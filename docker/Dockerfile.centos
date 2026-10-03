@@ -1,0 +1,173 @@
+# openMCX server images for Red Hat Enterprise Linux family clusters (docs/BUILD.md), valid for CentOS Stream 10:
+# the same programs and targets as docker/Dockerfile, built on CentOS Stream 10 (GCC 14) and run on CentOS Stream 10
+# minimal, in the manner of OpenAirInterface's Dockerfile.<nf>.centos.
+#
+#   docker build --target openmcx-mcptt-server -t openmcx-mcptt-server:TAG-centos -f docker/Dockerfile.centos .
+#
+# Targets: openmcx-mcptt-server, openmcx-mcvideo-server, openmcx-mcdata-server, openmcx-common (the common services
+# and the key tool), openmcx-http-proxy, openmcx-user-db. The build stage compiles once for all of them.
+#
+# Packages: BaseOS, AppStream and CRB, and EPEL 10 for nlohmann JSON, the AMR-WB codecs and libidn. freeDiameter and
+# OpenH264 have no EL10 package, so they are built from their pinned sources, like pjsip, wolfSSL and Go
+# (dependencies.lock.json, checked by tools/check-dependencies.py). The runtime images use BaseOS and AppStream only:
+# the few libraries from EPEL or built here are copied in, and every image checks with ldd that nothing is missing.
+
+ARG BUILDER_IMAGE=quay.io/centos/centos:stream10@sha256:3f924e68a32f956996f69431e59e069fbcef608ab9de821a78693167d25348d4
+ARG RUNTIME_IMAGE=quay.io/centos/centos:stream10-minimal@sha256:5c0cf51dd1b0553f8ea8ebd7c5a4f080e0be9c8ad702ee0462b7bb69119f5068
+
+#------------------------------------------------------------------------------
+# BUILDER IMAGE: the toolchain and libraries, the pinned sources, then the Go services and their tests, the C++
+# programs and their unit tests; stripped copies in /install/stripped, the libraries to copy in /install/libs.
+FROM ${BUILDER_IMAGE} AS build
+ARG DEPS_MIRROR=
+ARG GO_FILE=go1.27.1.linux-amd64.tar.gz
+ARG GO_URL=https://go.dev/dl/go1.27.1.linux-amd64.tar.gz
+ARG GO_SHA256=63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445
+ARG PJSIP_FILE=pjproject-2.17.tar.gz
+ARG PJSIP_URL=https://github.com/pjsip/pjproject/archive/refs/tags/2.17.tar.gz
+ARG PJSIP_SHA256=065fe06c06788d97c35f563796d59f00ce52fe9558a52d7b490a042a966facce
+ARG WOLFSSL_FILE=wolfssl-5.8.2-stable.tar.gz
+ARG WOLFSSL_URL=https://github.com/wolfSSL/wolfssl/archive/refs/tags/v5.8.2-stable.tar.gz
+ARG WOLFSSL_SHA256=3ef126e3466e2f8f6ebb62b916a7f8fb26c6709dbdf2b63a167759f2fdb53068
+ARG FREEDIAMETER_FILE=freeDiameter-1.5.0.tar.gz
+ARG FREEDIAMETER_URL=https://github.com/freeDiameter/freeDiameter/archive/refs/tags/1.5.0.tar.gz
+ARG FREEDIAMETER_SHA256=cc4ceafd9d0d4a6a5e3aa02bf557906fe755df9ec14d16c4fcd5dab6930296aa
+ARG OPENH264_FILE=openh264-2.4.1.tar.gz
+ARG OPENH264_URL=https://github.com/cisco/openh264/archive/refs/tags/v2.4.1.tar.gz
+ARG OPENH264_SHA256=8ffbe944e74043d0d3fb53d4a2a14c94de71f58dbea6a06d0dc92369542958ea
+# json-devel, opencore-amr-devel, vo-amrwbenc-devel and libidn-devel come from EPEL; libsrtp-devel and
+# libunistring-devel from CRB; the rest from BaseOS and AppStream.
+RUN dnf config-manager --set-enabled crb \
+    && dnf install -y epel-release \
+    && dnf update -y \
+    && cat /etc/os-release \
+    && dnf install -y gcc-c++ make cmake pkgconf-pkg-config bison flex autoconf automake libtool which tar gzip \
+       diffutils file ca-certificates python3 openssl binutils \
+       libuuid-devel openssl-devel libxml2-devel libcurl-devel json-devel libsrtp-devel lksctp-tools-devel \
+       opencore-amr-devel vo-amrwbenc-devel gnutls-devel libgcrypt-devel libidn-devel libidn2-devel \
+       mariadb-connector-c-devel pcre2-devel libunistring-devel \
+    && dnf clean all \
+    # Libraries built from source go to /usr/local, which is not on EL's default loader path.
+    && echo "/usr/local/lib" > /etc/ld.so.conf.d/local-lib.conf \
+    && echo "/usr/local/lib64" >> /etc/ld.so.conf.d/local-lib.conf
+ENV PATH="/usr/local/go/bin:/opt/pjsip/bin:${PATH}" \
+    PKG_CONFIG_PATH="/opt/pjsip/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/local/lib64/pkgconfig" \
+    LIBRARY_PATH="/usr/local/lib:/usr/local/lib64"
+COPY docker/fetch /usr/local/bin/fetch
+RUN fetch "$GO_FILE" "$GO_URL" "$GO_SHA256" /tmp/go.tar.gz \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
+RUN fetch "$PJSIP_FILE" "$PJSIP_URL" "$PJSIP_SHA256" /tmp/pjproject.tar.gz \
+    && mkdir /tmp/pjproject && tar -xzf /tmp/pjproject.tar.gz -C /tmp/pjproject --strip-components=1 \
+    && cd /tmp/pjproject \
+    && printf '/* SIP over TCP carries access tokens, MIKEY-SAKKE I_MESSAGEs and XML bodies */\n#define PJSIP_MAX_PKT_LEN 16000\n' \
+       > pjlib/include/pj/config_site.h \
+    && ./configure --prefix=/opt/pjsip --disable-video --disable-sound --disable-libyuv \
+       --disable-opencore-amr --disable-speex-aec --disable-gsm-codec --disable-speex-codec \
+       --disable-ilbc-codec --disable-g7221-codec --with-external-srtp CFLAGS='-fPIC' CXXFLAGS='-fPIC' \
+    && grep -q "guid_uuid.o" pjlib/build/os-auto.mak \
+    && make dep && make -j4 && make install \
+    && rm -rf /tmp/pjproject /tmp/pjproject.tar.gz
+COPY dependencies/wolfssl/build.sh /tmp/build-wolfssl.sh
+RUN mkdir -p /tmp/openmcx-wolfssl-build \
+    && fetch "$WOLFSSL_FILE" "$WOLFSSL_URL" "$WOLFSSL_SHA256" /tmp/openmcx-wolfssl-build/wolfssl-5.8.2-stable.tar.gz \
+    && bash /tmp/build-wolfssl.sh /opt/wolfssl /tmp/openmcx-wolfssl-build \
+    && rm -rf /tmp/openmcx-wolfssl-build /tmp/build-wolfssl.sh
+# freeDiameter 1.5.0 (the version Ubuntu 24.04 packages): libfdcore and libfdproto for the Diameter client of the
+# servers and the user database (TS 29.283); openMCX loads no extension.
+RUN fetch "$FREEDIAMETER_FILE" "$FREEDIAMETER_URL" "$FREEDIAMETER_SHA256" /tmp/freediameter.tar.gz \
+    && mkdir /tmp/freediameter && tar -xzf /tmp/freediameter.tar.gz -C /tmp/freediameter --strip-components=1 \
+    && cmake -S /tmp/freediameter -B /tmp/freediameter/build -DCMAKE_INSTALL_PREFIX=/usr/local \
+       -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+    && cmake --build /tmp/freediameter/build -j4 && cmake --install /tmp/freediameter/build && ldconfig \
+    && rm -rf /tmp/freediameter /tmp/freediameter.tar.gz
+# Cisco OpenH264 2.4.1 (the version Ubuntu 24.04 packages), H.264 for MCVideo (TS 26.281 clause 4.1.1); built
+# without assembly, so no nasm is needed.
+RUN fetch "$OPENH264_FILE" "$OPENH264_URL" "$OPENH264_SHA256" /tmp/openh264.tar.gz \
+    && mkdir /tmp/openh264 && tar -xzf /tmp/openh264.tar.gz -C /tmp/openh264 --strip-components=1 \
+    && make -C /tmp/openh264 -j4 USE_ASM=No PREFIX=/usr/local install-shared && ldconfig \
+    && rm -rf /tmp/openh264 /tmp/openh264.tar.gz
+COPY services /services
+RUN cd /services && go test ./... && go build -trimpath -o /install/bin/mcx-common ./cmd/mcx-common \
+    && go build -trimpath -o /install/bin/mcx-http-proxy ./cmd/mcx-http-proxy
+COPY CMakeLists.txt /src/CMakeLists.txt
+COPY include /src/include
+COPY src /src/src
+COPY tests /src/tests
+RUN cmake -S /src -B /build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    && cmake --build /build -j4 \
+    && ctest --test-dir /build --output-on-failure -E diameter_sctp \
+    && cmake --install /build --prefix /install \
+    && mkdir -p /install/stripped /install/libs \
+    && for program in /install/bin/*; do strip --strip-debug -o /install/stripped/$(basename $program) $program; done \
+    # The libraries the runtime images do not install: built here (/usr/local) or from EPEL.
+    && for program in /install/stripped/*; do \
+         ldd "$program" | awk '/=> \// {print $3}' \
+           | grep -E '/usr/local/|libopencore-amrwb|libvo-amrwbenc|libidn\.so' || true; \
+       done | sort -u | xargs -r cp -L -t /install/libs/ \
+    && ls -l /install/libs
+
+#------------------------------------------------------------------------------
+# TARGET IMAGES: CentOS Stream 10 minimal with CA certificates, Python for the health check and the copied libraries;
+# curl and libcurl are the minimal packages already in the image.
+FROM ${RUNTIME_IMAGE} AS runtime
+RUN microdnf update -y \
+    && microdnf install -y ca-certificates python3 \
+    && microdnf clean all -y && rm -rf /var/cache/yum /var/cache/dnf \
+    && echo "/usr/local/lib64" > /etc/ld.so.conf.d/local-lib.conf
+COPY --from=build /install/libs/ /usr/local/lib64/
+RUN ldconfig
+COPY tools/healthcheck.py /healthcheck.py
+WORKDIR /workspace
+
+#------------------------------------------------------------------------------
+# MCPTT server (TS 24.379, TS 24.380): SIP and media, HTTP to the common services, Diameter to the user database.
+FROM runtime AS openmcx-mcptt-server
+RUN microdnf install -y libxml2 libsrtp openssl-libs libuuid lksctp-tools gnutls libgcrypt libidn2 \
+    && microdnf clean all -y && rm -rf /var/cache/yum /var/cache/dnf
+COPY --from=build /install/stripped/openmcx-mcptt-server /usr/local/bin/
+RUN ! ldd /usr/local/bin/openmcx-mcptt-server | grep 'not found'
+ENTRYPOINT ["/usr/local/bin/openmcx-mcptt-server"]
+
+#------------------------------------------------------------------------------
+# MCVideo server (TS 24.281, TS 24.581): as the MCPTT server.
+FROM runtime AS openmcx-mcvideo-server
+RUN microdnf install -y libxml2 libsrtp openssl-libs libuuid lksctp-tools gnutls libgcrypt libidn2 \
+    && microdnf clean all -y && rm -rf /var/cache/yum /var/cache/dnf
+COPY --from=build /install/stripped/openmcx-mcvideo-server /usr/local/bin/
+RUN ! ldd /usr/local/bin/openmcx-mcvideo-server | grep 'not found'
+ENTRYPOINT ["/usr/local/bin/openmcx-mcvideo-server"]
+
+#------------------------------------------------------------------------------
+# MCData server (TS 24.282, TS 24.582).
+FROM runtime AS openmcx-mcdata-server
+RUN microdnf install -y libxml2 libsrtp openssl-libs libuuid \
+    && microdnf clean all -y && rm -rf /var/cache/yum /var/cache/dnf
+COPY --from=build /install/stripped/openmcx-mcdata-server /usr/local/bin/
+RUN ! ldd /usr/local/bin/openmcx-mcdata-server | grep 'not found'
+ENTRYPOINT ["/usr/local/bin/openmcx-mcdata-server"]
+
+#------------------------------------------------------------------------------
+# Common services (one role per container) with the key tool the KMS, GMS and IS proxy run.
+FROM runtime AS openmcx-common
+RUN microdnf install -y libxml2 libsrtp openssl-libs \
+    && microdnf clean all -y && rm -rf /var/cache/yum /var/cache/dnf
+COPY --from=build /install/stripped/mcx-common /install/stripped/mcx-keytool /usr/local/bin/
+RUN ! ldd /usr/local/bin/mcx-common /usr/local/bin/mcx-keytool | grep 'not found'
+ENTRYPOINT ["/usr/local/bin/mcx-common"]
+
+#------------------------------------------------------------------------------
+# HTTP proxy (TS 24.482 annex A.2.2.2).
+FROM runtime AS openmcx-http-proxy
+RUN microdnf install -y libxml2 && microdnf clean all -y && rm -rf /var/cache/yum /var/cache/dnf
+COPY --from=build /install/stripped/mcx-http-proxy /usr/local/bin/
+RUN ! ldd /usr/local/bin/mcx-http-proxy | grep 'not found'
+ENTRYPOINT ["/usr/local/bin/mcx-http-proxy"]
+
+#------------------------------------------------------------------------------
+# User database: MCPTT user profiles over Diameter (TS 29.283).
+FROM runtime AS openmcx-user-db
+RUN microdnf install -y lksctp-tools gnutls libgcrypt libidn2 \
+    && microdnf clean all -y && rm -rf /var/cache/yum /var/cache/dnf
+COPY --from=build /install/stripped/mcx-user-db /usr/local/bin/
+RUN ! ldd /usr/local/bin/mcx-user-db | grep 'not found'
+ENTRYPOINT ["/usr/local/bin/mcx-user-db"]

@@ -1,0 +1,8 @@
+/build/
+/.cache/
+/.superpowers/
+/artifacts/
+/config/generated/
+__pycache__/
+*.pyc
+/build-*/

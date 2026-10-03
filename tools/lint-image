@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Build openmcx-lint:0.1, the formatting and lint tools (docker/Dockerfile.lint), on openmcx-dev:0.1.
+# The pinned golangci-lint and ruff archives are fetched and verified by the build itself.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+docker build -t openmcx-lint:0.1 -f docker/Dockerfile.lint "$@" .

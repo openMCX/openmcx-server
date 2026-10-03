@@ -1,0 +1,277 @@
+// MCData server service authorisation, log-off and affiliation: the participating MCData function side of
+// TS 24.282 clauses 7.3 and 8.3.2 (member functions of DataServer, declared in data_server.hpp).
+//
+// Specifications: TS 24.282 V19.7.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), IETF RFC 3903.
+
+#include "data_server.hpp"
+
+namespace mcx {
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 7.3.3: service authorisation by a SIP PUBLISH for poc-settings (access token checked at the
+// IdM server, CSK upload accepted); a SIP PUBLISH with Expires 0 logs the user off (TS 24.282 clause 7.3.5).
+SipResponse DataServer::authorise(const SipMessage &request) {
+  SipResponse response;
+  const auto asserted = asserted_identity(request);
+  if (asserted.empty() || asserted != request.from_uri) return reject(403, "", asserted, "authorisation");
+  if (get_header(request.headers, "Expires") == "0") return log_off(asserted); // TS 24.282 clause 7.3.5
+  const auto *info_part = part(request, mcdata::info_mime);
+  if (!info_part || !part(request, "application/poc-settings+xml"))
+    return reject(403, "101 service authorisation failed", asserted, "authorisation");
+  // TS 24.282 clause 7.2.2 steps 3 and 4 and clause 7.3.3 steps 2 and 3 (clause 7.3.1A), with TS 33.180
+  // clause 9.2.1.3: the CSK upload, which also keys the encryption of the access token and client ID in the
+  // same request.
+  std::optional<keying::KeyMessage> csk;
+  std::string uploader;
+  std::string info_body = info_part->body;
+  if (auto refused = authorise_csk(request, asserted, info_body, csk, uploader)) return *refused;
+  const auto info = mcdata::parse_info(info_body);
+  if (info.access_token.empty() || info.client_id.empty())
+    return reject(403, "101 service authorisation failed", asserted, "authorisation");
+  const auto checked =
+      introspect_claims(http_, cfg_.at("common"), info.access_token, asserted, info.client_id, mcdata_service.id_claim);
+  if (!checked) return reject(403, "101 service authorisation failed", asserted, "authorisation");
+  const auto &claims = *checked;
+  const auto id = claims.value(mcdata_service.id_claim, std::string{});
+  for (const auto &[sip, other] : users_)
+    if (other.id == id && sip != asserted)
+      return reject(403, "101 service authorisation failed", asserted, "authorisation");
+  // Every check comes before the user's entry is made or changed, so that a refused request changes nothing.
+  const auto existing = users_.find(asserted);
+  const auto match = std::string(get_header(request.headers, "SIP-If-Match"));
+  if (!match.empty() && (existing == users_.end() || match != existing->second.auth_etag))
+    return reject(412, "", asserted, "authorisation");
+  // The CSK was signed by the MCData ID the access token names.
+  if (csk && uploader != id) return reject(403, "101 service authorisation failed", asserted, "authorisation");
+  auto &user = users_[asserted];
+  if (!user.id.empty() && (user.id != id || user.client != info.client_id)) {
+    user.groups.clear();
+    user.subscription.clear();
+  }
+  user.id = id;
+  user.client = info.client_id;
+  user.sip = asserted;
+  if (csk) user.csk = csk;
+  user.expires = claims.at("exp").get<std::int64_t>();
+  user.auth_etag = random_id();
+  response.status_code = 200;
+  response.headers = {{"SIP-ETag", user.auth_etag}, {"Expires", "4294967295"}};
+  event(
+      "mcdata_service_authorised",
+      {{"user_id", id}, {"client_id", info.client_id}, {"csk_id", user.csk ? Json(user.csk->csb_id) : Json(nullptr)}});
+  pending_.push_back([this, asserted] {
+    if (auto found = users_.find(asserted); found != users_.end()) implicit_affiliations(found->second);
+  });
+  // TS 24.282 clause 17.2.2: location reporting is configured upon successful service authorisation.
+  pending_.push_back([this, id] { location_.configure(id); });
+  return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 7.3.5: a SIP PUBLISH with Expires 0 logs the user off: its affiliations end, its functional
+// aliases are deactivated (clause 22.2.2.3.6).
+SipResponse DataServer::log_off(const std::string &asserted) {
+  SipResponse response;
+  const auto found = users_.find(asserted);
+  if (found != users_.end()) {
+    event("mcdata_logged_off", {{"user_id", found->second.id}});
+    found->second.groups.clear();
+    notify_affiliation(found->second, {}, true);
+    deactivate_aliases(found->second.id); // TS 24.282 clause 22.2.2.3.6
+    users_.erase(found);
+  }
+  response.status_code = 200;
+  response.headers = {{"Expires", "0"}};
+  return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 7.2.2 steps 3 and 4 and clause 7.3.3 steps 2 and 3 (clause 7.3.1A), with TS 33.180 clause
+// 9.2.1.3: the CSK upload of a service authorisation, and the decryption of the MCData info body it (or the CSK
+// already known) keys, or the refusal.
+std::optional<SipResponse> DataServer::authorise_csk(const SipMessage &request, const std::string &asserted,
+                                                     std::string &info_body, std::optional<keying::KeyMessage> &csk,
+                                                     std::string &uploader) {
+  if (const auto *upload = part(request, "application/mikey"); upload && keys_) {
+    try {
+      uploader = KeyClient::initiator(upload->body);
+      csk = keys_->accept_csk(uploader, upload->body);
+    } catch (const std::exception &error) {
+      event("mcdata_csk_rejected", {{"user_id", asserted}, {"reason", error.what()}});
+      return reject(488, "136 authentication of the MIKEY-SAKKE I_MESSAGE failed", asserted, "authorisation");
+    }
+    if (xmlsec::is_protected(info_body)) {
+      try {
+        info_body = xmlsec::decrypt(info_body, xml_key_of(*csk, uploader));
+        ++xml_decrypted_;
+      } catch (const std::exception &) {
+        ++xml_refused_;
+        return reject(403, "140 unable to decrypt XML content", asserted, "authorisation");
+      }
+    }
+  } else if (const auto known = xml_key(asserted); known && xmlsec::is_protected(info_body)) {
+    try {
+      info_body = xmlsec::decrypt(info_body, *known);
+      ++xml_decrypted_;
+    } catch (const std::exception &) {
+      ++xml_refused_;
+      return reject(403, "140 unable to decrypt XML content", asserted, "authorisation");
+    }
+  }
+  return std::nullopt;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 8.3.2.3: the MCData server receives an affiliation status change from the MCData client
+// (a SIP PUBLISH for presence with an MCData PIDF) and affiliates the served user to the listed groups.
+SipResponse DataServer::affiliate(const SipMessage &request, User &user) {
+  SipResponse response;
+  const auto *info_part = part(request, mcdata::info_mime);
+  const auto *pidf = part(request, "application/pidf+xml");
+  const bool removing = get_header(request.headers, "Expires") == "0";
+  // TS 24.282 clause 8.2.2 NOTE 1: de-affiliation from every group needs no PIDF body.
+  if (!info_part || (!pidf && !removing)) return reject(403, "", user.id, "affiliation");
+  const auto info = mcdata::parse_info(info_part->body);
+  if (info.request_uri != user.id) return reject(403, "", user.id, "affiliation");
+  Affiliation affiliation;
+  if (pidf) {
+    affiliation = parse_affiliation(pidf->body);
+    if (!affiliation.mcdata || affiliation.user_id != user.id || affiliation.client_id != user.client)
+      return reject(403, "", user.id, "affiliation");
+  }
+  // RFC 3903 section 6: a PUBLISH without SIP-If-Match is an initial publication,
+  // which replaces the event state rather than being refused. A client that
+  // restarted has no entity tag and must still be able to affiliate; only a
+  // tag that is present and does not match is a 412, as in TS 24.282 clause 7.3.3.
+  const auto match = std::string(get_header(request.headers, "SIP-If-Match"));
+  if (!match.empty() && match != user.affiliation_etag) return reject(412, "", user.id, "affiliation");
+  std::set<std::string> groups;
+  if (!removing)
+    for (const auto &group : affiliation.groups) {
+      const auto document = group_document(group);
+      if (!document || !document->contains("mcdata") ||
+          !listed(document->at("mcdata").value("members", Json::array()), user.id))
+        return reject(403, "", user.id, "affiliation");
+      groups.insert(group);
+    }
+  const auto previous = user.groups;
+  user.groups = std::move(groups);
+  user.affiliation_etag = removing ? std::string{} : random_id();
+  response.status_code = 200;
+  response.headers = {{"Expires", removing ? "0" : "4294967295"}};
+  if (!removing) response.headers.push_back({"SIP-ETag", user.affiliation_etag});
+  event(removing ? "mcdata_deaffiliated" : "mcdata_affiliated", {{"user_id", user.id}, {"groups", user.groups}});
+  schedule_notify(user, affiliation.publication_id);
+  for (const auto &group : user.groups)
+    if (!previous.contains(group))
+      pending_.push_back([this, id = user.id, group] {
+        if (const auto *member = by_id(id)) {
+          late_alerts(*member, group);            // TS 24.282 clause 16.2.3.3
+          late_in_progress_state(*member, group); // TS 24.282 clause 6.3.7.1.2: an outstanding state
+        }
+      });
+  return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 8.3.2.5: NOTIFY the subscriber with the per-user affiliation information, with
+// the p-id of the PUBLISH that caused the change (step 3d).
+void DataServer::notify_affiliation(const User &user, const std::string &publication, bool terminated) {
+  if (user.subscription.empty()) return;
+  const auto affiliation = affiliation_status(mcdata_service, user, publication);
+  sip_.notify(
+      user.subscription, "presence", terminated ? "terminated;reason=noresource" : "active", "application/pidf+xml",
+      encrypt_xml(xml_key(user.sip), {{"application/pidf+xml", affiliation_xml(affiliation, true)}}).front().body);
+  event("mcdata_affiliation_notified",
+        {{"user_id", user.id}, {"groups", user.groups}, {"p_id", publication}, {"terminated", terminated}});
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 8.3.2.5: queue the affiliation NOTIFY to the served user, sent after the response to the
+// request that changed the affiliation.
+void DataServer::schedule_notify(const User &served, const std::string &publication) {
+  pending_.push_back([this, id = served.id, publication] {
+    if (const auto *user = by_id(id)) notify_affiliation(*user, publication);
+  });
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 8.3.2.4: subscription to the affiliation status of the served MCData ID. Only the
+// user's own status: no user is authorised to modify another user's affiliation.
+SipResponse DataServer::affiliation_subscribe(const SipMessage &request, User &subscriber) {
+  SipResponse response;
+  const bool in_dialog = !subscriber.subscription.empty() && subscriber.subscription == request.dialog_id;
+  if (!in_dialog) {
+    // Steps 1 to 4: the served MCData ID, and no authorisation for another user's status.
+    const auto *info_part = part(request, mcdata::info_mime);
+    if (!info_part) return reject(403, "", subscriber.id, "affiliation-subscription");
+    const auto info = mcdata::parse_info(info_part->body);
+    if (info.request_uri != subscriber.id) return reject(403, "", subscriber.id, "affiliation-subscription");
+  }
+  if (get_header(request.headers, "Expires") == "0") {
+    // A de-subscription (in dialog) or a fetch of the current state (TS 24.282 clause 8.2.3 step 5):
+    // both are answered with a final NOTIFY on their own dialog.
+    response.status_code = 200;
+    response.headers = {{"Expires", "0"}};
+    const auto dialog = request.dialog_id;
+    pending_.push_back([this, id = subscriber.id, dialog] {
+      auto *user = by_id(id);
+      if (!user) return;
+      const auto kept = user->subscription;
+      user->subscription = dialog;
+      notify_affiliation(*user, {}, true);
+      user->subscription = kept == dialog ? std::string{} : kept;
+    });
+    event(in_dialog ? "mcdata_affiliation_unsubscribed" : "mcdata_affiliation_fetched", {{"user_id", subscriber.id}});
+    return response;
+  }
+  subscriber.subscription = request.dialog_id;
+  response.status_code = 200;
+  response.headers = {{"Expires", "4294967295"}};
+  event("mcdata_affiliation_subscribed", {{"user_id", subscriber.id}});
+  schedule_notify(subscriber);
+  return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 8.3.2.15: implicit affiliation to the groups configured in <ImplicitAffiliations>
+// after service authorisation (the combined server also owns the groups, TS 24.282 clauses 8.3.3.6 and 8.3.3.7).
+void DataServer::implicit_affiliations(User &user) {
+  const auto policy = profile(user.id).value("mcdata", Json::object());
+  std::vector<std::string> added;
+  for (const auto &entry : policy.value("implicit_affiliations", Json::array())) {
+    if (!entry.is_string() || user.groups.contains(entry.get<std::string>())) continue;
+    const auto group = entry.get<std::string>();
+    const auto document = group_document(group);
+    if (!document || !document->contains("mcdata") ||
+        !listed(document->at("mcdata").value("members", Json::array()), user.id)) {
+      event("mcdata_implicit_affiliation_refused", {{"user_id", user.id}, {"group_id", group}});
+      continue;
+    }
+    user.groups.insert(group);
+    added.push_back(group);
+  }
+  if (added.empty()) return;
+  event("mcdata_implicitly_affiliated", {{"user_id", user.id}, {"groups", added}, {"reason", "configured"}});
+  notify_affiliation(user);
+  for (const auto &group : added) late_alerts(user, group);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 6.3.5: affiliation check of a user at its MCData client.
+bool DataServer::affiliated(const std::string &id, const std::string &group) {
+  const auto *user = by_id(id);
+  return user && user->groups.contains(group);
+}
+
+//------------------------------------------------------------------------------
+// Helper: the served user a group document's member entry names when it is affiliated to the group and is not
+// `except` (the sender), or nullptr. One lookup, so that the user cannot expire between a check and its use.
+const DataServer::User *DataServer::affiliated_member(const Json &member, const std::string &group,
+                                                      const std::string &except) {
+  if (!member.is_string() || member.get<std::string>() == except) return nullptr;
+  const auto *user = by_id(member.get<std::string>());
+  return user && user->groups.contains(group) ? user : nullptr;
+}
+
+} // namespace mcx

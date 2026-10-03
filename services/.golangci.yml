@@ -1,0 +1,35 @@
+# openMCX Go checks (docs/CODING_STYLE.md), golangci-lint 2.14 (the openmcx-lint image), run by tools/lint.
+version: "2"
+run:
+  modules-download-mode: vendor
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - varnamelen
+    - funlen
+    - gocognit
+  settings:
+    # No single-letter names, receivers and HTTP handlers included (docs/CODING_STYLE.md 1.1).
+    varnamelen:
+      min-name-length: 2
+      max-distance: 1
+      check-receiver: true
+      check-return: true
+      check-type-param: true
+      ignore-type-assert-ok: false
+      ignore-map-index-ok: false
+      ignore-chan-recv-ok: false
+    funlen:
+      lines: 60
+      statements: -1
+    gocognit:
+      min-complexity: 30
+  exclusions:
+    paths:
+      - vendor
+formatters:
+  enable:
+    - gofmt

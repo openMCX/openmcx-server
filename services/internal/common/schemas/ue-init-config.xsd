@@ -1,0 +1,353 @@
+<!-- Source: ETSI TS 124 484 V19.4.0 (2026-02), clause 7.2.2.3, the MCPTT UE initial configuration document schema imported by the user profile schemas as "ue-init-config.xsd".
+     Taken from the 3GPP/ETSI specification (clause cited above). Only the page
+     headers and footers were removed, and 0 attribute value(s) wrapped at a hyphen
+     by the PDF layout were rejoined; the schema text is otherwise unchanged. -->
+<xs:schema xmlns:mcpttiup="urn:3gpp:mcptt:mcpttUEinitConfig:1.0"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  targetNamespace="urn:3gpp:mcptt:mcpttUEinitConfig:1.0"
+  elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+<xs:import namespace="http://www.w3.org/XML/1998/namespace"
+  schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+
+  <xs:element name="mcptt-UE-initial-configuration">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element name="mcptt-UE-id" type="mcpttiup:MCPTTUEIDType"/>
+        <xs:element name="name" type="mcpttiup:NameType"/>
+        <xs:element name="Default-user-profile" type="mcpttiup:UserProfileType"/>
+        <xs:element name="on-network" type="mcpttiup:On-networkType"/>
+        <xs:element name="off-network" type="mcpttiup:Off-networkType"/>
+        <xs:element name="anyExt" type="mcpttiup:anyExtType"/>
+        <xs:any namespace="##other" processContents="lax"/>
+      </xs:choice>
+      <xs:attribute name="domain" type="xs:anyURI" use="required"/>
+      <xs:attribute name="XUI-URI" type="xs:anyURI"/>
+      <xs:attribute name="Instance-ID-URN" type="xs:anyURI"/>
+      <xs:anyAttribute namespace="##any" processContents="lax"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="NameType">
+    <xs:simpleContent>
+      <xs:extension base="xs:token">
+
+        <xs:attribute ref="xml:lang"/>
+        <xs:attributeGroup ref="mcpttiup:IndexType"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="MCPTTUEIDType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="Instance-ID-URN" type="xs:anyURI"/>
+      <xs:element name="IMEI-range" type="mcpttiup:IMEI-rangeType"/>
+      <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax"/>
+    </xs:choice>
+    <xs:attributeGroup ref="mcpttiup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="IMEI-rangeType">
+    <xs:sequence>
+      <xs:element name="TAC" type="mcpttiup:tacType"/>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element name="SNR" type="mcpttiup:snrType"/>
+        <xs:element name="SNR-range" type="mcpttiup:SNR-rangeType"/>
+      </xs:choice>
+      <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcpttiup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="SNR-rangeType">
+    <xs:sequence>
+      <xs:element name="Low-SNR" type="mcpttiup:snrType"/>
+      <xs:element name="High-SNR" type="mcpttiup:snrType"/>
+      <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcpttiup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:simpleType name="tac-baseType">
+      <xs:restriction base="xs:decimal">
+        <xs:totalDigits value="8"/>
+      </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="tacType">
+    <xs:simpleContent>
+      <xs:extension base="mcpttiup:tac-baseType">
+        <xs:attributeGroup ref="mcpttiup:IndexType"/>
+        <xs:anyAttribute namespace="##any" processContents="lax"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:simpleType name="snr-baseType">
+    <xs:restriction base="xs:decimal">
+      <xs:totalDigits value="6"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="snrType">
+    <xs:simpleContent>
+      <xs:extension base="mcpttiup:snr-baseType">
+        <xs:attributeGroup ref="mcpttiup:IndexType"/>
+        <xs:anyAttribute namespace="##any" processContents="lax"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="UserProfileType">
+      <xs:attribute name="User-ID" type="xs:anyURI" use="required"/>
+      <xs:attribute name="user-profile-index" type="xs:unsignedByte" use="required"/>
+      <xs:attributeGroup ref="mcpttiup:IndexType"/>
+      <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="VPLMNType">
+    <xs:sequence>
+      <xs:element name="service" type="mcpttiup:ServiceType"/>
+      <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="PLMN" type="xs:string" use="required"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="ServiceType">
+    <xs:sequence>
+      <xs:element name="MCPTT-to-con-ref" type="xs:string"/>
+      <xs:element name="MC-common-core-to-con-ref" type="xs:string"/>
+      <xs:element name="MC-ID-to-con-ref" type="xs:string"/>
+      <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- These elements can be added under the anyExt element of an element of type "ServiceType" -->
+      <xs:element name="MCPTT-ref-SNSSAI" type="xs:string"/>
+      <xs:element name="MCData-ref-SNSSAI" type="xs:string"/>
+      <xs:element name="MCVideo-ref-SNSSAI" type="xs:string"/>
+      <xs:element name="MC-common-core-ref-SNSSAI" type="xs:string"/>
+      <xs:element name="MC-ID-ref-SNSSAI" type="xs:string"/>
+
+  <xs:complexType name="AuthMethodType">
+    <xs:sequence>
+      <xs:element name="mutual-authentication" type="xs:boolean"/>
+      <xs:element name="x509" type="xs:string" minOccurs="0"/>
+      <xs:element name="key" type="xs:string" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="On-networkType">
+    <xs:sequence>
+      <xs:element name="Timers">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="T100" type="xs:unsignedByte"/>
+            <xs:element name="T101" type="xs:unsignedByte"/>
+            <xs:element name="T103" type="xs:unsignedByte"/>
+            <xs:element name="T104" type="xs:unsignedByte"/>
+            <xs:element name="T132" type="xs:unsignedByte"/>
+            <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="HPLMN">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="service" type="mcpttiup:ServiceType"/>
+            <xs:element name="VPLMN" type="mcpttiup:VPLMNType" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+          <xs:attribute name="PLMN" type="xs:string" use="required"/>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="App-Server-Info">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="idms-auth-endpoint" type="xs:anyURI"/>
+            <xs:element name="idms-token-endpoint" type="xs:anyURI"/>
+            <xs:element name="http-proxy" type="xs:anyURI"/>
+            <xs:element name="gms" type="xs:anyURI"/>
+            <xs:element name="cms" type="xs:anyURI"/>
+            <xs:element name="kms" type="xs:anyURI"/>
+            <xs:element name="tls-tunnel-auth-method" type="mcpttiup:AuthMethodType"/>
+            <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+
+      <xs:element name="GMS-URI" type="xs:anyURI"/>
+      <xs:element name="group-creation-XUI" type="xs:anyURI"/>
+      <xs:element name="GMS-XCAP-root-URI" type="xs:anyURI"/>
+      <xs:element name="CMS-XCAP-root-URI" type="xs:anyURI"/>
+      <xs:element name="integrity-protection-enabled" type="xs:boolean"/>
+      <xs:element name="confidentiality-protection-enabled" type="xs:boolean"/>
+      <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcpttiup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <!-- These elements can be added under the anyExt element of the On-networkType element -->
+  <xs:element name="MCPTT-Service-Details" type="mcpttiup:Service-DetailsType"/>
+  <xs:element name="MCVideo-Service-Details" type="mcpttiup:Service-DetailsType"/>
+  <xs:element name="MCData-Service-Details" type="mcpttiup:Service-DetailsType"/>
+  <xs:element name="MCCommonCore-Service-Details" type="mcpttiup:Service-DetailsType"/>
+  <xs:element name="MCIdM-Service-Details" type="mcpttiup:Service-DetailsType"/>
+
+  <xs:element name="SNSSAI" type="mcpttiup:SNSSAI-InfoType"/>
+
+  <xs:complexType name="SNSSAI-InfoType">
+    <xs:sequence>
+      <xs:element name="NSSAA-Server" type="xs:anyURI" minOccurs="0"/>
+      <xs:element name="credentials" type="mcpttiup:credentialsType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="SNSSAI" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="Service-DetailsType">
+    <xs:sequence>
+      <xs:element name="IPv6-Required" type="xs:boolean"/>
+      <xs:element name="Server-URI" type="xs:anyURI"/>
+      <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="lms" type="xs:anyURI"/>
+  <!-- These elements can be added under the anyExt element of the *-Service-Details element -->
+  <xs:simpleType name="PDUSessionType">
+    <xs:restriction base="xs:string">
+       <xs:enumeration value="IPv4"/>
+       <xs:enumeration value="IPv6"/>
+       <xs:enumeration value="IPv4v6"/>
+       <xs:enumeration value="Ethernet"/>
+       <xs:enumeration value="Unstructured"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:element name="Idm-Client-Id" type="xs:string"/>
+
+  <xs:complexType name="Off-networkType">
+    <xs:sequence>
+      <xs:element name="Timers">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="TFG1" type="xs:unsignedShort"/>
+            <xs:element name="TFG2" type="xs:unsignedShort"/>
+            <xs:element name="TFG3" type="xs:unsignedShort"/>
+            <xs:element name="TFG4" type="xs:unsignedByte"/>
+            <xs:element name="TFG5" type="xs:unsignedByte"/>
+            <xs:element name="TFG11" type="xs:unsignedShort"/>
+            <xs:element name="TFG12" type="xs:unsignedShort"/>
+            <xs:element name="TFG13" type="xs:unsignedByte"/>
+            <xs:element name="TFG14" type="xs:unsignedByte"/>
+            <xs:element name="TFP1" type="xs:unsignedShort"/>
+            <xs:element name="TFP2" type="xs:unsignedByte"/>
+            <xs:element name="TFP3" type="xs:unsignedShort"/>
+            <xs:element name="TFP4" type="xs:unsignedShort"/>
+            <xs:element name="TFP5" type="xs:unsignedShort"/>
+            <xs:element name="TFP6" type="xs:unsignedShort"/>
+            <xs:element name="TFP7" type="xs:unsignedByte"/>
+            <xs:element name="TFB1" type="xs:unsignedShort"/>
+            <xs:element name="TFB2" type="xs:unsignedByte"/>
+            <xs:element name="TFB3" type="xs:unsignedByte"/>
+
+            <xs:element name="T201" type="xs:unsignedShort"/>
+            <xs:element name="T203" type="xs:unsignedByte"/>
+            <xs:element name="T204" type="xs:unsignedByte"/>
+            <xs:element name="T205" type="xs:unsignedByte"/>
+            <xs:element name="T230" type="xs:unsignedByte"/>
+            <xs:element name="T233" type="xs:unsignedByte"/>
+            <xs:element name="TFE1" type="xs:unsignedShort"/>
+            <xs:element name="TFE2" type="xs:unsignedByte"/>
+            <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Counters">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="CFP1" type="xs:unsignedByte"/>
+            <xs:element name="CFP3" type="xs:unsignedByte"/>
+            <xs:element name="CFP4" type="xs:unsignedByte"/>
+            <xs:element name="CFP6" type="xs:unsignedByte"/>
+            <xs:element name="CFG11" type="xs:unsignedByte"/>
+            <xs:element name="CFG12" type="xs:unsignedByte"/>
+            <xs:element name="C201" type="xs:unsignedByte"/>
+            <xs:element name="C204" type="xs:unsignedByte"/>
+            <xs:element name="C205" type="xs:unsignedByte"/>
+            <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcpttiup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:attributeGroup name="IndexType">
+    <xs:attribute name="index" type="xs:token"/>
+  </xs:attributeGroup>
+
+  <xs:complexType name="DN-InfoType">
+    <xs:sequence>
+      <xs:element name="DN-AAA-Server" type="xs:anyURI" minOccurs="0"/>
+      <xs:element name="credentials" type="mcpttiup:credentialsType" minOccurs="0"/>
+      <xs:element name="Pap-parameters" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="user-name" type="xs:string"/>
+            <xs:element name="password" type="xs:string"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Chap-parameters" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="user-name" type="xs:string"/>
+            <xs:element name="password" type="xs:string"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="DNN" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="credentialsType">
+    <xs:sequence>
+      <xs:element name="ID" type="xs:string" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttiup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="anyExtType">
+    <xs:sequence>
+      <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="mcServiceUELabel" type="xs:string"/>
+</xs:schema>

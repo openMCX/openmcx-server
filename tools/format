@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Format the code the way docs/CODING_STYLE.md says, in the openmcx-lint image (nothing on the host):
+# clang-format (C++), gofmt (Go), ruff format (Python).
+#   tools/format           rewrite the files
+#   tools/format --check   change nothing; list what is not formatted and fail if anything is
+set -euo pipefail
+cd "$(dirname "$0")/.."
+mode=${1:-write}
+# File lists from the host's git (inside the container a worktree's .git is not available).
+mkdir -p artifacts/lint
+git ls-files 'src/*.cpp' 'src/*.hpp' 'include/*.hpp' 'tests/*.cpp' 'tests/*.hpp' > artifacts/lint/cpp.list
+git ls-files 'services/*.go' | grep -v '^services/vendor/' > artifacts/lint/go.list
+git ls-files '*.py' > artifacts/lint/py.list
+docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/src" -w /src openmcx-lint:0.1 bash -c '
+set -euo pipefail
+mode=$1
+cpp=$(cat artifacts/lint/cpp.list); go=$(cat artifacts/lint/go.list); py=$(cat artifacts/lint/py.list)
+status=0
+if [ "$mode" = --check ]; then
+  clang-format --dry-run --Werror $cpp 2>/tmp/cpp || { echo "C++ not formatted:"; grep "clang-format-violations" /tmp/cpp | cut -d: -f1 | sort -u; status=1; }
+  unformatted=$(gofmt -l $go); [ -z "$unformatted" ] || { echo "Go not formatted:"; echo "$unformatted"; status=1; }
+  ruff format --check --quiet $py || status=1
+  exit $status
+fi
+clang-format -i $cpp
+gofmt -w $go
+ruff format --quiet $py
+' format "$mode"

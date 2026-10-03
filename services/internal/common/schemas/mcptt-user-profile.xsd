@@ -1,0 +1,501 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Source: ETSI TS 124 484 V19.4.0 (2026-02), clause 8.3.2.3 "XML Schema" (MCPTT user profile configuration document).
+     Taken from the 3GPP/ETSI specification (clause cited above). Only the page
+     headers and footers were removed, and 0 attribute value(s) wrapped at a hyphen
+     by the PDF layout were rejoined; the schema text is otherwise unchanged. -->
+<xs:schema
+  xmlns:mcpttup="urn:3gpp:mcptt:user-profile:1.0"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:mcpttiup="urn:3gpp:mcptt:mcpttUEinitConfig:1.0"
+  targetNamespace="urn:3gpp:mcptt:user-profile:1.0"
+  elementFormDefault="qualified" attributeFormDefault="unqualified">
+  <xs:import namespace="http://www.w3.org/XML/1998/namespace"
+  schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+  <!-- This import brings in common policy namespace from RFC 4745 -->
+  <xs:import namespace="urn:ietf:params:xml:ns:common-policy"
+  schemaLocation="http://www.iana.org/assignments/xml-registry/schema/common-policy.xsd"/>
+  <xs:import namespace="urn:3gpp:mcptt:mcpttUEinitConfig:1.0"
+  schemaLocation="ue-init-config.xsd"/>
+
+  <xs:element name="mcptt-user-profile">
+    <xs:complexType>
+      <xs:choice minOccurs="1" maxOccurs="unbounded">
+        <xs:element name="Name" type="mcpttup:NameType"/>
+        <xs:element name="Status" type="xs:boolean"/>
+        <xs:element name="ProfileName" type="mcpttup:NameType"/>
+        <xs:element name="Pre-selected-indication" type="mcpttup:emptyType"/>
+        <xs:element name="Common" type="mcpttup:CommonType"/>
+        <xs:element name="OffNetwork" type="mcpttup:OffNetworkType"/>
+        <xs:element name="OnNetwork" type="mcpttup:OnNetworkType"/>
+        <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+        <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:choice>
+      <xs:attribute name="XUI-URI" type="xs:anyURI" use="required"/>
+      <xs:attribute name="user-profile-index" type="xs:unsignedByte" use="required"/>
+      <xs:anyAttribute namespace="##any" processContents="lax"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="NameType">
+    <xs:simpleContent>
+      <xs:extension base="xs:token">
+        <xs:attribute ref="xml:lang"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="CommonType">
+    <xs:choice minOccurs="1" maxOccurs="unbounded">
+      <xs:element name="UserAlias" type="mcpttup:UserAliasType"/>
+      <xs:element name="MCPTTUserID" type="mcpttup:EntryType"/>
+      <xs:element name="PrivateCall" type="mcpttup:MCPTTPrivateCallType"/>
+      <xs:element name="MCPTT-group-call" type="mcpttup:MCPTTGroupCallType"/>
+      <xs:element name="MissionCriticalOrganization" type="xs:string"/>
+      <xs:element name="ParticipantType" type="xs:string"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attributeGroup ref="mcpttup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:element name="LocationUserProfileURI" type="xs:anyURI"/>
+
+  <xs:complexType name="MCPTTPrivateCallType">
+    <xs:sequence>
+      <xs:element name="PrivateCallList" type="mcpttup:PrivateCallListEntryType"/>
+      <xs:element name="EmergencyCall" type="mcpttup:EmergencyCallType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="PrivateCallListEntryType">
+    <xs:choice minOccurs="1" maxOccurs="unbounded">
+      <xs:element name="PrivateCallURI" type="mcpttup:EntryType"/>
+      <xs:element name="PrivateCallProSeUser" type="mcpttup:ProSeUserEntryType"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attributeGroup ref="mcpttup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="UserAliasType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="alias-entry" type="mcpttup:AliasEntryType"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="AliasEntryType">
+    <xs:simpleContent>
+      <xs:extension base="xs:token">
+        <xs:attributeGroup ref="mcpttup:IndexType"/>
+        <xs:attribute ref="xml:lang"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="ListEntryType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="entry" type="mcpttup:EntryType"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attribute ref="xml:lang"/>
+    <xs:attributeGroup ref="mcpttup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="EntryType">
+    <xs:sequence>
+      <xs:element name="uri-entry" type="xs:anyURI"/>
+      <xs:element name="display-name" type="mcpttup:DisplayNameElementType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="entry-info" type="mcpttup:EntryInfoTypeList"/>
+    <xs:attributeGroup ref="mcpttup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="GeographicalAreaChangeType">
+    <xs:sequence>
+      <xs:element name="EnterSpecificArea" type="mcpttup:GeographicalAreaType" minOccurs="0"
+maxOccurs="unbounded"/>
+      <xs:element name="ExitSpecificArea" type="mcpttup:GeographicalAreaType" minOccurs="0"
+maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="GeographicalAreaType">
+    <xs:choice>
+      <xs:element name="PolygonArea" type="mcpttup:PolygonAreaType" minOccurs="0"/>
+      <xs:element name="EllipsoidArcArea" type="mcpttup:EllipsoidArcType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="PolygonAreaType">
+    <xs:sequence>
+      <xs:element name="Corner" type="mcpttup:PointCoordinateType" minOccurs="3" maxOccurs="15"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="EllipsoidArcType">
+    <xs:sequence>
+      <xs:element name="Center" type="mcpttup:PointCoordinateType"/>
+      <xs:element name="Radius" type="xs:nonNegativeInteger"/>
+      <xs:element name="OffsetAngle" type="xs:unsignedByte"/>
+      <xs:element name="IncludedAngle" type="xs:unsignedByte"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="PointCoordinateType">
+    <xs:sequence>
+      <xs:element name="Longitude" type="mcpttup:CoordinateType"/>
+      <xs:element name="Latitude" type="mcpttup:CoordinateType"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:simpleType name="CoordinateType">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="16777215"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="RulesForAffiliationManagementType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="ListOfLocationCriteria" type="mcpttup:GeographicalAreaChangeType"/>
+      <xs:element name="ListOfActiveFunctionalAliasCriteria" type="mcpttup:ListEntryType"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attributeGroup ref="mcpttup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="SpeedType">
+    <xs:sequence>
+      <xs:element name="MinimumSpeed" type="xs:unsignedShort"/>
+      <xs:element name="MaximumSpeed" type="xs:unsignedShort"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="HeadingType">
+    <xs:sequence>
+      <xs:element name="MinimumHeading" type="xs:unsignedShort"/>
+      <xs:element name="MaximumHeading" type="xs:unsignedShort"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="ProSeUserEntryType">
+    <xs:sequence>
+      <xs:element name="DiscoveryGroupID" type="xs:hexBinary" minOccurs="0"/>
+      <xs:element name="User-Info-ID" type="xs:hexBinary"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcpttup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:simpleType name="EntryInfoTypeList">
+    <xs:restriction base="xs:normalizedString">
+      <xs:enumeration value="UseCurrentlySelectedGroup"/>
+      <xs:enumeration value="DedicatedGroup"/>
+      <xs:enumeration value="UsePreConfigured"/>
+      <xs:enumeration value="LocallyDetermined"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="DisplayNameElementType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute ref="xml:lang"/>
+        <xs:anyAttribute namespace="##any" processContents="lax"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="MCPTTGroupCallType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="MaxSimultaneousCallsN6" type="xs:positiveInteger"/>
+      <xs:element name="EmergencyCall" type="mcpttup:EmergencyCallType"/>
+      <xs:element name="ImminentPerilCall" type="mcpttup:ImminentPerilCallType"/>
+      <xs:element name="EmergencyAlert" type="mcpttup:EmergencyAlertType"/>
+      <xs:element name="Priority" type="xs:unsignedShort"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="EmergencyCallType">
+    <xs:sequence>
+      <xs:choice>
+        <xs:element name="MCPTTGroupInitiation" type="mcpttup:MCPTTGroupInitiationEntryType"/>
+        <xs:element name="MCPTTPrivateRecipient" type="mcpttup:MCPTTPrivateRecipientEntryType"/>
+        <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+        <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:choice>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="ImminentPerilCallType">
+    <xs:sequence>
+      <xs:element name="MCPTTGroupInitiation" type="mcpttup:MCPTTGroupInitiationEntryType"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="EmergencyAlertType">
+
+    <xs:sequence>
+      <xs:element name="entry" type="mcpttup:EntryType"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="MCPTTGroupInitiationEntryType">
+    <xs:choice>
+      <xs:element name="entry" type="mcpttup:EntryType"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="MCPTTPrivateRecipientEntryType">
+    <xs:sequence>
+      <xs:element name="entry" type="mcpttup:EntryType"/>
+      <xs:element name="ProSeUserID-entry" type="mcpttup:ProSeUserEntryType"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="OffNetworkType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="MCPTTGroupInfo" type="mcpttup:ListEntryType"/>
+      <xs:element name="User-Info-ID" type="xs:hexBinary"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attributeGroup ref="mcpttup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="OnNetworkType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="MCPTTGroupInfo" type="mcpttup:ListEntryType"/>
+      <xs:element name="MaxAffiliationsN2" type="xs:nonNegativeInteger"/>
+      <xs:element name="MaxSimultaneousTransmissionsN7" type="xs:nonNegativeInteger"/>
+      <xs:element name="ImplicitAffiliations" type="mcpttup:ListEntryType"/>
+      <xs:element name="PrivateEmergencyAlert" type="mcpttup:EmergencyAlertType"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attributeGroup ref="mcpttup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+<!-- Child elements to the <actions> element defined in this specification -->
+  <xs:element name="allow-presence-status" type="xs:boolean"/>
+  <xs:element name="allow-request-presence" type="xs:boolean"/>
+  <xs:element name="allow-query-availability-for-private-calls" type="xs:boolean"/>
+  <xs:element name="allow-enable-disable-user" type="xs:boolean"/>
+  <xs:element name="allow-enable-disable-UE" type="xs:boolean"/>
+  <xs:element name="allow-create-delete-user-alias" type="xs:boolean"/>
+  <xs:element name="allow-private-call" type="xs:boolean"/>
+  <xs:element name="allow-manual-commencement" type="xs:boolean"/>
+  <xs:element name="allow-automatic-commencement" type="xs:boolean"/>
+  <xs:element name="allow-force-auto-answer" type="xs:boolean"/>
+  <xs:element name="allow-failure-restriction" type="xs:boolean"/>
+  <xs:element name="allow-emergency-group-call" type="xs:boolean"/>
+  <xs:element name="allow-emergency-private-call" type="xs:boolean"/>
+  <xs:element name="allow-cancel-group-emergency" type="xs:boolean"/>
+  <xs:element name="allow-cancel-private-emergency-call" type="xs:boolean"/>
+  <xs:element name="allow-imminent-peril-call" type="xs:boolean"/>
+  <xs:element name="allow-cancel-imminent-peril" type="xs:boolean"/>
+  <xs:element name="allow-activate-emergency-alert" type="xs:boolean"/>
+  <xs:element name="allow-cancel-emergency-alert" type="xs:boolean"/>
+  <xs:element name="allow-offnetwork" type="xs:boolean"/>
+  <xs:element name="allow-imminent-peril-change" type="xs:boolean"/>
+  <xs:element name="allow-private-call-media-protection" type="xs:boolean"/>
+  <xs:element name="allow-private-call-floor-control-protection" type="xs:boolean"/>
+  <xs:element name="allow-request-affiliated-groups" type="xs:boolean"/>
+  <xs:element name="allow-request-to-affiliate-other-users" type="xs:boolean"/>
+
+  <xs:element name="allow-recommend-to-affiliate-other-users" type="xs:boolean"/>
+  <xs:element name="allow-private-call-to-any-user" type="xs:boolean"/>
+  <xs:element name="allow-regroup" type="xs:boolean"/>
+  <xs:element name="allow-private-call-participation" type="xs:boolean"/>
+  <xs:element name="allow-override-of-transmission" type="xs:boolean"/>
+  <xs:element name="allow-manual-off-network-switch" type="xs:boolean"/>
+  <xs:element name="allow-listen-both-overriding-and-overridden" type="xs:boolean"/>
+  <xs:element name="allow-transmit-during-override" type="xs:boolean"/>
+  <xs:element name="allow-off-network-group-call-change-to-emergency" type="xs:boolean"/>
+  <xs:element name="allow-revoke-transmit" type="xs:boolean"/>
+  <xs:element name="allow-create-group-broadcast-group" type="xs:boolean"/>
+  <xs:element name="allow-create-user-broadcast-group" type="xs:boolean"/>
+  <xs:element name="anyExt" type="mcpttup:anyExtType"/>
+
+<!-- Elements included in anyExt elements -->
+  <xs:element name="allow-request-private-call-call-back" type="xs:boolean"/>
+  <xs:element name="allow-cancel-private-call-call-back" type="xs:boolean"/>
+  <xs:element name="allow-request-remote-initiated-ambient-listening" type="xs:boolean"/>
+  <xs:element name="allow-request-locally-initiated-ambient-listening" type="xs:boolean"/>
+  <xs:element name="allow-request-first-to-answer-call" type="xs:boolean"/>
+  <xs:element name="allow-request-remote-init-private-call" type="xs:boolean"/>
+  <xs:element name="allow-request-remote-init-group-call" type="xs:boolean"/>
+  <xs:element name="allow-query-functional-alias-other-user" type="xs:boolean"/>
+  <xs:element name="allow-takeover-functional-alias-other-user" type="xs:boolean"/>
+  <xs:element name="allow-location-info-when-talking" type="xs:boolean"/>
+  <xs:element name="allow-to-receive-private-call-from-any-user" type="xs:boolean"/>
+  <xs:element name="allow-to-receive-non-acknowledged-users-information" type="xs:boolean"/>
+
+  <xs:element name="AllowedMCPTTIdsForCallTransfer" type="mcpttup:ListEntryType"/>
+  <xs:element name="AllowedFunctionalAliasesForCallTransfer" type="mcpttup:ListEntryType"/>
+
+  <xs:element name="allow-call-transfer" type="xs:boolean"/>
+  <xs:element name="allow-call-transfer-to-any-user" type="xs:boolean"/>
+  <xs:element name="allow-call-forwarding" type="xs:boolean"/>
+  <xs:element name="call-forwarding-on" type="xs:boolean"/>
+  <xs:element name="call-forwarding-no-answer-timeout" type="xs:duration"/>
+  <xs:element name="call-forwarding-condition" type="xs:string"/>
+  <xs:element name="call-forwarding-target" type="xs:anyURI"/>
+  <xs:element name="forward-to-functional-alias" type="xs:boolean"/>
+  <xs:element name="allow-call-forward-manual-input" type="xs:boolean"/>
+  <xs:element name="allow-functional-alias-binding-with-group" type="xs:boolean"/>
+  <xs:element name="allow-activate-adhoc-group-emergency-alert" type="xs:boolean"/>
+  <xs:element name="allow-cancel-adhoc-group-emergency-alert" type="xs:boolean"/>
+  <xs:element name="allow-to-recv-adhoc-group-emergency-alert-participants-info" type="xs:boolean"/>
+  <xs:element name="allow-to-setup-adhoc-group-call-using-emergency-alert-adhoc-group"
+type="xs:boolean"/>
+  <xs:element name="allow-adhoc-group-call" type="xs:boolean"/>
+  <xs:element name="allow-adhoc-group-call-participation" type="xs:boolean"/>
+  <xs:element name="allow-emergency-adhoc-group-call" type="xs:boolean"/>
+  <xs:element name="allow-imminent-peril-adhoc-group-call" type="xs:boolean"/>
+  <xs:element name="allow-to-recv-adhoc-group-call-participants-info" type="xs:boolean"/>
+  <xs:element name="allow-to-modify-adhoc-group-call-participants-info" type="xs:boolean"/>
+  <xs:element name="allow-trigger-remote-floor-request" type="xs:boolean"/>
+  <xs:element name="authorized-functional-alias-categories" type="xs:string"/>
+
+  <xs:element name="RemoteGroupSelectionURIList" type="mcpttup:ListEntryType"/>
+
+  <xs:element name="GroupServerInfo" type="mcpttup:GroupServerInfoType"/>
+
+  <xs:element name="FunctionalAliasList" type="mcpttup:ListEntryType"/>
+  <xs:element name="ListOfAllowedFAsToCall" type="mcpttup:ListEntryType"/>
+  <xs:element name="ListOfAllowedFAsToBeCalledFrom" type="mcpttup:ListEntryType"/>
+
+  <xs:element name="LocationCriteriaForActivation" type="mcpttup:GeographicalAreaChangeType"/>
+  <xs:element name="LocationCriteriaForDeactivation" type="mcpttup:GeographicalAreaChangeType"/>
+  <xs:element name="manual-deactivation-not-allowed-if-location-criteria-met" type="xs:boolean"/>
+
+  <xs:element name="RulesForAffiliation" type="mcpttup:RulesForAffiliationManagementType"/>
+
+  <xs:element name="RulesForDeaffiliation" type="mcpttup:RulesForAffiliationManagementType"/>
+
+  <xs:element name="Speed" type="mcpttup:SpeedType"/>
+  <xs:element name="Heading" type="mcpttup:HeadingType"/>
+
+  <xs:element name="manual-deaffiliation-not-allowed-if-affiliation-rules-are-met"
+type="xs:boolean"/>
+
+  <xs:element name="user-max-simultaneous-authorizations" type="xs:positiveInteger"/>
+
+  <xs:element name="MaxSimultaneousEmergencyGroupCalls" type="xs:positiveInteger"/>
+
+  <xs:element name="IncomingPrivateCallList" type="mcpttup:PrivateCallListEntryType"/>
+
+  <xs:element name="MigratablePartnerMCPTTSystemInfo"
+type="mcpttup:MigratablePartnerMCPTTSystemInfoEntryType"/>
+
+  <xs:complexType name="GroupServerInfoType">
+    <xs:sequence>
+      <xs:element name="GMS-Serv-Id" type="mcpttup:EntryType"/>
+      <xs:element name="IDMS-token-endpoint" type="mcpttup:EntryType"/>
+      <xs:element name="GroupKMSURI" type="mcpttup:EntryType"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:element name="PrivateCallKMSURI" type="mcpttup:PrivateCallKMSURIEntryType"/>
+
+  <xs:complexType name="PrivateCallKMSURIEntryType">
+    <xs:sequence>
+      <xs:element name="PrivateCallKMSURI" type="mcpttup:EntryType"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+<xs:element name="RelativePresentationPriority" type="mcpttup:PriorityType"/>
+
+  <xs:simpleType name="PriorityType">
+    <xs:restriction base="xs:nonNegativeInteger">
+      <xs:minInclusive value="0"/>
+     <xs:maxInclusive value="255"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:attributeGroup name="IndexType">
+    <xs:attribute name="index" type="xs:token"/>
+  </xs:attributeGroup>
+
+  <!-- empty complex type -->
+  <xs:complexType name="emptyType"/>
+
+  <xs:complexType name="anyExtType">
+    <xs:sequence>
+      <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="MigratablePartnerMCPTTSystemInfoEntryType">
+    <xs:sequence>
+      <xs:element name="PartnerMCPTTSystemId" type="xs:anyURI"/>
+      <xs:element ref="mcpttiup:mcptt-UE-initial-configuration"/>
+      <xs:element name="anyExt" type="mcpttup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+</xs:schema>

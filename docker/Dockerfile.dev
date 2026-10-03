@@ -1,0 +1,50 @@
+# The Ubuntu release (UBUNTU) and its pinned image (BASE_IMAGE) come from dependencies.lock.json; tools/build-images
+# --ubuntu passes both. The package names of each release are in docker/packages.
+ARG BASE_IMAGE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+FROM ${BASE_IMAGE}
+ARG UBUNTU=24.04
+ENV DEBIAN_FRONTEND=noninteractive
+COPY docker/packages /usr/local/bin/packages
+RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UBUNTU" dev) \
+    && rm -rf /var/lib/apt/lists/*
+# Pinned sources and toolchains, fetched and verified by the build (docker/fetch; DEPS_MIRROR for offline builds).
+# tools/check-dependencies.py keeps these arguments equal to dependencies.lock.json.
+ARG DEPS_MIRROR=
+ARG GO_FILE=go1.27.1.linux-amd64.tar.gz
+ARG GO_URL=https://go.dev/dl/go1.27.1.linux-amd64.tar.gz
+ARG GO_SHA256=63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445
+ARG PJSIP_FILE=pjproject-2.17.tar.gz
+ARG PJSIP_URL=https://github.com/pjsip/pjproject/archive/refs/tags/2.17.tar.gz
+ARG PJSIP_SHA256=065fe06c06788d97c35f563796d59f00ce52fe9558a52d7b490a042a966facce
+ARG WOLFSSL_FILE=wolfssl-5.8.2-stable.tar.gz
+ARG WOLFSSL_URL=https://github.com/wolfSSL/wolfssl/archive/refs/tags/v5.8.2-stable.tar.gz
+ARG WOLFSSL_SHA256=3ef126e3466e2f8f6ebb62b916a7f8fb26c6709dbdf2b63a167759f2fdb53068
+COPY docker/fetch /usr/local/bin/fetch
+RUN fetch "$GO_FILE" "$GO_URL" "$GO_SHA256" /tmp/go.tar.gz \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
+ENV PATH="/usr/local/go/bin:/opt/pjsip/bin:${PATH}"
+RUN fetch "$PJSIP_FILE" "$PJSIP_URL" "$PJSIP_SHA256" /tmp/pjproject.tar.gz \
+    && mkdir /tmp/pjproject && tar -xzf /tmp/pjproject.tar.gz -C /tmp/pjproject --strip-components=1 \
+    && cd /tmp/pjproject \
+    && printf '/* SIP over TCP carries access tokens, MIKEY-SAKKE I_MESSAGEs and XML bodies */\n#define PJSIP_MAX_PKT_LEN 16000\n' \
+       > pjlib/include/pj/config_site.h \
+    && ./configure --prefix=/opt/pjsip --disable-video --disable-sound --disable-libyuv \
+       --disable-opencore-amr --disable-speex-aec --disable-gsm-codec --disable-speex-codec \
+       --disable-ilbc-codec --disable-g7221-codec --with-external-srtp CFLAGS='-fPIC' CXXFLAGS='-fPIC' \
+    && grep -q "guid_uuid.o" pjlib/build/os-auto.mak \
+    && make dep && make -j4 && make install \
+    && rm -rf /tmp/pjproject /tmp/pjproject.tar.gz
+ENV PKG_CONFIG_PATH="/opt/pjsip/lib/pkgconfig"
+RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UBUNTU" dev-autotools) \
+    && rm -rf /var/lib/apt/lists/*
+COPY dependencies/wolfssl/build.sh /tmp/build-wolfssl.sh
+RUN mkdir -p /tmp/openmcx-wolfssl-build \
+    && fetch "$WOLFSSL_FILE" "$WOLFSSL_URL" "$WOLFSSL_SHA256" /tmp/openmcx-wolfssl-build/wolfssl-5.8.2-stable.tar.gz \
+    && bash /tmp/build-wolfssl.sh /opt/wolfssl /tmp/openmcx-wolfssl-build \
+    && rm -rf /tmp/openmcx-wolfssl-build /tmp/build-wolfssl.sh
+# H.264 for MCVideo (TS 26.281 4.1.1): Cisco's BSD-licensed OpenH264 encoder and
+# decoder, which the client uses for its test pattern and for decoding received video.
+RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UBUNTU" dev-openh264) \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+CMD ["bash"]

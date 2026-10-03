@@ -1,0 +1,465 @@
+// HTTP routes of the GMS and the CMS: group documents addressed by group ID, user profile documents, the bearer
+// access token check and the internal interface the MCPTT, MCData and MCVideo servers read.
+//
+// Specifications: TS 24.481 V19.3.0 (Rel-19), TS 24.484 V19.6.0 (Rel-19), TS 24.482 V19.1.0 (Rel-19),
+// TS 24.379 V19.7.0 (Rel-19), TS 23.280 V19.10.1 (Rel-19), RFC 4825, RFC 6750.
+package common
+
+import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
+	"encoding/xml"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+)
+
+// ------------------------------------------------------------------------------
+// Helper: the user record the internal interface serves to the MC service servers.
+type publicUser struct {
+	// The profile index (TS 24.484 clause 8.3.2.1).
+	ProfileIndex int                `json:"profile_index"`
+	MCID         string             `json:"mc_id"`
+	MCPTTID      string             `json:"mcptt_id"`
+	SIPURI       string             `json:"sip_uri"`
+	ClientID     string             `json:"client_id"`
+	Groups       []string           `json:"groups"`
+	PrivateCall  *PrivateCallPolicy `json:"private_call,omitempty"`
+	AdhocCall    *AdhocCallPolicy   `json:"adhoc_call,omitempty"`
+	GroupCall    *GroupCallPolicy   `json:"group_call,omitempty"`
+	// <allow-takeover-functional-alias-other-user>.
+	FunctionalAliasTakeover bool `json:"functional_alias_takeover,omitempty"`
+	FunctionalAliasBinding  bool `json:"functional_alias_binding,omitempty"`
+	MaxAffiliations         int  `json:"max_affiliations,omitempty"`
+	// <allow-regroup> (TS 24.379 clause 16.2.2.2 step 3).
+	Regroup   bool            `json:"regroup,omitempty"`
+	MCDataID  string          `json:"mcdata_id,omitempty"`
+	MCData    *MCDataPolicy   `json:"mcdata,omitempty"`
+	MCVideoID string          `json:"mcvideo_id,omitempty"`
+	MCVideo   map[string]any  `json:"mcvideo,omitempty"`
+	Location  *LocationPolicy `json:"location,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.10.2: the GMS routes of the group documents addressed by a group ID (retrieval, TS 24.481
+// clause 6.3.3.3; retrieval excluding members, clause 6.3.16.3; element, attribute and namespace fetch, clause
+// 6.3.8.3, clause 6.3.11.3 and clause 6.3.12.3), the group key routes and the internal group routes.
+func (svc *service) routesGMS(mux *http.ServeMux) {
+	svc.routesGroupKeys(mux)
+	mux.HandleFunc("GET /xcap-root/org.openmobilealliance.groups/global/byGroupID/{group}", svc.getGroupDocument)
+	mux.HandleFunc("POST /xcap-root/org.openmobilealliance.groups/global/byGroupID/{group}", svc.postGroupDocument)
+	// An element, attribute or namespace fetch of a group document (TS 24.481 clause 6.3.8.3, clause 6.3.11.3, clause
+	// 6.3.12.3).
+	mux.HandleFunc("GET /xcap-root/org.openmobilealliance.groups/global/byGroupID/{group}/~~/{selector...}", func(writer http.ResponseWriter, request *http.Request) {
+		target := xcapTarget{selector: request.PathValue("selector"), query: request.URL.RawQuery, groupID: request.PathValue("group")}
+		if doc, ok := svc.documentOf(target.groupID); ok {
+			target.doc = doc
+		}
+		svc.xcapGet(writer, request, target)
+	})
+	mux.HandleFunc("GET /internal/group", svc.getInternalGroup)
+	mux.HandleFunc("GET /internal/temporary-groups", svc.getInternalTemporaryGroups)
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.2 and clause 9.3.2.2: the CMS routes of the MCPTT and MCVideo user profile documents
+// (application unique IDs) and the internal user routes.
+func (svc *service) routesCMS(mux *http.ServeMux) {
+	mux.HandleFunc("GET /xcap-root/3gpp.mcptt.user-profile/users/{mcpttID}/index", svc.getUserProfile)
+	mux.HandleFunc("PUT /xcap-root/3gpp.mcptt.user-profile/users/{mcpttID}/index", svc.putUserProfile)
+	mux.HandleFunc("GET /internal/user-profile", svc.getInternalUserProfile)
+	mux.HandleFunc("GET /internal/user", svc.getInternalUser)
+	mux.HandleFunc("GET /internal/functional-alias", svc.getInternalFunctionalAlias)
+	mux.HandleFunc("GET /xcap-root/org.3gpp.mcvideo.user-profile/users/{mcvideoID}/{document}", svc.getMCVideoProfile)
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.482 annex A.2.3 step 2: the HTTP server of the GMS and the CMS (TS 24.484 clause 6.2.4.1) validates the bearer access token (RFC 6750) and takes the MC service ID of the token as the
+// identity of the sender of the request.
+func (svc *service) authenticateBearer(writer http.ResponseWriter, request *http.Request) (TokenClaims, bool) {
+	const prefix = "Bearer "
+	value := request.Header.Get("Authorization")
+	if value == "" {
+		// TS 24.482 annex A.2.3 step 1: no bearer access token.
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "no_identity"})
+		return TokenClaims{}, false
+	}
+	if len(value) <= len(prefix) || value[:len(prefix)] != prefix {
+		bearerDenied(writer)
+		return TokenClaims{}, false
+	}
+	claims, err := VerifyToken(value[len(prefix):], svc.verificationKey, svc.cfg.Issuer, svc.cfg.ServerClientID, svc.now())
+	if err != nil || claims.Type != "access" {
+		bearerDenied(writer)
+		return TokenClaims{}, false
+	}
+	return claims, true
+}
+
+// ------------------------------------------------------------------------------
+// RFC 6750 section 3.1: a request with an invalid or expired bearer access token, or another authentication scheme,
+// is answered 401 with a WWW-Authenticate challenge (invalid_token: a client signs in again or refreshes its token).
+// A request without a token gets 403 (TS 24.482 annex A.2.3 step 1, authenticateBearer).
+func bearerDenied(writer http.ResponseWriter) {
+	writer.Header().Set("WWW-Authenticate", `Bearer realm="mcx-common"`)
+	writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "invalid_token"})
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.481 clause 6.3.3.3: the GMS answers a retrieval of a group document addressed by its group ID (TS 24.481
+// clause 7.2.10.2), reduced to what the authenticated identity may read (TS 24.481 clause 7.2.12.1).
+func (svc *service) getGroupDocument(writer http.ResponseWriter, request *http.Request) {
+	svc.serveGroupDocument(writer, request, true)
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.481 clause 6.3.16.3: an HTTP POST with a GMOP document (TS 24.481 clause 7.3.4.2, MIME type of clause
+// 7.3.2) asks for the group document without the <list> of its members.
+func (svc *service) postGroupDocument(writer http.ResponseWriter, request *http.Request) {
+	raw, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 64<<10))
+	if err != nil {
+		writeJSON(writer, http.StatusRequestEntityTooLarge, map[string]string{"error": "too_large"})
+		return
+	}
+	if !strings.EqualFold(mediaType(request.Header.Get("Content-Type")), gmopMIME) {
+		writeJSON(writer, http.StatusUnsupportedMediaType, map[string]string{"error": "unsupported_media_type"})
+		return
+	}
+	exclude, err := gmopGetExcludingMemberList(raw)
+	if err != nil || !exclude {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "unsupported_gmop_request"})
+		return
+	}
+	svc.serveGroupDocument(writer, request, false)
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.481 clause 6.3.3.3 and clause 6.3.16.3: the GMS serves a group document, with or without its member list,
+// reduced by the authorization policy of TS 24.481 clause 7.2.12.1.
+func (svc *service) serveGroupDocument(writer http.ResponseWriter, request *http.Request, withList bool) {
+	claims, ok := svc.authenticateBearer(writer, request)
+	if !ok {
+		return
+	}
+	group, ok := svc.group(request.PathValue("group"))
+	if !ok {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	// The owner and the managers of a document read all of it (TS 24.481 clause 7.2.12.1).
+	if doc, stored := svc.documentOf(group.ID); stored && svc.mayManage(claims.MCPTTID, doc) && withList {
+		writeDocument(writer, request, doc.XML, groupDocumentMIME)
+		return
+	}
+	readable, ok := readableGroup(group, claims.MCPTTID, false)
+	// A temporary group lists no members: those of its constituent groups read it.
+	if len(group.TemporaryConstituents) > 0 {
+		readable, ok = group, slices.Contains(svc.keyGroup(group).Members, claims.MCPTTID)
+	}
+	if !ok {
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+	raw, err := groupDocument(readable, withList)
+	if err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "server_error"})
+		return
+	}
+	writeDocument(writer, request, raw, groupDocumentMIME)
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the media type of a Content-Type header field value, without parameters, in lower case.
+func mediaType(value string) string {
+	if index := strings.IndexByte(value, ';'); index >= 0 {
+		value = value[:index]
+	}
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 6.3.3.3: the CMS answers a retrieval of an MCPTT user profile document; the user of the profile
+// and a configuration manager may read it (access permissions of TS 24.484 clause 8.3.2.11).
+func (svc *service) getUserProfile(writer http.ResponseWriter, request *http.Request) {
+	claims, ok := svc.authenticateBearer(writer, request)
+	if !ok {
+		return
+	}
+	id := request.PathValue("mcpttID")
+	if id != claims.MCPTTID && !svc.configManager(claims.MCPTTID) {
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+	raw, status := svc.userProfileDocument(id)
+	if status != http.StatusOK {
+		writeJSON(writer, status, map[string]string{"error": http.StatusText(status)})
+		return
+	}
+	writeDocument(writer, request, raw, userProfileMIME)
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 6.3.3.3: the user profile document the CMS serves: one updated by an administrator (TS 24.484
+// clause 6.3.4.3), else the one built from the configuration.
+func (svc *service) userProfileDocument(id string) ([]byte, int) {
+	user, ok := svc.siteUser("mcptt_id", id)
+	if !ok {
+		return nil, http.StatusNotFound
+	}
+	svc.mu.Lock()
+	stored, updated := svc.profileDocs[id]
+	svc.mu.Unlock()
+	if updated {
+		return stored, http.StatusOK
+	}
+	raw, err := xml.Marshal(userProfileXML(user))
+	if err != nil {
+		return nil, http.StatusInternalServerError
+	}
+	return append([]byte(xml.Header), raw...), http.StatusOK
+}
+
+// ------------------------------------------------------------------------------
+// Helper: whether the user with this MCPTT ID may manage the configuration of other users (project policy).
+func (svc *service) configManager(id string) bool {
+	user, ok := svc.siteUser("mcptt_id", id)
+	return ok && user.ConfigManagement
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 6.3.4.3: an authorized CMC replaces a user profile
+// document. The document must be a user profile for the same MCPTT ID; the
+// servers keep enforcing the configured policy.
+func (svc *service) putUserProfile(writer http.ResponseWriter, request *http.Request) {
+	claims, ok := svc.authenticateBearer(writer, request)
+	if !ok {
+		return
+	}
+	id := request.PathValue("mcpttID")
+	if !svc.configManager(claims.MCPTTID) {
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+	current, status := svc.userProfileDocument(id)
+	if status != http.StatusOK {
+		writeJSON(writer, status, map[string]string{"error": http.StatusText(status)})
+		return
+	}
+	if match := request.Header.Get("If-Match"); match != "" && match != "*" && match != documentETag(current) {
+		writeJSON(writer, http.StatusPreconditionFailed, map[string]string{"error": "precondition_failed"})
+		return
+	}
+	raw, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 64<<10))
+	if err != nil {
+		writeJSON(writer, http.StatusRequestEntityTooLarge, map[string]string{"error": "too_large"})
+		return
+	}
+	// RFC 4825 section 8.2.2: the body is a user profile document (TS 24.484 clause 8.3.2.5).
+	if mediaType(request.Header.Get("Content-Type")) != userProfileMIME {
+		writeJSON(writer, http.StatusUnsupportedMediaType, map[string]string{"error": "unsupported_media_type"})
+		return
+	}
+	// RFC 4825 section 8.2.5: the document conforms to the schema of TS 24.484 clause 8.3.2.3, then to the
+	// constraints of TS 24.484 clause 8.3.2.6.
+	err = schemaError(userProfileSchema.validate(raw))
+	if err == nil {
+		err = profileConstraints(raw, id)
+	}
+	if err != nil {
+		svc.logEvent("user_profile_refused", map[string]any{"user_id": id, "by": claims.MCPTTID, "error": err.Error()})
+		writeXCAPError(writer, err)
+		return
+	}
+	svc.mu.Lock()
+	if svc.profileDocs == nil {
+		svc.profileDocs = map[string][]byte{}
+	}
+	previous, had := svc.profileDocs[id]
+	svc.profileDocs[id] = raw
+	if err := svc.saveProfileDocumentsLocked(); err != nil {
+		// Not stored: the document served stays the previous one.
+		if had {
+			svc.profileDocs[id] = previous
+		} else {
+			delete(svc.profileDocs, id)
+		}
+		svc.mu.Unlock()
+		svc.logEvent("user_profile_save_failed", map[string]any{"user_id": id, "error": err.Error()})
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "storage_unavailable"})
+		return
+	}
+	svc.mu.Unlock()
+	svc.logEvent("user_profile_updated", map[string]any{"user_id": id, "by": claims.MCPTTID})
+	writer.Header().Set("ETag", documentETag(raw))
+	writer.WriteHeader(http.StatusOK)
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 6.3.13.3: getInternalUserProfile gives the SIP front of the CMS the entity tag of a user
+// profile document, whose changes it notifies.
+func (svc *service) getInternalUserProfile(writer http.ResponseWriter, request *http.Request) {
+	if !svc.requireInternal(writer, request) {
+		return
+	}
+	raw, status := svc.userProfileDocument(request.URL.Query().Get("mcptt_id"))
+	if status != http.StatusOK {
+		writeJSON(writer, status, map[string]string{"error": http.StatusText(status)})
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]string{"document_etag": documentETag(raw)})
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the updated profile documents persist in the CMS's data directory (atomically); the caller holds svc.mu.
+func (svc *service) saveProfileDocumentsLocked() error {
+	if svc.dataDir == "" {
+		return nil
+	}
+	raw, err := json.Marshal(svc.profileDocs)
+	if err != nil {
+		return fmt.Errorf("user profiles: %w", err)
+	}
+	return writeFileAtomic(filepath.Join(svc.dataDir, "user-profiles.json"), raw)
+}
+
+// ------------------------------------------------------------------------------
+// Helper: loads the updated profile documents from the CMS's data directory; none stored is not an error, a file
+// that cannot be read or decoded is (the CMS would otherwise serve the configured profiles as if never changed).
+func (svc *service) loadProfileDocuments() error {
+	if svc.dataDir == "" {
+		return nil
+	}
+	raw, err := os.ReadFile(filepath.Join(svc.dataDir, "user-profiles.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("user profiles: %w", err)
+	}
+	var docs map[string][]byte
+	if err := json.Unmarshal(raw, &docs); err != nil {
+		return fmt.Errorf("user profiles: %w", err)
+	}
+	svc.profileDocs = docs
+	return nil
+}
+
+// ------------------------------------------------------------------------------
+// RFC 4825 section 8.3: an element fetched from a document is sent as application/xcap-el+xml.
+func writeXML(writer http.ResponseWriter, request *http.Request, raw []byte) {
+	writeDocument(writer, request, append([]byte(xml.Header), raw...), "application/xcap-el+xml")
+}
+
+// ------------------------------------------------------------------------------
+// RFC 4825 section 8.5: writeDocument sends a complete XML document with an entity tag, and 304 when the
+// If-None-Match entity tag is current.
+func writeDocument(writer http.ResponseWriter, request *http.Request, raw []byte, contentType string) {
+	sum := sha256.Sum256(raw)
+	etag := `"` + hex.EncodeToString(sum[:]) + `"`
+	writer.Header().Set("ETag", etag)
+	writer.Header().Set("Cache-Control", "private, no-cache")
+	if request.Header.Get("If-None-Match") == etag {
+		writer.WriteHeader(http.StatusNotModified)
+		return
+	}
+	writer.Header().Set("Content-Type", contentType+"; charset=utf-8")
+	writer.WriteHeader(http.StatusOK)
+	_, _ = writer.Write(raw)
+}
+
+// ------------------------------------------------------------------------------
+// Helper: whether a request of the internal interface carries the server client credentials (HTTP Basic).
+func (svc *service) internalAuthorized(request *http.Request) bool {
+	username, password, ok := request.BasicAuth()
+	if !ok || len(username) != len(svc.cfg.ServerClientID) || len(password) != len(svc.cfg.ServerSecret) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(username), []byte(svc.cfg.ServerClientID)) == 1 && subtle.ConstantTimeCompare([]byte(password), []byte(svc.cfg.ServerSecret)) == 1
+}
+
+// ------------------------------------------------------------------------------
+// Helper: answers 401 to a request of the internal interface without the server client credentials.
+func (svc *service) requireInternal(writer http.ResponseWriter, request *http.Request) bool {
+	if svc.internalAuthorized(request) {
+		return true
+	}
+	writer.Header().Set("WWW-Authenticate", `Basic realm="mcx-internal"`)
+	writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+	return false
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the internal interface serves a group with its document version and entity tag to the MC service servers.
+func (svc *service) getInternalGroup(writer http.ResponseWriter, request *http.Request) {
+	if !svc.requireInternal(writer, request) {
+		return
+	}
+	id := request.URL.Query().Get("id")
+	group, ok := svc.group(id)
+	if !ok {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	// The document version lets the servers and the subscription front notice changes.
+	raw, err := json.Marshal(group)
+	var out map[string]any
+	if err == nil {
+		err = json.Unmarshal(raw, &out)
+	}
+	if err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "server_error"})
+		return
+	}
+	out["document_version"] = svc.groupVersion(id)
+	// The entity tag of the complete document (RFC 4825 section 8.5), as xcap-diff carries it (TS 24.481 clause
+	// 6.3.13.3.3).
+	if svc.groupDocs != nil {
+		if doc, ok := svc.documentOf(id); ok {
+			out["document_etag"] = documentETag(doc.XML)
+		}
+	}
+	writeJSON(writer, http.StatusOK, out)
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the internal interface serves a user by MCPTT ID, MCData ID or MCVideo ID.
+func (svc *service) getInternalUser(writer http.ResponseWriter, request *http.Request) {
+	if !svc.requireInternal(writer, request) {
+		return
+	}
+	user, ok := svc.siteUser("mcptt_id", request.URL.Query().Get("mcptt_id"))
+	if id := request.URL.Query().Get("mcdata_id"); id != "" {
+		user, ok = svc.siteUser("mcdata_id", id)
+	}
+	if id := request.URL.Query().Get("mcvideo_id"); id != "" {
+		user, ok = svc.siteUser("mcvideo_id", id)
+	}
+	if !ok {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	writeJSON(writer, http.StatusOK, publicUser{ProfileIndex: user.profileIndex(), MCID: user.MCID, MCPTTID: user.MCPTTID, SIPURI: user.SIPURI, ClientID: user.ClientID, Groups: user.Groups, PrivateCall: user.PrivateCall, AdhocCall: user.AdhocCall, GroupCall: user.GroupCall,
+		FunctionalAliasTakeover: user.FunctionalAliasTakeover, FunctionalAliasBinding: user.FunctionalAliasBinding, MaxAffiliations: user.MaxAffiliations,
+		Regroup: user.Regroup, MCDataID: user.MCDataID, MCData: user.MCData, MCVideoID: user.MCVideoID, MCVideo: user.MCVideo, Location: user.Location})
+}
+
+// ------------------------------------------------------------------------------
+// Helper: getInternalFunctionalAlias serves one functional alias definition to the MCPTT, MCData and MCVideo servers.
+func (svc *service) getInternalFunctionalAlias(writer http.ResponseWriter, request *http.Request) {
+	if !svc.requireInternal(writer, request) {
+		return
+	}
+	fa, ok := svc.cfg.functionalAliasByID(request.URL.Query().Get("id"))
+	if !ok {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	writeJSON(writer, http.StatusOK, fa)
+}

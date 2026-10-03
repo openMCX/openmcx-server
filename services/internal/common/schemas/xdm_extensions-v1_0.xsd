@@ -1,0 +1,309 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+XDM - XDM2 - Extensions
+	version - 1.0.1
+	date    - 03 May 2016
+
+FILE INFORMATION
+
+	OMA Permanent Document
+	   File: OMA-SUP-XSD_xdm_extensions-V1_0_1-20160503-A
+	   Type: Text - Schema Description
+
+	Public Reachable Information
+	   Path: http://www.openmobilealliance.org/tech/profiles
+	   Name: xdm_extensions-v1_0.xsd
+
+NORMATIVE INFORMATION
+
+	Information about this file can be found in the specifications
+	
+	   OMA-TS-XDM_Shared_Group-V2_0, OMA-TS-XDM_Shared_List-V2_0,
+	   OMA-TS-XDM_Core-V2_2 and OMA-TS-XDM_Shared_Policy-V2_0
+		
+	available at http://www.openmobilealliance.org/
+
+	Send comments to technical-comments@mail.openmobilealliance.org
+	
+CHANGE HISTORY
+
+03052016 Status changed to Approved by TP, TP Ref # OMA-TP-2016-0052R01-INP_XDM_V2_2_ERP_for_final_Approval
+
+LEGAL DISCLAIMER
+
+  Copyright 2016 Open Mobile Alliance Ltd.  All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions
+  are met:
+
+  1. Redistributions of source code must retain the above copyright
+  notice, this list of conditions and the following disclaimer.
+  2. Redistributions in binary form must reproduce the above copyright
+  notice, this list of conditions and the following disclaimer in the
+  documentation and/or other materials provided with the distribution.
+  3. Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived
+  from this software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+  FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+  COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  POSSIBILITY OF SUCH DAMAGE.
+
+  The above license is used as a license under copyright only.  Please
+  reference the OMA IPR Policy for patent licensing terms:
+  http://www.openmobilealliance.org/ipr.html
+-->
+
+<xs:schema
+   targetNamespace="urn:oma:xml:xdm:extensions"
+   xmlns="urn:oma:xml:xdm:extensions"
+   xmlns:xs="http://www.w3.org/2001/XMLSchema"
+   xmlns:oru="urn:oma:xml:xdm:resource-list:oma-uriusage"
+   xmlns:rl="urn:ietf:params:xml:ns:resource-lists"
+   elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+   <!-- This import brings in the XML language attribute xml:lang-->
+   <xs:import namespace="http://www.w3.org/XML/1998/namespace"
+    schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+   <xs:import namespace="urn:ietf:params:xml:ns:resource-lists"/> 
+   <xs:import namespace="urn:oma:xml:xdm:resource-list:oma-uriusage"/>
+
+<!-- Common elements defined by this document.-->
+  <xs:element name="audio" type="duplexType"/>
+  <xs:element name="file-transfer" type="extensionType"/>
+  <xs:element name="group-advertisement" type="extensionType"/>
+  <xs:element name="message-session" type="duplexType"/>
+  <xs:element name="pager-mode-message" type="extensionType"/>
+  <xs:element name="video" type="duplexType"/>
+  <xs:element name="poc-speech" type="extensionType"/>
+
+<xs:element name="service" type="serviceType"/>
+
+  <!-- Common attributes defined by this document-->
+  <xs:attribute name="allow" type="xs:boolean"/>
+  <xs:attribute name="must-understand" type="xs:boolean"/>
+  
+<!--XML element extensions for the list-service element in the group application
+     usage in the urn:oma:xml:poc:list-service namespace-->
+  <xs:element name="age-restrictions" type="ageRestrictionsType"/>
+  <xs:element name="automatic-group-advertisement" type="xs:boolean"/>
+  <xs:element name="qoe" type="qoeType"/>
+  <xs:element name="searchable" type="xs:boolean"/>
+  <xs:element name="session-active-policy" type="sessionActPolicyType"/>
+  <xs:element name="subject" type="subjectType"/>
+  <xs:element name="supported-services" type="serviceListType"/>
+
+  <!-- OMA specific "conditions" child element extensions to namespace urn:ietf:params:xml:ns:common-policy-->
+
+  <xs:element name="media-list" type="mediaListType"/>
+  <xs:element name="service-list" type="serviceListType"/>
+
+<!--OMA specific "actions" child element extensions to namespace urn:ietf:params:xml:ns:common-policy -->
+
+  <xs:element name="allow-media-handling" type="xs:boolean"/>
+  <xs:element name="allow-auto-answermode" type="xs:boolean"/>
+  <xs:element name="allow-expelling" type="xs:boolean"/>
+  <xs:element name="block-group-advertisement-sending" type="xs:boolean"/>
+  <xs:element name="allow-manual-answer-override" type="xs:boolean"/>
+  <xs:element name="allow-offline-storage" type="allowOfflineStorageType"/>
+  <xs:element name="allow-private-message" type="xs:boolean"/>
+  <xs:element name="allow-reject-invite" type="xs:boolean"/>
+  <xs:element name="allow-subconf" type="xs:boolean"/>
+  <xs:element name="remove-media-handling" type="removeMediaHandlingType"/>
+
+  <!--XDM specific uriusage substitution element extensions to namespace urn:oma:xml:xdm:resource-list:oma-uriusage-->
+  <xs:element name="common-usage" substitutionGroup="oru:uriusage" type="commonUsageType"/>
+
+<!-- Type definitions defined by this document-->
+
+  <xs:complexType name="ageRestrictionsType">
+    <xs:sequence>
+      <xs:element name="age" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:attribute name="from" type="xs:positiveInteger"/>
+          <xs:attribute name="until" type="xs:positiveInteger"/>
+          <xs:anyAttribute processContents="lax"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute ref="must-understand" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="allMediaExceptType">
+     <xs:sequence minOccurs="0" maxOccurs="unbounded">
+       <xs:choice>
+         <xs:element ref="audio"/>
+          <xs:element ref="file-transfer"/>
+          <xs:element ref="group-advertisement"/>
+          <xs:element ref="message-session"/>
+          <xs:element ref="pager-mode-message"/>
+          <xs:element ref="video"/>
+          <xs:element ref="poc-speech"/>
+         <xs:any namespace="##other" processContents="lax"/>
+      </xs:choice>
+    </xs:sequence> 
+  </xs:complexType>
+
+  <xs:complexType name="allServicesExceptType">
+    <xs:sequence minOccurs="0" maxOccurs="unbounded">
+      <xs:choice>
+        <xs:element ref="service"/>              
+        <xs:any namespace="##other" processContents="lax"/>
+      </xs:choice>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="allowOfflineStorageType">
+    <xs:sequence minOccurs="0" maxOccurs="unbounded">
+      <xs:any namespace="##other" processContents="lax"/>
+    </xs:sequence>
+    <xs:attribute ref="allow" use="required"/>
+    <xs:anyAttribute processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="commonUsageType">
+    <xs:sequence maxOccurs="unbounded">
+      <xs:any namespace="##other" processContents="lax"/>
+    </xs:sequence>
+    <xs:attribute name="id" type="xs:string" use="required"/>
+    <xs:anyAttribute processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="duplexType">
+    <xs:sequence minOccurs="0">  
+      <xs:choice>
+        <xs:element name="full-duplex" type="emptyType"/>
+        <xs:element name="half-duplex" type="emptyType"/>
+        <xs:any namespace="##other" processContents="lax"/>
+      </xs:choice>    
+    </xs:sequence>
+    <xs:anyAttribute processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="emptyType"/>
+
+  <xs:complexType name="extensionType">
+    <xs:sequence minOccurs="0" maxOccurs="unbounded">
+      <xs:any namespace="##other" processContents="lax"/>
+    </xs:sequence>
+    <xs:anyAttribute processContents="lax"/>  
+  </xs:complexType>
+
+  <xs:complexType name="mediaListType">
+    <xs:choice>
+      <xs:element name="all-media-except" type="allMediaExceptType"/>
+      <xs:sequence maxOccurs="unbounded">
+        <xs:choice>         
+          <xs:element ref="audio"/>
+          <xs:element ref="file-transfer"/>
+          <xs:element ref="group-advertisement"/>
+          <xs:element ref="message-session"/>
+          <xs:element ref="pager-mode-message"/>
+          <xs:element ref="video"/>
+          <xs:element ref="poc-speech"/>
+          <xs:any namespace="##other" processContents="lax"/>
+        </xs:choice>
+      </xs:sequence>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="qoeType">
+    <xs:choice>
+      <xs:element name="basic" type="emptyType"/>
+      <xs:element name="premium" type="emptyType"/>
+      <xs:element name="professional" type="emptyType"/>
+      <xs:element name="government" type="emptyType"/>
+      <xs:any namespace="##other" processContents="lax" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attribute ref="must-understand" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="rangeType">
+    <xs:sequence>
+      <xs:element name="start-time" type="startendtimeType" minOccurs="0"/>
+      <xs:element name="end-time" type="startendtimeType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="removeMediaHandlingType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="own"/>
+      <xs:enumeration value="any"/>
+      <xs:enumeration value="none"/>
+      <xs:enumeration value="other"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="requiredParticipantsListType">
+    <xs:sequence>
+      <xs:element name="entry" type="rl:entryType" minOccurs="0" maxOccurs="unbounded"/> 
+     <xs:element name="external" type="rl:externalType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="scheduleType">
+    <xs:sequence minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="time-range" type="rangeType"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="serviceListType">
+    <xs:choice>
+      <xs:element name="all-services-except" type="allServicesExceptType"/>         
+      <xs:sequence maxOccurs="unbounded">
+        <xs:choice>
+           <xs:element ref="service"/>
+           <xs:any namespace="##other" processContents="lax"/>
+        </xs:choice>
+      </xs:sequence>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="serviceType">
+    <xs:sequence minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="group-media" type="mediaListType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="enabler" type="xs:string"/>
+    <xs:anyAttribute processContents="lax"/>  
+  </xs:complexType>
+ 
+  <xs:complexType name="sessionActPolicyType">
+    <xs:sequence>
+      <xs:element name="max-duration" type="xs:positiveInteger" minOccurs="0"/>
+      <xs:element name="required-participants-list" type="requiredParticipantsListType" minOccurs="0"/>
+      <xs:element name="min-participant-count" type="xs:positiveInteger" minOccurs="0"/>
+      <xs:element name="schedule" type="scheduleType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute ref="must-understand" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="startendtimeType">
+    <xs:simpleContent>
+      <xs:extension base="xs:dateTime"/>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="subjectType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute ref="xml:lang"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+</xs:schema>

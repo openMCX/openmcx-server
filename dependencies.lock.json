@@ -1,0 +1,230 @@
+{
+  "schema": 1,
+  "platform": "linux/amd64",
+  "base_image": "ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+  "base_images": {
+    "24.04": "ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3",
+    "26.04": "ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78"
+  },
+  "software": [
+    {
+      "file": "pjproject-2.17.tar.gz",
+      "url": "https://github.com/pjsip/pjproject/archive/refs/tags/2.17.tar.gz",
+      "sha256": "065fe06c06788d97c35f563796d59f00ce52fe9558a52d7b490a042a966facce",
+      "bytes": 10996639,
+      "use": "image"
+    },
+    {
+      "file": "kamailio-6.1.4.tar.gz",
+      "url": "https://github.com/kamailio/kamailio/archive/refs/tags/6.1.4.tar.gz",
+      "sha256": "d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6",
+      "bytes": 13041300,
+      "use": "image"
+    },
+    {
+      "file": "go1.27.1.linux-amd64.tar.gz",
+      "url": "https://go.dev/dl/go1.27.1.linux-amd64.tar.gz",
+      "sha256": "63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445",
+      "bytes": 70553950,
+      "use": "image"
+    },
+    {
+      "file": "docker-compose-linux-x86_64",
+      "url": "https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64",
+      "sha256": "dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372",
+      "bytes": 76593282,
+      "use": "host"
+    },
+    {
+      "file": "wolfssl-5.8.2-stable.tar.gz",
+      "url": "https://github.com/wolfSSL/wolfssl/archive/refs/tags/v5.8.2-stable.tar.gz",
+      "sha256": "3ef126e3466e2f8f6ebb62b916a7f8fb26c6709dbdf2b63a167759f2fdb53068",
+      "bytes": 25185074,
+      "use": "image"
+    },
+    {
+      "file": "golangci-lint-2.14.0-linux-amd64.tar.gz",
+      "url": "https://github.com/golangci/golangci-lint/releases/download/v2.14.0/golangci-lint-2.14.0-linux-amd64.tar.gz",
+      "sha256": "ab90aeb7b066f92a33415b638a50fe5344bbb75a0d32ad30cc248d88f81032ab",
+      "use": "image"
+    },
+    {
+      "file": "ruff-0.16.9-x86_64-unknown-linux-gnu.tar.gz",
+      "url": "https://github.com/astral-sh/ruff/releases/download/0.16.9/ruff-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "1bfbb819b5d4f9af501748862276b60e412d336034d99387691a4d4bce7a6f13",
+      "use": "image"
+    },
+    {
+      "file": "freeDiameter-1.5.0.tar.gz",
+      "url": "https://github.com/freeDiameter/freeDiameter/archive/refs/tags/1.5.0.tar.gz",
+      "sha256": "cc4ceafd9d0d4a6a5e3aa02bf557906fe755df9ec14d16c4fcd5dab6930296aa",
+      "bytes": 1024991,
+      "use": "image"
+    },
+    {
+      "file": "openh264-2.4.1.tar.gz",
+      "url": "https://github.com/cisco/openh264/archive/refs/tags/v2.4.1.tar.gz",
+      "sha256": "8ffbe944e74043d0d3fb53d4a2a14c94de71f58dbea6a06d0dc92369542958ea",
+      "bytes": 60297304,
+      "use": "image"
+    }
+  ],
+  "standards": [
+    {
+      "spec": "24380",
+      "url": "https://www.etsi.org/deliver/etsi_ts/124300_124399/124380/19.02.00_60/ts_124380v190200p.pdf",
+      "sha256": "e305aa5f81ea098250fcd77cb2eacf4b95ae62c5088ee97aeb713907ed330584",
+      "cover": "ETSI TS 124 380 V19.2.0 (2026-08)"
+    },
+    {
+      "spec": "26179",
+      "url": "https://www.etsi.org/deliver/etsi_ts/126100_126199/126179/19.00.00_60/ts_126179v190000p.pdf",
+      "sha256": "78ceb43ffd48cb74800a55ea2c6f899e183f009fe966730bf7ebb439de80e00a",
+      "cover": "ETSI TS 126 179 V19.0.0 (2025-10)"
+    },
+    {
+      "spec": "33180",
+      "url": "https://www.etsi.org/deliver/etsi_ts/133100_133199/133180/19.04.00_60/ts_133180v190400p.pdf",
+      "sha256": "83e5b983289567ad2b0b4eeacf6965de9287df540b8aef8f6d60d0cf16c1058e",
+      "cover": "ETSI TS 133 180 V19.4.0 (2026-02)"
+    },
+    {
+      "spec": "24481",
+      "url": "https://www.etsi.org/deliver/etsi_ts/124400_124499/124481/19.03.00_60/ts_124481v190300p.pdf",
+      "sha256": "cdc762729178570215e6674ce13acaaad5cffefae629b3372410139f871e38e8",
+      "cover": "ETSI TS 124 481 V19.3.0 (2026-07)"
+    },
+    {
+      "spec": "24482",
+      "url": "https://www.etsi.org/deliver/etsi_ts/124400_124499/124482/19.01.00_60/ts_124482v190100p.pdf",
+      "sha256": "d557bd80c371fbe49a03bebd188a1d9178029ce6c3e2e112d507c6270cf7cb1c",
+      "cover": "ETSI TS 124 482 V19.1.0 (2026-07)"
+    },
+    {
+      "spec": "24483",
+      "url": "https://www.etsi.org/deliver/etsi_ts/124400_124499/124483/19.02.00_60/ts_124483v190200p.pdf",
+      "sha256": "8deaa372c58b35d00b32ecbcc9cfa273fa4852b8a66c26f60362fa8fe4b60340",
+      "cover": "ETSI TS 124 483 V19.2.0 (2026-01)"
+    },
+    {
+      "spec": "24484",
+      "url": "https://www.etsi.org/deliver/etsi_ts/124400_124499/124484/19.06.00_60/ts_124484v190600p.pdf",
+      "sha256": "ec25edcb4fd751a84cb287c783da33437fb447e98023e5fd1b1b243e09d9734c",
+      "cover": "ETSI TS 124 484 V19.6.0 (2026-07)"
+    },
+    {
+      "spec": "29283",
+      "url": "https://www.etsi.org/deliver/etsi_ts/129200_129299/129283/19.00.00_60/ts_129283v190000p.pdf",
+      "sha256": "fa82d1a9025cf05f5b9fc887af1b57162b8b28c3cca0b1867b39f87139a18508",
+      "cover": "ETSI TS 129 283 V19.0.0 (2025-10)"
+    },
+    {
+      "spec": "24281",
+      "url": "https://www.etsi.org/deliver/etsi_ts/124200_124299/124281/19.06.00_60/ts_124281v190600p.pdf",
+      "sha256": "076b2bd7fe7df9c10587af05266d93136000d940dd7307a280d744a517124065",
+      "cover": "ETSI TS 124 281 V19.6.0 (2026-08)"
+    },
+    {
+      "spec": "24581",
+      "url": "https://www.etsi.org/deliver/etsi_ts/124500_124599/124581/19.02.00_60/ts_124581v190200p.pdf",
+      "sha256": "04b3b7ec07d278fdd02959304a53db2b756319558474d97ada583044785d6072",
+      "cover": "ETSI TS 124 581 V19.2.0 (2026-08)"
+    },
+    {
+      "spec": "23281",
+      "url": "https://www.etsi.org/deliver/etsi_ts/123200_123299/123281/19.10.00_60/ts_123281v191000p.pdf",
+      "sha256": "d55c1eb37f38f84754d65ff421a505482f2035433095a46c03d8288a471e6a3e",
+      "cover": "ETSI TS 123 281 V19.10.0 (2026-04)"
+    },
+    {
+      "spec": "26281",
+      "url": "https://www.etsi.org/deliver/etsi_ts/126200_126299/126281/19.00.00_60/ts_126281v190000p.pdf",
+      "sha256": "d9614974f0fb8bfbcf302b42bc8960dd8a458f3eff8ede4b638868b07f6e0b38",
+      "cover": "ETSI TS 126 281 V19.0.0 (2025-10)"
+    },
+    {
+      "spec": "OMA-TS-XDM_Group-V1_1_1",
+      "url": "https://www.openmobilealliance.org/release/XDM/V2_2_1-20170124-A/OMA-TS-XDM_Group-V1_1_1-20170124-A.pdf",
+      "sha256": "5fab580a8761ebc5b03530e98fb58168f7c7c6ea51b1ebd7d112bcf763783ba2",
+      "cover": "OMA-TS-XDM_Group-V1_1_1-20170124-A (Group XDM Specification)"
+    }
+  ],
+  "schemas": [
+    {
+      "file": "services/internal/common/schemas/xml.xsd",
+      "source": "https://www.w3.org/2001/xml.xsd",
+      "document": "W3C XML namespace schema (xml:lang)",
+      "sha256": "61960fb3131e38022caad5360e2f33a3382578ab3c80cd58bd74320ede61b20c"
+    },
+    {
+      "file": "services/internal/common/schemas/common-policy.xsd",
+      "source": "https://www.iana.org/assignments/xml-registry/schema/common-policy.xsd",
+      "document": "IETF RFC 4745 common policy",
+      "sha256": "2e9bc76fbf34e5725d7956af94a9b871a3fde2fcc36f8a3405d606a4ee6ec857"
+    },
+    {
+      "file": "services/internal/common/schemas/resource-lists.xsd",
+      "source": "https://www.iana.org/assignments/xml-registry/schema/resource-lists.xsd",
+      "document": "IETF RFC 4826 resource lists",
+      "sha256": "d417227affd502a1bbcfbc138560854f78f477b9c0e81610cbdea126c145745c"
+    },
+    {
+      "file": "services/internal/common/schemas/poc_listService-v1_0.xsd",
+      "source": "https://www.openmobilealliance.org/tech/profiles/poc_listService-v1_0.xsd",
+      "document": "OMA-SUP-XSD_poc_listService-V1_0_2-20090922-A (group document, TS 24.481 [19])",
+      "sha256": "69434e93d687e3ba80309ed8d0d54ebde08daea4738c0f0136224518e3712a82"
+    },
+    {
+      "file": "services/internal/common/schemas/xdm_extensions-v1_0.xsd",
+      "source": "https://www.openmobilealliance.org/tech/profiles/xdm_extensions-v1_0.xsd",
+      "document": "OMA-SUP-XSD_xdm_extensions-V1_0_1-20160503-A",
+      "sha256": "61fe49694a8ae11effba586f3bacfab823e33648ac9a0b66f35b1c0010554d09"
+    },
+    {
+      "file": "services/internal/common/schemas/xdm_commonPolicy-v1_0.xsd",
+      "source": "https://www.openmobilealliance.org/tech/profiles/xdm_commonPolicy-v1_0.xsd",
+      "document": "OMA-SUP-XSD_xdm_commonPolicy-V1_0_3-20160503-A",
+      "sha256": "b7ccc82e81474c340ca69e56d03b510257229208d99efb91d746062d90c9642d"
+    },
+    {
+      "file": "services/internal/common/schemas/xdm_rsrclst_uriusage-V1_0.xsd",
+      "source": "https://www.openmobilealliance.org/tech/profiles/xdm_rsrclst_uriusage-V1_0.xsd",
+      "document": "OMA-SUP-XSD_xdm_rsrclst_uriusage-V1_0_2-20160503-A",
+      "sha256": "c1c4227d96afc615bb50985c6f9dd9d06eddd682bce599e27a386a08a9d6d2d2"
+    },
+    {
+      "file": "services/internal/common/schemas/mcptt-group-info.xsd",
+      "source": "ETSI TS 124 481 (ETSI)",
+      "document": "ETSI TS 124 481 V19.3.0 clause 7.2.4.2, extracted with pdftotext",
+      "sha256": "496351a91c6f739ad92865fced752d51c11d82a11c6ae65ef6d401d0ebfe3ec1"
+    },
+    {
+      "file": "services/internal/common/schemas/mcptt-gmop.xsd",
+      "source": "ETSI TS 124 481 (ETSI)",
+      "document": "ETSI TS 124 481 V19.3.0 clause 7.3.3, extracted with pdftotext",
+      "sha256": "d1bf1da0a01c0266372b377cb999e642141707ae325589354bf959401bba1466"
+    },
+    {
+      "file": "services/internal/common/schemas/ue-init-config.xsd",
+      "source": "ETSI TS 124 484 (ETSI)",
+      "document": "ETSI TS 124 484 V19.4.0 clause 7.2.2.3, extracted with pdftotext",
+      "sha256": "c8b5e5e17fa2fd3019ac6910114985d0dbd564a583ce798ccf46980e7d853b17"
+    },
+    {
+      "file": "services/internal/common/schemas/mcptt-user-profile.xsd",
+      "source": "ETSI TS 124 484 (ETSI)",
+      "document": "ETSI TS 124 484 V19.4.0 clause 8.3.2.3, extracted with pdftotext; unchanged in V19.6.0",
+      "sha256": "4fb2ed05748372a5a52368800e85aa9071247fd9d72d209cd8274d54db6d2a74"
+    },
+    {
+      "file": "services/internal/common/schemas/mcdata-user-profile.xsd",
+      "source": "ETSI TS 124 484 (ETSI)",
+      "document": "ETSI TS 124 484 V19.4.0 clause 10.3.2.3, extracted with pdftotext",
+      "sha256": "df38e55bd9a03f146a2991bd8f7e4d364d78d4cd8ba82d2e392542e21347aeda"
+    }
+  ],
+  "centos_images": {
+    "builder": "quay.io/centos/centos:stream10@sha256:3f924e68a32f956996f69431e59e069fbcef608ab9de821a78693167d25348d4",
+    "runtime": "quay.io/centos/centos:stream10-minimal@sha256:5c0cf51dd1b0553f8ea8ebd7c5a4f080e0be9c8ad702ee0462b7bb69119f5068"
+  }
+}

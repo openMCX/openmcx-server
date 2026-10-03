@@ -1,0 +1,17 @@
+{
+  "domain": "mcx.test",
+  "service_user": "mcptt",
+  "group_user": "operations",
+  "oauth_client_id": "mcx-lab-client",
+  "server_client_id": "mcx-lab-server",
+  "oauth_redirect_uri": "http://127.0.0.1:8900/callback",
+  "token_ttl_seconds": 3600,
+  "users": [
+    {"role": "client-a", "username": "admin", "mcptt_user": "admin.mcptt",
+     "private_call": {"allow": true, "automatic_commencement": true, "manual_commencement": true, "targets": ["bob.mcptt"]},
+     "adhoc_call": {"allow": true}},
+    {"role": "client-b", "username": "bob", "mcptt_user": "bob.mcptt",
+     "private_call": {"allow": true, "automatic_commencement": true, "manual_commencement": true, "targets": ["admin.mcptt"]},
+     "adhoc_call": {"allow": true}}
+  ]
+}

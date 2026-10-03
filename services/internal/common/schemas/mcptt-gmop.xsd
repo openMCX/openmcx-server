@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Source: ETSI TS 124 481 V19.3.0 (2026-07), clause 7.3.3 "XML schema" (GMOP document).
+     Taken from the 3GPP/ETSI specification (clause cited above). Only the page
+     headers and footers were removed, and 1 attribute value(s) wrapped at a hyphen
+     by the PDF layout were rejoined; the schema text is otherwise unchanged. -->
+<xs:schema
+  targetNamespace="urn:3gpp:ns:mcpttGMOP:1.0"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:mcpttgi="urn:3gpp:ns:mcpttGroupInfo:1.0"
+  xmlns:gmop="urn:3gpp:ns:mcpttGMOP:1.0"
+  xmlns="urn:oma:xml:poc:list-service"
+  elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+  <xs:import namespace="urn:3gpp:ns:mcpttGroupInfo:1.0"/>
+  <xs:import namespace="urn:oma:xml:poc:list-service"/>
+
+  <!-- root element -->
+  <xs:element name="document" type="gmop:documentType"/>
+
+  <!-- complex type for document element -->
+  <xs:complexType name="documentType">
+    <xs:choice>
+      <xs:element name="request" type="gmop:anyExtType"/>
+      <xs:element name="response" type="gmop:anyExtType"/>
+      <xs:element name="indication" type="gmop:anyExtType"/>
+      <xs:element name="command" type="gmop:anyExtType"/>
+    </xs:choice>
+  </xs:complexType>
+
+  <!-- GMOP requests -->
+  <xs:element name="get-excluding-memberlist" type="gmop:emptyType"/>
+  <xs:element name="group-regroup-creation" type="gmop:group-regroup-creationType"/>
+  <xs:element name="group-regroup-check" type="gmop:group-regroup-checkType"/>
+  <xs:element name="group-regroup-notification" type="gmop:group-regroup-notificationType"/>
+
+  <!-- complex type for group-regroup-creation element -->
+  <xs:complexType name="group-regroup-creationType">
+    <xs:sequence>
+      <xs:element ref="group"/>
+      <xs:element name="anyExt" type="gmop:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <!-- complex type for group-regroup-check element -->
+  <xs:complexType name="group-regroup-checkType">
+    <xs:sequence>
+      <xs:element ref="mcpttgi:on-network-regrouped"/>
+      <xs:element name="anyExt" type="gmop:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <!-- complex type for group-regroup-notification element -->
+
+  <xs:complexType name="group-regroup-notificationType">
+    <xs:sequence>
+      <xs:element ref="mcpttgi:on-network-regrouped"/>
+      <xs:element name="anyExt" type="gmop:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <!-- GMOP responses -->
+  <xs:element name="group-regroup-creation-response" type="gmop:group-regroup-creation-responseType"/>
+
+  <!-- complex type for group-regroup-creation-response element -->
+  <xs:complexType name="group-regroup-creation-responseType">
+    <xs:sequence>
+      <xs:element name="temporary-group-document-ETag" type="xs:string"/>
+      <xs:element name="anyExt" type="gmop:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <!-- GMOP indications -->
+
+  <!-- GMOP commands -->
+
+  <!-- complex type for empty elements -->
+  <xs:complexType name="emptyType"/>
+
+  <!-- complex type for elements containing any elements -->
+  <xs:complexType name="anyExtType">
+    <xs:sequence>
+      <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+</xs:schema>

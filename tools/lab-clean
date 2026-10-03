@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Remove what openMCX labs and builds leave behind in Docker.
+
+Only openMCX objects are considered:
+  - containers, networks and volumes of the Compose projects the labs use:
+    regress labs (rg-*) and lab fixtures (openmcx*); a project with a running
+    container is kept whole;
+  - image tags of openmcx and openmcx-client not used by any container, except the
+    newest --keep of each and the tags named with --keep-tag; openmcx-dev and
+    openmcx-kamailio, the base images, are never removed.
+Anonymous volumes carry no project label, so they are removed only with
+--anonymous, and then only those no container uses (other software's too).
+
+Without --yes it lists what it would remove.
+
+Examples:
+  tools/lab-clean                          # what would go
+  tools/lab-clean --yes                    # remove it
+  tools/lab-clean --yes --keep 1 --keep-tag v14
+  tools/lab-clean --yes --anonymous        # also unused anonymous volumes
+"""
+import argparse
+import json
+import re
+import subprocess
+
+PROJECT = re.compile(r'^(rg-|openmcx)')
+IMAGES = ('openmcx', 'openmcx-client')
+
+
+def docker(*args, check=True):
+    run = subprocess.run(['docker', *args], capture_output=True, text=True)
+    if check and run.returncode:
+        raise SystemExit(f'docker {" ".join(args)}: {run.stderr.strip()}')
+    return run.stdout
+
+
+def lines(*args):
+    return [line for line in docker(*args).splitlines() if line.strip()]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--yes', action='store_true', help='remove; without it, only list')
+    parser.add_argument('--keep', type=int, default=2, help='newest tags kept of openmcx and of openmcx-client (default 2)')
+    parser.add_argument('--keep-tag', action='append', default=[], help='a tag kept in both repositories (repeatable)')
+    parser.add_argument('--anonymous', action='store_true', help='also remove anonymous volumes no container uses')
+    parser.add_argument('--no-images', action='store_true', help='leave the images')
+    args = parser.parse_args()
+
+    # Compose projects of the labs, and which of them are running.
+    containers = {}
+    for line in lines('ps', '-a', '--format', '{{.ID}}\t{{.State}}\t{{.Label "com.docker.compose.project"}}\t{{.Image}}'):
+        cid, state, project, image = (line.split('\t') + [''] * 4)[:4]
+        containers[cid] = (state, project, image)
+    running = {p for state, p, _ in containers.values() if state == 'running' and PROJECT.match(p)}
+    stale_containers = [cid for cid, (state, p, _) in containers.items() if PROJECT.match(p) and p not in running]
+
+    def project_of(kind, name):
+        labels = json.loads(docker(kind, 'inspect', '--format', '{{json .Labels}}', name, check=False) or 'null') or {}
+        return labels.get('com.docker.compose.project', ''), labels
+    stale_networks = []
+    for name in lines('network', 'ls', '--format', '{{.Name}}'):
+        project, _ = project_of('network', name)
+        if PROJECT.match(project) and project not in running:
+            stale_networks.append(name)
+    in_use = set(lines('volume', 'ls', '-q', '--filter', 'dangling=false'))
+    stale_volumes, anonymous = [], []
+    for name in lines('volume', 'ls', '-q'):
+        if name in in_use:
+            continue
+        project, labels = project_of('volume', name)
+        if PROJECT.match(project) and project not in running:
+            stale_volumes.append(name)
+        elif 'com.docker.volume.anonymous' in labels and args.anonymous:
+            anonymous.append(name)
+
+    # Image tags: newest first; keep the newest --keep, the named tags and any in use.
+    used_images = {image for _, _, image in containers.values()}
+    old_tags = []
+    if not args.no_images:
+        for repository in IMAGES:
+            tags = [line.split('\t') for line in lines('images', repository, '--format', '{{.Tag}}\t{{.ID}}\t{{.CreatedAt}}')]
+            tags = [t for t in tags if t[0] != '<none>']
+            tags.sort(key=lambda t: t[2], reverse=True)
+            for index, (tag, image_id, _) in enumerate(tags):
+                ref = f'{repository}:{tag}'
+                if index < args.keep or tag in args.keep_tag or ref in used_images or image_id in used_images:
+                    continue
+                old_tags.append(ref)
+
+    plan = [('containers', stale_containers, ['rm', '-f']), ('networks', stale_networks, ['network', 'rm']),
+            ('lab volumes', stale_volumes, ['volume', 'rm']), ('anonymous volumes', anonymous, ['volume', 'rm']),
+            ('image tags', old_tags, ['rmi'])]
+    for label, items, _ in plan:
+        print(f'{label}: {len(items)}' + (f'  e.g. {", ".join(items[:4])}' if items else ''))
+    if running:
+        print('kept, running:', ', '.join(sorted(running)))
+    if not args.yes:
+        print('nothing removed; run with --yes to remove')
+        return 0
+    for label, items, command in plan:
+        # A few at a time, so one refusal (an image another tag still needs) does not stop the rest.
+        for start in range(0, len(items), 50):
+            docker(*command, *items[start:start + 50], check=False)
+    print(docker('system', 'df').rstrip())
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

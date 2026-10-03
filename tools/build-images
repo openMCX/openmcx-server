@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Build every openMCX server image from docker/Dockerfile, tagged openmcx-<target>:TAG (docs/BUILD.md).
+#
+#   tools/build-images [--ubuntu RELEASE] [TAG] [docker build options...]     TAG defaults to 0.1
+#
+# --ubuntu picks the Ubuntu release of the images (24.04, the default, or 26.04; the pinned base images are in
+# dependencies.lock.json "base_images"). For another release than the default, the development image the build stage
+# runs on is openmcx-dev:0.1-ubuntu<RELEASE>, built first when it is missing. The build stage is shared, so the targets
+# after the first reuse its cached layers. The default development image (openmcx-dev:0.1, docker/Dockerfile.dev)
+# must exist; build it first with
+#   docker build -t openmcx-dev:0.1 -f docker/Dockerfile.dev .
+set -euo pipefail
+cd "$(dirname "$0")/.."
+UBUNTU=
+if [ "${1:-}" = --ubuntu ]; then
+  UBUNTU=${2:?--ubuntu needs a release}
+  shift 2
+fi
+TAG=${1:-0.1}
+shift || true
+TARGETS=(openmcx-mcptt-server openmcx-mcvideo-server openmcx-mcdata-server openmcx-common openmcx-http-proxy
+  openmcx-user-db openmcx-all)
+DEV_IMAGE=openmcx-dev:0.1
+release_args=()
+if [ -n "$UBUNTU" ]; then
+  base=$(python3 -c 'import json, sys; print(json.load(open("dependencies.lock.json"))["base_images"][sys.argv[1]])' \
+    "$UBUNTU" 2>/dev/null) || { echo "no pinned base image for Ubuntu $UBUNTU in dependencies.lock.json" >&2; exit 1; }
+  default=$(python3 -c 'import json; print(json.load(open("dependencies.lock.json"))["base_image"])')
+  if [ "$base" != "$default" ]; then
+    DEV_IMAGE=openmcx-dev:0.1-ubuntu$UBUNTU
+    if ! docker image inspect "$DEV_IMAGE" >/dev/null 2>&1; then
+      echo "== $DEV_IMAGE"
+      docker build -q -t "$DEV_IMAGE" --build-arg BASE_IMAGE="$base" --build-arg UBUNTU="$UBUNTU" \
+        -f docker/Dockerfile.dev .
+    fi
+  fi
+  release_args=(--build-arg DEV_IMAGE="$DEV_IMAGE" --build-arg RUNTIME_BASE="$base" --build-arg UBUNTU="$UBUNTU")
+fi
+docker image inspect "$DEV_IMAGE" >/dev/null 2>&1 \
+  || { echo "$DEV_IMAGE is missing: docker build -t openmcx-dev:0.1 -f docker/Dockerfile.dev ." >&2; exit 1; }
+for target in "${TARGETS[@]}"; do
+  echo "== $target:$TAG"
+  docker build -q --target "$target" -t "$target:$TAG" -f docker/Dockerfile "${release_args[@]}" "$@" .
+done
+docker image ls --format '{{.Repository}}:{{.Tag}}  {{.Size}}' | grep -E "^($(IFS=\|; echo "${TARGETS[*]}")):$TAG " | sort

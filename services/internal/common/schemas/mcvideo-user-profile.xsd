@@ -1,0 +1,499 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Source: ETSI TS 124 484 V19.6.0 (2026-07), the MCVideo user profile configuration document schema (clause 9.3.2.3).
+     Taken from the 3GPP/ETSI specification (clause cited above). Only the page
+     headers and footers were removed; the schema text is otherwise unchanged. -->
+<xs:schema
+  xmlns:mcvideoup="urn:3gpp:ns:mcvideo:user-profile:1.0"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:mcpttiup="urn:3gpp:mcptt:mcpttUEinitConfig:1.0"
+  targetNamespace="urn:3gpp:ns:mcvideo:user-profile:1.0"
+  elementFormDefault="qualified" attributeFormDefault="unqualified">
+  <xs:import namespace="http://www.w3.org/XML/1998/namespace"
+  schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+  <!-- This import brings in common policy namespace from RFC 4745 -->
+  <xs:import namespace="urn:ietf:params:xml:ns:common-policy"
+  schemaLocation="http://www.iana.org/assignments/xml-registry/schema/common-policy.xsd"/>
+  <xs:import namespace="urn:3gpp:mcptt:mcpttUEinitConfig:1.0"
+  schemaLocation="ue-init-config.xsd"/>
+
+  <xs:element name="mcvideo-user-profile">
+    <xs:complexType>
+      <xs:choice minOccurs="1" maxOccurs="unbounded">
+        <xs:element name="Name" type="mcvideoup:NameType"/>
+        <xs:element name="Status" type="xs:boolean"/>
+        <xs:element name="ProfileName" type="mcvideoup:NameType"/>
+        <xs:element name="Pre-selected-indication" type="mcvideoup:emptyType"/>
+        <xs:element name="Common" type="mcvideoup:CommonType"/>
+        <xs:element name="OffNetwork" type="mcvideoup:OffNetworkType"/>
+        <xs:element name="OnNetwork" type="mcvideoup:OnNetworkType"/>
+        <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+        <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:choice>
+      <xs:attribute name="XUI-URI" type="xs:anyURI" use="required"/>
+      <xs:attribute name="user-profile-index" type="xs:unsignedByte" use="required"/>
+      <xs:anyAttribute namespace="##any" processContents="lax"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="NameType">
+    <xs:simpleContent>
+      <xs:extension base="xs:token">
+        <xs:attribute ref="xml:lang"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="CommonType">
+    <xs:choice minOccurs="1" maxOccurs="unbounded">
+      <xs:element name="UserAlias" type="mcvideoup:UserAliasType"/>
+      <xs:element name="MCVideoUserID" type="mcvideoup:EntryType"/>
+      <xs:element name="PrivateCall" type="mcvideoup:MCVideoPrivateCallType"/>
+      <xs:element name="MCVideo-group-call" type="mcvideoup:MCVideoGroupCallType"/>
+      <xs:element name="MissionCriticalOrganization" type="xs:string"/>
+      <xs:element name="ParticipantType" type="xs:string"/>
+
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attributeGroup ref="mcvideoup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:element name="LocationUserProfileURI" type="xs:anyURI"/>
+
+  <xs:complexType name="UserAliasType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="alias-entry" type="mcvideoup:AliasEntryType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="AliasEntryType">
+    <xs:simpleContent>
+      <xs:extension base="xs:token">
+        <xs:attributeGroup ref="mcvideoup:IndexType"/>
+        <xs:attribute ref="xml:lang"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="MCVideoPrivateCallType">
+    <xs:sequence>
+      <xs:element name="PrivateCallList" type="mcvideoup:PrivateCallListType"/>
+      <xs:element name="EmergencyCall" type="mcvideoup:EmergencyCallType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="PrivateCallListType">
+    <xs:sequence>
+      <xs:element name="PrivateCallOnNetwork" type="mcvideoup:PrivateCallOnNetworkType"
+minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="PrivateCallOffNetwork" type="mcvideoup:PrivateCallOffNetworkType"
+minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcvideoup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="PrivateCallOnNetworkType">
+    <xs:sequence>
+      <xs:element name="PrivateCallURI" type="mcvideoup:EntryType"/>
+      <xs:element name="PrivateCallKMSURI" type="mcvideoup:PrivateCallKMSURIEntryType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="PrivateCallOffNetworkType">
+    <xs:sequence>
+      <xs:element name="PrivateCallProSeUser" type="mcvideoup:ProSeUserEntryType"/>
+      <xs:element name="PrivateCallKMSURI" type="mcvideoup:PrivateCallKMSURIEntryType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="ProSeUserEntryType">
+    <xs:sequence>
+      <xs:element name="DiscoveryGroupID" type="xs:hexBinary" minOccurs="0"/>
+      <xs:element name="User-Info-ID" type="xs:hexBinary"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcvideoup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="PrivateCallKMSURIEntryType">
+    <xs:sequence>
+      <xs:element name="PrivateCallKMSURI" type="mcvideoup:EntryType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="MCVideoGroupCallType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="MaxSimultaneousCallsN6" type="xs:positiveInteger"/>
+      <xs:element name="EmergencyCall" type="mcvideoup:EmergencyCallType"/>
+      <xs:element name="ImminentPerilCall" type="mcvideoup:ImminentPerilCallType"/>
+      <xs:element name="EmergencyAlert" type="mcvideoup:EmergencyAlertType"/>
+      <xs:element name="Priority" type="mcvideoup:PriorityType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="EmergencyCallType">
+    <xs:sequence>
+      <xs:choice>
+        <xs:element name="MCVideoGroupInitiation" type="mcvideoup:MCVideoGroupInitiationEntryType"/>
+        <xs:element name="MCVideoPrivateRecipient"
+type="mcvideoup:MCVideoPrivateRecipientEntryType"/>
+        <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+        <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:choice>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="ImminentPerilCallType">
+    <xs:sequence>
+      <xs:element name="MCVideoGroupInitiation" type="mcvideoup:MCVideoGroupInitiationEntryType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="EmergencyAlertType">
+    <xs:sequence>
+      <xs:element name="entry" type="mcvideoup:EntryType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="MCVideoGroupInitiationEntryType">
+    <xs:choice>
+      <xs:element name="entry" type="mcvideoup:EntryType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="MCVideoPrivateRecipientEntryType">
+    <xs:sequence>
+      <xs:element name="entry" type="mcvideoup:EntryType"/>
+      <xs:element name="ProSeUserID-entry" type="mcvideoup:ProSeUserEntryType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="OnNetworkType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="MCVideoGroupInfo" type="mcvideoup:MCVideoGroupInfoType"/>
+      <xs:element name="MaxAffiliationsN2" type="xs:nonNegativeInteger"/>
+      <xs:element name="ImplicitAffiliations" type="mcvideoup:ListEntryType"/>
+      <xs:element name="MaxSimultaneousVideoStreams" type="xs:positiveInteger" minOccurs="0"/>
+      <xs:element name="PrivateEmergencyAlert" type="mcvideoup:EmergencyAlertType"/>
+      <xs:element name="RemoteGroupSelectionURIList" type="mcvideoup:ListEntryType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attributeGroup ref="mcvideoup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="OffNetworkType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="MCVideoGroupInfo" type="mcvideoup:MCVideoGroupInfoType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attributeGroup ref="mcvideoup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="MCVideoGroupInfoType">
+    <xs:sequence>
+      <xs:element name="MCVideo-Group-ID" type="mcvideoup:EntryType"/>
+      <xs:element name="GMS-Serv-Id" type="mcvideoup:EntryType" minOccurs="0"/>
+      <xs:element name="IdMS-Token-Endpoint" type="mcvideoup:EntryType" minOccurs="0"/>
+      <xs:element name="RelativePresentationPriority" type="mcvideoup:PriorityType" minOccurs="0"/>
+      <xs:element name="GroupKMSURI" type="mcvideoup:EntryType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:simpleType name="PriorityType">
+    <xs:restriction base="xs:nonNegativeInteger">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="255"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="ListEntryType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="entry" type="mcvideoup:EntryType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attribute ref="xml:lang"/>
+    <xs:attributeGroup ref="mcvideoup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="EntryType">
+    <xs:sequence>
+      <xs:element name="uri-entry" type="xs:anyURI"/>
+      <xs:element name="display-name" type="mcvideoup:DisplayNameElementType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="entry-info" type="mcvideoup:EntryInfoTypeList"/>
+    <xs:attributeGroup ref="mcvideoup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:simpleType name="EntryInfoTypeList">
+    <xs:restriction base="xs:normalizedString">
+      <xs:enumeration value="UseCurrentlySelectedGroup"/>
+      <xs:enumeration value="DedicatedGroup"/>
+      <xs:enumeration value="UsePreConfigured"/>
+      <xs:enumeration value="LocallyDetermined"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+
+  <xs:complexType name="DisplayNameElementType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute ref="xml:lang"/>
+        <xs:anyAttribute namespace="##any" processContents="lax"/>
+      </xs:extension>
+    </xs:simpleContent>
+</xs:complexType>
+
+  <xs:complexType name="GeographicalAreaChangeType">
+    <xs:sequence>
+      <xs:element name="EnterSpecificArea" type="mcvideoup:GeographicalAreaType" minOccurs="0"
+maxOccurs="unbounded"/>
+      <xs:element name="ExitSpecificArea" type="mcvideoup:GeographicalAreaType" minOccurs="0"
+maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="GeographicalAreaType">
+    <xs:choice>
+      <xs:element name="PolygonArea" type="mcvideoup:PolygonAreaType" minOccurs="0"/>
+      <xs:element name="EllipsoidArcArea" type="mcvideoup:EllipsoidArcType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="PolygonAreaType">
+    <xs:sequence>
+      <xs:element name="Corner" type="mcvideoup:PointCoordinateType" minOccurs="3" maxOccurs="15"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="EllipsoidArcType">
+    <xs:sequence>
+      <xs:element name="Center" type="mcvideoup:PointCoordinateType"/>
+      <xs:element name="Radius" type="xs:nonNegativeInteger"/>
+      <xs:element name="OffsetAngle" type="xs:unsignedByte"/>
+      <xs:element name="IncludedAngle" type="xs:unsignedByte"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="PointCoordinateType">
+    <xs:sequence>
+      <xs:element name="Longitude" type="mcvideoup:CoordinateType"/>
+      <xs:element name="Latitude" type="mcvideoup:CoordinateType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:simpleType name="CoordinateType">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="16777215"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="RulesForAffiliationManagementType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="ListOfLocationCriteria" type="mcvideoup:GeographicalAreaChangeType"/>
+      <xs:element name="ListOfActiveFunctionalAliasCriteria" type="mcvideoup:ListEntryType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attributeGroup ref="mcvideoup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="SpeedType">
+    <xs:sequence>
+      <xs:element name="MinimumSpeed" type="xs:unsignedShort"/>
+      <xs:element name="MaximumSpeed" type="xs:unsignedShort"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="HeadingType">
+    <xs:sequence>
+      <xs:element name="MinimumHeading" type="xs:unsignedShort"/>
+      <xs:element name="MaximumHeading" type="xs:unsignedShort"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+</xs:complexType>
+
+<!--    anyExt elements for Functional Alias-->
+  <xs:element name="FunctionalAliasList" type="mcvideoup:ListEntryType"/>
+  <xs:element name="allow-query-functional-alias-other-user" type="xs:boolean"/>
+  <xs:element name="allow-takeover-functional-alias-other-user" type="xs:boolean"/>
+<xs:element name="MaxSimultaneousEmergencyGroupCalls" type="xs:positiveInteger"/>
+  <xs:element name="allow-functional-alias-binding-with-group" type="xs:boolean"/>
+
+  <xs:element name="ListOfAllowedFAsToCall" type="mcvideoup:ListEntryType"/>
+  <xs:element name="ListOfAllowedFAsToBeCalledFrom" type="mcvideoup:ListEntryType"/>
+
+<!--    anyExt elements for Functional Alias for Location change-->
+  <xs:element name="LocationCriteriaForActivation" type="mcvideoup:GeographicalAreaChangeType"/>
+  <xs:element name="LocationCriteriaForDeactivation" type="mcvideoup:GeographicalAreaChangeType"/>
+  <xs:element name="manual-deactivation-not-allowed-if-location-criteria-met" type="xs:boolean"/>
+  <xs:element name="Speed" type="mcvideoup:SpeedType"/>
+  <xs:element name="Heading" type="mcvideoup:HeadingType"/>
+
+<!--    anyExt elements for Functional Alias for Affiliation change-->
+<!-- Note: anyExt elements for Functional Alias for Affiliation change include speed and heading-->
+  <xs:element name="RulesForAffiliation" type="mcvideoup:RulesForAffiliationManagementType"/>
+  <xs:element name="RulesForDeaffiliation" type="mcvideoup:RulesForAffiliationManagementType"/>
+  <xs:element name="manual-deaffiliation-not-allowed-if-affiliation-rules-are-met"
+type="xs:boolean"/>
+
+
+<!--    anyExt elements for Private call lists-->
+  <xs:element name="IncomingPrivateCallList" type="mcvideoup:PrivateCallListEntryType"/>
+
+  <xs:complexType name="PrivateCallListEntryType">
+    <xs:choice minOccurs="1" maxOccurs="unbounded">
+      <xs:element name="PrivateCallURI" type="mcvideoup:EntryType"/>
+      <xs:element name="PrivateCallProSeUser" type="mcvideoup:ProSeUserEntryType"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attributeGroup ref="mcvideoup:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:element name="user-max-simultaneous-authorizations" type="xs:positiveInteger"/>
+
+<!--    anyExt elements for migration-->
+  <xs:element name="MigratablePartnerMCVideoSystemInfo"
+type="mcvideoup:MigratablePartnerMCVideoSystemInfoEntryType"/>
+
+  <xs:element name="allow-presence-status" type="xs:boolean"/>
+  <xs:element name="allow-request-presence" type="xs:boolean"/>
+  <xs:element name="allow-query-availability-for-private-calls" type="xs:boolean"/>
+  <xs:element name="allow-enable-disable-user" type="xs:boolean"/>
+  <xs:element name="allow-enable-disable-UE" type="xs:boolean"/>
+  <xs:element name="allow-private-call" type="xs:boolean"/>
+  <xs:element name="allow-manual-commencement" type="xs:boolean"/>
+  <xs:element name="allow-automatic-commencement" type="xs:boolean"/>
+  <xs:element name="allow-force-auto-answer" type="xs:boolean"/>
+  <xs:element name="allow-failure-restriction" type="xs:boolean"/>
+  <xs:element name="allow-emergency-group-call" type="xs:boolean"/>
+  <xs:element name="allow-emergency-private-call" type="xs:boolean"/>
+  <xs:element name="allow-cancel-group-emergency" type="xs:boolean"/>
+  <xs:element name="allow-cancel-private-emergency-call" type="xs:boolean"/>
+  <xs:element name="allow-imminent-peril-call" type="xs:boolean"/>
+  <xs:element name="allow-cancel-imminent-peril" type="xs:boolean"/>
+  <xs:element name="allow-activate-emergency-alert" type="xs:boolean"/>
+  <xs:element name="allow-cancel-emergency-alert" type="xs:boolean"/>
+  <xs:element name="allow-offnetwork" type="xs:boolean"/>
+  <xs:element name="allow-imminent-peril-change" type="xs:boolean"/>
+  <xs:element name="allow-private-call-media-protection" type="xs:boolean"/>
+  <xs:element name="allow-request-affiliated-groups" type="xs:boolean"/>
+  <xs:element name="allow-request-to-affiliate-other-users" type="xs:boolean"/>
+  <xs:element name="allow-recommend-to-affiliate-other-users" type="xs:boolean"/>
+  <xs:element name="allow-private-call-to-any-user" type="xs:boolean"/>
+  <xs:element name="allow-regroup" type="xs:boolean"/>
+  <xs:element name="allow-private-call-participation" type="xs:boolean"/>
+  <xs:element name="allow-manual-off-network-switch" type="xs:boolean"/>
+  <xs:element name="allow-off-network-group-call-change-to-emergency" type="xs:boolean"/>
+  <xs:element name="allow-revoke-transmit" type="xs:boolean"/>
+  <xs:element name="allow-create-group-broadcast-group" type="xs:boolean"/>
+  <xs:element name="allow-create-user-broadcast-group" type="xs:boolean"/>
+  <xs:element name="allow-request-remote-initiated-ambient-viewing" type="xs:boolean"/>
+  <xs:element name="allow-request-locally-initiated-ambient-viewing" type="xs:boolean"/>
+  <xs:element name="allow-to-receive-private-call-from-any-user" type="xs:boolean"/>
+  <xs:element name="allow-activate-adhoc-group-emergency-alert" type="xs:boolean"/>
+  <xs:element name="allow-cancel-adhoc-group-emergency-alert" type="xs:boolean"/>
+  <xs:element name="allow-to-recv-adhoc-group-emergency-alert-participants-info" type="xs:boolean"/>
+  <xs:element name="allow-to-setup-adhoc-group-call-using-emergency-alert-adhoc-group"
+type="xs:boolean"/>
+  <xs:element name="allow-adhoc-group-call" type="xs:boolean"/>
+  <xs:element name="allow-adhoc-group-call-participation" type="xs:boolean"/>
+  <xs:element name="allow-emergency-adhoc-group-call" type="xs:boolean"/>
+  <xs:element name="allow-imminent-peril-adhoc-group-call" type="xs:boolean"/>
+  <xs:element name="allow-to-recv-adhoc-group-call-participants-info" type="xs:boolean"/>
+  <xs:element name="allow-to-modify-adhoc-group-call-participants-info" type="xs:boolean"/>
+
+  <xs:element name="anyExt" type="mcvideoup:anyExtType"/>
+
+  <xs:attributeGroup name="IndexType">
+    <xs:attribute name="index" type="xs:token"/>
+  </xs:attributeGroup>
+
+
+  <!-- empty complex type -->
+  <xs:complexType name="emptyType"/>
+
+  <xs:complexType name="anyExtType">
+    <xs:sequence>
+      <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="MigratablePartnerMCVideoSystemInfoEntryType">
+    <xs:sequence>
+      <xs:element name="PartnerMCVideoSystemId" type="xs:anyURI"/>
+      <xs:element ref="mcpttiup:mcptt-UE-initial-configuration"/>
+      <xs:element name="anyExt" type="mcvideoup:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+</xs:schema>

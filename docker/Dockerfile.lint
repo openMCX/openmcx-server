@@ -1,0 +1,39 @@
+# The openMCX formatting and lint tools (docs/CODING_STYLE.md), on the development image,
+# so that clang-tidy sees the same compiler, headers and libraries as the build.
+#   tools/lint-image              builds it as openmcx-lint:<version below>
+# Pinned: LLVM 23 (clang-format, clang-tidy), golangci-lint 2.14.0, ruff 0.16.9; the archives are
+# fetched by the build and checked against their published SHA-256 (docker/fetch; DEPS_MIRROR for offline builds).
+FROM openmcx-dev:0.1
+
+ARG LLVM_VERSION=23
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o /etc/apt/trusted.gpg.d/apt.llvm.org.asc \
+    && echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-${LLVM_VERSION} main" \
+       > /etc/apt/sources.list.d/llvm.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+       clang-format-${LLVM_VERSION} clang-tidy-${LLVM_VERSION} python3-clang-${LLVM_VERSION} \
+    && ln -s /usr/bin/clang-format-${LLVM_VERSION} /usr/local/bin/clang-format \
+    && ln -s /usr/bin/clang-tidy-${LLVM_VERSION} /usr/local/bin/clang-tidy \
+    && ln -s /usr/bin/run-clang-tidy-${LLVM_VERSION} /usr/local/bin/run-clang-tidy \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG DEPS_MIRROR=
+ARG GOLANGCI_LINT_FILE=golangci-lint-2.14.0-linux-amd64.tar.gz
+ARG GOLANGCI_LINT_URL=https://github.com/golangci/golangci-lint/releases/download/v2.14.0/golangci-lint-2.14.0-linux-amd64.tar.gz
+ARG GOLANGCI_LINT_SHA256=ab90aeb7b066f92a33415b638a50fe5344bbb75a0d32ad30cc248d88f81032ab
+ARG RUFF_FILE=ruff-0.16.9-x86_64-unknown-linux-gnu.tar.gz
+ARG RUFF_URL=https://github.com/astral-sh/ruff/releases/download/0.16.9/ruff-x86_64-unknown-linux-gnu.tar.gz
+ARG RUFF_SHA256=1bfbb819b5d4f9af501748862276b60e412d336034d99387691a4d4bce7a6f13
+COPY docker/fetch /usr/local/bin/fetch
+RUN fetch "$GOLANGCI_LINT_FILE" "$GOLANGCI_LINT_URL" "$GOLANGCI_LINT_SHA256" /tmp/golangci-lint.tar.gz \
+    && tar -xzf /tmp/golangci-lint.tar.gz -C /tmp \
+    && mv /tmp/golangci-lint-2.14.0-linux-amd64/golangci-lint /usr/local/bin/ \
+    && rm -rf /tmp/golangci-lint*
+
+RUN fetch "$RUFF_FILE" "$RUFF_URL" "$RUFF_SHA256" /tmp/ruff.tar.gz \
+    && tar -xzf /tmp/ruff.tar.gz -C /tmp \
+    && mv /tmp/ruff-x86_64-unknown-linux-gnu/ruff /usr/local/bin/ \
+    && rm -rf /tmp/ruff*
+
+RUN python3 -c "import clang.cindex; clang.cindex.Index.create()" && clang-format --version && clang-tidy --version && golangci-lint --version && ruff --version
+WORKDIR /src

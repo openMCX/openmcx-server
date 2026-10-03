@@ -1,0 +1,388 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Source: ETSI TS 124 481 V19.3.0 (2026-07), clause 7.2.4.2 "XML schema for MCS specific extensions".
+     Taken from the 3GPP/ETSI specification (clause cited above). Only the page
+     headers and footers were removed, and 1 attribute value(s) wrapped at a hyphen
+     by the PDF layout were rejoined; the schema text is otherwise unchanged. -->
+<xs:schema
+  targetNamespace="urn:3gpp:ns:mcpttGroupInfo:1.0"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:mcpttgi="urn:3gpp:ns:mcpttGroupInfo:1.0"
+  xmlns:oxe="urn:oma:xml:xdm:extensions"
+  xmlns:rl="urn:ietf:params:xml:ns:resource-lists"
+  elementFormDefault="qualified" attributeFormDefault="unqualified">
+
+   <xs:import namespace="urn:oma:xml:xdm:extensions"/>
+   <xs:import namespace="urn:ietf:params:xml:ns:resource-lists"/>
+
+  <!-- MCS specific "list-service" child elements -->
+  <xs:element name="on-network-disabled" type="mcpttgi:emptyType"/>
+  <xs:element name="on-network-temporary" type="mcpttgi:temporaryType"/>
+  <xs:element name="on-network-regrouped" type="mcpttgi:regroupedType"/>
+  <xs:element name="off-network-ProSe-layer-2-group-id" type="xs:hexBinary"/>
+  <xs:element name="off-network-IP-multicast-address" type="xs:string"/>
+  <xs:element name="off-network-PDN-type" type="xs:string"/>
+  <xs:element name="off-network-ProSe-relay-service-code" type="xs:hexBinary"/>
+  <xs:element name="owner" type="xs:string"/>
+  <xs:element name="level-within-group-hierarchy" type="xs:unsignedShort"/>
+  <xs:element name="level-within-user-hierarchy" type="xs:unsignedShort"/>
+  <xs:element name="preconfigured-group-use-only" type="xs:boolean"/>
+  <xs:element name="permitted-geographic-area" type="mcpttgi:areaType"/>
+  <xs:element name="mandatory-geographic-area" type="mcpttgi:areaType"/>
+
+  <!-- MCPTT specific "list-service" child elements -->
+  <xs:element name="on-network-group-priority" type="mcpttgi:priorityType"/>
+  <xs:element name="off-network-ProSe-signalling-PPPP" type="xs:hexBinary"/>
+  <xs:element name="off-network-ProSe-emergency-call-signalling-PPPP" type="xs:hexBinary"/>
+  <xs:element name="off-network-ProSe-imminent-peril-call-signalling-PPPP" type="xs:hexBinary"/>
+  <xs:element name="off-network-ProSe-media-PPPP" type="xs:hexBinary"/>
+  <xs:element name="off-network-ProSe-emergency-call-media-PPPP" type="xs:hexBinary"/>
+  <xs:element name="off-network-ProSe-imminent-peril-call-media-PPPP" type="xs:hexBinary"/>
+  <xs:element name="off-network-ProSe-signalling-PQI" type="xs:hexBinary"/>
+  <xs:element name="off-network-ProSe-emergency-call-signalling-PQI" type="xs:hexBinary"/>
+  <xs:element name="off-network-ProSe-imminent-peril-call-signalling-PQI" type="xs:hexBinary"/>
+  <xs:element name="off-network-ProSe-media-PQI" type="xs:hexBinary"/>
+  <xs:element name="off-network-ProSe-emergency-call-media-PQI" type="xs:hexBinary"/>
+  <xs:element name="off-network-ProSe-imminent-peril-call-media-PQI" type="xs:hexBinary"/>
+
+  <xs:element name="on-network-max-participant-count" type="xs:nonNegativeInteger"/>
+  <xs:element name="on-network-invite-members" type="xs:boolean"/>
+  <xs:element name="preferred-voice-encodings" type="mcpttgi:encodingsType"/>
+  <xs:element name="on-network-in-progress-emergency-state-cancellation-timeout"
+type="xs:duration"/>
+  <xs:element name="on-network-in-progress-imminent-peril-state-cancellation-timeout"
+type="xs:duration"/>
+  <xs:element name="off-network-in-progress-emergency-state-cancellation-timeout"
+type="xs:duration"/>
+  <xs:element name="off-network-in-progress-imminent-peril-state-cancellation-timeout"
+type="xs:duration"/>
+  <xs:element name="on-network-hang-timer" type="xs:duration"/>
+  <xs:element name="on-network-maximum-duration" type="xs:duration"/>
+  <xs:element name="off-network-hang-timer" type="xs:duration"/>
+  <xs:element name="off-network-maximum-duration" type="xs:duration"/>
+  <xs:element name="on-network-minimum-number-to-start" type="xs:unsignedShort"/>
+  <xs:element name="on-network-timeout-for-acknowledgement-of-required-members" type="xs:duration"/>
+  <xs:element name="on-network-action-upon-expiration-of-timeout-for-acknowledgement-of-required-members" type="xs:string"/>
+  <xs:element name="protect-media" type="xs:boolean"/>
+  <xs:element name="protect-floor-control-signalling" type="xs:boolean"/>
+  <xs:element name="require-multicast-floor-control-signalling" type="mcpttgi:emptyType"/>
+  <xs:element name="off-network-queue-usage" type="xs:boolean"/>
+  <xs:element name="mcptt-on-network-audio-cut-in" type="xs:boolean"/>
+  <xs:element name="multi-talker-control" type="xs:boolean"/>
+  <xs:element name="max-number-simultaneous-talkers" type="xs:positiveInteger"/>
+  <xs:element name="audio-mixing-entity" type="xs:string"/>
+  <xs:element name="on-network-minimum-number-of-affiliated-members" type="xs:positiveInteger"/>
+  <xs:element name="forbidden-deaffiliation-FAs" type="mcpttgi:ListEntryType"/>
+  <xs:element name="forbidden-deaffiliation-if-last-FAs" type="mcpttgi:ListEntryType"/>
+
+  <!-- MCVideo specific "list-service" child elements -->
+  <xs:element name="mcvideo-on-network-invite-members" type="xs:boolean"/>
+  <xs:element name="mcvideo-on-network-maximum-duration" type="xs:duration"/>
+  <xs:element name="mcvideo-protect-media" type="xs:boolean"/>
+  <xs:element name="mcvideo-protect-transmission-control" type="xs:boolean"/>
+  <xs:element name="mcvideo-preferred-audio-encodings" type="mcpttgi:encodingsType"/>
+  <xs:element name="mcvideo-preferred-video-encodings" type="mcpttgi:encodingsType"/>
+  <xs:element name="mcvideo-preferred-video-resolutions" type="xs:string"/>
+  <xs:element name="mcvideo-preferred-video-frame-rate" type="xs:string"/>
+  <xs:element name="mcvideo-urgent-real-time-video-mode" type="xs:boolean"/>
+  <xs:element name="mcvideo-non-urgent-real-time-video-mode" type="xs:boolean"/>
+  <xs:element name="mcvideo-non-real-time-video-mode" type="xs:boolean"/>
+  <xs:element name="mcvideo-active-real-time-video-mode" type="xs:string"/>
+  <xs:element name="mcvideo-maximum-simultaneous-mcvideo-transmitting-group-members"
+type="xs:nonNegativeInteger"/>
+  <xs:element name="mcvideo-on-network-minimum-number-to-start" type="xs:unsignedShort"/>
+  <xs:element name="mcvideo-on-network-group-priority" type="mcpttgi:priorityType"/>
+  <xs:element name="mcvideo-off-network-arbitration-approach" type="xs:string"/>
+  <xs:element name="mcvideo-off-network-maximum-simultaneous-transmissions"
+type="xs:nonNegativeInteger"/>
+  <xs:element name="mcvideo-off-network-ProSe-signalling-PPPP" type="xs:hexBinary"/>
+  <xs:element name="mcvideo-off-network-ProSe-emergency-call-signalling-PPPP" type="xs:hexBinary"/>
+  <xs:element name="mcvideo-off-network-ProSe-imminent-peril-call-signalling-PPPP"
+type="xs:hexBinary"/>
+  <xs:element name="mcvideo-off-network-ProSe-media-PPPP" type="xs:hexBinary"/>
+  <xs:element name="mcvideo-off-network-ProSe-emergency-call-media-PPPP" type="xs:hexBinary"/>
+  <xs:element name="mcvideo-off-network-ProSe-imminent-peril-call-media-PPPP" type="xs:hexBinary"/>
+  <xs:element name="mcvideo-off-network-ProSe-signalling-PQI" type="xs:hexBinary"/>
+  <xs:element name="mcvideo-off-network-ProSe-emergency-call-signalling-PQI" type="xs:hexBinary"/>
+  <xs:element name="mcvideo-off-network-ProSe-imminent-peril-call-signalling-PQI"
+type="xs:hexBinary"/>
+  <xs:element name="mcvideo-off-network-ProSe-media-PQI" type="xs:hexBinary"/>
+
+  <xs:element name="mcvideo-off-network-ProSe-emergency-call-media-PQI" type="xs:hexBinary"/>
+  <xs:element name="mcvideo-off-network-ProSe-imminent-peril-call-media-PQI" type="xs:hexBinary"/>
+  <xs:element name="mcvideo-off-network-in-progress-emergency-state-cancellation-timeout"
+type="xs:duration"/>
+  <xs:element name="mcvideo-off-network-in-progress-imminent-peril-state-cancellation-timeout"
+type="xs:duration"/>
+  <xs:element name="mcvideo-off-network-maximum-duration" type="xs:duration"/>
+  <xs:element name="on-network-reception-hang-timer" type="xs:duration"/>
+
+  <!-- MCData specific "list-service" child elements -->
+  <xs:element name="mcdata-protect-media" type="xs:boolean"/>
+  <xs:element name="mcdata-protect-transmission-control" type="xs:boolean"/>
+  <xs:element name="mcdata-allow-short-data-service" type="xs:boolean"/>
+  <xs:element name="mcdata-allow-file-distribution" type="xs:boolean"/>
+  <xs:element name="mcdata-allow-conversation-management" type="xs:boolean"/>
+  <xs:element name="mcdata-allow-tx-control" type="xs:boolean"/>
+  <xs:element name="mcdata-allow-rx-control" type="xs:boolean"/>
+  <xs:element name="mcdata-allow-enhanced-status" type="xs:boolean"/>
+  <xs:element name="mcdata-enhanced-status-operational-values" type="mcpttgi:enhancedStatusList"/>
+  <xs:element name="mcdata-on-network-max-data-size-for-SDS" type="xs:unsignedInt"/>
+  <xs:element name="mcdata-on-network-max-data-size-for-FD" type="xs:unsignedInt"/>
+  <xs:element name="mcdata-on-network-max-data-size-auto-recv" type="xs:unsignedInt"/>
+  <xs:element name="mcdata-on-network-group-priority" type="mcpttgi:priorityType"/>
+  <xs:element name="mcdata-off-network-ProSe-signalling-PPPP" type="xs:hexBinary"/>
+  <xs:element name="mcdata-off-network-ProSe-media-PPPP" type="xs:hexBinary"/>
+  <xs:element name="mcdata-off-network-ProSe-signalling-PQI" type="xs:hexBinary"/>
+  <xs:element name="mcdata-off-network-ProSe-media-PQI" type="xs:hexBinary"/>
+  <xs:element name="mcdata-default-charset" type="xs:positiveInteger"/>
+
+  <!-- MCS specific "entry" child elements -->
+  <xs:element name="user-priority" type="mcpttgi:priorityType"/>
+  <xs:element name="user-reception-priority" type="mcpttgi:priorityType"/>
+  <xs:element name="participant-type" type="xs:string"/>
+
+  <!-- MCPTT specific "entry" child elements -->
+  <xs:element name="on-network-required" type="mcpttgi:emptyType"/>
+  <xs:element name="on-network-recvonly" type="mcpttgi:emptyType"/>
+  <xs:element name="multi-talker-allowed" type="mcpttgi:emptyType"/>
+  <xs:element name="on-network-affiliation-to-group-required" type="mcpttgi:emptyType"/>
+
+  <!-- MCVideo specific "entry" child elements -->
+  <xs:element name="mcvideo-on-network-required" type="mcpttgi:emptyType"/>
+  <xs:element name="mcvideo-mcvideo-id" type="rl:entryType"/>
+
+  <!-- MCData specific "entry" child elements -->
+  <xs:element name="mcdata-max-data-in-single-request" type="xs:unsignedInt"/>
+  <xs:element name="mcdata-max-time-in-single-request" type="xs:duration"/>
+  <xs:element name="mcdata-mcdata-id" type="rl:entryType"/>
+
+  <!-- MCS specific "actions" child elements -->
+  <xs:element name="on-network-allow-getting-member-list" type="xs:boolean"/>
+
+  <!-- MCPTT specific "actions" child elements -->
+  <xs:element name="allow-MCPTT-emergency-call" type="xs:boolean"/>
+  <xs:element name="allow-imminent-peril-call" type="xs:boolean"/>
+  <xs:element name="allow-MCPTT-emergency-alert" type="xs:boolean"/>
+  <xs:element name="on-network-allow-getting-affiliation-list" type="xs:boolean"/>
+  <xs:element name="on-network-allow-conference-state" type="xs:boolean"/>
+
+  <!-- MCVideo specific "actions" child elements -->
+  <xs:element name="mcvideo-allow-emergency-call" type="xs:boolean"/>
+  <xs:element name="mcvideo-allow-emergency-alert" type="xs:boolean"/>
+  <xs:element name="mcvideo-allow-imminent-peril-call" type="xs:boolean"/>
+  <xs:element name="mcvideo-on-network-allow-conference-state" type="xs:boolean"/>
+  <xs:element name="mcvideo-on-network-allow-getting-affiliation-list" type="xs:boolean"/>
+
+  <!-- MCData specific "actions" child elements -->
+  <xs:element name="mcdata-allow-transmit-data-in-this-group" type="xs:boolean"/>
+  <xs:element name="mcdata-on-network-allow-getting-affiliation-list" type="xs:boolean"/>
+  <xs:element name="mcdata-allow-emergency-alert" type="xs:boolean"/>
+
+  <!-- MCPTT specific media elements -->
+  <xs:element name="mcptt-speech" type="oxe:extensionType"/>
+
+  <!-- Elements included in anyExt elements -->
+  <xs:element name="audio-mixing-performed-in-the-network" type="xs:boolean"/>
+
+  <!-- MCVideo specific media elements -->
+
+  <xs:element name="mcvideo-video-media" type="oxe:extensionType"/>
+
+  <!-- MCData specific media elements -->
+
+  <!-- MCS specific complex type definitions -->
+
+  <!-- empty complex type -->
+  <xs:complexType name="emptyType"/>
+
+  <!-- complex type for temporary element -->
+  <xs:complexType name="temporaryType">
+    <xs:sequence>
+      <xs:element name="constituent-MCPTT-group-IDs"
+        type="mcpttgi:constituentMCPTTgroupTypeIDsType"/>
+      <xs:element name="anyExt" type="mcpttgi:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <!-- complex type for constituent-MCPTT-group-ID element -->
+  <xs:complexType name="constituentMCPTTgroupTypeIDsType">
+    <xs:sequence>
+      <xs:element name="constituent-MCPTT-group-ID" type="xs:anyURI" minOccurs="0"
+maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcpttgi:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <!-- complex type for regrouped element -->
+  <xs:complexType name="regroupedType">
+    <xs:sequence>
+      <xs:element name="constituent-MCPTT-group-IDs"
+        type="mcpttgi:constituentMCPTTgroupTypeIDsType"/>
+
+      <!-- MCPTT specific extensions for regroupedType type defined in release 13 -->
+      <xs:element ref="mcpttgi:on-network-group-priority" minOccurs="0"/>
+      <xs:element ref="mcpttgi:protect-media" minOccurs="0"/>
+      <xs:element ref="mcpttgi:protect-floor-control-signalling" minOccurs="0"/>
+      <xs:element ref="mcpttgi:require-multicast-floor-control-signalling" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttgi:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="temporary-MCPTT-group-ID" type="xs:anyURI" use="required"/>
+    <xs:attribute name="temporary-MCPTT-group-requestor" type="xs:anyURI" use="required"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <!--areaType complex type -->
+  <xs:complexType name="areaType">
+  <xs:sequence maxOccurs="unbounded">
+    <xs:choice>
+      <xs:element name="PolygonArea" type="mcpttgi:PolygonAreaType" minOccurs="0"/>
+      <xs:element name="EllipsoidArcArea" type="mcpttgi:EllipsoidArcType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttgi:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+  </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="PolygonAreaType">
+    <xs:sequence>
+      <xs:element name="Corner" type="mcpttgi:PointCoordinateType" minOccurs="3" maxOccurs="15"/>
+      <xs:element name="anyExt" type="mcpttgi:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="EllipsoidArcType">
+    <xs:sequence>
+      <xs:element name="Center" type="mcpttgi:PointCoordinateType"/>
+      <xs:element name="Radius" type="xs:nonNegativeInteger"/>
+      <xs:element name="OffsetAngle" type="xs:unsignedByte"/>
+      <xs:element name="IncludedAngle" type="xs:unsignedByte"/>
+
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcpttgi:anyExtType" minOccurs="0"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="PointCoordinateType">
+    <xs:sequence>
+      <xs:element name="Longitude" type="mcpttgi:CoordinateType"/>
+      <xs:element name="Latitude" type="mcpttgi:CoordinateType"/>
+      <xs:element name="anyExt" type="mcpttgi:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:simpleType name="CoordinateType">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="16777215"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- complex type for list of entry element -->
+  <xs:complexType name="ListEntryType">
+    <xs:sequence>
+      <xs:element name="entry" type="mcpttgi:EntryType" maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcpttgi:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="EntryType">
+    <xs:sequence>
+      <xs:element name="uri-entry" type="xs:anyURI"/>
+      <xs:element name="display-name" type="xs:string" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttgi:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <!-- complex type for any extensions element -->
+  <xs:complexType name="anyExtType">
+    <xs:sequence>
+      <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- MCS specific extensions for regroupedType type -->
+
+  <!-- MCPTT specific extensions for regroupedType type defined in a release after release 13 -->
+
+  <!-- MCVideo specific extensions for regroupedType type -->
+
+  <!-- MCData specific extensions for regroupedType type    -->
+
+  <!-- MCS specific complex type definitions -->
+  <!-- encodingsType complex type -->
+  <xs:complexType name="encodingsType">
+    <xs:sequence>
+      <xs:element name="encoding" type="mcpttgi:encodingType" maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcpttgi:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <!-- encodingType complex type -->
+  <xs:complexType name="encodingType">
+    <xs:sequence>
+      <xs:element name="anyExt" type="mcpttgi:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+
+  <!-- simple type for priority element -->
+  <xs:simpleType name="priorityType">
+    <xs:restriction base="xs:unsignedShort">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="255"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- MCPTT specific complex type definitions -->
+
+  <!-- MCVideo specific complex type definitions -->
+
+  <!-- MCData specific complex type definitions -->
+
+  <!-- complex type for mcdata-enhanced-status-operational-values element -->
+  <xs:complexType name="enhancedStatusList">
+    <xs:sequence minOccurs="0" maxOccurs="65536">
+      <xs:choice>
+        <xs:element name="status" type="mcpttgi:enhancedStatusType"/>
+        <xs:element name="anyExt" type="mcpttgi:anyExtType" minOccurs="0"/>
+        <xs:any namespace="##other" processContents="lax"/>
+      </xs:choice>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- complex type for enhancedStatusType element -->
+  <xs:complexType name="enhancedStatusType">
+    <xs:sequence>
+        <xs:element name="id" type="xs:nonNegativeInteger"/>
+        <xs:element name="shortText" type="mcpttgi:languageString"/>
+        <xs:element name="description" type="mcpttgi:languageString"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="languageString">
+      <xs:sequence maxOccurs="unbounded">
+          <xs:element name="langType" type="xs:language"/>
+          <xs:element name="langText" type="xs:string"/>
+      </xs:sequence>
+  </xs:complexType>
+
+</xs:schema>

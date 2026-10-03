@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- 
+XDM Resource List Elements - uriusage
+	version - 1.0.2
+	date    - 03 May 2016
+
+FILE INFORMATION
+
+	OMA Permanent Document
+	   File: OMA-SUP-XSD_xdm_rsrclst_uriusage-V1_0_2-20160503-A
+	   Type: Text - Schema Description
+
+	Public Reachable Information
+	   Path: http://www.openmobilealliance.org/tech/profiles
+	   Name: xdm_rsrclst_uriusage-v1_0.xsd
+
+NORMATIVE INFORMATION
+
+	Information about this file can be found in the specification
+	
+	   OMA-TS-XDM_Shared-V1_1 
+		
+	available at http://www.openmobilealliance.org/
+
+	Send comments to technical-comments@mail.openmobilealliance.org
+	
+CHANGE HISTORY
+
+03052016 Status changed to Approved by TP, TP Ref # OMA-TP-2016-0052R01-INP_XDM_V2_2_ERP_for_final_Approval
+
+LEGAL DISCLAIMER
+
+  Copyright 2016 Open Mobile Alliance Ltd.  All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions
+  are met:
+
+  1. Redistributions of source code must retain the above copyright
+  notice, this list of conditions and the following disclaimer.
+  2. Redistributions in binary form must reproduce the above copyright
+  notice, this list of conditions and the following disclaimer in the
+  documentation and/or other materials provided with the distribution.
+  3. Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived
+  from this software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+  FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+  COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  POSSIBILITY OF SUCH DAMAGE.
+
+  The above license is used as a license under copyright only.  Please
+  reference the OMA IPR Policy for patent licensing terms:
+  http://www.openmobilealliance.org/ipr.html
+-->
+
+   <xs:schema targetNamespace="urn:oma:xml:xdm:resource-list:oma-uriusage"
+       xmlns="urn:oma:xml:xdm:resource-list:oma-uriusage"
+       xmlns:xs="http://www.w3.org/2001/XMLSchema"
+       elementFormDefault="qualified">
+
+<!-- OMA specific extension: "uriusage" child elements -->
+        <xs:element name="uriusages">
+          <xs:complexType>
+             <xs:sequence>
+               <xs:element ref="uriusage" minOccurs="0" maxOccurs="unbounded"/>
+           </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="uriusage" abstract="true"/>
+</xs:schema>

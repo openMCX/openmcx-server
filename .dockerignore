@@ -1,0 +1,10 @@
+.git
+artifacts
+build
+build-*
+.superpowers
+.cache/src
+.cache/bin
+config/generated
+**/__pycache__
+.cache/toolchains

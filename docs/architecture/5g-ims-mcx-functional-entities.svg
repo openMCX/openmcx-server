@@ -1,0 +1,283 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3400" height="2420" viewBox="0 0 3400 2420" role="img" aria-labelledby="title desc">
+<title id="title">MCX over IMS and 5G: three-column functional architecture</title>
+<desc id="desc">The left column is a UE containing MCX, IMS and 5G clients. The middle column is separate 5G NG-RAN access. The right column stacks MCX above IMS above 5G Core. It shows the MC service server to PCF N5 policy path and two location sources: UE LMC reports to MCX LMS, and LMS obtains operator location through NEF, GMLC, AMF and LMF.</desc>
+<rect x="0" y="0" width="3400" height="2420" rx="0" fill="#f5f8fc" stroke="none" stroke-width="1"/>
+<rect x="0" y="0" width="3400" height="112" rx="0" fill="#12243c" stroke="none" stroke-width="1"/>
+<text x="55" y="70" fill="#fff" font-family="DejaVu Sans, Arial, sans-serif" font-size="43" font-weight="800" text-anchor="start">MCX / IMS / 5G functional architecture</text>
+<text x="2110" y="68" fill="#dbeafb" font-family="DejaVu Sans, Arial, sans-serif" font-size="23" font-weight="500" text-anchor="start">Three columns  ·  5G QoS and named reference points</text>
+<rect x="50" y="145" width="415" height="2170" rx="23" fill="#fff" stroke="#879db5" stroke-width="2.3"/>
+<rect x="495" y="145" width="405" height="2170" rx="23" fill="#f3fbf8" stroke="#77ae95" stroke-width="2.3"/>
+<rect x="930" y="145" width="2420" height="780" rx="23" fill="#fff2e8" stroke="#d3935e" stroke-width="2.2"/>
+<rect x="930" y="950" width="2420" height="360" rx="23" fill="#f2ecff" stroke="#a382cf" stroke-width="2.2"/>
+<rect x="930" y="1335" width="2420" height="980" rx="23" fill="#eaf3ff" stroke="#83a7d5" stroke-width="2.2"/>
+<rect x="50" y="145" width="415" height="88" rx="22" fill="#243952" stroke="none" stroke-width="1"/>
+<rect x="50" y="207" width="415" height="26" rx="0" fill="#243952" stroke="none" stroke-width="1"/>
+<text x="77" y="201" fill="#fff" font-family="DejaVu Sans, Arial, sans-serif" font-size="29" font-weight="800" text-anchor="start">UE / MCX DEVICE</text>
+<rect x="495" y="145" width="405" height="88" rx="22" fill="#177659" stroke="none" stroke-width="1"/>
+<rect x="495" y="207" width="405" height="26" rx="0" fill="#177659" stroke="none" stroke-width="1"/>
+<text x="525" y="201" fill="#fff" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="800" text-anchor="start">5G ACCESS / NG-RAN</text>
+<text x="965" y="206" fill="#bd5b18" font-family="DejaVu Sans, Arial, sans-serif" font-size="38" font-weight="800" text-anchor="start">MCX</text>
+<text x="1140" y="205" fill="#7a5d4b" font-family="DejaVu Sans, Arial, sans-serif" font-size="23" font-weight="500" text-anchor="start">Mission-critical service and common-service functions</text>
+<text x="965" y="1011" fill="#7546b6" font-family="DejaVu Sans, Arial, sans-serif" font-size="38" font-weight="800" text-anchor="start">IMS</text>
+<text x="1140" y="1010" fill="#66577a" font-family="DejaVu Sans, Arial, sans-serif" font-size="23" font-weight="500" text-anchor="start">SIP registration and service routing</text>
+<text x="965" y="1395" fill="#2362ad" font-family="DejaVu Sans, Arial, sans-serif" font-size="38" font-weight="800" text-anchor="start">5G CORE</text>
+<text x="1210" y="1394" fill="#526b8c" font-family="DejaVu Sans, Arial, sans-serif" font-size="23" font-weight="500" text-anchor="start">Access control, policy, QoS flows and user-plane delivery</text>
+<rect x="72" y="267" width="371" height="630" rx="17" fill="#fff8f2" stroke="#cc8e5e" stroke-width="2"/>
+<text x="93" y="316" fill="#ad5017" font-family="DejaVu Sans, Arial, sans-serif" font-size="29" font-weight="800" text-anchor="start">MCX CLIENT</text>
+<text x="93" y="357" fill="#24364d" font-family="DejaVu Sans, Arial, sans-serif" font-size="20" font-weight="650" text-anchor="start">MCPTT · MCData · MCVideo</text>
+<line x1="93" y1="379" x2="421" y2="379" stroke="#ecc9ae" stroke-width="2" stroke-linecap="round"/>
+<text x="93" y="418" fill="#25364a" font-family="DejaVu Sans, Arial, sans-serif" font-size="19" font-weight="650" text-anchor="start">SIP signalling UA</text>
+<text x="93" y="453" fill="#25364a" font-family="DejaVu Sans, Arial, sans-serif" font-size="19" font-weight="650" text-anchor="start">HTTP + common clients</text>
+<text x="93" y="489" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">IdM · group · config</text>
+<text x="93" y="522" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">key · location</text>
+<rect x="93" y="581" width="329" height="129" rx="11" fill="#fff" stroke="#d49c70" stroke-width="1.5"/>
+<text x="111" y="621" fill="#ad5017" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="700" text-anchor="start">PTT / data / video media</text>
+<text x="111" y="657" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">and floor / tx control</text>
+<rect x="93" y="730" width="329" height="96" rx="14" fill="#fff" stroke="#d49c70" stroke-width="2"/>
+<text x="112" y="769" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="19" font-weight="750" text-anchor="start">LMC / location</text>
+<text x="112" y="800" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">UE reports to LMS (CSC-14)</text>
+<text x="93" y="865" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">MCX identity + group data</text>
+<rect x="72" y="975" width="371" height="410" rx="17" fill="#f8f5ff" stroke="#aa8bcc" stroke-width="2"/>
+<text x="93" y="1024" fill="#7546b6" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="800" text-anchor="start">IMS USER AGENT</text>
+<text x="93" y="1067" fill="#25364a" font-family="DejaVu Sans, Arial, sans-serif" font-size="19" font-weight="650" text-anchor="start">SIP registration</text>
+<text x="93" y="1102" fill="#25364a" font-family="DejaVu Sans, Arial, sans-serif" font-size="19" font-weight="650" text-anchor="start">Session signalling</text>
+<text x="93" y="1173" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">IMS public/private IDs</text>
+<rect x="72" y="1485" width="371" height="710" rx="17" fill="#f3f8ff" stroke="#8daed7" stroke-width="2"/>
+<text x="93" y="1536" fill="#2362ad" font-family="DejaVu Sans, Arial, sans-serif" font-size="29" font-weight="800" text-anchor="start">5G UE</text>
+<text x="93" y="1579" fill="#25364a" font-family="DejaVu Sans, Arial, sans-serif" font-size="19" font-weight="650" text-anchor="start">NAS · PDU session</text>
+<text x="93" y="1615" fill="#25364a" font-family="DejaVu Sans, Arial, sans-serif" font-size="19" font-weight="650" text-anchor="start">QoS rules / QFI</text>
+<text x="93" y="1651" fill="#25364a" font-family="DejaVu Sans, Arial, sans-serif" font-size="19" font-weight="650" text-anchor="start">NR radio modem</text>
+<rect x="93" y="1910" width="329" height="190" rx="12" fill="#fff" stroke="#91b2dc" stroke-width="1.5"/>
+<text x="111" y="1950" fill="#2362ad" font-family="DejaVu Sans, Arial, sans-serif" font-size="19" font-weight="700" text-anchor="start">Service QoS flows</text>
+<text x="111" y="1984" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">UL packets mapped by UE</text>
+<text x="111" y="2016" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">DL packets from gNB</text>
+<text x="111" y="2048" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">over radio bearers</text>
+<text x="523" y="288" fill="#17664d" font-family="DejaVu Sans, Arial, sans-serif" font-size="20" font-weight="700" text-anchor="start">Packets cross this access</text>
+<text x="523" y="322" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="19" font-weight="500" text-anchor="start">using a 5G PDU session.</text>
+<rect x="520" y="535" width="355" height="160" rx="13" fill="#fff" stroke="#91c6ae" stroke-width="1.6"/>
+<text x="542" y="579" fill="#17664d" font-family="DejaVu Sans, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="start">MCX application traffic</text>
+<text x="542" y="615" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">Logical UE ↔ MCX</text>
+<text x="542" y="650" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">endpoints over 5G IP</text>
+<rect x="520" y="1225" width="355" height="145" rx="13" fill="#fff" stroke="#91c6ae" stroke-width="1.6"/>
+<text x="542" y="1268" fill="#17664d" font-family="DejaVu Sans, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="start">IMS signalling</text>
+<text x="542" y="1305" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">Gm is end-to-end SIP</text>
+<text x="542" y="1338" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">over 5G transport</text>
+<rect x="520" y="1585" width="355" height="137" rx="13" fill="#fff" stroke="#91c6ae" stroke-width="1.6"/>
+<text x="542" y="1625" fill="#17664d" font-family="DejaVu Sans, Arial, sans-serif" font-size="21" font-weight="700" text-anchor="start">5G radio access</text>
+<text x="542" y="1660" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">N2 control · N3 user</text>
+<rect x="555" y="1740" width="310" height="155" rx="14" fill="#fff" stroke="#70b28f" stroke-width="2"/>
+<text x="574" y="1779" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="28" font-weight="750" text-anchor="start">gNB</text>
+<text x="574" y="1810" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Schedule admitted QoS flows</text>
+<rect x="520" y="1920" width="355" height="155" rx="13" fill="#fff" stroke="#91c6ae" stroke-width="1.6"/>
+<text x="542" y="1960" fill="#17664d" font-family="DejaVu Sans, Arial, sans-serif" font-size="20" font-weight="700" text-anchor="start">Optional gNB split</text>
+<text x="542" y="1996" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">F1: CU ↔ DU</text>
+<text x="542" y="2030" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">E1: CU-CP ↔ CU-UP</text>
+<rect x="985" y="258" width="1025" height="442" rx="17" fill="#fff" stroke="#ca8253" stroke-width="2"/>
+<text x="1012" y="304" fill="#b65517" font-family="DejaVu Sans, Arial, sans-serif" font-size="28" font-weight="800" text-anchor="start">MC SERVICE SERVER (MCX)</text>
+<text x="1012" y="337" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">Application control, floor / transmission control and distribution</text>
+<rect x="1010" y="374" width="314" height="110" rx="14" fill="#fff8f2" stroke="#d9a079" stroke-width="2"/>
+<text x="1029" y="413" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="24" font-weight="750" text-anchor="start">MCPTT</text>
+<text x="1029" y="444" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Call + floor</text>
+<rect x="1338" y="374" width="314" height="110" rx="14" fill="#fff8f2" stroke="#d9a079" stroke-width="2"/>
+<text x="1357" y="413" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="24" font-weight="750" text-anchor="start">MCData</text>
+<text x="1357" y="444" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">SDS + FD + streams</text>
+<rect x="1666" y="374" width="314" height="110" rx="14" fill="#fff8f2" stroke="#d9a079" stroke-width="2"/>
+<text x="1685" y="413" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="24" font-weight="750" text-anchor="start">MCVideo</text>
+<text x="1685" y="444" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Video + tx control</text>
+<rect x="1010" y="531" width="615" height="111" rx="14" fill="#fff8f2" stroke="#d9a079" stroke-width="2"/>
+<text x="1029" y="570" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="750" text-anchor="start">Media + floor / transmission</text>
+<text x="1029" y="601" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">MCPTT-4/7 · MCVideo-4/7</text>
+<rect x="1666" y="531" width="314" height="111" rx="14" fill="#ffe6d1" stroke="#bc7541" stroke-width="2"/>
+<text x="1685" y="570" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="750" text-anchor="start">MCX SIP AS</text>
+<text x="1685" y="601" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Service SIP trigger</text>
+<text x="1012" y="678" fill="#9e4d17" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700" text-anchor="start">AF role on N5: MCPTT-5 · MCVideo-5 · MCData-5</text>
+<rect x="2040" y="258" width="1265" height="442" rx="17" fill="#fff" stroke="#ca8253" stroke-width="2"/>
+<text x="2065" y="304" fill="#b65517" font-family="DejaVu Sans, Arial, sans-serif" font-size="28" font-weight="800" text-anchor="start">COMMON SERVICES</text>
+<rect x="2063" y="347" width="390" height="92" rx="14" fill="#fff8f2" stroke="#d9a079" stroke-width="2"/>
+<text x="2082" y="386" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="750" text-anchor="start">IdMS</text>
+<rect x="2478" y="347" width="390" height="92" rx="14" fill="#fff8f2" stroke="#d9a079" stroke-width="2"/>
+<text x="2497" y="386" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="750" text-anchor="start">CMS</text>
+<rect x="2893" y="347" width="390" height="92" rx="14" fill="#fff8f2" stroke="#d9a079" stroke-width="2"/>
+<text x="2912" y="386" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="750" text-anchor="start">GMS</text>
+<rect x="2063" y="465" width="390" height="92" rx="14" fill="#fff8f2" stroke="#d9a079" stroke-width="2"/>
+<text x="2082" y="504" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="750" text-anchor="start">KMS</text>
+<rect x="2478" y="465" width="390" height="92" rx="14" fill="#fff8f2" stroke="#d9a079" stroke-width="2"/>
+<text x="2497" y="504" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="750" text-anchor="start">LMS</text>
+<rect x="2893" y="465" width="390" height="92" rx="14" fill="#fff8f2" stroke="#d9a079" stroke-width="2"/>
+<text x="2912" y="504" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="750" text-anchor="start">User DB</text>
+<text x="2065" y="675" fill="#9e4d17" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700" text-anchor="start">CSC-1/2/4/8/14 · CSC-3/5/9/15 · CSC-13</text>
+<path d="M 2010 620 H 2673 V 557" fill="none" stroke="#b65517" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 7"/>
+<rect x="2153.2" y="576" width="273.6" height="38" rx="19" fill="#fff" stroke="#b65517" stroke-width="1.6"/>
+<text x="2290" y="601" fill="#b65517" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">CSC-15 / MC server ↔ LMS</text>
+<line x1="443" y1="470" x2="985" y2="470" stroke="#c26924" stroke-width="3" stroke-linecap="round" stroke-dasharray="10 7"/>
+<rect x="533.875" y="416" width="404.25" height="38" rx="19" fill="#fff" stroke="#b65517" stroke-width="1.6"/>
+<text x="736" y="441" fill="#b65517" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" font-weight="750" text-anchor="middle">MCPTT-1 · MCData-SDS-1/FD-1 · MCVideo-1</text>
+<line x1="443" y1="801" x2="985" y2="801" stroke="#c26924" stroke-width="3" stroke-linecap="round" stroke-dasharray="10 7"/>
+<rect x="684.85" y="746" width="90.3" height="38" rx="19" fill="#fff" stroke="#b65517" stroke-width="1.6"/>
+<text x="730" y="771" fill="#b65517" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="750" text-anchor="middle">HTTP-1</text>
+<rect x="985" y="751" width="440" height="105" rx="14" fill="#fff" stroke="#ca8253" stroke-width="2"/>
+<text x="1004" y="790" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="750" text-anchor="start">HTTP proxy</text>
+<text x="1004" y="821" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Proxied common-service requests</text>
+<path d="M 1425 801 H 2450 V 700" fill="none" stroke="#c26924" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="10 7"/>
+<rect x="1729.85" y="746" width="90.3" height="38" rx="19" fill="#fff" stroke="#b65517" stroke-width="1.6"/>
+<text x="1775" y="771" fill="#b65517" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="750" text-anchor="middle">HTTP-2</text>
+<text x="1475" y="840" fill="#9e4d17" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="650" text-anchor="start">UE clients ↔ IdMS / GMS / CMS / KMS / LMS</text>
+<rect x="624.4" y="815" width="211.20000000000002" height="38" rx="19" fill="#fff" stroke="#0b7a81" stroke-width="1.6"/>
+<text x="730" y="840" fill="#0b7a81" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">CSC-14 / LMC → LMS</text>
+<line x1="2010" y1="468" x2="2040" y2="468" stroke="#c26924" stroke-width="3" stroke-linecap="round" stroke-dasharray="9 6"/>
+<text x="1630" y="896" fill="#9e4d17" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="650" text-anchor="start">Server ↔ common services: CSC-3/5/9/15   ·   CMS ↔ user DB: CSC-13</text>
+<path d="M 1480 700 V 728 H 3315 V 1940 H 3240" fill="none" stroke="#12805a" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="13 7"/>
+<rect x="2690.925" y="707" width="278.15" height="38" rx="19" fill="#fff" stroke="#12805a" stroke-width="1.6"/>
+<text x="2830" y="732" fill="#12805a" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="750" text-anchor="middle">MCX media / data via DN</text>
+<text x="3294" y="1345" fill="#12805a" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700" text-anchor="end">IP user plane</text>
+<path d="M 2810 557 V 775 H 3270 V 2200 H 3210" fill="none" stroke="#0b7a81" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="11 7"/>
+<rect x="2953.025" y="756" width="233.95000000000002" height="38" rx="19" fill="#fff" stroke="#0b7a81" stroke-width="1.6"/>
+<text x="3070" y="781" fill="#0b7a81" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="750" text-anchor="middle">N33 / Nnef location</text>
+<rect x="1040" y="1035" width="300" height="145" rx="14" fill="#fff" stroke="#ab89ce" stroke-width="2"/>
+<text x="1059" y="1074" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">P-CSCF</text>
+<text x="1059" y="1105" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">UE-facing SIP proxy</text>
+<rect x="1460" y="1035" width="300" height="145" rx="14" fill="#fff" stroke="#ab89ce" stroke-width="2"/>
+<text x="1479" y="1074" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">I-CSCF</text>
+<text x="1479" y="1105" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">CSCF selection</text>
+<rect x="1880" y="1035" width="300" height="145" rx="14" fill="#fff" stroke="#ab89ce" stroke-width="2"/>
+<text x="1899" y="1074" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">S-CSCF</text>
+<text x="1899" y="1105" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Service triggering</text>
+<rect x="2360" y="1035" width="300" height="145" rx="14" fill="#fff" stroke="#ab89ce" stroke-width="2"/>
+<text x="2379" y="1074" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">HSS</text>
+<text x="2379" y="1105" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">IMS subscriber data</text>
+<line x1="443" y1="1105" x2="1040" y2="1105" stroke="#7546b6" stroke-width="3" stroke-linecap="round" stroke-dasharray="11 7"/>
+<rect x="669.5" y="1049" width="141.0" height="38" rx="19" fill="#fff" stroke="#7546b6" stroke-width="1.6"/>
+<text x="740" y="1074" fill="#7546b6" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="750" text-anchor="middle">Gm / SIP-1</text>
+<line x1="1340" y1="1105" x2="1460" y2="1105" stroke="#7546b6" stroke-width="3" stroke-linecap="round"/>
+<rect x="1369.0" y="1050" width="62" height="38" rx="19" fill="#fff" stroke="#7546b6" stroke-width="1.6"/>
+<text x="1400" y="1075" fill="#7546b6" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="750" text-anchor="middle">Mw</text>
+<line x1="1760" y1="1105" x2="1880" y2="1105" stroke="#7546b6" stroke-width="3" stroke-linecap="round"/>
+<rect x="1789.0" y="1050" width="62" height="38" rx="19" fill="#fff" stroke="#7546b6" stroke-width="1.6"/>
+<text x="1820" y="1075" fill="#7546b6" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="750" text-anchor="middle">Mw</text>
+<path d="M 1610 1180 V 1245 H 2510 V 1180" fill="none" stroke="#7546b6" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 2030 1180 V 1245" fill="none" stroke="#7546b6" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="2154.4" y="1226" width="211.20000000000002" height="38" rx="19" fill="#fff" stroke="#7546b6" stroke-width="1.6"/>
+<text x="2260" y="1251" fill="#7546b6" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">Cx: I/S-CSCF ↔ HSS</text>
+<path d="M 2030 1035 V 940 H 1823 V 642" fill="none" stroke="#7546b6" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="10 7"/>
+<rect x="1947.225" y="928" width="145.55" height="38" rx="19" fill="#fff" stroke="#7546b6" stroke-width="1.6"/>
+<text x="2020" y="953" fill="#7546b6" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="750" text-anchor="middle">ISC / SIP-2</text>
+<path d="M 1610 1035 V 1005 H 1725 V 642" fill="none" stroke="#ad8bd6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="6 8"/>
+<rect x="1614.625" y="989" width="150.75" height="38" rx="19" fill="#fff" stroke="#7546b6" stroke-width="1.6"/>
+<text x="1690" y="1014" fill="#7546b6" font-family="DejaVu Sans, Arial, sans-serif" font-size="15" font-weight="750" text-anchor="middle">Ma (optional)</text>
+<text x="1000" y="1285" fill="#66577a" font-family="DejaVu Sans, Arial, sans-serif" font-size="19" font-weight="500" text-anchor="start">IMS handles SIP. MCX common-service HTTP and media use 5G IP connectivity without traversing the SIP core.</text>
+<path d="M 300 1740 V 1440 H 1245 V 1545" fill="none" stroke="#4b79a6" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="11 7"/>
+<line x1="443" y1="1817" x2="555" y2="1817" stroke="#12805a" stroke-width="4" stroke-linecap="round"/>
+<path d="M 865 1790 H 1000 V 1612 H 1090" fill="none" stroke="#2362ad" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 865 1860 H 915 V 2035 H 2265 V 2000" fill="none" stroke="#12805a" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="1370" y1="1610" x2="1450" y2="1610" stroke="#2362ad" stroke-width="3" stroke-linecap="round"/>
+<line x1="1740" y1="1610" x2="1820" y2="1610" stroke="#2362ad" stroke-width="3" stroke-linecap="round"/>
+<line x1="2110" y1="1610" x2="2190" y2="1610" stroke="#2362ad" stroke-width="3" stroke-linecap="round"/>
+<path d="M 1240 1545 V 1515 H 1965 V 1545" fill="none" stroke="#5d89b6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1230 1680 V 1775 H 1195 V 1880" fill="none" stroke="#2362ad" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1370 1650 H 1415 V 1750 H 1750 V 1850" fill="none" stroke="#2362ad" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1955 1680 V 1765 H 1750 V 1850" fill="none" stroke="#5d89b6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1740 1850 V 1795 H 3000 V 1770" fill="none" stroke="#b24663" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="1950" y1="1920" x2="2110" y2="1920" stroke="#2362ad" stroke-width="3.5" stroke-linecap="round"/>
+<line x1="2450" y1="1920" x2="2790" y2="1920" stroke="#12805a" stroke-width="4" stroke-linecap="round"/>
+<path d="M 1990 700 V 711 H 2725 V 1528 H 3030 V 1545" fill="none" stroke="#b24663" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="14 7"/>
+<line x1="2820" y1="2200" x2="2260" y2="2200" stroke="#0b7a81" stroke-width="3.5" stroke-linecap="round"/>
+<path d="M 1860 2200 H 1435 V 1570 H 1370" fill="none" stroke="#0b7a81" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1370 1680 H 1400 V 2240 H 1340" fill="none" stroke="#0b7a81" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="1090" y="1545" width="280" height="135" rx="14" fill="#fff" stroke="#86aad3" stroke-width="2"/>
+<text x="1109" y="1584" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">AMF</text>
+<text x="1109" y="1615" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Access / mobility</text>
+<rect x="1450" y="1545" width="290" height="135" rx="14" fill="#fff" stroke="#86aad3" stroke-width="2"/>
+<text x="1469" y="1584" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">AUSF</text>
+<text x="1469" y="1615" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Authentication</text>
+<rect x="1820" y="1545" width="290" height="135" rx="14" fill="#fff" stroke="#86aad3" stroke-width="2"/>
+<text x="1839" y="1584" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">UDM</text>
+<text x="1839" y="1615" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Subscription</text>
+<rect x="2190" y="1545" width="290" height="135" rx="14" fill="#fff" stroke="#86aad3" stroke-width="2"/>
+<text x="2209" y="1584" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">UDR</text>
+<text x="2209" y="1615" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Data repository</text>
+<rect x="2810" y="1365" width="430" height="142" rx="12" fill="#f8fbff" stroke="#86aad3" stroke-width="1.7"/>
+<text x="2830" y="1400" fill="#2362ad" font-family="DejaVu Sans, Arial, sans-serif" font-size="20" font-weight="750" text-anchor="start">MCX 5QI examples</text>
+<text x="2830" y="1435" fill="#25364a" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="650" text-anchor="start">PTT 65  ·  video RT 67</text>
+<text x="2830" y="1465" fill="#25364a" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="650" text-anchor="start">video NRT 4  ·  data 70 opt.</text>
+<text x="2830" y="1495" fill="#25364a" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="650" text-anchor="start">SIP 69  ·  HTTP 8 or better</text>
+<rect x="2810" y="1545" width="430" height="225" rx="14" fill="#fff" stroke="#86aad3" stroke-width="2"/>
+<text x="2830" y="1585" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">PCF</text>
+<text x="2830" y="1621" fill="#2362ad" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="700" text-anchor="start">Npcf_PolicyAuthorization</text>
+<text x="2830" y="1653" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">fDescs: flow descriptions</text>
+<text x="2830" y="1683" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">afAppId: application ID</text>
+<text x="2830" y="1714" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="650" text-anchor="start">Policy → authorized 5QI / ARP</text>
+<text x="2830" y="1744" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">PCC rule → SMF over N7</text>
+<rect x="1040" y="1880" width="310" height="120" rx="14" fill="#fff" stroke="#86aad3" stroke-width="2"/>
+<text x="1059" y="1919" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="25" font-weight="750" text-anchor="start">NSSF</text>
+<text x="1059" y="1950" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Slice selection</text>
+<rect x="1590" y="1850" width="360" height="150" rx="14" fill="#fff" stroke="#86aad3" stroke-width="2"/>
+<text x="1609" y="1889" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">SMF</text>
+<text x="1609" y="1920" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">PDU session / QoS rules</text>
+<rect x="2110" y="1850" width="340" height="150" rx="14" fill="#fff" stroke="#86aad3" stroke-width="2"/>
+<text x="2129" y="1889" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">UPF</text>
+<text x="2129" y="1920" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Enforce MCX flow rules</text>
+<rect x="2790" y="1850" width="450" height="150" rx="14" fill="#fff" stroke="#86aad3" stroke-width="2"/>
+<text x="2809" y="1889" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">DN / DNN</text>
+<text x="2809" y="1920" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Reachable IMS + MCX networks</text>
+<text x="1000" y="2085" fill="#0b7a81" font-family="DejaVu Sans, Arial, sans-serif" font-size="23" font-weight="800" text-anchor="start">5GS LOCATION SERVICES</text>
+<text x="1580" y="2085" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">GMLC/LMF positioning example; NEF may use AMF for cell-level location.</text>
+<rect x="1000" y="2135" width="340" height="135" rx="14" fill="#fff" stroke="#86aad3" stroke-width="2"/>
+<text x="1019" y="2174" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">LMF</text>
+<text x="1019" y="2205" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Determines UE position</text>
+<text x="1019" y="2245" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">LPP / NRPPa via AMF</text>
+<rect x="1860" y="2135" width="400" height="135" rx="14" fill="#fff" stroke="#86aad3" stroke-width="2"/>
+<text x="1879" y="2174" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">GMLC</text>
+<text x="1879" y="2205" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">LCS gateway + privacy</text>
+<text x="1879" y="2245" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Routes authorized location</text>
+<rect x="2820" y="2135" width="390" height="135" rx="14" fill="#fff" stroke="#86aad3" stroke-width="2"/>
+<text x="2839" y="2174" fill="#182b43" font-family="DejaVu Sans, Arial, sans-serif" font-size="27" font-weight="750" text-anchor="start">NEF</text>
+<text x="2839" y="2205" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">N33 exposure to MCX LMS</text>
+<text x="2839" y="2245" fill="#52657c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="500" text-anchor="start">Location API + authorization</text>
+<rect x="451.4" y="1758" width="107.2" height="38" rx="19" fill="#fff" stroke="#12805a" stroke-width="1.6"/>
+<text x="505" y="1783" fill="#12805a" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">Uu / DRB</text>
+<rect x="708.8" y="1421" width="112.4" height="38" rx="19" fill="#fff" stroke="#4b79a6" stroke-width="1.6"/>
+<text x="765" y="1446" fill="#4b79a6" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="750" text-anchor="middle">N1 / NAS</text>
+<rect x="879.8" y="1559" width="190.4" height="38" rx="19" fill="#fff" stroke="#2362ad" stroke-width="1.6"/>
+<text x="975" y="1584" fill="#2362ad" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">N2 / QoS + NRPPa</text>
+<rect x="1643.8" y="2016" width="112.4" height="38" rx="19" fill="#fff" stroke="#12805a" stroke-width="1.6"/>
+<text x="1700" y="2041" fill="#12805a" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="750" text-anchor="middle">N3 / QFI</text>
+<rect x="1379.0" y="1562" width="62" height="38" rx="19" fill="#fff" stroke="#2362ad" stroke-width="1.6"/>
+<text x="1410" y="1587" fill="#2362ad" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">N12</text>
+<rect x="1749.0" y="1562" width="62" height="38" rx="19" fill="#fff" stroke="#2362ad" stroke-width="1.6"/>
+<text x="1780" y="1587" fill="#2362ad" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">N13</text>
+<rect x="2119.0" y="1562" width="62" height="38" rx="19" fill="#fff" stroke="#2362ad" stroke-width="1.6"/>
+<text x="2150" y="1587" fill="#2362ad" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">N35</text>
+<rect x="1609.0" y="1496" width="62" height="38" rx="19" fill="#fff" stroke="#5d89b6" stroke-width="1.6"/>
+<text x="1640" y="1521" fill="#5d89b6" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">N8</text>
+<rect x="1219.0" y="1754" width="62" height="38" rx="19" fill="#fff" stroke="#2362ad" stroke-width="1.6"/>
+<text x="1250" y="1779" fill="#2362ad" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">N22</text>
+<rect x="1499.0" y="1731" width="62" height="38" rx="19" fill="#fff" stroke="#2362ad" stroke-width="1.6"/>
+<text x="1530" y="1756" fill="#2362ad" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">N11</text>
+<rect x="1909.0" y="1746" width="62" height="38" rx="19" fill="#fff" stroke="#5d89b6" stroke-width="1.6"/>
+<text x="1940" y="1771" fill="#5d89b6" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">N10</text>
+<rect x="2440.65" y="1776" width="178.70000000000002" height="38" rx="19" fill="#fff" stroke="#b24663" stroke-width="1.6"/>
+<text x="2530" y="1801" fill="#b24663" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="750" text-anchor="middle">N7 / PCC rules</text>
+<rect x="1945.2" y="1861" width="169.6" height="38" rx="19" fill="#fff" stroke="#2362ad" stroke-width="1.6"/>
+<text x="2030" y="1886" fill="#2362ad" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">N4 / UPF rules</text>
+<rect x="2530.0" y="1861" width="180.0" height="38" rx="19" fill="#fff" stroke="#12805a" stroke-width="1.6"/>
+<text x="2620" y="1886" fill="#12805a" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">N6 / IP traffic</text>
+<rect x="2547.25" y="999" width="355.5" height="38" rx="19" fill="#fff" stroke="#b24663" stroke-width="1.6"/>
+<text x="2725" y="1024" fill="#b24663" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="750" text-anchor="middle">N5 / MC server (AF role) ↔ PCF</text>
+<text x="2780" y="1265" fill="#9c405c" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="650" text-anchor="start">Direct policy path; no IMS SIP hop</text>
+<rect x="2465.8" y="2141" width="138.4" height="38" rx="19" fill="#fff" stroke="#0b7a81" stroke-width="1.6"/>
+<text x="2535" y="2166" fill="#0b7a81" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">NL5 / Ngmlc</text>
+<rect x="1571.0" y="2141" width="128.0" height="38" rx="19" fill="#fff" stroke="#0b7a81" stroke-width="1.6"/>
+<text x="1635" y="2166" fill="#0b7a81" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">NL2 / Namf</text>
+<rect x="1336.0" y="2066" width="128.0" height="38" rx="19" fill="#fff" stroke="#0b7a81" stroke-width="1.6"/>
+<text x="1400" y="2091" fill="#0b7a81" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="750" text-anchor="middle">NL1 / Nlmf</text>
+<text x="1000" y="2300" fill="#4d6b8f" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="start">Support: NRF discovery (Nnrf) · NEF exposure (N33 for LCS or indirect QoS) · SCP optional</text>
+<line x1="65" y1="2380" x2="150" y2="2380" stroke="#b24663" stroke-width="4" stroke-linecap="round" stroke-dasharray="13 7"/>
+<text x="165" y="2387" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="650" text-anchor="start">QoS policy / control</text>
+<line x1="525" y1="2380" x2="610" y2="2380" stroke="#12805a" stroke-width="4" stroke-linecap="round" stroke-dasharray="13 7"/>
+<text x="625" y="2387" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="650" text-anchor="start">Media / IP user plane</text>
+<line x1="1035" y1="2380" x2="1120" y2="2380" stroke="#7546b6" stroke-width="4" stroke-linecap="round" stroke-dasharray="13 7"/>
+<text x="1135" y="2387" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="650" text-anchor="start">Logical SIP / app reference point</text>
+<line x1="1770" y1="2380" x2="1855" y2="2380" stroke="#0b7a81" stroke-width="4" stroke-linecap="round" stroke-dasharray="11 7"/>
+<text x="1870" y="2387" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="650" text-anchor="start">5GS location service</text>
+<text x="3335" y="2387" fill="#52657b" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="500" text-anchor="end">5QI alone does not guarantee bit rate; admitted GBR flows provide GFBR.</text>
+</svg>

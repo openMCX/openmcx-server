@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Check the code against docs/CODING_STYLE.md in the openmcx-lint image (nothing on the host):
+# clang-tidy (C++, with the build's compile commands), golangci-lint (Go), ruff and
+# tools/check-names.py (Python). Prints the findings and a count per check.
+#   tools/lint            report (exit 0): the baseline while the refactoring is under way
+#   tools/lint --strict   fail on any finding (once the code is clean)
+#   tools/lint cpp|go|py  one language only
+set -euo pipefail
+cd "$(dirname "$0")/.."
+strict=0; only=all
+for arg in "$@"; do case "$arg" in --strict) strict=1 ;; cpp|go|py) only=$arg ;; *) echo "usage: tools/lint [--strict] [cpp|go|py]" >&2; exit 2 ;; esac; done
+mkdir -p artifacts/lint
+# File lists from the host's git (inside the container a worktree's .git is not available).
+git ls-files 'src/*.cpp' > artifacts/lint/tidy.list
+git ls-files '*.py' > artifacts/lint/py.list
+docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e GOCACHE=/tmp/go-cache -e GOFLAGS=-mod=vendor \
+  -v "$PWD:/src" -w /src openmcx-lint:0.1 bash -c '
+set -uo pipefail
+only=$1
+out=artifacts/lint
+if [ "$only" = all ] || [ "$only" = cpp ]; then
+  cmake -S . -B /tmp/lint-build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Debug >/dev/null
+  files=$(cat $out/tidy.list)
+  run-clang-tidy -quiet -p /tmp/lint-build $files > $out/cpp.txt 2>/dev/null
+  echo "C++ (clang-tidy): $(grep -c "warning:" $out/cpp.txt) findings"
+  grep -o "\[[a-z-]*\]$" $out/cpp.txt | sort | uniq -c | sort -rn | head -12
+fi
+if [ "$only" = all ] || [ "$only" = go ]; then
+  (cd services && golangci-lint run --max-issues-per-linter 0 --max-same-issues 0 --output.text.path stdout ./... > ../$out/go.txt 2>&1)
+  echo "Go (golangci-lint): $(grep -cE "^[^ ].*\.go:[0-9]+:" $out/go.txt) findings"
+  grep -oE "\((varnamelen|funlen|gocognit|govet|staticcheck|errcheck)\)$" $out/go.txt | sort | uniq -c | sort -rn
+fi
+if [ "$only" = all ] || [ "$only" = py ]; then
+  py=$(cat $out/py.list)
+  ruff check --quiet --output-format concise $py > $out/py.txt 2>&1
+  echo "Python (ruff): $(grep -c ":[0-9]*:[0-9]*:" $out/py.txt) findings"
+  python3 tools/check-names.py $py > $out/py-names.txt; tail -1 $out/py-names.txt | sed "s/^/Python: /"
+fi
+' lint "$only"
+echo "details: artifacts/lint/"
+if [ "$strict" = 1 ]; then
+  ! grep -qs "warning:" artifacts/lint/cpp.txt && ! grep -qsE "\.go:[0-9]+:" artifacts/lint/go.txt \
+    && ! grep -qs ":[0-9]*:[0-9]*:" artifacts/lint/py.txt && ! grep -qs "^[^0].* single-letter names" artifacts/lint/py-names.txt
+fi

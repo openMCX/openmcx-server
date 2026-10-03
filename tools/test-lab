@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+MCX_TEST_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$MCX_TEST_ROOT"
+mkdir -p artifacts/integration
+MCX_TRACE_NAME=mcptt
+MCX_WIRE_NAME=wire-results
+MCX_DEBUG=false
+if [[ "${1:-}" == --disable-tls ]]; then
+  MCX_TRACE_NAME=mcptt-debug
+  MCX_WIRE_NAME=wire-debug-results
+  MCX_DEBUG=true
+elif [[ $# -gt 0 ]]; then
+  echo 'Usage: tools/test-lab [--disable-tls]' >&2; exit 2
+fi
+MCX_CAPTURE_CONTAINER=openmcx-evidence-capture-$$
+MCX_SIP_CAPTURE_CONTAINER=openmcx-sip-capture-$$
+MCX_SERVER_CONTAINER=$(tools/mcx compose ps -q mcptt-server)
+test -n "$MCX_SERVER_CONTAINER"
+cleanup_capture() {
+  docker stop -t 3 "$MCX_CAPTURE_CONTAINER" >/dev/null 2>&1 || true
+  if [[ -n "${MCX_CAPTURE_PID:-}" ]]; then wait "$MCX_CAPTURE_PID" || true; fi
+  chmod 600 "artifacts/integration/$MCX_TRACE_NAME.pcap"
+  if $MCX_DEBUG; then
+    docker stop -t 3 "$MCX_SIP_CAPTURE_CONTAINER" >/dev/null 2>&1 || true
+    if [[ -n "${MCX_SIP_CAPTURE_PID:-}" ]]; then wait "$MCX_SIP_CAPTURE_PID" || true; fi
+    if [[ -f artifacts/integration/sip-debug.pcap ]]; then chmod 600 artifacts/integration/sip-debug.pcap; fi
+  fi
+}
+trap cleanup_capture EXIT
+# Stream packet data into files owned by the invoking user; no broad file
+# permissions or additional filesystem capabilities are needed in the container.
+docker run --rm --name "$MCX_CAPTURE_CONTAINER" \
+  --network "container:$MCX_SERVER_CONTAINER" --cap-drop ALL --cap-add NET_RAW \
+  openmcx-dev:0.1 tcpdump -Z root -i eth0 -U -s 0 -w - '(udp and not port 53) or sctp or tcp port 5061 or tcp port 5060' \
+  > "artifacts/integration/$MCX_TRACE_NAME.pcap" 2> artifacts/integration/capture.log &
+MCX_CAPTURE_PID=$!
+for attempt in $(seq 1 50); do
+  if grep -q 'listening on' artifacts/integration/capture.log; then break; fi
+  sleep 0.1
+done
+grep -q 'listening on' artifacts/integration/capture.log
+if $MCX_DEBUG; then
+  python3 - <<'CHECK'
+import json
+for role in ('client-a','client-b','mcptt-server'):
+    assert json.load(open(f'artifacts/{role}/status.json')).get('sip_transport')=='tcp', f'{role} is not in debug TCP mode'
+CHECK
+  docker run --rm --name "$MCX_SIP_CAPTURE_CONTAINER" \
+    --network "container:$(tools/mcx compose ps -q sip-core)" --cap-drop ALL --cap-add NET_RAW \
+    openmcx-dev:0.1 tcpdump -Z root -i eth0 -U -s 0 -w - 'tcp port 5060' \
+    > artifacts/integration/sip-debug.pcap 2> artifacts/integration/sip-debug-capture.log &
+  MCX_SIP_CAPTURE_PID=$!
+  for attempt in $(seq 1 50); do
+    if grep -q 'listening on' artifacts/integration/sip-debug-capture.log; then break; fi
+    sleep 0.1
+  done
+  grep -q 'listening on' artifacts/integration/sip-debug-capture.log
+  # Require fresh processes so the scenario cannot consume stale affiliation status.
+  python3 - <<'CHECK'
+import sys,subprocess
+sys.path.insert(0,'tests/integration')
+from speech_scenario import wait,status
+old={c:status(c).get('instance_id') for c in ('client-a','client-b')}
+subprocess.run(['tools/mcx','compose','restart',*old],check=True)
+wait('debug client affiliations', lambda: all(status(c).get('instance_id')!=old[c] and status(c).get('affiliated') for c in old),60)
+CHECK
+fi
+python3 tests/integration/speech_scenario.py
+cleanup_capture
+trap - EXIT
+python3 tools/inspect-pcap.py "artifacts/integration/$MCX_TRACE_NAME.pcap" "artifacts/integration/$MCX_WIRE_NAME.json"
+python3 tests/integration/restart_scenario.py
+tools/mcx compose logs --no-color > artifacts/integration/component.log
+printf '%s\n' 'MCPTT speech, floor, wire and client restart checks passed.'
+if $MCX_DEBUG; then
+  for name in speech restart; do cp "artifacts/integration/$name-results.json" "artifacts/integration/$name-debug-results.json"; done
+  cp artifacts/integration/component.log artifacts/integration/component-debug.log
+fi

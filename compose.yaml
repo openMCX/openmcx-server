@@ -1,0 +1,297 @@
+name: openmcx
+x-app: &app
+  image: openmcx:0.1
+  init: true
+  tmpfs: [/run/mcx]
+  volumes:
+    - ./artifacts:/artifacts
+  networks: [mcx]
+x-common: &common
+  <<: *app
+  entrypoint: [/usr/local/bin/mcx-common]
+  command: []
+x-health: &health
+  interval: 3s
+  timeout: 3s
+  start_period: 10s
+  retries: 30
+services:
+  http-proxy:
+    <<: *app
+    entrypoint: [/usr/local/bin/mcx-http-proxy]
+    command: [--config, /config/http-proxy.json, --tls-cert, /config/tls/http-proxy.crt, --tls-key, /config/tls/http-proxy.key, --ca-file, /config/tls/ca.crt]
+    depends_on:
+      gms: {condition: service_healthy}
+      cms: {condition: service_healthy}
+      lms: {condition: service_healthy}
+      content-server: {condition: service_healthy}
+      message-store: {condition: service_healthy}
+      notification-server: {condition: service_healthy}
+    volumes:
+      - ./config/generated/http-proxy.json:/config/http-proxy.json:ro
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/tls/http-proxy.crt:/config/tls/http-proxy.crt:ro
+      - ./config/generated/tls/http-proxy.key:/config/tls/http-proxy.key:ro
+    healthcheck:
+      <<: *health
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://http-proxy:8443/readyz']
+  sip-db:
+    image: mysql@sha256:a08db11d440f1426eb47fbdf7cf2e458aa11bc79341bd2a5461f0296f1272f88
+    environment:
+      MYSQL_DATABASE: mcx
+      MYSQL_USER: mcx
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql-password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql-root-password
+    volumes:
+      - sip-db:/var/lib/mysql
+      - ./config/generated/mysql-password:/run/secrets/mysql-password:ro
+      - ./config/generated/mysql-root-password:/run/secrets/mysql-root-password:ro
+      - ./config/generated/sip-db.sql:/docker-entrypoint-initdb.d/01-subscriber.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, 'MYSQL_PWD=$$(cat /run/secrets/mysql-root-password) mysql -h 127.0.0.1 -u root -D mcx -e "SELECT 1 FROM subscriber LIMIT 1" >/dev/null']
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks: [mcx]
+  sip-core:
+    image: openmcx-kamailio:6.1.4-2
+    depends_on:
+      sip-db: {condition: service_healthy}
+    volumes:
+      - ./config/generated/kamailio.cfg:/config/kamailio.cfg:ro
+      - ./config/generated/tls.cfg:/config/tls.cfg:ro
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/tls/sip-core.crt:/config/tls/sip-core.crt:ro
+      - ./config/generated/tls/sip-core.key:/config/tls/sip-core.key:ro
+    networks: [mcx]
+    healthcheck:
+      <<: *health
+      test: [CMD-SHELL, 'test -r /proc/1/comm && nc -z 127.0.0.1 5061']
+  idms:
+    <<: *common
+    command: [--role, idms, --config, /config/site.json, --tls-cert, /config/tls/idms.crt, --tls-key, /config/tls/idms.key, --signing-key, /config/oidc-private.pem, --data-dir, /data]
+    volumes:
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/site.json:/config/site.json:ro
+      - ./config/generated/tls/idms.crt:/config/tls/idms.crt:ro
+      - ./config/generated/tls/idms.key:/config/tls/idms.key:ro
+      - ./config/generated/oidc-private.pem:/config/oidc-private.pem:ro
+      - idms:/data
+    healthcheck:
+      <<: *health
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://idms:8443/readyz']
+  gms:
+    <<: *common
+    command: [--role, gms, --config, /config/site.json, --tls-cert, /config/tls/gms.crt, --tls-key, /config/tls/gms.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
+    volumes:
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/site.json:/config/site.json:ro
+      - ./config/generated/tls/gms.crt:/config/tls/gms.crt:ro
+      - ./config/generated/tls/gms.key:/config/tls/gms.key:ro
+      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - gms:/data
+    healthcheck:
+      <<: *health
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://gms:8443/readyz']
+  cms:
+    <<: *common
+    command: [--role, cms, --config, /config/site.json, --tls-cert, /config/tls/cms.crt, --tls-key, /config/tls/cms.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
+    volumes:
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/site.json:/config/site.json:ro
+      - ./config/generated/tls/cms.crt:/config/tls/cms.crt:ro
+      - ./config/generated/tls/cms.key:/config/tls/cms.key:ro
+      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - cms:/data
+    healthcheck:
+      <<: *health
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://cms:8443/readyz']
+  lms:
+    <<: *common
+    command: [--role, lms, --config, /config/site.json, --tls-cert, /config/tls/lms.crt, --tls-key, /config/tls/lms.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
+    volumes:
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/site.json:/config/site.json:ro
+      - ./config/generated/tls/lms.crt:/config/tls/lms.crt:ro
+      - ./config/generated/tls/lms.key:/config/tls/lms.key:ro
+      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - lms:/data
+    healthcheck:
+      <<: *health
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://lms:8443/readyz']
+  content-server:
+    <<: *common
+    command: [--role, content, --config, /config/site.json, --tls-cert, /config/tls/content-server.crt, --tls-key, /config/tls/content-server.key, --verification-key, /config/oidc-public.pem, --data-dir, /data, --ca-file, /config/tls/ca.crt]
+    volumes:
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/site.json:/config/site.json:ro
+      - ./config/generated/tls/content-server.crt:/config/tls/content-server.crt:ro
+      - ./config/generated/tls/content-server.key:/config/tls/content-server.key:ro
+      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - content:/data
+    healthcheck:
+      <<: *health
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://content-server:8443/readyz']
+  # The MCData message store function and notification server (TS 24.282 clause 21).
+  message-store:
+    <<: *common
+    command: [--role, msgstore, --config, /config/site.json, --tls-cert, /config/tls/message-store.crt, --tls-key, /config/tls/message-store.key, --verification-key, /config/oidc-public.pem, --data-dir, /data, --ca-file, /config/tls/ca.crt]
+    volumes:
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/site.json:/config/site.json:ro
+      - ./config/generated/tls/message-store.crt:/config/tls/message-store.crt:ro
+      - ./config/generated/tls/message-store.key:/config/tls/message-store.key:ro
+      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - msgstore:/data
+    healthcheck:
+      <<: *health
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://message-store:8443/readyz']
+  notification-server:
+    <<: *common
+    command: [--role, notification, --config, /config/site.json, --tls-cert, /config/tls/notification-server.crt, --tls-key, /config/tls/notification-server.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
+    volumes:
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/site.json:/config/site.json:ro
+      - ./config/generated/tls/notification-server.crt:/config/tls/notification-server.crt:ro
+      - ./config/generated/tls/notification-server.key:/config/tls/notification-server.key:ro
+      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - notification:/data
+    healthcheck:
+      <<: *health
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://notification-server:8443/readyz']
+  kms:
+    <<: *common
+    command: [--role, kms, --config, /config/site.json, --tls-cert, /config/tls/kms.crt, --tls-key, /config/tls/kms.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
+    volumes:
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/site.json:/config/site.json:ro
+      - ./config/generated/tls/kms.crt:/config/tls/kms.crt:ro
+      - ./config/generated/tls/kms.key:/config/tls/kms.key:ro
+      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - kms:/data
+    healthcheck:
+      <<: *health
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://kms:8443/readyz']
+  mcx-user-db:
+    <<: *app
+    entrypoint: [/usr/local/bin/mcx-user-db]
+    command: [--config, /config/site.json, --diameter-config, /config/diameter-user-db.conf]
+    volumes:
+      - ./config/generated/site.json:/config/site.json:ro
+      - ./config/generated/diameter-user-db.conf:/config/diameter-user-db.conf:ro
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/tls/mcx-user-db.crt:/config/tls/mcx-user-db.crt:ro
+      - ./config/generated/tls/mcx-user-db.key:/config/tls/mcx-user-db.key:ro
+    healthcheck:
+      <<: *health
+      test: [CMD-SHELL, 'test -r /proc/net/sctp/eps && python3 -c "import pathlib; assert any(int(row.split()[5]) == 3868 for row in pathlib.Path(\"/proc/net/sctp/eps\").read_text().splitlines()[1:])"']
+  mcptt-server:
+    <<: *app
+    entrypoint: [/usr/local/bin/openmcx-mcptt-server]
+    command: [--config, /config/mcptt-server.json]
+    depends_on:
+      sip-core: {condition: service_healthy}
+      idms: {condition: service_healthy}
+      gms: {condition: service_healthy}
+      cms: {condition: service_healthy}
+      mcx-user-db: {condition: service_healthy}
+    volumes:
+      - ./artifacts:/artifacts
+      - ./config/generated/mcptt-server.json:/config/mcptt-server.json:ro
+      - ./config/generated/diameter-server.conf:/config/diameter-server.conf:ro
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/tls/mcptt-server.crt:/config/tls/mcptt-server.crt:ro
+      - ./config/generated/tls/mcptt-server.key:/config/tls/mcptt-server.key:ro
+    healthcheck:
+      <<: *health
+      test: [CMD, python3, /healthcheck.py, /artifacts/mcptt-server/status.json, ready]
+  # The MCVideo server (TS 24.281): the openmcx-mcvideo-server executable.
+  # Opt-in until MCVideo is routed: `--profile mcvideo`.
+  mcvideo-server:
+    <<: *app
+    profiles: [mcvideo]
+    entrypoint: [/usr/local/bin/openmcx-mcvideo-server]
+    command: [--config, /config/mcvideo-server.json]
+    depends_on:
+      sip-core: {condition: service_healthy}
+      idms: {condition: service_healthy}
+      gms: {condition: service_healthy}
+      cms: {condition: service_healthy}
+    volumes:
+      - ./artifacts:/artifacts
+      - ./config/generated/mcvideo-server.json:/config/mcvideo-server.json:ro
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/tls/mcvideo-server.crt:/config/tls/mcvideo-server.crt:ro
+      - ./config/generated/tls/mcvideo-server.key:/config/tls/mcvideo-server.key:ro
+    healthcheck:
+      <<: *health
+      test: [CMD, python3, /healthcheck.py, /artifacts/mcvideo-server/status.json, ready]
+  mcdata-server:
+    <<: *app
+    entrypoint: [/usr/local/bin/openmcx-mcdata-server]
+    command: [--config, /config/mcdata-server.json]
+    depends_on:
+      sip-core: {condition: service_healthy}
+      idms: {condition: service_healthy}
+      gms: {condition: service_healthy}
+      cms: {condition: service_healthy}
+      content-server: {condition: service_healthy}
+    volumes:
+      - ./artifacts:/artifacts
+      - ./config/generated/mcdata-server.json:/config/mcdata-server.json:ro
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/tls/mcdata-server.crt:/config/tls/mcdata-server.crt:ro
+      - ./config/generated/tls/mcdata-server.key:/config/tls/mcdata-server.key:ro
+    healthcheck:
+      <<: *health
+      test: [CMD, python3, /healthcheck.py, /artifacts/mcdata-server/status.json, ready]
+  client-a:
+    <<: *app
+    image: openmcx-client:0.1
+    entrypoint: [/usr/local/bin/mcx-client]
+    command: [--config, /config/client-a.json]
+    depends_on:
+      http-proxy: {condition: service_healthy}
+      mcptt-server: {condition: service_healthy}
+      mcdata-server: {condition: service_healthy}
+      idms: {condition: service_healthy}
+    volumes:
+      - ./artifacts:/artifacts
+      - ./config/generated/client-a.json:/config/client-a.json:ro
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/tls/client-a.crt:/config/tls/client-a.crt:ro
+      - ./config/generated/tls/client-a.key:/config/tls/client-a.key:ro
+    healthcheck:
+      <<: *health
+      test: [CMD, python3, /healthcheck.py, /artifacts/client-a/status.json, authorized]
+  client-b:
+    <<: *app
+    image: openmcx-client:0.1
+    entrypoint: [/usr/local/bin/mcx-client]
+    command: [--config, /config/client-b.json]
+    depends_on:
+      http-proxy: {condition: service_healthy}
+      mcptt-server: {condition: service_healthy}
+      mcdata-server: {condition: service_healthy}
+      idms: {condition: service_healthy}
+    volumes:
+      - ./artifacts:/artifacts
+      - ./config/generated/client-b.json:/config/client-b.json:ro
+      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/generated/tls/client-b.crt:/config/tls/client-b.crt:ro
+      - ./config/generated/tls/client-b.key:/config/tls/client-b.key:ro
+    healthcheck:
+      <<: *health
+      test: [CMD, python3, /healthcheck.py, /artifacts/client-b/status.json, authorized]
+networks:
+  mcx: {}
+volumes:
+  sip-db: {}
+  idms: {}
+  gms: {}
+  cms: {}
+  lms: {}
+  kms: {}
+  content: {}
+  msgstore: {}
+  notification: {}

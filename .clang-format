@@ -1,0 +1,30 @@
+# openMCX C++ formatting (docs/CODING_STYLE.md), clang-format 23 (the openmcx-lint image).
+# LLVM style with the project's width and compact one-line guards.
+BasedOnStyle: LLVM
+IndentWidth: 2
+ColumnLimit: 120
+PointerAlignment: Right
+ReferenceAlignment: Right
+AccessModifierOffset: -2
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: All
+AllowShortLambdasOnASingleLine: All
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Empty
+AllowShortEnumsOnASingleLine: true
+BreakBeforeBraces: Attach
+SeparateDefinitionBlocks: Always
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^"'
+    Priority: 1
+  - Regex: '^<(mcx|openmcx)/'
+    Priority: 2
+  - Regex: '^<[a-z0-9_]+\.h(pp)?>$|^<(pj|nlohmann|openssl|libxml|curl|srtp|wolfssl)'
+    Priority: 3
+  - Regex: '^<'
+    Priority: 4
+SortIncludes: CaseSensitive
+FixNamespaceComments: true
+ReflowComments: IndentOnly

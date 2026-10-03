@@ -1,0 +1,12 @@
+# Explicit clear-SIP debug mode; common services continue to use HTTPS.
+services:
+  sip-core:
+    command: [-DD, -E, -A, SIP_DEBUG_NO_TLS, -f, /config/kamailio.cfg]
+    healthcheck:
+      test: [CMD-SHELL, 'nc -z 127.0.0.1 5060']
+  mcptt-server:
+    command: [--config, /config/mcptt-server.json, --disable-tls]
+  client-a:
+    command: [--config, /config/client-a.json, --disable-tls]
+  client-b:
+    command: [--config, /config/client-b.json, --disable-tls]

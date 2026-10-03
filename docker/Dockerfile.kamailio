@@ -1,0 +1,15 @@
+FROM openmcx-dev:0.1
+# Pinned source, fetched and verified by the build (docker/fetch; DEPS_MIRROR for offline builds).
+ARG DEPS_MIRROR=
+ARG KAMAILIO_FILE=kamailio-6.1.4.tar.gz
+ARG KAMAILIO_URL=https://github.com/kamailio/kamailio/archive/refs/tags/6.1.4.tar.gz
+ARG KAMAILIO_SHA256=d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6
+COPY docker/fetch /usr/local/bin/fetch
+RUN fetch "$KAMAILIO_FILE" "$KAMAILIO_URL" "$KAMAILIO_SHA256" /tmp/kamailio.tar.gz \
+ && mkdir /tmp/kamailio && tar -xf /tmp/kamailio.tar.gz -C /tmp/kamailio --strip-components=1 \
+ && cd /tmp/kamailio \
+ && make cfg prefix=/opt/kamailio include_modules="tls auth_db db_mysql http_client" \
+ && make -j4 all && make install \
+ && rm -rf /tmp/kamailio /tmp/kamailio.tar.gz
+ENTRYPOINT ["/opt/kamailio/sbin/kamailio"]
+CMD ["-DD", "-E", "-f", "/config/kamailio.cfg"]
