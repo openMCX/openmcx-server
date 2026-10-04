@@ -1,0 +1,191 @@
+# SPDX-License-Identifier: LicenseRef-CSSL-1.0
+
+# OAI CN configuration for the rfsim5g-mcx deployment (full 5GC incl. PCF).
+# Shared by NRF, AMF, SMF, UPF, AUSF, UDM, UDR and PCF; each NF reads its own part.
+# Derived from oai-cn5g-fed docker-compose/conf/basic_nrf_config_qos.yaml, adapted to
+# the rfsim network plan (public_net 192.168.71.128/26, traffic_net 192.168.72.128/26),
+# PLMN 208/99 and the "mcptt" DNN.
+
+############# Common configuration
+
+log_level:
+  general: debug
+
+# NRF discovery for every NF
+register_nf:
+  general: yes
+
+http_version: 2
+
+############## SBI Interfaces
+nfs:
+  amf:
+    host: oai-amf
+    sbi:
+      port: 8080
+      api_version: v1
+      interface_name: eth0
+    n2:
+      interface_name: eth0
+      port: 38412
+  smf:
+    host: oai-smf
+    sbi:
+      port: 8080
+      api_version: v1
+      interface_name: eth0
+    n4:
+      interface_name: eth0
+      port: 8805
+  upf:
+    host: oai-upf
+    sbi:
+      port: 8080
+      api_version: v1
+      interface_name: eth0
+    n3:
+      interface_name: eth0
+      port: 2152
+    n4:
+      interface_name: eth0
+      port: 8805
+    n6:
+      interface_name: eth1
+    n9:
+      interface_name: eth0
+      port: 2152
+  udm:
+    host: oai-udm
+    sbi:
+      port: 8080
+      api_version: v1
+      interface_name: eth0
+  udr:
+    host: oai-udr
+    sbi:
+      port: 8080
+      api_version: v1
+      interface_name: eth0
+  ausf:
+    host: oai-ausf
+    sbi:
+      port: 8080
+      api_version: v1
+      interface_name: eth0
+  nrf:
+    host: oai-nrf
+    sbi:
+      port: 8080
+      api_version: v1
+      interface_name: eth0
+  pcf:
+    host: oai-pcf
+    sbi:
+      port: 8080
+      api_version: v1
+      interface_name: eth0
+
+#### Common for UDR and AMF
+database:
+  host: mysql
+  user: test
+  type: mysql
+  password: test
+  database_name: oai_db
+  generate_random: true
+  connection_timeout: 300 # seconds
+
+snssais:
+  - &embb_slice1
+    sst: 1
+
+############## NF-specific configuration
+amf:
+  amf_name: "OAI-AMF"
+  support_features_options:
+    enable_simple_scenario: no  # full core: AUSF/UDM/UDR/NRF/PCF
+    enable_nssf: no
+    enable_smf_selection: yes
+  relative_capacity: 30
+  statistics_timer_interval: 20  # in seconds
+  emergency_support: false
+  served_guami_list:
+    - mcc: 208
+      mnc: 99
+      amf_region_id: 01
+      amf_set_id: 001
+      amf_pointer: 01
+  plmn_support_list:
+    - mcc: 208
+      mnc: 99
+      tac: 0x0001   # gnb.sa.band78.106prb.rfsim.yaml tracking_area_code: 1
+      nssai:
+        - *embb_slice1
+  supported_integrity_algorithms:
+    - "NIA0"
+    - "NIA1"
+    - "NIA2"
+  supported_encryption_algorithms:
+    - "NEA0"
+    - "NEA1"
+    - "NEA2"
+
+smf:
+  ue_mtu: 1500
+  support_features:
+    use_local_subscription_info: no # session data (5QI 69) from UDM/UDR
+    use_local_pcc_rules: no         # PCC rules from the PCF (SM policy association, N7)
+  upfs:
+    - host: oai-upf
+      config:
+        enable_usage_reporting: no
+        # QERs carry the QFI and GBR/MBR of the N5-authorised MCPTT flows to the UPF
+        # (N4). Simple-switch UPF does not enforce them (eBPF UPF only, see
+        # oai-cn5g-fed docs/DEPLOY_SA5G_WITH_QOS.md); N1/N2 signalling is unaffected.
+        enable_qers: yes
+  ue_dns:
+    primary_ipv4: "172.21.3.100"
+    primary_ipv6: "2001:4860:4860::8888"
+    secondary_ipv4: "8.8.8.8"
+    secondary_ipv6: "2001:4860:4860::8888"
+  ims:
+    pcscf_ipv4: "192.168.72.136"   # openMCX SIP core (Kamailio) on traffic_net
+    pcscf_ipv6: "fe80::7915:f408:1787:db8b"
+  smf_info:
+    sNssaiSmfInfoList:
+      - sNssai: *embb_slice1
+        dnnSmfInfoList:
+          - dnn: "mcptt"
+  # unused (use_local_subscription_info: no) but kept as a fallback reference
+  local_subscription_infos:
+    - single_nssai: *embb_slice1
+      dnn: "mcptt"
+      qos_profile:
+        5qi: 69
+        session_ambr_ul: "100Mbps"
+        session_ambr_dl: "100Mbps"
+
+upf:
+  support_features:
+    enable_bpf_datapath: no    # simple-switch datapath
+    enable_snat: no            # the MCX server must see real UE addresses (12.1.1.x)
+  remote_n6_gw: 127.0.0.1      # dummy, simple-switch does not use an N6 gateway
+  upf_info:
+    sNssaiUpfInfoList:
+      - sNssai: *embb_slice1
+        dnnUpfInfoList:
+          - dnn: "mcptt"
+
+## DNN configuration
+dnns:
+  - dnn: "mcptt"
+    pdu_session_type: "IPV4"
+    ipv4_subnet: "12.1.1.0/24"
+
+pcf:
+  enable_policy_provisioning_api: no  # use the YAML local policies below
+  local_policy:
+    policy_decisions_path: /openair-pcf/policies/policy_decisions
+    pcc_rules_path: /openair-pcf/policies/pcc_rules
+    traffic_rules_path: /openair-pcf/policies/traffic_rules
+    qos_data_path: /openair-pcf/policies/qos_data

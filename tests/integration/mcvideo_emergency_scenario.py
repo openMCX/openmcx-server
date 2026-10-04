@@ -272,9 +272,9 @@ def main():
             invites = [message for message in capture.split(sip) if message.startswith('INVITE sip:mcvideo@')]
             check(
                 'MV-EM-08 emergency INVITE with emergency-ind and Resource-Priority',
-                any('Resource-Priority: mcptt.15' in message and '<emergency-ind' in message for message in invites),
+                any('Resource-Priority: mcpttp.15' in message and '<emergency-ind' in message for message in invites),
             )
-            check('MV-EM-08 imminent peril with its Resource-Priority', 'Resource-Priority: mcptt.10' in sip)
+            check('MV-EM-08 imminent peril with its Resource-Priority', 'Resource-Priority: mcpttp.10' in sip)
             messages = [message for message in capture.split(sip) if message.startswith('MESSAGE sip:')]
             check(
                 'MV-EM-08 alert MESSAGE with the MCVideo location body',

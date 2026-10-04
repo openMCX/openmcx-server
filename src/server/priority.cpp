@@ -109,8 +109,8 @@ const char *McServer::priority_name(const PriorityState &state) {
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 6.3.3.1.19: the Resource-Priority header field value provisioned for the call state.
-std::vector<SipHeader> McServer::priority_headers(const Json &policy, const PriorityState &state) const {
-  const auto values = policy.value("resource_priority", Json::object());
+std::vector<SipHeader> McServer::priority_headers(const Json &, const PriorityState &state) const {
+  const auto values = service_resource_priority();
   const auto value = values.value(priority_name(state), std::string{});
   if (value.empty()) {
     if (state.emergency || state.imminent)
@@ -317,17 +317,42 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
     return reject(warn(Warning::invalid_mime_combination));
   if (alert_only && ((!info.alert && info.emergency != false) || info.imminent_peril || info.emergency == true))
     return reject(warn(Warning::invalid_mime_combination));
-  if (info.emergency == true && !priority_allowed(policy, "emergency_users", user.id))
+  // TS 24.379 and TS 24.281 clause 6.3.3.1.13: the rights of the caller's user profile, the profile's group entry
+  // (a dedicated group, or the group the user has selected) and the group document's action for the caller.
+  const auto rights = user_profile(user.id);
+  const auto group_rights = rights.value("group_call", Json::object());
+  const auto private_rights = rights.value("private_call", Json::object());
+  const auto& group_id = info.request_uri;
+  auto entry_allows = [&](const char *key) {
+    const auto dedicated = group_rights.value(key, std::string());
+    return dedicated.empty() || dedicated == group_id;
+  };
+  auto group_allows = [&](const char *action, const char *members) {
+    return profile.value(action, false) || priority_allowed(policy, members, user.id);
+  };
+  const bool alert_right = group_rights.value("alert", false) || private_rights.value("alert", false);
+  const bool alert_cancel_right = group_rights.value("alert_cancel", false) || private_rights.value("alert_cancel", false);
+  // Clause 6.3.3.1.13.2.
+  if (info.emergency == true && !(group_rights.value("emergency", false) && entry_allows("emergency_group") &&
+                                  group_allows("allow_emergency_call", "emergency_users")))
     return reject("emergency call not authorized");
-  if (info.emergency == false && !priority_allowed(policy, "emergency_cancel_users", user.id))
+  // Clause 6.3.3.1.13.4: local policy: the user's <allow-cancel-group-emergency>, or the group's list of those who
+  // may cancel.
+  if (info.emergency == false &&
+      !(group_rights.value("emergency_cancel", false) || priority_allowed(policy, "emergency_cancel_users", user.id)))
     return reject("emergency cancellation not authorized");
-  if (info.imminent_peril == true && !priority_allowed(policy, "imminent_users", user.id))
+  // Clause 6.3.3.1.13.5.
+  if (info.imminent_peril == true && !(group_rights.value("imminent", false) && entry_allows("imminent_group") &&
+                                       group_allows("allow_imminent_peril", "imminent_users")))
     return reject("imminent peril not authorized");
-  if (info.imminent_peril == false && !priority_allowed(policy, "imminent_cancel_users", user.id))
+  // Clause 6.3.3.1.13.6: <allow-cancel-imminent-peril> of the user profile.
+  if (info.imminent_peril == false && !group_rights.value("imminent_cancel", false))
     return reject("imminent peril cancellation not authorized");
   if (!info.originated_by.empty() && (!info.alert || *info.alert))
     return reject("originated-by requires alert cancellation");
-  if (info.alert == true && !priority_allowed(policy, "alert_users", user.id)) {
+  // Clause 6.3.3.1.13.1: <allow-activate-emergency-alert>, the <EmergencyAlert> entry and the group's action.
+  if (info.alert == true &&
+      !(alert_right && entry_allows("alert_group") && group_allows("allow_emergency_alert", "alert_users"))) {
     if (alert_only) return reject("emergency alert not authorized");
     correction = McpttInfo{};
     correction->emergency = true;
@@ -335,8 +360,7 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
     info.alert.reset();
   }
   if (info.alert == false && info.emergency != true &&
-      state.alerts.contains(info.originated_by.empty() ? user.id : info.originated_by) &&
-      !priority_allowed(policy, "alert_cancel_users", user.id)) {
+      state.alerts.contains(info.originated_by.empty() ? user.id : info.originated_by) && !alert_cancel_right) {
     if (alert_only) return reject("alert cancellation not authorized");
     correction = McpttInfo{};
     correction->alert = true;
@@ -358,7 +382,7 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
     }
   }
   const auto requested = std::string(get_header(message.headers, "Resource-Priority"));
-  const auto values = policy.value("resource_priority", Json::object());
+  const auto values = service_resource_priority();
   if (!requested.empty() && !ric_priority(user.id, info.request_uri, requested, values)) {
     bool known = false;
     for (const auto *name : {"normal", "emergency", "imminent"})
@@ -452,7 +476,9 @@ void McServer::negotiate_priority(Leg &leg, const Json &profile, std::optional<s
     return;
   }
   const auto caps = policy.value("floor_priority_caps", profile.value("floor_priority_caps", Json::object()));
-  const unsigned cap = caps.value(leg.user, 0u);
+  // TS 24.380 clause 4.1.1.4: the configured cap, or the member's <user-priority> of the group document.
+  const unsigned cap = caps.contains(leg.user) ? caps.value(leg.user, 0u)
+                                               : profile.value("user_priorities", Json::object()).value(leg.user, 0u);
   const unsigned levels = policy.value("num_levels", 99u);
   if (cap > 99 || levels > 99) throw std::runtime_error("invalid configured floor priority hierarchy");
   leg.local.floor_priority = static_cast<std::uint8_t>(std::min({unsigned(*offer), cap, levels}));
@@ -463,6 +489,22 @@ void McServer::negotiate_priority(Leg &leg, const Json &profile, std::optional<s
 FloorArbitratorOptions McServer::floor_options() const {
   const auto &settings = cfg_.at(svc_.name);
   FloorArbitratorOptions options;
+  if (std::string_view(svc_.name) == "mcptt") {
+    // TS 24.380 clause 11 with TS 24.484 clause 8.4: <transmit-time>/<time-limit> (T2), <floor-control-queue> and
+    // <fc-timers-counters> of the MCPTT service configuration document.
+    const auto timers = service_config_.value("fc_timers_counters", Json::object());
+    options.max_talk_ms = service_config_.value("transmit_time_limit_ms", 30000u);
+    options.media_idle_ms = timers.value("t1", 4000u);
+    options.revoke_grace_ms = timers.value("t3", 3000u);
+    options.revoke_retry_ms = timers.value("t8", 1000u);
+    options.grant_retry_ms = timers.value("t20", 1000u);
+    options.max_grant_transmissions = timers.value("c20", 3u);
+    options.idle_retry_ms = timers.value("t7", 1000u);
+    options.max_idle_transmissions = timers.value("c7", 10u);
+    options.queue_enabled = service_config_.value("floor_queue", false);
+    return options;
+  }
+  // MCVideo transmission control (TS 24.581): the MCVideo server's settings.
   options.max_talk_ms = settings.value("max_talk_ms", 30000u);
   options.media_idle_ms = settings.value("floor_media_idle_ms", 4000u);
   options.revoke_grace_ms = settings.value("floor_revoke_grace_ms", 3000u);

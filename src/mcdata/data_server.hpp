@@ -308,6 +308,12 @@ class DataServer {
 
   Json file_distribution() const { return cfg_.at("mcdata").value("fd", Json::object()); }
 
+  // TS 24.282 clauses 6.3.7.1.4 and 10.2.4.4.2 with TS 24.484 clause 10.4: the values of the MCData service
+  // configuration document from the CMS, refreshed every 30 seconds.
+  Json service_config_ = Json::object();
+  std::uint64_t service_config_at_ = 0;
+  void refresh_service_config(std::uint64_t now);
+
   void count(const char *name) { counters_.add(name); }
 
   // ---- Group documents (group_documents.cpp): TS 24.282 clause 6.3.3 ----

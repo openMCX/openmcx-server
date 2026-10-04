@@ -11,8 +11,27 @@ namespace mcx {
 // Helper: the periodic tick: runs the location, media and IP connectivity timers, TDC1 (disposition
 // aggregation), TDC2 (file availability) and TDC3 (request for extension, TS 24.282 clause 13.2.4.5.4.1),
 // expires users and writes the status file.
+//------------------------------------------------------------------------------
+// TS 24.484 clause 10.4: read the MCData service configuration from the CMS every 30 seconds, every 2 seconds until
+// the first answer.
+void DataServer::refresh_service_config(std::uint64_t now) {
+  const bool known = !service_config_.empty();
+  if (service_config_at_ && now - service_config_at_ < (known ? 30000u : 2000u)) return;
+  service_config_at_ = now;
+  try {
+    auto config = internal("cms", "/internal/service-config?service=mcdata");
+    if (!config.is_object() || !config.contains("resource_priority")) return;
+    if (config != service_config_) event("service_config_read", Json{{"resource_priority", config.at("resource_priority")}});
+    service_config_ = std::move(config);
+  } catch (const std::exception &error) {
+    if (!known) event("service_config_unavailable", Json{{"reason", error.what()}});
+  }
+}
+
+//------------------------------------------------------------------------------
 void DataServer::tick() {
   const auto now = monotonic_ms();
+  refresh_service_config(now);
   location_.tick(now);
   for (auto &[group, sub] : group_subscriptions_)
     if (sub.active && now >= sub.refresh) {

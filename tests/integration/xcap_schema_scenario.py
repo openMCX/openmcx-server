@@ -93,8 +93,8 @@ def main():
         return url_quote(text, safe='')
 
     tree = f"{gms}/xcap-root/org.openmobilealliance.groups/users/{quote(ids['client-a'])}/"
-    profile_b = f"{cms}/xcap-root/3gpp.mcptt.user-profile/users/{quote(ids['client-b'])}/index"
-    profile_a = f"{cms}/xcap-root/3gpp.mcptt.user-profile/users/{quote(ids['client-a'])}/index"
+    profile_b = f"{cms}/xcap-root/org.3gpp.mcptt.user-profile/users/{quote(ids['client-b'])}/mcptt-user-profile-1.xml"
+    profile_a = f"{cms}/xcap-root/org.3gpp.mcptt.user-profile/users/{quote(ids['client-a'])}/mcptt-user-profile-1.xml"
     squad = f'sip:schema-{int(time.time()) % 100000}@{domain}'
     checks, observations = [], {}
     result = dict(scenario='xcap-schema', passed=False, checks=checks, observations=observations)

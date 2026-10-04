@@ -96,7 +96,9 @@ void McpttServer::floor_request(Leg &leg, const std::shared_ptr<Session> &sessio
     return;
   }
   const auto caps = priority_policy.value("floor_priority_caps", policy.value("floor_priority_caps", Json::object()));
-  const unsigned cap = caps.value(leg.user, 0u);
+  // TS 24.380 clause 4.1.1.4: the configured cap, or the member's <user-priority> of the group document.
+  const unsigned cap = caps.contains(leg.user) ? caps.value(leg.user, 0u)
+                                               : policy.value("user_priorities", Json::object()).value(leg.user, 0u);
   if (cap > 99) throw std::runtime_error("invalid floor priority cap");
   priority = leg.local.floor_priority
                  ? static_cast<std::uint8_t>(std::min({unsigned(priority), unsigned(*leg.local.floor_priority), cap}))

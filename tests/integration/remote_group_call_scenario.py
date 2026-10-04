@@ -227,7 +227,7 @@ def main():
         # RG-09 application priority (TS 24.379 clause 10.1.5.2.1 step 3 d) D), clause 10.1.5.2.2 step 2 b)): the
         # remote user's INVITE carries the requested value as Resource-Priority,
         # which the server accepts for that follow-up call only.
-        command('client-a', f'remote-group-call {ids["client-b"]} {group} priority=mcptt.5')
+        command('client-a', f'remote-group-call {ids["client-b"]} {group} priority=mcpttp.5')
         wait(
             'RG-09 a request with ric-app-level-priority establishes the call',
             lambda: all(status(role).get('call_state') == 'active' for role in roles),
@@ -237,9 +237,9 @@ def main():
             lambda: outcome('client-a', 'remotely-initiated-group-call-response') == 'success',
         )
         wait(
-            'RG-09 the remote user placed the call with Resource-Priority mcptt.5',
+            'RG-09 the remote user placed the call with Resource-Priority mcpttp.5',
             lambda: any(
-                event.get('resource_priority') == 'mcptt.5' and event.get('target') == group
+                event.get('resource_priority') == 'mcpttp.5' and event.get('target') == group
                 for event in events('client-b', 'ric_priority_applied')
             ),
         )
@@ -248,7 +248,7 @@ def main():
             lambda: any(
                 event.get('user_id') == ids['client-b']
                 and event.get('target') == group
-                and event.get('resource_priority') == 'mcptt.5'
+                and event.get('resource_priority') == 'mcpttp.5'
                 for event in events('mcptt-server', 'ric_priority_accepted')
             ),
         )

@@ -67,6 +67,18 @@ if(BUILD_TESTING)
     endforeach()
 endif()
 
+# N5: the MC service server in the 5GC AF role (TS 29.514 Npcf_PolicyAuthorization), used by the MCPTT and MCVideo
+# servers only with a "pcf" block in their configuration.
+add_library(mcx_af src/common/af.cpp)
+target_include_directories(mcx_af PUBLIC include)
+target_link_libraries(mcx_af PUBLIC mcx_dependencies)
+target_compile_options(mcx_af PRIVATE -Wall -Wextra -Wpedantic)
+if(BUILD_TESTING)
+    add_executable(test_af tests/test_af.cpp)
+    target_link_libraries(test_af PRIVATE mcx_af)
+    add_test(NAME af COMMAND test_af)
+endif()
+
 add_library(mcx_diameter src/common/diameter.cpp)
 target_include_directories(mcx_diameter PUBLIC include)
 target_link_libraries(mcx_diameter PUBLIC fdcore fdproto Threads::Threads)
@@ -112,6 +124,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/server/location.cpp
         src/server/media.cpp
         src/server/notices.cpp
+        src/server/pcf.cpp
         src/server/priority.cpp
         src/server/private_call.cpp
         src/server/private_services.cpp
@@ -125,7 +138,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/server/users.cpp
         src/server/xml_protection.cpp)
     target_include_directories(mcx_server_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/server)
-    target_link_libraries(mcx_server_core PUBLIC mcx_service_parts mcx_diameter)
+    target_link_libraries(mcx_server_core PUBLIC mcx_service_parts mcx_diameter mcx_af)
     target_compile_options(mcx_server_core PRIVATE -Wall -Wextra -Wpedantic)
     # Link-time optimisation: the split into files and programs must not cost the inlining the single file had.
     set_target_properties(mcx_server_core PROPERTIES INTERPROCEDURAL_OPTIMIZATION ON)

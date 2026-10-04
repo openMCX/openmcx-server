@@ -147,7 +147,7 @@ func TestGMSRequiresMembershipAndReturnsExplicitClearPolicyWithETag(test *testin
 func TestCMSProfileIsRestrictedToBoundTokenIdentity(test *testing.T) {
 	cfg, key := testConfig(), testKey(test)
 	handler := roleHandler(test, RoleCMS, cfg, key, test.TempDir())
-	bobPath := "/xcap-root/3gpp.mcptt.user-profile/users/" + url.PathEscape("sip:bob@mcx.test") + "/index"
+	bobPath := "/xcap-root/org.3gpp.mcptt.user-profile/users/" + url.PathEscape("sip:bob@mcx.test") + "/mcptt-user-profile-1.xml"
 
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, bearerRequest(http.MethodGet, bobPath, tokenFor(test, cfg, key, "alice", testNow, cfg.ServerClientID), nil))
@@ -155,7 +155,7 @@ func TestCMSProfileIsRestrictedToBoundTokenIdentity(test *testing.T) {
 		test.Fatalf("cross-user status=%d body=%s", rr.Code, rr.Body.String())
 	}
 
-	alicePath := "/xcap-root/3gpp.mcptt.user-profile/users/" + url.PathEscape("sip:alice@mcx.test") + "/index"
+	alicePath := "/xcap-root/org.3gpp.mcptt.user-profile/users/" + url.PathEscape("sip:alice@mcx.test") + "/mcptt-user-profile-1.xml"
 	rr = httptest.NewRecorder()
 	handler.ServeHTTP(rr, bearerRequest(http.MethodGet, alicePath, tokenFor(test, cfg, key, "alice", testNow, cfg.ServerClientID), nil))
 	if rr.Code != http.StatusOK {
@@ -182,7 +182,7 @@ func TestCMSProfileUpdateByAdministrator(test *testing.T) {
 	}
 	dir := test.TempDir()
 	handler := roleHandler(test, RoleCMS, cfg, key, dir)
-	bobPath := "/xcap-root/3gpp.mcptt.user-profile/users/" + url.PathEscape("sip:bob@mcx.test") + "/index"
+	bobPath := "/xcap-root/org.3gpp.mcptt.user-profile/users/" + url.PathEscape("sip:bob@mcx.test") + "/mcptt-user-profile-1.xml"
 	alice, bob := tokenFor(test, cfg, key, "alice", testNow, cfg.ServerClientID), tokenFor(test, cfg, key, "bob", testNow, cfg.ServerClientID)
 	internal := func() string {
 		rr := httptest.NewRecorder()
@@ -592,7 +592,7 @@ func TestProfileAndGroupDocumentsCarryRulesets(test *testing.T) {
 	cfg.Groups[0].AllowGettingMemberList = true
 	token := tokenFor(test, cfg, key, "alice", testNow, cfg.ServerClientID)
 	for role, path := range map[Role]string{
-		RoleCMS: "/xcap-root/3gpp.mcptt.user-profile/users/" + url.PathEscape("sip:alice@mcx.test") + "/index",
+		RoleCMS: "/xcap-root/org.3gpp.mcptt.user-profile/users/" + url.PathEscape("sip:alice@mcx.test") + "/mcptt-user-profile-1.xml",
 		RoleGMS: "/xcap-root/org.openmobilealliance.groups/global/byGroupID/" + url.PathEscape(cfg.Groups[0].ID),
 	} {
 		rr := httptest.NewRecorder()
@@ -699,7 +699,7 @@ func TestCMSServesMCDataPolicyByMCDataID(test *testing.T) {
 		test.Fatalf("unexpected MCData user: %s", rr.Body.String())
 	}
 	if actions := fmt.Sprint(profileRights(cfg.Users[0])); !strings.Contains(actions, "allow-transmit-data") ||
-		!strings.Contains(actions, "allow-adhoc-group-data-comn}") || strings.Contains(actions, "participation") {
+		!strings.Contains(actions, "allow-adhoc-group-data-comn}") || strings.Contains(actions, "allow-adhoc-group-data-comn-participation") {
 		test.Fatalf("allow-transmit-data not granted: %v", actions)
 	}
 	bad := testConfig()

@@ -69,15 +69,23 @@ func (svc *service) routesGMS(mux *http.ServeMux) {
 }
 
 // ------------------------------------------------------------------------------
-// TS 24.484 clause 8.3.2.2 and clause 9.3.2.2: the CMS routes of the MCPTT and MCVideo user profile documents
+// TS 24.484 clause 7.4.2.2, clause 8.3.2.2, clause 9.3.2.2 and clause 10.3.2.2: the CMS routes of the location user
+// configuration data documents and the MCPTT, MCVideo and MCData user profile documents
 // (application unique IDs) and the internal user routes.
 func (svc *service) routesCMS(mux *http.ServeMux) {
-	mux.HandleFunc("GET /xcap-root/3gpp.mcptt.user-profile/users/{mcpttID}/index", svc.getUserProfile)
-	mux.HandleFunc("PUT /xcap-root/3gpp.mcptt.user-profile/users/{mcpttID}/index", svc.putUserProfile)
+	// The AUID "org.3gpp.mcptt.user-profile" (TS 24.484 clause 8.3.2.2) and the document
+	// mcptt-user-profile-<index>.xml (clause 8.3.1A).
+	mux.HandleFunc("GET /xcap-root/org.3gpp.mcptt.user-profile/users/{mcpttID}/{document}", svc.getUserProfile)
+	mux.HandleFunc("PUT /xcap-root/org.3gpp.mcptt.user-profile/users/{mcpttID}/{document}", svc.putUserProfile)
 	mux.HandleFunc("GET /internal/user-profile", svc.getInternalUserProfile)
 	mux.HandleFunc("GET /internal/user", svc.getInternalUser)
 	mux.HandleFunc("GET /internal/functional-alias", svc.getInternalFunctionalAlias)
 	mux.HandleFunc("GET /xcap-root/org.3gpp.mcvideo.user-profile/users/{mcvideoID}/{document}", svc.getMCVideoProfile)
+	mux.HandleFunc("GET /xcap-root/org.3gpp.mcdata.user-profile/users/{mcdataID}/{document}", svc.getMCDataProfile)
+	// TS 24.484 clauses 8.4.2.8, 9.4.2.8 and 10.4.2.8: the global service configuration documents.
+	mux.HandleFunc("GET /xcap-root/{auid}/global/{document}", svc.getServiceConfig)
+	mux.HandleFunc("GET /internal/service-config", svc.getInternalServiceConfig)
+	mux.HandleFunc("GET /xcap-root/"+locationConfigAUID+"/users/{serviceID}/{document}", svc.getLocationConfig)
 }
 
 // ------------------------------------------------------------------------------
@@ -197,12 +205,23 @@ func (svc *service) getUserProfile(writer http.ResponseWriter, request *http.Req
 		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "forbidden"})
 		return
 	}
+	if user, known := svc.siteUser("mcptt_id", id); known && !profileDocumentAddressed(request.PathValue("document"), user) {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": http.StatusText(http.StatusNotFound)})
+		return
+	}
 	raw, status := svc.userProfileDocument(id)
 	if status != http.StatusOK {
 		writeJSON(writer, status, map[string]string{"error": http.StatusText(status)})
 		return
 	}
 	writeDocument(writer, request, raw, userProfileMIME)
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.1A and clause 8.3.2.8: whether a request names the user's MCPTT user profile document,
+// mcptt-user-profile-<index>.xml.
+func profileDocumentAddressed(document string, user User) bool {
+	return document == profileDocumentName(user.profileIndex())
 }
 
 // ------------------------------------------------------------------------------
@@ -213,13 +232,10 @@ func (svc *service) userProfileDocument(id string) ([]byte, int) {
 	if !ok {
 		return nil, http.StatusNotFound
 	}
-	svc.mu.Lock()
-	stored, updated := svc.profileDocs[id]
-	svc.mu.Unlock()
-	if updated {
+	if stored, updated := svc.uploadedProfile(user); updated {
 		return stored, http.StatusOK
 	}
-	raw, err := xml.Marshal(userProfileXML(user))
+	raw, err := xml.Marshal(svc.servedProfileXML(user))
 	if err != nil {
 		return nil, http.StatusInternalServerError
 	}
@@ -234,9 +250,8 @@ func (svc *service) configManager(id string) bool {
 }
 
 // ------------------------------------------------------------------------------
-// TS 24.484 clause 6.3.4.3: an authorized CMC replaces a user profile
-// document. The document must be a user profile for the same MCPTT ID; the
-// servers keep enforcing the configured policy.
+// TS 24.484 clause 6.3.4.3: an authorized CMC replaces a user profile document. The document must be a user profile
+// for the same MCPTT ID, at its document name; the servers then enforce the rights it grants (effectiveUser).
 func (svc *service) putUserProfile(writer http.ResponseWriter, request *http.Request) {
 	claims, ok := svc.authenticateBearer(writer, request)
 	if !ok {
@@ -245,6 +260,12 @@ func (svc *service) putUserProfile(writer http.ResponseWriter, request *http.Req
 	id := request.PathValue("mcpttID")
 	if !svc.configManager(claims.MCPTTID) {
 		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+	user, known := svc.siteUser("mcptt_id", id)
+	if known && !profileDocumentAddressed(request.PathValue("document"), user) {
+		// One MCPTT user profile document per user, at its index (TS 24.484 clause 8.3.2.8).
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": http.StatusText(http.StatusNotFound)})
 		return
 	}
 	current, status := svc.userProfileDocument(id)
@@ -270,25 +291,40 @@ func (svc *service) putUserProfile(writer http.ResponseWriter, request *http.Req
 	// constraints of TS 24.484 clause 8.3.2.6.
 	err = schemaError(userProfileSchema.validate(raw))
 	if err == nil {
-		err = profileConstraints(raw, id)
+		err = profileConstraints(raw, id, profileDocumentName(user.profileIndex()))
 	}
 	if err != nil {
 		svc.logEvent("user_profile_refused", map[string]any{"user_id": id, "by": claims.MCPTTID, "error": err.Error()})
 		writeXCAPError(writer, err)
 		return
 	}
+	generated, err := xml.Marshal(svc.servedProfileXML(user))
+	if err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "server_error"})
+		return
+	}
 	svc.mu.Lock()
 	if svc.profileDocs == nil {
 		svc.profileDocs = map[string][]byte{}
 	}
+	if svc.profileBases == nil {
+		svc.profileBases = map[string]string{}
+	}
 	previous, had := svc.profileDocs[id]
+	previousBase, hadBase := svc.profileBases[id]
 	svc.profileDocs[id] = raw
+	svc.profileBases[id] = documentETag(append([]byte(xml.Header), generated...))
 	if err := svc.saveProfileDocumentsLocked(); err != nil {
 		// Not stored: the document served stays the previous one.
 		if had {
 			svc.profileDocs[id] = previous
 		} else {
 			delete(svc.profileDocs, id)
+		}
+		if hadBase {
+			svc.profileBases[id] = previousBase
+		} else {
+			delete(svc.profileBases, id)
 		}
 		svc.mu.Unlock()
 		svc.logEvent("user_profile_save_failed", map[string]any{"user_id": id, "error": err.Error()})
@@ -313,7 +349,9 @@ func (svc *service) getInternalUserProfile(writer http.ResponseWriter, request *
 		writeJSON(writer, status, map[string]string{"error": http.StatusText(status)})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]string{"document_etag": documentETag(raw)})
+	user, _ := svc.siteUser("mcptt_id", request.URL.Query().Get("mcptt_id"))
+	writeJSON(writer, http.StatusOK, map[string]string{"document_etag": documentETag(raw),
+		"document": profileDocumentName(user.profileIndex())})
 }
 
 // ------------------------------------------------------------------------------
@@ -326,7 +364,13 @@ func (svc *service) saveProfileDocumentsLocked() error {
 	if err != nil {
 		return fmt.Errorf("user profiles: %w", err)
 	}
-	return writeFileAtomic(filepath.Join(svc.dataDir, "user-profiles.json"), raw)
+	if err := writeFileAtomic(filepath.Join(svc.dataDir, "user-profiles.json"), raw); err != nil {
+		return err
+	}
+	if raw, err = json.Marshal(svc.profileBases); err != nil {
+		return fmt.Errorf("user profiles: %w", err)
+	}
+	return writeFileAtomic(filepath.Join(svc.dataDir, "user-profile-bases.json"), raw)
 }
 
 // ------------------------------------------------------------------------------
@@ -348,6 +392,18 @@ func (svc *service) loadProfileDocuments() error {
 		return fmt.Errorf("user profiles: %w", err)
 	}
 	svc.profileDocs = docs
+	// The configured profile each was uploaded over; none for documents stored by earlier versions, which stay until
+	// the next upload.
+	raw, err = os.ReadFile(filepath.Join(svc.dataDir, "user-profile-bases.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err == nil {
+		err = json.Unmarshal(raw, &svc.profileBases)
+	}
+	if err != nil {
+		return fmt.Errorf("user profile bases: %w", err)
+	}
 	return nil
 }
 
@@ -445,6 +501,8 @@ func (svc *service) getInternalUser(writer http.ResponseWriter, request *http.Re
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
+	// The rights of an uploaded MCPTT user profile document (TS 24.484 clause 6.3.4.3).
+	user = svc.effectiveUser(user)
 	writeJSON(writer, http.StatusOK, publicUser{ProfileIndex: user.profileIndex(), MCID: user.MCID, MCPTTID: user.MCPTTID, SIPURI: user.SIPURI, ClientID: user.ClientID, Groups: user.Groups, PrivateCall: user.PrivateCall, AdhocCall: user.AdhocCall, GroupCall: user.GroupCall,
 		FunctionalAliasTakeover: user.FunctionalAliasTakeover, FunctionalAliasBinding: user.FunctionalAliasBinding, MaxAffiliations: user.MaxAffiliations,
 		Regroup: user.Regroup, MCDataID: user.MCDataID, MCData: user.MCData, MCVideoID: user.MCVideoID, MCVideo: user.MCVideo, Location: user.Location})

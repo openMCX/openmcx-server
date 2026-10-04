@@ -178,7 +178,7 @@ std::optional<SipResponse> McServer::adhoc_priority(const SipMessage &message, c
   if (priority.imminent) priority.imminent_users.insert(user.id);
   {
     const auto requested = std::string(get_header(message.headers, "Resource-Priority"));
-    const auto values = cfg_.at(svc_.name).value("resource_priority", Json::object());
+    const auto values = service_resource_priority();
     if (!requested.empty() && ((requested == values.value("emergency", std::string{}) && !priority.emergency) ||
                                (requested == values.value("imminent", std::string{}) && !priority.imminent)))
       return reject(403, "Resource-Priority is not authorized by call state");
@@ -374,6 +374,13 @@ void McServer::invite_adhoc_member(const std::shared_ptr<Session> &session, cons
   const auto *user = by_id(id);
   if (user && user->expires <= std::time(nullptr)) user = nullptr;
   if (!user || has_leg(*session, id)) return;
+  // TS 24.379 clause 17.4.2.2.1 step 6 (the terminating participating function): an invitee whose user profile has no
+  // <allow-adhoc-group-call-participation> is not invited (403, warning 188).
+  if (!user_profile(id).value("adhoc_call", Json::object()).value("participation", false)) {
+    event("adhoc_invitee_rejected", {{"user_id", id}, {"group_id", session->group}, {"status", 403},
+                                     {"warning", warn(Warning::adhoc_participation_not_allowed)}});
+    return;
+  }
   release_listened_to(id, ambient_reason("for"));
   auto leg = make_leg(id, session);
   leg->local.floor_priority.reset();

@@ -24,6 +24,8 @@ enum class Warning {
   private_call_not_authorised,           // code 107 in TS 24.379 and TS 24.281 table 4.4.2-2
   declined,                              // code 110 in TS 24.379 and TS 24.281 table 4.4.2-2
   required_members_abandoned,            // code 112 in TS 24.379 and TS 24.281 table 4.4.2-2
+  group_disabled,                        // code 115 in TS 24.379 and TS 24.281 table 4.4.2-2
+  not_group_member,                      // code 116 in TS 24.379 and TS 24.281 table 4.4.2-2
   prearranged_group_mismatch,            // code 117 in TS 24.379 and TS 24.281 table 4.4.2-2
   chat_group_mismatch,                   // code 118 in TS 24.379 and TS 24.281 table 4.4.2-2
   group_call_initiation_not_authorised,  // code 119 in TS 24.379 and TS 24.281 table 4.4.2-2
@@ -108,6 +110,8 @@ constexpr WarningEntry mcptt_warning(Warning warning) {
   case Warning::declined: return {110, "user declined the call invitation"};
   case Warning::required_members_abandoned:
     return {112, "group call abandoned due to required group members not part of the group session"};
+  case Warning::group_disabled: return {115, "group is disabled"};
+  case Warning::not_group_member: return {116, "user is not part of the MCPTT group"};
   case Warning::prearranged_group_mismatch:
     return {117, "the group identity indicated in the request is a prearranged group"};
   case Warning::chat_group_mismatch: return {118, "the group identity indicated in the request is a chat group"};
@@ -194,6 +198,8 @@ constexpr WarningEntry mcvideo_warning(Warning warning) {
   case Warning::declined: return {110, "user declined the call invitation"};
   case Warning::required_members_abandoned:
     return {112, "group call abandoned due to required group members not part of the group session"};
+  case Warning::group_disabled: return {115, "group is disabled"};
+  case Warning::not_group_member: return {116, "user is not part of the MCVideo group"};
   case Warning::prearranged_group_mismatch:
     return {117, "the group identity indicated in the request is a prearranged group"};
   case Warning::chat_group_mismatch: return {118, "the group identity indicated in the request is a chat group"};

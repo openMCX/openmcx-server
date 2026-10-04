@@ -989,9 +989,16 @@ bool McServer::group_call_affiliated(User &user, const McpttInfo &info, bool cha
 // the group (preconfigured use only, regrouped). Returns false when the request is refused in `response`.
 bool McServer::group_call_type_allowed(const User &user, const McpttInfo &info, const Json &profile, bool chat_request,
                                        SipResponse &response) {
+  // TS 24.379 and TS 24.281 clause 6.3.5.2 step 5a: a disabled group (<on-network-disabled>).
+  if (profile.value("disabled", false)) {
+    response.status_code = 403;
+    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::group_disabled) + "\""}};
+    return false;
+  }
+  // Step 5b: the caller is not in the group's <list>.
   if (!member(profile, user.id)) {
     response.status_code = 403;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::group_call_join_not_authorised) + "\""}};
+    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::not_group_member) + "\""}};
     return false;
   }
   // TS 24.379 clause 4.4.2 warnings 117 and 118: the requested call type must match the group type.

@@ -172,6 +172,25 @@ var (
 			{profileNS, "mcptt-user-profile.xsd"},
 			{mcdataProfileNS, "mcdata-user-profile.xsd"},
 		}}
+	// TS 24.484 clause 10.3.2.3.
+	mcdataProfileSchema = &documentSchema{name: "MCData user profile", root: xml.Name{Space: mcdataProfileNS, Local: "mcdata-user-profile"},
+		imports: []schemaImport{
+			{"http://www.w3.org/XML/1998/namespace", "xml.xsd"},
+			{commonPolicyNS, "common-policy.xsd"},
+			{ueInitConfigNS, "ue-init-config.xsd"},
+			{mcdataProfileNS, "mcdata-user-profile.xsd"},
+		}}
+	// TS 24.484 clause 7.4.2.3.
+	locationConfigSchema = &documentSchema{name: "location user configuration", root: xml.Name{Space: locationConfigNS, Local: "location-user-configuration-data"},
+		imports: []schemaImport{
+			{"http://www.w3.org/XML/1998/namespace", "xml.xsd"},
+			{commonPolicyNS, "common-policy.xsd"},
+			{locationConfigNS, "location-user-config.xsd"},
+		}}
+	// TS 24.484 clauses 8.4.2.3, 9.4.2.3 and 10.4.2.3: the service configuration documents.
+	mcpttServiceConfigSchema   = serviceConfigSchema("MCPTT service configuration", mcpttServiceConfigNS, "mcptt-service-config.xsd")
+	mcvideoServiceConfigSchema = serviceConfigSchema("MCVideo service configuration", mcvideoServiceConfigNS, "mcvideo-service-config.xsd")
+	mcdataServiceConfigSchema  = serviceConfigSchema("MCData service configuration", mcdataServiceConfigNS, "mcdata-service-config.xsd")
 	// TS 24.484 clause 9.3.2.3.
 	mcvideoProfileSchema = &documentSchema{name: "MCVideo user profile", root: xml.Name{Space: mcvideoProfileNS, Local: "mcvideo-user-profile"},
 		imports: []schemaImport{
@@ -181,6 +200,13 @@ var (
 			{mcvideoProfileNS, "mcvideo-user-profile.xsd"},
 		}}
 )
+
+// ------------------------------------------------------------------------------
+// Helper: the schema of a service configuration document (root <service-configuration-info>).
+func serviceConfigSchema(name, namespace, file string) *documentSchema {
+	return &documentSchema{name: name, root: xml.Name{Space: namespace, Local: "service-configuration-info"},
+		imports: []schemaImport{{"http://www.w3.org/XML/1998/namespace", "xml.xsd"}, {namespace, file}}}
+}
 
 // ------------------------------------------------------------------------------
 // RFC 4825 section 8.2.5: schemaViolation is a document that fails its schema:

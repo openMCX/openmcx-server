@@ -689,6 +689,38 @@ int main() {
   rejects([&] {
     (void)parse_profile_actions(profile_head + "<allow-private-call>yes</allow-private-call>" + profile_tail);
   });
+  // TS 24.484 clauses 8.4.2.1 and 10.4.2.1: the resource priorities of the service configuration documents, RFC 8101
+  // namespaces only; MCData's in the <anyExt> of <on-network>.
+  {
+    const auto rp = [](const char *element, const char *space, const char *level) {
+      return std::string("<") + element + "><resource-priority-namespace>" + space +
+             "</resource-priority-namespace><resource-priority-priority>" + level + "</resource-priority-priority></" +
+             element + ">";
+    };
+    const auto three = rp("emergency-resource-priority", "mcpttp", "15") +
+                       rp("imminent-peril-resource-priority", "mcpttp", "10") +
+                       rp("normal-resource-priority", "mcpttq", "0");
+    const auto mcptt = parse_service_resource_priorities(
+        "<service-configuration-info xmlns=\"urn:3gpp:ns:mcpttServiceConfig:1.0\"><service-configuration-params "
+        "domain=\"x\"><on-network>" + three + "</on-network></service-configuration-params></service-configuration-info>");
+    check(mcptt.at("emergency") == "mcpttp.15" && mcptt.at("imminent") == "mcpttp.10" && mcptt.at("normal") == "mcpttq.0",
+          "MCPTT service configuration resource priorities");
+    const auto mcdata = parse_service_resource_priorities(
+        "<service-configuration-info xmlns=\"urn:3gpp:ns:mcdataServiceConfig:1.0\"><service-configuration-params "
+        "domain=\"x\"><on-network><anyExt>" + three + "</anyExt></on-network></service-configuration-params>"
+        "</service-configuration-info>");
+    check(mcdata.at("emergency") == "mcpttp.15", "MCData service configuration resource priorities");
+    for (const auto *bad : {"mcptt", "mcpttp.16"})
+      rejects([&] {
+        const std::string space = std::string(bad) == "mcptt" ? "mcptt" : "mcpttp";
+        const std::string level = std::string(bad) == "mcptt" ? "15" : "16";
+        (void)parse_service_resource_priorities(
+            "<service-configuration-info xmlns=\"urn:3gpp:ns:mcpttServiceConfig:1.0\"><service-configuration-params "
+            "domain=\"x\"><on-network>" + rp("emergency-resource-priority", space.c_str(), level.c_str()) +
+            rp("imminent-peril-resource-priority", "mcpttp", "10") + rp("normal-resource-priority", "mcpttp", "0") +
+            "</on-network></service-configuration-params></service-configuration-info>");
+      });
+  }
   // TS 24.481 clauses 7.2.2 and 7.2.8: <preconfigured-group-use-only> of the group document (TS 24.379
   // clause 10.1.5.2.1 step 1A).
   const std::string group_doc =

@@ -119,6 +119,37 @@ McvideoProfile parse_mcvideo_profile(std::string_view xml) {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.484 clauses 8.4.2.1, 9.4.2.1 and 10.4.2.1: the resource priorities of a service configuration document.
+std::map<std::string, std::string> parse_service_resource_priorities(std::string_view xml) {
+  static const char *const namespaces[] = {"urn:3gpp:ns:mcpttServiceConfig:1.0", "urn:3gpp:ns:mcvideoServiceConfig:1.0",
+                                           "urn:3gpp:ns:mcdataServiceConfig:1.0"};
+  auto doc = document(xml);
+  auto root = xmlDocGetRootElement(doc.get());
+  const char *ns = nullptr;
+  for (const auto *candidate : namespaces)
+    if (is(root, "service-configuration-info", candidate)) ns = candidate;
+  if (!ns) invalid("not a service configuration document");
+  auto on = unique_child(unique_child(root, "service-configuration-params", ns), "on-network", ns);
+  // The MCData document carries them in the <anyExt> of <on-network> (clause 10.4.2.1 item 4).
+  auto holder = ns == namespaces[2] ? unique_child(on, "anyExt", ns) : on;
+  std::map<std::string, std::string> out;
+  for (const auto &[level, element] : {std::pair{"emergency", "emergency-resource-priority"},
+                                       std::pair{"imminent", "imminent-peril-resource-priority"},
+                                       std::pair{"normal", "normal-resource-priority"}}) {
+    auto value = unique_child(holder, element, ns);
+    const auto space = text(unique_child(value, "resource-priority-namespace", ns));
+    const auto priority = text(unique_child(value, "resource-priority-priority", ns));
+    // RFC 8101 section 3.2: mcpttp or mcpttq, levels 0 to 15.
+    const bool level_ok = !priority.empty() && priority.size() <= 2 &&
+                          priority.find_first_not_of("0123456789") == std::string::npos &&
+                          (priority.size() == 1 || priority[0] != '0') && std::stoi(priority) <= 15;
+    if ((space != "mcpttp" && space != "mcpttq") || !level_ok) invalid("resource priority not of RFC 8101");
+    out[level] = space + "." + priority;
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.481 clause 7.2.4.2: the <list-service> of a group document.
 static xmlNode *group_list_service(xmlDoc *doc) {
   auto root = xmlDocGetRootElement(doc);

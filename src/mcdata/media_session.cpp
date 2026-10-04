@@ -351,7 +351,7 @@ std::optional<SipResponse> DataServer::media_invite_group_targets(const User &us
       return reject_priority(user.id, emergency_request);
   }
   if (document->value("regrouped", false)) return reject(403, "148 group is regrouped", user.id, what);
-  if (settings.contains("transmit_members") && !listed(settings.at("transmit_members"), user.id))
+  if (!transmit_allowed(settings, user.id))
     return reject(403, "201 user not authorised to transmit data on this group identity", user.id, what);
   if (!affiliated(user.id, group)) return reject(403, "120 user is not affiliated to this group", user.id, what);
   for (const auto &member : settings.value("members", Json::array()))
@@ -384,8 +384,9 @@ std::optional<SipResponse> DataServer::media_invite_private_target(const User &u
   if (!recipient) return reject(404, "", user.id, "media-sds");
   // TS 24.282 clause 9.2.3.3: the recipient's incoming communication list.
   const auto incoming_policy = profile(target).value("mcdata", Json::object());
-  if (!incoming_policy.value("incoming_any", false) &&
-      !listed(incoming_policy.value("incoming_from", Json::array()), user.id))
+  // The list applies with one or more entries (TS 24.282 clause 9.2.3.3 step 4A).
+  const auto incoming_list = incoming_policy.value("incoming_from", Json::array());
+  if (!incoming_policy.value("incoming_any", false) && !incoming_list.empty() && !listed(incoming_list, user.id))
     return reject(403, "230 one-to-one MCData communication not authorised from this originating user", user.id,
                   "media-sds");
   invite.recipients.push_back(target);

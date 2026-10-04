@@ -18,12 +18,24 @@ std::vector<std::string> McServer::subscribed_profiles(const std::string &list) 
   } catch (const std::exception &) {
     return {};
   }
+  // The AUID "org.3gpp.mcptt.user-profile" (TS 24.484 clause 8.3.2.2) and the document mcptt-user-profile-<index>.xml
+  // (clause 8.3.1A).
+  const std::string path = profile_auid;
+  const auto profile_document = [](const std::string &name) {
+    static const std::string prefix = "mcptt-user-profile-", suffix = ".xml";
+    if (name.size() <= prefix.size() + suffix.size() || name.compare(0, prefix.size(), prefix) != 0 ||
+        name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0)
+      return false;
+    const auto digits = name.substr(prefix.size(), name.size() - prefix.size() - suffix.size());
+    return digits.find_first_not_of("0123456789") == std::string::npos;
+  };
   for (const auto &entry : entries) {
-    const auto at = entry.find(profile_auid);
-    const auto end = entry.rfind("/index");
-    if (at == std::string::npos || end == std::string::npos || end <= at) return {};
-    const auto id = percent_decode(
-        entry.substr(at + std::string(profile_auid).size(), end - at - std::string(profile_auid).size()));
+    const auto at = entry.find(path);
+    const auto end = entry.rfind('/');
+    if (at == std::string::npos || end == std::string::npos || end <= at + path.size() ||
+        !profile_document(entry.substr(end + 1)))
+      return {};
+    const auto id = percent_decode(entry.substr(at + path.size(), end - at - path.size()));
     if (!id || id->empty()) return {};
     ids.push_back(*id);
   }
@@ -71,7 +83,7 @@ void McServer::notify_configuration(const std::string &dialog) {
   auto &sub = found->second;
   sub.next_poll = monotonic_ms() + cfg_.at(svc_.name).value("configuration_poll_ms", 5000u);
   const bool terminated = sub.expires <= std::time(nullptr);
-  std::vector<std::tuple<std::string, std::string, std::string>> changes;
+  std::vector<std::tuple<std::string, std::string, std::string, std::string>> changes;
   if (!terminated && !service_down("cms"))
     for (auto &[id, last] : sub.etags) {
       const auto &common = cfg_.at("common");
@@ -90,7 +102,8 @@ void McServer::notify_configuration(const std::string &dialog) {
       if (reply.status != 200) continue;
       const auto current = reply.json().value("document_etag", std::string{});
       if (current != last || sub.initial) {
-        changes.emplace_back(id, sub.initial ? std::string{} : last, current);
+        changes.emplace_back(id, reply.json().value("document", std::string("mcptt-user-profile-1.xml")),
+                             sub.initial ? std::string{} : last, current);
         last = current;
       }
     }
@@ -100,8 +113,8 @@ void McServer::notify_configuration(const std::string &dialog) {
   std::string body =
       "<?xml version=\"1.0\" encoding=\"UTF-8\"?><xcap-diff xmlns=\"urn:ietf:params:xml:ns:xcap-diff\" xcap-root=\"" +
       xml_escape(cfg_.at("common").at("cms").get<std::string>() + "/xcap-root") + "/\">";
-  for (const auto &[id, previous, next] : changes) {
-    body += "<document sel=\"" + xml_escape(std::string(profile_auid) + url_encode(id) + "/index") + "\"";
+  for (const auto &[id, document, previous, next] : changes) {
+    body += "<document sel=\"" + xml_escape(std::string(profile_auid) + url_encode(id) + "/" + document) + "\"";
     if (!previous.empty()) body += " previous-etag=\"" + xml_escape(previous) + "\"";
     if (!next.empty()) body += " new-etag=\"" + xml_escape(next) + "\"";
     body += "/>";

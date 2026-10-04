@@ -124,7 +124,7 @@ def add_private_call_policy(fixture, refresh=False):
             user['groups'].append(preconf)
     site_file.write_text(json.dumps(site, indent=2) + '\n')
     # Emergency private calls carry Resource-Priority (TS 24.379 clause 6.2.8.3.3).
-    resources = dict(normal='mcptt.0', imminent='mcptt.10', emergency='mcptt.15')
+    resources = dict(normal='mcpttp.0', imminent='mcpttp.10', emergency='mcpttp.15')
     for role in ['mcptt-server', 'client-a', 'client-b', 'client-c', 'client-d']:
         path = fixture / f'generated/{role}.json'
         cfg = json.loads(path.read_text())
@@ -325,15 +325,44 @@ def add_group_management(fixture):
 
 
 # ------------------------------------------------------------------------------
-def accept_resource_priority(fixture):
-    """Let every group accept the Resource-Priority values that clients send."""
-    site_file = fixture / 'generated/site.json'
+def service_configuration(fixture):
+    """The site's service_config (TS 24.484 clauses 8.4, 9.4 and 10.4): the RFC 8101 Resource-Priority values of
+    each service, and the MCPTT floor settings and MCData file availabilities the lab gave its servers. The clients
+    and servers read them from the CMS, so no other file keeps Resource-Priority values."""
+    generated = fixture / 'generated'
+    resources = dict(emergency='mcpttp.15', imminent='mcpttp.10', normal='mcpttp.0')
+    mcptt = dict(resource_priority=resources)
+    mcdata = dict(resource_priority=resources)
+    for path in sorted(generated.glob('*.json')):
+        if path.name == 'site.json':
+            continue
+        cfg = json.loads(path.read_text())
+        if not isinstance(cfg, dict):
+            continue
+        for service in ('mcptt', 'mcvideo', 'mcdata'):
+            if isinstance(cfg.get(service), dict):
+                cfg[service].pop('resource_priority', None)
+        if path.name == 'mcptt-server.json':
+            # <transmit-time>/<time-limit> (T2) and <floor-control-queue> of the MCPTT service configuration.
+            if 'max_talk_ms' in cfg.get('mcptt', {}):
+                mcptt['transmit_time_limit_ms'] = cfg['mcptt']['max_talk_ms']
+            if cfg.get('mcptt', {}).get('floor_queue'):
+                mcptt['floor_queue'] = True
+        if path.name == 'mcdata-server.json':
+            fd = cfg.get('mcdata', {}).get('fd', {})
+            if 'default_file_availability_ms' in fd:
+                mcdata['default_file_availability_s'] = max(1, fd['default_file_availability_ms'] // 1000)
+            if 'max_file_availability_ms' in fd:
+                mcdata['max_file_availability_s'] = max(1, fd['max_file_availability_ms'] // 1000)
+        path.write_text(json.dumps(cfg, indent=2) + '\n')
+    site_file = generated / 'site.json'
     site = json.loads(site_file.read_text())
-    resources = json.loads((fixture / 'generated/client-a.json').read_text())['mcptt'].get('resource_priority')
-    if resources:
-        for group in site['groups']:
-            group.setdefault('priority_policy', {}).setdefault('resource_priority', resources)
-        site_file.write_text(json.dumps(site, indent=2) + '\n')
+    for group in site['groups']:
+        for policy in (group.get('priority_policy'), group.get('mcvideo', {}).get('priority_policy')):
+            if isinstance(policy, dict):
+                policy.pop('resource_priority', None)
+    site['service_config'] = dict(mcptt=mcptt, mcvideo=dict(resource_priority=resources), mcdata=mcdata)
+    site_file.write_text(json.dumps(site, indent=2) + '\n')
 
 
 # ------------------------------------------------------------------------------
@@ -373,7 +402,7 @@ def add_broadcast_hierarchy(fixture, source):
             protect_floor=False,
         )
     )
-    resources = dict(normal='mcptt.0', imminent='mcptt.10', emergency='mcptt.15')
+    resources = dict(normal='mcpttp.0', imminent='mcpttp.10', emergency='mcpttp.15')
     for group in site['groups']:
         if group['id'] == second:
             group.setdefault('priority_policy', {}).update(
@@ -506,7 +535,7 @@ def add_mcvideo_policy(fixture):
     by_mcptt = {profile['mcptt_id']: profile for profile in site['users']}
     video_ids = {client: by_mcptt[configs[client]['mcptt']['user_id']]['mcvideo_id'] for client in roles}
     group = site['groups'][0]
-    resources = dict(normal='mcptt.0', imminent='mcptt.10', emergency='mcptt.15')
+    resources = dict(normal='mcpttp.0', imminent='mcpttp.10', emergency='mcpttp.15')
     permitted = [video_ids['client-a'], video_ids['client-b']]
     group['mcvideo'] = dict(
         members=[video_ids[client] for client in roles],
@@ -908,7 +937,7 @@ def add_chat_group(fixture, source):
     # Group call_policy replaces the server default for this group only.
     # Emergency and imminent peril chat calls (TS 24.379 clause 10.1.2.4.1 steps 14 to 15)
     # are authorised for clients a-c; client-d is not.
-    resources = dict(normal='mcptt.0', imminent='mcptt.10', emergency='mcptt.15')
+    resources = dict(normal='mcpttp.0', imminent='mcpttp.10', emergency='mcpttp.15')
     permitted = members[:3]
     priority = dict(
         emergency_users=permitted,
@@ -1059,7 +1088,7 @@ def add_adhoc_policy(fixture):
         end_when_initiator_leaves=True,
         emergency_timeout_ms=12000,
     )
-    resources = dict(normal='mcptt.0', imminent='mcptt.10', emergency='mcptt.15')
+    resources = dict(normal='mcpttp.0', imminent='mcpttp.10', emergency='mcpttp.15')
     server['mcptt'].setdefault('resource_priority', resources)
     server_file.write_text(json.dumps(server, indent=2) + '\n')
     for role in ['client-a', 'client-b', 'client-c', 'client-d']:
@@ -1090,6 +1119,74 @@ def status_probes(gen, site, args):
 
 
 # ------------------------------------------------------------------------------
+def add_pcf(fixture):
+    """N5 (TS 29.514): the MCPTT server's "pcf" block, pointing at mock-pcf. The lab network's addresses are assigned by
+    Docker, so every client address counts as a 5G UE. Without --pcf the server has no "pcf" block: N5 off."""
+    path = fixture / 'generated/mcptt-server.json'
+    cfg = json.loads(path.read_text())
+    cfg['pcf'] = dict(enabled=True, pcf_uri='http://mock-pcf:8080', http2=True, dnn='mcptt', snssai=dict(sst=1),
+                      af_app_id='mcptt', notif_bind='0.0.0.0:8099', notif_uri_base='http://mcptt-server:8099/npcf-af',
+                      ue_subnets=['0.0.0.0/0'], audio_bw_kbps=41, required=False,
+                      prio_map=dict(normal='', imminent='PRIO_12', emergency='PRIO_16'))
+    path.write_text(json.dumps(cfg, indent=2) + '\n')
+
+
+def add_mock_pcf(compose, fixture):
+    """The mock PCF: tests/integration/mock_pcf.go, run with the Go toolchain of the development image."""
+    server = compose['services']['mcptt-server']
+    compose['services']['mock-pcf'] = {
+        'image': 'openmcx-dev:0.1',
+        'init': True,
+        'entrypoint': ['go', 'run', '/mock/mock_pcf.go'],
+        'command': ['-listen', ':8080', '-record', '/artifacts/mock-pcf/requests.jsonl'],
+        'environment': {'GOCACHE': '/tmp/go-cache', 'GOPATH': '/tmp/go', 'HOME': '/tmp'},
+        'working_dir': '/tmp',
+        'volumes': [{'type': 'bind', 'source': str(ROOT / 'tests/integration/mock_pcf.go'), 'target': '/mock/mock_pcf.go',
+                     'read_only': True},
+                    {'type': 'bind', 'source': str(fixture / 'artifacts'), 'target': '/artifacts'}],
+        'networks': copy.deepcopy(server['networks']),
+        'healthcheck': {'test': ['CMD', 'curl', '-sf', '--http2-prior-knowledge', 'http://127.0.0.1:8080/healthz'],
+                        'interval': '2s', 'timeout': '3s', 'retries': 60, 'start_period': '5s'},
+    }
+    server.setdefault('depends_on', {})['mock-pcf'] = {'condition': 'service_healthy'}
+
+
+def rights_from_group_lists(fixture):
+    """TS 24.379 and TS 24.281 clause 6.3.3.1.13: an emergency group call, imminent peril call or emergency alert needs
+    the right in the caller's user profile (TS 24.484) and the group document's action for the caller (TS 24.481);
+    cancelling an alert or imminent peril needs the profile right. The labs name who may in the groups' priority
+    policies (the action for each listed member); every user a list names gets the matching profile right, so a lab
+    authorises exactly whom its lists name. An MCData group without transmit_members lets every member transmit
+    (transmit_all, <mcdata-allow-transmit-data-in-this-group> for all members), as the labs expect."""
+    site_file = fixture / 'generated/site.json'
+    if not site_file.exists():
+        return
+    site = json.loads(site_file.read_text())
+    rights = dict(emergency_users='emergency', imminent_users='imminent', imminent_cancel_users='imminent_cancel',
+                  alert_users='alert', alert_cancel_users='alert_cancel', emergency_cancel_users='emergency_cancel')
+    by_mcptt = {user['mcptt_id']: user for user in site['users']}
+    by_mcvideo = {user.get('mcvideo_id'): user for user in site['users'] if user.get('mcvideo_id')}
+    for group in site['groups']:
+        for key, right in rights.items():
+            for member in group.get('priority_policy', {}).get(key, []):
+                if member in by_mcptt:
+                    by_mcptt[member].setdefault('group_call', {})[right] = True
+            for member in group.get('mcvideo', {}).get('priority_policy', {}).get(key, []):
+                if member in by_mcvideo:
+                    video = by_mcvideo[member].setdefault('mcvideo', {})
+                    video.setdefault('group_call', {})[right] = True
+        if 'mcdata' in group and 'transmit_members' not in group['mcdata']:
+            group['mcdata']['transmit_all'] = True
+    # <allow-adhoc-group-call-participation> (TS 24.379 clause 17.4.2.2.1 step 6): every user the labs may invite to
+    # an ad hoc group call, unless a lab says otherwise.
+    for user in site['users']:
+        for policy in (user.get('adhoc_call'), user.get('mcvideo', {}).get('adhoc_call')):
+            if isinstance(policy, dict):
+                policy.setdefault('participation', True)
+        user.setdefault('adhoc_call', {'allow': False, 'participation': True}).setdefault('participation', True)
+    site_file.write_text(json.dumps(site, indent=2) + '\n')
+
+
 def add_admin(fixture, compose, args):
     """MCX Admin manages the accounts.
 
@@ -1479,6 +1576,12 @@ def main():
         'likewise mcvideo-server, mcvideo-part-1 and mcvideo-part-2',
     )
     parser.add_argument(
+        '--pcf',
+        action='store_true',
+        help='N5 AF role (TS 29.514): mcptt-server requests QoS from mock-pcf, a recording mock PCF '
+        '(tests/integration/mock_pcf.go) over HTTP/2 cleartext; every client counts as a 5G UE',
+    )
+    parser.add_argument(
         '--admin',
         action='store_true',
         help='MCX Admin manages the accounts (admin mode of IdMS, CMS and user database; needs --admin-image)',
@@ -1590,7 +1693,7 @@ def main():
             client: json.loads((fixture / f'generated/{client}.json').read_text())['mcptt']['user_id']
             for client in ['client-a', 'client-b', 'client-c', 'client-d']
         }
-        resources = dict(normal='mcptt.0', imminent='mcptt.10', emergency='mcptt.15')
+        resources = dict(normal='mcpttp.0', imminent='mcpttp.10', emergency='mcpttp.15')
         wire_profile = dict(
             message_type=10, algorithm=1, key_parameters_iei=args.key_parameters_iei, encrypted_payload_iei=0x78
         )
@@ -1745,7 +1848,10 @@ def main():
         if args.split:
             parser.error('--location runs on a combined server')
         add_location(fixture)
-    accept_resource_priority(fixture)
+    if args.pcf:
+        if args.split:
+            parser.error('--pcf runs on a combined server')
+        add_pcf(fixture)
     # Scenario clients leave authorisation to the server so its rejections are
     # exercised; the private-services lab keeps client-d enforcing its profile.
     for role in ['client-a', 'client-b', 'client-c', 'client-d']:
@@ -1850,6 +1956,10 @@ def main():
         core['healthcheck']['test'] = ['CMD-SHELL', 'nc -z 127.0.0.1 5060']
         for role in servers + ['mcdata-server', 'client-a', 'client-b', 'client-c', 'client-d'] + video_servers:
             compose['services'][role]['command'].append('--disable-tls')
+    if args.pcf:
+        add_mock_pcf(compose, fixture)
+    rights_from_group_lists(fixture)
+    service_configuration(fixture)
     if args.admin:
         add_admin(fixture, compose, args)
     path = fixture / 'compose.json'

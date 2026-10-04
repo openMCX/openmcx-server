@@ -64,7 +64,8 @@ Json McvideoServer::service_members(Json group) const {
   group["members"] = video.value("members", Json::array());
   for (const auto &[key, value] : video.items())
     if (key != "members") group[key] = value;
-  for (const auto *key : {"priority_policy", "call_policy", "floor_priority_caps", "user_priorities"})
+  for (const auto *key : {"priority_policy", "call_policy", "floor_priority_caps", "user_priorities", "allow_emergency_call",
+                          "allow_imminent_peril", "allow_emergency_alert"})
     if (!video.contains(key)) group.erase(key); // MCPTT settings name MCPTT IDs
   return group;
 }

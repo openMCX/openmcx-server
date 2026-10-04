@@ -58,6 +58,36 @@ type profileCommon struct {
 	Index       string              `xml:"index,attr"`
 	MCPTTUserID profileEntry        `xml:"MCPTTUserID"`
 	PrivateCall *profilePrivateCall `xml:"PrivateCall,omitempty"`
+	GroupCall   profileGroupCall    `xml:"MCPTT-group-call"`
+	AnyExt      *locationURIExt     `xml:"anyExt,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.1 item 8e: the <MCPTT-group-call> element of <Common>: the N6 limit, the group of an
+// emergency group call, of an imminent peril call and of an emergency alert (TS 24.379 clause 6.3.3.1.13 reads
+// them), and the user's priority.
+type profileGroupCall struct {
+	MaxCallsN6 int                    `xml:"MaxSimultaneousCallsN6"`
+	Emergency  profileGroupInitiation `xml:"EmergencyCall"`
+	Imminent   profileGroupInitiation `xml:"ImminentPerilCall"`
+	Alert      profileAlert           `xml:"EmergencyAlert"`
+	Priority   int                    `xml:"Priority"`
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.3: <MCPTTGroupInitiation> with its <entry>.
+type profileGroupInitiation struct {
+	Entry profileEntry `xml:"MCPTTGroupInitiation>entry"`
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the <entry> of a group initiation or emergency alert: a dedicated group, or the group the user has
+// selected when none is configured.
+func groupInitiationEntry(group string) profileEntry {
+	if group == "" {
+		return profileEntry{EntryInfo: "UseCurrentlySelectedGroup"}
+	}
+	return profileEntry{EntryInfo: "DedicatedGroup", URI: group}
 }
 
 // ------------------------------------------------------------------------------
@@ -71,7 +101,22 @@ type profileEntry struct {
 // ------------------------------------------------------------------------------
 // TS 24.484 clause 8.3.2.1 item 8: the <PrivateCall> element of <Common>.
 type profilePrivateCall struct {
-	List privateCallList `xml:"PrivateCallList"`
+	List      privateCallList          `xml:"PrivateCallList"`
+	Emergency *profilePrivateEmergency `xml:"EmergencyCall,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.3 (EmergencyCallType, MCPTTPrivateRecipientEntryType): the emergency private call's
+// recipient, "LocallyDetermined" (the user chooses) or "UsePreConfigured" with its MCPTT ID. <ProSeUserID-entry> is
+// mandatory in the type; this system is on-network only, so its <User-Info-ID> is six zero octets (the value must be
+// 6 octets, TS 24.484 clause 8.4.2) and names no ProSe user.
+type profilePrivateEmergency struct {
+	Recipient struct {
+		Entry profileEntry `xml:"entry"`
+		ProSe struct {
+			UserInfoID string `xml:"User-Info-ID"`
+		} `xml:"ProSeUserID-entry"`
+	} `xml:"MCPTTPrivateRecipient"`
 }
 
 // ------------------------------------------------------------------------------
@@ -145,8 +190,23 @@ type profileRuleset struct {
 // ------------------------------------------------------------------------------
 // TS 24.484 clause 8.3.2.1 item 11: one <rule> with its <actions>.
 type profileRule struct {
-	ID      string          `xml:"id,attr"`
-	Actions profileElements `xml:"actions"`
+	ID         string             `xml:"id,attr"`
+	Conditions *profileConditions `xml:"conditions,omitempty"`
+	Actions    profileElements    `xml:"actions"`
+}
+
+// ------------------------------------------------------------------------------
+// RFC 4745 section 7.1: the <conditions> of a rule, with the <identity> of the users it applies to.
+type profileConditions struct {
+	Identity struct {
+		One []profileOne `xml:"one"`
+	} `xml:"identity"`
+}
+
+// ------------------------------------------------------------------------------
+// RFC 4745 section 7.1.1: one <one id="..."> of an <identity>.
+type profileOne struct {
+	ID string `xml:"id,attr"`
 }
 
 // ------------------------------------------------------------------------------
@@ -228,6 +288,10 @@ func profileRights(user User) []profileRight {
 		}
 	}
 	mcptt := add(profileNS)
+	// <allow-private-call-participation>: the user may be called, unless the configuration says it may not
+	// (callable false); the servers apply the same default (TS 24.379 clause 11.1.1.3.2 step 8).
+	mcptt(user.PrivateCall == nil || user.PrivateCall.Callable == nil || *user.PrivateCall.Callable,
+		"allow-private-call-participation")
 	if private := user.PrivateCall; private != nil {
 		mcptt(private.Allow, "allow-private-call")
 		mcptt(private.AutomaticCommencement, "allow-automatic-commencement")
@@ -237,8 +301,6 @@ func profileRights(user User) []profileRight {
 		mcptt(private.AnyTarget, "allow-private-call-to-any-user")
 		mcptt(private.Emergency, "allow-emergency-private-call")
 		mcptt(private.EmergencyCancel, "allow-cancel-private-emergency-call")
-		mcptt(private.Alert, "allow-activate-emergency-alert")
-		mcptt(private.AlertCancel, "allow-cancel-emergency-alert")
 		mcptt(private.Callback, "allow-request-private-call-call-back")
 		mcptt(private.CallbackCancel, "allow-cancel-private-call-call-back")
 		mcptt(private.RemoteInit, "allow-request-remote-init-private-call")
@@ -250,6 +312,7 @@ func profileRights(user User) []profileRight {
 	}
 	if adhoc := user.AdhocCall; adhoc != nil {
 		mcptt(adhoc.Allow, "allow-adhoc-group-call")
+		mcptt(adhoc.Participation, "allow-adhoc-group-call-participation")
 		mcptt(adhoc.Emergency, "allow-emergency-adhoc-group-call")
 		mcptt(adhoc.Imminent, "allow-imminent-peril-adhoc-group-call")
 		mcptt(adhoc.Modify, "allow-to-modify-adhoc-group-call-participants-info")
@@ -258,7 +321,15 @@ func profileRights(user User) []profileRight {
 	}
 	if groupCall := user.GroupCall; groupCall != nil {
 		mcptt(groupCall.RemoteInit, "allow-request-remote-init-group-call")
+		mcptt(groupCall.Emergency, "allow-emergency-group-call")
+		mcptt(groupCall.EmergencyCancel, "allow-cancel-group-emergency")
+		mcptt(groupCall.Imminent, "allow-imminent-peril-call")
+		mcptt(groupCall.ImminentCancel, "allow-cancel-imminent-peril")
 	}
+	// One element each for group and private emergency alerts (TS 24.379 clauses 6.3.3.1.13.1 and 6.3.3.1.13.3).
+	alert, alertCancel := user.alertRights()
+	mcptt(alert, "allow-activate-emergency-alert")
+	mcptt(alertCancel, "allow-cancel-emergency-alert")
 	mcptt(user.FunctionalAliasTakeover, "allow-takeover-functional-alias-other-user")
 	mcptt(user.FunctionalAliasBinding, "allow-functional-alias-binding-with-group")
 	if mcdataPolicy := user.MCData; mcdataPolicy != nil {
@@ -278,6 +349,20 @@ func profileRights(user User) []profileRight {
 		add(profileExtensionNS)(mcdataPolicy.EmergencyGroupCancel, "allow-cancel-group-emergency")
 	}
 	return out
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the user's <allow-activate-emergency-alert> and <allow-cancel-emergency-alert>: granted by the private call
+// or the group call policy.
+func (user User) alertRights() (bool, bool) {
+	alert, cancel := false, false
+	if private := user.PrivateCall; private != nil {
+		alert, cancel = private.Alert, private.AlertCancel
+	}
+	if groupCall := user.GroupCall; groupCall != nil {
+		alert, cancel = alert || groupCall.Alert, cancel || groupCall.AlertCancel
+	}
+	return alert, cancel
 }
 
 // ------------------------------------------------------------------------------
@@ -346,9 +431,16 @@ func (rs *profileRuleset) granted(space, extNS string) map[string]bool {
 func userProfileXML(user User) profileXML {
 	doc := profileXML{XUIURI: user.MCPTTID, ProfileIndex: user.profileIndex(), Status: true,
 		ProfileName: profileDocumentName(user.profileIndex()),
-		Common:      profileCommon{Index: "0", MCPTTUserID: profileEntry{URI: user.MCPTTID}},
-		Ruleset:     profileRulesetOf(user),
-		Extension:   &profileExtension{MCID: user.MCID, SIPURI: user.SIPURI, ClientID: user.ClientID}}
+		Common: profileCommon{Index: "0", MCPTTUserID: profileEntry{URI: user.MCPTTID},
+			GroupCall: profileGroupCall{MaxCallsN6: 1, Emergency: profileGroupInitiation{Entry: groupInitiationEntry("")},
+				Imminent: profileGroupInitiation{Entry: groupInitiationEntry("")}, Alert: profileAlert{Entry: groupInitiationEntry("")}}},
+		Ruleset:   profileRulesetOf(user),
+		Extension: &profileExtension{MCID: user.MCID, SIPURI: user.SIPURI, ClientID: user.ClientID}}
+	if groupCall := user.GroupCall; groupCall != nil {
+		doc.Common.GroupCall.Emergency.Entry = groupInitiationEntry(groupCall.EmergencyGroup)
+		doc.Common.GroupCall.Imminent.Entry = groupInitiationEntry(groupCall.ImminentGroup)
+		doc.Common.GroupCall.Alert.Entry = groupInitiationEntry(groupCall.AlertGroup)
+	}
 	on := &profileOnNetwork{Index: "0", MaxAffiliationsN2: user.MaxAffiliations}
 	if len(user.Groups) > 0 {
 		on.GroupInfo = &profileEntryList{}
@@ -364,6 +456,13 @@ func userProfileXML(user User) profileXML {
 		}
 		if private.Emergency {
 			doc.Extension.EmergencyRecipients = recipients(private.EmergencyAny, private.EmergencyRecipients)
+			emergency := &profilePrivateEmergency{}
+			emergency.Recipient.ProSe.UserInfoID = "000000000000"
+			emergency.Recipient.Entry = profileEntry{EntryInfo: "LocallyDetermined"}
+			if !private.EmergencyAny && len(private.EmergencyRecipients) == 1 {
+				emergency.Recipient.Entry = profileEntry{EntryInfo: "UsePreConfigured", URI: private.EmergencyRecipients[0]}
+			}
+			doc.Common.PrivateCall.Emergency = emergency
 		}
 		if private.Alert {
 			doc.Extension.AlertRecipients = recipients(private.AlertAny, private.AlertRecipients)
@@ -380,8 +479,7 @@ func userProfileXML(user User) profileXML {
 }
 
 // ------------------------------------------------------------------------------
-// TS 24.484 clause 8.3.2.8: profileDocumentName is the naming convention, used as the <Profile-Name> (the document
-// itself is named "index": see profileConstraints).
+// TS 24.484 clause 8.3.2.8: profileDocumentName is the naming convention, the document name and <ProfileName>.
 func profileDocumentName(index int) string {
 	return "mcptt-user-profile-" + strconv.Itoa(index) + ".xml"
 }
@@ -396,21 +494,20 @@ func (doc profileXML) mcpttID() string {
 }
 
 // ------------------------------------------------------------------------------
-// TS 24.484 clause 8.3.2.6: profileConstraints are the validation constraints that the
-// schema does not express, checked after it (RFC 4825 section 8.2.5). xui is the XUI of
-// the document URI.
-//
-// Deviation from TS 24.484 clause 8.3.2.6 (document name mcptt-user-profile-<profile-index>.xml, and one
-// <Pre-selected-indication> among a user's documents): this CMS keeps one MCPTT user profile document per user,
-// under the fixed document name "index" that the openMCX clients and servers address, so neither rule has a
-// document to apply to. The MCVideo profiles follow the naming rule (mcvideoProfileConstraints).
-func profileConstraints(raw []byte, xui string) error {
+// TS 24.484 clause 8.3.2.6: profileConstraints are the validation constraints that the schema does not express,
+// checked after it (RFC 4825 section 8.2.5). xui is the XUI of the document URI and name the document name the
+// document is stored under, mcptt-user-profile-<profile-index>.xml (this CMS keeps one document per user, so
+// <Pre-selected-indication> is optional, clause 8.3.2.6).
+func profileConstraints(raw []byte, xui, name string) error {
 	root, err := parseXMLTree(raw)
 	if err != nil {
 		return xcapFail(409, "not-well-formed", err.Error())
 	}
 	if value, _ := root.attr("XUI-URI"); value != xui {
 		return constraintFailure("Wrong User Profile URI")
+	}
+	if index, _ := root.attr("user-profile-index"); name != "mcptt-user-profile-"+index+".xml" {
+		return constraintFailure("The user profile document name does not comply with the format: 'mcptt-user-profile-<profile-index>.xml'")
 	}
 	var check func(node *xmlNode, parent string) error
 	check = func(node *xmlNode, parent string) error {
@@ -452,16 +549,25 @@ func octets(hexText string) int {
 }
 
 // ------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.1 item 8: the user profile document the CMS serves, with the <LocationUserProfileURI> of the
+// user's location user configuration data document (clause 7.4.1.2).
+func (svc *service) servedProfileXML(user User) profileXML {
+	doc := userProfileXML(user)
+	doc.Common.AnyExt = &locationURIExt{LocationURI: svc.locationDocumentURI(user.MCPTTID, user.profileIndex())}
+	return doc
+}
+
+// ------------------------------------------------------------------------------
 // TS 24.484 clause 8.3.2.3 and clause 8.3.2.6: checkProfileDocuments validates the user profile documents the CMS
 // generates from its configuration.
 func (svc *service) checkProfileDocuments() error {
 	for _, user := range svc.cfg.Users {
-		raw, err := xml.Marshal(userProfileXML(user))
+		raw, err := xml.Marshal(svc.servedProfileXML(user))
 		if err == nil {
 			err = schemaError(userProfileSchema.validate(raw))
 		}
 		if err == nil {
-			err = profileConstraints(raw, user.MCPTTID)
+			err = profileConstraints(raw, user.MCPTTID, profileDocumentName(user.profileIndex()))
 		}
 		if err != nil {
 			return fmt.Errorf("user profile document of %s: %w", user.MCPTTID, err)

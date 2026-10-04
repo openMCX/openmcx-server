@@ -42,9 +42,11 @@ void DataServer::delete_file(const std::string &url) {
 //------------------------------------------------------------------------------
 // TS 24.282 clause 10.2.4.4.2 step 9: TDC2 from the file availability in the Metadata IE, bounded
 // by <max-file-availability>, or <default-file-availability> without metadata.
+// The two values are <max-file-availability> and <default-file-availability> of the MCData service configuration
+// document (TS 24.484 clause 10.4.2.1).
 std::uint64_t DataServer::file_availability(const mcdata::FdSignalling &fd) {
-  const auto maximum = file_distribution().value("max_file_availability_ms", 600000u);
-  const auto fallback = file_distribution().value("default_file_availability_ms", 120000u);
+  const std::uint64_t maximum = service_config_.value("max_file_availability_s", 600u) * 1000ull;
+  const std::uint64_t fallback = service_config_.value("default_file_availability_s", 120u) * 1000ull;
   if (!fd.metadata) return fallback;
   const auto until = mcdata::metadata_availability(*fd.metadata);
   if (!until) return fallback;
@@ -77,7 +79,7 @@ SipResponse DataServer::media_storage_discovery(const User &user, const mcdata::
       return reject(403, "213 file distribution not allowed for this group", user.id, "msf-discovery");
     if (!settings.value("fd_supported", false))
       return reject(488, "214 FD services not supported for this group", user.id, "msf-discovery");
-    if (settings.contains("transmit_members") && !listed(settings.at("transmit_members"), user.id))
+    if (!transmit_allowed(settings, user.id))
       return reject(403, "201 user not authorised to transmit data on this group identity", user.id, "msf-discovery");
     if (!affiliated(user.id, info.calling_group))
       return reject(403, "120 user is not affiliated to this group", user.id, "msf-discovery");
@@ -136,9 +138,14 @@ SipResponse DataServer::fd(const SipMessage &received, const User &sender, mcdat
   // TS 24.282 clause 10.2.4.4.2 step 7b with clause 6.7.3.
   if (!file_available(request.file_url))
     return reject(403, "212 file referenced by file URL does not exist", sender.id, "fd");
-  // TS 24.282 clause 11.2: auto-receive turns a small file into a mandatory download.
+  // TS 24.282 clause 11.2: auto-receive turns a small file into a mandatory download; the limit is the service
+  // configuration's for one-to-one, the group document's <mcdata-on-network-max-data-size-auto-recv> for a group.
   if (!request.mandatory_download) {
-    const auto automatic = file_distribution().value("max_data_size_auto_recv_bytes", 0u);
+    const auto group_settings =
+        group_request ? group_document(info.request_uri).value_or(Json::object()).value("mcdata", Json::object())
+                      : Json::object();
+    const auto automatic = group_request ? group_settings.value("max_auto_recv_bytes", 0u)
+                                         : file_distribution().value("max_data_size_auto_recv_bytes", 0u);
     if (automatic && size && size <= automatic) request.mandatory_download = true;
   }
   const auto message_id = mcdata::uuid_text(request.message);
@@ -219,7 +226,9 @@ std::optional<SipResponse> DataServer::fd_one_to_one(const SipMessage &received,
   if (!user) return reject(404, "", sender.id, "fd");
   // TS 24.282 clause 10.2.4.3.2 step 5A: the recipient's incoming communication list.
   const auto incoming = profile(user->id).value("mcdata", Json::object());
-  if (!incoming.value("incoming_any", false) && !listed(incoming.value("incoming_from", Json::array()), sender.id))
+  // The list applies with one or more entries (TS 24.282 clause 10.2.4.3.2 step 5A).
+  const auto incoming_list = incoming.value("incoming_from", Json::array());
+  if (!incoming.value("incoming_any", false) && !incoming_list.empty() && !listed(incoming_list, sender.id))
     return reject(403, "230 one-to-one MCData communication not authorised from this originating user", sender.id,
                   "fd");
   called_alias = info.called_functional_alias;
@@ -246,7 +255,7 @@ std::optional<SipResponse> DataServer::fd_group(const User &sender, mcdata::Info
     return reject(403, "213 file distribution not allowed for this group", sender.id, "fd");
   if (!settings.value("fd_supported", false))
     return reject(488, "214 FD services not supported for this group", sender.id, "fd");
-  if (settings.contains("transmit_members") && !listed(settings.at("transmit_members"), sender.id))
+  if (!transmit_allowed(settings, sender.id))
     return reject(403, "201 user not authorised to transmit data on this group identity", sender.id, "fd");
   if (const auto max = limit(settings, "max_fd_bytes"); max && size > max)
     return reject(403,

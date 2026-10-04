@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Source: ETSI TS 124 484 V19.6.0 (2026-07), the MCData service configuration document schema (clause 10.4.2.3).
+     Taken from the 3GPP/ETSI specification (clause cited above). The page headers and footers were removed and
+     the lines the page width wrapped inside attribute values were joined; the schema text is otherwise unchanged. -->
+<xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified"
+xmlns:xs="http://www.w3.org/2001/XMLSchema"
+targetNamespace="urn:3gpp:ns:mcdataServiceConfig:1.0"
+xmlns:mcdatasc="urn:3gpp:ns:mcdataServiceConfig:1.0">
+<xs:import namespace="http://www.w3.org/XML/1998/namespace"
+schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+<!-- the root element -->
+  <xs:element name="service-configuration-info" type="mcdatasc:service-configuration-info-Type"/>
+<!-- the root type -->
+<!-- this is refined with one or more sub-types -->
+  <xs:complexType name="service-configuration-info-Type">
+    <xs:sequence>
+      <xs:element name="service-configuration-params" type="mcdatasc:service-configuration-params-Type" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+     </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+<!-- definition of the service-configuration-params-Type subtype-->
+  <xs:complexType name="service-configuration-params-Type">
+    <xs:sequence>
+      <xs:element name="common" type="mcdatasc:commonType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="on-network" type="mcdatasc:on-networkType" minOccurs="0"
+maxOccurs="unbounded"/>
+      <xs:element name="off-network" type="mcdatasc:off-networkType" minOccurs="0"
+maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="domain" type="xs:anyURI" use="required"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="commonType">
+    <xs:sequence>
+      <xs:element name="tx-and-rx-control" type="mcdatasc:common-tx-and-rx-controlType"
+minOccurs="0"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="on-networkType">
+    <xs:sequence>
+      <xs:element name="tx-and-rx-control" type="mcdatasc:on-network-tx-and-rx-controlType"
+minOccurs="0"/>
+      <xs:element name="signalling-protection" type="mcdatasc:signalling-protectionType"
+minOccurs="0"/>
+      <xs:element name="protection-between-mcdata-servers" type="mcdatasc:server-protectionType"
+minOccurs="0"/>
+      <xs:element name="file-availability" type="mcdatasc:on-network-file-availabilityType"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:element name="emergency-resource-priority" type="mcdatasc:resource-priorityType"/>
+  <xs:element name="imminent-peril-resource-priority" type="mcdatasc:resource-priorityType"/>
+  <xs:element name="normal-resource-priority" type="mcdatasc:resource-priorityType"/>
+  <xs:complexType name="off-networkType">
+    <xs:sequence>
+      <xs:element name="default-prose-per-packet-priority" type="mcdatasc:default-prose-per-packet-priorityType" minOccurs="0"/>
+      <xs:element name="default-pqi" type="mcdatasc:default-pqiType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="default-prose-per-packet-priorityType">
+    <xs:sequence>
+      <xs:element name="mcdata-one-to-one-call-signalling" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="mcdata-one-to-one-call-media" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="default-pqiType">
+    <xs:sequence>
+      <xs:element name="mcdata-one-to-one-call-signalling" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="mcdata-one-to-one-call-media" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="common-tx-and-rx-controlType">
+    <xs:sequence>
+      <xs:element name="time-temp-data-waiting" type="xs:duration" minOccurs="0"/>
+      <xs:element name="time-periodic-announcement" type="xs:duration" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="signalling-protectionType">
+    <xs:sequence>
+      <xs:element name="confidentiality-protection" type="xs:boolean" minOccurs="0" default="true"/>
+      <xs:element name="integrity-protection" type="xs:boolean" minOccurs="0" default="true"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="server-protectionType">
+    <xs:sequence>
+      <xs:element name="allow-signalling-protection" type="xs:boolean" minOccurs="0"
+default="true"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="on-network-tx-and-rx-controlType">
+    <xs:sequence>
+      <xs:element name="max-data-size-sds-bytes" type="xs:unsignedInt" minOccurs="0"/>
+      <xs:element name="max-payload-size-sds-cplane-bytes" type="xs:unsignedInt" minOccurs="0"/>
+      <xs:element name="max-data-size-fd-bytes" type="xs:unsignedInt" minOccurs="0"/>
+      <xs:element name="max-data-size-auto-recv-bytes" type="xs:unsignedInt" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="on-network-file-availabilityType">
+    <xs:sequence>
+      <xs:element name="default-file-availability" type="xs:unsignedInt"/>
+      <xs:element name="max-file-availability" type="xs:unsignedInt" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="resource-priorityType">
+    <xs:sequence>
+      <xs:element name="resource-priority-namespace" type="xs:string"/>
+      <xs:element name="resource-priority-priority" type="xs:string"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:element name="functional-alias-list" type="mcdatasc:functional-alias-listType"/>
+<!-- definition of the functional-alias-listType subtype-->
+  <xs:complexType name="functional-alias-listType">
+    <xs:sequence>
+      <xs:element name="functional-alias-entry" type="mcdatasc:functional-alias-entryType"
+minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+<!-- definition of the functional-aliasType subtype-->
+  <xs:complexType name="functional-alias-entryType">
+    <xs:sequence>
+      <xs:element name="functional-alias" type="xs:anyURI"/>
+      <xs:element name="max-simultaneous-activations" type="xs:positiveInteger"/>
+      <xs:element name="allow-takeover" type="xs:boolean"/>
+      <xs:element name="mcdata-user-list" type="mcdatasc:ListEntryType"/>
+      <xs:element name="functional-alias-priority" type="xs:positiveInteger"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+<xs:element name="max-simultaneous-authorizations" type="xs:positiveInteger"/>
+  <xs:element name="notificationserver-hostname-list" type="mcdatasc:notificationserver-hostname-listType"/>
+<!-- definition of the notificationserver-hostname-listType subtype-->
+  <xs:complexType name="notificationserver-hostname-listType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="ns-entry" type="xs:anyURI" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+<!-- child elements of anyExt element of on-network element to support adhoc group data
+communications -->
+  <xs:element name="adhoc-group-data-comn" type="mcdatasc:adhoc-group-comnType"/>
+  <xs:complexType name="adhoc-group-comnType">
+    <xs:sequence>
+      <xs:element name="allow-adhoc-group-data-comn-support" type="xs:boolean"/>
+      <xs:element name="max-no-participants" type="xs:positiveInteger"/>
+      <xs:element name="hang-time" type="xs:duration" minOccurs="0"/>
+      <xs:element name="max-duration-of-data-comn" type="xs:duration" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+   </xs:complexType>
+  <xs:complexType name="ListEntryType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="entry" type="mcdatasc:EntryType"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attribute ref="xml:lang"/>
+    <xs:attributeGroup ref="mcdatasc:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="EntryType">
+    <xs:sequence>
+      <xs:element name="uri-entry" type="xs:anyURI"/>
+      <xs:element name="display-name" type="mcdatasc:DisplayNameElementType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcdatasc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcdatasc:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:attributeGroup name="IndexType">
+    <xs:attribute name="index" type="xs:token"/>
+  </xs:attributeGroup>
+  <xs:complexType name="DisplayNameElementType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute ref="xml:lang"/>
+        <xs:anyAttribute namespace="##any" processContents="lax"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+  <xs:complexType name="anyExtType">
+    <xs:sequence>
+      <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>
+

@@ -283,7 +283,7 @@ def main():
         'Resource-Priority (6.2.8.1.1, 6.2.8.1.2)',
         bool(group_emergency)
         and all(
-            header(message, 'resource-priority') == 'mcdata.15' and message['info'].get('mcdata-request-uri')
+            header(message, 'resource-priority') == 'mcpttp.15' and message['info'].get('mcdata-request-uri')
             for message in group_emergency
         ),
     )
@@ -292,14 +292,14 @@ def main():
         'Resource-Priority (6.2.8.1.9, 6.2.8.1.12)',
         bool(group_imminent)
         and all(
-            header(message, 'resource-priority') == 'mcdata.10' and 'emergency-ind' not in message['info']
+            header(message, 'resource-priority') == 'mcpttp.10' and 'emergency-ind' not in message['info']
             for message in group_imminent
         ),
     )
     check(
         'a cancellation carries <emergency-ind> false with the normal Resource-Priority (6.2.8.1.3)',
         bool(group_cancel)
-        and any(header(message, 'resource-priority') == 'mcdata.0' for message in group_cancel)
+        and any(header(message, 'resource-priority') == 'mcpttp.0' for message in group_cancel)
         and any(response['status'] == 200 for message in group_cancel for response in answers(message)),
     )
     served = [
@@ -309,19 +309,19 @@ def main():
         'the members are invited at the level of the in-progress state of the group (6.3.7.1.11)',
         any(
             message['info'].get('emergency-ind') == 'true'
-            and header(message, 'resource-priority') == 'mcdata.15'
+            and header(message, 'resource-priority') == 'mcpttp.15'
             and message['info'].get('mcdata-calling-group-id')
             for message in served
         )
         and any(
-            message['info'].get('imminentperil-ind') == 'true' and header(message, 'resource-priority') == 'mcdata.10'
+            message['info'].get('imminentperil-ind') == 'true' and header(message, 'resource-priority') == 'mcpttp.10'
             for message in served
         ),
     )
     check(
         'the members are told when the in-progress emergency state is cancelled (6.3.7.1.14)',
         any(
-            message['info'].get('emergency-ind') == 'false' and header(message, 'resource-priority') == 'mcdata.0'
+            message['info'].get('emergency-ind') == 'false' and header(message, 'resource-priority') == 'mcpttp.0'
             for message in served
         ),
     )
@@ -490,7 +490,7 @@ def main():
     check(
         'an emergency group file distribution carries the emergency Resource-Priority (6.3.7.1.11)',
         any(
-            message['info'].get('emergency-ind') == 'true' and header(message, 'resource-priority') == 'mcdata.15'
+            message['info'].get('emergency-ind') == 'true' and header(message, 'resource-priority') == 'mcpttp.15'
             for message in file_deliveries
         ),
     )

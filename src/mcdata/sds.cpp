@@ -190,7 +190,7 @@ std::optional<SipResponse> DataServer::sds_group(const User &sender, mcdata::Inf
   if (!settings.value("sds_supported", false))
     return reject(488, "207 SDS services not supported for this group", sender.id, request.c_str());
   if (document.value("regrouped", false)) return reject(403, "148 group is regrouped", sender.id, request.c_str());
-  if (settings.contains("transmit_members") && !listed(settings.at("transmit_members"), sender.id))
+  if (!transmit_allowed(settings, sender.id))
     return reject(403, "201 user not authorised to transmit data on this group identity", sender.id, request.c_str());
   if (const auto max = limit(settings, "max_request_bytes"); max && size > max)
     return reject(403,

@@ -57,4 +57,10 @@ Affiliation affiliation_status(const ServiceProfile &service, const ServedUser &
 //------------------------------------------------------------------------------
 // Helper: whether a JSON list (of a group or policy document) names the ID; anything but a list names nobody.
 bool listed(const Json &list, const std::string &id);
+
+//------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.4.2 and TS 24.282 clause 11.1 step 2: whether an MCData group's document lets a member
+// transmit data in the group (<mcdata-allow-transmit-data-in-this-group>): for every member ("transmit_all"), or for
+// those listed ("transmit_members"); with neither, no member may.
+bool transmit_allowed(const Json &settings, const std::string &id);
 } // namespace mcx

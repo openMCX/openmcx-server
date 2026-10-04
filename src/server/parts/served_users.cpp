@@ -37,4 +37,11 @@ bool listed(const Json &list, const std::string &id) {
   return false;
 }
 
+//------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.4.2: the group's <mcdata-allow-transmit-data-in-this-group> for a member.
+bool transmit_allowed(const Json &settings, const std::string &id) {
+  if (settings.value("transmit_all", false)) return true;
+  return settings.contains("transmit_members") && listed(settings.at("transmit_members"), id);
+}
+
 } // namespace mcx

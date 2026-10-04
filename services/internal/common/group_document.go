@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"slices"
 )
 
@@ -46,14 +47,23 @@ type listServiceXML struct {
 	URI  string        `xml:"uri,attr"`
 	List *groupListXML `xml:"list"`
 	// <cp:ruleset>: <on-network-allow-getting-member-list> for the members (TS 24.481 clause 7.2.12.1).
-	Ruleset              *rulesetXML            `xml:"urn:ietf:params:xml:ns:common-policy ruleset"`
-	SupportedServices    supportedServicesXML   `xml:"urn:oma:xml:xdm:extensions supported-services"`
-	MaxParticipants      int                    `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-max-participant-count,omitempty"`
-	PreconfiguredUseOnly bool                   `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 preconfigured-group-use-only,omitempty"`
-	ProtectMedia         bool                   `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 protect-media"`
-	ProtectFloor         bool                   `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 protect-floor-control-signalling"`
+	Ruleset              *rulesetXML          `xml:"urn:ietf:params:xml:ns:common-policy ruleset"`
+	SupportedServices    supportedServicesXML `xml:"urn:oma:xml:xdm:extensions supported-services"`
+	InviteMembers        *bool                `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-invite-members,omitempty"`
+	MaxDuration          string               `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-maximum-duration,omitempty"`
+	MaxParticipants      int                  `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-max-participant-count,omitempty"`
+	PreconfiguredUseOnly bool                 `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 preconfigured-group-use-only,omitempty"`
+	Disabled             *struct{}            `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-disabled,omitempty"`
+	ProtectMedia         bool                 `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 protect-media"`
+	ProtectFloor         bool                 `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 protect-floor-control-signalling"`
+	// MCData group (TS 24.481 clause 7.2.2): the short data service, file distribution and their size limits.
+	AllowSDS             *bool                  `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-allow-short-data-service,omitempty"`
+	AllowFD              *bool                  `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-allow-file-distribution,omitempty"`
 	AllowEnhancedStatus  bool                   `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-allow-enhanced-status,omitempty"`
 	EnhancedStatusValues *enhancedStatusListXML `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-enhanced-status-operational-values"`
+	MaxSDSBytes          int                    `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-on-network-max-data-size-for-SDS,omitempty"`
+	MaxFDBytes           int                    `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-on-network-max-data-size-for-FD,omitempty"`
+	MaxAutoRecvBytes     int                    `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-on-network-max-data-size-auto-recv,omitempty"`
 	OnNetworkTemporary   *temporaryXML          `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-temporary"`
 	OnNetworkRegrouped   []regroupedXML         `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-regrouped"`
 	Configuration        *groupConfigurationXML `xml:"urn:openmcx:ns:groupConfiguration:1.0 configuration"`
@@ -107,6 +117,8 @@ type groupListXML struct {
 type groupEntryXML struct {
 	URI          string `xml:"uri,attr"`
 	UserPriority int    `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 user-priority,omitempty"`
+	// <on-network-recvonly> (TS 24.481 clause 7.2.4.2): the member only receives in the group's calls.
+	RecvOnly *struct{} `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-recvonly,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -124,15 +136,113 @@ type ruleXML struct {
 }
 
 // ------------------------------------------------------------------------------
-// TS 24.481 clause 7.2.12.1: the <is-list-member> condition.
+// TS 24.481 clause 7.2.4.1: the <is-list-member> condition (every member), or an <identity> condition naming one
+// member (RFC 4745 <one>).
 type conditionXML struct {
-	IsListMember *struct{} `xml:"urn:oma:xml:poc:list-service is-list-member"`
+	IsListMember *struct{}    `xml:"urn:oma:xml:poc:list-service is-list-member"`
+	Identity     *identityXML `xml:"urn:ietf:params:xml:ns:common-policy identity"`
 }
 
 // ------------------------------------------------------------------------------
-// TS 24.481 clause 7.2.12.1: the <on-network-allow-getting-member-list> action.
+// RFC 4745 clause 7.1: an <identity> condition with its <one> identities.
+type identityXML struct {
+	One []oneXML `xml:"urn:ietf:params:xml:ns:common-policy one"`
+}
+
+// ------------------------------------------------------------------------------
+// RFC 4745 clause 7.1.1: one identity, by its "id" attribute.
+type oneXML struct {
+	ID string `xml:"id,attr"`
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.4.2: the <actions> of a rule this GMS writes: getting the member list, the MCPTT and MCVideo
+// emergency group call, imminent peril call and emergency alert (TS 24.379 and TS 24.281 clause 6.3.3.1.13), and
+// transmitting data in the group (TS 24.282 clause 11.1).
 type actionsXML struct {
-	AllowGettingMemberList bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-allow-getting-member-list,omitempty"`
+	JoinHandling               bool `xml:"urn:oma:xml:poc:list-service join-handling,omitempty"`
+	AllowGettingMemberList     bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-allow-getting-member-list,omitempty"`
+	AllowEmergencyCall         bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 allow-MCPTT-emergency-call,omitempty"`
+	AllowImminentPeril         bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 allow-imminent-peril-call,omitempty"`
+	AllowEmergencyAlert        bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 allow-MCPTT-emergency-alert,omitempty"`
+	VideoAllowEmergencyCall    bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcvideo-allow-emergency-call,omitempty"`
+	VideoAllowEmergencyAlert   bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcvideo-allow-emergency-alert,omitempty"`
+	VideoAllowImminentPeril    bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcvideo-allow-imminent-peril-call,omitempty"`
+	DataAllowTransmitThisGroup bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-allow-transmit-data-in-this-group,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// Helper: whether a rule grants anything.
+func (actions actionsXML) any() bool { return actions != actionsXML{} }
+
+// ------------------------------------------------------------------------------
+// Helper: the identities a priority policy lists under a key (MCPTT or MCVideo IDs).
+func policyIDs(policy map[string]any, key string) []string {
+	var out []string
+	list, _ := policy[key].([]any)
+	for _, item := range list {
+		if id, ok := item.(string); ok {
+			out = append(out, id)
+		}
+	}
+	if typed, ok := policy[key].([]string); ok {
+		out = append(out, typed...)
+	}
+	return out
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.12.1: the rules of a group: one for every member (<is-list-member>) with the actions the group
+// allows all its members, and one per member listed (<identity>) with the actions the group allows that member: the
+// emergency, imminent peril and emergency alert lists of the MCPTT and MCVideo priority policies, and the MCData
+// members that may transmit.
+func groupRules(group Group) *rulesetXML {
+	all := actionsXML{AllowGettingMemberList: group.AllowGettingMemberList, AllowEmergencyCall: group.AllowEmergencyCall,
+		AllowImminentPeril: group.AllowImminentPeril, AllowEmergencyAlert: group.AllowEmergencyAlert}
+	var order []string
+	byID := map[string]*actionsXML{}
+	grant := func(ids []string, set func(*actionsXML)) {
+		for _, id := range ids {
+			if byID[id] == nil {
+				byID[id] = &actionsXML{}
+				order = append(order, id)
+			}
+			set(byID[id])
+		}
+	}
+	// <join-handling> (TS 24.379 clause 6.3.5.3): every member may join, unless call_policy join_members names who may.
+	if joiners := policyIDs(group.CallPolicy, "join_members"); group.CallPolicy != nil && group.CallPolicy["join_members"] != nil {
+		grant(joiners, func(a *actionsXML) { a.JoinHandling = true })
+	} else {
+		all.JoinHandling = true
+	}
+	grant(policyIDs(group.PriorityPolicy, "emergency_users"), func(a *actionsXML) { a.AllowEmergencyCall = true })
+	grant(policyIDs(group.PriorityPolicy, "imminent_users"), func(a *actionsXML) { a.AllowImminentPeril = true })
+	grant(policyIDs(group.PriorityPolicy, "alert_users"), func(a *actionsXML) { a.AllowEmergencyAlert = true })
+	if video := group.MCVideo; video != nil {
+		all.VideoAllowEmergencyCall, all.VideoAllowImminentPeril = video.AllowEmergencyCall, video.AllowImminentPeril
+		all.VideoAllowEmergencyAlert = video.AllowEmergencyAlert
+		grant(policyIDs(video.PriorityPolicy, "emergency_users"), func(a *actionsXML) { a.VideoAllowEmergencyCall = true })
+		grant(policyIDs(video.PriorityPolicy, "imminent_users"), func(a *actionsXML) { a.VideoAllowImminentPeril = true })
+		grant(policyIDs(video.PriorityPolicy, "alert_users"), func(a *actionsXML) { a.VideoAllowEmergencyAlert = true })
+	}
+	if data := group.MCData; data != nil {
+		all.DataAllowTransmitThisGroup = data.TransmitAll
+		grant(data.TransmitMembers, func(a *actionsXML) { a.DataAllowTransmitThisGroup = true })
+	}
+	ruleset := &rulesetXML{}
+	if all.any() {
+		ruleset.Rules = append(ruleset.Rules, ruleXML{ID: "members", Conditions: &conditionXML{IsListMember: &struct{}{}},
+			Actions: all})
+	}
+	for index, id := range order {
+		ruleset.Rules = append(ruleset.Rules, ruleXML{ID: fmt.Sprintf("member-%d", index+1),
+			Conditions: &conditionXML{Identity: &identityXML{One: []oneXML{{ID: id}}}}, Actions: *byID[id]})
+	}
+	if len(ruleset.Rules) == 0 {
+		return nil
+	}
+	return ruleset
 }
 
 // ------------------------------------------------------------------------------
@@ -196,16 +306,34 @@ type groupExtension struct {
 func groupDocument(group Group, withList bool) ([]byte, error) {
 	ls := listServiceXML{URI: group.ID, ProtectMedia: group.ProtectMedia, ProtectFloor: group.ProtectFloor,
 		PreconfiguredUseOnly: group.PreconfiguredUseOnly}
+	if group.Disabled {
+		ls.Disabled = &struct{}{}
+	}
 	if withList {
 		list := &groupListXML{Entries: []groupEntryXML{}}
+		receiveOnly := policyIDs(group.PriorityPolicy, "receive_only_users")
 		for _, id := range group.Members {
-			list.Entries = append(list.Entries, groupEntryXML{URI: id, UserPriority: group.UserPriorities[id]})
+			entry := groupEntryXML{URI: id, UserPriority: group.UserPriorities[id]}
+			if slices.Contains(receiveOnly, id) {
+				entry.RecvOnly = &struct{}{}
+			}
+			list.Entries = append(list.Entries, entry)
 		}
 		ls.List = list
 	}
-	if group.AllowGettingMemberList {
-		ls.Ruleset = &rulesetXML{Rules: []ruleXML{{ID: "members", Conditions: &conditionXML{IsListMember: &struct{}{}},
-			Actions: actionsXML{AllowGettingMemberList: true}}}}
+	ls.Ruleset = groupRules(group)
+	// <on-network-invite-members> (TS 24.481 clause 7.2.4.2): true for a prearranged group, whose members are invited
+	// to its calls; a chat group has none (TS 24.379 clause 10.1.2).
+	// <on-network-maximum-duration>, which TS 24.481 clause 7.2.7 requires with it: the duration the MCPTT server
+	// enforces (call_policy maximum_duration_ms, by default one hour).
+	if group.Type != "chat" {
+		invite := true
+		ls.InviteMembers = &invite
+		durationMs := 3600000.0
+		if value, ok := group.CallPolicy["maximum_duration_ms"].(float64); ok && value > 0 {
+			durationMs = value
+		}
+		ls.MaxDuration = fmt.Sprintf("PT%dS", int(durationMs/1000))
 	}
 	ls.SupportedServices.Services = []serviceXML{{Enabler: mcpttICSI}}
 	if group.MCData != nil {
@@ -216,6 +344,10 @@ func groupDocument(group Group, withList bool) ([]byte, error) {
 	}
 	if max, ok := group.CallPolicy["max_participants"].(float64); ok {
 		ls.MaxParticipants = int(max)
+	}
+	if data := group.MCData; data != nil {
+		ls.AllowSDS, ls.AllowFD = &data.AllowSDS, &data.AllowFD
+		ls.MaxSDSBytes, ls.MaxFDBytes, ls.MaxAutoRecvBytes = data.MaxSDSBytes, data.MaxFDBytes, data.MaxAutoRecvBytes
 	}
 	if group.MCData != nil && group.MCData.AllowEnhancedStatus {
 		ls.AllowEnhancedStatus = true
@@ -276,10 +408,9 @@ func parseGroupDocument(raw []byte) (Group, error) {
 			}
 		}
 	}
-	if ls.Ruleset != nil {
-		for _, rule := range ls.Ruleset.Rules {
-			group.AllowGettingMemberList = group.AllowGettingMemberList || rule.Actions.AllowGettingMemberList
-		}
+	group.Disabled = ls.Disabled != nil
+	if ls.InviteMembers != nil && !*ls.InviteMembers && group.Type == "" {
+		group.Type = "chat"
 	}
 	if ls.OnNetworkTemporary != nil {
 		group.TemporaryConstituents = ls.OnNetworkTemporary.Constituents.IDs
@@ -305,6 +436,23 @@ func parseGroupDocument(raw []byte) (Group, error) {
 		group.Type, group.SubordinateGroups, group.Regrouped = extension.Type, extension.SubordinateGroups, extension.Regrouped
 		group.CallPolicy, group.FloorPriorityCaps, group.PriorityPolicy = extension.CallPolicy, extension.FloorPriorityCaps, extension.PriorityPolicy
 		group.MCData, group.MCVideo = extension.MCData, extension.MCVideo
+	}
+	if ls.Ruleset != nil {
+		readRules(&group, ls.Ruleset.Rules)
+	}
+	// <on-network-recvonly> members: the priority policy's receive_only_users.
+	if ls.List != nil {
+		for _, entry := range ls.List.Entries {
+			if entry.RecvOnly == nil {
+				continue
+			}
+			if group.PriorityPolicy == nil {
+				group.PriorityPolicy = map[string]any{}
+			}
+			if ids := policyIDs(group.PriorityPolicy, "receive_only_users"); !slices.Contains(ids, entry.URI) {
+				group.PriorityPolicy["receive_only_users"] = append(ids, entry.URI)
+			}
+		}
 	}
 	if group.CallPolicy == nil && ls.MaxParticipants > 0 {
 		group.CallPolicy = map[string]interface{}{"max_participants": float64(ls.MaxParticipants)}
@@ -389,4 +537,69 @@ func gmopGetExcludingMemberList(raw []byte) (bool, error) {
 		return false, err
 	}
 	return doc.Request != nil && doc.Request.Get != nil, nil
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.12.1: the rules of an uploaded group document read back: the actions of the <is-list-member>
+// rule become the group's settings for every member, those of <identity> rules the lists of the members they name.
+func readRules(group *Group, rules []ruleXML) {
+	add := func(policy *map[string]any, key, id string) {
+		if *policy == nil {
+			*policy = map[string]any{}
+		}
+		ids := policyIDs(*policy, key)
+		if !slices.Contains(ids, id) {
+			(*policy)[key] = append(ids, id)
+		}
+	}
+	for _, rule := range rules {
+		actions := rule.Actions
+		if rule.Conditions != nil && rule.Conditions.IsListMember != nil {
+			group.AllowGettingMemberList = group.AllowGettingMemberList || actions.AllowGettingMemberList
+			group.AllowEmergencyCall = group.AllowEmergencyCall || actions.AllowEmergencyCall
+			group.AllowImminentPeril = group.AllowImminentPeril || actions.AllowImminentPeril
+			group.AllowEmergencyAlert = group.AllowEmergencyAlert || actions.AllowEmergencyAlert
+			if group.MCVideo != nil {
+				group.MCVideo.AllowEmergencyCall = group.MCVideo.AllowEmergencyCall || actions.VideoAllowEmergencyCall
+				group.MCVideo.AllowImminentPeril = group.MCVideo.AllowImminentPeril || actions.VideoAllowImminentPeril
+				group.MCVideo.AllowEmergencyAlert = group.MCVideo.AllowEmergencyAlert || actions.VideoAllowEmergencyAlert
+			}
+			if group.MCData != nil {
+				group.MCData.TransmitAll = group.MCData.TransmitAll || actions.DataAllowTransmitThisGroup
+			}
+			continue
+		}
+		if rule.Conditions == nil || rule.Conditions.Identity == nil {
+			continue
+		}
+		for _, one := range rule.Conditions.Identity.One {
+			if actions.JoinHandling {
+				add(&group.CallPolicy, "join_members", one.ID)
+			}
+			if actions.AllowEmergencyCall {
+				add(&group.PriorityPolicy, "emergency_users", one.ID)
+			}
+			if actions.AllowImminentPeril {
+				add(&group.PriorityPolicy, "imminent_users", one.ID)
+			}
+			if actions.AllowEmergencyAlert {
+				add(&group.PriorityPolicy, "alert_users", one.ID)
+			}
+			if video := group.MCVideo; video != nil {
+				if actions.VideoAllowEmergencyCall {
+					add(&video.PriorityPolicy, "emergency_users", one.ID)
+				}
+				if actions.VideoAllowImminentPeril {
+					add(&video.PriorityPolicy, "imminent_users", one.ID)
+				}
+				if actions.VideoAllowEmergencyAlert {
+					add(&video.PriorityPolicy, "alert_users", one.ID)
+				}
+			}
+			if data := group.MCData; data != nil && actions.DataAllowTransmitThisGroup &&
+				!slices.Contains(data.TransmitMembers, one.ID) {
+				data.TransmitMembers = append(data.TransmitMembers, one.ID)
+			}
+		}
+	}
 }

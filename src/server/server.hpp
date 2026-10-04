@@ -12,6 +12,7 @@
 // TS 24.484 V19.6.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), TS 24.545, TS 29.283, RFC 3891, RFC 5359, RFC 5874.
 #pragma once
 
+#include "mcx/af.hpp"
 #include "mcx/adhoc_call.hpp"
 #include "mcx/admission.hpp"
 #include "mcx/diameter.hpp"
@@ -300,6 +301,16 @@ protected:
   unsigned next_port_ = 0;
   std::string core_address_, session_service_;
   std::map<std::string, PriorityState> priorities_;
+  // N5 AF role (TS 23.289 clauses 5.4 to 5.6, TS 29.514; src/server/pcf.cpp): one app session per active leg of a UE
+  // on 5G access, keyed by the leg's dialog. Null without an enabled "pcf" block: N5 off.
+  std::unique_ptr<af::PolicyAuthorizationClient> pcf_;
+  std::uint64_t pcf_checked_ = 0;
+  void pcf_start();
+  std::optional<af::SessionRequest> pcf_request(const Leg &leg) const;
+  void pcf_open(const Leg &leg);
+  void pcf_event(const af::Event &result);
+  void pcf_tick(std::uint64_t now);
+  void pcf_stop();
   // Functional alias activation state (TS 24.379 clause 9A.2.2.3.2): alias -> MCPTT
   // IDs in activation order. The server both serves the user and owns aliases.
   AliasRegistry functional_aliases_;
@@ -582,6 +593,13 @@ protected:
   void negotiate_priority(Leg &leg, const Json &profile, std::optional<std::uint8_t> offer);
 
   FloorArbitratorOptions floor_options() const;
+
+  // TS 24.379 clause 6.3.3.1.19 (TS 24.281 likewise) and TS 24.380 clause 11: the values of the service's service
+  // configuration document (TS 24.484 clauses 8.4 and 9.4) from the CMS, refreshed every 30 seconds.
+  Json service_config_ = Json::object();
+  std::uint64_t service_config_at_ = 0;
+  void refresh_service_config(std::uint64_t now);
+  Json service_resource_priority() const { return service_config_.value("resource_priority", Json::object()); }
 
   void schedule(std::function<void()> task) { pending_.push_back(std::move(task)); }
 
@@ -1057,7 +1075,7 @@ protected:
 
   std::map<std::string, ConfigSubscription> config_subscriptions_;
   Counters configsub_counters_{"subscriptions", "notifies", "refused"};
-  static constexpr const char *profile_auid = "3gpp.mcptt.user-profile/users/";
+  static constexpr const char *profile_auid = "org.3gpp.mcptt.user-profile/users/";
 
   static std::vector<std::string> subscribed_profiles(const std::string &list);
 

@@ -60,6 +60,25 @@ type mcvideoCommon struct {
 	Index       string              `xml:"index,attr"`
 	UserID      profileEntry        `xml:"MCVideoUserID"`
 	PrivateCall *mcvideoPrivateCall `xml:"PrivateCall,omitempty"`
+	GroupCall   mcvideoGroupCall    `xml:"MCVideo-group-call"`
+	AnyExt      *locationURIExt     `xml:"anyExt,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 9.3.2.1 item 8 e: the <MCVideo-group-call> element of <Common>, as <MCPTT-group-call>
+// (TS 24.281 clause 6.3.3.1.13 reads its group entries).
+type mcvideoGroupCall struct {
+	MaxCallsN6 int                    `xml:"MaxSimultaneousCallsN6"`
+	Emergency  mcvideoGroupInitiation `xml:"EmergencyCall"`
+	Imminent   mcvideoGroupInitiation `xml:"ImminentPerilCall"`
+	Alert      profileAlert           `xml:"EmergencyAlert"`
+	Priority   int                    `xml:"Priority"`
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 9.3.2.3: <MCVideoGroupInitiation> with its <entry>.
+type mcvideoGroupInitiation struct {
+	Entry profileEntry `xml:"MCVideoGroupInitiation>entry"`
 }
 
 // ------------------------------------------------------------------------------
@@ -117,6 +136,7 @@ type mcvideoProfileExtension struct {
 // carries, under the keys the MCVideo server reads.
 type mcvideoRights struct {
 	PrivateCall              *PrivateCallPolicy `json:"private_call,omitempty"`
+	GroupCall                *GroupCallPolicy   `json:"group_call,omitempty"`
 	AdhocCall                *AdhocCallPolicy   `json:"adhoc_call,omitempty"`
 	Regroup                  bool               `json:"regroup,omitempty"`
 	RemoteGroupSelection     []string           `json:"remote_group_selection,omitempty"`
@@ -150,6 +170,8 @@ var mcvideoDirectActions = map[string]bool{
 	"allow-private-call": true, "allow-manual-commencement": true, "allow-automatic-commencement": true,
 	"allow-force-auto-answer": true, "allow-emergency-private-call": true, "allow-cancel-private-emergency-call": true,
 	"allow-private-call-to-any-user": true, "allow-regroup": true, "allow-revoke-transmit": true,
+	"allow-emergency-group-call": true, "allow-cancel-group-emergency": true, "allow-imminent-peril-call": true,
+	"allow-cancel-imminent-peril": true, "allow-activate-emergency-alert": true, "allow-cancel-emergency-alert": true,
 }
 
 // ------------------------------------------------------------------------------
@@ -177,8 +199,23 @@ func mcvideoProfileRights(rights mcvideoRights) []profileRight {
 		video(private.AmbientRemote, "allow-request-remote-initiated-ambient-viewing")
 		video(private.AmbientLocal, "allow-request-locally-initiated-ambient-viewing")
 	}
+	alert, alertCancel := false, false
+	if private := rights.PrivateCall; private != nil {
+		alert, alertCancel = private.Alert, private.AlertCancel
+	}
+	if groupCall := rights.GroupCall; groupCall != nil {
+		video(groupCall.Emergency, "allow-emergency-group-call")
+		video(groupCall.EmergencyCancel, "allow-cancel-group-emergency")
+		video(groupCall.Imminent, "allow-imminent-peril-call")
+		video(groupCall.ImminentCancel, "allow-cancel-imminent-peril")
+		alert, alertCancel = alert || groupCall.Alert, alertCancel || groupCall.AlertCancel
+	}
+	// One element each for group and private emergency alerts (TS 24.281 clause 6.3.3.1.13).
+	video(alert, "allow-activate-emergency-alert")
+	video(alertCancel, "allow-cancel-emergency-alert")
 	if adhoc := rights.AdhocCall; adhoc != nil {
 		video(adhoc.Allow, "allow-adhoc-group-call")
+		video(adhoc.Participation, "allow-adhoc-group-call-participation")
 		video(adhoc.Emergency, "allow-emergency-adhoc-group-call")
 		video(adhoc.Imminent, "allow-imminent-peril-adhoc-group-call")
 		video(adhoc.Modify, "allow-to-modify-adhoc-group-call-participants-info")
@@ -205,8 +242,16 @@ func (svc *service) mcvideoProfileXML(user User) (mcvideoProfileXML, error) {
 	}
 	doc := mcvideoProfileXML{XUIURI: user.MCVideoID, ProfileIndex: user.profileIndex(), Status: true,
 		ProfileName: mcvideoProfileDocumentName(user.profileIndex()),
-		Common:      mcvideoCommon{Index: "0", UserID: profileEntry{URI: user.MCVideoID}},
-		Ruleset:     rulesetOf(mcvideoProfileRights(rights), mcvideoProfileNS, mcvideoDirectActions)}
+		Common: mcvideoCommon{Index: "0", UserID: profileEntry{URI: user.MCVideoID},
+			GroupCall: mcvideoGroupCall{MaxCallsN6: 1, Emergency: mcvideoGroupInitiation{Entry: groupInitiationEntry("")},
+				Imminent: mcvideoGroupInitiation{Entry: groupInitiationEntry("")}, Alert: profileAlert{Entry: groupInitiationEntry("")}}},
+		Ruleset: rulesetOf(mcvideoProfileRights(rights), mcvideoProfileNS, mcvideoDirectActions)}
+	if groupCall := rights.GroupCall; groupCall != nil {
+		doc.Common.GroupCall.Emergency.Entry = groupInitiationEntry(groupCall.EmergencyGroup)
+		doc.Common.GroupCall.Imminent.Entry = groupInitiationEntry(groupCall.ImminentGroup)
+		doc.Common.GroupCall.Alert.Entry = groupInitiationEntry(groupCall.AlertGroup)
+	}
+	doc.Common.AnyExt = &locationURIExt{LocationURI: svc.locationDocumentURI(user.MCVideoID, user.profileIndex())}
 	ext := &mcvideoProfileExtension{}
 	on := &mcvideoOnNetwork{Index: "0", MaxAffiliationsN2: rights.MaxAffiliations}
 	if svc.cfg.AdminAccounts != nil {

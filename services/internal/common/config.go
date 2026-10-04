@@ -59,6 +59,8 @@ type Config struct {
 	FunctionalAliases []FunctionalAlias   `json:"functional_aliases,omitempty"`
 	Endpoints         Endpoints           `json:"endpoints"`
 	MCDataService     MCDataServiceConfig `json:"mcdata_service,omitempty"`
+	// The service configuration documents of the organisation (TS 24.484 clauses 8.4, 9.4 and 10.4).
+	ServiceConfig ServiceConfiguration `json:"service_config,omitempty"`
 	// The public service identity of the MCVideo server, which the KMS provisions for
 	// the CSKs of MCVideo transmission control (TS 33.180 clause 9.4, TS 24.281 clause 4.7).
 	MCVideoService MCVideoServiceConfig `json:"mcvideo_service,omitempty"`
@@ -119,6 +121,9 @@ type User struct {
 	// The groups whose MCVideo members name this user, as MCX Admin gives them in admin
 	// mode (slice D4); in file mode they come from groups[] and this is empty.
 	MCVideoGroups []string `json:"mcvideo_groups,omitempty"`
+	// The groups whose MCData members name this user, as MCX Admin gives them in admin mode; in file mode they come
+	// from groups[] and this is empty.
+	MCDataGroups []string `json:"mcdata_groups,omitempty"`
 	// The MCVideo user profile's rulesets (TS 24.484), in the form of the MCPTT ones
 	// (private_call, adhoc_call, ...) and naming MCVideo IDs; the MCVideo server
 	// reads them in place of the MCPTT rulesets.
@@ -217,9 +222,9 @@ type MCDataPolicy struct {
 
 // GroupMCData mirrors the MCData group-document membership and elements of TS 24.282
 // clause 9.2.2.4.2 step 6 and clause 11.1: <supported-services> naming the SDS enabler,
-// <mcdata-allow-short-data-service>, the per-member
-// <mcdata-allow-transmit-data-in-this-group> action (nil TransmitMembers = all
-// members), <mcdata-on-network-max-data-size-for-SDS> and
+// <mcdata-allow-short-data-service>, the <mcdata-allow-transmit-data-in-this-group> action (TransmitAll: for every
+// member; TransmitMembers: for the members listed; neither: no member may transmit, TS 24.481 clause 7.2.4.2),
+// <mcdata-on-network-max-data-size-for-SDS> and
 // <mcdata-max-data-in-single-request> (bytes, 0 = no limit).
 type GroupMCData struct {
 	// <mcdata-mcdata-id> entries of the group list (MCData IDs).
@@ -227,6 +232,7 @@ type GroupMCData struct {
 	SDSSupported    bool     `json:"sds_supported"`
 	AllowSDS        bool     `json:"allow_sds"`
 	TransmitMembers []string `json:"transmit_members,omitempty"`
+	TransmitAll     bool     `json:"transmit_all,omitempty"`
 	MaxSDSBytes     int      `json:"max_sds_bytes,omitempty"`
 	MaxRequestBytes int      `json:"max_request_bytes,omitempty"`
 	// <mcdata-allow-emergency-alert> (TS 24.282 clause 6.3.7.2.1).
@@ -241,6 +247,9 @@ type GroupMCData struct {
 	AllowFD     bool `json:"allow_fd,omitempty"`
 	FDSupported bool `json:"fd_supported,omitempty"`
 	MaxFDBytes  int  `json:"max_fd_bytes,omitempty"`
+	// <mcdata-on-network-max-data-size-auto-recv>: a group file up to this size is a mandatory download
+	// (TS 24.282 clause 11.2).
+	MaxAutoRecvBytes int `json:"max_auto_recv_bytes,omitempty"`
 	// Enhanced status (TS 24.282 clause 14.2.1): <mcdata-allow-enhanced-status> and the
 	// operational values of <mcdata-enhanced-status-operational-values>, each named
 	// by its "id" attribute.
@@ -254,19 +263,38 @@ type EnhancedStatusValue struct {
 	Value string `json:"value"`
 }
 
-// GroupCallPolicy carries the group-call ruleset flags (TS 24.379 clause 10.1.5).
+// GroupCallPolicy carries the group-call rights of the user profile (TS 24.484 clause 8.3.2.1, TS 24.379 clauses
+// 6.3.3.1.13 and 10.1.5). The emergency, imminent peril and emergency alert rights are the user's; the group document
+// must also allow them (Group.AllowEmergencyCall, ...). EmergencyGroup, ImminentGroup and AlertGroup are the
+// <entry> of <MCPTT-group-call>'s <EmergencyCall>/<MCPTTGroupInitiation>, <ImminentPerilCall>/<MCPTTGroupInitiation>
+// and <EmergencyAlert>: a group names a dedicated group ("DedicatedGroup"), empty the group the user has selected
+// ("UseCurrentlySelectedGroup").
 type GroupCallPolicy struct {
-	RemoteInit bool `json:"remote_init,omitempty"` // <allow-request-remote-init-group-call>
+	RemoteInit      bool   `json:"remote_init,omitempty"`      // <allow-request-remote-init-group-call>
+	Emergency       bool   `json:"emergency,omitempty"`        // <allow-emergency-group-call>
+	EmergencyGroup  string `json:"emergency_group,omitempty"`  // <EmergencyCall>/<MCPTTGroupInitiation>
+	EmergencyCancel bool   `json:"emergency_cancel,omitempty"` // <allow-cancel-group-emergency>
+	Imminent        bool   `json:"imminent,omitempty"`         // <allow-imminent-peril-call>
+	ImminentGroup   string `json:"imminent_group,omitempty"`   // <ImminentPerilCall>/<MCPTTGroupInitiation>
+	ImminentCancel  bool   `json:"imminent_cancel,omitempty"`  // <allow-cancel-imminent-peril>
+	// <allow-activate-emergency-alert> and <allow-cancel-emergency-alert>: one right each in the profile for group
+	// and private alerts; PrivateCall.Alert and PrivateCall.AlertCancel grant the same elements.
+	Alert       bool   `json:"alert,omitempty"`
+	AlertGroup  string `json:"alert_group,omitempty"` // <MCPTT-group-call>/<EmergencyAlert>
+	AlertCancel bool   `json:"alert_cancel,omitempty"`
 }
 
 // AdhocCallPolicy mirrors <allow-adhoc-group-call> (TS 24.379 clause 17.3.2.1.1 step 9),
 // <allow-emergency-adhoc-group-call> and <allow-imminent-peril-adhoc-group-call>
 // (clauses 6.3.3.1.13.11 and 6.3.3.1.13.12).
 type AdhocCallPolicy struct {
-	Allow     bool `json:"allow"`
-	Emergency bool `json:"emergency,omitempty"`
-	Imminent  bool `json:"imminent,omitempty"`
-	Modify    bool `json:"modify,omitempty"` // <allow-to-modify-adhoc-group-call-participants-info>
+	Allow bool `json:"allow"`
+	// <allow-adhoc-group-call-participation>: invited to an ad hoc group call, the user may take part (TS 24.379
+	// clause 17.4.2.2.1 step 6: absent or false, the invitation is refused with warning 188).
+	Participation bool `json:"participation,omitempty"`
+	Emergency     bool `json:"emergency,omitempty"`
+	Imminent      bool `json:"imminent,omitempty"`
+	Modify        bool `json:"modify,omitempty"` // <allow-to-modify-adhoc-group-call-participants-info>
 	// <allow-activate-adhoc-group-emergency-alert> and its cancellation counterpart (clause 12.1A).
 	Alert       bool `json:"alert,omitempty"`
 	AlertCancel bool `json:"alert_cancel,omitempty"`
@@ -330,18 +358,28 @@ type Group struct {
 	// <preconfigured-group-use-only> (warning 167), a regrouped marker set by the
 	// regroup administrator (warning 148), and <user-priority> per member for
 	// participant preemption at the limit (TS 24.379 clause 10.1.2.4.1 steps 4b, 4c and 12a).
-	PreconfiguredUseOnly bool           `json:"preconfigured_use_only,omitempty"`
-	Regrouped            bool           `json:"regrouped,omitempty"`
-	UserPriorities       map[string]int `json:"user_priorities,omitempty"`
-	Members              []string       `json:"members"`
+	PreconfiguredUseOnly bool `json:"preconfigured_use_only,omitempty"`
+	Regrouped            bool `json:"regrouped,omitempty"`
+	// <on-network-disabled> (TS 24.481 clause 7.2.4.2): the group takes no calls (TS 24.379 clause 6.3.5.2 step 5a,
+	// warning 115).
+	Disabled       bool           `json:"disabled,omitempty"`
+	UserPriorities map[string]int `json:"user_priorities,omitempty"`
+	Members        []string       `json:"members"`
 	// <on-network-allow-getting-member-list> for members (TS 24.481 clause 7.2.12);
 	// without it a member reads only its own <entry>.
 	AllowGettingMemberList bool                   `json:"allow_getting_member_list,omitempty"`
 	ProtectMedia           bool                   `json:"protect_media"`
 	ProtectFloor           bool                   `json:"protect_floor"`
 	CallPolicy             map[string]interface{} `json:"call_policy,omitempty"`
-	FloorPriorityCaps      map[string]uint8       `json:"floor_priority_caps,omitempty"`
-	PriorityPolicy         map[string]interface{} `json:"priority_policy,omitempty"`
+	// The <actions> of the group document's rule for every member (<is-list-member>, TS 24.481 clause 7.2.12.1):
+	// <allow-MCPTT-emergency-call>, <allow-imminent-peril-call> and <allow-MCPTT-emergency-alert>. PriorityPolicy's
+	// emergency_users, imminent_users and alert_users grant the same actions to the members they list (rules with an
+	// <identity> condition). Neither: the action is not allowed (TS 24.481 clause 7.2.4.2).
+	AllowEmergencyCall  bool                   `json:"allow_emergency_call,omitempty"`
+	AllowImminentPeril  bool                   `json:"allow_imminent_peril,omitempty"`
+	AllowEmergencyAlert bool                   `json:"allow_emergency_alert,omitempty"`
+	FloorPriorityCaps   map[string]uint8       `json:"floor_priority_caps,omitempty"`
+	PriorityPolicy      map[string]interface{} `json:"priority_policy,omitempty"`
 	// MCData settings of the group; nil when the group does not support MCData.
 	MCData *GroupMCData `json:"mcdata,omitempty"`
 	// TS 24.481 clause 6.3.14: a temporary MCS group formed by the GMS names its
@@ -363,6 +401,14 @@ type GroupMCVideo struct {
 	FloorPriorityCaps map[string]uint8       `json:"floor_priority_caps,omitempty"`
 	PriorityPolicy    map[string]interface{} `json:"priority_policy,omitempty"`
 	UserPriorities    map[string]int         `json:"user_priorities,omitempty"`
+	// <mcvideo-allow-emergency-call>, <mcvideo-allow-imminent-peril-call> and <mcvideo-allow-emergency-alert> for
+	// every member (TS 24.481 clause 7.2.12.1), as Group.AllowEmergencyCall and the others for MCPTT.
+	AllowEmergencyCall  bool `json:"allow_emergency_call,omitempty"`
+	AllowImminentPeril  bool `json:"allow_imminent_peril,omitempty"`
+	AllowEmergencyAlert bool `json:"allow_emergency_alert,omitempty"`
+	// <preconfigured-group-use-only> for MCVideo (TS 24.481 with TS 24.281): the group's MCVideo part in the
+	// site.json form carries it, so provisioning (MCX Admin) must accept it.
+	PreconfiguredUseOnly bool `json:"preconfigured_use_only,omitempty"`
 }
 
 // TemporaryRegroup is the <on-network-regrouped> element of a constituent group.
@@ -449,6 +495,9 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.TokenTTLSeconds <= 0 {
 		return errors.New("token_ttl_seconds must be positive")
+	}
+	if err := cfg.ServiceConfig.Validate(); err != nil {
+		return err
 	}
 	if len(cfg.OAuthRedirectURIs) == 0 {
 		return errors.New("oauth_redirect_uris must contain a registered redirect URI")

@@ -60,7 +60,10 @@ type service struct {
 	// The writable group documents of the GMS (TS 24.481 clauses 6.3.2 to 6.3.12).
 	groupDocs *groupStore
 	// User profile documents updated through the CMS (TS 24.484 clause 6.3.4), by MCPTT ID.
-	profileDocs   map[string][]byte
+	profileDocs map[string][]byte
+	// The entity tag of the configured profile each was uploaded over: a later change of the configuration supersedes
+	// the uploaded document (uploadedProfile).
+	profileBases  map[string]string
 	notifications *notificationServer
 	// Requests to other services of this system (the content server, the
 	// notification server); replaced in tests.
@@ -165,6 +168,15 @@ func (svc *service) routes(mux *http.ServeMux) error {
 			return err
 		}
 		if err := svc.checkMCVideoProfileDocuments(); err != nil {
+			return err
+		}
+		if err := svc.checkMCDataProfileDocuments(); err != nil {
+			return err
+		}
+		if err := svc.checkLocationDocuments(); err != nil {
+			return err
+		}
+		if err := svc.checkServiceConfigDocuments(); err != nil {
 			return err
 		}
 		svc.routesCMS(mux)

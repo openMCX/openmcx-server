@@ -1,0 +1,24 @@
+{
+  "sip": {"listen": "0.0.0.0", "advertise": "DISPATCHER_IP", "port": 5071, "session_expires": 90, "register_expires": 120, "outbound": true},
+  "tls": {},
+  "media": {
+    "bind": "DISPATCHER_IP", "advertise": "DISPATCHER_IP", "rtp_port": 4400, "floor_port": 5400, "mode": 0, "server_source": "port",
+    "live": {"listen": "127.0.0.1", "port": 7700, "send_host": "127.0.0.1", "send_port": 7701}
+  },
+  "control_fifo": "/run/mcx/control",
+  "status_file": "/run/mcx/status.json",
+  "trusted_core": "sip-core",
+  "server_address": "HOST_IP",
+  "mcptt": {
+    "group_from_profile": true,
+    "floor_queue": false,
+    "resource_priority": {"normal": "mcptt.0", "imminent": "mcptt.10", "emergency": "mcptt.15"},
+    "enforce_profile_ruleset": false
+  },
+  "mcvideo": {
+    "service_uri": "sip:mcvideo@mcx.test",
+    "media": {"audio_port": 4600, "control_port": 5600, "video_port": 6600},
+    "queueing": true, "auto_receive": true,
+    "resource_priority": {"normal": "mcptt.0", "imminent": "mcptt.10", "emergency": "mcptt.15"}
+  }
+}

@@ -50,6 +50,7 @@ void McServer::leg_confirmed(const std::shared_ptr<Leg> &leg, const std::shared_
   if (!leg->origin) session->no_answer_deadline = 0; // TS 24.379 clause 6.3.2.5: answered before TNP1 expired
   schedule([this, id = leg->dialog] { send_priority_correction(id); });
   event("participant_active", {{"user_id", leg->user}, {"session_uri", session->uri}});
+  pcf_open(*leg);
   if (session->chat) {
     // A chat session counts as established once two members have joined.
     std::size_t active = 0;
@@ -89,6 +90,7 @@ void McServer::initial_floor_state(const std::shared_ptr<Leg> &leg, const std::s
 // TS 24.379 clause 6.3.8.1: a disconnected leg becomes inactive and leaves its call in a scheduled task.
 void McServer::leg_disconnected(const std::shared_ptr<Leg> &leg, const std::shared_ptr<Session> &session, int code) {
   leg->active = false;
+  if (pcf_) pcf_->close(leg->dialog);
   schedule([this, leg, session] { release_departed_leg(leg, session); });
   event("participant_left", {{"user_id", leg->user}, {"status", code}, {"session_uri", session->uri}});
 }
@@ -139,8 +141,28 @@ void McServer::release_departed_leg(const std::shared_ptr<Leg> &leg, const std::
 // TS 24.379 clauses 6.3.8.1 and 6.3.8.2 (T4, TNG3, private call timer, minimum affiliated members) and TS 23.379
 // clause 10.6.2.5.2 step 3 (broadcast); policy revalidation; expiry of subscriptions and registrations; and the
 // status file.
+//------------------------------------------------------------------------------
+// TS 24.379 clause 6.3.3.1.19 and TS 24.380 clause 11: read the service configuration from the CMS every 30 seconds,
+// every 2 seconds until the first answer.
+void McServer::refresh_service_config(std::uint64_t now) {
+  const bool known = !service_config_.empty();
+  if (service_config_at_ && now - service_config_at_ < (known ? 30000u : 2000u)) return;
+  service_config_at_ = now;
+  try {
+    auto config = internal("cms", std::string("/internal/service-config?service=") + svc_.name);
+    if (!config.is_object() || !config.contains("resource_priority")) return;
+    if (config != service_config_) event("service_config_read", Json{{"resource_priority", config.at("resource_priority")}});
+    service_config_ = std::move(config);
+  } catch (const std::exception &error) {
+    if (!known) event("service_config_unavailable", Json{{"reason", error.what()}});
+  }
+}
+
+//------------------------------------------------------------------------------
 void McServer::tick() {
   auto now = monotonic_ms();
+  refresh_service_config(now);
+  if (pcf_) pcf_tick(now);
   location_.tick(now);
   docsub_tick(now);
   temporary_tick(now);
@@ -447,6 +469,7 @@ void McServer::save_status(std::uint64_t now) {
                                {"creator", state.creator},
                                {"temporary", state.temporary}};
   status_["regrouped_groups"] = regrouped_;
+  if (pcf_) status_["pcf"] = pcf_->status();
   status_["group_priority"] = Json::object();
   for (const auto &[group, priority] : priorities_)
     status_["group_priority"][group] = {{"priority", priority_name(priority)},
@@ -615,6 +638,7 @@ void McServer::run() {
     keys_ = std::make_unique<KeyClient>(http_, cfg_.at("security"), cfg_.at(svc_.name).at("service_uri"));
     keys_->provision("", cfg_.at("common").at("client_id"), cfg_.at("common").at("secret"));
   }
+  pcf_start();
   sip_.set_body_filters(
       [this](const SipTransmission &transmission, std::vector<BodyPart> parts) {
         return protect_outgoing(transmission, std::move(parts));
@@ -687,6 +711,7 @@ void McServer::run() {
   for (auto &[dialog, leg] : legs_) sip_.bye(dialog);
   for (auto &[dialog, relay] : relays_) sip_.bye(dialog);
   for (int index = 0; index < 20; index++) sip_.poll(std::chrono::milliseconds(10));
+  pcf_stop();
   sip_.stop();
 }
 

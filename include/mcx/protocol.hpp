@@ -166,6 +166,12 @@ McvideoProfile parse_mcvideo_profile(std::string_view xml);
 // TS 24.484 clause 8.3.2.1 item 4 and clause 9.3.2.1 item 4: the "user-profile-index" of an MCPTT or MCVideo user
 // profile; 1 when absent.
 unsigned parse_profile_index(std::string_view xml);
+
+//------------------------------------------------------------------------------
+// TS 24.484 clauses 8.4.2.1 items 9 to 11, 9.4.2.1 and 10.4.2.1 item 4 (in the <anyExt> of <on-network>): the
+// Resource-Priority header field values of an MCPTT, MCVideo or MCData service configuration document, by level
+// ("emergency", "imminent", "normal"), each "<namespace>.<priority>" (RFC 4412 with RFC 8101).
+std::map<std::string, std::string> parse_service_resource_priorities(std::string_view xml);
 //------------------------------------------------------------------------------
 // TS 24.481 clause 7.2.4.2: <preconfigured-group-use-only> of a group document (<list-service>): calls on
 // the group are not allowed (TS 24.379 clause 10.1.5.2.1 step 1A, warning 167 of TS 24.379 table 4.4.2-2).

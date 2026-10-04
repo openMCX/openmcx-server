@@ -38,8 +38,9 @@ SipResponse DataServer::ipcon_invite(const SipMessage &request, const User &user
   if (!recipient) return reject(404, "", user.id, what); // TS 24.282 clause 20.3.2 step 4
   // The called user's incoming list (TS 24.282 clause 20.3.2).
   const auto incoming_policy = profile(target).value("mcdata", Json::object());
-  if (!incoming_policy.value("incoming_any", false) &&
-      !listed(incoming_policy.value("incoming_from", Json::array()), user.id))
+  // The list applies with one or more entries (as TS 24.282 clause 9.2.3.3 step 4A).
+  const auto incoming_list = incoming_policy.value("incoming_from", Json::array());
+  if (!incoming_policy.value("incoming_any", false) && !incoming_list.empty() && !listed(incoming_list, user.id))
     return reject(403, "230 one-to-one MCData communication not authorised from this originating user", user.id, what);
   SipResponse response;
   ipconn::TunnelMedia offer;

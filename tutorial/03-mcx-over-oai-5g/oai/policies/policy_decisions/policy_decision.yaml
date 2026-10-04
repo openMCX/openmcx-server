@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: LicenseRef-CSSL-1.0
+# rfsim5g-mcx: PCF local policy decisions.
+# Every PDU session on DNN "mcptt" gets the 5QI 69 (MCPTT signalling) PCC rule,
+# whose match-all filter makes it the default QoS flow of the session.
+
+decision_dnn_mcptt:
+  dnn: mcptt
+  pcc_rules:
+    - non-gbr-rule-5qi-69
+
+decision_default:
+  default: true
+  pcc_rules:
+    - non-gbr-rule-5qi-9

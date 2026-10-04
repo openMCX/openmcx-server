@@ -1,0 +1,305 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Source: ETSI TS 124 484 V19.6.0 (2026-07), the MCPTT service configuration document schema (clause 8.4.2.3).
+     Taken from the 3GPP/ETSI specification (clause cited above). The page headers and footers were removed and
+     the lines the page width wrapped inside attribute values were joined; the schema text is otherwise unchanged.
+     Corrected: the published schema names an element "default-pqi " (with a trailing space), which is not an XML
+     name, so no schema processor accepts it; the space is removed (<default-pqi>, as clause 8.4.2.1 lists it). -->
+<xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified"
+xmlns:xs="http://www.w3.org/2001/XMLSchema"
+targetNamespace="urn:3gpp:ns:mcpttServiceConfig:1.0"
+xmlns:mcpttsc="urn:3gpp:ns:mcpttServiceConfig:1.0">
+<xs:import namespace="http://www.w3.org/XML/1998/namespace"
+schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+<!-- the root element -->
+  <xs:element name="service-configuration-info" type="mcpttsc:service-configuration-info-Type"/>
+<!-- the root type -->
+<!-- this is refined with one or more sub-types -->
+  <xs:complexType name="service-configuration-info-Type">
+    <xs:sequence>
+      <xs:element name="service-configuration-params" type="mcpttsc:service-configuration-params-Type" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+     </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+<!-- definition of the service-configuration-params-Type subtype-->
+  <xs:complexType name="service-configuration-params-Type">
+    <xs:sequence>
+      <xs:element name="common" type="mcpttsc:commonType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="on-network" type="mcpttsc:on-networkType" minOccurs="0"
+maxOccurs="unbounded"/>
+      <xs:element name="off-network" type="mcpttsc:off-networkType" minOccurs="0"
+maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="domain" type="xs:anyURI" use="required"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="commonType">
+    <xs:sequence>
+      <xs:element name="min-length-alias" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="broadcast-group" type="mcpttsc:broadcast-groupType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="on-networkType">
+    <xs:sequence>
+      <xs:element name="emergency-call" type="mcpttsc:emergency-callType" minOccurs="0"/>
+      <xs:element name="private-call" type="mcpttsc:private-callType" minOccurs="0"/>
+      <xs:element name="num-levels-priority-hierarchy" type="mcpttsc:priorityhierarchyType"
+minOccurs="0"/>
+      <xs:element name="transmit-time" type="mcpttsc:transmit-timeType" minOccurs="0"/>
+      <xs:element name="hang-time-warning" type="xs:duration" minOccurs="0"/>
+      <xs:element name="floor-control-queue" type="mcpttsc:floor-control-queueType" minOccurs="0"/>
+      <xs:element name="fc-timers-counters" type="mcpttsc:fc-timers-countersType"/>
+      <xs:element name="signalling-protection" type="mcpttsc:signalling-protectionType"
+minOccurs="0"/>
+      <xs:element name="protection-between-mcptt-servers" type="mcpttsc:server-protectionType"
+minOccurs="0"/>
+      <xs:element name="emergency-resource-priority" type="mcpttsc:resource-priorityType"/>
+      <xs:element name="imminent-peril-resource-priority" type="mcpttsc:resource-priorityType"/>
+      <xs:element name="normal-resource-priority" type="mcpttsc:resource-priorityType"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="off-networkType">
+    <xs:sequence>
+      <xs:element name="emergency-call" type="mcpttsc:emergency-callType" minOccurs="0"/>
+      <xs:element name="private-call" type="mcpttsc:private-callType" minOccurs="0"/>
+      <xs:element name="num-levels-priority-hierarchy" type="mcpttsc:priorityhierarchyType"
+minOccurs="0"/>
+      <xs:element name="transmit-time" type="mcpttsc:transmit-timeType" minOccurs="0"/>
+      <xs:element name="hang-time-warning" type="xs:duration" minOccurs="0"/>
+      <xs:element name="default-prose-per-packet-priority" type="mcpttsc:default-prose-per-packet-priorityType" minOccurs="0"/>
+      <xs:element name="allow-log-metadata" type="xs:boolean" minOccurs="0"/>
+      <xs:element name="default-pqi" type="mcpttsc:default-pqiType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="private-callType">
+    <xs:sequence>
+      <xs:element name="hang-time" type="xs:duration" minOccurs="0"/>
+      <xs:element name="max-duration-with-floor-control" type="xs:duration" minOccurs="0"/>
+      <xs:element name="max-duration-without-floor-control" type="xs:duration" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="broadcast-groupType">
+    <xs:sequence>
+      <xs:element name="num-levels-group-hierarchy" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="num-levels-user-hierarchy" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="fc-timers-countersType">
+    <xs:sequence>
+      <xs:element name="T1-end-of-rtp-media" type="xs:duration"/>
+      <xs:element name="T3-stop-talking-grace" type="xs:duration"/>
+      <xs:element name="T7-floor-idle" type="xs:duration"/>
+      <xs:element name="T8-floor-revoke" type="xs:duration"/>
+      <xs:element name="T11-end-of-RTP-dual" type="xs:duration"/>
+      <xs:element name="T12-stop-talking-dual" type="xs:duration"/>
+      <xs:element name="T15-conversation" type="xs:duration"/>
+      <xs:element name="T16-map-group-to-bearer" type="xs:duration"/>
+      <xs:element name="T17-unmap-group-to-bearer" type="xs:duration"/>
+      <xs:element name="T20-floor-granted" type="xs:duration"/>
+      <xs:element name="T55-connect" type="xs:duration"/>
+      <xs:element name="T56-disconnect" type="xs:duration"/>
+      <xs:element name="C7-floor-idle" type="xs:unsignedShort"/>
+      <xs:element name="C17-unmap-group-to-bearer" type="xs:unsignedShort"/>
+      <xs:element name="C20-floor-granted" type="xs:unsignedShort"/>
+      <xs:element name="C55-connect" type="xs:unsignedShort"/>
+      <xs:element name="C56-disconnect" type="xs:unsignedShort"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:element name="R18-fc-timers-counters" type="mcpttsc:R18-fc-timers-countersType"/>
+  <xs:complexType name="R18-fc-timers-countersType">
+    <xs:sequence>
+      <xs:element name="T25-mbs-conversation" type="xs:duration"/>
+      <xs:element name="T26-map-group-to-session-stream" type="xs:duration"/>
+      <xs:element name="T27-unmap-group-from-session-stream" type="xs:duration"/>
+      <xs:element name="C27-unmap-group-from-session-stream" type="xs:unsignedShort"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="emergency-callType">
+    <xs:sequence>
+      <xs:element name="private-cancel-timeout" type="xs:duration" minOccurs="0"/>
+      <xs:element name="group-time-limit" type="xs:duration" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="transmit-timeType">
+    <xs:sequence>
+      <xs:element name="time-limit" type="xs:duration" minOccurs="0"/>
+      <xs:element name="time-warning" type="xs:duration" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="floor-control-queueType">
+    <xs:sequence>
+      <xs:element name="depth" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="max-user-request-time" type="xs:duration" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="default-prose-per-packet-priorityType">
+    <xs:sequence>
+      <xs:element name="mcptt-private-call-signalling" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="mcptt-private-call-media" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="mcptt-emergency-private-call-signalling" type="xs:unsignedShort"
+minOccurs="0"/>
+      <xs:element name="mcptt-emergency-private-call-media" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="default-pqiType">
+    <xs:sequence>
+      <xs:element name="mcptt-private-call-signalling" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="mcptt-private-call-media" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="mcptt-emergency-private-call-signalling" type="xs:unsignedShort"
+minOccurs="0"/>
+      <xs:element name="mcptt-emergency-private-call-media" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="signalling-protectionType">
+    <xs:sequence>
+      <xs:element name="confidentiality-protection" type="xs:boolean" minOccurs="0" default="true"/>
+      <xs:element name="integrity-protection" type="xs:boolean" minOccurs="0" default="true"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="server-protectionType">
+    <xs:sequence>
+      <xs:element name="allow-signalling-protection" type="xs:boolean" minOccurs="0"
+default="true"/>
+      <xs:element name="allow-floor-control-protection" type="xs:boolean" minOccurs="0"
+default="true"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="resource-priorityType">
+    <xs:sequence>
+      <xs:element name="resource-priority-namespace" type="xs:string"/>
+      <xs:element name="resource-priority-priority" type="xs:string"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <!-- simple type for priority element -->
+  <xs:simpleType name="priorityhierarchyType">
+    <xs:restriction base="xs:unsignedShort">
+      <xs:minInclusive value="4"/>
+      <xs:maxInclusive value="256"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- child elements of anyExt element of on-network element -->
+  <xs:element name="functional-alias-list" type="mcpttsc:functional-alias-listType"/>
+  <xs:complexType name="functional-alias-listType">
+    <xs:sequence>
+      <xs:element name="functional-alias-entry" type="mcpttsc:functional-alias-entryType"
+minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="functional-alias-entryType">
+    <xs:sequence>
+      <xs:element name="functional-alias" type="xs:anyURI"/>
+      <xs:element name="max-simultaneous-activations" type="xs:positiveInteger"/>
+      <xs:element name="allow-takeover" type="xs:boolean"/>
+      <xs:element name="mcptt-user-list" type="mcpttsc:ListEntryType"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:element name="functional-alias-priority" type="xs:positiveInteger"/>
+  <xs:element name="max-simultaneous-authorizations" type="xs:positiveInteger"/>
+  <xs:element name="max-immediate-forwardings" type="xs:positiveInteger"/>
+<!-- child elements of anyExt element of on-network element to support adhoc group calls -->
+  <xs:element name="adhoc-group-call" type="mcpttsc:adhoc-group-callType"/>
+  <xs:complexType name="adhoc-group-callType">
+    <xs:sequence>
+      <xs:element name="allow-adhoc-group-call-support" type="xs:boolean"/>
+      <xs:element name="max-no-participants" type="xs:positiveInteger"/>
+      <xs:element name="hang-time" type="xs:duration" minOccurs="0"/>
+      <xs:element name="max-duration-of-call" type="xs:duration" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+   </xs:complexType>
+  <xs:element name="adhoc-multi-talker-control" type="xs:boolean"/>
+  <xs:element name="adhoc-multi-talker-max-talkers" type="xs:positiveInteger"/>
+  <xs:complexType name="ListEntryType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="entry" type="mcpttsc:EntryType"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attribute ref="xml:lang"/>
+    <xs:attributeGroup ref="mcpttsc:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="EntryType">
+    <xs:sequence>
+      <xs:element name="uri-entry" type="xs:anyURI"/>
+      <xs:element name="display-name" type="mcpttsc:DisplayNameElementType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcpttsc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcpttsc:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:attributeGroup name="IndexType">
+    <xs:attribute name="index" type="xs:token"/>
+  </xs:attributeGroup>
+  <xs:complexType name="DisplayNameElementType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute ref="xml:lang"/>
+        <xs:anyAttribute namespace="##any" processContents="lax"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+  <xs:complexType name="anyExtType">
+    <xs:sequence>
+      <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>
+

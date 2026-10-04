@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Source: ETSI TS 124 484 V19.6.0 (2026-07), the MCVideo service configuration document schema (clause 9.4.2.3).
+     Taken from the 3GPP/ETSI specification (clause cited above). The page headers and footers were removed and
+     the lines the page width wrapped inside attribute values were joined; the schema text is otherwise unchanged. -->
+<xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified"
+xmlns:xs="http://www.w3.org/2001/XMLSchema"
+targetNamespace="urn:3gpp:ns:mcvideoServiceConfig:1.0"
+xmlns:mcvideosc="urn:3gpp:ns:mcvideoServiceConfig:1.0">
+<xs:import namespace="http://www.w3.org/XML/1998/namespace"
+  schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+<!-- the root element -->
+  <xs:element name="service-configuration-info" type="mcvideosc:service-configuration-info-Type"/>
+<!-- the root type -->
+<!-- this is refined with one or more sub-types -->
+  <xs:complexType name="service-configuration-info-Type">
+    <xs:sequence>
+      <xs:element name="service-configuration-params" type="mcvideosc:service-configuration-params-Type" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+     </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+<!-- definition of the service-configuration-params-Type subtype-->
+  <xs:complexType name="service-configuration-params-Type">
+    <xs:sequence>
+      <xs:element name="common" type="mcvideosc:commonType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="on-network" type="mcvideosc:on-networkType" minOccurs="0"
+maxOccurs="unbounded"/>
+      <xs:element name="off-network" type="mcvideosc:off-networkType" minOccurs="0"
+maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="domain" type="xs:anyURI" use="required"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="commonType">
+    <xs:sequence>
+      <xs:element name="min-length-alias" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="broadcast-group" type="mcvideosc:broadcast-groupType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="on-networkType">
+    <xs:sequence>
+      <xs:element name="signalling-protection" type="mcvideosc:signalling-protectionType"
+minOccurs="0"/>
+      <xs:element name="protection-between-mcvideo-servers" type="mcvideosc:server-protectionType"
+minOccurs="0"/>
+      <xs:element name="emergency-resource-priority" type="mcvideosc:resource-priorityType"/>
+      <xs:element name="imminent-peril-resource-priority" type="mcvideosc:resource-priorityType"/>
+      <xs:element name="normal-resource-priority" type="mcvideosc:resource-priorityType"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:element name="max-simultaneous-authorizations" type="xs:positiveInteger"/>
+  <xs:complexType name="off-networkType">
+    <xs:sequence>
+      <xs:element name="default-prose-per-packet-priority" type="mcvideosc:default-prose-per-packet-priorityType" minOccurs="0"/>
+      <xs:element name="private-call" type="mcvideosc:private-callType" minOccurs="0"/>
+      <xs:element name="num-levels-priority-hierarchy" type="mcvideosc:priorityhierarchyType"
+minOccurs="0"/>
+      <xs:element name="default-pqi" type="mcvideosc:default-pqiType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+</xs:complexType>
+<!-- anyExt elements for on-network element to support functional alias -->
+  <xs:element name="functional-alias-list" type="mcvideosc:functional-alias-listType"/>
+  <xs:complexType name="functional-alias-listType">
+    <xs:sequence>
+      <xs:element name="functional-alias-entry" type="mcvideosc:functional-alias-entryType"
+minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="functional-alias-entryType">
+    <xs:sequence>
+      <xs:element name="functional-alias" type="xs:anyURI"/>
+      <xs:element name="max-simultaneous-activations" type="xs:positiveInteger"/>
+      <xs:element name="allow-takeover" type="xs:boolean"/>
+      <xs:element name="mcvideo-user-list" type="mcvideosc:ListEntryType"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:element name="functional-alias-priority" type="xs:positiveInteger"/>
+<!-- child elements of anyExt element of on-network element to support adhoc group calls -->
+  <xs:element name="adhoc-group-call" type="mcvideosc:adhoc-group-callType"/>
+  <xs:complexType name="adhoc-group-callType">
+    <xs:sequence>
+      <xs:element name="allow-adhoc-group-call-support" type="xs:boolean"/>
+      <xs:element name="max-no-participants" type="xs:positiveInteger"/>
+      <xs:element name="hang-time" type="xs:duration" minOccurs="0"/>
+      <xs:element name="max-duration-of-call" type="xs:duration" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+   </xs:complexType>
+<xs:complexType name="ListEntryType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="entry" type="mcvideosc:EntryType"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:choice>
+    <xs:attribute ref="xml:lang"/>
+    <xs:attributeGroup ref="mcvideosc:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="EntryType">
+    <xs:sequence>
+      <xs:element name="uri-entry" type="xs:anyURI"/>
+      <xs:element name="display-name" type="mcvideosc:DisplayNameElementType" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcvideosc:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:attributeGroup name="IndexType">
+    <xs:attribute name="index" type="xs:token"/>
+  </xs:attributeGroup>
+  <xs:complexType name="DisplayNameElementType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute ref="xml:lang"/>
+        <xs:anyAttribute namespace="##any" processContents="lax"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+  <xs:complexType name="broadcast-groupType">
+    <xs:sequence>
+      <xs:element name="num-levels-group-hierarchy" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="num-levels-user-hierarchy" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="default-prose-per-packet-priorityType">
+    <xs:sequence>
+      <xs:element name="mcvideo-private-call-signalling" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="mcvideo-private-call-media" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="mcvideo-emergency-private-call-signalling" type="xs:unsignedShort"
+minOccurs="0"/>
+      <xs:element name="mcvideo-emergency-private-call-media" type="xs:unsignedShort"
+minOccurs="0"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="private-callType">
+    <xs:sequence>
+      <xs:element name="mcvideo-max-duration" type="xs:duration" minOccurs="0"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:simpleType name="priorityhierarchyType">
+    <xs:restriction base="xs:unsignedShort">
+      <xs:minInclusive value="4"/>
+      <xs:maxInclusive value="256"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:complexType name="default-pqiType">
+    <xs:sequence>
+      <xs:element name="mcvideo-private-call-signalling" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="mcvideo-private-call-media" type="xs:unsignedShort" minOccurs="0"/>
+      <xs:element name="mcvideo-emergency-private-call-signalling" type="xs:unsignedShort"
+minOccurs="0"/>
+      <xs:element name="mcvideo-emergency-private-call-media" type="xs:unsignedShort"
+minOccurs="0"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="signalling-protectionType">
+    <xs:sequence>
+      <xs:element name="confidentiality-protection" type="xs:boolean" minOccurs="0" default="true"/>
+      <xs:element name="integrity-protection" type="xs:boolean" minOccurs="0" default="true"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="server-protectionType">
+    <xs:sequence>
+      <xs:element name="allow-signalling-protection" type="xs:boolean" minOccurs="0"
+default="true"/>
+      <xs:element name="allow-transmission-control-protection" type="xs:boolean" minOccurs="0"
+default="true"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+<!-- definition of the tc-timers-counters-R14Type subtype-->
+  <xs:complexType name="tc-timers-counters-R14Type">
+    <xs:sequence>
+      <xs:element name="T100-transmission-request" type="xs:unsignedByte"/>
+      <xs:element name="T101-transmission-end-request" type="xs:unsignedByte"/>
+      <xs:element name="T102-queue-position-request" type="xs:unsignedByte"/>
+      <xs:element name="T103-receive-media-request" type="xs:unsignedByte"/>
+      <xs:element name="T104-receive-media-release" type="xs:unsignedByte"/>
+      <xs:element name="private-call-hang-timer" type="xs:duration"/>
+      <xs:element name="T2-transmission-idle" type="xs:duration"/>
+      <xs:element name="T3-transmission-revoke" type="xs:duration"/>
+      <xs:element name="T4-transmission-granted" type="xs:duration"/>
+      <xs:element name="reception-hang-time" type="xs:duration"/>
+      <xs:element name="T6-reception-granted" type="xs:duration"/>
+      <xs:element name="T11-stream-reception-idle" type="xs:duration"/>
+      <xs:element name="C2-transmission-idle" type="xs:unsignedByte"/>
+      <xs:element name="C4-transmission-granted" type="xs:unsignedByte"/>
+      <xs:element name="C6-reception-granted" type="xs:unsignedByte"/>
+      <xs:element name="C7-reception-accpeted" type="xs:unsignedByte"/>
+      <xs:element name="C11-media-receivers" type="xs:unsignedByte"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+<!-- definition of the tc-timers-counters-R15Type subtype-->
+  <xs:complexType name="tc-timers-counters-R15Type">
+    <xs:sequence>
+      <xs:element name="T300-transmission" type="xs:duration"/>
+      <xs:element name="T301-map-group-to-bearer" type="xs:duration"/>
+      <xs:element name="T303-unmap-group-to-bearer" type="xs:duration"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+<!-- definition of the tc-timers-counters-R18Type subtype-->
+  <xs:complexType name="tc-timers-counters-R18Type">
+    <xs:sequence>
+      <xs:element name="T310-transmission" type="xs:duration"/>
+      <xs:element name="T311-map-group-to-session-stream" type="xs:duration"/>
+      <xs:element name="T312-unmap-group-from-session-stream" type="xs:duration"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+<!-- Elements to be included in anyExt elements -->
+  <xs:element name="tc-timers-counters-R14" type="mcvideosc:tc-timers-counters-R14Type"/>
+  <xs:element name="tc-timers-counters-R15" type="mcvideosc:tc-timers-counters-R15Type"/>
+  <xs:element name="tc-timers-counters-R18" type="mcvideosc:tc-timers-counters-R18Type"/>
+  <xs:complexType name="resource-priorityType">
+    <xs:sequence>
+      <xs:element name="resource-priority-namespace" type="xs:string"/>
+      <xs:element name="resource-priority-priority" type="xs:string"/>
+      <xs:element name="anyExt" type="mcvideosc:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="anyExtType">
+    <xs:sequence>
+      <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>
+

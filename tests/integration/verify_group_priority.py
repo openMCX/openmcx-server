@@ -9,7 +9,7 @@ cancellation travel in SIP MESSAGE with a location body (clauses 12.1.1.1 and 12
 by SIP INFO (warning 149). Floor messages carry the Floor Indicator 'D' and 'E' bits (TS 24.380 table 8.2.3.15-2).
 
 Usage: verify_group_priority.py capture.pcap --service sip:mcptt@DOMAIN
-         --emergency-priority mcptt.15 --imminent-priority mcptt.10 --output result.json
+         --emergency-priority mcpttp.15 --imminent-priority mcpttp.10 --output result.json
 Self-contained (no tshark); reuses the SIP reassembly of verify_private_call.py and
 the floor decoder of verify_broadcast_call.py.
 

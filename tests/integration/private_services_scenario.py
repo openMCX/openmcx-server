@@ -209,16 +209,16 @@ def main():
         wait('PS-04 released', idle)
         # PS-04a <ric-app-level-priority> (TS 24.379 clause 11.1.7.2.2 step 3 b)): the remote user's
         # INVITE carries it as Resource-Priority, accepted for that call only.
-        command('client-a', f"remote-call {ids['client-b']} {ids['client-d']} auto priority=mcptt.6")
+        command('client-a', f"remote-call {ids['client-b']} {ids['client-d']} auto priority=mcpttp.6")
         wait(
             'PS-04a remote user places the prioritised private call', lambda: private_active('client-b', 'client-d'), 20
         )
         wait(
-            'PS-04a the server accepted Resource-Priority mcptt.6 for that call',
+            'PS-04a the server accepted Resource-Priority mcpttp.6 for that call',
             lambda: any(
                 event.get('user_id') == ids['client-b']
                 and event.get('target') == ids['client-d']
-                and event.get('resource_priority') == 'mcptt.6'
+                and event.get('resource_priority') == 'mcpttp.6'
                 for event in events('mcptt-server', 'ric_priority_accepted')
             ),
         )

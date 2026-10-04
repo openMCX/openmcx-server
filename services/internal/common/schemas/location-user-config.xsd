@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Source: ETSI TS 124 484 V19.6.0 (2026-07), the location user configuration data document schema (clause 7.4.2.3).
+     Taken from the 3GPP/ETSI specification (clause cited above). Only the page
+     headers and footers were removed; the schema text is otherwise unchanged. -->
+<xs:schema xmlns:mcloc="urn:3gpp:mcs:location-user-config:1.0"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  targetNamespace="urn:3gpp:mcs:location-user-config:1.0"
+  elementFormDefault="qualified" attributeFormDefault="unqualified">
+  <xs:import namespace="http://www.w3.org/XML/1998/namespace"
+  schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+  <!-- This import brings in common policy namespace from RFC 4745 -->
+  <xs:import namespace="urn:ietf:params:xml:ns:common-policy"
+  schemaLocation="http://www.iana.org/assignments/xml-registry/schema/common-policy.xsd"/>
+  <xs:element name="location-user-configuration-data">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element name="mc-service-id" type="xs:anyURI" minOccurs="0" maxOccurs="unbounded"/>
+        <xs:element name="default-location-config-URI" type="xs:anyURI" minOccurs="0"
+maxOccurs="unbounded"/>
+        <xs:element name="anyExt" type="mcloc:anyExtType"/>
+        <xs:any namespace="##other" processContents="lax"/>
+      </xs:choice>
+      <xs:attribute name="domain" type="xs:anyURI" use="required"/>
+      <xs:anyAttribute namespace="##any" processContents="lax"/>
+    </xs:complexType>
+  </xs:element>
+  <!-- Child elements to the <actions> element defined in this specification -->
+  <xs:element name="allow-request-location-of-users" type="xs:boolean"/>
+  <xs:element name="allow-request-location-of-groups" type="xs:boolean"/>
+  <xs:element name="allow-to-share-location-information" type="xs:boolean"/>
+  <xs:element name="allow-subscription-on-location-information" type="xs:boolean"/>
+  <xs:element name="allow-change-location-configuration-of-users" type="xs:boolean"/>
+  <xs:complexType name="anyExtType">
+    <xs:sequence>
+      <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>

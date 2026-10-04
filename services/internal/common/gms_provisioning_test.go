@@ -186,3 +186,21 @@ func TestMCVideoProfileGroupsAdminMode(test *testing.T) {
 		test.Fatalf("admin mode %v", got)
 	}
 }
+
+// ------------------------------------------------------------------------------
+// TestGroupProvisioningMCVideoPreconfigured: a group whose MCVideo part is for preconfigured use only, as the
+// site.json form writes it (and MCX Admin sends it), is accepted.
+func TestGroupProvisioningMCVideoPreconfigured(test *testing.T) {
+	handler := roleHandler(test, RoleGMS, testConfig(), testKey(test), test.TempDir())
+	body := `{"id":"sip:video-team@mcx.test","members":["sip:alice@mcx.test"],` +
+		`"mcvideo":{"members":["sip:alice.mcvideo@mcx.test"],"preconfigured_use_only":true},` +
+		`"protect_media":false,"protect_floor":false}`
+	req := httptest.NewRequest(http.MethodPut, "/internal/groups?id="+url.QueryEscape("sip:video-team@mcx.test"),
+		strings.NewReader(body))
+	req.SetBasicAuth("mcx-server", "server-secret")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		test.Fatalf("a group with an MCVideo preconfigured-use-only part: %d %s", rr.Code, rr.Body.String())
+	}
+}

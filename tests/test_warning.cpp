@@ -27,6 +27,8 @@ int main() {
       "107 user not authorised to make private calls",
       "110 user declined the call invitation",
       "112 group call abandoned due to required group members not part of the group session",
+      "115 group is disabled",
+      "116 user is not part of the MCPTT group",
       "117 the group identity indicated in the request is a prearranged group",
       "118 the group identity indicated in the request is a chat group",
       "119 user is not authorised to initiate the group call",

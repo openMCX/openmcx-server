@@ -134,9 +134,10 @@ void DataServer::media_received(const std::shared_ptr<MediaSession> &session, co
 }
 
 //------------------------------------------------------------------------------
-// TS 24.282 clause 6.3.7.1.4: the provisioned Resource-Priority of a priority communication.
+// TS 24.282 clause 6.3.7.1.4: the Resource-Priority of a priority communication, from the MCData service
+// configuration document (TS 24.484 clause 10.4.2.1 item 4).
 std::vector<SipHeader> DataServer::media_priority_headers(const char *level) const {
-  const auto value = cfg_.at("mcdata").value("resource_priority", Json::object()).value(level, std::string{});
+  const auto value = service_config_.value("resource_priority", Json::object()).value(level, std::string{});
   if (value.empty()) return {};
   return {{"Resource-Priority", value}};
 }

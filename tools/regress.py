@@ -179,6 +179,8 @@ LABS = [
         ['mcptt', 'split'],
         call_types=True,
     ),
+    # N5 AF role (TS 29.514): QoS requested from a recording mock PCF over HTTP/2 cleartext.
+    lab('pcf-n5', 'single', ['--pcf', '--priority', '--floor-queue', '--private-call'], ['pcf_n5_scenario'], ['mcptt', '5gc']),
     lab('floor-queue', 'single', ['--floor-queue'], ['prearranged_floor_scenario'], ['mcptt']),
     lab('priority', 'single', ['--priority', '--floor-queue'], ['prearranged_priority_scenario'], ['mcptt']),
     lab('first-to-answer', 'single', ['--private-call'], ['first_to_answer_emergency_scenario'], ['mcptt']),

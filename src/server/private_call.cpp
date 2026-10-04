@@ -342,7 +342,7 @@ std::optional<SipResponse> McServer::private_call_media_refusal(const SipMessage
     return private_call_rejected(response, user, status, warning);
   };
   if (!ric_priority(user.id, request.target, std::string(get_header(message.headers, "Resource-Priority")),
-                    cfg_.at(svc_.name).value("resource_priority", Json::object())) &&
+                    service_resource_priority()) &&
       !private_resource_priority_allowed(message, priority, info.emergency == true))
     return reject(403, "Resource-Priority is not authorized by call state");
   try {
@@ -733,7 +733,7 @@ bool McServer::private_resource_priority_allowed(const SipMessage &message, cons
                                                  bool emergency_requested) const {
   const auto requested = std::string(get_header(message.headers, "Resource-Priority"));
   if (requested.empty()) return true;
-  const auto values = cfg_.at(svc_.name).value("resource_priority", Json::object());
+  const auto values = service_resource_priority();
   if (requested == values.value("emergency", std::string{})) return emergency_requested || state.emergency;
   return requested == values.value("normal", std::string{});
 }
@@ -891,7 +891,7 @@ SipResponse McServer::private_reinvite(const SipMessage &message, const User &us
   if (!private_resource_priority_allowed(message, state, *info.emergency) ||
       (!*info.emergency &&
        std::string(get_header(message.headers, "Resource-Priority")) ==
-           cfg_.at(svc_.name).value("resource_priority", Json::object()).value("emergency", std::string{})))
+           service_resource_priority().value("emergency", std::string{})))
     return reject(403, "Resource-Priority is not authorized by call state");
   std::vector<SipHeader> headers;
   try {

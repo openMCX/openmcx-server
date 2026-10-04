@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: LicenseRef-CSSL-1.0
+# rfsim5g-mcx: QoS data referenced by the PCC rules.
+
+# TS 23.501 table 5.7.4-1: 5QI 69, non-GBR, priority 5, PDB 60 ms, PER 1e-6,
+# "Mission Critical delay sensitive signalling (e.g. MC-PTT signalling)".
+non-gbr-qos-5qi-69:
+  5qi: 69
+  arp:
+    priorityLevel: 7
+    preemptCap: NOT_PREEMPT
+    preemptVuln: PREEMPTABLE
+  priorityLevel: 5
+
+non-gbr-qos-5qi-9:
+  5qi: 9
+  arp:
+    priorityLevel: 7
+    preemptCap: NOT_PREEMPT
+    preemptVuln: PREEMPTABLE
+  priorityLevel: 90

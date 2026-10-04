@@ -473,7 +473,6 @@ TLS_CA = "/config/tls/ca.crt";
                     "extension_ms": 120000,
                 },
                 "media": {"session_ms": 30000, "idle_ms": 300000},
-                "resource_priority": {"emergency": "mcdata.15", "imminent_peril": "mcdata.10", "normal": "mcdata.0"},
                 "msgstore": {"uri": message_store, "store": "mcdata"},
             },
         },
@@ -535,11 +534,6 @@ TLS_CA = "/config/tls/ca.crt";
                     "user_id": user["mcdata_id"],
                     "service_uri": mcdata_service,
                     "group_id": group,
-                    "resource_priority": {
-                        "emergency": "mcdata.15",
-                        "imminent_peril": "mcdata.10",
-                        "normal": "mcdata.0",
-                    },
                     "fd": {"auto_receive_bytes": 0},
                     "ipconn": {
                         "address": f"10.77.0.{[source_user['role'] for source_user in source['users']].index(role) + 1}"

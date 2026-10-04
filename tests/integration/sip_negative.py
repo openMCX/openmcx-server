@@ -257,7 +257,7 @@ def main():
         user_id = urllib.parse.quote(cfg["mcptt"]["user_id"], safe="")
         check(
             "cms_requires_bearer_token",
-            http("GET", cms + "/xcap-root/3gpp.mcptt.user-profile/users/" + user_id + "/index")[0],
+            http("GET", cms + "/xcap-root/org.3gpp.mcptt.user-profile/users/" + user_id + "/mcptt-user-profile-1.xml")[0],
             {401},
         )
         check("proxy_internal_cms_route_hidden", http("GET", cms + "/internal/user?mcptt_id=" + user_id)[0], {404})

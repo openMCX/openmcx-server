@@ -9,7 +9,7 @@ withdrawn by SIP INFO; a re-INVITE cancels the emergency. Every floor message of
 'D' bit (TS 24.380 clause 8.2.3.15).
 
 Usage: verify_first_to_answer_emergency.py capture.pcap --service sip:mcptt@DOMAIN
-         --emergency-priority mcptt.15 --output result.json
+         --emergency-priority mcpttp.15 --output result.json
 Self-contained (no tshark); reuses the SIP reassembly of verify_private_call.py.
 
 Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19).
