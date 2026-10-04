@@ -1,15 +1,43 @@
-FROM openmcx-dev:0.1
+# The SIP core: upstream Kamailio 6.1.4, unmodified, with the tls, auth_db, db_mysql and http_client modules. Built on
+# the development image, run on a slim Ubuntu image with only Kamailio's run-time libraries (docker/packages).
+#
+#   docker build -t openmcx-kamailio:6.1.4-2 -f docker/Dockerfile.kamailio .
+#
+# Kamailio is GPL-2.0 (its tls module ISC). The image carries the licence (/usr/share/doc/kamailio/COPYING) and the
+# exact source it was built from (/usr/src/kamailio-6.1.4.tar.gz, pinned in dependencies.lock.json).
+
+ARG DEV_IMAGE=openmcx-dev:0.1
+ARG RUNTIME_BASE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+ARG UBUNTU=24.04
+
+FROM ${DEV_IMAGE} AS build
 # Pinned source, fetched and verified by the build (docker/fetch; DEPS_MIRROR for offline builds).
 ARG DEPS_MIRROR=
 ARG KAMAILIO_FILE=kamailio-6.1.4.tar.gz
 ARG KAMAILIO_URL=https://github.com/kamailio/kamailio/archive/refs/tags/6.1.4.tar.gz
 ARG KAMAILIO_SHA256=d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6
 COPY docker/fetch /usr/local/bin/fetch
-RUN fetch "$KAMAILIO_FILE" "$KAMAILIO_URL" "$KAMAILIO_SHA256" /tmp/kamailio.tar.gz \
- && mkdir /tmp/kamailio && tar -xf /tmp/kamailio.tar.gz -C /tmp/kamailio --strip-components=1 \
+RUN mkdir -p /src && fetch "$KAMAILIO_FILE" "$KAMAILIO_URL" "$KAMAILIO_SHA256" /src/$KAMAILIO_FILE \
+ && mkdir /tmp/kamailio && tar -xf /src/$KAMAILIO_FILE -C /tmp/kamailio --strip-components=1 \
  && cd /tmp/kamailio \
  && make cfg prefix=/opt/kamailio include_modules="tls auth_db db_mysql http_client" \
  && make -j4 all && make install \
- && rm -rf /tmp/kamailio /tmp/kamailio.tar.gz
+ && mkdir -p /install/doc && cp COPYING /install/doc/COPYING \
+ && rm -rf /tmp/kamailio
+
+FROM ${RUNTIME_BASE} AS runtime
+ARG UBUNTU
+ARG KAMAILIO_FILE=kamailio-6.1.4.tar.gz
+ENV DEBIAN_FRONTEND=noninteractive
+COPY docker/packages /usr/local/bin/packages
+RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UBUNTU" kamailio) \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /opt/kamailio /opt/kamailio
+COPY --from=build /install/doc/COPYING /usr/share/doc/kamailio/COPYING
+COPY --from=build /src/${KAMAILIO_FILE} /usr/src/${KAMAILIO_FILE}
+LABEL org.opencontainers.image.title="openmcx-kamailio" \
+      org.opencontainers.image.version="6.1.4" \
+      org.opencontainers.image.licenses="GPL-2.0-only AND ISC" \
+      org.opencontainers.image.source="https://github.com/kamailio/kamailio/tree/6.1.4"
 ENTRYPOINT ["/opt/kamailio/sbin/kamailio"]
 CMD ["-DD", "-E", "-f", "/config/kamailio.cfg"]

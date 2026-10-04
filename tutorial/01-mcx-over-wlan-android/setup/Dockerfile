@@ -1,7 +1,7 @@
 # The tutorial's setup image: it writes a new system's configuration (CA and certificates, users, servers, MCX Admin)
 # with the lab's own generator, then sets it up for phones on the same network as this computer (configure.py).
 #
-#   docker build -f tutorial/setup/Dockerfile -t openmcx-setup:TAG .          (from the repository root)
+#   docker build -f tutorial/01-mcx-over-wlan-android/setup/Dockerfile -t openmcx-setup:TAG .          (from the repository root)
 
 FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl openssl \
@@ -20,5 +20,8 @@ COPY compose.yaml /opt/mcxserver/compose.yaml
 COPY config/lab.json /opt/mcxserver/config/lab.json
 COPY docker /opt/mcxserver/docker
 COPY tools /opt/mcxserver/tools
-COPY tutorial/setup /opt/tutorial
+COPY tutorial/01-mcx-over-wlan-android/setup /opt/tutorial
+COPY LICENSE NOTICE /usr/share/doc/openmcx/
+LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.source="https://github.com/openMCX/openmcx-server"
 ENTRYPOINT ["python3", "/opt/tutorial/configure.py"]

@@ -2,7 +2,8 @@
 # The Ubuntu packages of one image part, by Ubuntu release, for docker/Dockerfile.dev and docker/Dockerfile
 # (docs/BUILD.md). Library package names follow each release's ABI (t64 names, libxml2-16, freeDiameter 7).
 #   docker/packages <ubuntu release> <part>      e.g. docker/packages 26.04 mcptt
-# Parts: dev, dev-autotools, dev-openh264, runtime, mcptt (also MCVideo), mcdata, common, http-proxy, user-db.
+# Parts: dev, dev-autotools, dev-openh264, runtime, mcptt (also MCVideo), mcdata, common, http-proxy, user-db,
+# kamailio (the SIP core's run-time libraries and nc for its health check).
 set -eu
 release=$1
 part=$2
@@ -42,6 +43,7 @@ mcdata) echo "$server" ;;
 common) echo "$xml libsrtp2-1 libssl3t64" ;;
 http-proxy) echo "$xml" ;;
 user-db) echo "libsctp1 $diameter" ;;
+kamailio) echo "ca-certificates libssl3t64 libcurl4t64 libmariadb3 netcat-openbsd" ;;
 *)
   echo "docker/packages: unknown part $part" >&2
   exit 1

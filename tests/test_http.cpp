@@ -13,6 +13,8 @@
 
 #include <arpa/inet.h>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <iostream>
 #include <memory>
@@ -21,6 +23,7 @@
 #include <string>
 #include <string_view>
 #include <sys/socket.h>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -175,6 +178,72 @@ void configured_timeout() {
 }
 
 //------------------------------------------------------------------------------
+// The address map and the pinned GET of an MCX Admin activation, against an openssl s_server whose certificate names
+// pinned.test: a mapped request reaches 127.0.0.1 and passes the name check; a mapped name the certificate does not
+// carry is refused; the certificate's pin is accepted, another pin refused; without a map nothing is mapped.
+void address_map_and_pin() {
+  const std::string dir = "/tmp/mcx-test-http-" + std::to_string(getpid());
+  const std::string make = "mkdir -p " + dir + " && cd " + dir +
+                           " && openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 1"
+                           " -subj /CN=pinned.test -addext subjectAltName=DNS:pinned.test -keyout key.pem -out cert.pem"
+                           " >/dev/null 2>&1 && openssl x509 -in cert.pem -outform DER | openssl dgst -sha256 -binary"
+                           " | openssl base64 -A | tr '+/' '-_' | tr -d '=' > pin";
+  if (std::system(make.c_str()) != 0) throw std::runtime_error("test certificate");
+  int port = 0;
+  {
+    const int probe = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t length = sizeof(address);
+    bind(probe, reinterpret_cast<sockaddr *>(&address), sizeof(address));
+    getsockname(probe, reinterpret_cast<sockaddr *>(&address), &length);
+    port = ntohs(address.sin_port);
+    close(probe);
+  }
+  const std::string serve = "cd " + dir + " && exec openssl s_server -quiet -www -accept 127.0.0.1:" +
+                            std::to_string(port) + " -cert cert.pem -key key.pem >/dev/null 2>&1 & echo $! > " + dir +
+                            "/server.pid";
+  if (std::system(serve.c_str()) != 0) throw std::runtime_error("test server");
+  std::this_thread::sleep_for(std::chrono::milliseconds(700));
+  std::string pin;
+  {
+    std::FILE *file = std::fopen((dir + "/pin").c_str(), "r");
+    char buffer[128] = {};
+    if (!file || !std::fgets(buffer, sizeof buffer, file)) throw std::runtime_error("test pin");
+    std::fclose(file);
+    pin = buffer;
+    while (!pin.empty() && (pin.back() == '\n' || pin.back() == '\r')) pin.pop_back();
+  }
+  const auto stop = [&] {
+    if (std::system(("kill $(cat " + dir + "/server.pid) 2>/dev/null; rm -rf " + dir).c_str()) != 0) std::cerr << "cleanup\n";
+  };
+  try {
+    const std::string here = "127.0.0.1:" + std::to_string(port);
+    const mcx::HttpClient mapped(dir + "/cert.pem", {}, {{"pinned.test:8443", here}});
+    if (mapped.request("GET", "https://pinned.test:8443/").status != 200)
+      throw std::runtime_error("the mapped request did not reach the server");
+    expect_rejected("a mapped name the certificate does not carry", [&] {
+      mcx::HttpClient(dir + "/cert.pem", {}, {{"other.test:8443", here}}).request("GET", "https://other.test:8443/");
+    });
+    expect_rejected("an unmapped name", [&] {
+      mcx::HttpClient(dir + "/cert.pem", {.connect_ms = 500, .total_ms = 1000}).request("GET", "https://pinned.test:8443/");
+    });
+    expect_rejected("a malformed address map", [&] { mcx::HttpClient(dir + "/cert.pem", {}, {{"pinned.test", here}}); });
+    if (mcx::http_get_pinned("https://" + here + "/", pin).status != 200)
+      throw std::runtime_error("the pinned certificate was refused");
+    std::string other = pin;
+    other[0] = other[0] == 'A' ? 'B' : 'A';
+    expect_rejected("another pin", [&] { mcx::http_get_pinned("https://" + here + "/", other); });
+    expect_rejected("a pin that is not a SHA-256", [&] { mcx::http_get_pinned("https://" + here + "/", "AAAA"); });
+  } catch (...) {
+    stop();
+    throw;
+  }
+  stop();
+}
+
+//------------------------------------------------------------------------------
 // TS 33.180 clause 6.1.2 and annex B.11.1: clear HTTP is refused; a valid ID token returns its claims, and a token
 // with another subject, an empty identity binding, a wrong issuer, audience or nonce, an expired or not yet valid
 // lifetime, a changed signature, an encryption key or another key algorithm is refused.
@@ -182,6 +251,7 @@ int main() {
   if (mcx::url_encode("sip:a+b@example.test") != "sip%3Aa%2Bb%40example.test") throw std::runtime_error("URI escaping");
   expect_rejected("clear HTTP", [] { mcx::HttpClient("unused").request("GET", "http://localhost/"); });
   configured_timeout();
+  address_map_and_pin();
 
   SigningKey key;
   const auto keys = key.jwks();

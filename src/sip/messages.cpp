@@ -9,11 +9,11 @@ namespace mcx {
 
 //------------------------------------------------------------------------------
 // RFC 3261 section 8.1.1.8: the bare Contact URI of this endpoint, as the transport in use describes it (sips: and
-// transport=tls, or sip: and transport=tcp for debug).
+// transport=tls, or sip: and transport=tcp for debug), with ;ob for an RFC 5626 outbound client (section 5.4).
 [[nodiscard]] std::string SipEngine::Impl::contact_target() const {
   return std::string(config.tls.enabled ? "sips:" : "sip:") + identity_user(config.identity) + "@" +
          config.advertise_address + ":" + std::to_string(config.listen_port) +
-         (config.tls.enabled ? ";transport=tls" : ";transport=tcp");
+         (config.tls.enabled ? ";transport=tls" : ";transport=tcp") + (config.outbound_instance.empty() ? "" : ";ob");
 }
 
 //------------------------------------------------------------------------------

@@ -8,9 +8,9 @@
   "token_ttl_seconds": 3600,
   "users": [
     {"role": "client-a", "username": "admin", "mcptt_user": "admin.mcptt",
-     "private_call": {"allow": true, "automatic_commencement": true, "manual_commencement": true, "targets": ["bob.mcptt"]},
+     "private_call": {"allow": true, "automatic_commencement": true, "manual_commencement": true, "targets": ["operator.mcptt"]},
      "adhoc_call": {"allow": true}},
-    {"role": "client-b", "username": "bob", "mcptt_user": "bob.mcptt",
+    {"role": "client-b", "username": "operator", "mcptt_user": "operator.mcptt",
      "private_call": {"allow": true, "automatic_commencement": true, "manual_commencement": true, "targets": ["admin.mcptt"]},
      "adhoc_call": {"allow": true}}
   ]

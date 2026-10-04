@@ -11,6 +11,9 @@
 #include <openssl/evp.h>
 #include <openssl/param_build.h>
 #include <openssl/rand.h>
+#include <openssl/sha.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
 
 #include <algorithm>
 #include <array>
@@ -158,7 +161,12 @@ nlohmann::json HttpResponse::json() const {
 
 //------------------------------------------------------------------------------
 // TS 24.482 annex A.2.1.2: an HTTPS client that verifies the server against a configured trust anchor.
-HttpClient::HttpClient(std::string ca_file, HttpTimeouts timeouts) : ca_(std::move(ca_file)), timeouts_(timeouts) {
+HttpClient::HttpClient(std::string ca_file, HttpTimeouts timeouts, HttpAddressMap address_map)
+    : ca_(std::move(ca_file)), timeouts_(timeouts), address_map_(std::move(address_map)) {
+  for (const auto &[named, reached] : address_map_)
+    if (named.find(':') == named.npos || reached.find(':') == reached.npos ||
+        (named + reached).find_first_of(" \r\n") != std::string::npos)
+      throw std::invalid_argument("address map entries are host:port -> address:port");
   static const int initialized = curl_global_init(CURL_GLOBAL_DEFAULT);
   if (initialized != CURLE_OK) throw std::runtime_error("curl init failed");
   if (ca_.empty()) throw std::invalid_argument("HTTPS trust anchor required");
@@ -212,6 +220,87 @@ HttpResponse HttpClient::request(std::string_view method, const std::string &url
   }
   std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)> holder(list, curl_slist_free_all);
   curl_easy_setopt(easy, CURLOPT_HTTPHEADER, list);
+  // The address map: connect to the mapped address; libcurl keeps the URL's host for SNI and the name check.
+  curl_slist *connect_to = nullptr;
+  for (const auto &[named, reached] : address_map_) connect_to = curl_slist_append(connect_to, (named + ":" + reached).c_str());
+  std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)> connect_holder(connect_to, curl_slist_free_all);
+  if (connect_to) curl_easy_setopt(easy, CURLOPT_CONNECT_TO, connect_to);
+  auto result = curl_easy_perform(easy);
+  if (result != CURLE_OK) throw std::runtime_error(std::string("HTTPS transport: ") + curl_easy_strerror(result));
+  curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &response.status);
+  return response;
+}
+
+namespace {
+//------------------------------------------------------------------------------
+// Helper: the pin of http_get_pinned, decoded, reachable from the OpenSSL verify callback through the SSL_CTX.
+struct Pin {
+  std::array<unsigned char, SHA256_DIGEST_LENGTH> digest{};
+};
+
+//------------------------------------------------------------------------------
+// Helper: OpenSSL verify callback of http_get_pinned: the server's own certificate (depth 0) is accepted when its
+// SHA-256 (DER) is the pin, whatever its chain or name; the chain above it is not checked (the pin names the server).
+int verify_pinned(int, X509_STORE_CTX *store) {
+  if (X509_STORE_CTX_get_error_depth(store) != 0) {
+    X509_STORE_CTX_set_error(store, X509_V_OK);
+    return 1;
+  }
+  auto *ssl = static_cast<SSL *>(X509_STORE_CTX_get_ex_data(store, SSL_get_ex_data_X509_STORE_CTX_idx()));
+  const auto *pin = ssl ? static_cast<const Pin *>(SSL_CTX_get_app_data(SSL_get_SSL_CTX(ssl))) : nullptr;
+  X509 *certificate = X509_STORE_CTX_get_current_cert(store);
+  unsigned char *der = nullptr;
+  const int length = certificate ? i2d_X509(certificate, &der) : -1;
+  if (!pin || length <= 0) return 0;
+  std::array<unsigned char, SHA256_DIGEST_LENGTH> digest{};
+  SHA256(der, static_cast<size_t>(length), digest.data());
+  OPENSSL_free(der);
+  if (CRYPTO_memcmp(digest.data(), pin->digest.data(), digest.size()) != 0) return 0;
+  X509_STORE_CTX_set_error(store, X509_V_OK);
+  return 1;
+}
+
+//------------------------------------------------------------------------------
+// Helper: libcurl SSL_CTX callback of http_get_pinned (OpenSSL backend): installs the pin check.
+CURLcode pin_context(CURL *, void *context, void *pin) {
+  auto *ctx = static_cast<SSL_CTX *>(context);
+  SSL_CTX_set_app_data(ctx, pin);
+  SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, verify_pinned);
+  return CURLE_OK;
+}
+
+} // namespace
+
+//------------------------------------------------------------------------------
+// MCX Admin activation link: a GET trusting only the server certificate whose SHA-256 is the pin (checked in the TLS
+// handshake), without host name check, no redirects, bounded timeouts.
+HttpResponse http_get_pinned(const std::string &url, std::string_view pin, HttpTimeouts timeouts) {
+  if (!url.starts_with("https://")) throw std::invalid_argument("HTTPS required");
+  static const int initialized = curl_global_init(CURL_GLOBAL_DEFAULT);
+  if (initialized != CURLE_OK) throw std::runtime_error("curl init failed");
+  const auto bytes = unb64(pin);
+  Pin expected;
+  if (bytes.size() != expected.digest.size()) throw std::invalid_argument("the pin is not a SHA-256");
+  std::copy(bytes.begin(), bytes.end(), expected.digest.begin());
+  std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> handle(curl_easy_init(), curl_easy_cleanup);
+  if (!handle) throw std::runtime_error("curl allocation");
+  auto *easy = handle.get();
+  HttpResponse response;
+  curl_easy_setopt(easy, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(easy, CURLOPT_SSL_VERIFYPEER, 1L);
+  curl_easy_setopt(easy, CURLOPT_SSL_VERIFYHOST, 0L);
+  curl_easy_setopt(easy, CURLOPT_SSL_CTX_FUNCTION, pin_context);
+  curl_easy_setopt(easy, CURLOPT_SSL_CTX_DATA, &expected);
+  curl_easy_setopt(easy, CURLOPT_SSL_SESSIONID_CACHE, 0L);
+  curl_easy_setopt(easy, CURLOPT_PROTOCOLS_STR, "https");
+  curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 0L);
+  curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT_MS, timeouts.connect_ms);
+  curl_easy_setopt(easy, CURLOPT_TIMEOUT_MS, timeouts.total_ms);
+  curl_easy_setopt(easy, CURLOPT_NOSIGNAL, 1L);
+  curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, receive);
+  curl_easy_setopt(easy, CURLOPT_WRITEDATA, &response.body);
+  curl_easy_setopt(easy, CURLOPT_HEADERFUNCTION, header);
+  curl_easy_setopt(easy, CURLOPT_HEADERDATA, &response);
   auto result = curl_easy_perform(easy);
   if (result != CURLE_OK) throw std::runtime_error(std::string("HTTPS transport: ") + curl_easy_strerror(result));
   curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &response.status);

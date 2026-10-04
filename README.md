@@ -22,6 +22,9 @@ This is the **standalone edition**: one MC system for all three services. What e
 
 **Containerised deployment** on Ubuntu 24.04 LTS (default) and Ubuntu 26.04 LTS ([building](docs/BUILD.md)).
 
+**Try it**: [Tutorial 1: MCX over WLAN with the Android app](tutorial/01-mcx-over-wlan-android/README.md) runs the whole
+system on one computer from the Docker Hub images, with two Android phones on the same Wi-Fi ([all tutorials](tutorial/README.md)).
+
 It is not an interoperability-certified implementation: see the current limits in the [feature list](docs/FEATURES.md#current-limits).
 
 ## Services
@@ -64,3 +67,8 @@ It is not an interoperability-certified implementation: see the current limits i
 - **[Using the lab](docs/USAGE.md)**: build, run, client commands, verification and SIP debugging
 - **Tests**: [MCPTT](tests/README.md), [MCData](tests/MCDATA_TEST.md) and [MCVideo](tests/MCVIDEO_TEST.md) test indexes, with call flows and evidence
 - **Acceptance matrices**: [MCPTT](docs/architecture/mcptt-standards-and-acceptance.md), [MCData](docs/architecture/mcdata-standards-and-acceptance.md) and [MCVideo](docs/architecture/mcvideo-standards-and-acceptance.md)
+
+## Licence
+
+openMCX is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
+Third-party software and its licences: [NOTICE](NOTICE).

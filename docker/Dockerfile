@@ -41,6 +41,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UB
     && rm -rf /var/lib/apt/lists/*
 COPY tools/healthcheck.py /healthcheck.py
 WORKDIR /workspace
+# The licence of openMCX and the third-party notices, in every image (NOTICE lists the sources).
+COPY LICENSE NOTICE /usr/share/doc/openmcx/
+LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.source="https://github.com/openMCX/openmcx-server"
 
 #------------------------------------------------------------------------------
 # MCPTT server (TS 24.379, TS 24.380): SIP and media, HTTP to the common services, Diameter to the user database.

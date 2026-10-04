@@ -1,0 +1,45 @@
+openMCX server (standalone edition)
+Copyright (C) 2026 the openMCX authors
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
+later version. See LICENSE.
+
+The source code of each published version, and of the images built from it, is at
+https://github.com/openMCX/openmcx-server.
+
+Third-party software
+--------------------
+Built into the openMCX programs or their images (versions pinned in dependencies.lock.json and docker/packages; the
+source archives are fetched from the listed upstream and verified by SHA-256):
+
+  wolfSSL 5.8.2            GPL-3.0-or-later         https://github.com/wolfSSL/wolfssl
+  pjproject (PJSIP) 2.17   GPL-2.0-or-later         https://github.com/pjsip/pjproject
+  freeDiameter             BSD-3-Clause             https://github.com/freeDiameter/freeDiameter
+  libsrtp2                 BSD-3-Clause             https://github.com/cisco/libsrtp
+  OpenH264                 BSD-2-Clause             https://github.com/cisco/openh264
+  opencore-amr (AMR-WB decoder), vo-amrwbenc (AMR-WB encoder)
+                           Apache-2.0               https://sourceforge.net/projects/opencore-amr/
+  nlohmann/json            MIT                      https://github.com/nlohmann/json
+  libxml2                  MIT                      https://gitlab.gnome.org/GNOME/libxml2
+  OpenSSL 3                Apache-2.0               https://www.openssl.org
+  Go standard library      BSD-3-Clause             https://go.dev
+  go-sql-driver/mysql      MPL-2.0                  https://github.com/go-sql-driver/mysql
+  filippo.io/edwards25519  BSD-3-Clause             https://github.com/FiloSottile/edwards25519
+  Docker Compose 2.40.3 (setup image only)
+                           Apache-2.0               https://github.com/docker/compose
+  Python 3.12 (setup image, python:3.12-slim)
+                           PSF-2.0                  https://www.python.org
+  Ubuntu 24.04 packages    their own licences       /usr/share/doc/*/copyright in each image
+
+Separate programs run alongside openMCX, not linked with it:
+
+  Kamailio 6.1.4 (SIP core, image openmcx-kamailio)
+                           GPL-2.0-or-later         https://github.com/kamailio/kamailio
+                           The image carries its licence (/usr/share/doc/kamailio/COPYING) and its source
+                           (/usr/src/kamailio-6.1.4.tar.gz).
+  MySQL (SIP core database, the official mysql image)
+                           GPL-2.0 with the Universal FOSS Exception   https://hub.docker.com/_/mysql
+
+3GPP and ETSI specifications are cited by clause; they are not part of this repository. Standard-essential patents
+of 3GPP technologies are not licensed by this software licence.

@@ -35,6 +35,26 @@ SIP_PORT, IDMS_PORT, PROXY_PORT, KMS_PORT, ADMIN_PORT, CREDENTIALS_PORT = 5061, 
 MCVIDEO_BASES = {'rtp_port': 7000, 'floor_port': 7200, 'video_port': 7400}
 
 
+# The rights of the 'phone-user' template (TS 24.484 profile sections, as MCX Admin's templates hold them): private
+# and ad hoc calls to and from any user, one-to-one MCData from any user, MCVideo calls to any user.
+PHONE_USER = {
+    'private_call': {
+        'allow': True,
+        'automatic_commencement': True,
+        'manual_commencement': True,
+        'callable': True,
+        'incoming_any': True,
+    },
+    'adhoc_call': {'allow': True},
+    'mcdata': {'transmit_data': True, 'incoming_any': True, 'adhoc': True, 'adhoc_participation': True},
+    'mcvideo': {
+        'private_call': {'allow': True, 'automatic_commencement': True, 'manual_commencement': True, 'any_target': True},
+        'adhoc_call': {'allow': True},
+        'allow_video_pull_from_server': True,
+    },
+}
+
+
 def edit(path, change):
     data = json.loads(path.read_text())
     change(data)
@@ -63,7 +83,7 @@ def main():
                 '--input',
                 str(LAB),
                 '--project',
-                'basic-mcx',
+                'openmcx-basic',
                 '--mcdata',
                 '--mcvideo',
                 '--adhoc',
@@ -121,6 +141,10 @@ def main():
     def site(cfg):
         cfg['oauth_redirect_uris'].append(https(ADMIN_PORT) + '/ui/callback')
         cfg['admin_accounts']['link_base_url'] = https(IDMS_PORT)
+        # MCX Admin's template for the phones' users: users made from it in the console call, message and video
+        # call any user of the system (without a template a new user has no rights; the test users' rights name
+        # each other only). MCX Admin imports it on its first start; the servers do not read it.
+        cfg['templates'] = {'phone-user': PHONE_USER}
 
     edit(OUT / 'mcptt-server.json', mcptt)
     edit(OUT / 'mcvideo-server.json', mcvideo)

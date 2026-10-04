@@ -59,6 +59,11 @@ struct SipConfig {
   // The media feature tags of the REGISTER Contact, each with its leading ';'
   // (TS 24.379 clause 7.2.1AA, TS 24.282 clause 7.2.1AA). Empty: the MCPTT ones.
   std::string registration_features;
+  // RFC 5626 (SIP Outbound), for a client: its instance identifier (a URN, the MC client ID). When set, the REGISTER
+  // Contact carries +sip.instance and reg-id=1 and every Contact URI ;ob, so that the SIP core reaches this endpoint
+  // over the connection it registered on, never by connecting to its Contact (a client behind NAT, or on the
+  // server's own computer). Empty (servers): plain Contacts.
+  std::string outbound_instance;
 };
 
 //------------------------------------------------------------------------------

@@ -32,7 +32,7 @@ static std::string substituted_identity;
 namespace mcx {
 //------------------------------------------------------------------------------
 // Stub: no connection.
-HttpClient::HttpClient(std::string, HttpTimeouts) {}
+HttpClient::HttpClient(std::string, HttpTimeouts, HttpAddressMap) {}
 
 //------------------------------------------------------------------------------
 // Stub: the text unchanged.

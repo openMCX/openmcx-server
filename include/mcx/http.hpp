@@ -29,9 +29,14 @@ struct HttpTimeouts {
   long total_ms = 5000;
 };
 
+// The address map of an MCX Admin activation package ("address_map"): "host:port" as the package names a server ->
+// "address:port" where this client reaches it (a phone or a dispatcher on another machine, through a host's published
+// ports). The connection goes to the address; TLS still checks the certificate against the named host (SNI included).
+using HttpAddressMap = std::map<std::string, std::string>;
+
 class HttpClient {
 public:
-  explicit HttpClient(std::string ca_file, HttpTimeouts timeouts = {});
+  explicit HttpClient(std::string ca_file, HttpTimeouts timeouts = {}, HttpAddressMap address_map = {});
   // TS 24.482 annex A.2.1.2: sends one HTTP request over TLS, with optional basic authentication and header fields.
   HttpResponse request(std::string_view method, const std::string &url, const std::string &body = {},
                        const std::map<std::string, std::string> &headers = {}, const std::string &user = {},
@@ -40,7 +45,14 @@ public:
 private:
   std::string ca_;
   HttpTimeouts timeouts_;
+  HttpAddressMap address_map_;
 };
+
+//------------------------------------------------------------------------------
+// MCX Admin activation link (https://...#pin=<base64url SHA-256 of the server certificate, DER>): a GET over TLS that
+// trusts only a server presenting that certificate, checked in the TLS handshake before the request is sent; for a
+// device that does not trust the system CA yet. The host name is not checked: the pin names the server.
+HttpResponse http_get_pinned(const std::string &url, std::string_view pin, HttpTimeouts timeouts = {});
 
 //------------------------------------------------------------------------------
 // RFC 3986 section 2.1: percent-encodes every character except the unreserved ones (section 2.3).

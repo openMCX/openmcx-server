@@ -98,9 +98,14 @@ void SipEngine::register_account(unsigned expires, SipResponseHandler handler) {
     const auto registrar = "sip:" + identity_domain(impl_->config.identity);
     auto server = pj_view(registrar);
     auto identity = pj_view(impl_->config.identity);
-    const auto contact_text = impl_->config.registration_features.empty()
-                                  ? impl_->contact_uri()
-                                  : "<" + impl_->contact_target() + ">" + impl_->config.registration_features;
+    // RFC 5626 section 4.2: an outbound client registers its instance and reg-id with the Contact.
+    const auto &instance = impl_->config.outbound_instance;
+    if (instance.find_first_of("\"<>\r\n") != std::string::npos)
+      throw std::invalid_argument("invalid SIP outbound instance");
+    const auto contact_text = (impl_->config.registration_features.empty()
+                                   ? impl_->contact_uri()
+                                   : "<" + impl_->contact_target() + ">" + impl_->config.registration_features) +
+                              (instance.empty() ? "" : ";+sip.instance=\"<" + instance + ">\";reg-id=1");
     auto contact = pj_view(contact_text);
     require_success(pjsip_regc_init(impl_->registration, &server, &identity, &identity, 1, &contact, expires),
                     "initialize SIP registration");
