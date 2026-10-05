@@ -44,6 +44,7 @@ call or a group) functions.
 | Key management | KMS identity provisioning, ECCSI/SAKKE MIKEY, group key transport (GKTP), AES-GCM SRTP/SRTCP for protected media |
 | Location and user database | Location reporting through the participating functions (TS 24.379 clause 13, TS 24.282 clause 17); the SEAL location management server of TS 24.545 over HTTP in the LMS: configuration, periodic and history reports, subscriptions and notifications for the MCPTT server and on-demand requests ([tests](../tests/mcptt/LOCATION_TEST.md#seal-location-management-server-sl-01-to-sl-06-isl-01-to-isl-06)); MCPTT-2 user-profile pull over freeDiameter (application 16777351) with SCTP CER/CEA and DPR/DPA, protected with TLS on the RFC 6733 secure port and mutual certificate authentication (TS 33.210) |
 | Transport | Mutual TLS for SIP and HTTPS for the services; a debug profile with clear SIP for capture-based testing |
+| QoS for call media | The MCPTT and MCVideo servers as AF: N5 to a PCF for 5G UEs (TS 29.514) and Rx to a PCRF for EPS UEs (TS 29.214, MCPTT-5), chosen by the UE's address; no request for a UE on WLAN (TS 24.379 clause 4.13). Best effort unless required ([how](POLICY.md)) |
 
 ## MCPTT
 

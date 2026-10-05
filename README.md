@@ -22,8 +22,8 @@ This is the **standalone edition**: one MC system for all three services. What e
 
 **Containerised deployment** on Ubuntu 24.04 LTS (default) and Ubuntu 26.04 LTS ([building](docs/BUILD.md)).
 
-**Try it**: [Tutorial 1: MCX over WLAN with the Android app](tutorial/01-mcx-over-wlan-android/README.md) runs the whole
-system on one computer from the Docker Hub images, with two Android phones on the same Wi-Fi ([all tutorials](tutorial/README.md)).
+**Try it**: [Tutorial 1: MCX over WLAN with the Android app](tutorials/01-mcx-over-wlan-android/README.md) runs the whole
+system on one computer from the Docker Hub images, with two Android phones on the same Wi-Fi ([all tutorials](tutorials/README.md)).
 
 It is not an interoperability-certified implementation: see the current limits in the [feature list](docs/FEATURES.md#current-limits).
 
@@ -72,3 +72,16 @@ It is not an interoperability-certified implementation: see the current limits i
 
 openMCX is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
 Third-party software and its licences: [NOTICE](NOTICE).
+
+## 3GPP specification correction candidates
+
+> [!NOTE]
+> While implementing openMCX we recorded defects and inconsistencies in the Release 19 specifications it follows
+> (versions in [docs/SPECS.md](docs/SPECS.md)): conflicting XML schemas, wrong clause, table and field numbers, wrong
+> bibliography references and procedures left undefined. They are listed with proposed corrections in
+> [3GPP correction candidates](docs/3GPP_CORRECTION_CANDIDATES.pdf) ([Markdown](docs/3GPP_CORRECTION_CANDIDATES.md)).
+>
+> This is a desk review of the specification text only. It is not an approved ETSI/3GPP change request, and none of it
+> has been confirmed by interoperability testing with other implementations. Where the text is ambiguous, openMCX
+> follows one reading (for example the 16-octet protected-payload IV of TS 33.180) that other implementations may not
+> share; confirm the behaviour with each peer.

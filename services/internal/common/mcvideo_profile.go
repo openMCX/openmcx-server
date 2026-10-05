@@ -66,7 +66,7 @@ type mcvideoCommon struct {
 
 // ------------------------------------------------------------------------------
 // TS 24.484 clause 9.3.2.1 item 8 e: the <MCVideo-group-call> element of <Common>, as <MCPTT-group-call>
-// (TS 24.281 clause 6.3.3.1.13 reads its group entries).
+// (TS 24.281 clause 6.3.3.1.12 reads its group entries).
 type mcvideoGroupCall struct {
 	MaxCallsN6 int                    `xml:"MaxSimultaneousCallsN6"`
 	Emergency  mcvideoGroupInitiation `xml:"EmergencyCall"`
@@ -210,7 +210,7 @@ func mcvideoProfileRights(rights mcvideoRights) []profileRight {
 		video(groupCall.ImminentCancel, "allow-cancel-imminent-peril")
 		alert, alertCancel = alert || groupCall.Alert, alertCancel || groupCall.AlertCancel
 	}
-	// One element each for group and private emergency alerts (TS 24.281 clause 6.3.3.1.13).
+	// One element each for group and private emergency alerts (TS 24.281 clause 6.3.3.1.12).
 	video(alert, "allow-activate-emergency-alert")
 	video(alertCancel, "allow-cancel-emergency-alert")
 	if adhoc := rights.AdhocCall; adhoc != nil {

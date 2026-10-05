@@ -1,9 +1,12 @@
 #include "mcx/af.hpp"
+#include "mcx/h2.hpp"
 #include <algorithm>
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
+#include <functional>
 #include <curl/curl.h>
+#include <map>
 #include <netinet/in.h>
 #include <poll.h>
 #include <random>
@@ -84,7 +87,9 @@ PcfConfig PcfConfig::parse(const Json &j) {
   c.enabled = j.value("enabled", false);
   c.pcf_uri = trim_slash(j.value("pcf_uri", std::string{}));
   c.nrf_uri = trim_slash(j.value("nrf_uri", std::string{}));
-  c.http2 = j.value("http2", true);
+  // N5 is HTTP/2 only (TS 29.500 5.2.2.1); an old "http2": true is accepted.
+  if (j.contains("http2") && !j.at("http2").get<bool>())
+    throw std::runtime_error("pcf.http2: N5 uses HTTP/2 only (TS 29.500 5.2.2.1); remove \"http2\": false");
   c.dnn = j.value("dnn", c.dnn);
   if (j.contains("snssai")) {
     const auto &s = j.at("snssai");
@@ -538,7 +543,9 @@ PolicyAuthorizationClient::Result PolicyAuthorizationClient::perform(const Job &
   headers = curl_slist_append(headers, "Accept: application/json, application/problem+json");
   if (method != "GET") headers = curl_slist_append(headers, ("Content-Type: " + type).c_str());
   curl_easy_setopt(c, CURLOPT_URL, url.c_str());
-  curl_easy_setopt(c, CURLOPT_HTTP_VERSION, cfg_.http2 ? CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE : CURL_HTTP_VERSION_1_1);
+  // HTTP/2 only (TS 29.500 5.2.2.1): prior knowledge over cleartext; over TLS
+  // negotiated with ALPN, and an HTTP/1.1 answer is refused below.
+  curl_easy_setopt(c, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE);
   curl_easy_setopt(c, CURLOPT_PROTOCOLS_STR, "http,https");
   curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
   curl_easy_setopt(c, CURLOPT_TIMEOUT_MS, static_cast<long>(cfg_.timeout_ms));
@@ -560,6 +567,12 @@ PolicyAuthorizationClient::Result PolicyAuthorizationClient::perform(const Job &
   curl_slist_free_all(headers);
   if (code != CURLE_OK) {
     result.error = std::string(method) + " " + url + ": " + curl_easy_strerror(code);
+    return result;
+  }
+  long version = 0;
+  curl_easy_getinfo(c, CURLINFO_HTTP_VERSION, &version);
+  if (version != CURL_HTTP_VERSION_2_0) {
+    result.error = std::string(method) + " " + url + ": not answered over HTTP/2 (TS 29.500 5.2.2.1)";
     return result;
   }
   curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &result.status);
@@ -595,16 +608,37 @@ void PolicyAuthorizationClient::work() {
   if (curl_) curl_easy_cleanup(static_cast<CURL *>(curl_));
   curl_ = nullptr;
 }
-// A minimal HTTP/1.1 receiver for Npcf_PolicyAuthorization_Notify (TS 29.514
-// 4.2.5): POST {notifUri}/notify (EventsNotification) and {notifUri}/terminate
-// (TerminationInfo), one request per connection, answered 204.
-void PolicyAuthorizationClient::listen() {
+// Npcf_PolicyAuthorization_Notify (TS 29.514 4.2.5): POST {notifUri}/notify
+// (EventsNotification) and {notifUri}/terminate (TerminationInfo), answered 204.
+int PolicyAuthorizationClient::receive(const std::string &method, std::string path, const std::string &body) {
   const auto base = uri_path(cfg_.notif_uri_base);
+  if (const auto q = path.find('?'); q != std::string::npos) path.resize(q);
+  if (!path.starts_with(base + "/")) return 404;
+  const auto rest = path.substr(base.size() + 1);
+  const auto slash = rest.find('/');
+  const auto id = rest.substr(0, slash), kind = slash == std::string::npos ? "" : rest.substr(slash + 1);
+  if (kind != "notify" && kind != "terminate") return 404;
+  if (method != "POST") return 405;
+  auto json = Json::parse(body, nullptr, false);
+  if (json.is_discarded()) return 400;
+  std::lock_guard lock(mutex_);
+  notifications_.push_back({id, kind, std::move(json)});
+  return 204;
+}
+
+// The notification receiver: HTTP/2 over cleartext with prior knowledge only, as
+// on the SBI (TS 29.500 5.2.2.1). A connection that does not start with the
+// HTTP/2 preface is refused (an HTTP/1.1 request gets 505) and reported.
+void PolicyAuthorizationClient::listen() {
+  const auto stopping = [this] {
+    std::lock_guard lock(mutex_);
+    return stopping_;
+  };
+  const h2::Handler handler = [this](const h2::Request &r) {
+    return h2::Response{receive(r.method, r.path, r.body), {}, {}};
+  };
   for (;;) {
-    {
-      std::lock_guard lock(mutex_);
-      if (stopping_) return;
-    }
+    if (stopping()) return;
     pollfd p{listen_fd_, POLLIN, 0};
     if (::poll(&p, 1, 200) <= 0) continue;
     const int fd = ::accept4(listen_fd_, nullptr, nullptr, SOCK_CLOEXEC);
@@ -614,60 +648,21 @@ void PolicyAuthorizationClient::listen() {
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout);
     std::string data;
     char buffer[4096];
-    std::size_t header_end = std::string::npos, length = 0;
-    bool complete = false;
-    while (data.size() < 65536) {
+    while (data.size() < h2::preface.size() && h2::preface.starts_with(data)) {
       const auto n = ::recv(fd, buffer, sizeof buffer, 0);
       if (n <= 0) break;
       data.append(buffer, static_cast<std::size_t>(n));
-      if (data.starts_with("PRI * HTTP/2.0")) break;
-      if (header_end == std::string::npos && (header_end = data.find("\r\n\r\n")) != std::string::npos) {
-        const auto headers = lower(data.substr(0, header_end));
-        if (const auto at = headers.find("\r\ncontent-length:"); at != std::string::npos)
-          length = std::strtoul(headers.c_str() + at + 17, nullptr, 10);
-      }
-      if (header_end != std::string::npos && data.size() >= header_end + 4 + length) {
-        complete = true;
-        break;
-      }
     }
-    std::string status = "400 Bad Request";
-    Notification note;
-    if (data.starts_with("PRI * HTTP/2.0")) {
-      note = {"", "rejected", {{"reason", "HTTP/2 prior knowledge on the HTTP/1.1 notification receiver"}}};
+    if (!h2::serve(fd, data, handler, stopping) && !data.empty()) {
+      if (data.starts_with("POST ") || data.starts_with("GET ") || data.find(" HTTP/1.") != std::string::npos) {
+        static const std::string reply =
+            "HTTP/1.1 505 HTTP Version Not Supported\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        (void)::send(fd, reply.data(), reply.size(), MSG_NOSIGNAL);
+      }
       std::lock_guard lock(mutex_);
-      notifications_.push_back(note);
-      ::close(fd);
-      continue;
+      notifications_.push_back(
+          {"", "rejected", {{"reason", "not HTTP/2 (TS 29.500 5.2.2.1): " + data.substr(0, data.find('\r'))}}});
     }
-    if (complete) {
-      const auto line_end = data.find("\r\n");
-      const auto line = data.substr(0, line_end);
-      const auto sp1 = line.find(' '), sp2 = line.find(' ', sp1 + 1);
-      const auto method = line.substr(0, sp1);
-      auto path = sp1 == std::string::npos ? std::string{} : line.substr(sp1 + 1, sp2 - sp1 - 1);
-      if (const auto q = path.find('?'); q != std::string::npos) path.resize(q);
-      status = "404 Not Found";
-      if (path.starts_with(base + "/")) {
-        const auto rest = path.substr(base.size() + 1);
-        const auto slash = rest.find('/');
-        const auto id = rest.substr(0, slash), kind = slash == std::string::npos ? "" : rest.substr(slash + 1);
-        if (method != "POST") {
-          status = "405 Method Not Allowed";
-        } else if (kind == "notify" || kind == "terminate") {
-          auto body = Json::parse(data.substr(header_end + 4, length), nullptr, false);
-          if (body.is_discarded()) {
-            status = "400 Bad Request";
-          } else {
-            std::lock_guard lock(mutex_);
-            notifications_.push_back({id, kind, std::move(body)});
-            status = "204 No Content";
-          }
-        }
-      }
-    }
-    const auto reply = "HTTP/1.1 " + status + "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-    (void)::send(fd, reply.data(), reply.size(), MSG_NOSIGNAL);
     ::close(fd);
   }
 }

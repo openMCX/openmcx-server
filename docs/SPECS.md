@@ -24,6 +24,7 @@ them there.
 | TS 24.581 | MCVideo media plane control (transmission control) | V19.2.0 | 2026-08 |
 | TS 24.582 | MCData media plane control | V19.0.0 | 2025-10 |
 | TS 26.281 | MCVideo codecs and media handling | V19.0.0 | 2025-10 |
+| TS 29.214 | Policy and charging control over Rx | V19.3.0 | 2026-02 |
 | TS 33.180 | Security of the MC services | V19.4.0 | 2026-02 |
 
 ## Cited, text not yet kept locally
@@ -35,6 +36,9 @@ References to these are written in the same form but not yet checked against the
 | TS 24.545 | SEAL location management |
 | TS 24.229 | IP multimedia call control based on SIP and SDP (IMS) |
 | TS 29.283 | Diameter data management applications |
+| TS 29.229 | Cx and Dx interfaces (Supported-Features AVP) |
+| TS 29.213 | Policy and charging control signalling flows and QoS parameter mapping |
+| ETSI TS 183 017 | Resource and admission control: DIAMETER protocol (Reservation-Priority AVP) |
 | TS 23.032 | Universal geographical area description (GAD) |
 | TS 23.434 | SEAL functional architecture |
 

@@ -3,8 +3,11 @@
 #endif
 // N5 AF (TS 29.514 Npcf_PolicyAuthorization): request bodies, the priority mapping,
 // the 5G UE subnet test, the app session state machine, and the HTTP client and
-// notification receiver against an in-process HTTP/1.1 PCF.
+// notification receiver against an in-process PCF, all over HTTP/2 with prior
+// knowledge as on the SBI (TS 29.500 5.2.2.1); HTTP/1.1 is refused.
 #include "mcx/af.hpp"
+#include "mcx/h2.hpp"
+#include <curl/curl.h>
 #include <arpa/inet.h>
 #include <atomic>
 #include <cassert>
@@ -17,6 +20,7 @@
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
+#include <vector>
 using namespace mcx::af;
 using namespace std::chrono_literals;
 
@@ -43,7 +47,7 @@ PcfConfig config() {
 
 void test_config() {
   const auto c = config();
-  assert(c.enabled && c.http2 && c.pcf_uri == "http://oai-pcf:8080" && c.dnn == "mcptt" && c.af_app_id == "mcptt");
+  assert(c.enabled && c.pcf_uri == "http://oai-pcf:8080" && c.dnn == "mcptt" && c.af_app_id == "mcptt");
   assert(c.supp_feat == "0" && c.audio_bw_kbps == 41 && !c.required && c.notif_bind == "0.0.0.0:8099");
   assert(c.sst == 1 && c.sd == "FFFFFF");
   const auto disabled = PcfConfig::parse(Json::object());
@@ -58,8 +62,10 @@ void test_config() {
   assert(bad({{"prio_map", {{"emergency", "PRIO_17"}}}}));
   assert(bad({{"prio_map", {{"urgent", "PRIO_1"}}}}));
   assert(bad({{"snssai", {{"sst", 1}, {"sd", "12"}}}}));
-  const auto custom = PcfConfig::parse({{"prio_map", {{"normal", "PRIO_1"}, {"emergency", "PRIO_15"}}}, {"http2", false}});
-  assert(!custom.http2 && custom.prio_map.at("normal") == "PRIO_1" && custom.prio_map.at("imminent") == "PRIO_12" &&
+  assert(bad({{"http2", false}}));  // N5 is HTTP/2 only
+  assert(!bad({{"http2", true}}));
+  const auto custom = PcfConfig::parse({{"prio_map", {{"normal", "PRIO_1"}, {"emergency", "PRIO_15"}}}});
+  assert(custom.prio_map.at("normal") == "PRIO_1" && custom.prio_map.at("imminent") == "PRIO_12" &&
          custom.prio_map.at("emergency") == "PRIO_15");
 }
 
@@ -237,8 +243,8 @@ int free_port() {
   return ntohs(a.sin_port);
 }
 
-// An HTTP/1.1 PCF: 201 with a Location for a create (503 while failing), 200 for a
-// PATCH, 204 for a delete; it records "METHOD path body".
+// An HTTP/2 PCF (prior knowledge): 201 with a Location for a create (503 while
+// failing), 200 for a PATCH, 204 for a delete; it records "METHOD path body".
 struct MockPcf {
   int fd = -1, port = 0;
   std::atomic<bool> stop{false}, fail_create{false};
@@ -265,45 +271,36 @@ struct MockPcf {
     thread.join();
     ::close(fd);
   }
+  mcx::h2::Response answer(const mcx::h2::Request &r) {
+    {
+      std::lock_guard lock(mutex);
+      requests.push_back(r.method + " " + r.path + " " + r.body);
+    }
+    if (r.method == "POST" && r.path == "/npcf-policyauthorization/v1/app-sessions") {
+      if (fail_create) return {503, {}, {}};
+      return {201,
+              {{"location", "http://127.0.0.1:" + std::to_string(port) + "/npcf-policyauthorization/v1/app-sessions/s" +
+                                std::to_string(next++)},
+               {"content-type", "application/json"}},
+              "{}"};
+    }
+    if (r.method == "PATCH") return {200, {{"content-type", "application/json"}}, "{}"};
+    return {204, {}, {}};
+  }
   void run() {
+    const mcx::h2::Handler handler = [this](const mcx::h2::Request &r) { return answer(r); };
     while (!stop) {
       pollfd p{fd, POLLIN, 0};
       if (::poll(&p, 1, 50) <= 0) continue;
       const int c = ::accept(fd, nullptr, nullptr);
       std::string data;
       char buf[4096];
-      std::size_t length = 0, end = std::string::npos;
-      while (true) {
+      while (data.size() < mcx::h2::preface.size()) {
         const auto r = ::recv(c, buf, sizeof buf, 0);
         if (r <= 0) break;
         data.append(buf, r);
-        if (end == std::string::npos && (end = data.find("\r\n\r\n")) != std::string::npos) {
-          auto at = data.find("Content-Length: ");
-          if (at != std::string::npos && at < end) length = std::stoul(data.substr(at + 16));
-        }
-        if (end != std::string::npos && data.size() >= end + 4 + length) break;
       }
-      const auto line = data.substr(0, data.find("\r\n"));
-      const auto method = line.substr(0, line.find(' '));
-      const auto path = line.substr(line.find(' ') + 1, line.rfind(' ') - line.find(' ') - 1);
-      {
-        std::lock_guard lock(mutex);
-        requests.push_back(method + " " + path + " " + data.substr(end + 4, length));
-      }
-      std::string reply;
-      if (method == "POST" && path == "/npcf-policyauthorization/v1/app-sessions") {
-        reply = fail_create ? "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n"
-                            : "HTTP/1.1 201 Created\r\nLocation: http://127.0.0.1:" + std::to_string(port) +
-                                  "/npcf-policyauthorization/v1/app-sessions/s" + std::to_string(next++) +
-                                  "\r\nContent-Type: application/json\r\nContent-Length: 2\r\n";
-      } else if (method == "PATCH") {
-        reply = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n";
-      } else {
-        reply = "HTTP/1.1 204 No Content\r\n";
-      }
-      reply += "Connection: close\r\n\r\n";
-      if (reply.find("Content-Length: 2") != std::string::npos) reply += "{}";
-      ::send(c, reply.data(), reply.size(), MSG_NOSIGNAL);
+      mcx::h2::serve(c, data, handler, [this] { return stop.load(); }, 500);
       ::close(c);
     }
   }
@@ -339,10 +336,39 @@ int post(int port, const std::string &path, const std::string &body) {
   return std::atoi(buf + 9);
 }
 
+// POSTs over HTTP/2 with prior knowledge, all on one connection, as a PCF's SBI
+// client does; the status of each request.
+std::vector<long> post_h2(int port, const std::vector<std::pair<std::string, std::string>> &requests) {
+  std::vector<long> statuses;
+  CURL *c = curl_easy_init();
+  assert(c);
+  curl_slist *headers = curl_slist_append(nullptr, "Content-Type: application/json");
+  for (const auto &[path, body] : requests) {
+    const auto url = "http://127.0.0.1:" + std::to_string(port) + path;
+    curl_easy_setopt(c, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(c, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE);
+    curl_easy_setopt(c, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(c, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(c, CURLOPT_TIMEOUT_MS, 3000L);
+    long status = 0, version = 0;
+    assert(curl_easy_perform(c) == CURLE_OK);
+    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
+    curl_easy_getinfo(c, CURLINFO_HTTP_VERSION, &version);
+    assert(version == CURL_HTTP_VERSION_2_0);
+    statuses.push_back(status);
+  }
+  long connects = -1;
+  curl_easy_getinfo(c, CURLINFO_NUM_CONNECTS, &connects);
+  assert(connects == 0);  // the last request reused the connection
+  curl_slist_free_all(headers);
+  curl_easy_cleanup(c);
+  return statuses;
+}
+
 void test_client() {
   MockPcf pcf;
   const int notif = free_port();
-  auto cfg = PcfConfig::parse({{"enabled", true}, {"pcf_uri", "http://127.0.0.1:" + std::to_string(pcf.port)}, {"http2", false},
+  auto cfg = PcfConfig::parse({{"enabled", true}, {"pcf_uri", "http://127.0.0.1:" + std::to_string(pcf.port)}, 
                                {"notif_bind", "127.0.0.1:" + std::to_string(notif)},
                                {"notif_uri_base", "http://127.0.0.1:" + std::to_string(notif) + "/n5"},
                                {"ue_subnets", {"12.1.1.0/24"}}});
@@ -365,16 +391,24 @@ void test_client() {
   assert(seen[1] == "PATCH /npcf-policyauthorization/v1/app-sessions/s1 {\"ascReqData\":{\"resPrio\":\"PRIO_16\"}}");
   assert(client.status().at("active") == 1);
 
-  // Notifications: an event report, then a termination, which the AF answers with a delete.
+  // Notifications over HTTP/2 (TS 29.500 5.2.2.1), three requests on one
+  // connection: an event report, a wrong path, then a termination, which the AF
+  // answers with a delete.
   const auto path = notif_uri.substr(notif_uri.find("/n5/"));
-  assert(post(notif, path + "/notify", R"({"evSubsUri":"x","evNotifs":[{"event":"SUCCESSFUL_RESOURCES_ALLOCATION"}]})") == 204);
+  const auto answers =
+      post_h2(notif, {{path + "/notify", R"({"evSubsUri":"x","evNotifs":[{"event":"FAILED_RESOURCES_ALLOCATION"}]})"},
+                      {"/elsewhere/x/notify", "{}"},
+                      {path + "/terminate", R"({"termCause":"ALL_SDF_DEACTIVATION","resUri":"x"})"}});
+  assert(answers.size() == 3 && answers[0] == 204 && answers[1] == 404 && answers[2] == 204);
+  events = pump(client, 3);
+  assert(events.size() == 3 && events[0].kind == Event::Kind::notified && events[0].key == "dialog-1" &&
+         events[0].detail == "FAILED_RESOURCES_ALLOCATION");
+  assert(events[1].kind == Event::Kind::terminated && events[1].detail == "ALL_SDF_DEACTIVATION" &&
+         events[2].kind == Event::Kind::deleted);
+  // HTTP/1.1 is refused (505) and reported.
+  assert(post(notif, path + "/notify", "{}") == 505);
   events = pump(client, 1);
-  assert(events.size() == 1 && events[0].kind == Event::Kind::notified && events[0].key == "dialog-1" &&
-         events[0].detail == "SUCCESSFUL_RESOURCES_ALLOCATION");
-  assert(post(notif, "/elsewhere/x/notify", "{}") == 404);
-  assert(post(notif, path + "/terminate", R"({"termCause":"PDU_SESSION_TERMINATION","resUri":"x"})") == 204);
-  events = pump(client, 2);
-  assert(events.size() == 2 && events[0].kind == Event::Kind::terminated && events[1].kind == Event::Kind::deleted);
+  assert(events.size() == 1 && events[0].kind == Event::Kind::notified && events[0].status == 505);
   assert(pcf.seen().back() == "POST /npcf-policyauthorization/v1/app-sessions/s1/delete ");
   assert(!client.tracking("dialog-1"));
   client.close("dialog-1");  // the leg's own teardown afterwards: nothing more is sent

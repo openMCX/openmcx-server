@@ -735,8 +735,9 @@ func (svc *service) sealCreate(val string, requested []string, request *sealSubs
 			kept = append(kept, user)
 		}
 	}
-	// TS 24.545 clause 6.2.6.2.2 step b: the expiry is at most the configured limit. <expiry-time> is a
-	// non-positive integer in the schema: its magnitude is the duration in seconds.
+	// TS 24.545 clause 6.2.6.2.2 step b: the expiry is at most the configured limit. <expiry-time> is positive
+	// seconds (clause 7.5); a negative value is accepted, as its magnitude, only to tolerate peers that follow the
+	// schema's xs:nonPositiveInteger type.
 	seconds := *request.ExpiryTime
 	if seconds < 0 {
 		seconds = -seconds

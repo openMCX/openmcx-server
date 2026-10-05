@@ -157,7 +157,7 @@ type oneXML struct {
 
 // ------------------------------------------------------------------------------
 // TS 24.481 clause 7.2.4.2: the <actions> of a rule this GMS writes: getting the member list, the MCPTT and MCVideo
-// emergency group call, imminent peril call and emergency alert (TS 24.379 and TS 24.281 clause 6.3.3.1.13), and
+// emergency group call, imminent peril call and emergency alert (TS 24.379 clause 6.3.3.1.13 and TS 24.281 clause 6.3.3.1.12), and
 // transmitting data in the group (TS 24.282 clause 11.1).
 type actionsXML struct {
 	JoinHandling               bool `xml:"urn:oma:xml:poc:list-service join-handling,omitempty"`

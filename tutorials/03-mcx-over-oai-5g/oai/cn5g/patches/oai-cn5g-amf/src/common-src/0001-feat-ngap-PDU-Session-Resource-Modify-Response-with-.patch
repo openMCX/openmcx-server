@@ -1,0 +1,158 @@
+From ef3df0de174e9f9263d26b1e5f20092ed4fdcc09 Mon Sep 17 00:00:00 2001
+From: Rohan <kharade@eurecom.fr>
+Date: Mon, 5 Oct 2026 02:42:48 +0200
+Subject: [PATCH 1/2] feat(ngap): PDU Session Resource Modify Response with
+ failed PDU sessions
+
+Decode the optional PDUSessionResourceFailedToModifyListModRes (TS 38.413
+9.2.1.6) and give each failed PDU session with its PDU Session Resource Modify
+Unsuccessful Transfer (9.3.4.8). User Location Information and Criticality
+Diagnostics are accepted (not used).
+
+The receiver takes the criticality of each IE from the specification (all
+"ignore" in this message) and no longer requires a particular value from the
+sender: a RAN UE NGAP ID sent with "ignore", as TS 38.413 specifies, made the
+whole message undecodable.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013UXVKWJNq3UC36dmrQjjV3
+---
+ .../PduSessionResourceModifyResponse.cpp      | 53 ++++++++++++++-----
+ .../PduSessionResourceModifyResponse.hpp      |  9 +++-
+ 2 files changed, 49 insertions(+), 13 deletions(-)
+
+diff --git a/ngap/ngap_msgs/PduSessionResourceModifyResponse.cpp b/ngap/ngap_msgs/PduSessionResourceModifyResponse.cpp
+index 183eff7e..c3bffd5e 100644
+--- a/ngap/ngap_msgs/PduSessionResourceModifyResponse.cpp
++++ b/ngap/ngap_msgs/PduSessionResourceModifyResponse.cpp
+@@ -30,6 +30,7 @@ namespace oai::ngap {
+ PduSessionResourceModifyResponseMsg::PduSessionResourceModifyResponseMsg()
+     : NgapUeMessage() {
+   m_PduSessionResourceModifyList = std::nullopt;
++  m_FailedToModifyList           = nullptr;
+   setMessageType(NgapMessageType::PDU_SESSION_RESOURCE_MODIFY_RESPONSE);
+   initialize();
+ }
+@@ -168,6 +169,23 @@ bool PduSessionResourceModifyResponseMsg::
+   return true;
+ }
+ 
++//------------------------------------------------------------------------------
++bool PduSessionResourceModifyResponseMsg::
++    getPduSessionResourceFailedToModifyList(
++        std::vector<PDUSessionResourceModifyResponseItem_t>& list) const {
++  if (!m_FailedToModifyList) return false;
++  for (int i = 0; i < m_FailedToModifyList->list.count; i++) {
++    const auto* item = m_FailedToModifyList->list.array[i];
++    if (!item) continue;
++    PDUSessionResourceModifyResponseItem_t failed = {};
++    failed.pduSessionId = static_cast<uint8_t>(item->pDUSessionID);
++    failed.pduSessionResourceModifyUnsuccessfulTransfer =
++        item->pDUSessionResourceModifyUnsuccessfulTransfer;
++    list.push_back(failed);
++  }
++  return true;
++}
++
+ //------------------------------------------------------------------------------
+ bool PduSessionResourceModifyResponseMsg::decode(Ngap_NGAP_PDU_t* ngapMsgPdu) {
+   ngapPdu = ngapMsgPdu;
+@@ -200,10 +218,8 @@ bool PduSessionResourceModifyResponseMsg::decode(Ngap_NGAP_PDU_t* ngapMsgPdu) {
+         pduSessionResourceModifyResponseIes->protocolIEs.list.array[i]->id) {
+       case Ngap_ProtocolIE_ID_id_AMF_UE_NGAP_ID: {
+         if (pduSessionResourceModifyResponseIes->protocolIEs.list.array[i]
+-                    ->criticality == Ngap_Criticality_ignore &&
+-            pduSessionResourceModifyResponseIes->protocolIEs.list.array[i]
+-                    ->value.present ==
+-                Ngap_PDUSessionResourceModifyResponseIEs__value_PR_AMF_UE_NGAP_ID) {
++                ->value.present ==
++            Ngap_PDUSessionResourceModifyResponseIEs__value_PR_AMF_UE_NGAP_ID) {
+           if (!NgapUeMessage::m_AmfUeNgapId.decode(
+                   pduSessionResourceModifyResponseIes->protocolIEs.list
+                       .array[i]
+@@ -220,10 +236,8 @@ bool PduSessionResourceModifyResponseMsg::decode(Ngap_NGAP_PDU_t* ngapMsgPdu) {
+       } break;
+       case Ngap_ProtocolIE_ID_id_RAN_UE_NGAP_ID: {
+         if (pduSessionResourceModifyResponseIes->protocolIEs.list.array[i]
+-                    ->criticality == Ngap_Criticality_reject &&
+-            pduSessionResourceModifyResponseIes->protocolIEs.list.array[i]
+-                    ->value.present ==
+-                Ngap_PDUSessionResourceModifyResponseIEs__value_PR_RAN_UE_NGAP_ID) {
++                ->value.present ==
++            Ngap_PDUSessionResourceModifyResponseIEs__value_PR_RAN_UE_NGAP_ID) {
+           if (!NgapUeMessage::m_RanUeNgapId.decode(
+                   pduSessionResourceModifyResponseIes->protocolIEs.list
+                       .array[i]
+@@ -240,10 +254,8 @@ bool PduSessionResourceModifyResponseMsg::decode(Ngap_NGAP_PDU_t* ngapMsgPdu) {
+       } break;
+       case Ngap_ProtocolIE_ID_id_PDUSessionResourceModifyListModRes: {
+         if (pduSessionResourceModifyResponseIes->protocolIEs.list.array[i]
+-                    ->criticality == Ngap_Criticality_ignore &&
+-            pduSessionResourceModifyResponseIes->protocolIEs.list.array[i]
+-                    ->value.present ==
+-                Ngap_PDUSessionResourceModifyResponseIEs__value_PR_PDUSessionResourceModifyListModRes) {
++                ->value.present ==
++            Ngap_PDUSessionResourceModifyResponseIEs__value_PR_PDUSessionResourceModifyListModRes) {
+           PduSessionResourceModifyListModRes item_list = {};
+           if (!item_list.decode(
+                   pduSessionResourceModifyResponseIes->protocolIEs.list
+@@ -263,6 +275,23 @@ bool PduSessionResourceModifyResponseMsg::decode(Ngap_NGAP_PDU_t* ngapMsgPdu) {
+           return false;
+         }
+       } break;
++      case Ngap_ProtocolIE_ID_id_PDUSessionResourceFailedToModifyListModRes: {
++        if (pduSessionResourceModifyResponseIes->protocolIEs.list.array[i]
++                ->value.present !=
++            Ngap_PDUSessionResourceModifyResponseIEs__value_PR_PDUSessionResourceFailedToModifyListModRes) {
++          oai::logger::logger_common::ngap().error(
++              "Decoded NGAP PDUSessionResourceFailedToModifyListModRes IE "
++              "error");
++          return false;
++        }
++        m_FailedToModifyList =
++            &pduSessionResourceModifyResponseIes->protocolIEs.list.array[i]
++                 ->value.choice.PDUSessionResourceFailedToModifyListModRes;
++      } break;
++      // Optional IEs this AMF does not use (TS 38.413 9.2.1.6).
++      case Ngap_ProtocolIE_ID_id_UserLocationInformation:
++      case Ngap_ProtocolIE_ID_id_CriticalityDiagnostics:
++        break;
+       default: {
+         oai::logger::logger_common::ngap().error(
+             "Decoded NGAP Message PDU error");
+diff --git a/ngap/ngap_msgs/PduSessionResourceModifyResponse.hpp b/ngap/ngap_msgs/PduSessionResourceModifyResponse.hpp
+index 571ed2d1..b86f70dc 100644
+--- a/ngap/ngap_msgs/PduSessionResourceModifyResponse.hpp
++++ b/ngap/ngap_msgs/PduSessionResourceModifyResponse.hpp
+@@ -26,6 +26,8 @@
+ #include "PduSessionResourceModifyListModRes.hpp"
+ 
+ extern "C" {
++#include "Ngap_PDUSessionResourceFailedToModifyItemModRes.h"
++#include "Ngap_PDUSessionResourceFailedToModifyListModRes.h"
+ #include "Ngap_PDUSessionResourceModifyResponse.h"
+ }
+ 
+@@ -46,13 +48,18 @@ class PduSessionResourceModifyResponseMsg : public NgapUeMessage {
+       const std::vector<PDUSessionResourceModifyResponseItem_t>& list);
+   bool getPduSessionResourceModifyResponseList(
+       std::vector<PDUSessionResourceModifyResponseItem_t>& list) const;
++  // The PDU sessions the NG-RAN failed to modify, each with its PDU Session
++  // Resource Modify Unsuccessful Transfer (TS 38.413 9.2.1.6, 9.3.4.8).
++  bool getPduSessionResourceFailedToModifyList(
++      std::vector<PDUSessionResourceModifyResponseItem_t>& list) const;
+ 
+  private:
+   Ngap_PDUSessionResourceModifyResponse_t* pduSessionResourceModifyResponseIes;
+ 
+   std::optional<PduSessionResourceModifyListModRes>
+       m_PduSessionResourceModifyList;  // Optional
+-  // TODO: PDUSessionResourceFailedToModifyListModRes (Optional)
++  Ngap_PDUSessionResourceFailedToModifyListModRes_t*
++      m_FailedToModifyList;  // Optional
+   // TODO: User Location Information (Optional)
+   // TODO: Criticality Diagnostics (Optional)
+ };
+-- 
+2.53.0
+

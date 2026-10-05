@@ -43,7 +43,7 @@ RUN dnf config-manager --set-enabled crb \
     && cat /etc/os-release \
     && dnf install -y gcc-c++ make cmake pkgconf-pkg-config bison flex autoconf automake libtool which tar gzip \
        diffutils file ca-certificates python3 openssl binutils \
-       libuuid-devel openssl-devel libxml2-devel libcurl-devel json-devel libsrtp-devel lksctp-tools-devel \
+       libuuid-devel openssl-devel libxml2-devel libcurl-devel libnghttp2-devel json-devel libsrtp-devel lksctp-tools-devel \
        opencore-amr-devel vo-amrwbenc-devel gnutls-devel libgcrypt-devel libidn-devel libidn2-devel \
        mariadb-connector-c-devel pcre2-devel libunistring-devel \
     && dnf clean all \

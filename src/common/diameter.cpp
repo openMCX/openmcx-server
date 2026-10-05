@@ -1,8 +1,11 @@
 // Diameter data management client and server: the Data-Pull-Request and Data-Pull-Answer carrying the MCPTT user
-// profile, over freeDiameter with the ConnectTo peer names resolved at start.
+// profile, over freeDiameter with the ConnectTo peer names resolved at start; and the process's freeDiameter core,
+// shared with Rx (src/common/rx.cpp).
 //
 // Specifications: TS 29.283, RFC 6733.
 #include "mcx/diameter.hpp"
+
+#include "diameter_core.hpp"
 
 #include <netdb.h>
 #include <unistd.h>
@@ -13,8 +16,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <freeDiameter/freeDiameter-host.h>
-#include <freeDiameter/libfdcore.h>
 #include <fstream>
 #include <future>
 #include <iostream>
@@ -29,15 +30,16 @@
 #include <thread>
 #include <utility>
 
-namespace mcx {
+namespace mcx::diameter {
 namespace {
 
-constexpr vendor_id_t vendor_3gpp = 10415;
 constexpr application_id_t app_id = diameter_data_management_application_id;
 constexpr command_code_t dpr_code = diameter_data_pull_command_code;
 constexpr std::size_t max_config_bytes = 1024 * 1024;
 constexpr std::size_t max_identity_bytes = 1024;
 constexpr std::size_t max_profile_bytes = 1024 * 1024;
+
+} // namespace
 
 //------------------------------------------------------------------------------
 // Helper: throws the error of a failed freeDiameter or system operation.
@@ -78,6 +80,8 @@ std::set<std::string> configured_peers(const std::string &path) {
   if (peers.empty()) throw std::runtime_error("Diameter configuration has no allowed ConnectPeer");
   return peers;
 }
+
+namespace {
 
 //------------------------------------------------------------------------------
 // Helper: whether a host is a numeric IPv4 or IPv6 address.
@@ -164,29 +168,7 @@ void parse_configuration(const std::string &path) {
   check_fd(result, "parse freeDiameter configuration");
 }
 
-//------------------------------------------------------------------------------
-// TS 29.283 and RFC 6733: the dictionary objects of the Diameter Data Management application (Data-Pull-Request and
-// Data-Pull-Answer and their AVPs) and the base protocol AVPs used.
-struct Dictionary {
-  struct dict_object *vendor = nullptr;
-  struct dict_object *application = nullptr;
-  struct dict_object *dpr = nullptr;
-  struct dict_object *dpa = nullptr;
-  struct dict_object *auth_session_state = nullptr;
-  struct dict_object *destination_realm = nullptr;
-  struct dict_object *result_code = nullptr;
-  struct dict_object *experimental_result = nullptr;
-  struct dict_object *experimental_result_code = nullptr;
-  struct dict_object *vendor_id = nullptr;
-  struct dict_object *user_identifier = nullptr;
-  struct dict_object *mcptt_id = nullptr;
-  struct dict_object *data_identification = nullptr;
-  struct dict_object *data_prefix = nullptr;
-  struct dict_object *data_flags = nullptr;
-  struct dict_object *data = nullptr;
-  struct dict_object *profile_data = nullptr;
-  struct dict_object *user_data = nullptr;
-};
+} // namespace
 
 //------------------------------------------------------------------------------
 // Helper: a dictionary object that freeDiameter must already know.
@@ -197,21 +179,55 @@ struct dict_object *find_required(enum dict_object_type type, int criteria, cons
 }
 
 //------------------------------------------------------------------------------
-// TS 29.283: registers a 3GPP vendor-specific AVP with the V and M flags, unless it is already known.
-struct dict_object *add_avp(std::uint32_t code, const char *name, enum dict_avp_basetype type) {
-  struct dict_avp_request request{vendor_3gpp, code, nullptr};
+// RFC 6733 section 4.1: registers an AVP, with the V flag when it has a vendor and the M flag when it is mandatory (or
+// free, when the M flag "may" be set), unless it is already known.
+struct dict_object *add_avp(std::uint32_t code, const char *name, enum dict_avp_basetype type, vendor_id_t vendor,
+                            bool mandatory, bool mandatory_fixed) {
+  struct dict_avp_request request{vendor, code, nullptr};
   struct dict_object *existing = nullptr;
   if (fd_dict_search(fd_g_config->cnf_dict, DICT_AVP, AVP_BY_CODE_AND_VENDOR, &request, &existing, ENOENT) == 0)
     return existing;
-  struct dict_avp_data data{code,
-                            vendor_3gpp,
-                            const_cast<char *>(name),
-                            AVP_FLAG_VENDOR | AVP_FLAG_MANDATORY,
-                            AVP_FLAG_VENDOR | AVP_FLAG_MANDATORY,
-                            type};
+  const std::uint8_t flags =
+      static_cast<std::uint8_t>((vendor ? AVP_FLAG_VENDOR : 0) | (mandatory ? AVP_FLAG_MANDATORY : 0));
+  const std::uint8_t mask = static_cast<std::uint8_t>(AVP_FLAG_VENDOR | (mandatory_fixed ? AVP_FLAG_MANDATORY : 0));
+  struct dict_avp_data data{code, vendor, const_cast<char *>(name), mask, flags, type};
+  // The vendor is named by its ID (and must be registered); the parent of an AVP is its derived type, none here.
   struct dict_object *object = nullptr;
   check_fd(fd_dict_new(fd_g_config->cnf_dict, DICT_AVP, &data, nullptr, &object), name);
   return object;
+}
+
+//------------------------------------------------------------------------------
+// RFC 6733 section 5.3.3: a vendor, registered unless it is already known.
+struct dict_object *ensure_vendor(vendor_id_t id, const char *name) {
+  struct dict_object *vendor = nullptr;
+  if (fd_dict_search(fd_g_config->cnf_dict, DICT_VENDOR, VENDOR_BY_ID, &id, &vendor, ENOENT) == 0) return vendor;
+  struct dict_vendor_data data{id, const_cast<char *>(name)};
+  check_fd(fd_dict_new(fd_g_config->cnf_dict, DICT_VENDOR, &data, nullptr, &vendor), name);
+  return vendor;
+}
+
+//------------------------------------------------------------------------------
+// RFC 6733 section 2.4: an application, registered unless it is already known.
+struct dict_object *ensure_application(application_id_t id, const char *name, struct dict_object *vendor) {
+  struct dict_object *application = nullptr;
+  if (fd_dict_search(fd_g_config->cnf_dict, DICT_APPLICATION, APPLICATION_BY_ID, &id, &application, ENOENT) == 0)
+    return application;
+  struct dict_application_data data{id, const_cast<char *>(name)};
+  check_fd(fd_dict_new(fd_g_config->cnf_dict, DICT_APPLICATION, &data, vendor, &application), name);
+  return application;
+}
+
+//------------------------------------------------------------------------------
+// RFC 6733 section 3: a proxiable command of an application, the request (R flag) or its answer.
+struct dict_object *add_command(struct dict_object *application, command_code_t code, const char *name, bool request) {
+  struct dict_cmd_data data{code, const_cast<char *>(name),
+                            static_cast<std::uint8_t>(CMD_FLAG_REQUEST | CMD_FLAG_PROXIABLE),
+                            static_cast<std::uint8_t>(request ? CMD_FLAG_REQUEST | CMD_FLAG_PROXIABLE
+                                                              : CMD_FLAG_PROXIABLE)};
+  struct dict_object *command = nullptr;
+  check_fd(fd_dict_new(fd_g_config->cnf_dict, DICT_COMMAND, &data, application, &command), name);
+  return command;
 }
 
 //------------------------------------------------------------------------------
@@ -219,31 +235,12 @@ struct dict_object *add_avp(std::uint32_t code, const char *name, enum dict_avp_
 // Data-Pull-Answer commands (proxiable) and the AVPs User-Identifier (3102), MCPTT-ID (4500), Data-Identification
 // (4501), Data-Identification-Prefix (4502), Data-Identification-Flags (4503), MC-Service-User-Profile-Data (4511),
 // Data (4513) and User-Data (702).
-Dictionary register_dictionary() {
-  Dictionary dictionary;
-  vendor_id_t vendor_id = vendor_3gpp;
-  if (fd_dict_search(fd_g_config->cnf_dict, DICT_VENDOR, VENDOR_BY_ID, &vendor_id, &dictionary.vendor, ENOENT) != 0) {
-    struct dict_vendor_data data{vendor_3gpp, const_cast<char *>("3GPP")};
-    check_fd(fd_dict_new(fd_g_config->cnf_dict, DICT_VENDOR, &data, nullptr, &dictionary.vendor),
-             "register 3GPP vendor");
-  }
-  application_id_t application_id = app_id;
-  if (fd_dict_search(fd_g_config->cnf_dict, DICT_APPLICATION, APPLICATION_BY_ID, &application_id,
-                     &dictionary.application, ENOENT) != 0) {
-    struct dict_application_data data{app_id, const_cast<char *>("3GPP Diameter Data Management")};
-    check_fd(fd_dict_new(fd_g_config->cnf_dict, DICT_APPLICATION, &data, dictionary.vendor, &dictionary.application),
-             "register Diameter Data Management application");
-  }
-  struct dict_cmd_data request_data{dpr_code, const_cast<char *>("Data-Pull-Request"),
-                                    static_cast<std::uint8_t>(CMD_FLAG_REQUEST | CMD_FLAG_PROXIABLE),
-                                    static_cast<std::uint8_t>(CMD_FLAG_REQUEST | CMD_FLAG_PROXIABLE)};
-  check_fd(fd_dict_new(fd_g_config->cnf_dict, DICT_COMMAND, &request_data, dictionary.application, &dictionary.dpr),
-           "register Data-Pull-Request");
-  struct dict_cmd_data answer_data{dpr_code, const_cast<char *>("Data-Pull-Answer"),
-                                   static_cast<std::uint8_t>(CMD_FLAG_REQUEST | CMD_FLAG_PROXIABLE),
-                                   static_cast<std::uint8_t>(CMD_FLAG_PROXIABLE)};
-  check_fd(fd_dict_new(fd_g_config->cnf_dict, DICT_COMMAND, &answer_data, dictionary.application, &dictionary.dpa),
-           "register Data-Pull-Answer");
+DataManagementDictionary register_data_management_dictionary() {
+  DataManagementDictionary dictionary;
+  dictionary.vendor = ensure_vendor(vendor_3gpp, "3GPP");
+  dictionary.application = ensure_application(app_id, "3GPP Diameter Data Management", dictionary.vendor);
+  dictionary.dpr = add_command(dictionary.application, dpr_code, "Data-Pull-Request", true);
+  dictionary.dpa = add_command(dictionary.application, dpr_code, "Data-Pull-Answer", false);
 
   dictionary.auth_session_state = find_required(DICT_AVP, AVP_BY_NAME, "Auth-Session-State", "find Auth-Session-State");
   dictionary.destination_realm = find_required(DICT_AVP, AVP_BY_NAME, "Destination-Realm", "find Destination-Realm");
@@ -265,50 +262,6 @@ Dictionary register_dictionary() {
 }
 
 //------------------------------------------------------------------------------
-// Helper: the freeDiameter core: initialised with the dictionary and the configuration, advertising the Diameter Data
-// Management application, and shut down when destroyed.
-class Core {
-public:
-  explicit Core(const std::string &config_path) : config_path_(config_path) {
-    check_fd(fd_core_initialize(), "initialize freeDiameter");
-    initialized_ = true;
-    try {
-      dictionary_ = register_dictionary();
-      parse_configuration(config_path_);
-      check_fd(fd_disp_app_support(dictionary_.application, dictionary_.vendor, 1, 0),
-               "advertise Diameter Data Management application");
-    } catch (...) {
-      shutdown();
-      throw;
-    }
-  }
-
-  void start() {
-    check_fd(fd_core_start(), "start freeDiameter");
-    check_fd(fd_core_waitstartcomplete(), "wait for freeDiameter startup");
-  }
-
-  ~Core() { shutdown(); }
-
-  Core(const Core &) = delete;
-  Core &operator=(const Core &) = delete;
-
-  Dictionary &dictionary() { return dictionary_; }
-
-private:
-  void shutdown() noexcept {
-    if (!initialized_) return;
-    (void)fd_core_shutdown();
-    (void)fd_core_wait_shutdown_complete();
-    initialized_ = false;
-  }
-
-  std::string config_path_;
-  bool initialized_ = false;
-  Dictionary dictionary_;
-};
-
-//------------------------------------------------------------------------------
 // Helper: appends an Unsigned32 AVP.
 void add_u32(msg_or_avp *parent, struct dict_object *model, std::uint32_t value) {
   struct avp *avp = nullptr;
@@ -316,6 +269,17 @@ void add_u32(msg_or_avp *parent, struct dict_object *model, std::uint32_t value)
   union avp_value storage{};
   storage.u32 = value;
   check_fd(fd_msg_avp_setvalue(avp, &storage), "set Unsigned32 AVP");
+  check_fd(fd_msg_avp_add(parent, MSG_BRW_LAST_CHILD, avp), "add AVP");
+}
+
+//------------------------------------------------------------------------------
+// Helper: appends an Integer32 AVP (also the base of Enumerated, RFC 6733 section 4.3.1).
+void add_i32(msg_or_avp *parent, struct dict_object *model, std::int32_t value) {
+  struct avp *avp = nullptr;
+  check_fd(fd_msg_avp_new(model, 0, &avp), "create Integer32 AVP");
+  union avp_value storage{};
+  storage.i32 = value;
+  check_fd(fd_msg_avp_setvalue(avp, &storage), "set Integer32 AVP");
   check_fd(fd_msg_avp_add(parent, MSG_BRW_LAST_CHILD, avp), "add AVP");
 }
 
@@ -395,6 +359,8 @@ std::string octets_value(struct avp *avp, const char *name, std::size_t limit) {
   return {reinterpret_cast<char *>(header->avp_value->os.data), header->avp_value->os.len};
 }
 
+namespace {
+
 //------------------------------------------------------------------------------
 // RFC 6733 section 6.6: the Destination-Realm of a request for an MCPTT ID: its domain after the last "@", without
 // URI parameters.
@@ -412,9 +378,14 @@ std::string realm_for(std::string_view mcptt_id) {
   return std::string(realm);
 }
 
+} // namespace
+
 //------------------------------------------------------------------------------
-// RFC 6733 section 5.6: waits until one of the allowed peers is in the Open state.
-void wait_for_peer(const std::set<std::string> &peers, std::chrono::milliseconds timeout) {
+// RFC 6733 sections 5.3 and 5.6: waits until one of the allowed peers is in the Open state and, unless application
+// is 0, advertised that application in its capabilities exchange (a core shared by MCPTT-2 and Rx has peers of
+// either).
+void wait_for_peer(const std::set<std::string> &peers, std::chrono::milliseconds timeout,
+                   application_id_t application) {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   do {
     for (const auto &identity : peers) {
@@ -423,7 +394,11 @@ void wait_for_peer(const std::set<std::string> &peers, std::chrono::milliseconds
               0 &&
           peer != nullptr) {
         const auto state = fd_peer_get_state(peer);
-        if (state == STATE_OPEN || state == STATE_OPEN_NEW) return;
+        struct fd_app *advertised = nullptr;
+        if ((state == STATE_OPEN || state == STATE_OPEN_NEW) &&
+            (application == 0 ||
+             (fd_app_check(&peer->info.runtime.pir_apps, application, &advertised) == 0 && advertised)))
+          return;
       }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(25));
@@ -431,11 +406,13 @@ void wait_for_peer(const std::set<std::string> &peers, std::chrono::milliseconds
   throw std::runtime_error("Diameter peer did not reach OPEN over SCTP");
 }
 
+namespace {
+
 //------------------------------------------------------------------------------
 // Helper: the pending answer of one Data-Pull-Request.
 struct PullState {
   std::promise<std::string> promise;
-  Dictionary *dictionary = nullptr;
+  DataManagementDictionary *dictionary = nullptr;
 };
 
 //------------------------------------------------------------------------------
@@ -499,23 +476,110 @@ void timeout_callback(void *opaque, DiamId_t, size_t, struct msg **) {
 
 //------------------------------------------------------------------------------
 // RFC 6733 section 7.6: an Experimental-Result AVP with the 3GPP Vendor-Id and the code.
-void add_experimental_result(struct msg *answer, Dictionary &dictionary, std::uint32_t code) {
+void add_experimental_result(struct msg *answer, DataManagementDictionary &dictionary, std::uint32_t code) {
   auto *group = add_group(answer, dictionary.experimental_result);
   add_u32(group, dictionary.vendor_id, vendor_3gpp);
   add_u32(group, dictionary.experimental_result_code, code);
 }
 
 } // namespace
+} // namespace mcx::diameter
+
+namespace mcx {
+using namespace diameter;
+
+namespace {
+// Helper: the one core of the process, while it is in use.
+std::mutex core_mutex;
+std::weak_ptr<DiameterCore> running_core;
+} // namespace
 
 //------------------------------------------------------------------------------
-// Helper: the Diameter profile client: the allowed peers, the core and the request timeout.
+// Helper: the freeDiameter core: initialised with the dictionaries of the applications it serves and the
+// configuration, advertising those applications (RFC 6733 section 5.3: Auth-Application-Id in CER); started by its
+// first client once that client's handlers are registered.
+DiameterCore::DiameterCore(const std::string &config_path, DiameterApplications applications)
+    : config_path_(config_path), applications_(applications) {
+  if (!applications_.data_management && !applications_.rx)
+    throw std::invalid_argument("a Diameter core serves at least one application");
+  check_fd(fd_core_initialize(), "initialize freeDiameter");
+  initialized_ = true;
+  try {
+    if (applications_.data_management) {
+      data_management_ = register_data_management_dictionary();
+      check_fd(fd_disp_app_support(data_management_.application, data_management_.vendor, 1, 0),
+               "advertise Diameter Data Management application");
+    }
+    if (applications_.rx) {
+      rx_ = register_rx_dictionary();
+      check_fd(fd_disp_app_support(rx_.application, rx_.vendor, 1, 0), "advertise Rx application");
+    }
+    parse_configuration(config_path_);
+  } catch (...) {
+    shutdown();
+    throw;
+  }
+}
+
+//------------------------------------------------------------------------------
+// Helper: starts the core (peer connections and the dispatch of requests); later calls do nothing.
+void DiameterCore::start() {
+  std::lock_guard lock(start_mutex_);
+  if (started_) return;
+  check_fd(fd_core_start(), "start freeDiameter");
+  check_fd(fd_core_waitstartcomplete(), "wait for freeDiameter startup");
+  started_ = true;
+}
+
+//------------------------------------------------------------------------------
+// Helper: stops the freeDiameter core.
+DiameterCore::~DiameterCore() { shutdown(); }
+
+//------------------------------------------------------------------------------
+// Helper: the Diameter Data Management dictionary; the core must serve that application.
+DataManagementDictionary &DiameterCore::data_management() {
+  if (!applications_.data_management) throw std::logic_error("Diameter core does not serve Data Management");
+  return data_management_;
+}
+
+//------------------------------------------------------------------------------
+// Helper: the Rx dictionary; the core must serve that application.
+RxDictionary &DiameterCore::rx() {
+  if (!applications_.rx) throw std::logic_error("Diameter core does not serve Rx");
+  return rx_;
+}
+
+//------------------------------------------------------------------------------
+// Helper: shuts the core down and waits for it.
+void DiameterCore::shutdown() noexcept {
+  if (!initialized_) return;
+  (void)fd_core_shutdown();
+  (void)fd_core_wait_shutdown_complete();
+  initialized_ = false;
+}
+
+//------------------------------------------------------------------------------
+// Helper: initialises the process's freeDiameter core, which its first client starts; a second core while one runs
+// is refused, since libfdcore keeps its state in globals.
+std::shared_ptr<DiameterCore> start_diameter_core(const std::string &native_config_path,
+                                                  DiameterApplications applications) {
+  std::lock_guard lock(core_mutex);
+  if (!running_core.expired()) throw std::logic_error("a freeDiameter core already runs in this process");
+  auto core = std::make_shared<DiameterCore>(native_config_path, applications);
+  running_core = core;
+  return core;
+}
+
+//------------------------------------------------------------------------------
+// Helper: the Diameter profile client: the allowed peers, the shared core and the request timeout.
 class DiameterProfileClient::Impl {
 public:
-  Impl(std::string config_path, std::chrono::milliseconds timeout)
-      : peers(configured_peers(config_path)), core(config_path), timeout(timeout) {
+  Impl(std::shared_ptr<DiameterCore> shared, std::chrono::milliseconds timeout)
+      : peers(configured_peers(shared->config_path())), core(std::move(shared)), timeout(timeout) {
     if (timeout <= std::chrono::milliseconds::zero() || timeout > std::chrono::minutes(1))
       throw std::invalid_argument("Diameter timeout is outside supported bounds");
-    core.start();
+    (void)core->data_management();
+    core->start();
   }
 
   // TS 29.283: a Data-Pull-Request (Auth-Session-State NO_STATE_MAINTAINED, the realm of the MCPTT ID,
@@ -523,8 +587,8 @@ public:
   // answer.
   std::string pull(std::string_view mcptt_id) {
     const auto realm = realm_for(mcptt_id);
-    wait_for_peer(peers, timeout);
-    auto &dictionary = core.dictionary();
+    wait_for_peer(peers, timeout, app_id);
+    auto &dictionary = core->data_management();
     struct msg *request = nullptr;
     check_fd(fd_msg_new(dictionary.dpr, MSGFL_ALLOC_ETEID, &request), "create Data-Pull-Request");
     try {
@@ -572,7 +636,7 @@ public:
   }
 
   std::set<std::string> peers;
-  Core core;
+  std::shared_ptr<DiameterCore> core;
   std::chrono::milliseconds timeout;
 };
 
@@ -581,7 +645,7 @@ using ProfileMap = std::unordered_map<std::string, std::string>;
 //------------------------------------------------------------------------------
 // Helper: what the Data-Pull-Request handler of a server reads.
 struct ServerState {
-  Dictionary *dictionary = nullptr;
+  DataManagementDictionary *dictionary = nullptr;
   // Replaced as a whole by replace_profiles; a request holds the map it read.
   std::mutex *profiles_mutex = nullptr;
   std::shared_ptr<const ProfileMap> *profiles = nullptr;
@@ -648,13 +712,14 @@ int data_pull_callback(struct msg **message, struct avp *, struct session *, voi
 class DiameterProfileServer::Impl {
 public:
   Impl(std::string config_path, std::unordered_map<std::string, std::string> profile_values)
-      : allowed_peers(configured_peers(config_path)), profiles(checked(std::move(profile_values))), core(config_path) {
-    state = ServerState{&core.dictionary(), &profiles_mutex, &profiles, &allowed_peers};
+      : allowed_peers(configured_peers(config_path)), profiles(checked(std::move(profile_values))),
+        core(start_diameter_core(config_path, {.data_management = true})) {
+    state = ServerState{&core->data_management(), &profiles_mutex, &profiles, &allowed_peers};
     struct disp_when when{};
-    when.app = core.dictionary().application;
-    when.command = core.dictionary().dpr;
+    when.app = core->data_management().application;
+    when.command = core->data_management().dpr;
     check_fd(fd_disp_register(data_pull_callback, DISP_HOW_CC, &when, &state, &handler), "register Data-Pull handler");
-    core.start();
+    core->start();
   }
 
   ~Impl() {
@@ -680,7 +745,7 @@ public:
   std::set<std::string> allowed_peers;
   std::mutex profiles_mutex;
   std::shared_ptr<const ProfileMap> profiles;
-  Core core;
+  std::shared_ptr<DiameterCore> core;
   ServerState state;
   struct disp_hdl *handler = nullptr;
 };
@@ -688,7 +753,12 @@ public:
 //------------------------------------------------------------------------------
 // Helper: a Diameter profile client started on the freeDiameter configuration.
 DiameterProfileClient::DiameterProfileClient(std::string native_config_path, std::chrono::milliseconds timeout)
-    : impl_(std::make_unique<Impl>(std::move(native_config_path), timeout)) {}
+    : impl_(std::make_unique<Impl>(start_diameter_core(native_config_path, {.data_management = true}), timeout)) {}
+
+//------------------------------------------------------------------------------
+// Helper: a Diameter profile client on a shared core that serves the Diameter Data Management application.
+DiameterProfileClient::DiameterProfileClient(std::shared_ptr<DiameterCore> core, std::chrono::milliseconds timeout)
+    : impl_(std::make_unique<Impl>(std::move(core), timeout)) {}
 
 //------------------------------------------------------------------------------
 // Helper: stops the freeDiameter core.

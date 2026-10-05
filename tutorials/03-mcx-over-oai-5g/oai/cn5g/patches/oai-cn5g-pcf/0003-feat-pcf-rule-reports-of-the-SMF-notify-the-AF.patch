@@ -1,0 +1,315 @@
+From 84c92edc74c25a17d8eddc030e0d4dded1d48910 Mon Sep 17 00:00:00 2001
+From: Rohan <kharade@eurecom.fr>
+Date: Mon, 5 Oct 2026 03:32:01 +0200
+Subject: [PATCH] feat(pcf): rule reports of the SMF notify the AF
+
+When the SMF reports PCC rules as no longer active (Npcf_SMPolicyControl_Update
+with ruleReports, ruleStatus INACTIVE, e.g. failureCode RES_ALLO_FAIL when the
+NG-RAN refused the QoS flow; TS 29.512 4.2.4.1, 5.6.2.7):
+
+- the rules and their QoS decisions are removed from the association's
+  decision, without a notification back to the SMF, which already removed them;
+- for each app session the rules belong to (mcx-<app session ID>-<media
+  component number>), the AF gets Npcf_PolicyAuthorization_Notify, POST
+  {notifUri}/notify with an EventsNotification (TS 29.514 4.2.5.4, 5.6.2.5):
+  event FAILED_RESOURCES_ALLOCATION and the media components as
+  failedResourcAllocReports (mcResourcStatus INACTIVE), if the AF subscribed to
+  that event in evSubsc.
+
+The policy authorization service gets the report through a new pcf_event
+signal (pa_rule_report), emitted after the association lock is released.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013UXVKWJNq3UC36dmrQjjV3
+---
+ src/pcf_app/pcf_event.cpp                |  6 ++
+ src/pcf_app/pcf_event.hpp                |  9 +++
+ src/pcf_app/pcf_event_sig.hpp            |  8 +++
+ src/pcf_app/pcf_policy_authorization.cpp | 86 +++++++++++++++++++++++-
+ src/pcf_app/pcf_policy_authorization.hpp | 11 +++
+ src/pcf_app/pcf_sm_policy_control.cpp    | 51 +++++++++++++-
+ 6 files changed, 167 insertions(+), 4 deletions(-)
+
+diff --git a/src/pcf_app/pcf_event.cpp b/src/pcf_app/pcf_event.cpp
+index 71a8338..dcff41e 100644
+--- a/src/pcf_app/pcf_event.cpp
++++ b/src/pcf_app/pcf_event.cpp
+@@ -1,3 +1,4 @@
++// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
+ /*
+  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
+  */
+@@ -38,3 +39,8 @@ bs2::connection pcf_event::subscribe_sm_update_decision(
+     const sm_update_decision_sig_t::slot_type& sig) {
+   return sm_update_decision.connect(sig);
+ }
++
++bs2::connection pcf_event::subscribe_pa_rule_report(
++    const pa_rule_report_sig_t::slot_type& sig) {
++  return pa_rule_report.connect(sig);
++}
+diff --git a/src/pcf_app/pcf_event.hpp b/src/pcf_app/pcf_event.hpp
+index 610946a..ac20f11 100644
+--- a/src/pcf_app/pcf_event.hpp
++++ b/src/pcf_app/pcf_event.hpp
+@@ -1,3 +1,4 @@
++// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
+ /*
+  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
+  */
+@@ -83,6 +84,12 @@ class pcf_event {
+   bs2::connection subscribe_sm_update_decision(
+       const sm_update_decision_sig_t::slot_type& sig);
+ 
++  /**
++   * Subscribe to the PCC rule report signal (policy authorization)
++   */
++  bs2::connection subscribe_pa_rule_report(
++      const pa_rule_report_sig_t::slot_type& sig);
++
+  private:
+   task_sig_t task_tick;
+ 
+@@ -94,6 +101,8 @@ class pcf_event {
+   sm_session_binding_sig_t sm_session_binding;  // Signal for SM Session Binding
+ 
+   sm_update_decision_sig_t sm_update_decision;  // Signal for SM Update Decision
++
++  pa_rule_report_sig_t pa_rule_report;  // Signal for PCC rule reports
+ };
+ }  // namespace oai::pcf::app
+ #endif
+diff --git a/src/pcf_app/pcf_event_sig.hpp b/src/pcf_app/pcf_event_sig.hpp
+index abdccc0..3cf122d 100644
+--- a/src/pcf_app/pcf_event_sig.hpp
++++ b/src/pcf_app/pcf_event_sig.hpp
+@@ -8,6 +8,7 @@
+ 
+ #include <boost/signals2.hpp>
+ #include <string>
++#include <vector>
+ #include "SmPolicyDecision.h"
+ 
+ namespace bs2 = boost::signals2;
+@@ -57,5 +58,12 @@ typedef bs2::signal_type<
+     bool(std::optional<std::string>&, oai::model::pcf::SmPolicyDecision&),
+     bs2::keywords::mutex_type<bs2::dummy_mutex>>::type sm_update_decision_sig_t;
+ 
++// Signal for policy_authorization: PCC rules the SMF reported as no longer
++// active (rule reports, TS 29.512 4.2.4.1) with their failure code, to notify
++// the AF of their app sessions (TS 29.514 4.2.5)
++typedef bs2::signal_type<
++    void(const std::vector<std::string>&, const std::string&),
++    bs2::keywords::mutex_type<bs2::dummy_mutex>>::type pa_rule_report_sig_t;
++
+ }  // namespace oai::pcf::app
+ #endif
+diff --git a/src/pcf_app/pcf_policy_authorization.cpp b/src/pcf_app/pcf_policy_authorization.cpp
+index 971e947..54d0e6b 100644
+--- a/src/pcf_app/pcf_policy_authorization.cpp
++++ b/src/pcf_app/pcf_policy_authorization.cpp
+@@ -12,7 +12,10 @@
+ #include "AppSessionContextUpdateDataPatch.h"
+ #include "policy_auth/app_session.hpp"
+ #include "policy_auth/mcx_qos.hpp"
++#include "3gpp_29.500.h"
++#include "http_client.hpp"
+ 
++#include <boost/bind/bind.hpp>
+ #include <boost/uuid/uuid_io.hpp>
+ #include <unordered_map>
+ #include <map>
+@@ -28,6 +31,7 @@ using namespace oai::model::pcf;
+ using namespace std;
+ 
+ extern std::unique_ptr<oai::config::pcf::pcf_config> pcf_cfg;
++extern std::shared_ptr<oai::http::http_client> http_client_inst;
+ 
+ namespace {
+ std::optional<std::string> json_opt_string(
+@@ -51,7 +55,86 @@ std::set<int32_t> used_precedences(
+ 
+ //------------------------------------------------------------------------------
+ pcf_policy_authorization::pcf_policy_authorization(pcf_event& ev)
+-    : m_event_sub(ev) {}
++    : m_event_sub(ev) {
++  m_rule_report_connection = m_event_sub.subscribe_pa_rule_report(boost::bind(
++      &pcf_policy_authorization::handle_rule_report, this,
++      boost::placeholders::_1, boost::placeholders::_2));
++}
++
++//------------------------------------------------------------------------------
++void pcf_policy_authorization::handle_rule_report(
++    const std::vector<std::string>& pcc_rule_ids,
++    const std::string& failure_code) {
++  // PCC rule "mcx-<app session ID>-<media component number>" (mcx_qos.cpp)
++  std::map<std::string, std::set<int>> media_components;
++  for (const auto& id : pcc_rule_ids) {
++    if (!mcx::is_mcx_id(id)) continue;
++    const auto rest = id.substr(mcx::kMcxPccRulePrefix.size());
++    const auto dash = rest.rfind('-');
++    if (dash == std::string::npos) continue;
++    try {
++      media_components[rest.substr(0, dash)].insert(
++          std::stoi(rest.substr(dash + 1)));
++    } catch (const std::exception&) {
++    }
++  }
++
++  const auto sbi = pcf_cfg->local().get_sbi();
++  for (const auto& [app_session_id, med_comp_ns] : media_components) {
++    nlohmann::json subscription;
++    {
++      std::shared_lock lock(m_app_sessions_mutex);
++      auto it = m_app_sessions.find(app_session_id);
++      if (it == m_app_sessions.end()) continue;
++      const auto& raw = it->second.get_raw_context();
++      if (raw.contains("evSubsc") && raw["evSubsc"].is_object())
++        subscription = raw["evSubsc"];
++    }
++    bool subscribed = false;
++    if (subscription.contains("events") && subscription["events"].is_array())
++      for (const auto& ev : subscription["events"])
++        if (ev.is_object() &&
++            ev.value("event", "") == "FAILED_RESOURCES_ALLOCATION")
++          subscribed = true;
++    const std::string notif_uri = subscription.value("notifUri", "");
++    if (!subscribed || notif_uri.empty()) {
++      Logger::pcf_app().info(
++          "App session %s: resources of media components not allocated, the "
++          "AF did not subscribe to FAILED_RESOURCES_ALLOCATION",
++          app_session_id.c_str());
++      continue;
++    }
++
++    nlohmann::json flows = nlohmann::json::array();
++    for (int n : med_comp_ns) flows.push_back({{"medCompN", n}});
++    // EventsNotification (TS 29.514 5.6.2.5): the media components whose
++    // resources are no longer allocated, as ResourcesAllocationInfo
++    nlohmann::json notification = {
++        {"evSubsUri",
++         sbi.get_url() + "/npcf-policyauthorization/" +
++             sbi.get_api_version() + "/app-sessions/" + app_session_id +
++             "/events-subscription"},
++        {"evNotifs",
++         nlohmann::json::array(
++             {{{"event", "FAILED_RESOURCES_ALLOCATION"}, {"flows", flows}}})},
++        {"failedResourcAllocReports",
++         nlohmann::json::array(
++             {{{"mcResourcStatus", "INACTIVE"}, {"flows", flows}}})}};
++    Logger::pcf_app().info(
++        "Npcf_PolicyAuthorization_Notify to %s/notify: app session %s, "
++        "FAILED_RESOURCES_ALLOCATION (%s)",
++        notif_uri.c_str(), app_session_id.c_str(), failure_code.c_str());
++    auto req = http_client_inst->prepare_json_request(
++        notif_uri + "/notify", notification.dump());
++    auto resp = http_client_inst->send_http_request(
++        oai::common::sbi::method_e::POST, req);
++    if (resp.status_code != oai::common::sbi::http_status_code::NO_CONTENT &&
++        resp.status_code != oai::common::sbi::http_status_code::OK)
++      Logger::pcf_app().warn(
++          "Npcf_PolicyAuthorization_Notify: the AF answered %d",
++          (int) resp.status_code);
++  }
++}
+ 
+ //------------------------------------------------------------------------------
+ handler_result pcf_policy_authorization::apply_media_components(
+@@ -410,5 +493,6 @@ policy_auth::status_code pcf_policy_authorization::get_app_session_handler(
+ 
+ //------------------------------------------------------------------------------
+ pcf_policy_authorization::~pcf_policy_authorization() {
++  m_rule_report_connection.disconnect();
+   Logger::pcf_app().debug("Delete PCF PA instance...");
+ }
+\ No newline at end of file
+diff --git a/src/pcf_app/pcf_policy_authorization.hpp b/src/pcf_app/pcf_policy_authorization.hpp
+index 8d7d7c6..3e5e720 100644
+--- a/src/pcf_app/pcf_policy_authorization.hpp
++++ b/src/pcf_app/pcf_policy_authorization.hpp
+@@ -101,8 +101,19 @@ class pcf_policy_authorization {
+       const std::string& app_session_id, const nlohmann::json& raw_context,
+       oai::model::pcf::SmPolicyDecision& decision);
+ 
++  /**
++   * PCC rules the SMF reported as no longer active: for each app session they
++   * belong to, Npcf_PolicyAuthorization_Notify (EventsNotification with
++   * FAILED_RESOURCES_ALLOCATION, TS 29.514 4.2.5.4) to the AF, if it
++   * subscribed to that event
++   */
++  void handle_rule_report(
++      const std::vector<std::string>& pcc_rule_ids,
++      const std::string& failure_code);
++
+   // for Event Handling
+   pcf_event& m_event_sub;
++  bs2::connection m_rule_report_connection;
+ };
+ 
+ }  // namespace oai::pcf::app
+diff --git a/src/pcf_app/pcf_sm_policy_control.cpp b/src/pcf_app/pcf_sm_policy_control.cpp
+index 466f31c..171a121 100644
+--- a/src/pcf_app/pcf_sm_policy_control.cpp
++++ b/src/pcf_app/pcf_sm_policy_control.cpp
+@@ -383,10 +383,55 @@ sm_policy::status_code pcf_smpc::update_sm_policy_handler(
+         update_context.getIpv4Address(), id);
+   }
+ 
+-  SmPolicyDecision new_decision;
++  // Rule reports (TS 29.512 4.2.4.1, 5.6.2.7): PCC rules the SMF could not
++  // install or keep (e.g. the NG-RAN refused their QoS flow, RES_ALLO_FAIL)
++  // are no longer part of the decision; the AF of their app session is told
++  // (TS 29.514 4.2.5), after the association lock is released
++  std::vector<std::string> inactive_rules;
++  std::string failure_code;
++  {
++    nlohmann::json update_json;
++    to_json(update_json, update_context);
++    if (update_json.contains("ruleReports") &&
++        update_json["ruleReports"].is_array()) {
++      for (const auto& report : update_json["ruleReports"]) {
++        if (report.value("ruleStatus", "") != "INACTIVE" ||
++            !report.contains("pccRuleIds"))
++          continue;
++        if (report.contains("failureCode") &&
++            report["failureCode"].is_string())
++          failure_code = report["failureCode"].get<std::string>();
++        for (const auto& id : report["pccRuleIds"])
++          if (id.is_string()) inactive_rules.push_back(id.get<std::string>());
++      }
++    }
++  }
++  if (!inactive_rules.empty()) {
++    auto current = iter->second.get_sm_policy_decision_dto();
++    auto rules   = current.getPccRules();
++    auto qos     = current.getQosDecs();
++    for (const auto& id : inactive_rules) {
++      Logger::pcf_app().warn(
++          "SMF reports PCC rule %s inactive (%s)", id.c_str(),
++          failure_code.c_str());
++      auto it = rules.find(id);
++      if (it == rules.end()) continue;
++      for (const auto& ref : it->second.getRefQosData()) qos.erase(ref);
++      rules.erase(it);
++    }
++    current.setPccRules(rules);
++    current.setQosDecs(qos);
++    // the SMF has already removed them: no notification back
++    iter->second.set_sm_policy_decision(current);
++  }
++
++  auto status =
++      iter->second.redecide_policy(update_context, decision, problem_details);
++  lock_associations.unlock();
+ 
+-  return iter->second.redecide_policy(
+-      update_context, decision, problem_details);
++  if (!inactive_rules.empty())
++    m_event_sub.pa_rule_report(inactive_rules, failure_code);
++  return status;
+ }
+ 
+ //------------------------------------------------------------------------------
+-- 
+2.53.0
+

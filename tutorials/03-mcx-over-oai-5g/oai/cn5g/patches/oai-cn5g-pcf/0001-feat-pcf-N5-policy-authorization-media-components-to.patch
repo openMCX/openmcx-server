@@ -1,0 +1,2092 @@
+From 7f14cd32f576b0b0e6d69bcd9fce1263fcefcc2c Mon Sep 17 00:00:00 2001
+From: Abhishek <a.dandekar@tu.berlin>
+Date: Thu, 1 Oct 2026 10:30:19 +0200
+Subject: [PATCH] feat(pcf): N5 policy authorization media components to PCC
+ rules / QoS
+
+Map the medComponents of an Npcf_PolicyAuthorization app session (TS 29.514,
+e.g. from an MCPTT AF) to dynamic PCC rules and QoS decisions (TS 29.513
+7.3) and notify the SMF (SmPolicyUpdateNotification):
+
+- one PCC rule "mcx-<appSessionId>-<medCompN>" per media component, flow
+  informations from all (enabled) media sub components fDescs; the
+  direction is derived from the UE IPv4 (UL descriptions are rewritten as
+  "from <remote> to <UE>", UL+DL of the same 5-tuple merged into
+  BIDIRECTIONAL), precedence from a configurable base
+- QoS decision "mcx-qos-<appSessionId>-<medCompN>": 5QI from medType (AUDIO
+  65, VIDEO 67, others 69), GBR = MBR = marBwUl/Dl, ARP from resPrio
+  (TS 29.514: PRIO_16 highest, configurable map, default ARP 3,
+  MAY_PREEMPT, NOT_PREEMPTABLE for emergency level)
+- PATCH app-sessions/{id}: RFC 7396 merge patch of the stored context
+  (e.g. resPrio change / resPrio null -> ARP update)
+- POST app-sessions/{id}/delete: implemented, rules removed (null in the
+  notification), 204
+- POST returns 201 Created with Location header (was 200 without Location
+  and a problem body), proper problem details / status codes (404
+  PDU_SESSION_NOT_AVAILABLE when no SM policy association is bound)
+- the SM policy update notification only carries the changed/removed rules;
+  AF-session rules are not persisted in the policy storage; failed
+  notifications are rolled back
+- session binding: the UE IP may be updated by Npcf_SMPolicyControl_Update,
+  stale bindings are overwritten / ignored
+- new optional "pcf.mcx_qos" configuration section (etc/config.yaml)
+- docker: install libodb/libodb-mysql 2.5.0 with build2 0.18.1 since the
+  build2 0.17.0 sources are no longer available (image did not build)
+
+The raw JSON of the app session context is used for the mapping because the
+generated ReservPriority / MediaType models are empty stubs.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ docker/Dockerfile.pcf.ubuntu                  |   7 +
+ docker/install_odb_2.5.sh                     |  32 ++
+ etc/config.yaml                               |  16 +
+ ...cation_sessions_collection_api_handler.cpp |  86 ++--
+ ...lication_sessions_collection_api_handler.h |   3 +-
+ ...n_session_context_document_api_handler.cpp | 126 +++---
+ ...ion_session_context_document_api_handler.h |   3 +-
+ src/api-server/pcf-http2-server.cpp           |  43 +-
+ src/pcf_app/CMakeLists.txt                    |   1 +
+ src/pcf_app/pcf_config.cpp                    |   6 +
+ src/pcf_app/pcf_config.hpp                    |   1 +
+ src/pcf_app/pcf_config_types.cpp              |  48 +++
+ src/pcf_app/pcf_config_types.hpp              |  34 ++
+ src/pcf_app/pcf_event_sig.hpp                 |   4 +-
+ src/pcf_app/pcf_policy_authorization.cpp      | 294 +++++++++----
+ src/pcf_app/pcf_policy_authorization.hpp      |  30 +-
+ src/pcf_app/pcf_sm_policy_control.cpp         | 134 ++++--
+ src/pcf_app/pcf_sm_policy_control.hpp         |  16 +-
+ src/pcf_app/policy_auth/app_session.hpp       |  17 +
+ src/pcf_app/policy_auth/mcx_qos.cpp           | 392 ++++++++++++++++++
+ src/pcf_app/policy_auth/mcx_qos.hpp           | 113 +++++
+ .../pcf_policy_authorization_status_code.hpp  |   1 +
+ src/pcf_app/sm_policy/policy_storage_yaml.cpp |   5 +-
+ 23 files changed, 1203 insertions(+), 209 deletions(-)
+ create mode 100755 docker/install_odb_2.5.sh
+ create mode 100644 src/pcf_app/policy_auth/mcx_qos.cpp
+ create mode 100644 src/pcf_app/policy_auth/mcx_qos.hpp
+
+diff --git a/docker/Dockerfile.pcf.ubuntu b/docker/Dockerfile.pcf.ubuntu
+index 6f80ad4..9204f06 100644
+--- a/docker/Dockerfile.pcf.ubuntu
++++ b/docker/Dockerfile.pcf.ubuntu
+@@ -44,6 +44,13 @@ WORKDIR /openair-pcf/build/scripts
+ RUN ./build_pcf --install-deps --force && \
+     ldconfig
+ 
++# Workaround: the build2 0.17.0 toolchain used by --install-deps to install
++# libodb can no longer be installed (packages removed from pkg.cppget.org),
++# install libodb/libodb-mysql 2.5.0 with build2 0.18.1 if they are missing
++COPY ./docker/install_odb_2.5.sh /openair-pcf/docker/install_odb_2.5.sh
++RUN /openair-pcf/docker/install_odb_2.5.sh && \
++    ldconfig
++
+ #---------------------------------------------------------------------
+ # BUILDER IMAGE
+ #---------------------------------------------------------------------
+diff --git a/docker/install_odb_2.5.sh b/docker/install_odb_2.5.sh
+new file mode 100755
+index 0000000..b0d9b96
+--- /dev/null
++++ b/docker/install_odb_2.5.sh
+@@ -0,0 +1,32 @@
++#!/bin/bash
++# SPDX-License-Identifier: LicenseRef-CSSL-1.0
++#
++# Workaround for the PCF image build: the build2 0.17.0 toolchain used by
++# build/common-build/installation/build_helper.odb can no longer be installed
++# (its source packages were removed from pkg.cppget.org), so libodb is not
++# installed and the PCF does not build. Install the libodb / libodb-mysql 2.5.0
++# runtime libraries with the build2 0.18.1 toolchain instead.
++# Does nothing if libodb 2.5 is already installed.
++set -ex
++
++if [ -f /usr/local/lib/libodb-2.5.so ] && [ -f /usr/local/lib/libodb-mysql-2.5.so ]; then
++  echo "libodb 2.5 already installed"
++  exit 0
++fi
++
++BUILD2_VERSION=0.18.1
++rm -f /usr/local/bin/b-stage /usr/local/bin/bpkg-stage /usr/local/bin/bdep-stage
++rm -rf /tmp/build2-odb && mkdir -p /tmp/build2-odb && cd /tmp/build2-odb
++curl -sSfO https://download.build2.org/${BUILD2_VERSION}/build2-install-${BUILD2_VERSION}.sh
++sh build2-install-${BUILD2_VERSION}.sh --yes --no-bdep --no-modules --trust yes
++
++bpkg create -d libodb-gcc cc config.cxx=g++ config.cc.coptions=-O3 \
++  config.install.root=/usr/local
++cd libodb-gcc
++bpkg add https://pkg.cppget.org/1/beta
++bpkg fetch --trust-yes
++bpkg build --yes libodb/2.5.0 libodb-mysql/2.5.0
++bpkg install --all --recursive
++ldconfig
++ls -la /usr/local/lib/libodb*
++cd / && rm -rf /tmp/build2-odb /tmp/build2
+diff --git a/etc/config.yaml b/etc/config.yaml
+index 59faf03..66ce67e 100644
+--- a/etc/config.yaml
++++ b/etc/config.yaml
+@@ -192,6 +192,22 @@ pcf:
+     policy_decisions_path: /openair-pcf/policies/policy_decisions
+     pcc_rules_path: /openair-pcf/policies/pcc_rules
+     traffic_rules_path: /openair-pcf/policies/traffic_rules
++  # Optional: Npcf_PolicyAuthorization (N5) media components -> PCC rules / QoS
++  # (used e.g. by an MCPTT AF). All values below are the defaults.
++  mcx_qos:
++    audio_5qi: 65        # medType AUDIO (GBR, mission critical PTT voice)
++    video_5qi: 67        # medType VIDEO (GBR, mission critical video)
++    other_5qi: 69        # other media types (non-GBR)
++    default_arp_priority: 3      # resPrio absent (or removed with null)
++    res_prio_arp:        # TS 29.514 ReservPriority (PRIO_16 = highest) -> ARP
++      PRIO_16: 1
++      PRIO_15: 2
++      PRIO_14: 2
++      PRIO_13: 2
++      PRIO_12: 2
++    emergency_arp_threshold: 1   # ARP <= threshold -> NOT_PREEMPTABLE
++    precedence_base: 10  # must be lower than the default "match all" PCC rule
++    default_bandwidth: "64 Kbps" # GBR/MBR when marBwUl/Dl are absent
+ 
+ nssf:
+   slice_config_path: /openair-nssf/etc/nssf_slice_config.yaml
+diff --git a/src/api-server/handler/application_sessions_collection_api_handler.cpp b/src/api-server/handler/application_sessions_collection_api_handler.cpp
+index 0f1b619..e7c1883 100644
+--- a/src/api-server/handler/application_sessions_collection_api_handler.cpp
++++ b/src/api-server/handler/application_sessions_collection_api_handler.cpp
+@@ -9,52 +9,76 @@
+ 
+ namespace oai::pcf::api {
+ 
++namespace {
++// Map the PA status code to the HTTP status code (TS 29.514 / TS 29.500)
++uint16_t pa_status_to_http(oai::pcf::app::policy_auth::status_code res) {
++  using oai::pcf::app::policy_auth::status_code;
++  switch (res) {
++    case status_code::CREATED:
++      return oai::common::sbi::http_status_code::CREATED;
++    case status_code::OK:
++      return oai::common::sbi::http_status_code::OK;
++    case status_code::NO_CONTENT:
++      return oai::common::sbi::http_status_code::NO_CONTENT;
++    case status_code::NOT_FOUND:
++    case status_code::PDU_SESSION_NOT_AVAILABLE:
++      return oai::common::sbi::http_status_code::NOT_FOUND;
++    case status_code::BAD_REQUEST:
++    case status_code::INVALID_PARAMETERS:
++      return oai::common::sbi::http_status_code::BAD_REQUEST;
++    case status_code::FORBIDDEN:
++    case status_code::CONTEXT_DENIED:
++    case status_code::REQUESTED_SERVICE_NOT_AUTHORIZED:
++      return oai::common::sbi::http_status_code::FORBIDDEN;
++    default:
++      return oai::common::sbi::http_status_code::INTERNAL_SERVER_ERROR;
++  }
++}
++
++api_response problem_response(uint16_t http_code, const std::string& cause) {
++  api_response response;
++  oai::model::common::ProblemDetails problem_details;
++  problem_details.setStatus(http_code);
++  problem_details.setCause(cause.empty() ? "UNSPECIFIED" : cause);
++  nlohmann::json json_data;
++  to_json(json_data, problem_details);
++  response.headers.add<Pistache::Http::Header::ContentType>(
++      Pistache::Http::Mime::MediaType("application/problem+json"));
++  response.body        = json_data.dump();
++  response.status_code = http_code;
++  return response;
++}
++}  // namespace
++
+ using namespace oai::model::pcf;
+ using namespace oai::model::common;
+ using namespace oai::common::sbi;
+ using namespace oai::pcf::app::policy_auth;
+ 
+ api_response application_sessions_collection_api_handler::post_app_sessions(
+-    const AppSessionContext& app_session_context) {
+-  api_response response;
+-
+-  ProblemDetails problem_details;
++    const AppSessionContext& app_session_context,
++    const nlohmann::json& raw_body) {
+   std::string problem_description;
+-  std::string content_type = "application/problem+json";
+-  std::string location;
+   std::string app_session_id;
+-  nlohmann::json json_data;
+-  uint16_t http_code;
++  nlohmann::json response_body;
+ 
+   status_code res = m_pa_service->post_app_sessions_handler(
+-      app_session_context, app_session_id, problem_description);
+-
+-  problem_details.setDetail(problem_description);
++      app_session_context, raw_body, app_session_id, problem_description,
++      response_body);
+ 
+-  switch (res) {
+-    case status_code::CREATED:
+-      content_type = "application/json";
+-      location  = m_address + app_sessions::get_route() + "/" + app_session_id;
+-      http_code = http_status_code::OK;
+-      break;
+-    default:
+-      problem_details.setCause("INTERNAL_ERROR");
+-      http_code = http_status_code::INTERNAL_SERVER_ERROR;
++  if (res != status_code::CREATED) {
++    return problem_response(pa_status_to_http(res), problem_description);
+   }
+ 
+-  if (res == status_code::OK) {
+-    to_json(json_data, app_session_context);
+-  } else {
+-    to_json(json_data, problem_details);
+-  }
+-
+-  // TODO: set Location header
++  api_response response;
++  std::string location =
++      m_address + app_sessions::get_route() + "/" + app_session_id;
+   Logger::pcf_app().info(fmt::format("Location: {}", location));
+-
++  response.headers.add<Pistache::Http::Header::Location>(location);
+   response.headers.add<Pistache::Http::Header::ContentType>(
+-      Pistache::Http::Mime::MediaType(content_type));
+-  response.body        = json_data.dump();
+-  response.status_code = http_code;
++      Pistache::Http::Mime::MediaType("application/json"));
++  response.body        = response_body.dump();
++  response.status_code = http_status_code::CREATED;
+   return response;
+ }
+ 
+diff --git a/src/api-server/handler/application_sessions_collection_api_handler.h b/src/api-server/handler/application_sessions_collection_api_handler.h
+index 093c71f..2eb3b4d 100644
+--- a/src/api-server/handler/application_sessions_collection_api_handler.h
++++ b/src/api-server/handler/application_sessions_collection_api_handler.h
+@@ -26,7 +26,8 @@ class application_sessions_collection_api_handler {
+    * @return api_response
+    */
+   api_response post_app_sessions(
+-      const oai::model::pcf::AppSessionContext& app_session_context);
++      const oai::model::pcf::AppSessionContext& app_session_context,
++      const nlohmann::json& raw_body = nlohmann::json::object());
+ 
+  private:
+   std::shared_ptr<oai::pcf::app::pcf_policy_authorization> m_pa_service;
+diff --git a/src/api-server/handler/individual_application_session_context_document_api_handler.cpp b/src/api-server/handler/individual_application_session_context_document_api_handler.cpp
+index 8277e3d..57af44a 100644
+--- a/src/api-server/handler/individual_application_session_context_document_api_handler.cpp
++++ b/src/api-server/handler/individual_application_session_context_document_api_handler.cpp
+@@ -8,6 +8,47 @@
+ 
+ namespace oai::pcf::api {
+ 
++namespace {
++// Map the PA status code to the HTTP status code (TS 29.514 / TS 29.500)
++uint16_t pa_status_to_http(oai::pcf::app::policy_auth::status_code res) {
++  using oai::pcf::app::policy_auth::status_code;
++  switch (res) {
++    case status_code::CREATED:
++      return oai::common::sbi::http_status_code::CREATED;
++    case status_code::OK:
++      return oai::common::sbi::http_status_code::OK;
++    case status_code::NO_CONTENT:
++      return oai::common::sbi::http_status_code::NO_CONTENT;
++    case status_code::NOT_FOUND:
++    case status_code::PDU_SESSION_NOT_AVAILABLE:
++      return oai::common::sbi::http_status_code::NOT_FOUND;
++    case status_code::BAD_REQUEST:
++    case status_code::INVALID_PARAMETERS:
++      return oai::common::sbi::http_status_code::BAD_REQUEST;
++    case status_code::FORBIDDEN:
++    case status_code::CONTEXT_DENIED:
++    case status_code::REQUESTED_SERVICE_NOT_AUTHORIZED:
++      return oai::common::sbi::http_status_code::FORBIDDEN;
++    default:
++      return oai::common::sbi::http_status_code::INTERNAL_SERVER_ERROR;
++  }
++}
++
++api_response problem_response(uint16_t http_code, const std::string& cause) {
++  api_response response;
++  oai::model::common::ProblemDetails problem_details;
++  problem_details.setStatus(http_code);
++  problem_details.setCause(cause.empty() ? "UNSPECIFIED" : cause);
++  nlohmann::json json_data;
++  to_json(json_data, problem_details);
++  response.headers.add<Pistache::Http::Header::ContentType>(
++      Pistache::Http::Mime::MediaType("application/problem+json"));
++  response.body        = json_data.dump();
++  response.status_code = http_code;
++  return response;
++}
++}  // namespace
++
+ using namespace oai::model::pcf;
+ using namespace oai::model::common;
+ using namespace oai::common::sbi;
+@@ -16,37 +57,32 @@ using namespace oai::pcf::app::policy_auth;
+ api_response
+ individual_application_session_context_document_api_handler::delete_app_session(
+     const std::string& app_session_id,
+-    const EventsSubscReqData& events_subsc_req_data) {
++    const EventsSubscReqData& /* events_subsc_req_data */) {
++  std::string problem_description;
++  status_code res = m_pa_service->delete_app_session_handler(
++      app_session_id, problem_description);
++  if (res != status_code::NO_CONTENT && res != status_code::OK) {
++    return problem_response(pa_status_to_http(res), problem_description);
++  }
+   api_response response;
+-  std::string content_type = "application/problem+json";
+-
+-  nlohmann::json json_data;
+-
+-  json_data["error"] = "API endpoint not implemented";
+-
+-  response.headers.add<Pistache::Http::Header::ContentType>(
+-      Pistache::Http::Mime::MediaType(content_type));
+-  response.body        = json_data.dump();
+-  response.status_code = http_status_code::NOT_FOUND;
+-
++  response.status_code = http_status_code::NO_CONTENT;
+   return response;
+ }
+ 
+ api_response
+ individual_application_session_context_document_api_handler::get_app_session(
+     const std::string& app_session_id) {
++  nlohmann::json body;
++  status_code res = m_pa_service->get_app_session_handler(app_session_id, body);
++  if (res != status_code::OK) {
++    return problem_response(
++        pa_status_to_http(res), "APPLICATION_SESSION_CONTEXT_NOT_FOUND");
++  }
+   api_response response;
+-  std::string content_type = "application/problem+json";
+-
+-  nlohmann::json json_data;
+-
+-  json_data["error"] = "API endpoint not implemented";
+-
+   response.headers.add<Pistache::Http::Header::ContentType>(
+-      Pistache::Http::Mime::MediaType(content_type));
+-  response.body        = json_data.dump();
+-  response.status_code = http_status_code::NOT_FOUND;
+-
++      Pistache::Http::Mime::MediaType("application/json"));
++  response.body        = body.dump();
++  response.status_code = http_status_code::OK;
+   return response;
+ }
+ 
+@@ -54,41 +90,25 @@ api_response
+ individual_application_session_context_document_api_handler::mod_app_session(
+     const std::string& app_session_id,
+     const AppSessionContextUpdateDataPatch&
+-        app_session_context_update_data_patch) {
+-  api_response response;
+-  ProblemDetails problem_details;
++        app_session_context_update_data_patch,
++    const nlohmann::json& raw_patch) {
+   std::string problem_description;
+-  std::string content_type = "application/problem+json";
+-  nlohmann::json json_data;
+-  uint16_t http_code;
+-
+-  AppSessionContext app_session_context;
+-  status_code res = m_pa_service->mod_app_session_handler(
+-      app_session_id, app_session_context_update_data_patch,
+-      app_session_context, problem_description);
+-
+-  problem_details.setDetail(problem_description);
+-
+-  switch (res) {
+-    case status_code::OK:
+-      content_type = "application/json";
+-      http_code    = http_status_code::OK;
+-      break;
+-    default:
+-      problem_details.setCause("INTERNAL_ERROR");
+-      http_code = http_status_code::INTERNAL_SERVER_ERROR;
++  nlohmann::json body;
++  nlohmann::json patch = raw_patch;
++  if (!patch.is_object() || patch.empty()) {
++    to_json(patch, app_session_context_update_data_patch);
+   }
+-
+-  if (res == status_code::OK) {
+-    to_json(json_data, app_session_context);
+-  } else {
+-    to_json(json_data, problem_details);
++  status_code res = m_pa_service->mod_app_session_handler(
++      app_session_id, app_session_context_update_data_patch, patch,
++      problem_description, body);
++  if (res != status_code::OK) {
++    return problem_response(pa_status_to_http(res), problem_description);
+   }
+-
++  api_response response;
+   response.headers.add<Pistache::Http::Header::ContentType>(
+-      Pistache::Http::Mime::MediaType(content_type));
+-  response.body        = json_data.dump();
+-  response.status_code = http_code;
++      Pistache::Http::Mime::MediaType("application/json"));
++  response.body        = body.dump();
++  response.status_code = http_status_code::OK;
+   return response;
+ }
+ 
+diff --git a/src/api-server/handler/individual_application_session_context_document_api_handler.h b/src/api-server/handler/individual_application_session_context_document_api_handler.h
+index 2fb30dd..44d00f9 100644
+--- a/src/api-server/handler/individual_application_session_context_document_api_handler.h
++++ b/src/api-server/handler/individual_application_session_context_document_api_handler.h
+@@ -46,7 +46,8 @@ class individual_application_session_context_document_api_handler {
+   api_response mod_app_session(
+       const std::string& app_session_id,
+       const oai::model::pcf::AppSessionContextUpdateDataPatch&
+-          app_session_context_update_data_patch);
++          app_session_context_update_data_patch,
++      const nlohmann::json& raw_patch = nlohmann::json::object());
+ 
+  private:
+   std::shared_ptr<oai::pcf::app::pcf_policy_authorization> m_pa_service;
+diff --git a/src/api-server/pcf-http2-server.cpp b/src/api-server/pcf-http2-server.cpp
+index 42f89a6..68e93da 100644
+--- a/src/api-server/pcf-http2-server.cpp
++++ b/src/api-server/pcf-http2-server.cpp
+@@ -168,10 +168,18 @@ void pcf_http2_server::start() {
+           }
+           AppSessionContext context;
+           try {
+-            nlohmann::json::parse(request_body->str()).get_to(context);
+-            context.validate();
++            nlohmann::json raw_body = nlohmann::json::parse(request_body->str());
++            raw_body.get_to(context);
++            try {
++              context.validate();
++            } catch (std::exception& e) {
++              // Some generated models are stubs (e.g. ReservPriority), the raw
++              // JSON is used for the media component mapping
++              Logger::pcf_sbi().warn(
++                  "AppSessionContext validation: %s (continuing)", e.what());
++            }
+             api_response resp = m_application_sessions_collection_api_handler
+-                                    ->post_app_sessions(context);
++                                    ->post_app_sessions(context, raw_body);
+             auto h_map = convert_headers(resp);
+             response.write_head(
+                 static_cast<unsigned int>(resp.status_code), h_map);
+@@ -273,9 +281,11 @@ void pcf_http2_server::start() {
+           api_response resp;
+           try {
+             if (is_delete) {
+-              nlohmann::json::parse(request_body->str())
+-                  .get_to(events_subsc_data);
+-              events_subsc_data.validate();
++              // the request body (EventsSubscReqData) is optional
++              if (!request_body->str().empty()) {
++                nlohmann::json::parse(request_body->str())
++                    .get_to(events_subsc_data);
++              }
+               resp =
+                   m_individual_application_session_context_document_api_handler
+                       ->delete_app_session(app_session_id, events_subsc_data);
+@@ -286,7 +296,7 @@ void pcf_http2_server::start() {
+               resp =
+                   m_events_subscription_document_api_handler
+                       ->update_events_subsc(app_session_id, events_subsc_data);
+-            } else if (is_event && request.method() == "DELTE") {
++            } else if (is_event && request.method() == "DELETE") {
+               resp = m_events_subscription_document_api_handler
+                          ->delete_events_subsc(app_session_id);
+             } else if (is_get_patch && request.method() == "GET") {
+@@ -294,14 +304,23 @@ void pcf_http2_server::start() {
+                   m_individual_application_session_context_document_api_handler
+                       ->get_app_session(app_session_id);
+             } else if (is_get_patch && request.method() == "PATCH") {
+-              nlohmann::json::parse(request_body->str())
+-                  .get_to(app_session_context_data);
+-              Logger::pcf_sbi().info("App Session Context Update Data:");
+-              app_session_context_data.validate();
++              nlohmann::json raw_patch =
++                  nlohmann::json::parse(request_body->str());
++              raw_patch.get_to(app_session_context_data);
++              Logger::pcf_sbi().info(
++                  "App Session Context Update Data: %s", raw_patch.dump());
++              try {
++                app_session_context_data.validate();
++              } catch (std::exception& e) {
++                Logger::pcf_sbi().warn(
++                    "AppSessionContextUpdateDataPatch validation: %s "
++                    "(continuing)",
++                    e.what());
++              }
+               resp =
+                   m_individual_application_session_context_document_api_handler
+                       ->mod_app_session(
+-                          app_session_id, app_session_context_data);
++                          app_session_id, app_session_context_data, raw_patch);
+             }
+             auto h_map = convert_headers(resp);
+             response.write_head(
+diff --git a/src/pcf_app/CMakeLists.txt b/src/pcf_app/CMakeLists.txt
+index 5fd6a96..8541fc7 100644
+--- a/src/pcf_app/CMakeLists.txt
++++ b/src/pcf_app/CMakeLists.txt
+@@ -47,6 +47,7 @@ add_library (PCF STATIC
+   sm_policy/policy_storage_db.cpp
+   sm_policy/policy_provisioning_file.cpp
+   policy_auth/app_session.cpp
++  policy_auth/mcx_qos.cpp
+   pcf_policy_authorization.cpp
+   sm_policy/database/mysql_db.cpp
+   )
+diff --git a/src/pcf_app/pcf_config.cpp b/src/pcf_app/pcf_config.cpp
+index 442d789..de88928 100644
+--- a/src/pcf_app/pcf_config.cpp
++++ b/src/pcf_app/pcf_config.cpp
+@@ -40,3 +40,9 @@ bool oai::config::pcf::pcf_config::use_db_policy_storage() const {
+   return std::dynamic_pointer_cast<pcf_config_type>(get_local())
+       ->enable_policy_provisioning_api();
+ }
++
++const oai::config::pcf::mcx_qos_config&
++oai::config::pcf::pcf_config::get_mcx_qos_config() const {
++  return std::dynamic_pointer_cast<pcf_config_type>(get_local())
++      ->get_mcx_qos_config();
++}
+diff --git a/src/pcf_app/pcf_config.hpp b/src/pcf_app/pcf_config.hpp
+index 2c904ab..5ee11ee 100644
+--- a/src/pcf_app/pcf_config.hpp
++++ b/src/pcf_app/pcf_config.hpp
+@@ -23,5 +23,6 @@ class pcf_config : public oai::config::config {
+ 
+   const policy_config& get_pcf_policy() const;
+   bool use_db_policy_storage() const;
++  const mcx_qos_config& get_mcx_qos_config() const;
+ };
+ }  // namespace oai::config::pcf
+diff --git a/src/pcf_app/pcf_config_types.cpp b/src/pcf_app/pcf_config_types.cpp
+index 4527eaa..22de3be 100644
+--- a/src/pcf_app/pcf_config_types.cpp
++++ b/src/pcf_app/pcf_config_types.cpp
+@@ -95,6 +95,9 @@ void pcf_config_type::from_yaml(const YAML::Node& node) {
+   if (node["local_policy"]) {
+     m_policy_config.from_yaml(node["local_policy"]);
+   }
++  if (node["mcx_qos"]) {
++    m_mcx_qos_config.from_yaml(node["mcx_qos"]);
++  }
+ }
+ 
+ std::string pcf_config_type::to_string(const std::string& indent) const {
+@@ -109,6 +112,7 @@ std::string pcf_config_type::to_string(const std::string& indent) const {
+   if (!m_enable_policy_provisioning_api.get_value()) {
+     out.append(m_policy_config.to_string(indent));
+   }
++  out.append(m_mcx_qos_config.to_string(indent));
+ 
+   return out;
+ }
+@@ -125,3 +129,47 @@ bool pcf_config_type::enable_policy_provisioning_api() const {
+ const policy_config& pcf_config_type::get_policy_config() const {
+   return m_policy_config;
+ }
++
++const mcx_qos_config& pcf_config_type::get_mcx_qos_config() const {
++  return m_mcx_qos_config;
++}
++
++void mcx_qos_config::from_yaml(const YAML::Node& node) {
++  if (node["audio_5qi"]) audio_5qi = node["audio_5qi"].as<int>();
++  if (node["video_5qi"]) video_5qi = node["video_5qi"].as<int>();
++  if (node["other_5qi"]) other_5qi = node["other_5qi"].as<int>();
++  if (node["default_arp_priority"])
++    default_arp_priority = node["default_arp_priority"].as<int>();
++  if (node["res_prio_arp"] && node["res_prio_arp"].IsMap()) {
++    res_prio_arp.clear();
++    for (const auto& it : node["res_prio_arp"]) {
++      res_prio_arp[it.first.as<std::string>()] = it.second.as<int>();
++    }
++  }
++  if (node["emergency_arp_threshold"])
++    emergency_arp_threshold = node["emergency_arp_threshold"].as<int>();
++  if (node["precedence_base"])
++    precedence_base = node["precedence_base"].as<int>();
++  if (node["default_bandwidth"])
++    default_bandwidth = node["default_bandwidth"].as<std::string>();
++}
++
++std::string mcx_qos_config::to_string(const std::string& indent) const {
++  std::string out;
++  out.append(indent).append("MCX QoS (N5 media component mapping):\n");
++  out.append(indent).append(fmt::format(
++      "  audio_5qi: {}, video_5qi: {}, other_5qi: {}\n", audio_5qi, video_5qi,
++      other_5qi));
++  std::string res_prio;
++  for (const auto& [prio, arp] : res_prio_arp) {
++    res_prio.append(fmt::format("{}->{} ", prio, arp));
++  }
++  out.append(indent).append(fmt::format(
++      "  default_arp_priority: {}, emergency_arp_threshold: {}\n",
++      default_arp_priority, emergency_arp_threshold));
++  out.append(indent).append(fmt::format("  res_prio_arp: {}\n", res_prio));
++  out.append(indent).append(fmt::format(
++      "  precedence_base: {}, default_bandwidth: {}\n", precedence_base,
++      default_bandwidth));
++  return out;
++}
+diff --git a/src/pcf_app/pcf_config_types.hpp b/src/pcf_app/pcf_config_types.hpp
+index f2e760d..bd6a4a1 100644
+--- a/src/pcf_app/pcf_config_types.hpp
++++ b/src/pcf_app/pcf_config_types.hpp
+@@ -3,6 +3,9 @@
+  */
+ 
+ #pragma once
++#include <map>
++#include <string>
++
+ #include "config_types.hpp"
+ 
+ namespace oai::config::pcf {
+@@ -29,10 +32,40 @@ class policy_config : public config_type {
+   [[nodiscard]] const std::string& get_qos_data_path() const;
+ };
+ 
++/**
++ * MCX (TS 29.514 Npcf_PolicyAuthorization) media component -> PCC rule / QoS
++ * mapping parameters. Read from the optional "mcx_qos" section of the "pcf"
++ * configuration block. All values have sensible defaults.
++ */
++struct mcx_qos_config {
++  int audio_5qi = 65;  // Mission Critical user plane Push To Talk voice (GBR)
++  int video_5qi = 67;  // Mission Critical Video user plane (GBR)
++  int other_5qi = 69;  // Mission Critical delay sensitive signalling (non-GBR)
++  int default_arp_priority = 3;  // used when resPrio is absent (or null)
++  // ReservPriority -> ARP priority level (TS 29.514: PRIO_16 is the highest
++  // reservation priority, PRIO_1 the lowest). MCX: PRIO_16 = emergency,
++  // PRIO_12 = imminent peril. Values not listed use default_arp_priority.
++  std::map<std::string, int> res_prio_arp = {
++      {"PRIO_16", 1}, {"PRIO_15", 2}, {"PRIO_14", 2},
++      {"PRIO_13", 2}, {"PRIO_12", 2}};
++  // ARP priority levels <= this value are NOT_PREEMPTABLE ("emergency" level)
++  int emergency_arp_threshold = 1;
++  // first PCC rule precedence used for MCX rules (must be lower than the
++  // precedence of the default "match all" PCC rule)
++  int precedence_base = 10;
++  // bandwidth used for GBR flows when the AF does not provide marBwUl/Dl
++  std::string default_bandwidth = "64 Kbps";
++  // per-direction GBR/MBR multiplier is not applied: marBw is used as-is
++
++  void from_yaml(const YAML::Node& node);
++  [[nodiscard]] std::string to_string(const std::string& indent) const;
++};
++
+ class pcf_config_type : public nf {
+  private:
+   option_config_value m_enable_policy_provisioning_api;
+   policy_config m_policy_config;
++  mcx_qos_config m_mcx_qos_config;
+ 
+  public:
+   explicit pcf_config_type(
+@@ -48,6 +81,7 @@ class pcf_config_type : public nf {
+ 
+   [[nodiscard]] bool enable_policy_provisioning_api() const;
+   [[nodiscard]] const policy_config& get_policy_config() const;
++  [[nodiscard]] const mcx_qos_config& get_mcx_qos_config() const;
+ };
+ 
+ }  // namespace oai::config::pcf
+\ No newline at end of file
+diff --git a/src/pcf_app/pcf_event_sig.hpp b/src/pcf_app/pcf_event_sig.hpp
+index 6784def..15d94c8 100644
+--- a/src/pcf_app/pcf_event_sig.hpp
++++ b/src/pcf_app/pcf_event_sig.hpp
+@@ -50,8 +50,10 @@ typedef bs2::signal_type<
+     bs2::keywords::mutex_type<bs2::dummy_mutex>>::type sm_session_binding_sig_t;
+ 
+ // Signal for sm_policy_control to update policy decision
++// Returns true if the decision has been applied (and successfully notified to
++// the SMF, if a notification was necessary)
+ typedef bs2::signal_type<
+-    void(std::optional<std::string>&, oai::model::pcf::SmPolicyDecision&),
++    bool(std::optional<std::string>&, oai::model::pcf::SmPolicyDecision&),
+     bs2::keywords::mutex_type<bs2::dummy_mutex>>::type sm_update_decision_sig_t;
+ 
+ }  // namespace oai::pcf::app
+diff --git a/src/pcf_app/pcf_policy_authorization.cpp b/src/pcf_app/pcf_policy_authorization.cpp
+index 8aff0e0..ad2ed45 100644
+--- a/src/pcf_app/pcf_policy_authorization.cpp
++++ b/src/pcf_app/pcf_policy_authorization.cpp
+@@ -10,12 +10,14 @@
+ #include "AppSessionContextReqData.h"
+ #include "AppSessionContextUpdateDataPatch.h"
+ #include "policy_auth/app_session.hpp"
++#include "policy_auth/mcx_qos.hpp"
+ 
+ #include <boost/uuid/uuid_io.hpp>
+ #include <unordered_map>
+ #include <map>
+ #include <memory>
+ #include <string>
++#include <set>
+ 
+ using namespace oai::pcf::app;
+ using namespace oai::pcf::app::policy_auth;
+@@ -24,14 +26,71 @@ using namespace oai::model::pcf;
+ 
+ using namespace std;
+ 
++extern std::unique_ptr<oai::config::pcf::pcf_config> pcf_cfg;
++
++namespace {
++std::optional<std::string> json_opt_string(
++    const nlohmann::json& j, const std::string& key) {
++  if (j.is_object() && j.contains(key) && j[key].is_string() &&
++      !j[key].get<std::string>().empty()) {
++    return j[key].get<std::string>();
++  }
++  return std::nullopt;
++}
++
++std::set<int32_t> used_precedences(
++    const oai::model::pcf::SmPolicyDecision& decision) {
++  std::set<int32_t> out;
++  for (const auto& [id, rule] : decision.getPccRules()) {
++    out.insert(rule.getPrecedence());
++  }
++  return out;
++}
++}  // namespace
++
+ //------------------------------------------------------------------------------
+ pcf_policy_authorization::pcf_policy_authorization(pcf_event& ev)
+     : m_event_sub(ev) {}
+ 
++//------------------------------------------------------------------------------
++handler_result pcf_policy_authorization::apply_media_components(
++    const std::string& app_session_id, const nlohmann::json& raw_context,
++    oai::model::pcf::SmPolicyDecision& decision) {
++  // remove previous rules of this app session (update case)
++  mcx::remove_app_session_rules(app_session_id, decision);
++
++  std::string error;
++  auto mcx_decision = mcx::build_mcx_decision(
++      raw_context, app_session_id, used_precedences(decision),
++      pcf_cfg->get_mcx_qos_config(), error);
++  if (!mcx_decision.has_value()) {
++    Logger::pcf_app().warn(
++        "Invalid media component information: %s", error.c_str());
++    return handler_result{
++        .status          = status_code::FORBIDDEN,
++        .problem_details = "INVALID_SERVICE_INFORMATION"};
++  }
++
++  auto pcc_rules = decision.getPccRules();
++  for (const auto& [id, rule] : mcx_decision->pcc_rules) {
++    pcc_rules.insert_or_assign(id, rule);
++  }
++  decision.setPccRules(pcc_rules);
++
++  auto qos_decs = decision.getQosDecs();
++  for (const auto& [id, qos] : mcx_decision->qos_decs) {
++    qos_decs.insert_or_assign(id, qos);
++  }
++  decision.setQosDecs(qos_decs);
++
++  return handler_result{.status = status_code::OK};
++}
++
+ //------------------------------------------------------------------------------
+ status_code pcf_policy_authorization::post_app_sessions_handler(
+     const oai::model::pcf::AppSessionContext& context,
+-    std::string& app_session_id, std::string& problem_details) {
++    const nlohmann::json& raw_context, std::string& app_session_id,
++    std::string& problem_details, nlohmann::json& response_body) {
+   oai::model::pcf::SmPolicyDecision current_decision = {};
+   oai::model::pcf::SmPolicyDecision request_decision = {};
+ 
+@@ -39,25 +98,41 @@ status_code pcf_policy_authorization::post_app_sessions_handler(
+ 
+   const oai::model::pcf::AppSessionContextReqData reqContext =
+       context.getAscReqData();
++
++  // raw AppSessionContextReqData (the generated models are lossy)
++  nlohmann::json raw_req_data = nlohmann::json::object();
++  if (raw_context.is_object() && raw_context.contains("ascReqData") &&
++      raw_context["ascReqData"].is_object()) {
++    raw_req_data = raw_context["ascReqData"];
++  } else {
++    to_json(raw_req_data, reqContext);
++  }
++
++  std::optional<std::string> ue_ipv4 = json_opt_string(raw_req_data, "ueIpv4");
++  if (!ue_ipv4.has_value() && reqContext.ueIpv4IsSet())
++    ue_ipv4 = reqContext.getUeIpv4();
++  std::optional<std::string> supi = json_opt_string(raw_req_data, "supi");
++  std::optional<std::string> dnn  = json_opt_string(raw_req_data, "dnn");
++
+   std::optional<std::string> association_id = {};
+   try {
+     // Perform session binding
+     m_event_sub.sm_session_binding(
+-        reqContext.getUeIpv4(), reqContext.getSupi(), reqContext.getDnn(),
+-        association_id, current_decision);
++        ue_ipv4, supi, dnn, association_id, current_decision);
+   } catch (const std::exception& e) {
+     Logger::pcf_app().info(e.what());
+     problem_details = "PDU_SESSION_NOT_AVAILABLE";
+-    return status_code::INTERNAL_SERVER_ERROR;
++    return status_code::NOT_FOUND;
+   }
+ 
+   if (!association_id.has_value()) {
+-    Logger::pcf_app().debug("Failed to find session");
++    Logger::pcf_app().info(
++        "Session binding failed for UE IPv4 %s: no SM policy association",
++        ue_ipv4.value_or("-").c_str());
++    problem_details = "PDU_SESSION_NOT_AVAILABLE";
+     return status_code::NOT_FOUND;
+   }
+ 
+-  // We are saving the entire app context at the end
+-
+   // Authorise the service information received
+   handler_result auth_result = authorize_service_info(context.getAscReqData());
+   if (auth_result.problem_details.has_value()) {
+@@ -65,10 +140,6 @@ status_code pcf_policy_authorization::post_app_sessions_handler(
+     return auth_result.status.value();
+   }
+ 
+-  // If the service information provided in the body of the HTTP POST request is
+-  // rejected, return HTTP "403 Forbidden" response message the cause for the
+-  // rejection
+-
+   /**
+    * Handle Initial provisioning of service function chaining information
+    *
+@@ -80,11 +151,7 @@ status_code pcf_policy_authorization::post_app_sessions_handler(
+    * the "medComponents" attribute shall have precedence over the "afSfcReq"
+    * attribute included in the "AppSessionContextReqData" data type
+    */
+-
+-  // Check if the request contains the "afSfcReq" attribute or medComponents is
+-  // present. Pick medComponents if both are present
+   if (context.getAscReqData().medComponentsIsSet()) {
+-    Logger::pcf_app().info("MedComponents is set");
+     // TODO [PAS] handle multiple medComponents
+     for (const auto& medComponent :
+          context.getAscReqData().getMedComponents()) {
+@@ -94,8 +161,8 @@ status_code pcf_policy_authorization::post_app_sessions_handler(
+         if (result.problem_details.has_value()) {
+           problem_details = result.problem_details.value();
+           Logger::pcf_app().error(
+-              "Service function chaining failed. Problem details: {}",
+-              result.problem_details.value());
++              "Service function chaining failed. Problem details: %s",
++              result.problem_details.value().c_str());
+           return result.status.value();
+         }
+         break;
+@@ -108,8 +175,8 @@ status_code pcf_policy_authorization::post_app_sessions_handler(
+     if (result.problem_details.has_value()) {
+       problem_details = result.problem_details.value();
+       Logger::pcf_app().error(
+-          "Service function chaining failed. Problem details: {}",
+-          result.problem_details.value());
++          "Service function chaining failed. Problem details: %s",
++          result.problem_details.value().c_str());
+       return result.status.value();
+     }
+   }
+@@ -122,24 +189,46 @@ status_code pcf_policy_authorization::post_app_sessions_handler(
+   if (decision_result.problem_details.has_value()) {
+     problem_details = decision_result.problem_details.value();
+     Logger::pcf_app().error(
+-        "Validation and merge of Decision failed. Problem details: {}",
+-        decision_result.problem_details.value());
++        "Validation and merge of Decision failed. Problem details: %s",
++        decision_result.problem_details.value().c_str());
+     return decision_result.status.value();
+   }
+ 
+   app_session_id = std::to_string(m_app_sessions_id_generator.get_uid());
+-  policy_auth::app_session app_session(
+-      reqContext, current_decision, app_session_id);
+ 
+-  // Create an association
+-  m_app_sessions.insert(std::make_pair(app_session_id, app_session));
+-  context.getAscReqData().setAfAppId(app_session_id);
++  // Media components -> PCC rules / QoS decisions (TS 29.513 7.3)
++  handler_result mc_result =
++      apply_media_components(app_session_id, raw_req_data, current_decision);
++  if (mc_result.problem_details.has_value()) {
++    problem_details = mc_result.problem_details.value();
++    return mc_result.status.value();
++  }
+ 
+-  // Event with updated decision
+-  m_event_sub.sm_update_decision(association_id, current_decision);
++  // Event with updated decision (notifies the SMF if the decision changed)
++  auto notified = m_event_sub.sm_update_decision(association_id, current_decision);
++  if (!notified.has_value() || !notified.value()) {
++    Logger::pcf_app().warn(
++        "App session %s: SM policy update towards the SMF failed",
++        app_session_id.c_str());
++    problem_details = "REQUESTED_SERVICE_NOT_AUTHORIZED";
++    return status_code::FORBIDDEN;
++  }
++
++  policy_auth::app_session app_session(
++      reqContext, current_decision, app_session_id);
++  app_session.set_raw_context(raw_req_data);
++  app_session.set_association_id(association_id.value());
++  {
++    std::unique_lock lock(m_app_sessions_mutex);
++    m_app_sessions.insert_or_assign(app_session_id, app_session);
++  }
+ 
+-  // TODO [PAS] send notification if notifcation is required
++  response_body               = nlohmann::json::object();
++  response_body["ascReqData"] = raw_req_data;
+ 
++  Logger::pcf_app().info(
++      "Created app session %s (association %s)", app_session_id.c_str(),
++      association_id.value().c_str());
+   // Return "201 Created" response to the HTTP POST request
+   return status_code::CREATED;
+ }
+@@ -149,54 +238,55 @@ policy_auth::status_code pcf_policy_authorization::mod_app_session_handler(
+     const std::string& app_session_id,
+     const oai::model::pcf::AppSessionContextUpdateDataPatch&
+         app_session_context_update_data_patch,
+-    const oai::model::pcf::AppSessionContext& context,
+-    std::string& problem_details) {
++    const nlohmann::json& raw_patch, std::string& problem_details,
++    nlohmann::json& response_body) {
+   oai::model::pcf::SmPolicyDecision current_decision = {};
+   oai::model::pcf::SmPolicyDecision request_decision = {};
+ 
+-  const oai::model::pcf::AppSessionContextUpdateData reqContext =
+-      app_session_context_update_data_patch.getAscReqData();
+-  std::optional<std::string> association_id = {};
++  Logger::pcf_app().info("PATCH /app-sessions/%s", app_session_id.c_str());
+ 
++  std::unique_lock lock(m_app_sessions_mutex);
+   // Get app session
+   auto iter = m_app_sessions.find(app_session_id);
+   if (iter == m_app_sessions.end()) {
+     Logger::pcf_app().error("App session not found");
++    problem_details = "APPLICATION_SESSION_CONTEXT_NOT_FOUND";
+     return status_code::NOT_FOUND;
+   }
+ 
+   auto& app_session        = iter->second;
+   auto app_session_context = app_session.get_app_session_context();
+ 
++  // JSON merge patch (RFC 7396) of the stored AppSessionContextReqData
++  nlohmann::json raw_context = app_session.get_raw_context();
++  if (raw_patch.is_object() && raw_patch.contains("ascReqData")) {
++    raw_context.merge_patch(raw_patch["ascReqData"]);
++  }
++
++  std::optional<std::string> association_id = {};
+   try {
+     // Perform session binding
+     m_event_sub.sm_session_binding(
+-        app_session_context.getUeIpv4(), app_session_context.getSupi(),
+-        app_session_context.getDnn(), association_id, current_decision);
++        json_opt_string(raw_context, "ueIpv4"),
++        json_opt_string(raw_context, "supi"),
++        json_opt_string(raw_context, "dnn"), association_id, current_decision);
+   } catch (const std::exception& e) {
+     Logger::pcf_app().info(e.what());
+     problem_details = "PDU_SESSION_NOT_AVAILABLE";
+-    return status_code::INTERNAL_SERVER_ERROR;
++    return status_code::NOT_FOUND;
++  }
++  if (!association_id.has_value() ||
++      association_id.value() != app_session.get_association_id()) {
++    Logger::pcf_app().info(
++        "App session %s: bound SM policy association does not exist anymore",
++        app_session_id.c_str());
++    problem_details = "PDU_SESSION_NOT_AVAILABLE";
++    return status_code::NOT_FOUND;
+   }
+ 
+-  /**
+-   * Handle Initial provisioning of service function chaining information
+-   *
+-   * the "afSfcReq" attribute of "AfSfcRequirement" data type with specific
+-   * N6-LAN traffic steering requirements for the application traffic flows
+-   * either within "AppSessionContextReqData" data type for the service
+-   * indicated in the "afAppId" attribute, or within the "medComponents"
+-   * attribute. When provided at both levels, the "afSfcReq" attribute value in
+-   * the "medComponents" attribute shall have precedence over the "afSfcReq"
+-   * attribute included in the "AppSessionContextReqData" data type
+-   */
+-
+-  // Check if the request contains the "afSfcReq" attribute or medComponents is
+-  // present. Pick medComponents if both are present
++  // Service function chaining (unchanged behaviour)
+   if (app_session_context_update_data_patch.getAscReqData()
+           .medComponentsIsSet()) {
+-    Logger::pcf_app().info("MedComponents is set");
+-    // TODO [PAS] handle multiple medComponents
+     for (const auto& medComponent :
+          app_session_context_update_data_patch.getAscReqData()
+              .getMedComponents()) {
+@@ -207,15 +297,11 @@ policy_auth::status_code pcf_policy_authorization::mod_app_session_handler(
+                 app_session_context);
+         if (result.problem_details.has_value()) {
+           problem_details = result.problem_details.value();
+-          Logger::pcf_app().error(
+-              "Service function chaining failed. Problem details: {}",
+-              result.problem_details.value());
+           return result.status.value();
+         }
+         break;
+       }
+     }
+-
+   } else if (app_session_context_update_data_patch.getAscReqData()
+                  .afSfcReqIsSet()) {
+     handler_result result =
+@@ -224,44 +310,100 @@ policy_auth::status_code pcf_policy_authorization::mod_app_session_handler(
+             request_decision, app_session_context);
+     if (result.problem_details.has_value()) {
+       problem_details = result.problem_details.value();
+-      Logger::pcf_app().error(
+-          "Service function chaining failed. Problem details: {}",
+-          result.problem_details.value());
+       return result.status.value();
+     }
+   }
+ 
+-  // Validate the request decision against the current decision
+-  // merge the request decision with the current decision if the request
+-  // decision is valid
+   handler_result decision_result =
+       validate_and_merge_decision(request_decision, current_decision, true);
+-
+   if (decision_result.problem_details.has_value()) {
+     problem_details = decision_result.problem_details.value();
+-    Logger::pcf_app().error(
+-        "Validation and merge of Decision failed. Problem details: {}",
+-        decision_result.problem_details.value());
+     return decision_result.status.value();
+   }
+ 
++  // Re-derive the media component PCC rules from the patched context
++  handler_result mc_result =
++      apply_media_components(app_session_id, raw_context, current_decision);
++  if (mc_result.problem_details.has_value()) {
++    problem_details = mc_result.problem_details.value();
++    return mc_result.status.value();
++  }
++
+   // Event with updated decision
+-  m_event_sub.sm_update_decision(association_id, current_decision);
++  auto notified = m_event_sub.sm_update_decision(association_id, current_decision);
++  if (!notified.has_value() || !notified.value()) {
++    problem_details = "REQUESTED_SERVICE_NOT_AUTHORIZED";
++    return status_code::FORBIDDEN;
++  }
+ 
+-  // Update app session
+-  // m_app_sessions[app_session_id] = app_session;
+-  std::shared_lock lock_associations(m_app_sessions_mutex);
+   app_session.set_app_session_context(app_session_context);
+-  // Get mutex
++  app_session.set_raw_context(raw_context);
+ 
+-  auto iter2 = m_app_sessions.find(app_session_id);
+-  if (iter2 == m_app_sessions.end()) {
+-    Logger::pcf_app().error("App session not found");
++  response_body               = nlohmann::json::object();
++  response_body["ascReqData"] = raw_context;
++  return status_code::OK;
++}
++
++//------------------------------------------------------------------------------
++policy_auth::status_code pcf_policy_authorization::delete_app_session_handler(
++    const std::string& app_session_id, std::string& problem_details) {
++  Logger::pcf_app().info(
++      "POST /app-sessions/%s/delete", app_session_id.c_str());
++
++  std::unique_lock lock(m_app_sessions_mutex);
++  auto iter = m_app_sessions.find(app_session_id);
++  if (iter == m_app_sessions.end()) {
++    Logger::pcf_app().info("App session %s not found", app_session_id.c_str());
++    problem_details = "APPLICATION_SESSION_CONTEXT_NOT_FOUND";
+     return status_code::NOT_FOUND;
+   }
+ 
+-  // TODO [PAS] send notification if notifcation is required
++  const nlohmann::json& raw_context = iter->second.get_raw_context();
++  oai::model::pcf::SmPolicyDecision current_decision = {};
++  std::optional<std::string> association_id          = {};
++  try {
++    m_event_sub.sm_session_binding(
++        json_opt_string(raw_context, "ueIpv4"),
++        json_opt_string(raw_context, "supi"),
++        json_opt_string(raw_context, "dnn"), association_id, current_decision);
++  } catch (const std::exception& e) {
++    Logger::pcf_app().info(e.what());
++  }
++
++  if (association_id.has_value() &&
++      association_id.value() == iter->second.get_association_id()) {
++    // Remove the PCC rules of this app session and notify the SMF
++    mcx::remove_app_session_rules(app_session_id, current_decision);
++    auto notified =
++        m_event_sub.sm_update_decision(association_id, current_decision);
++    if (!notified.has_value() || !notified.value()) {
++      Logger::pcf_app().warn(
++          "App session %s: SM policy update (rule removal) towards the SMF "
++          "failed",
++          app_session_id.c_str());
++    }
++  } else {
++    Logger::pcf_app().info(
++        "App session %s: SM policy association %s does not exist anymore, "
++        "nothing to release",
++        app_session_id.c_str(), iter->second.get_association_id().c_str());
++  }
++
++  m_app_sessions.erase(iter);
++  Logger::pcf_app().info("Deleted app session %s", app_session_id.c_str());
++  return status_code::NO_CONTENT;
++}
+ 
++//------------------------------------------------------------------------------
++policy_auth::status_code pcf_policy_authorization::get_app_session_handler(
++    const std::string& app_session_id, nlohmann::json& response_body) {
++  std::shared_lock lock(m_app_sessions_mutex);
++  auto iter = m_app_sessions.find(app_session_id);
++  if (iter == m_app_sessions.end()) {
++    return status_code::NOT_FOUND;
++  }
++  response_body               = nlohmann::json::object();
++  response_body["ascReqData"] = iter->second.get_raw_context();
+   return status_code::OK;
+ }
+ 
+diff --git a/src/pcf_app/pcf_policy_authorization.hpp b/src/pcf_app/pcf_policy_authorization.hpp
+index a8bc35a..27028b3 100644
+--- a/src/pcf_app/pcf_policy_authorization.hpp
++++ b/src/pcf_app/pcf_policy_authorization.hpp
+@@ -21,6 +21,7 @@
+ #include "policy_auth/app_session.hpp"
+ #include "uint_generator.hpp"
+ #include "pcf_event.hpp"
++#include "nlohmann/json.hpp"
+ 
+ namespace oai::pcf::app {
+ 
+@@ -48,7 +49,8 @@ class pcf_policy_authorization {
+    */
+   policy_auth::status_code post_app_sessions_handler(
+       const oai::model::pcf::AppSessionContext& context,
+-      std::string& app_session_id, std::string& problem_details);
++      const nlohmann::json& raw_context, std::string& app_session_id,
++      std::string& problem_details, nlohmann::json& response_body);
+ 
+   /**
+    * @brief Handler for receiving service policy requests to update application
+@@ -65,8 +67,22 @@ class pcf_policy_authorization {
+       const std::string& app_session_id,
+       const oai::model::pcf::AppSessionContextUpdateDataPatch&
+           app_session_context_update_data_patch,
+-      const oai::model::pcf::AppSessionContext& context,
+-      std::string& problem_details);
++      const nlohmann::json& raw_patch, std::string& problem_details,
++      nlohmann::json& response_body);
++
++  /**
++   * @brief Handler for the deletion of an application session context, as
++   * defined in 3GPP TS 29.514 Chapter 4.2.4. The PCC rules derived from the
++   * app session are removed and the SMF is notified.
++   */
++  policy_auth::status_code delete_app_session_handler(
++      const std::string& app_session_id, std::string& problem_details);
++
++  /**
++   * @brief Return the stored app session context
++   */
++  policy_auth::status_code get_app_session_handler(
++      const std::string& app_session_id, nlohmann::json& response_body);
+ 
+  private:
+   oai::utils::uint_generator<uint32_t> m_app_sessions_id_generator;
+@@ -76,6 +92,14 @@ class pcf_policy_authorization {
+ 
+   mutable std::shared_mutex m_app_sessions_mutex;
+ 
++  /**
++   * Add the PCC rules / QoS decisions derived from the media components of
++   * the app session (MCX) to the given decision.
++   */
++  policy_auth::handler_result apply_media_components(
++      const std::string& app_session_id, const nlohmann::json& raw_context,
++      oai::model::pcf::SmPolicyDecision& decision);
++
+   // for Event Handling
+   pcf_event& m_event_sub;
+ };
+diff --git a/src/pcf_app/pcf_sm_policy_control.cpp b/src/pcf_app/pcf_sm_policy_control.cpp
+index acb4a49..ffa185a 100644
+--- a/src/pcf_app/pcf_sm_policy_control.cpp
++++ b/src/pcf_app/pcf_sm_policy_control.cpp
+@@ -7,6 +7,7 @@
+ #include "pcf_config.hpp"
+ #include "sm_policy/policy_decision.hpp"
+ #include "SmPolicyDecision.h"
++#include "policy_auth/mcx_qos.hpp"
+ 
+ #include <boost/uuid/uuid_io.hpp>
+ #include <unordered_map>
+@@ -64,19 +65,16 @@ void pcf_smpc::handle_policy_change(
+ }
+ 
+ sm_policy::status_code pcf_smpc::send_sm_policy_control_update_notify(
+-    const oai::pcf::app::sm_policy::individual_sm_association& association) {
++    const oai::pcf::app::sm_policy::individual_sm_association& association,
++    const nlohmann::json& decision_json) {
+   std::string uri =
+       association.get_sm_policy_context_data().getNotificationUri() + "/update";
+   nlohmann::json json_data;
+-  // to_json(json_data, association.decsion);
+-  nlohmann::json decision_json;
+-  to_json(decision_json, association.get_sm_policy_decision_dto());
+-
+   json_data["smPolicyDecision"] = decision_json;
+ 
+   Logger::pcf_app().info(
+-      "Sending PCF SM policy association creation request: uri -> %s",
+-      uri.c_str());
++      "Sending SM Policy Update Notification: uri -> %s", uri.c_str());
++  Logger::pcf_app().debug("SM Policy Update Notification: %s", json_data.dump());
+   request req   = http_client_inst->prepare_json_request(uri, json_data.dump());
+   response resp = http_client_inst->send_http_request(method_e::POST, req);
+ 
+@@ -90,7 +88,13 @@ sm_policy::status_code pcf_smpc::send_sm_policy_control_update_notify(
+ 
+   // failure case
+   ProblemDetails problem_details;
+-  from_json(resp.body, problem_details);
++  try {
++    if (!resp.body.empty()) {
++      nlohmann::json::parse(resp.body).get_to(problem_details);
++    }
++  } catch (std::exception& e) {
++    Logger::pcf_app().debug("Cannot parse problem details from SMF");
++  }
+ 
+   std::string info;
+   status_code response;
+@@ -142,64 +146,135 @@ void pcf_smpc::handle_session_binding_request(
+     return;
+   }
+ 
+-  assoc_id = association_id->c_str();
+-
+   std::unique_lock lock_assocations(m_associations_mutex);
+   auto iter = m_associations.find(association_id->c_str());
+   if (iter == m_associations.end()) {
++    // stale binding (e.g. the PDU session / SM policy association has been
++    // released): no session binding possible
+     Logger::pcf_app().info(fmt::format(
+         "Could not find policy association: ID {} not found",
+         association_id->c_str()));
+     return;
+   }
+ 
++  assoc_id = association_id->c_str();
+   decision = iter->second.get_sm_policy_decision_dto();
+ 
+   // Get PCC from decision
+ }
+ 
+-void pcf_smpc::handle_update_decision_request(
++bool pcf_smpc::handle_update_decision_request(
+     std::optional<std::string>& association_id,
+     oai::model::pcf::SmPolicyDecision& decision) {
++  if (!association_id.has_value()) {
++    Logger::pcf_app().info("Update decision: no association ID");
++    return false;
++  }
+   // Fetch the association related to the decision
+   std::unique_lock lock_assocations(m_associations_mutex);
+   auto iter = m_associations.find(association_id.value());
+   if (iter == m_associations.end()) {
+     Logger::pcf_app().info(fmt::format(
+-        "Could not delete policy association: ID {} not found",
++        "Could not update policy association: ID {} not found",
+         association_id.value()));
+-    return;
++    return false;
+   }
+ 
++  SmPolicyDecision old_decision = iter->second.get_sm_policy_decision_dto();
++  nlohmann::json delta = compute_decision_delta(old_decision, decision);
++
+   iter->second.set_sm_policy_decision(decision);
+ 
+-  // TODO [PAS] confirm if the storage should be updated
+   /**
+-   * The changes from the update policy authorisation request should be
+-   * be for an existing policy association for an existing PDU session.
+-   * THe SMF gets the updated policy decision from the PCF for which the
+-   * PCF reads the new decision from the policy storage. However the policy
+-   * storage persists over new UE connections.
+-   *
+-   * The TODO is to confirm if the policy storage should be updated with the
+-   * new decision and to look for an alternative way to store the updates for
+-   * the policy decisions that are not persisted.
++   * The changes from the policy authorisation request are related to an
++   * existing PDU session only. The dynamic (AF-session bound, "mcx-") PCC
++   * rules and QoS decisions are therefore NOT persisted in the policy storage,
++   * otherwise they would be re-applied to future PDU sessions of the UE.
+    */
++  SmPolicyDecision persisted_decision = decision;
++  {
++    auto rules = persisted_decision.getPccRules();
++    for (auto it = rules.begin(); it != rules.end();) {
++      if (policy_auth::mcx::is_mcx_id(it->first))
++        it = rules.erase(it);
++      else
++        ++it;
++    }
++    persisted_decision.setPccRules(rules);
++    auto qos_decs = persisted_decision.getQosDecs();
++    for (auto it = qos_decs.begin(); it != qos_decs.end();) {
++      if (policy_auth::mcx::is_mcx_id(it->first))
++        it = qos_decs.erase(it);
++      else
++        ++it;
++    }
++    persisted_decision.setQosDecs(qos_decs);
++  }
+   auto context = iter->second.get_sm_policy_context_data();
+   if (!context.getSupi().empty()) {
+-    m_policy_storage->insert_supi_decision(context.getSupi(), decision);
++    m_policy_storage->insert_supi_decision(
++        context.getSupi(), persisted_decision);
+   } else if (!context.getDnn().empty()) {
+-    m_policy_storage->insert_dnn_decision(context.getDnn(), decision);
++    m_policy_storage->insert_dnn_decision(context.getDnn(), persisted_decision);
+   } else {
+     Logger::pcf_app().error("Failed to update policy decision");
+   }
+ 
++  if (delta.empty()) {
++    Logger::pcf_app().info(
++        "SM policy decision of association %s unchanged, no notification",
++        association_id.value().c_str());
++    return true;
++  }
++
+   // Send a notification to the SMF related to the updated decision
+   const auto& association_ref = iter->second;
+-  auto ret = send_sm_policy_control_update_notify(association_ref);
++  auto ret = send_sm_policy_control_update_notify(association_ref, delta);
+   if (ret != status_code::CREATED) {
+     Logger::pcf_app().error("Policy update notification failed");
++    // roll back
++    iter->second.set_sm_policy_decision(old_decision);
++    return false;
+   }
++  return true;
++}
++
++//------------------------------------------------------------------------------
++nlohmann::json pcf_smpc::compute_decision_delta(
++    const SmPolicyDecision& old_decision,
++    const SmPolicyDecision& new_decision) {
++  nlohmann::json delta = nlohmann::json::object();
++
++  auto diff_map = [&delta](
++                      const std::string& name, const auto& old_map,
++                      const auto& new_map) {
++    nlohmann::json j = nlohmann::json::object();
++    for (const auto& [key, value] : new_map) {
++      auto it = old_map.find(key);
++      if (it == old_map.end() || !(it->second == value)) {
++        nlohmann::json v;
++        to_json(v, value);
++        j[key] = v;
++      }
++    }
++    for (const auto& [key, value] : old_map) {
++      if (new_map.find(key) == new_map.end()) {
++        // TS 29.512: removal of a PCC rule / decision is indicated with null
++        j[key] = nullptr;
++      }
++    }
++    if (!j.empty()) delta[name] = j;
++  };
++
++  diff_map(
++      "pccRules", old_decision.getPccRules(), new_decision.getPccRules());
++  diff_map("qosDecs", old_decision.getQosDecs(), new_decision.getQosDecs());
++  diff_map(
++      "traffContDecs", old_decision.getTraffContDecs(),
++      new_decision.getTraffContDecs());
++  diff_map(
++      "sessRules", old_decision.getSessRules(), new_decision.getSessRules());
++  return delta;
+ }
+ 
+ //------------------------------------------------------------------------------
+@@ -300,7 +375,12 @@ sm_policy::status_code pcf_smpc::update_sm_policy_handler(
+     return status_code::NOT_FOUND;
+   }
+ 
+-  // TODO [PAS]: Perform session binding update
++  // Session binding update: the UE IP address may only be known now
++  if (update_context.ipv4AddressIsSet() &&
++      !update_context.getIpv4Address().empty()) {
++    m_policy_storage->insert_ip_association(
++        update_context.getIpv4Address(), id);
++  }
+ 
+   SmPolicyDecision new_decision;
+ 
+diff --git a/src/pcf_app/pcf_sm_policy_control.hpp b/src/pcf_app/pcf_sm_policy_control.hpp
+index 928aae8..3a89646 100644
+--- a/src/pcf_app/pcf_sm_policy_control.hpp
++++ b/src/pcf_app/pcf_sm_policy_control.hpp
+@@ -6,6 +6,7 @@
+ #define FILE_PCF_SM_POLICY_CONTROL_SEEN
+ 
+ #include <string>
++#include "nlohmann/json.hpp"
+ #include <unordered_map>
+ #include <shared_mutex>
+ #include <memory>
+@@ -118,7 +119,18 @@ class pcf_smpc {
+           decision);
+ 
+   sm_policy::status_code send_sm_policy_control_update_notify(
+-      const oai::pcf::app::sm_policy::individual_sm_association& association);
++      const oai::pcf::app::sm_policy::individual_sm_association& association,
++      const nlohmann::json& decision_json);
++
++  /**
++   * Compute the SmPolicyDecision to be notified to the SMF (TS 29.512
++   * 4.2.4.2): only the PCC rules / QoS decisions / traffic control decisions
++   * that are new or changed are included, removed ones are set to null.
++   * @return JSON SmPolicyDecision, empty object if nothing changed
++   */
++  static nlohmann::json compute_decision_delta(
++      const oai::model::pcf::SmPolicyDecision& old_decision,
++      const oai::model::pcf::SmPolicyDecision& new_decision);
+ 
+   void handle_session_binding_request(
+       const std::optional<std::string>& ipv4,
+@@ -127,7 +139,7 @@ class pcf_smpc {
+       std::optional<std::string>& assoc_id,
+       oai::model::pcf::SmPolicyDecision& decision);
+ 
+-  void handle_update_decision_request(
++  bool handle_update_decision_request(
+       std::optional<std::string>& association_id,
+       oai::model::pcf::SmPolicyDecision& decision);
+ 
+diff --git a/src/pcf_app/policy_auth/app_session.hpp b/src/pcf_app/policy_auth/app_session.hpp
+index 3b384e6..9fc9442 100644
+--- a/src/pcf_app/policy_auth/app_session.hpp
++++ b/src/pcf_app/policy_auth/app_session.hpp
+@@ -7,6 +7,8 @@
+ 
+ #include "AppSessionContext.h"
+ #include "AppSessionContextReqData.h"
++#include "nlohmann/json.hpp"
++#include "pcf_policy_authorization_status_code.hpp"
+ 
+ namespace oai::pcf::app::policy_auth {
+ 
+@@ -31,7 +33,22 @@ class app_session {
+ 
+   [[nodiscard]] virtual std::string get_id() const;
+ 
++  // Raw AppSessionContextReqData as received from the AF (and updated with
++  // merge-patches). Used for the MCX media component mapping since some of the
++  // generated models are lossy.
++  void set_raw_context(const nlohmann::json& raw) { m_raw_context = raw; }
++  [[nodiscard]] const nlohmann::json& get_raw_context() const {
++    return m_raw_context;
++  }
++
++  void set_association_id(const std::string& id) { m_association_id = id; }
++  [[nodiscard]] const std::string& get_association_id() const {
++    return m_association_id;
++  }
++
+  private:
++  nlohmann::json m_raw_context;
++  std::string m_association_id;
+   // TODO: create a struct only for attributes that need to be stored?
+   oai::model::pcf::AppSessionContextReqData m_context;
+   // TODO: create a struct only for attributes that need to be stored?
+diff --git a/src/pcf_app/policy_auth/mcx_qos.cpp b/src/pcf_app/policy_auth/mcx_qos.cpp
+new file mode 100644
+index 0000000..6be3951
+--- /dev/null
++++ b/src/pcf_app/policy_auth/mcx_qos.cpp
+@@ -0,0 +1,392 @@
++/*
++ * SPDX-License-Identifier: LicenseRef-CSSL-1.0
++ */
++
++#include "mcx_qos.hpp"
++
++#include <algorithm>
++#include <regex>
++#include <sstream>
++
++#include "logger.hpp"
++
++namespace oai::pcf::app::policy_auth::mcx {
++
++using namespace oai::model::pcf;
++
++namespace {
++
++// 5QIs with a GBR resource type (TS 23.501, table 5.7.4-1)
++const std::set<int> kGbr5qis = {1,  2,  3,  4,  65, 66, 67, 71, 72, 73,
++                                74, 75, 76, 82, 83, 84, 85, 86, 87, 88,
++                                89, 90};
++
++std::vector<std::string> split_ws(const std::string& in) {
++  std::istringstream iss(in);
++  std::vector<std::string> out;
++  std::string tok;
++  while (iss >> tok) out.push_back(tok);
++  return out;
++}
++
++std::string strip_mask(const std::string& addr) {
++  auto pos = addr.find('/');
++  if (pos == std::string::npos) return addr;
++  // a /32 mask still designates the UE address
++  return addr.substr(0, pos);
++}
++
++std::string build_description(
++    const std::string& proto, const std::string& from_addr,
++    const std::string& from_ports, const std::string& to_addr,
++    const std::string& to_ports) {
++  std::string out = "permit out " + proto + " from " + from_addr;
++  if (!from_ports.empty()) out.append(" ").append(from_ports);
++  out.append(" to ").append(to_addr);
++  if (!to_ports.empty()) out.append(" ").append(to_ports);
++  return out;
++}
++
++std::string json_string(
++    const nlohmann::json& j, const std::string& key,
++    const std::string& def = "") {
++  if (j.is_object() && j.contains(key) && j[key].is_string()) {
++    return j[key].get<std::string>();
++  }
++  return def;
++}
++
++bool flow_status_enabled(const nlohmann::json& j) {
++  // fStatus absent means ENABLED (TS 29.514, 5.6.3.x FlowStatus)
++  std::string status = json_string(j, "fStatus", "ENABLED");
++  return status != "DISABLED" && status != "REMOVED";
++}
++
++std::string upper(std::string s) {
++  std::transform(s.begin(), s.end(), s.begin(), ::toupper);
++  return s;
++}
++
++}  // namespace
++
++//------------------------------------------------------------------------------
++bool is_mcx_id(const std::string& id) {
++  return id.rfind(kMcxPccRulePrefix, 0) == 0;
++}
++
++//------------------------------------------------------------------------------
++std::optional<parsed_flow_description> parse_flow_description(
++    const std::string& fdesc) {
++  auto toks = split_ws(fdesc);
++  // permit out <proto> from <addr> [ports] to <addr> [ports]
++  if (toks.size() < 7) return std::nullopt;
++  if (toks[0] != "permit" || toks[1] != "out") return std::nullopt;
++
++  auto from_it = std::find(toks.begin(), toks.end(), "from");
++  auto to_it   = std::find(toks.begin(), toks.end(), "to");
++  if (from_it == toks.end() || to_it == toks.end() || to_it < from_it) {
++    return std::nullopt;
++  }
++  size_t from_idx = std::distance(toks.begin(), from_it);
++  size_t to_idx   = std::distance(toks.begin(), to_it);
++  if (from_idx != 3 || from_idx + 1 >= to_idx || to_idx + 1 >= toks.size()) {
++    return std::nullopt;
++  }
++
++  parsed_flow_description out;
++  out.protocol = toks[2];
++  out.src_addr = toks[from_idx + 1];
++  for (size_t i = from_idx + 2; i < to_idx; i++) {
++    if (!out.src_ports.empty()) out.src_ports.append(" ");
++    out.src_ports.append(toks[i]);
++  }
++  out.dst_addr = toks[to_idx + 1];
++  for (size_t i = to_idx + 2; i < toks.size(); i++) {
++    if (!out.dst_ports.empty()) out.dst_ports.append(" ");
++    out.dst_ports.append(toks[i]);
++  }
++  return out;
++}
++
++//------------------------------------------------------------------------------
++std::vector<mcx_flow> derive_flows(
++    const std::vector<std::string>& fdescs, const std::string& ue_ipv4) {
++  std::vector<mcx_flow> flows;
++
++  for (const auto& fdesc : fdescs) {
++    auto parsed = parse_flow_description(fdesc);
++    if (!parsed.has_value()) {
++      Logger::pcf_app().warn(
++          "MCX: cannot parse flow description '%s', using it unchanged as "
++          "BIDIRECTIONAL",
++          fdesc.c_str());
++      flows.push_back(mcx_flow{fdesc, "BIDIRECTIONAL"});
++      continue;
++    }
++    const auto& p = parsed.value();
++    mcx_flow flow;
++    if (!ue_ipv4.empty() && strip_mask(p.dst_addr) == ue_ipv4) {
++      // from <remote> to <UE>: downlink, already in the TS 29.512 notation
++      flow.flow_description = build_description(
++          p.protocol, p.src_addr, p.src_ports, p.dst_addr, p.dst_ports);
++      flow.flow_direction = "DOWNLINK";
++    } else if (!ue_ipv4.empty() && strip_mask(p.src_addr) == ue_ipv4) {
++      // from <UE> to <remote>: uplink. TS 29.512/29.513: the flow description
++      // is expressed from the remote to the UE, direction in flowDirection
++      flow.flow_description = build_description(
++          p.protocol, p.dst_addr, p.dst_ports, p.src_addr, p.src_ports);
++      flow.flow_direction = "UPLINK";
++    } else {
++      flow.flow_description = build_description(
++          p.protocol, p.src_addr, p.src_ports, p.dst_addr, p.dst_ports);
++      flow.flow_direction = "BIDIRECTIONAL";
++    }
++
++    // merge UL + DL of the same 5-tuple into one bidirectional flow
++    auto existing = std::find_if(
++        flows.begin(), flows.end(), [&flow](const mcx_flow& f) {
++          return f.flow_description == flow.flow_description;
++        });
++    if (existing != flows.end()) {
++      if (existing->flow_direction != flow.flow_direction) {
++        existing->flow_direction = "BIDIRECTIONAL";
++      }
++      continue;
++    }
++    flows.push_back(flow);
++  }
++  return flows;
++}
++
++//------------------------------------------------------------------------------
++int arp_priority_from_res_prio(
++    const std::optional<std::string>& res_prio,
++    const oai::config::pcf::mcx_qos_config& cfg) {
++  // absent (or removed with a null merge-patch) -> default
++  if (!res_prio.has_value()) return cfg.default_arp_priority;
++  static const std::regex prio_re("^PRIO_([0-9]{1,2})$");
++  std::smatch m;
++  if (!std::regex_match(res_prio.value(), m, prio_re)) {
++    Logger::pcf_app().warn(
++        "MCX: unknown resPrio value '%s', using default ARP %d",
++        res_prio.value().c_str(), cfg.default_arp_priority);
++    return cfg.default_arp_priority;
++  }
++  auto it = cfg.res_prio_arp.find(res_prio.value());
++  if (it == cfg.res_prio_arp.end()) return cfg.default_arp_priority;
++  return std::clamp(it->second, 1, 15);
++}
++
++//------------------------------------------------------------------------------
++std::optional<mcx_decision> build_mcx_decision(
++    const nlohmann::json& asc_req_data, const std::string& app_session_id,
++    const std::set<int32_t>& used_precedences,
++    const oai::config::pcf::mcx_qos_config& cfg, std::string& error) {
++  mcx_decision decision;
++
++  if (!asc_req_data.contains("medComponents") ||
++      !asc_req_data["medComponents"].is_object()) {
++    // nothing to do (e.g. app session only for event subscription)
++    return decision;
++  }
++
++  std::string ue_ipv4 = json_string(asc_req_data, "ueIpv4");
++  std::optional<std::string> session_res_prio = std::nullopt;
++  if (asc_req_data.contains("resPrio") && asc_req_data["resPrio"].is_string()) {
++    session_res_prio = asc_req_data["resPrio"].get<std::string>();
++  }
++
++  std::set<int32_t> precedences = used_precedences;
++  int32_t next_precedence       = cfg.precedence_base;
++  auto allocate_precedence      = [&]() {
++    while (precedences.count(next_precedence) > 0) next_precedence++;
++    precedences.insert(next_precedence);
++    return next_precedence;
++  };
++
++  // order the media components by medCompN to have deterministic precedences
++  std::map<int, nlohmann::json> med_comps;
++  for (const auto& [key, med_comp] : asc_req_data["medComponents"].items()) {
++    if (med_comp.is_null()) continue;  // removed by merge-patch
++    if (!med_comp.is_object()) {
++      error = "medComponents." + key + " is not an object";
++      return std::nullopt;
++    }
++    int med_comp_n = 0;
++    if (med_comp.contains("medCompN") && med_comp["medCompN"].is_number()) {
++      med_comp_n = med_comp["medCompN"].get<int>();
++    } else {
++      try {
++        med_comp_n = std::stoi(key);
++      } catch (...) {
++        error = "medComponents." + key + ": missing medCompN";
++        return std::nullopt;
++      }
++    }
++    med_comps[med_comp_n] = med_comp;
++  }
++
++  for (const auto& [med_comp_n, med_comp] : med_comps) {
++    if (!flow_status_enabled(med_comp)) {
++      Logger::pcf_app().info(
++          "MCX: media component %d is disabled/removed, no PCC rule",
++          med_comp_n);
++      continue;
++    }
++
++    // Collect the flow descriptions of all the (enabled) media sub components
++    std::vector<std::string> fdescs;
++    std::string sub_mar_bw_ul, sub_mar_bw_dl;
++    if (med_comp.contains("medSubComps") &&
++        med_comp["medSubComps"].is_object()) {
++      std::map<int, nlohmann::json> sub_comps;
++      for (const auto& [skey, sub] : med_comp["medSubComps"].items()) {
++        if (!sub.is_object()) continue;
++        int f_num = 0;
++        if (sub.contains("fNum") && sub["fNum"].is_number()) {
++          f_num = sub["fNum"].get<int>();
++        } else {
++          try {
++            f_num = std::stoi(skey);
++          } catch (...) {
++            f_num = static_cast<int>(sub_comps.size()) + 1000;
++          }
++        }
++        sub_comps[f_num] = sub;
++      }
++      for (const auto& [f_num, sub] : sub_comps) {
++        if (!flow_status_enabled(sub)) continue;
++        if (sub.contains("fDescs") && sub["fDescs"].is_array()) {
++          for (const auto& fd : sub["fDescs"]) {
++            if (fd.is_string()) fdescs.push_back(fd.get<std::string>());
++          }
++        }
++        if (sub_mar_bw_ul.empty()) sub_mar_bw_ul = json_string(sub, "marBwUl");
++        if (sub_mar_bw_dl.empty()) sub_mar_bw_dl = json_string(sub, "marBwDl");
++      }
++    }
++
++    std::vector<mcx_flow> flows = derive_flows(fdescs, ue_ipv4);
++    if (flows.empty()) {
++      Logger::pcf_app().warn(
++          "MCX: media component %d has no flow description, no PCC rule",
++          med_comp_n);
++      continue;
++    }
++
++    // 5QI from the media type
++    std::string med_type = upper(json_string(med_comp, "medType", "AUDIO"));
++    int r5qi             = cfg.other_5qi;
++    if (med_type == "AUDIO") {
++      r5qi = cfg.audio_5qi;
++    } else if (med_type == "VIDEO") {
++      r5qi = cfg.video_5qi;
++    }
++    bool gbr = kGbr5qis.count(r5qi) > 0;
++
++    // ARP (TS 29.513, 7.3.x: derived from the reservation priority)
++    std::optional<std::string> res_prio = session_res_prio;
++    if (med_comp.contains("resPrio") && med_comp["resPrio"].is_string()) {
++      res_prio = med_comp["resPrio"].get<std::string>();
++    }
++    int arp_prio = arp_priority_from_res_prio(res_prio, cfg);
++    std::string preempt_cap =
++        json_string(med_comp, "preemptCap", "MAY_PREEMPT");
++    std::string preempt_vuln = json_string(
++        med_comp, "preemptVuln",
++        arp_prio <= cfg.emergency_arp_threshold ? "NOT_PREEMPTABLE" :
++                                                  "PREEMPTABLE");
++
++    std::string mar_bw_ul = json_string(med_comp, "marBwUl", sub_mar_bw_ul);
++    std::string mar_bw_dl = json_string(med_comp, "marBwDl", sub_mar_bw_dl);
++    if (mar_bw_ul.empty()) mar_bw_ul = cfg.default_bandwidth;
++    if (mar_bw_dl.empty()) mar_bw_dl = cfg.default_bandwidth;
++
++    std::string suffix =
++        app_session_id + "-" + std::to_string(med_comp_n);
++    std::string rule_id = kMcxPccRulePrefix + suffix;
++    std::string qos_id  = kMcxQosDataPrefix + suffix;
++
++    nlohmann::json qos_json = {
++        {"qosId", qos_id},
++        {"5qi", r5qi},
++        {"arp",
++         {{"priorityLevel", arp_prio},
++          {"preemptCap", preempt_cap},
++          {"preemptVuln", preempt_vuln}}}};
++    if (gbr) {
++      qos_json["gbrUl"]   = mar_bw_ul;
++      qos_json["gbrDl"]   = mar_bw_dl;
++      qos_json["maxbrUl"] = mar_bw_ul;
++      qos_json["maxbrDl"] = mar_bw_dl;
++    }
++
++    nlohmann::json flow_infos = nlohmann::json::array();
++    int pf_id                 = 1;
++    for (const auto& flow : flows) {
++      flow_infos.push_back(
++          {{"flowDescription", flow.flow_description},
++           {"flowDirection", flow.flow_direction},
++           {"packFiltId", std::to_string(pf_id++)},
++           {"packetFilterUsage", true}});
++    }
++
++    nlohmann::json rule_json = {
++        {"pccRuleId", rule_id},
++        {"flowInfos", flow_infos},
++        {"precedence", allocate_precedence()},
++        {"refQosData", {qos_id}}};
++
++    try {
++      PccRule rule = rule_json.get<PccRule>();
++      QosData qos  = qos_json.get<QosData>();
++      decision.pcc_rules[rule_id] = rule;
++      decision.qos_decs[qos_id]   = qos;
++    } catch (std::exception& e) {
++      error = std::string("Cannot build PCC rule: ") + e.what();
++      return std::nullopt;
++    }
++
++    Logger::pcf_app().info(
++        "MCX: media component %d (%s) -> PCC rule %s, 5QI %d, ARP %d (%s/%s), "
++        "MBR/GBR UL %s DL %s, %d flow(s)",
++        med_comp_n, med_type.c_str(), rule_id.c_str(), r5qi, arp_prio,
++        preempt_cap.c_str(), preempt_vuln.c_str(), mar_bw_ul.c_str(),
++        mar_bw_dl.c_str(), static_cast<int>(flows.size()));
++    for (const auto& flow : flows) {
++      Logger::pcf_app().debug(
++          "MCX:   %s [%s]", flow.flow_description.c_str(),
++          flow.flow_direction.c_str());
++    }
++  }
++  return decision;
++}
++
++//------------------------------------------------------------------------------
++void remove_app_session_rules(
++    const std::string& app_session_id, SmPolicyDecision& decision) {
++  std::string rule_prefix = kMcxPccRulePrefix + app_session_id + "-";
++  std::string qos_prefix  = kMcxQosDataPrefix + app_session_id + "-";
++
++  auto rules = decision.getPccRules();
++  for (auto it = rules.begin(); it != rules.end();) {
++    if (it->first.rfind(rule_prefix, 0) == 0) {
++      it = rules.erase(it);
++    } else {
++      ++it;
++    }
++  }
++  decision.setPccRules(rules);
++
++  auto qos_decs = decision.getQosDecs();
++  for (auto it = qos_decs.begin(); it != qos_decs.end();) {
++    if (it->first.rfind(qos_prefix, 0) == 0) {
++      it = qos_decs.erase(it);
++    } else {
++      ++it;
++    }
++  }
++  decision.setQosDecs(qos_decs);
++}
++
++}  // namespace oai::pcf::app::policy_auth::mcx
+diff --git a/src/pcf_app/policy_auth/mcx_qos.hpp b/src/pcf_app/policy_auth/mcx_qos.hpp
+new file mode 100644
+index 0000000..b837ebc
+--- /dev/null
++++ b/src/pcf_app/policy_auth/mcx_qos.hpp
+@@ -0,0 +1,113 @@
++/*
++ * SPDX-License-Identifier: LicenseRef-CSSL-1.0
++ */
++
++/*
++ * Mapping of Npcf_PolicyAuthorization (TS 29.514) media components to PCC
++ * rules and QoS decisions (TS 29.512), following the principles of TS 29.513
++ * (chapter 7.3 "QoS parameter mapping"). Used for MCX (MCPTT) AF requests.
++ *
++ * The mapping works on the raw JSON representation of the
++ * AppSessionContextReqData because some of the generated OpenAPI models used
++ * by the PCF (e.g. ReservPriority, MediaType) are empty stubs and would lose
++ * the values sent by the AF.
++ */
++
++#ifndef FILE_PCF_MCX_QOS_SEEN
++#define FILE_PCF_MCX_QOS_SEEN
++
++#include <map>
++#include <optional>
++#include <set>
++#include <string>
++#include <vector>
++
++#include "PccRule.h"
++#include "QosData.h"
++#include "SmPolicyDecision.h"
++#include "nlohmann/json.hpp"
++#include "pcf_config_types.hpp"
++
++namespace oai::pcf::app::policy_auth::mcx {
++
++const std::string kMcxPccRulePrefix = "mcx-";
++const std::string kMcxQosDataPrefix = "mcx-qos-";
++
++struct parsed_flow_description {
++  std::string protocol;
++  std::string src_addr;
++  std::string src_ports;
++  std::string dst_addr;
++  std::string dst_ports;
++};
++
++/**
++ * Parse an IPFilterRule ("permit out 17 from 1.2.3.4 5000 to 5.6.7.8 6000").
++ * @return std::nullopt if the string can not be parsed
++ */
++std::optional<parsed_flow_description> parse_flow_description(
++    const std::string& fdesc);
++
++/**
++ * Derived flow information (TS 29.513, 7.3.1 / TS 29.512 FlowInformation):
++ * the flow description is always written from the network to the UE
++ * ("from <remote> to <UE>") and the direction is carried in flowDirection.
++ */
++struct mcx_flow {
++  std::string flow_description;
++  std::string flow_direction;  // UPLINK, DOWNLINK or BIDIRECTIONAL
++};
++
++/**
++ * Convert the fDescs of the media sub components into flow information.
++ * Uplink and downlink descriptions of the same 5-tuple are merged into one
++ * BIDIRECTIONAL flow.
++ */
++std::vector<mcx_flow> derive_flows(
++    const std::vector<std::string>& fdescs, const std::string& ue_ipv4);
++
++/**
++ * Map a ReservPriority ("PRIO_1".."PRIO_16") to an ARP priority level (1..15)
++ */
++int arp_priority_from_res_prio(
++    const std::optional<std::string>& res_prio,
++    const oai::config::pcf::mcx_qos_config& cfg);
++
++struct mcx_decision {
++  std::map<std::string, oai::model::pcf::PccRule> pcc_rules;
++  std::map<std::string, oai::model::pcf::QosData> qos_decs;
++};
++
++/**
++ * Build the PCC rules and QoS decisions for all the media components of an
++ * AppSessionContextReqData (raw JSON).
++ * @param asc_req_data: AppSessionContextReqData as JSON
++ * @param app_session_id: ID of the application session (used in rule IDs)
++ * @param used_precedences: precedences already in use in the SM policy
++ * decision (MCX rules of this app session must not be part of it)
++ * @param cfg: mapping configuration
++ * @param error: human readable error
++ * @return the decision, std::nullopt in case the service information is
++ * invalid
++ */
++std::optional<mcx_decision> build_mcx_decision(
++    const nlohmann::json& asc_req_data, const std::string& app_session_id,
++    const std::set<int32_t>& used_precedences,
++    const oai::config::pcf::mcx_qos_config& cfg, std::string& error);
++
++/**
++ * Remove all the PCC rules / QoS decisions belonging to an app session from
++ * the given decision
++ */
++void remove_app_session_rules(
++    const std::string& app_session_id,
++    oai::model::pcf::SmPolicyDecision& decision);
++
++/**
++ * Return true if the PCC rule / QoS data ID is a dynamic MCX one
++ */
++bool is_mcx_id(const std::string& id);
++
++}  // namespace oai::pcf::app::policy_auth::mcx
++
++#endif
+diff --git a/src/pcf_app/policy_auth/pcf_policy_authorization_status_code.hpp b/src/pcf_app/policy_auth/pcf_policy_authorization_status_code.hpp
+index d4fa290..cb70b89 100644
+--- a/src/pcf_app/policy_auth/pcf_policy_authorization_status_code.hpp
++++ b/src/pcf_app/policy_auth/pcf_policy_authorization_status_code.hpp
+@@ -19,6 +19,7 @@ enum class status_code {
+   PDU_SESSION_NOT_AVAILABLE,
+   REQUESTED_SERVICE_NOT_AUTHORIZED,
+   OK,
++  NO_CONTENT,
+   BAD_REQUEST,
+   INTERNAL_SERVER_ERROR,
+   FORBIDDEN
+diff --git a/src/pcf_app/sm_policy/policy_storage_yaml.cpp b/src/pcf_app/sm_policy/policy_storage_yaml.cpp
+index 08c3927..095c984 100644
+--- a/src/pcf_app/sm_policy/policy_storage_yaml.cpp
++++ b/src/pcf_app/sm_policy/policy_storage_yaml.cpp
+@@ -141,7 +141,8 @@ void policy_storage_yaml::insert_ip_association(
+     const std::string& ip, const std::string& association_id) {
+   std::unique_lock ip_association_lock(m_ip_to_association_map_mutex);
+ 
+-  m_ip_to_association_map.insert(std::make_pair(ip, association_id));
++  // overwrite: the same UE IP may be re-assigned to a new PDU session
++  m_ip_to_association_map.insert_or_assign(ip, association_id);
+   ip_association_lock.unlock();
+ }
+ 
+@@ -149,7 +150,7 @@ void policy_storage_yaml::insert_supi_association(
+     const std::string& supi, const std::string& association_id) {
+   std::unique_lock supi_to_association_lock(m_supi_to_association_map_mutex);
+ 
+-  m_supi_to_association_map.insert(std::make_pair(supi, association_id));
++  m_supi_to_association_map.insert_or_assign(supi, association_id);
+   supi_to_association_lock.unlock();
+ }
+ 
+-- 
+2.43.0
+

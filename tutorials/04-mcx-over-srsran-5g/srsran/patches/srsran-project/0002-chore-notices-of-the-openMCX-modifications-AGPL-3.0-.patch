@@ -1,0 +1,97 @@
+From feab93a1b1f62df02b591fbc1d1a5da07a76406c Mon Sep 17 00:00:00 2001
+From: openMCX <noreply@openmcx.invalid>
+Date: Mon, 5 Oct 2026 09:25:10 +0200
+Subject: [PATCH 2/2] chore: notices of the openMCX modifications (AGPL-3.0
+ section 5(a))
+
+Each file changed by openMCX carries a notice that it was modified and when.
+---
+ include/srsran/cu_cp/cu_cp_types.h                              | 2 ++
+ .../routines/pdu_session_resource_modification_routine.cpp      | 2 ++
+ lib/cu_cp/up_resource_manager/up_resource_manager_helpers.cpp   | 2 ++
+ lib/cu_cp/up_resource_manager/up_resource_manager_impl.h        | 2 ++
+ lib/ngap/ngap_asn1_converters.h                                 | 2 ++
+ .../procedures/ngap_pdu_session_resource_modify_procedure.cpp   | 2 ++
+ 6 files changed, 12 insertions(+)
+
+diff --git a/include/srsran/cu_cp/cu_cp_types.h b/include/srsran/cu_cp/cu_cp_types.h
+index 3898502..eef85b5 100644
+--- a/include/srsran/cu_cp/cu_cp_types.h
++++ b/include/srsran/cu_cp/cu_cp_types.h
+@@ -2,6 +2,8 @@
+  *
+  * Copyright 2021-2025 Software Radio Systems Limited
+  *
++ * Modified by openMCX, 2026 (MCX N5 QoS): see the openMCX tutorial/04-mcx-over-srsran-5g/srsran/NOTICE.
++ *
+  * This file is part of srsRAN.
+  *
+  * srsRAN is free software: you can redistribute it and/or modify
+diff --git a/lib/cu_cp/routines/pdu_session_resource_modification_routine.cpp b/lib/cu_cp/routines/pdu_session_resource_modification_routine.cpp
+index de7fb78..149ea67 100644
+--- a/lib/cu_cp/routines/pdu_session_resource_modification_routine.cpp
++++ b/lib/cu_cp/routines/pdu_session_resource_modification_routine.cpp
+@@ -2,6 +2,8 @@
+  *
+  * Copyright 2021-2025 Software Radio Systems Limited
+  *
++ * Modified by openMCX, 2026 (MCX N5 QoS): see the openMCX tutorial/04-mcx-over-srsran-5g/srsran/NOTICE.
++ *
+  * This file is part of srsRAN.
+  *
+  * srsRAN is free software: you can redistribute it and/or modify
+diff --git a/lib/cu_cp/up_resource_manager/up_resource_manager_helpers.cpp b/lib/cu_cp/up_resource_manager/up_resource_manager_helpers.cpp
+index 2994249..659f356 100644
+--- a/lib/cu_cp/up_resource_manager/up_resource_manager_helpers.cpp
++++ b/lib/cu_cp/up_resource_manager/up_resource_manager_helpers.cpp
+@@ -2,6 +2,8 @@
+  *
+  * Copyright 2021-2025 Software Radio Systems Limited
+  *
++ * Modified by openMCX, 2026 (MCX N5 QoS): see the openMCX tutorial/04-mcx-over-srsran-5g/srsran/NOTICE.
++ *
+  * This file is part of srsRAN.
+  *
+  * srsRAN is free software: you can redistribute it and/or modify
+diff --git a/lib/cu_cp/up_resource_manager/up_resource_manager_impl.h b/lib/cu_cp/up_resource_manager/up_resource_manager_impl.h
+index 54680b6..083c678 100644
+--- a/lib/cu_cp/up_resource_manager/up_resource_manager_impl.h
++++ b/lib/cu_cp/up_resource_manager/up_resource_manager_impl.h
+@@ -2,6 +2,8 @@
+  *
+  * Copyright 2021-2025 Software Radio Systems Limited
+  *
++ * Modified by openMCX, 2026 (MCX N5 QoS): see the openMCX tutorial/04-mcx-over-srsran-5g/srsran/NOTICE.
++ *
+  * This file is part of srsRAN.
+  *
+  * srsRAN is free software: you can redistribute it and/or modify
+diff --git a/lib/ngap/ngap_asn1_converters.h b/lib/ngap/ngap_asn1_converters.h
+index e124be0..ab3fe58 100644
+--- a/lib/ngap/ngap_asn1_converters.h
++++ b/lib/ngap/ngap_asn1_converters.h
+@@ -2,6 +2,8 @@
+  *
+  * Copyright 2021-2025 Software Radio Systems Limited
+  *
++ * Modified by openMCX, 2026 (MCX N5 QoS): see the openMCX tutorial/04-mcx-over-srsran-5g/srsran/NOTICE.
++ *
+  * This file is part of srsRAN.
+  *
+  * srsRAN is free software: you can redistribute it and/or modify
+diff --git a/lib/ngap/procedures/ngap_pdu_session_resource_modify_procedure.cpp b/lib/ngap/procedures/ngap_pdu_session_resource_modify_procedure.cpp
+index 5e8658c..6cdf68f 100644
+--- a/lib/ngap/procedures/ngap_pdu_session_resource_modify_procedure.cpp
++++ b/lib/ngap/procedures/ngap_pdu_session_resource_modify_procedure.cpp
+@@ -2,6 +2,8 @@
+  *
+  * Copyright 2021-2025 Software Radio Systems Limited
+  *
++ * Modified by openMCX, 2026 (MCX N5 QoS): see the openMCX tutorial/04-mcx-over-srsran-5g/srsran/NOTICE.
++ *
+  * This file is part of srsRAN.
+  *
+  * srsRAN is free software: you can redistribute it and/or modify
+-- 
+2.53.0
+

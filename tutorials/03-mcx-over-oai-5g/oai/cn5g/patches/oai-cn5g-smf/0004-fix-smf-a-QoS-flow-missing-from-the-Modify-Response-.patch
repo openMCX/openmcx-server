@@ -1,0 +1,167 @@
+From 13b3ff766293e925df8ebc037cc4c4c041dfe16d Mon Sep 17 00:00:00 2001
+From: Rohan <kharade@eurecom.fr>
+Date: Mon, 5 Oct 2026 06:11:18 +0200
+Subject: [PATCH] fix(smf): a QoS flow missing from the Modify Response's added
+ flows is refused
+
+A PCF-initiated QoS flow was released only when the NG-RAN listed it in the
+QoS Flow Failed to Add or Modify List of the PDU Session Resource Modify
+Response Transfer. The QoS Flow Add or Modify Response List of the same
+transfer lists the flows the NG-RAN did add (TS 38.413 8.2.3.2, 9.3.4.2): a
+pending flow in neither list was not added either. srsRAN (25.10), which cannot
+add a DRB for it, leaves the flow out of both lists and reports the session in
+the PDU Session Resource Modify List and in the Failed to Modify List at once;
+the SMF took the first answer as a success and the UPF kept marking the traffic
+with a QFI the NG-RAN had no bearer for.
+
+- A pending flow that is in the Failed list, or missing from the Response
+  List, is released at the UPF and reported to the PCF (as before for the
+  Failed list); whichever of the two answers comes first releases it.
+- Also when the response carries a new N3 tunnel (logged; the release goes
+  first).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013UXVKWJNq3UC36dmrQjjV3
+---
+ src/smf_app/smf_context.cpp | 100 +++++++++++++++++++++++++-----------
+ 1 file changed, 70 insertions(+), 30 deletions(-)
+
+diff --git a/src/smf_app/smf_context.cpp b/src/smf_app/smf_context.cpp
+index c0bf155a..7f54ef3c 100644
+--- a/src/smf_app/smf_context.cpp
++++ b/src/smf_app/smf_context.cpp
+@@ -14,6 +14,8 @@
+ #include "3gpp_29.502.h"
+ #include "3gpp_commons.h"
+ #include "Cause.hpp"
++#include <set>
++
+ #include "EventNotification.h"
+ #include "PduSessionModificationCommandReject.hpp"
+ #include "PduSessionModificationRequest.hpp"
+@@ -2056,32 +2058,51 @@ bool smf_context::handle_an_release(
+ }
+ 
+ //------------------------------------------------------------------------------
+-// The QoS Flow Failed to Add or Modify List of a PDU Session Resource Modify
+-// Response Transfer (TS 38.413 9.3.4.2): QFI and cause of each QoS flow
+-static std::vector<std::pair<uint8_t, std::string>>
+-failed_qos_flows_of_modify_response(const std::string& n2_sm_information) {
+-  std::vector<std::pair<uint8_t, std::string>> failed;
++// The QoS flow lists of a PDU Session Resource Modify Response Transfer
++// (TS 38.413 9.3.4.2): the QoS flows the NG-RAN added or modified (QoS Flow
++// Add or Modify Response List) and those it could not, with their cause (QoS
++// Flow Failed to Add or Modify List)
++struct modify_response_flows {
++  bool decoded = false;
++  std::set<uint8_t> added;
++  std::map<uint8_t, std::string> failed;
++};
++
++static modify_response_flows flows_of_modify_response(
++    const std::string& n2_sm_information) {
++  modify_response_flows flows;
+   auto decoded =
+       std::make_shared<oai::ngap::PduSessionResourceModifyResponseTransfer>();
+   if (smf_n2::get_instance().decode_n2_sm_information(
+           decoded, n2_sm_information) == KEncodeDecodeError)
+-    return failed;
+-  std::optional<oai::ngap::QosFlowListWithCause> list = {};
+-  decoded->getQosFlowFailedToAddOrModifyList(list);
+-  if (!list.has_value()) return failed;
+-  std::vector<oai::ngap::QosFlowWithCauseItem> items;
+-  list.value().get(items);
+-  for (const auto& item : items) {
+-    oai::ngap::QosFlowIdentifier qfi = {};
+-    oai::ngap::Cause cause           = {};
+-    item.get(qfi, cause);
+-    failed.emplace_back(
+-        static_cast<uint8_t>(qfi.get()),
+-        fmt::format(
+-            "NGAP cause group {} value {}",
+-            static_cast<int>(cause.getChoiceOfCause()), cause.get()));
+-  }
+-  return failed;
++    return flows;
++  flows.decoded = true;
++  std::optional<oai::ngap::QosFlowAddOrModifyResponseList> added = {};
++  decoded->getQosFlowAddOrModifyRequestList(added);  // the Response List
++  if (added.has_value()) {
++    std::vector<oai::ngap::QosFlowAddOrModifyResponseItem> items;
++    added.value().get(items);
++    for (const auto& item : items) {
++      oai::ngap::QosFlowIdentifier qfi = {};
++      item.getQosFlowIdentifier(qfi);
++      flows.added.insert(static_cast<uint8_t>(qfi.get()));
++    }
++  }
++  std::optional<oai::ngap::QosFlowListWithCause> failed = {};
++  decoded->getQosFlowFailedToAddOrModifyList(failed);
++  if (failed.has_value()) {
++    std::vector<oai::ngap::QosFlowWithCauseItem> items;
++    failed.value().get(items);
++    for (const auto& item : items) {
++      oai::ngap::QosFlowIdentifier qfi = {};
++      oai::ngap::Cause cause           = {};
++      item.get(qfi, cause);
++      flows.failed[static_cast<uint8_t>(qfi.get())] = fmt::format(
++          "NGAP cause group {} value {}",
++          static_cast<int>(cause.getChoiceOfCause()), cause.get());
++    }
++  }
++  return flows;
+ }
+ 
+ //-------------------------------------------------------------------------------------
+@@ -2366,21 +2387,40 @@ bool smf_context::handle_pdu_session_update_sm_context_request(
+             update_upf = true;
+           }
+         }
+-        // QoS flows of a PCF-initiated modification that the NG-RAN could not
+-        // add (QoS Flow Failed to Add or Modify List, TS 38.413 9.3.4.2)
++        // QoS flows of a PCF-initiated modification the NG-RAN did not add: a
++        // flow in the QoS Flow Failed to Add or Modify List, or one missing
++        // from the QoS Flow Add or Modify Response List, which lists the flows
++        // that were added (TS 38.413 8.2.3.2, 9.3.4.2). Some NG-RANs (srsRAN)
++        // leave a flow out of both and report the session in the PDU Session
++        // Resource Failed to Modify List as well; whichever answer comes
++        // first releases the flow, the other finds nothing pending.
+         {
+           auto pending = sp->get_session_handler()->take_pending_flows();
+           std::map<std::string, uint8_t> failed;
+           std::string cause;
+-          for (const auto& [qfi, why] :
+-               failed_qos_flows_of_modify_response(n2_sm_information)) {
+-            for (const auto& [id, pending_qfi] : pending)
+-              if (pending_qfi == qfi) failed[id] = qfi;
+-            cause = why;
++          if (!pending.empty()) {
++            const auto flows = flows_of_modify_response(n2_sm_information);
++            for (const auto& [id, qfi] : pending) {
++              if (const auto f = flows.failed.find(qfi);
++                  f != flows.failed.end()) {
++                failed[id] = qfi;
++                cause      = f->second;
++              } else if (flows.decoded && !flows.added.count(qfi)) {
++                failed[id] = qfi;
++                if (cause.empty())
++                  cause = "not in the QoS Flow Add or Modify Response List";
++              }
++            }
+           }
+-          if (!failed.empty() && !update_upf)
++          if (!failed.empty()) {
++            if (update_upf)
++              Logger::smf_app().warn(
++                  "PDU Session Resource Modify Response with a new N3 tunnel "
++                  "and refused QoS flows: the refused flows are released "
++                  "first, the tunnel change is not applied");
+             return handle_ran_rejected_qos_flows(
+                 smreq, sm_context_resp_pending, sp, failed, cause);
++          }
+         }
+       } break;
+ 
+-- 
+2.53.0
+

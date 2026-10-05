@@ -1,0 +1,49 @@
+openMCX modifications of OpenAirInterface CN5G
+==============================================
+
+This directory and the images openmcx/oai-amf:mcx-n5, openmcx/oai-pcf:mcx-n5, openmcx/oai-smf:mcx-n5 and
+openmcx/oai-upf:mcx-n5 contain OAI CN5G network functions (OpenAirInterface Software Alliance, https://gitlab.eurecom.fr/oai/cn5g), version v2.2.1,
+modified by openMCX for tutorial 3 (TS 29.514 Npcf_PolicyAuthorization from the MCPTT server as AF).
+
+License
+-------
+OAI CN5G is distributed under the Collaborative Standards Software License v1.0 (CSSL), included as LICENSE in this
+directory and in each image (/usr/share/doc/openmcx-oai/LICENSE), and at https://openairinterface.org/oai-cssl/. The
+modifications (the patches in this directory) are distributed under the same license. The rest of the
+openmcx-server repository is under its own license (the repository's LICENSE); this directory is not.
+
+Patents (CSSL section 3): the patent license granted with the software covers study, testing and research purposes
+only (section 3.1). Any other use, for example commercial deployment, requires a license of the Essential Patents on
+FRAND terms from the Contributors and/or the Licensor (section 3.2).
+
+Modifications (CSSL section 5.2)
+--------------------------------
+Each modified file carries the notice "Modified by openMCX, 2026 (MCX N5 QoS)". The changes, as patches against
+v2.2.1:
+
+  patches/oai-cn5g-amf/   PDU Session Resource Modify Response: the failed PDU sessions (TS 38.413 9.2.1.6) go to
+                          the SMF (PDU_RES_MOD_FAIL); the IEs are accepted whatever criticality the gNB sends
+  patches/oai-cn5g-pcf/   N5 policy authorization: media components to PCC rules and QoS decisions (5QI 65 GBR),
+                          PATCH and delete of app sessions, SmPolicyUpdateNotify; rule reports of the SMF notify
+                          the AF (FAILED_RESOURCES_ALLOCATION)
+  patches/oai-cn5g-smf/   PCF-initiated PDU session modification (TS 23.502 clause 4.3.3.2): QoS flow setup, change
+                          and release; QoS flows the RAN refuses are released and reported (RES_ALLO_FAIL)
+  patches/oai-cn5g-upf/   simple-switch keeps all PDRs of a session in the UL/DL lookups
+
+Corresponding source
+--------------------
+The complete source of each image is the upstream repository at tag v2.2.1
+(https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-<nf>, with its submodules) with the patches above applied:
+build-images.sh recreates it and builds the images from it. The tag's commit of each network function is pinned
+(README.md); each image names it, the submodule commits and the patches' SHA-256 in
+/usr/share/doc/openmcx-oai/SOURCE. This also provides the source of the third-party
+components the images contain, including those under the GPL-2.0 (UPF), the LGPL-2.1 or BSD-2-Clause, the MIT,
+BSD-3-Clause and Apache-2.0 licenses.
+
+Third-party notices
+-------------------
+Each image carries the network function's own NOTICE (/usr/share/doc/openmcx-oai/NOTICE.oai) and license texts
+(/usr/share/doc/openmcx-oai/LICENSES/), unchanged from v2.2.1.
+
+The other network functions of tutorial 3 (AUSF, NRF, UDM, UDR) and the RAN (gNB, nr-UE) are OAI's unmodified
+images (oaisoftwarealliance/*), under their own licenses.

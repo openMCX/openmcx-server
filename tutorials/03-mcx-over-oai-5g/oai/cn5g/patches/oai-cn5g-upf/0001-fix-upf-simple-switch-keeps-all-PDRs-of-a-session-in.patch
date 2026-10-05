@@ -1,0 +1,255 @@
+From 8ba0e49c7c89ddd5cb64a595b6a3cd601e981236 Mon Sep 17 00:00:00 2001
+From: Abhishek <a.dandekar@tu.berlin>
+Date: Thu, 1 Oct 2026 11:16:13 +0200
+Subject: [PATCH] fix(upf): simple-switch keeps all PDRs of a session in the
+ UL/DL lookups
+
+The DL lookup by UE IP held only the last created PDR ("TODO: Dirty fix"),
+and Remove PDR (PFCP Session Modification) left removed PDRs in the UL/DL
+lookups. With a dynamic QoS flow added and then removed by a PCF-initiated
+PDU Session Modification (TS 23.502 4.3.3.2), downlink traffic to the UE was
+then matched to the removed PDR and dropped.
+
+- add: (re)insert the PDR in the lookup list, ordered by precedence, replacing
+  an entry for the same session and PDR ID (UL and DL)
+- Remove PDR: drop that PDR from the UL/DL lookups; erase the entry only when
+  the list becomes empty
+- lookup lists are replaced, not edited in place
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/upf_app/simpleswitch/pfcp_session.cpp |  16 +++
+ src/upf_app/simpleswitch/pfcp_switch.cpp  | 159 ++++++++++++----------
+ src/upf_app/simpleswitch/pfcp_switch.hpp  |   3 +
+ 3 files changed, 105 insertions(+), 73 deletions(-)
+
+diff --git a/src/upf_app/simpleswitch/pfcp_session.cpp b/src/upf_app/simpleswitch/pfcp_session.cpp
+index bee799f..436d334 100644
+--- a/src/upf_app/simpleswitch/pfcp_session.cpp
++++ b/src/upf_app/simpleswitch/pfcp_session.cpp
+@@ -100,6 +100,22 @@ bool pfcp_session::remove(const pfcp::pdr_id_t& pdr_id, uint8_t& cause_value) {
+     if ((*it)->pdr_id.rule_id == pdr_id.rule_id) {
+       Logger::upf_n4().info(
+           "pfcp_session::remove(pdr) seid " SEID_FMT " ", seid);
++      // Also drop it from the switch lookups: otherwise a removed DL PDR keeps
++      // matching the UE IP and its (removed) FAR blackholes downlink traffic.
++      const auto& pdi = (*it)->pdi;
++      if (pdi.first && pdi.second.source_interface.first) {
++        const auto iface = pdi.second.source_interface.second.interface_value;
++        if (iface == INTERFACE_VALUE_ACCESS && pdi.second.local_fteid.first) {
++          pfcp_switch_inst->remove_pfcp_ul_pdr_by_up_teid(
++              pdi.second.local_fteid.second.teid, **it);
++        } else if (
++            iface == INTERFACE_VALUE_CORE && pdi.second.ue_ip_address.first &&
++            pdi.second.ue_ip_address.second.v4) {
++          pfcp_switch_inst->remove_pfcp_dl_pdr_by_ue_ip(
++              be32toh(pdi.second.ue_ip_address.second.ipv4_address.s_addr),
++              **it);
++        }
++      }
+       pdrs.erase(it);
+       return true;
+     }
+diff --git a/src/upf_app/simpleswitch/pfcp_switch.cpp b/src/upf_app/simpleswitch/pfcp_switch.cpp
+index 28f2ac8..389d4b0 100644
+--- a/src/upf_app/simpleswitch/pfcp_switch.cpp
++++ b/src/upf_app/simpleswitch/pfcp_switch.cpp
+@@ -551,37 +551,58 @@ void pfcp_switch::remove_pfcp_session(const pfcp::fseid_t& cp_fseid) {
+ }
+ 
+ //------------------------------------------------------------------------------
++namespace {
++using pdr_list_t = std::vector<std::shared_ptr<pfcp::pfcp_pdr>>;
++
++bool same_pdr(const pfcp::pfcp_pdr& a, const pfcp::pfcp_pdr& b) {
++  if (&a == &b) return true;
++  uint64_t sa = 0, sb = 0;
++  a.get(sa);
++  b.get(sb);
++  return sa == sb && a.pdr_id.rule_id == b.pdr_id.rule_id;
++}
++
++// Copy of a lookup list with "pdr" (re)inserted: any entry for the same session
++// and PDR ID is replaced, and the list stays ordered by precedence (lowest value
++// first), which is the order the packet path evaluates PDRs in (TS 29.244 5.2.1).
++std::shared_ptr<pdr_list_t> with_pdr(
++    const std::shared_ptr<pdr_list_t>& current,
++    const std::shared_ptr<pfcp::pfcp_pdr>& pdr) {
++  auto pdrs = std::make_shared<pdr_list_t>();
++  if (current)
++    for (const auto& p : *current)
++      if (!same_pdr(*p, *pdr)) pdrs->push_back(p);
++  auto pos = std::upper_bound(
++      pdrs->begin(), pdrs->end(), pdr,
++      [](const std::shared_ptr<pfcp::pfcp_pdr>& a,
++         const std::shared_ptr<pfcp::pfcp_pdr>& b) { return *a < *b; });
++  pdrs->insert(pos, pdr);
++  return pdrs;
++}
++
++// Copy of a lookup list without "pdr" (same session and PDR ID).
++std::shared_ptr<pdr_list_t> without_pdr(
++    const std::shared_ptr<pdr_list_t>& current, const pfcp::pfcp_pdr& pdr) {
++  auto pdrs = std::make_shared<pdr_list_t>();
++  if (current)
++    for (const auto& p : *current)
++      if (!same_pdr(*p, pdr)) pdrs->push_back(p);
++  return pdrs;
++}
++}  // namespace
++
++//------------------------------------------------------------------------------
++// Lookup lists are replaced, never edited in place, so that the packet path,
++// which holds its own reference to a list, never sees one being modified.
+ void pfcp_switch::add_pfcp_ul_pdr_by_up_teid(
+     const teid_t teid, std::shared_ptr<pfcp::pfcp_pdr>& pdr) {
+-  folly::AtomicHashMap<
+-      teid_t, std::shared_ptr<std::vector<std::shared_ptr<pfcp::pfcp_pdr>>>>::
+-      const_iterator pit = ul_n3_teid2pfcp_pdr.find(teid);
+-  if (pit == ul_n3_teid2pfcp_pdr.end()) {
+-    std::shared_ptr<std::vector<std::shared_ptr<pfcp::pfcp_pdr>>> pdrs =
+-        std::shared_ptr<std::vector<std::shared_ptr<pfcp::pfcp_pdr>>>(
+-            new std::vector<std::shared_ptr<pfcp::pfcp_pdr>>());
+-    pdrs->push_back(pdr);
+-
+-    std::pair<
+-        teid_t, std::shared_ptr<std::vector<std::shared_ptr<pfcp::pfcp_pdr>>>>
+-        entry(teid, pdrs);
+-    // Logger::pfcp_switch().info( "add_pfcp_ul_pdr_by_up_teid tunnel " TEID_FMT
+-    // " ", teid);
+-    ul_n3_teid2pfcp_pdr.insert(entry);
+-  } else {
+-    // sort by precedence
+-    // const std::shared_ptr<std::vector<std::shared_ptr<pfcp::pfcp_pdr>>>&
+-    // spdrs = pit->second;
+-    std::vector<std::shared_ptr<pfcp::pfcp_pdr>>* pdrs = pit->second.get();
+-    for (std::vector<std::shared_ptr<pfcp::pfcp_pdr>>::iterator it =
+-             pdrs->begin();
+-         it < pdrs->end(); ++it) {
+-      if (*(it->get()) < *(pdr.get())) {
+-        pit->second->insert(it, pdr);
+-        return;
+-      }
+-    }
++  std::shared_ptr<pdr_list_t> current = {};
++  auto pit = ul_n3_teid2pfcp_pdr.find(teid);
++  if (pit != ul_n3_teid2pfcp_pdr.end()) {
++    current = pit->second;
++    ul_n3_teid2pfcp_pdr.erase(teid);
+   }
++  ul_n3_teid2pfcp_pdr.insert(std::make_pair(teid, with_pdr(current, pdr)));
+ }
+ 
+ //------------------------------------------------------------------------------
+@@ -590,57 +611,49 @@ void pfcp_switch::remove_pfcp_ul_pdrs_by_up_teid(const teid_t teid) {
+ }
+ 
+ //------------------------------------------------------------------------------
++void pfcp_switch::remove_pfcp_ul_pdr_by_up_teid(
++    const teid_t teid, const pfcp::pfcp_pdr& pdr) {
++  auto pit = ul_n3_teid2pfcp_pdr.find(teid);
++  if (pit == ul_n3_teid2pfcp_pdr.end()) return;
++  auto pdrs = without_pdr(pit->second, pdr);
++  ul_n3_teid2pfcp_pdr.erase(teid);
++  if (!pdrs->empty()) ul_n3_teid2pfcp_pdr.insert(std::make_pair(teid, pdrs));
++}
++
++//------------------------------------------------------------------------------
++// A session may have several DL PDRs for one UE IP (the default QoS flow and
++// dynamic QoS flows added by PDU Session Modification, TS 23.502 4.3.3.2): keep
++// all of them, instead of only the last one created.
+ void pfcp_switch::add_pfcp_dl_pdr_by_ue_ip(
+     const uint32_t ue_ip, std::shared_ptr<pfcp::pfcp_pdr>& pdr) {
+-  folly::AtomicHashMap<
+-      uint32_t, std::shared_ptr<std::vector<std::shared_ptr<pfcp::pfcp_pdr>>>>::
+-      const_iterator pit = ue_ipv4_hbo2pfcp_pdr.find(ue_ip);
+-
+-  if (pit == ue_ipv4_hbo2pfcp_pdr.end()) {
+-    std::shared_ptr<std::vector<std::shared_ptr<pfcp::pfcp_pdr>>> pdrs =
+-        std::shared_ptr<std::vector<std::shared_ptr<pfcp::pfcp_pdr>>>(
+-            new std::vector<std::shared_ptr<pfcp::pfcp_pdr>>());
+-    pdrs->push_back(pdr);
+-    std::pair<
+-        uint32_t, std::shared_ptr<std::vector<std::shared_ptr<pfcp::pfcp_pdr>>>>
+-        entry(ue_ip, pdrs);
+-    ue_ipv4_hbo2pfcp_pdr.insert(entry);
+-    if (!upf_cfg.enable_bpf_datapath && upf_cfg.enable_fr &&
+-        pdr->pdi.second.framed_route.first) {
+-      for (const auto& item : pdr->pdi.second.framed_route.second) {
+-        Logger::pfcp_switch().debug("framed routing ip: %s", item.framed_route);
+-        fr->addFramedRoute(ue_ip, item);
+-      }
+-    }
+-    // Logger::pfcp_switch().info( "add_pfcp_dl_pdr_by_ue_ip UE IP %8x", ue_ip);
+-  } else {
+-    // TODO: Dirty fix
++  std::shared_ptr<pdr_list_t> current = {};
++  auto pit = ue_ipv4_hbo2pfcp_pdr.find(ue_ip);
++  if (pit != ue_ipv4_hbo2pfcp_pdr.end()) {
++    current = pit->second;
+     ue_ipv4_hbo2pfcp_pdr.erase(ue_ip);
+-    std::shared_ptr<std::vector<std::shared_ptr<pfcp::pfcp_pdr>>> pdrs =
+-        std::shared_ptr<std::vector<std::shared_ptr<pfcp::pfcp_pdr>>>(
+-            new std::vector<std::shared_ptr<pfcp::pfcp_pdr>>());
+-    pdrs->push_back(pdr);
+-    std::pair<
+-        uint32_t, std::shared_ptr<std::vector<std::shared_ptr<pfcp::pfcp_pdr>>>>
+-        entry(ue_ip, pdrs);
+-    ue_ipv4_hbo2pfcp_pdr.insert(entry);
+-
+-    /*
+-    // sort by precedence
+-    // const std::shared_ptr<std::vector<std::shared_ptr<pfcp::pfcp_pdr>>>&
+-    // spdrs = pit->second;
+-    std::vector<std::shared_ptr<pfcp::pfcp_pdr>>* pdrs = pit->second.get();
+-    for (std::vector<std::shared_ptr<pfcp::pfcp_pdr>>::iterator it =
+-             pdrs->begin();
+-         it < pdrs->end(); ++it) {
+-      if (*(it->get()) < *(pdr.get())) {
+-        pit->second->insert(it, pdr);
+-        return;
+-      }
++  } else if (
++      !upf_cfg.enable_bpf_datapath && upf_cfg.enable_fr &&
++      pdr->pdi.second.framed_route.first) {
++    for (const auto& item : pdr->pdi.second.framed_route.second) {
++      Logger::pfcp_switch().debug("framed routing ip: %s", item.framed_route);
++      fr->addFramedRoute(ue_ip, item);
+     }
++  }
++  ue_ipv4_hbo2pfcp_pdr.insert(std::make_pair(ue_ip, with_pdr(current, pdr)));
++}
+ 
+-*/
++//------------------------------------------------------------------------------
++void pfcp_switch::remove_pfcp_dl_pdr_by_ue_ip(
++    const uint32_t ue_ip, const pfcp::pfcp_pdr& pdr) {
++  auto pit = ue_ipv4_hbo2pfcp_pdr.find(ue_ip);
++  if (pit == ue_ipv4_hbo2pfcp_pdr.end()) return;
++  auto pdrs = without_pdr(pit->second, pdr);
++  if (pdrs->empty()) {
++    remove_pfcp_dl_pdrs_by_ue_ip(ue_ip);
++    return;
+   }
++  ue_ipv4_hbo2pfcp_pdr.erase(ue_ip);
++  ue_ipv4_hbo2pfcp_pdr.insert(std::make_pair(ue_ip, pdrs));
+ }
+ 
+ //------------------------------------------------------------------------------
+diff --git a/src/upf_app/simpleswitch/pfcp_switch.hpp b/src/upf_app/simpleswitch/pfcp_switch.hpp
+index b0f1929..dea8053 100644
+--- a/src/upf_app/simpleswitch/pfcp_switch.hpp
++++ b/src/upf_app/simpleswitch/pfcp_switch.hpp
+@@ -199,6 +199,9 @@ class pfcp_switch {
+   void remove_pfcp_session(const pfcp::fseid_t& cp_fseid);
+   void remove_pfcp_ul_pdrs_by_up_teid(const teid_t);
+   void remove_pfcp_dl_pdrs_by_ue_ip(const uint32_t);
++  // Remove one PDR (Remove PDR of a PFCP Session Modification) from the lookups.
++  void remove_pfcp_ul_pdr_by_up_teid(const teid_t, const pfcp::pfcp_pdr&);
++  void remove_pfcp_dl_pdr_by_ue_ip(const uint32_t, const pfcp::pfcp_pdr&);
+ 
+   std::string to_string() const;
+ };
+-- 
+2.43.0
+

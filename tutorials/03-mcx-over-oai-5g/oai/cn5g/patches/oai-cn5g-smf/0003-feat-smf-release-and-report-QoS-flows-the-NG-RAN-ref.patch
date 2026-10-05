@@ -1,0 +1,381 @@
+From bedd6b2c30e2db2f5e85329638a6af18ea01ffb7 Mon Sep 17 00:00:00 2001
+From: Rohan <kharade@eurecom.fr>
+Date: Mon, 5 Oct 2026 02:43:03 +0200
+Subject: [PATCH] feat(smf): release and report QoS flows the NG-RAN refuses
+
+A PCF-initiated PDU Session Modification (TS 23.502 4.3.3.2) adds the QoS
+flows at the UPF before the NG-RAN is asked; the NG-RAN may refuse them in its
+PDU Session Resource Modify Response (step 4): the whole session (Modify
+Unsuccessful Transfer, PDU_RES_MOD_FAIL) or single flows (QoS Flow Failed to
+Add or Modify List of the Modify Response Transfer, TS 38.413 9.3.4.2). Until
+now the SMF ignored both and the UPF kept marking the traffic with a QFI the
+NG-RAN has no bearer for: it was dropped (e.g. srsUE, which supports one QoS
+flow only).
+
+- The flows added by a PCF-initiated modification stay pending until the
+  NG-RAN answers.
+- Refused flows are removed at the UPF (N4 Session Modification: Remove
+  PDR/FAR/QER) without N1/N2, their QFI and IDs freed: the traffic is back on
+  the session's QoS flows.
+- Their PCC rules are reported to the PCF in Npcf_SMPolicyControl_Update
+  (ruleReports: ruleStatus INACTIVE, failureCode RES_ALLO_FAIL; TS 29.512
+  4.2.4.1, 5.6.2.7) and removed from the SMF's decision.
+- The AMF gets 204 No Content once the UPF has removed them.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013UXVKWJNq3UC36dmrQjjV3
+---
+ src/smf_app/session_handler.cpp |  15 +++
+ src/smf_app/session_handler.hpp |   7 ++
+ src/smf_app/smf_context.cpp     | 161 ++++++++++++++++++++++++++++++--
+ src/smf_app/smf_context.hpp     |  23 +++++
+ src/smf_app/smf_procedure.cpp   |  16 ++++
+ src/smf_app/smf_procedure.hpp   |   6 ++
+ 6 files changed, 222 insertions(+), 6 deletions(-)
+
+diff --git a/src/smf_app/session_handler.cpp b/src/smf_app/session_handler.cpp
+index 5ef21641..446d8393 100644
+--- a/src/smf_app/session_handler.cpp
++++ b/src/smf_app/session_handler.cpp
+@@ -707,6 +707,21 @@ std::map<std::string, uint8_t> session_handler::get_dynamic_flows() {
+   return m_dynamic_flows;
+ }
+ 
++//------------------------------------------------------------------------------
++void session_handler::set_pending_flows(
++    const std::map<std::string, uint8_t>& flows) {
++  std::unique_lock lock(m_session_handler_mutex);
++  m_pending_flows = flows;
++}
++
++//------------------------------------------------------------------------------
++std::map<std::string, uint8_t> session_handler::take_pending_flows() {
++  std::unique_lock lock(m_session_handler_mutex);
++  auto flows = std::move(m_pending_flows);
++  m_pending_flows.clear();
++  return flows;
++}
++
+ //------------------------------------------------------------------------------
+ std::vector<std::shared_ptr<qos_upf_edge>>
+ session_handler::get_access_edges_for_qfi(uint8_t qfi) {
+diff --git a/src/smf_app/session_handler.hpp b/src/smf_app/session_handler.hpp
+index 3926134b..d9e4dfe0 100644
+--- a/src/smf_app/session_handler.hpp
++++ b/src/smf_app/session_handler.hpp
+@@ -190,6 +190,12 @@ class session_handler {
+   void remove_dynamic_flow(const std::string& pcc_rule_id);
+   std::map<std::string, uint8_t> get_dynamic_flows();
+ 
++  // Dynamic QoS flows sent to the NG-RAN and not confirmed yet (PDU Session
++  // Resource Modify Request, TS 23.502 4.3.3.2 step 3): the NG-RAN may refuse
++  // them in its response (step 4)
++  void set_pending_flows(const std::map<std::string, uint8_t>& flows);
++  std::map<std::string, uint8_t> take_pending_flows();
++
+   /**
+    * @return all the access (N3) edges carrying the given QFI
+    */
+@@ -216,6 +222,7 @@ class session_handler {
+ 
+  private:
+   std::map<std::string, uint8_t> m_dynamic_flows;  // PCC rule ID <-> QFI
++  std::map<std::string, uint8_t> m_pending_flows;  // PCC rule ID <-> QFI
+ 
+   std::shared_ptr<upf_graph> m_session_graph;
+   std::vector<pfcp::qfi_t> m_qfis_to_be_updated;
+diff --git a/src/smf_app/smf_context.cpp b/src/smf_app/smf_context.cpp
+index 1e889f17..c0bf155a 100644
+--- a/src/smf_app/smf_context.cpp
++++ b/src/smf_app/smf_context.cpp
+@@ -17,6 +17,8 @@
+ #include "EventNotification.h"
+ #include "PduSessionModificationCommandReject.hpp"
+ #include "PduSessionModificationRequest.hpp"
++#include "PduSessionResourceModifyResponseTransfer.hpp"
++#include "PduSessionResourceModifyUnsuccessfulTransfer.hpp"
+ #include "PduSessionResourceSetupResponseTransfer.hpp"
+ #include "PduSessionType.h"
+ #include "PlmnId.h"
+@@ -2053,6 +2055,35 @@ bool smf_context::handle_an_release(
+   return true;
+ }
+ 
++//------------------------------------------------------------------------------
++// The QoS Flow Failed to Add or Modify List of a PDU Session Resource Modify
++// Response Transfer (TS 38.413 9.3.4.2): QFI and cause of each QoS flow
++static std::vector<std::pair<uint8_t, std::string>>
++failed_qos_flows_of_modify_response(const std::string& n2_sm_information) {
++  std::vector<std::pair<uint8_t, std::string>> failed;
++  auto decoded =
++      std::make_shared<oai::ngap::PduSessionResourceModifyResponseTransfer>();
++  if (smf_n2::get_instance().decode_n2_sm_information(
++          decoded, n2_sm_information) == KEncodeDecodeError)
++    return failed;
++  std::optional<oai::ngap::QosFlowListWithCause> list = {};
++  decoded->getQosFlowFailedToAddOrModifyList(list);
++  if (!list.has_value()) return failed;
++  std::vector<oai::ngap::QosFlowWithCauseItem> items;
++  list.value().get(items);
++  for (const auto& item : items) {
++    oai::ngap::QosFlowIdentifier qfi = {};
++    oai::ngap::Cause cause           = {};
++    item.get(qfi, cause);
++    failed.emplace_back(
++        static_cast<uint8_t>(qfi.get()),
++        fmt::format(
++            "NGAP cause group {} value {}",
++            static_cast<int>(cause.getChoiceOfCause()), cause.get()));
++  }
++  return failed;
++}
++
+ //-------------------------------------------------------------------------------------
+ bool smf_context::handle_pdu_session_update_sm_context_request(
+     std::shared_ptr<itti_sbi_update_sm_context_request> smreq) {
+@@ -2335,13 +2366,48 @@ bool smf_context::handle_pdu_session_update_sm_context_request(
+             update_upf = true;
+           }
+         }
++        // QoS flows of a PCF-initiated modification that the NG-RAN could not
++        // add (QoS Flow Failed to Add or Modify List, TS 38.413 9.3.4.2)
++        {
++          auto pending = sp->get_session_handler()->take_pending_flows();
++          std::map<std::string, uint8_t> failed;
++          std::string cause;
++          for (const auto& [qfi, why] :
++               failed_qos_flows_of_modify_response(n2_sm_information)) {
++            for (const auto& [id, pending_qfi] : pending)
++              if (pending_qfi == qfi) failed[id] = qfi;
++            cause = why;
++          }
++          if (!failed.empty() && !update_upf)
++            return handle_ran_rejected_qos_flows(
++                smreq, sm_context_resp_pending, sp, failed, cause);
++        }
+       } break;
+ 
+       case n2_sm_info_type_e::PDU_RES_MOD_FAIL: {
+-        // PDU Session Modification procedure
+-
+-        Logger::smf_app().info("PDU_RES_MOD_FAIL");
+-        // TODO: To be completed
++        // PDU Session Resource Modify Unsuccessful Transfer (TS 38.413
++        // 9.3.4.8): the NG-RAN modified nothing in this PDU session, the QoS
++        // flows it was asked to add are refused (TS 23.502 4.3.3.2 step 4)
++        std::string cause = "cause unknown";
++        {
++          auto decoded = std::make_shared<
++              oai::ngap::PduSessionResourceModifyUnSuccessfulTransfer>();
++          std::string data = n2_sm_information;
++          if (decoded->decode(
++                  reinterpret_cast<uint8_t*>(data.data()), data.size()))
++            cause = fmt::format(
++                "NGAP cause group {} value {}", decoded->getChoiceOfCause(),
++                decoded->getCause());
++        }
++        Logger::smf_app().warn(
++            "PDU Session Resource Modify Unsuccessful Transfer (%s)",
++            cause.c_str());
++        auto pending = sp->get_session_handler()->take_pending_flows();
++        if (!pending.empty())
++          return handle_ran_rejected_qos_flows(
++              smreq, sm_context_resp_pending, sp, pending, cause);
++        sm_context_resp_pending->res.set_http_code(
++            http_status_code::NO_CONTENT);
+       } break;
+ 
+       case n2_sm_info_type_e::PDU_RES_REL_RSP: {
+@@ -4634,9 +4700,11 @@ void smf_context::send_pdu_session_update_response(
+       case session_management_procedures_type_e::
+           PDU_SESSION_MODIFICATION_PCF_INITIATED: {
+         // N1N2MessageTransfer already triggered by the procedure, just answer
+-        // the SmPolicyUpdateNotification
++        // the SmPolicyUpdateNotification (200), or the AMF (204) after QoS
++        // flows refused by the NG-RAN were released
+         Logger::smf_app().info("PDU Session Modification PCF-initiated");
+-        resp->res.set_http_code(http_status_code::OK);
++        if (resp->res.get_http_code() != http_status_code::NO_CONTENT)
++          resp->res.set_http_code(http_status_code::OK);
+       } break;
+ 
+         // PDU Session Modification UE-initiated (Step 3)
+@@ -5224,6 +5292,87 @@ bool smf_context::handle_pcf_initiated_policy_update(
+   return true;
+ }
+ 
++//------------------------------------------------------------------------------
++bool smf_context::handle_ran_rejected_qos_flows(
++    std::shared_ptr<itti_sbi_update_sm_context_request>& smreq,
++    std::shared_ptr<itti_sbi_update_sm_context_response>& sm_context_resp,
++    std::shared_ptr<smf_pdu_session>& sp,
++    const std::map<std::string, uint8_t>& failed, const std::string& cause) {
++  pcf_policy_change change;
++  for (const auto& [pcc_rule_id, qfi] : failed) {
++    Logger::smf_app().warn(
++        "NG-RAN refused QoS flow QFI %d (PCC rule %s, %s): release it at the "
++        "UPF and report the PCC rule to the PCF",
++        qfi, pcc_rule_id.c_str(), cause.c_str());
++    pcf_qos_flow_change c;
++    c.pcc_rule_id = pcc_rule_id;
++    c.qfi         = qfi;
++    change.to_release.push_back(c);
++  }
++
++  auto proc = std::make_shared<session_update_sm_context_procedure>(sp);
++  std::shared_ptr<smf_procedure> sproc = proc;
++  proc->session_procedure_type         = session_management_procedures_type_e::
++      PDU_SESSION_MODIFICATION_PCF_INITIATED;
++  proc->pcf_change   = change;
++  proc->ran_rejected = true;
++  proc->ran_cause    = cause;
++  insert_procedure(sproc);
++  if (proc->run(smreq, sm_context_resp, shared_from_this()) ==
++      smf_procedure_code::ERROR) {
++    Logger::smf_app().warn(
++        "Release of the QoS flows refused by the NG-RAN failed");
++    remove_procedure(sproc.get());
++    smf_app_inst->trigger_http_response(
++        http_status_code::INTERNAL_SERVER_ERROR, smreq->pid,
++        N11_SESSION_UPDATE_SM_CONTEXT_RESPONSE);
++  }
++  return true;
++}
++
++//------------------------------------------------------------------------------
++void smf_context::report_failed_pcc_rules(
++    const std::shared_ptr<smf_pdu_session>& sp,
++    const std::vector<pcf_qos_flow_change>& failed, const std::string& cause) {
++  if (!sp->policy_ptr || failed.empty()) return;
++
++  // The PCC rules are no longer active in this SMF
++  auto rules = sp->policy_ptr->decision.getPccRules();
++  std::vector<std::string> ids;
++  for (const auto& change : failed) {
++    rules.erase(change.pcc_rule_id);
++    ids.push_back(change.pcc_rule_id);
++  }
++  sp->policy_ptr->decision.setPccRules(rules);
++
++  nlohmann::json update = {
++      {"ruleReports",
++       nlohmann::json::array(
++           {{{"pccRuleIds", ids},
++             {"ruleStatus", "INACTIVE"},
++             {"failureCode", "RES_ALLO_FAIL"}}})}};
++  oai::model::pcf::SmPolicyUpdateContextData update_data;
++  try {
++    from_json(update, update_data);
++  } catch (std::exception& e) {
++    Logger::smf_n7().warn("Cannot build the rule report: %s", e.what());
++    return;
++  }
++  Logger::smf_n7().info(
++      "Npcf_SMPolicyControl_Update: PCC rule(s) %s INACTIVE, RES_ALLO_FAIL "
++      "(%s)",
++      nlohmann::json(ids).dump().c_str(), cause.c_str());
++  // The response carries the PCF's decision, which the N7 client stores as
++  // the association's decision; the SMF's own view of its PCC rules stays
++  const auto decision = sp->policy_ptr->decision;
++  auto status = n7::smf_n7::get_instance().update_sm_policy_association(
++      update_data, sp->policy_ptr);
++  sp->policy_ptr->decision = decision;
++  if (status != n7::sm_policy_status_code::OK) {
++    Logger::smf_n7().warn("The PCF did not accept the rule report");
++  }
++}
++
+ //------------------------------------------------------------------------------
+ void smf_context::trigger_pcf_initiated_n1n2_message_transfer(
+     const std::shared_ptr<smf_pdu_session>& sp,
+diff --git a/src/smf_app/smf_context.hpp b/src/smf_app/smf_context.hpp
+index 66b244ed..8d895339 100644
+--- a/src/smf_app/smf_context.hpp
++++ b/src/smf_app/smf_context.hpp
+@@ -496,6 +496,29 @@ class smf_context : public std::enable_shared_from_this<smf_context> {
+       const std::shared_ptr<smf_pdu_session>& sp,
+       const pcf_policy_change& change);
+ 
++  /*
++   * The NG-RAN refused dynamic QoS flows of a PCF-initiated modification
++   * (PDU Session Resource Modify Response, TS 23.502 4.3.3.2 step 4): release
++   * them at the UPF and report their PCC rules to the PCF as failed; the AMF
++   * gets its answer when the UPF has removed them
++   * @param failed PCC rule ID <-> QFI of the refused QoS flows
++   * @return true if the request has been handled (a response is/will be sent)
++   */
++  bool handle_ran_rejected_qos_flows(
++      std::shared_ptr<itti_sbi_update_sm_context_request>& smreq,
++      std::shared_ptr<itti_sbi_update_sm_context_response>& sm_context_resp,
++      std::shared_ptr<smf_pdu_session>& sp,
++      const std::map<std::string, uint8_t>& failed, const std::string& cause);
++
++  /*
++   * Npcf_SMPolicyControl_Update with a rule report (ruleStatus INACTIVE,
++   * failureCode RES_ALLO_FAIL) for PCC rules whose QoS flows could not be set
++   * up (TS 29.512 4.2.4.1, 5.6.2.7)
++   */
++  void report_failed_pcc_rules(
++      const std::shared_ptr<smf_pdu_session>& sp,
++      const std::vector<pcf_qos_flow_change>& failed, const std::string& cause);
++
+   /*
+    * Handle PDU Session Modification Request
+    * @param [std::shared_ptr<oai::nas::Nas5gsmMessage>&] nas_message: NAS
+diff --git a/src/smf_app/smf_procedure.cpp b/src/smf_app/smf_procedure.cpp
+index b74188d2..6de52ef8 100644
+--- a/src/smf_app/smf_procedure.cpp
++++ b/src/smf_app/smf_procedure.cpp
+@@ -2023,9 +2023,25 @@ session_update_sm_context_procedure::handle_pcf_initiated_n4_response(
+     release_edges(change.qfi);
+     sh->remove_dynamic_flow(change.pcc_rule_id);
+   }
++
++  if (ran_rejected) {
++    // The NG-RAN never set these QoS flows up: nothing to send to the AMF; the
++    // traffic is back on the QoS flows of the PDU session. Report the PCC
++    // rules to the PCF, then answer the AMF (204, TS 29.502 5.2.2.3.2).
++    sc->report_failed_pcc_rules(sps, pcf_change.to_release, ran_cause);
++    n11_triggered_pending->res.set_cause(k5gsmCauseRequestAccepted);
++    n11_triggered_pending->res.set_http_code(
++        oai::common::sbi::http_status_code::NO_CONTENT);
++    return smf_procedure_code::OK;
++  }
++
++  std::map<std::string, uint8_t> pending;
+   for (const auto& change : pcf_change.to_add) {
+     sh->add_dynamic_flow(change.pcc_rule_id, change.qfi);
++    pending[change.pcc_rule_id] = change.qfi;
+   }
++  // until the NG-RAN confirms them in its PDU Session Resource Modify Response
++  sh->set_pending_flows(pending);
+ 
+   n11_triggered_pending->res.set_cause(k5gsmCauseRequestAccepted);
+   n11_triggered_pending->res.set_http_code(
+diff --git a/src/smf_app/smf_procedure.hpp b/src/smf_app/smf_procedure.hpp
+index 9877e505..460b70b3 100644
+--- a/src/smf_app/smf_procedure.hpp
++++ b/src/smf_app/smf_procedure.hpp
+@@ -290,6 +290,11 @@ class session_update_sm_context_procedure : public smf_session_procedure {
+ 
+   // PCF-initiated PDU session modification (TS 23.502 4.3.3.2)
+   pcf_policy_change pcf_change;
++  // The QoS flows to release (pcf_change.to_release) were refused by the
++  // NG-RAN (TS 23.502 4.3.3.2 step 4): remove them at the UPF only (no N1/N2)
++  // and report their PCC rules to the PCF as failed (TS 29.512 4.2.4.x)
++  bool ran_rejected = false;
++  std::string ran_cause;
+ 
+  private:
+   /**
+@@ -310,6 +315,7 @@ class session_update_sm_context_procedure : public smf_session_procedure {
+   // edges added by the PCF-initiated modification (for roll-back)
+   std::vector<uint8_t> pcf_added_qfis;
+ 
++
+   /**
+    * Sends a session modification request, based on the graph
+    * Does only consider normal DL procedures
+-- 
+2.53.0
+

@@ -1,0 +1,37 @@
+openMCX modifications of the srsRAN Project gNB
+================================================
+
+The image openmcx-srsran-gnb built from this directory contains the srsRAN Project gNB (Software Radio Systems
+Limited, https://github.com/srsran/srsRAN_Project), tag release_25_10, commit
+d2f4b70dda8e2c557d5b05a0ac5f92dbddda19bc, modified by openMCX for tutorial 4. The image openmcx-srsue contains srsUE
+from srsRAN 4G (https://github.com/srsran/srsRAN_4G), tag release_25_10, commit
+6bcbd9e5bf8686aa7085202cd847c5ddd64a9c16, unmodified.
+
+License
+-------
+srsRAN Project and srsRAN 4G are distributed under the GNU Affero General Public License version 3 (AGPL-3.0); the
+license text is in each image (/usr/share/doc/srsran-project/LICENSE, /usr/share/doc/srsran-4g/LICENSE) and at
+https://www.gnu.org/licenses/agpl-3.0.html. The modifications (the patches in patches/srsran-project/) are
+distributed under the same license.
+
+Modifications (AGPL-3.0 section 5(a))
+-------------------------------------
+Each modified file carries the notice "Modified by openMCX, 2026 (MCX N5 QoS)". The changes, as patches against
+commit d2f4b70:
+
+  patches/srsran-project/0001   A PDU Session Resource Modify Request whose QoS flows cannot be added (for example
+                                because max_nof_drbs_per_ue is reached) no longer makes the gNB release the UE. As
+                                TS 38.413 8.2.3.2 specifies, the gNB keeps the previous configuration, passes the
+                                NAS-PDU only for a PDU session that is modified, reports a refused QoS flow in the QoS
+                                Flow Failed to Add or Modify List, and a PDU session with nothing left to modify in the
+                                Failed to Modify List (cause radio resources not available).
+  patches/srsran-project/0002   The modification notices.
+
+Corresponding source
+--------------------
+The complete source of openmcx-srsran-gnb is the upstream repository at the commit above with the patches applied,
+in order; the Dockerfile in this directory does exactly that and checks the commit. The image also contains the
+patches and a SOURCE file (/usr/share/doc/srsran-project/) naming the commit and each patch's SHA-256. The source of
+openmcx-srsue is the upstream repository at its commit.
+
+Rebuild: srsran/build-images.sh (or the docker build commands at the top of the Dockerfile).

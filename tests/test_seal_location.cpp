@@ -53,7 +53,7 @@ static void run_tests() {
 
   // A subscription names the users, the interval and the duration.
   const auto sub = subscription_xml("sip:mcptt@mcx.test", {"sip:bob@mcx.test", "sip:erin@other.test"}, 2, 300);
-  check(sub.find("<time-interval-length>2</time-interval-length><expiry-time>-300</expiry-time>") != std::string::npos);
+  check(sub.find("<time-interval-length>2</time-interval-length><expiry-time>300</expiry-time>") != std::string::npos);
   check(unsubscription_xml("sip:mcptt@mcx.test", "7")
             .find("<subscription-identifier>7</subscription-identifier><expiry-time>0") != std::string::npos);
   check(request_xml("sip:mcptt@mcx.test", {"sip:bob@mcx.test"}, true).find("<history xmlns=") != std::string::npos);

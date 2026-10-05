@@ -23,6 +23,7 @@
 #include "mcx/location.hpp"
 #include "mcx/media.hpp"
 #include "mcx/private_call.hpp"
+#include "mcx/rx.hpp"
 #include "mcx/protected_call.hpp"
 #include "mcx/runtime.hpp"
 #include "mcx/seal_location.hpp"
@@ -289,6 +290,9 @@ protected:
   Json cfg_, status_;
   HttpClient http_;
   Control control_;
+  // The process's freeDiameter core, shared by MCPTT-2 and Rx (src/common/diameter_core.hpp); null when neither
+  // is configured.
+  std::shared_ptr<DiameterCore> diameter_core_;
   // MCPTT-2 (TS 23.379 clause 7.5.2.3, TS 29.283); an MCVideo server reads the profile from the CMS instead
   // (MCVideo-2 is not used), so it runs without "diameter_config".
   std::unique_ptr<DiameterProfileClient> diameter_;
@@ -301,16 +305,19 @@ protected:
   unsigned next_port_ = 0;
   std::string core_address_, session_service_;
   std::map<std::string, PriorityState> priorities_;
-  // N5 AF role (TS 23.289 clauses 5.4 to 5.6, TS 29.514; src/server/pcf.cpp): one app session per active leg of a UE
-  // on 5G access, keyed by the leg's dialog. Null without an enabled "pcf" block: N5 off.
-  std::unique_ptr<af::PolicyAuthorizationClient> pcf_;
-  std::uint64_t pcf_checked_ = 0;
-  void pcf_start();
-  std::optional<af::SessionRequest> pcf_request(const Leg &leg) const;
-  void pcf_open(const Leg &leg);
-  void pcf_event(const af::Event &result);
-  void pcf_tick(std::uint64_t now);
-  void pcf_stop();
+  // AF role towards policy control (TS 24.379 clause 4.13; src/server/policy.cpp): N5 for 5G access (TS 29.514,
+  // "pcf" block) and Rx for EPS access (TS 29.214, MCPTT-5, "rx" block). An active leg whose UE is on one of their
+  // accesses has a policy session with that client, keyed by the leg's dialog; any other leg (WLAN) has none.
+  std::vector<std::unique_ptr<af::PolicyClient>> policy_clients_;
+  std::uint64_t policy_checked_ = 0;
+  static std::shared_ptr<DiameterCore> start_diameter_core_for(const Json &cfg);
+  void policy_start();
+  af::PolicyClient *policy_client_for(const Leg &leg) const;
+  std::optional<af::SessionRequest> policy_request(const Leg &leg) const;
+  void policy_open(const Leg &leg);
+  void policy_event(af::PolicyClient &client, const af::Event &result);
+  void policy_tick(std::uint64_t now);
+  void policy_stop();
   // Functional alias activation state (TS 24.379 clause 9A.2.2.3.2): alias -> MCPTT
   // IDs in activation order. The server both serves the user and owns aliases.
   AliasRegistry functional_aliases_;

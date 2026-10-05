@@ -30,14 +30,12 @@ struct PcfConfig {
   // Static PCF (http://host:port), or empty with nrf_uri for NRF discovery
   // (TS 29.510 Nnrf_NFDiscovery, target-nf-type=PCF).
   std::string pcf_uri, nrf_uri;
-  // HTTP/2 over cleartext with prior knowledge (TS 29.500 5.2.2); false: HTTP/1.1.
-  bool http2 = true;
   std::string dnn = "mcptt";
   int sst = 1;
   std::string sd;  // empty: no "sd"
   std::string af_app_id = "mcptt";
   std::string supp_feat = "0";
-  // Notification receiver (HTTP/1.1): bind address and the URI the PCF is given.
+  // Notification receiver (HTTP/2 with prior knowledge): bind address and the URI the PCF is given.
   std::string notif_bind = "0.0.0.0:8099", notif_uri_base;
   // Only legs whose UE address is in one of these IPv4 prefixes are 5G UEs.
   std::vector<std::string> ue_subnets;
@@ -73,6 +71,10 @@ struct SessionRequest {
   std::string id_attribute = "mcpttId";  // "mcVideoId" for an MCVideo server
   MediaFlows flows;
   std::string priority = "normal";       // "normal", "imminent" or "emergency"
+  // The Resource-Priority value provisioned for that priority (TS 24.379 clause 6.3.3.1.19), e.g. "mcpttp.15";
+  // empty when none is provisioned. Rx derives MCPTT-Identifier and Reservation-Priority from it (TS 29.214
+  // annex A.13.2).
+  std::string resource_priority;
   bool operator==(const SessionRequest &) const = default;
 };
 
@@ -126,26 +128,55 @@ struct Event {
 };
 const char *event_name(Event::Kind);
 
+// The MC service server as AF towards the policy control of one access (TS 24.379 clause 4.13: Rx for 4G and 5G,
+// N5 for 5G): one policy session per call leg whose UE is on that access, keyed by the leg's dialog. Every call
+// comes from the owning (SIP) thread; poll() hands the results back to it.
+class PolicyClient {
+public:
+  virtual ~PolicyClient() = default;
+  // "pcf" (N5) or "rx": the prefix of the client's events and its status entry.
+  virtual const char *interface_name() const = 0;
+  virtual const char *event_name(Event::Kind) const = 0;
+  // Whether a UE address is on the access this client serves.
+  virtual bool covers(std::string_view ue_ip) const = 0;
+  // required: a leg whose QoS is not authorised is released; release_on_terminate: so is a leg whose policy
+  // session the network terminates.
+  virtual bool required() const = 0;
+  virtual bool release_on_terminate() const = 0;
+  virtual bool tracking(const std::string &key) const = 0;
+  virtual void open(const std::string &key, SessionRequest) = 0;
+  virtual void refresh(const std::string &key, const SessionRequest &) = 0;
+  virtual void close(const std::string &key) = 0;
+  virtual std::vector<Event> poll() = 0;
+  virtual std::vector<std::string> keys() const = 0;
+  virtual Json status() const = 0;
+  // Ends every policy session and waits for the answers until the deadline.
+  virtual std::vector<Event> shutdown(std::chrono::milliseconds) = 0;
+};
+
 // Npcf_PolicyAuthorization client. Every call from the owning (SIP) thread only
 // queues work: HTTP runs on a worker thread, the notification receiver on another,
 // and poll() hands their results back to the owning thread.
-class PolicyAuthorizationClient {
+class PolicyAuthorizationClient : public PolicyClient {
 public:
   explicit PolicyAuthorizationClient(PcfConfig);
-  ~PolicyAuthorizationClient();
+  ~PolicyAuthorizationClient() override;
   PolicyAuthorizationClient(const PolicyAuthorizationClient &) = delete;
   PolicyAuthorizationClient &operator=(const PolicyAuthorizationClient &) = delete;
   const PcfConfig &config() const { return cfg_; }
-  bool covers(std::string_view ue_ip) const { return ipv4_in_subnets(ue_ip, cfg_.ue_subnets); }
-  bool tracking(const std::string &key) const { return entries_.contains(key); }
-  void open(const std::string &key, SessionRequest);
-  void refresh(const std::string &key, const SessionRequest &);
-  void close(const std::string &key);
-  std::vector<Event> poll();
-  std::vector<std::string> keys() const;
-  Json status() const;
-  // Deletes every app session and waits for the answers until the deadline.
-  std::vector<Event> shutdown(std::chrono::milliseconds);
+  const char *interface_name() const override { return "pcf"; }
+  const char *event_name(Event::Kind kind) const override { return af::event_name(kind); }
+  bool covers(std::string_view ue_ip) const override { return ipv4_in_subnets(ue_ip, cfg_.ue_subnets); }
+  bool required() const override { return cfg_.required; }
+  bool release_on_terminate() const override { return cfg_.release_on_terminate; }
+  bool tracking(const std::string &key) const override { return entries_.contains(key); }
+  void open(const std::string &key, SessionRequest) override;
+  void refresh(const std::string &key, const SessionRequest &) override;
+  void close(const std::string &key) override;
+  std::vector<Event> poll() override;
+  std::vector<std::string> keys() const override;
+  Json status() const override;
+  std::vector<Event> shutdown(std::chrono::milliseconds) override;
 
 private:
   struct Entry {
@@ -173,6 +204,7 @@ private:
   void dispatch(const std::string &key, Entry &, Op);
   void work();
   void listen();
+  int receive(const std::string &method, std::string path, const std::string &body);
   Result perform(const Job &);
   std::string pcf_root();
   std::string notif_uri(const std::string &notif_id) const;

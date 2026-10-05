@@ -181,6 +181,8 @@ LABS = [
     ),
     # N5 AF role (TS 29.514): QoS requested from a recording mock PCF over HTTP/2 cleartext.
     lab('pcf-n5', 'single', ['--pcf', '--priority', '--floor-queue', '--private-call'], ['pcf_n5_scenario'], ['mcptt', '5gc']),
+    # Rx AF role (TS 29.214, TS 23.379 clause 7.5.2.6): EPS UEs get Rx sessions, the WLAN UE none (TS 24.379 clause 4.13).
+    lab('rx', 'single', ['--rx', '--priority', '--floor-queue', '--private-call'], ['rx_scenario'], ['mcptt', 'epc']),
     lab('floor-queue', 'single', ['--floor-queue'], ['prearranged_floor_scenario'], ['mcptt']),
     lab('priority', 'single', ['--priority', '--floor-queue'], ['prearranged_priority_scenario'], ['mcptt']),
     lab('first-to-answer', 'single', ['--private-call'], ['first_to_answer_emergency_scenario'], ['mcptt']),

@@ -206,10 +206,11 @@ std::string history_xml(const std::string &subscription, const std::vector<Fix> 
 // TS 24.545 clause 6.2.6.1.2: an MC service server's location reporting subscription for users.
 std::string subscription_xml(const std::string &server, const std::vector<std::string> &users, unsigned interval,
                              unsigned expiry) {
-  // <expiry-time> is a non-positive integer in the schema: its magnitude is the duration.
+  // TS 24.545 clause 7.5: <expiry-time> is the subscription's expiry in seconds (0 deletes it). The schema types it
+  // xs:nonPositiveInteger by mistake; the clause 7.5 meaning, positive seconds, is followed.
   return root(identity(server) +
               element("subscription", identities(users) + element("time-interval-length", std::to_string(interval)) +
-                                          element("expiry-time", "-" + std::to_string(expiry))));
+                                          element("expiry-time", std::to_string(expiry))));
 }
 
 //------------------------------------------------------------------------------

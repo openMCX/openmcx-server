@@ -40,6 +40,13 @@ Separate programs run alongside openMCX, not linked with it:
                            (/usr/src/kamailio-6.1.4.tar.gz).
   MySQL (SIP core database, the official mysql image)
                            GPL-2.0 with the Universal FOSS Exception   https://hub.docker.com/_/mysql
+  OpenAirInterface CN5G v2.2.1 and RAN (tutorial 3 only: the 5G core, gNB and nr-UE)
+                           Collaborative Standards Software License v1.0   https://gitlab.eurecom.fr/oai
+                           The AMF, PCF, SMF and UPF are modified for N5: the patches, their license and notices are
+                           in tutorials/03-mcx-over-oai-5g/oai/cn5g/ (LICENSE, NOTICE), which is under that license,
+                           not this repository's. Its patent license covers study, testing and research only.
+  srsRAN Project gNB and srsUE 25.10 (tutorial 4 only, built by tutorials/04-mcx-over-srsran-5g/srsran/Dockerfile)
+                           AGPL-3.0-only   https://github.com/srsran/srsRAN_Project   https://github.com/srsran/srsRAN_4G
 
 3GPP and ETSI specifications are cited by clause; they are not part of this repository. Standard-essential patents
 of 3GPP technologies are not licensed by this software licence.

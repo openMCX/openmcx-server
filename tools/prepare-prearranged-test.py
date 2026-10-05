@@ -1124,7 +1124,7 @@ def add_pcf(fixture):
     Docker, so every client address counts as a 5G UE. Without --pcf the server has no "pcf" block: N5 off."""
     path = fixture / 'generated/mcptt-server.json'
     cfg = json.loads(path.read_text())
-    cfg['pcf'] = dict(enabled=True, pcf_uri='http://mock-pcf:8080', http2=True, dnn='mcptt', snssai=dict(sst=1),
+    cfg['pcf'] = dict(enabled=True, pcf_uri='http://mock-pcf:8080', dnn='mcptt', snssai=dict(sst=1),
                       af_app_id='mcptt', notif_bind='0.0.0.0:8099', notif_uri_base='http://mcptt-server:8099/npcf-af',
                       ue_subnets=['0.0.0.0/0'], audio_bw_kbps=41, required=False,
                       prio_map=dict(normal='', imminent='PRIO_12', emergency='PRIO_16'))
@@ -1151,8 +1151,53 @@ def add_mock_pcf(compose, fixture):
     server.setdefault('depends_on', {})['mock-pcf'] = {'condition': 'service_healthy'}
 
 
+# The Rx lab's network: Docker assigns addresses from the lower half (the EPS UEs of rx.ue_subnets); client-d has a
+# fixed address in the upper half, a UE on an access without dedicated bearers (WLAN, TS 24.379 clause 4.13).
+RX_LAB_SUBNET, RX_LAB_EPS, RX_LAB_WLAN_CLIENT = '10.231.0.0/24', '10.231.0.0/25', '10.231.0.200'
+
+
+def add_rx(fixture):
+    """Rx (TS 29.214, MCPTT-5): the MCPTT server's "rx" block and the mock PCRF as a Diameter peer of its core, which
+    MCPTT-2 shares: over SCTP like MCPTT-2 but without TLS (the mock has none). client-a to client-c are EPS UEs,
+    client-d is on WLAN. Without --rx the server has no "rx" block: Rx off."""
+    path = fixture / 'generated/mcptt-server.json'
+    cfg = json.loads(path.read_text())
+    domain = json.loads((fixture / 'generated/site.json').read_text())['domain']
+    cfg['rx'] = dict(enabled=True, destination_realm=domain, destination_host=f'mock-pcrf.{domain}',
+                     ue_subnets=[RX_LAB_EPS], audio_bw_kbps=41, required=False)
+    path.write_text(json.dumps(cfg, indent=2) + '\n')
+    conf = fixture / 'generated/diameter-server.conf'
+    peer = f'ConnectTo = "mock-pcrf"; TcTimer = 5; Port = 3868; No_TCP; No_TLS; Realm = "{domain}";'
+    comment = '# Rx to the mock PCRF (TS 29.214), over SCTP without TLS.'
+    conf.write_text(conf.read_text() + f'{comment}\nConnectPeer = "mock-pcrf.{domain}" {{ {peer} }};\n')
+
+
+def add_mock_pcrf(compose, fixture):
+    """The mock PCRF (tests/integration/mock_pcrf.py, with the Python of the development image) and the Rx lab's
+    network: a fixed subnet, client-d outside rx.ue_subnets."""
+    domain = json.loads((fixture / 'generated/site.json').read_text())['domain']
+    server = compose['services']['mcptt-server']
+    compose['services']['mock-pcrf'] = {
+        'image': 'openmcx-dev:0.1',
+        'init': True,
+        'entrypoint': ['python3', '/mock/mock_pcrf.py'],
+        'command': ['--identity', f'mock-pcrf.{domain}', '--realm', domain, '--record',
+                    '/artifacts/mock-pcrf/requests.jsonl'],
+        'volumes': [{'type': 'bind', 'source': str(ROOT / 'tests/integration/mock_pcrf.py'),
+                     'target': '/mock/mock_pcrf.py', 'read_only': True},
+                    {'type': 'bind', 'source': str(fixture / 'artifacts'), 'target': '/artifacts'}],
+        'networks': copy.deepcopy(server['networks']),
+        'healthcheck': {'test': ['CMD', 'curl', '-sf', 'http://127.0.0.1:8080/healthz'],
+                        'interval': '2s', 'timeout': '3s', 'retries': 60, 'start_period': '2s'},
+    }
+    (fixture / 'artifacts/mock-pcrf').mkdir(parents=True, exist_ok=True)
+    server.setdefault('depends_on', {})['mock-pcrf'] = {'condition': 'service_healthy'}
+    compose['networks']['mcx']['ipam'] = {'config': [{'subnet': RX_LAB_SUBNET, 'ip_range': RX_LAB_EPS}]}
+    compose['services']['client-d']['networks'] = {'mcx': {'ipv4_address': RX_LAB_WLAN_CLIENT}}
+
+
 def rights_from_group_lists(fixture):
-    """TS 24.379 and TS 24.281 clause 6.3.3.1.13: an emergency group call, imminent peril call or emergency alert needs
+    """TS 24.379 clause 6.3.3.1.13 and TS 24.281 clause 6.3.3.1.12: an emergency group call, imminent peril call or emergency alert needs
     the right in the caller's user profile (TS 24.484) and the group document's action for the caller (TS 24.481);
     cancelling an alert or imminent peril needs the profile right. The labs name who may in the groups' priority
     policies (the action for each listed member); every user a list names gets the matching profile right, so a lab
@@ -1582,6 +1627,12 @@ def main():
         '(tests/integration/mock_pcf.go) over HTTP/2 cleartext; every client counts as a 5G UE',
     )
     parser.add_argument(
+        '--rx',
+        action='store_true',
+        help='Rx AF role (TS 29.214): mcptt-server requests QoS from mock-pcrf, a recording mock PCRF '
+        '(tests/integration/mock_pcrf.py) over Diameter; client-a to client-c are EPS UEs, client-d is on WLAN',
+    )
+    parser.add_argument(
         '--admin',
         action='store_true',
         help='MCX Admin manages the accounts (admin mode of IdMS, CMS and user database; needs --admin-image)',
@@ -1852,6 +1903,10 @@ def main():
         if args.split:
             parser.error('--pcf runs on a combined server')
         add_pcf(fixture)
+    if args.rx:
+        if args.split:
+            parser.error('--rx runs on a combined server')
+        add_rx(fixture)
     # Scenario clients leave authorisation to the server so its rejections are
     # exercised; the private-services lab keeps client-d enforcing its profile.
     for role in ['client-a', 'client-b', 'client-c', 'client-d']:
@@ -1958,6 +2013,8 @@ def main():
             compose['services'][role]['command'].append('--disable-tls')
     if args.pcf:
         add_mock_pcf(compose, fixture)
+    if args.rx:
+        add_mock_pcrf(compose, fixture)
     rights_from_group_lists(fixture)
     service_configuration(fixture)
     if args.admin:

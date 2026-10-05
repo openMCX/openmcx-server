@@ -449,7 +449,7 @@ int main() {
     check(make_sdp(ptt, 1) ==
               "v=0\r\no=- 1 1 IN IP4 192.0.2.1\r\ns=MCPTT\r\nc=IN IP4 192.0.2.1\r\nt=0 0\r\n"
               "m=audio 4000 RTP/AVP 96\r\ni=speech\r\na=rtpmap:96 AMR-WB/16000/1\r\n"
-              "a=fmtp:96 octet-align=0;mode-change-capability=2\r\na=ptime:20\r\na=maxptime:240\r\na=sendrecv\r\n"
+              "a=fmtp:96 octet-align=0;mode-change-capability=2;max-red=0\r\na=ptime:20\r\na=maxptime:240\r\na=sendrecv\r\n"
               "a=rtcp:4001\r\na=ssrc:777 cname:mcptt\r\nm=application 5000 udp MCPTT\r\n"
               "a=fmtp:MCPTT mc_floor_ssrc=12345;mc_queueing\r\n",
           "MCPTT SDP changed");
@@ -467,7 +467,7 @@ int main() {
     check(video_sdp ==
               "v=0\r\no=- 2 1 IN IP4 192.0.2.1\r\ns=MCVideo\r\nc=IN IP4 192.0.2.1\r\nt=0 0\r\n"
               "m=audio 4000 RTP/AVP 96\r\ni=audio component of MCVideo\r\na=rtpmap:96 AMR-WB/16000/1\r\n"
-              "a=fmtp:96 octet-align=0;mode-change-capability=2\r\na=ptime:20\r\na=maxptime:240\r\na=sendrecv\r\n"
+              "a=fmtp:96 octet-align=0;mode-change-capability=2;max-red=0\r\na=ptime:20\r\na=maxptime:240\r\na=sendrecv\r\n"
               "a=rtcp:4001\r\na=ssrc:777 cname:mcvideo\r\n"
               "m=video 4002 RTP/AVP 97\r\ni=video component of MCVideo\r\na=rtpmap:97 H264/90000\r\n"
               "a=fmtp:97 profile-level-id=42e01f;packetization-mode=1\r\na=sendrecv\r\na=rtcp:4003\r\n"
@@ -689,6 +689,26 @@ int main() {
   rejects([&] {
     (void)parse_profile_actions(profile_head + "<allow-private-call>yes</allow-private-call>" + profile_tail);
   });
+  // TS 26.179 clause 4.1.3: the AMR-WB format offers max-red 0, ptime 20, maxptime 240 and no mode-set; a peer's
+  // mode-set (RFC 4867 section 8.1) is read and limits the mode sent.
+  {
+    MediaDescription offer;
+    offer.address = offer.floor_address = "192.0.2.1";
+    offer.audio_port = 4000;
+    offer.rtcp_port = 4001;
+    offer.floor_port = 5000;
+    offer.floor_ssrc = 12345;
+    const auto sdp = make_sdp(offer, 1);
+    check(sdp.find(";mode-change-capability=2;max-red=0") != std::string::npos && sdp.find("a=maxptime:240") != std::string::npos &&
+              sdp.find("mode-set") == std::string::npos,
+          "AMR-WB offer per TS 26.179");
+    auto remote = parse_sdp(std::string(sdp).replace(sdp.find("max-red=0"), 9, "max-red=0;mode-set=0,1,2"));
+    check(remote.mode_set == std::vector<std::uint8_t>{0, 1, 2}, "mode-set parsed");
+    check(amr_wb_send_mode(2, remote.mode_set) == 2 && amr_wb_send_mode(8, remote.mode_set) == 2 &&
+              amr_wb_send_mode(0, {}) == 0 && amr_wb_send_mode(1, {4, 6}) == 4,
+          "send mode within the mode-set");
+    rejects([&] { (void)parse_sdp(std::string(sdp).replace(sdp.find("max-red=0"), 9, "mode-set=9")); });
+  }
   // TS 24.484 clauses 8.4.2.1 and 10.4.2.1: the resource priorities of the service configuration documents, RFC 8101
   // namespaces only; MCData's in the <anyExt> of <on-network>.
   {

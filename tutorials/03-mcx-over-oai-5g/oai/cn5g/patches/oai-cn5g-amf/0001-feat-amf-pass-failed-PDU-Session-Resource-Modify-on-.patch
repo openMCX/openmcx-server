@@ -1,0 +1,106 @@
+From 223c33c101e876c38cb4b09f23dbc31b3d4348d7 Mon Sep 17 00:00:00 2001
+From: Rohan <kharade@eurecom.fr>
+Date: Mon, 5 Oct 2026 02:42:48 +0200
+Subject: [PATCH 1/2] feat(amf): pass failed PDU Session Resource Modify on to
+ the SMF
+
+Each PDU session of a PDU Session Resource Modify Response goes to its SMF in
+Nsmf_PDUSession_UpdateSMContext (TS 23.502 4.3.3.2 step 4, TS 29.502):
+PDU_RES_MOD_RSP with the Modify Response Transfer for a modified session,
+PDU_RES_MOD_FAIL with the Modify Unsuccessful Transfer for one the NG-RAN
+failed to modify (e.g. a UE that cannot add the QoS flow of a PCF-initiated
+modification). The modified list is optional too.
+
+Needs the NGAP decoding of the submodule src/common-src (patches in
+src/common-src/ of this patch set).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013UXVKWJNq3UC36dmrQjjV3
+---
+ src/ngap/ngap_message_callback.hpp | 58 ++++++++++++++++++------------
+ 1 file changed, 35 insertions(+), 23 deletions(-)
+
+diff --git a/src/ngap/ngap_message_callback.hpp b/src/ngap/ngap_message_callback.hpp
+index bebfcfe2..1d66953a 100644
+--- a/src/ngap/ngap_message_callback.hpp
++++ b/src/ngap/ngap_message_callback.hpp
+@@ -500,41 +500,53 @@ int ngap_amf_handle_pdu_session_resource_modify_response(
+     return RETURNerror;
+   }
+ 
+-  // Transfer pduSessionResourceModifyResponseTransfer to SMF
+-  std::vector<PDUSessionResourceModifyResponseItem_t> list;
+-  if (!response_msg->getPduSessionResourceModifyResponseList(list)) {
+-    Logger::ngap().error(
+-        "Decoding PduSessionResourceModifyResponseMsg "
+-        "getPduSessionResourceModifyResponseList IE error");
+-    return RETURNerror;
+-  }
+-
+-  for (auto response_item : list) {
++  // Each PDU session's N2 SM information goes to its SMF in
++  // Nsmf_PDUSession_UpdateSMContext (TS 23.502 4.3.3.2 step 4, TS 29.502
++  // 6.1.6.3.7): PDU_RES_MOD_RSP for a modified session, PDU_RES_MOD_FAIL with
++  // the Modify Unsuccessful Transfer for one the NG-RAN failed to modify. Both
++  // lists are optional (TS 38.413 9.2.1.6).
++  auto forward = [&](uint8_t pdu_session_id, const OCTET_STRING_t& transfer,
++                     const std::string& type) {
+     Logger::ngap().debug(
+-        "Sending ITTI PDUSessionResourceModifyResponseTransfer to "
+-        "TASK_AMF_SBI");
+-
++        "Sending ITTI %s (PDU Session ID %d) to TASK_AMF_SBI", type.c_str(),
++        pdu_session_id);
+     auto itti_msg = std::make_shared<itti_nsmf_pdusession_update_sm_context>(
+         TASK_NGAP, TASK_AMF_SBI);
+-    itti_msg->pdu_session_id = response_item.pduSessionId;
+-    itti_msg->n2sm           = blk2bstr(
+-        response_item.pduSessionResourceModifyResponseTransfer.buf,
+-        response_item.pduSessionResourceModifyResponseTransfer.size);
++    itti_msg->pdu_session_id = pdu_session_id;
++    itti_msg->n2sm           = blk2bstr(transfer.buf, transfer.size);
+     itti_msg->is_n2sm_set    = true;
+-    itti_msg->n2sm_info_type = "PDU_RES_MOD_RSP";
++    itti_msg->n2sm_info_type = type;
+     itti_msg->amf_ue_ngap_id = response_msg->getAmfUeNgapId();
+     itti_msg->ran_ue_ngap_id = response_msg->getRanUeNgapId();
+-
+-    int ret = itti_inst->send_msg(itti_msg);
+-    if (0 != ret) {
++    if (itti_inst->send_msg(itti_msg) != 0) {
+       Logger::ngap().error(
+           "Could not send ITTI message %s to task TASK_AMF_SBI",
+           itti_msg->get_msg_name());
+-      return RETURNerror;
++      return false;
+     }
++    return true;
++  };
++
++  std::vector<PDUSessionResourceModifyResponseItem_t> list;
++  response_msg->getPduSessionResourceModifyResponseList(list);
++  for (const auto& item : list)
++    if (!forward(
++            item.pduSessionId, item.pduSessionResourceModifyResponseTransfer,
++            "PDU_RES_MOD_RSP"))
++      return RETURNerror;
++
++  std::vector<PDUSessionResourceModifyResponseItem_t> failed;
++  response_msg->getPduSessionResourceFailedToModifyList(failed);
++  for (const auto& item : failed) {
++    Logger::ngap().warn(
++        "NG-RAN failed to modify PDU Session ID %d", item.pduSessionId);
++    if (!forward(
++            item.pduSessionId,
++            item.pduSessionResourceModifyUnsuccessfulTransfer,
++            "PDU_RES_MOD_FAIL"))
++      return RETURNerror;
+   }
+ 
+-  // TODO:for PDUSessionResourceFailedToModifyListModRes
+   // TODO: process User Location Information if available
+   return RETURNok;
+ }
+-- 
+2.53.0
+

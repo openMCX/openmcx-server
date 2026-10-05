@@ -8,6 +8,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(PJ REQUIRED libpjproject)
 pkg_check_modules(XML REQUIRED IMPORTED_TARGET libxml-2.0)
 pkg_check_modules(CURL REQUIRED IMPORTED_TARGET libcurl)
+pkg_check_modules(NGHTTP2 REQUIRED IMPORTED_TARGET libnghttp2)
 pkg_check_modules(SRTP REQUIRED IMPORTED_TARGET libsrtp2)
 pkg_check_modules(OPENH264 REQUIRED IMPORTED_TARGET openh264)
 find_package(OpenSSL REQUIRED)
@@ -69,9 +70,9 @@ endif()
 
 # N5: the MC service server in the 5GC AF role (TS 29.514 Npcf_PolicyAuthorization), used by the MCPTT and MCVideo
 # servers only with a "pcf" block in their configuration.
-add_library(mcx_af src/common/af.cpp)
+add_library(mcx_af src/common/af.cpp src/common/h2.cpp)
 target_include_directories(mcx_af PUBLIC include)
-target_link_libraries(mcx_af PUBLIC mcx_dependencies)
+target_link_libraries(mcx_af PUBLIC mcx_dependencies PRIVATE PkgConfig::NGHTTP2)
 target_compile_options(mcx_af PRIVATE -Wall -Wextra -Wpedantic)
 if(BUILD_TESTING)
     add_executable(test_af tests/test_af.cpp)
@@ -79,9 +80,16 @@ if(BUILD_TESTING)
     add_test(NAME af COMMAND test_af)
 endif()
 
-add_library(mcx_diameter src/common/diameter.cpp)
+add_library(mcx_diameter src/common/diameter.cpp src/common/rx_dictionary.cpp)
 target_include_directories(mcx_diameter PUBLIC include)
 target_link_libraries(mcx_diameter PUBLIC fdcore fdproto Threads::Threads)
+target_compile_options(mcx_diameter PRIVATE -Wall -Wextra -Wpedantic)
+# Rx: the MC service server in the AF role towards the PCRF (TS 29.214, MCPTT-5), used by the MCPTT and MCVideo
+# servers only with an "rx" block in their configuration; on the process's freeDiameter core (mcx_diameter).
+add_library(mcx_rx src/common/rx.cpp)
+target_include_directories(mcx_rx PUBLIC include PRIVATE src/common)
+target_link_libraries(mcx_rx PUBLIC mcx_af mcx_diameter)
+target_compile_options(mcx_rx PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(mcx-user-db src/user_db/user_db.cpp)
 target_link_libraries(mcx-user-db PRIVATE mcx_diameter)
 if(BUILD_TESTING)
@@ -89,6 +97,11 @@ if(BUILD_TESTING)
     target_link_libraries(test_diameter PRIVATE mcx_diameter)
     add_test(NAME diameter_sctp COMMAND test_diameter $<TARGET_FILE:mcx-user-db>)
     set_tests_properties(diameter_sctp PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE)
+    add_executable(test_rx tests/test_rx.cpp)
+    target_include_directories(test_rx PRIVATE src/common)
+    target_link_libraries(test_rx PRIVATE mcx_rx)
+    add_test(NAME rx COMMAND test_rx)
+    set_tests_properties(rx PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
     add_library(mcx_sip src/sip/helpers.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp src/sip/messages.cpp src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp src/common/runtime.cpp src/security/key_client.cpp)
@@ -124,7 +137,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/server/location.cpp
         src/server/media.cpp
         src/server/notices.cpp
-        src/server/pcf.cpp
+        src/server/policy.cpp
         src/server/priority.cpp
         src/server/private_call.cpp
         src/server/private_services.cpp
@@ -138,7 +151,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/server/users.cpp
         src/server/xml_protection.cpp)
     target_include_directories(mcx_server_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/server)
-    target_link_libraries(mcx_server_core PUBLIC mcx_service_parts mcx_diameter mcx_af)
+    target_link_libraries(mcx_server_core PUBLIC mcx_service_parts mcx_diameter mcx_af mcx_rx)
     target_compile_options(mcx_server_core PRIVATE -Wall -Wextra -Wpedantic)
     # Link-time optimisation: the split into files and programs must not cost the inlining the single file had.
     set_target_properties(mcx_server_core PROPERTIES INTERPROCEDURAL_OPTIMIZATION ON)

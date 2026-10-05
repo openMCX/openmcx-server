@@ -1,0 +1,220 @@
+From d05f7c4ffbb808dc8e253c691541159b961e1c17 Mon Sep 17 00:00:00 2001
+From: openMCX <noreply@openmcx.invalid>
+Date: Mon, 5 Oct 2026 09:25:10 +0200
+Subject: [PATCH 1/2] cu_cp, ngap: refused QoS flows keep the UE connected (TS
+ 38.413 8.2.3.2)
+
+A PDU Session Resource Modify Request whose QoS flows cannot be added (for
+example with max_nof_drbs_per_ue reached) made the gNB send the NAS-PDU to
+the UE, list the session as both modified and failed, and then request a UE
+context release. TS 38.413 8.2.3.2 asks the NG-RAN node to fall back to the
+previous configuration for a PDU session or QoS flow that failed to be
+modified, to pass the NAS-PDU only for a session with at least one successful
+request, and to report refused flows in the QoS Flow Failed to Add or Modify
+List of the PDU Session Resource Modify Response Transfer.
+
+- up_resource_manager: a refused flow is recorded with its cause (radio
+  resources not available); a session with nothing left to execute is a
+  failed session and is not modified.
+- modification routine: no E1, F1 or RRC procedure when no session is
+  modified; NAS-PDUs only for modified sessions; refused flows in the
+  response transfer; failed sessions with cause radio resources not available.
+- NGAP: UE context release only when the routine failed after changing the
+  UE's configuration (ue_context_release_required), not for refused requests.
+- ASN.1: QoS Flow Failed to Add or Modify List in the response transfer.
+---
+ include/srsran/cu_cp/cu_cp_types.h            |  6 ++++
+ ..._session_resource_modification_routine.cpp | 28 +++++++++++++++++--
+ .../up_resource_manager_helpers.cpp           | 20 +++++++++++--
+ .../up_resource_manager_impl.h                |  2 ++
+ lib/ngap/ngap_asn1_converters.h               |  8 ++++++
+ ..._pdu_session_resource_modify_procedure.cpp |  5 ++--
+ 6 files changed, 63 insertions(+), 6 deletions(-)
+
+diff --git a/include/srsran/cu_cp/cu_cp_types.h b/include/srsran/cu_cp/cu_cp_types.h
+index 831fb7f..3898502 100644
+--- a/include/srsran/cu_cp/cu_cp_types.h
++++ b/include/srsran/cu_cp/cu_cp_types.h
+@@ -495,6 +495,8 @@ struct cu_cp_pdu_session_res_modify_response_transfer {
+   std::vector<cu_cp_qos_flow_per_tnl_information> add_dl_qos_flow_per_tnl_info;
+   std::optional<slotted_id_vector<qos_flow_id_t, qos_flow_add_or_mod_response_item>>
+       qos_flow_add_or_modify_response_list;
++  /// QoS flows that could not be added or modified, with the cause (TS 38.413 9.3.4.2).
++  std::vector<cu_cp_qos_flow_with_cause_item> qos_flow_failed_to_add_or_modify_list;
+ };
+ 
+ struct cu_cp_pdu_session_resource_modify_response_item {
+@@ -511,6 +513,10 @@ struct cu_cp_pdu_session_resource_modify_response {
+       pdu_session_res_failed_to_modify_list;
+   // id-UserLocationInformation
+   // id-CriticalityDiagnostics
++  /// The modification failed after the UE's configuration was partly changed, so the UE context has to be released to
++  /// clean up the CU-CP. Not set when requested sessions or QoS flows were refused without changing the UE's
++  /// configuration (TS 38.413 8.2.3.2: the NG-RAN node falls back to the configuration prior to the request).
++  bool ue_context_release_required = false;
+ };
+ 
+ struct cu_cp_ue_context_release_command {
+diff --git a/lib/cu_cp/routines/pdu_session_resource_modification_routine.cpp b/lib/cu_cp/routines/pdu_session_resource_modification_routine.cpp
+index 3c41478..de7fb78 100644
+--- a/lib/cu_cp/routines/pdu_session_resource_modification_routine.cpp
++++ b/lib/cu_cp/routines/pdu_session_resource_modification_routine.cpp
+@@ -94,6 +94,13 @@ void pdu_session_resource_modification_routine::operator()(
+     next_config = up_resource_mng.calculate_update(modify_request);
+   }
+ 
++  if (next_config.pdu_sessions_to_modify_list.empty()) {
++    // Every requested PDU session was refused before any change to the UE's configuration: report them as failed,
++    // without bearer, UE context or RRC reconfiguration (TS 38.413 8.2.3.2).
++    logger.info("ue={}: \"{}\" no PDU session can be modified", modify_request.ue_index, name());
++    CORO_EARLY_RETURN(generate_pdu_session_resource_modify_response(true));
++  }
++
+   {
+     // Prepare first BearerContextModificationRequest.
+     bearer_context_modification_request.ng_ran_bearer_context_mod_request.emplace(); // initialize fresh message
+@@ -164,8 +171,12 @@ void pdu_session_resource_modification_routine::operator()(
+     {
+       // Get NAS PDUs as received by AMF.
+       std::vector<byte_buffer> nas_pdus;
++      // A NAS-PDU is passed to the UE only for a PDU session that is modified, i.e. for which at least one request
++      // succeeded (TS 38.413 8.2.3.2).
+       for (const auto& pdu_session : modify_request.pdu_session_res_modify_items) {
+-        if (!pdu_session.nas_pdu.empty()) {
++        if (!pdu_session.nas_pdu.empty() &&
++            next_config.pdu_sessions_to_modify_list.find(pdu_session.pdu_session_id) !=
++                next_config.pdu_sessions_to_modify_list.end()) {
+           nas_pdus.push_back(pdu_session.nas_pdu);
+         }
+       }
+@@ -530,12 +541,25 @@ pdu_session_resource_modification_routine::generate_pdu_session_resource_modify_
+     for (const auto& psi : next_config.pdu_sessions_failed_to_modify_list) {
+       cu_cp_pdu_session_resource_failed_to_modify_item failed_item;
+       failed_item.pdu_session_id              = psi;
+-      failed_item.unsuccessful_transfer.cause = ngap_cause_radio_network_t::unspecified;
++      failed_item.unsuccessful_transfer.cause = ngap_cause_radio_network_t::radio_res_not_available;
+       response_msg.pdu_session_res_failed_to_modify_list.emplace(failed_item.pdu_session_id, failed_item);
+     }
++
++    // QoS flows refused in an otherwise modified PDU session (TS 38.413 8.2.3.2, 9.3.4.2).
++    for (const auto& [psi, failed_flows] : next_config.qos_flows_failed_to_add_or_modify) {
++      if (!response_msg.pdu_session_res_modify_list.contains(psi)) {
++        cu_cp_pdu_session_resource_modify_response_item item;
++        item.pdu_session_id = psi;
++        response_msg.pdu_session_res_modify_list.emplace(psi, item);
++      }
++      auto& transfer = response_msg.pdu_session_res_modify_list[psi].transfer;
++      transfer.qos_flow_failed_to_add_or_modify_list.insert(
++          transfer.qos_flow_failed_to_add_or_modify_list.end(), failed_flows.begin(), failed_flows.end());
++    }
+   } else {
+     logger.warning("ue={}: \"{}\" failed", modify_request.ue_index, name());
+     mark_all_sessions_as_failed(response_msg, modify_request);
++    response_msg.ue_context_release_required = true;
+   }
+   return response_msg;
+ }
+diff --git a/lib/cu_cp/up_resource_manager/up_resource_manager_helpers.cpp b/lib/cu_cp/up_resource_manager/up_resource_manager_helpers.cpp
+index 45d4af1..2994249 100644
+--- a/lib/cu_cp/up_resource_manager/up_resource_manager_helpers.cpp
++++ b/lib/cu_cp/up_resource_manager/up_resource_manager_helpers.cpp
+@@ -370,14 +370,19 @@ up_config_update srsran::srs_cu_cp::calculate_update(const cu_cp_pdu_session_res
+                   "PDU session does not exist.");
+ 
+     up_pdu_session_context_update ctxt_update(modify_item.pdu_session_id);
++    // QoS flows that cannot be added or modified are refused; the NG-RAN keeps their previous configuration and the
++    // rest of the request is executed (TS 38.413 8.2.3.2).
++    std::vector<cu_cp_qos_flow_with_cause_item> failed_flows;
++    unsigned                                    nof_flows_ok = 0;
+     for (const auto& flow_item : modify_item.transfer.qos_flow_add_or_modify_request_list) {
+       // If QoS flow already exists, modify it.
+       if (context.qos_flow_map.find(flow_item.qos_flow_id) != context.qos_flow_map.end()) {
+         auto drb_id = modify_qos_flow(ctxt_update, flow_item, update, context, cfg, logger);
+         if (drb_id == drb_id_t::invalid) {
+           logger.warning("Couldn't modify {}", flow_item.qos_flow_id);
+-          update.pdu_sessions_failed_to_modify_list.push_back(modify_item.pdu_session_id);
++          failed_flows.push_back({flow_item.qos_flow_id, ngap_cause_radio_network_t::radio_res_not_available});
+         } else {
++          ++nof_flows_ok;
+           srsran_assert(context.drb_map.find(drb_id) != context.drb_map.end() ||
+                             ctxt_update.drb_to_modify.find(drb_id) != ctxt_update.drb_to_modify.end(),
+                         "{} has to exist in current PDU session context or in context update",
+@@ -388,8 +393,9 @@ up_config_update srsran::srs_cu_cp::calculate_update(const cu_cp_pdu_session_res
+         auto drb_id = allocate_qos_flow(ctxt_update, flow_item, update, context, cfg, logger);
+         if (drb_id == drb_id_t::invalid) {
+           logger.warning("Couldn't allocate {}", flow_item.qos_flow_id);
+-          update.pdu_sessions_failed_to_modify_list.push_back(modify_item.pdu_session_id);
++          failed_flows.push_back({flow_item.qos_flow_id, ngap_cause_radio_network_t::radio_res_not_available});
+         } else {
++          ++nof_flows_ok;
+           srsran_assert(context.drb_map.find(drb_id) != context.drb_map.end() ||
+                             ctxt_update.drb_to_add.find(drb_id) != ctxt_update.drb_to_add.end(),
+                         "{} has to exist in current PDU session context or in context update",
+@@ -417,6 +423,16 @@ up_config_update srsran::srs_cu_cp::calculate_update(const cu_cp_pdu_session_res
+       }
+     }
+ 
++    if (!failed_flows.empty() && nof_flows_ok == 0 && modify_item.transfer.qos_flow_to_release_list.empty()) {
++      // Nothing of the request can be executed: the PDU session failed to be modified (TS 38.413 8.2.3.2) and is
++      // left as it is.
++      update.pdu_sessions_failed_to_modify_list.push_back(modify_item.pdu_session_id);
++      continue;
++    }
++    if (!failed_flows.empty()) {
++      update.qos_flows_failed_to_add_or_modify.emplace(modify_item.pdu_session_id, std::move(failed_flows));
++    }
++
+     update.pdu_sessions_to_modify_list.emplace(ctxt_update.id, ctxt_update);
+   }
+ 
+diff --git a/lib/cu_cp/up_resource_manager/up_resource_manager_impl.h b/lib/cu_cp/up_resource_manager/up_resource_manager_impl.h
+index caacaa3..54680b6 100644
+--- a/lib/cu_cp/up_resource_manager/up_resource_manager_impl.h
++++ b/lib/cu_cp/up_resource_manager/up_resource_manager_impl.h
+@@ -54,6 +54,8 @@ struct up_config_update {
+                                 pdu_sessions_to_modify_list;        // List of PDU sessions to be modified.
+   std::vector<pdu_session_id_t> pdu_sessions_to_remove_list;        // List of PDU sessions to be removed.
+   std::vector<pdu_session_id_t> pdu_sessions_failed_to_modify_list; // List of PDU sessions that failed to be modified.
++  // QoS flows that could not be added or modified, per PDU session that is otherwise modified (TS 38.413 8.2.3.2).
++  std::map<pdu_session_id_t, std::vector<cu_cp_qos_flow_with_cause_item>> qos_flows_failed_to_add_or_modify;
+   std::vector<drb_id_t>         drb_to_remove_list;                 // List of DRBs to be removed.
+ };
+ 
+diff --git a/lib/ngap/ngap_asn1_converters.h b/lib/ngap/ngap_asn1_converters.h
+index a30d0d2..e124be0 100644
+--- a/lib/ngap/ngap_asn1_converters.h
++++ b/lib/ngap/ngap_asn1_converters.h
+@@ -337,6 +337,14 @@ inline bool pdu_session_res_modify_response_item_to_asn1(template_asn1_item& asn
+     }
+   }
+ 
++  // QoS Flow Failed to Add or Modify List (TS 38.413 9.3.4.2).
++  for (const auto& failed_flow : resp.transfer.qos_flow_failed_to_add_or_modify_list) {
++    asn1::ngap::qos_flow_with_cause_item_s asn1_item;
++    asn1_item.qos_flow_id = qos_flow_id_to_uint(failed_flow.qos_flow_id);
++    asn1_item.cause       = cause_to_asn1(failed_flow.cause);
++    response_transfer.qos_flow_failed_to_add_or_modify_list.push_back(asn1_item);
++  }
++
+   // Pack pdu_session_res_modify_resp_transfer_s.
+   byte_buffer pdu = pack_into_pdu(response_transfer);
+ 
+diff --git a/lib/ngap/procedures/ngap_pdu_session_resource_modify_procedure.cpp b/lib/ngap/procedures/ngap_pdu_session_resource_modify_procedure.cpp
+index 1b482e3..5e8658c 100644
+--- a/lib/ngap/procedures/ngap_pdu_session_resource_modify_procedure.cpp
++++ b/lib/ngap/procedures/ngap_pdu_session_resource_modify_procedure.cpp
+@@ -75,8 +75,9 @@ void ngap_pdu_session_resource_modify_procedure::operator()(coro_context<async_t
+   }
+ 
+   if (send_pdu_session_resource_modify_response()) {
+-    // Request UE release in case of a failure to cleanup CU-CP.
+-    if (!response.pdu_session_res_failed_to_modify_list.empty()) {
++    // Request UE release only if a failure left the CU-CP to clean up. Sessions or QoS flows that were refused keep
++    // their previous configuration, and the UE stays connected (TS 38.413 8.2.3.2).
++    if (response.ue_context_release_required) {
+       ue_context_release_request = {
+           ue_ids.ue_index, {}, ngap_cause_radio_network_t::release_due_to_ngran_generated_reason};
+       CORO_AWAIT(ngap_ctrl_handler.handle_ue_context_release_request(ue_context_release_request));
+-- 
+2.53.0
+

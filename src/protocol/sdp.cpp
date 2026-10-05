@@ -5,6 +5,8 @@
 // TS 24.581 V19.2.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.582 V19.0.0, TS 24.229, RFC 4566, RFC 3264,
 // RFC 4567, RFC 4867, RFC 6184, RFC 5576, RFC 3605, RFC 4975, RFC 4145, RFC 5547.
 
+#include <algorithm>
+
 #include "protocol_internal.hpp"
 
 namespace mcx {
@@ -81,7 +83,9 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
       << unsigned(media.payload_type) << "\r\ni=" << (video ? "audio component of MCVideo" : "speech")
       << "\r\na=rtpmap:" << unsigned(media.payload_type) << " AMR-WB/16000/1\r\na=fmtp:" << unsigned(media.payload_type)
       << " octet-align=" << (media.octet_aligned ? 1 : 0)
-      << ";mode-change-capability=2\r\na=ptime:20\r\na=maxptime:240\r\na=" << media.direction << "\r\n";
+      // TS 26.179 clause 4.1.3: mode-change-capability "2", max-red "0", ptime "20" and maxptime "240" offered;
+      // no mode-set (all modes); one channel.
+      << ";mode-change-capability=2;max-red=0\r\na=ptime:20\r\na=maxptime:240\r\na=" << media.direction << "\r\n";
   if (media.rtcp_port) out << "a=rtcp:" << media.rtcp_port << "\r\n";
   if (media.audio_ssrc) out << "a=ssrc:" << media.audio_ssrc << " cname:" << (video ? "mcvideo" : "mcptt") << "\r\n";
   if (video) {
@@ -356,6 +360,17 @@ void parse_format_parameter(const std::string &parameter, const std::string &sec
     out.octet_aligned = number(val, 1) == 1;
   else if (section == "audio" && (key == "interleaving" || key == "crc" || key == "robust-sorting") && val != "0")
     invalid("unsupported AMR-WB payload option");
+  else if (section == "audio" && key == "mode-set") {
+    // RFC 4867 section 8.1: a comma-separated list of the AMR-WB modes 0 to 8.
+    out.mode_set.clear();
+    std::size_t start = 0;
+    while (start <= val.size()) {
+      const auto end = std::min(val.find(',', start), val.size());
+      const auto mode = static_cast<std::uint8_t>(number(trim(val.substr(start, end - start)), 8));
+      if (std::find(out.mode_set.begin(), out.mode_set.end(), mode) == out.mode_set.end()) out.mode_set.push_back(mode);
+      start = end + 1;
+    }
+  }
   else if (transmission && key == "mc_transmission_ssrc") {
     if (out.floor_ssrc) invalid("duplicate transmission control SSRC");
     out.floor_ssrc = number(val, UINT32_MAX);
@@ -511,6 +526,18 @@ MediaDescription parse_sdp(std::string_view sdp) {
   }
   finish_sdp(out, state);
   return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 26.179 clause 4.1.3 with RFC 4867 section 8.1: the AMR-WB mode allowed by a peer's mode-set.
+int amr_wb_send_mode(int wanted, const std::vector<std::uint8_t> &mode_set) {
+  if (mode_set.empty() || std::find(mode_set.begin(), mode_set.end(), wanted) != mode_set.end()) return wanted;
+  int below = -1, lowest = 9;
+  for (const auto mode : mode_set) {
+    if (mode < wanted && mode > below) below = mode;
+    lowest = std::min<int>(lowest, mode);
+  }
+  return below >= 0 ? below : lowest;
 }
 
 } // namespace mcx

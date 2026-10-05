@@ -1,0 +1,1746 @@
+From 1ef0edc4c45353c4946c0e1acc525a4314bc507b Mon Sep 17 00:00:00 2001
+From: Abhishek <a.dandekar@tu.berlin>
+Date: Thu, 1 Oct 2026 10:30:19 +0200
+Subject: [PATCH] feat(smf): PCF-initiated PDU session modification for dynamic
+ QoS flows
+
+Honour SmPolicyUpdateNotification (TS 29.512 4.2.4.2) from the PCF, e.g.
+triggered by an N5 Npcf_PolicyAuthorization app session (MCPTT AF), and run
+the PCF-initiated PDU Session Modification of TS 23.502 4.3.3.2:
+
+- New PCC rules (with their QoS decision) create a dedicated QoS flow: new
+  QFI, one N3/N6 edge pair per flow information on the session UPF (same N3
+  tunnel), N4 Session Modification with Create PDR/FAR/QER (UL and/or DL per
+  flowDirection, shared UL/DL QER with MBR/GBR and QFI).
+- Changed QoS decisions (e.g. ARP) update the QERs (Update QER) and the QoS
+  flow; changed packet filters re-create the flow.
+- PCC rules set to null (TS 29.512) release the flow: Remove PDR/FAR/QER and
+  the edges/IDs/QFI.
+- After the N4 response, Namf_Communication_N1N2MessageTransfer with N2 PDU
+  Session Resource Modify Request Transfer (QoS Flow Add or Modify Request
+  List / QoS Flow to Release List) and N1 PDU Session Modification Command
+  (QoS rules + QoS flow descriptions create/modify/delete, PTI 0).
+- The PCF gets 200 OK after the N4 modification (500 + roll-back if the UPF
+  rejects it).
+
+Fixes found on the way:
+- the HTTP/2 callback route /nsmf-callback/v1 only matched the exact path,
+  so the notificationUri advertised to the PCF always returned 404
+- callback body accumulated over several DATA frames, null map entries of
+  the SmPolicyDecision tolerated, error responses had no status
+- N1: Authorized QoS rules / QoS flow descriptions were encoded without IEI
+- reuse the SMF-allocated N3 F-TEID when the UPF has no F-TEID allocation
+- PDU Session Resource Modify Response without new DL tunnel no longer
+  re-creates FAR/PDRs (and zeroes the gNB F-TEID)
+
+Limitations: only PDU sessions served by a single UPF (N3<->N6); UE side
+(NAS PDU Session Modification Complete) not exercised.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/api-server/smf-http2-server.cpp  | 171 +++++++------
+ src/api-server/smf-http2-server.h    |   3 +-
+ src/smf_app/session_handler.cpp      | 102 +++++++-
+ src/smf_app/session_handler.hpp      |  37 +++
+ src/smf_app/smf_context.cpp          | 360 ++++++++++++++++++++++++++-
+ src/smf_app/smf_context.hpp          |  21 ++
+ src/smf_app/smf_msg.cpp              |   7 +
+ src/smf_app/smf_msg.hpp              |  13 +
+ src/smf_app/smf_n1.cpp               |  73 +++++-
+ src/smf_app/smf_n2.cpp               | 107 +++++++-
+ src/smf_app/smf_pfcp_association.cpp |  88 +++++++
+ src/smf_app/smf_pfcp_association.hpp |  43 ++++
+ src/smf_app/smf_procedure.cpp        | 290 ++++++++++++++++++++-
+ src/smf_app/smf_procedure.hpp        |  45 ++++
+ 14 files changed, 1260 insertions(+), 100 deletions(-)
+
+diff --git a/src/api-server/smf-http2-server.cpp b/src/api-server/smf-http2-server.cpp
+index 334137a1..ff2375ad 100644
+--- a/src/api-server/smf-http2-server.cpp
++++ b/src/api-server/smf-http2-server.cpp
+@@ -397,83 +397,104 @@ void smf_http2_server::start() {
+       });
+ 
+   // SMF Callback (including SM Policy Notification)
++  // NOTE: nghttp2 asio patterns without trailing "/" only match the exact
++  // path, the callbacks are /nsmf-callback/v1/{smContextRef}/...
+   server.handle(
+-      smf_sbi_helper::SmfCallbackBase(),
++      smf_sbi_helper::SmfCallbackBase() + "/",
+       [&](const request& request, const response& response) {
+-        request.on_data([&](const uint8_t* data, std::size_t len) {
++        // accumulate the body: it may be received in several DATA frames
++        auto request_body = std::make_shared<std::string>();
++        request.on_data([&, request_body](const uint8_t* data, std::size_t len) {
+           if (len > 0) {
+-            Logger::smf_api_server().debug("Received a callback");
+-            std::string msg((char*) data, len);
+-            Logger::smf_api_server().debug(
+-                "Message content \n %s", msg.c_str());
++            request_body->append((const char*) data, len);
++            return;
++          }
++          std::string msg = *request_body;
++          Logger::smf_api_server().debug("Received a callback");
++          Logger::smf_api_server().debug("Message content \n %s", msg.c_str());
+ 
+-            // Verify request's method
+-            if (!boost::iequals(request.method(), "POST")) {
+-              response.write_head(http_status_code::BAD_REQUEST);
+-              response.end();
+-              return;
+-            }
++          // Verify request's method
++          if (!boost::iequals(request.method(), "POST")) {
++            response.write_head(http_status_code::BAD_REQUEST);
++            response.end();
++            return;
++          }
+ 
+-            std::vector<std::string> split_result;
+-            boost::split(
+-                split_result, request.uri().path, boost::is_any_of("/"));
++          std::vector<std::string> split_result;
++          boost::split(split_result, request.uri().path, boost::is_any_of("/"));
+ 
+-            if (split_result.size() < 6) {
+-              Logger::smf_api_server().warn("Requested URL is not implemented");
+-              response.write_head(
+-                  oai::common::sbi::http_status_code::NOT_IMPLEMENTED);
+-              response.end();
+-              return;
+-            }
++          if (split_result.size() < 6) {
++            Logger::smf_api_server().warn("Requested URL is not implemented");
++            response.write_head(
++                oai::common::sbi::http_status_code::NOT_IMPLEMENTED);
++            response.end();
++            return;
++          }
+ 
+-            std::string scid         = split_result[split_result.size() - 3];
+-            std::string callback_api = split_result[split_result.size() - 2];
+-            std::string action       = split_result[split_result.size() - 1];
+-            Logger::smf_api_server().info(
+-                "smf_ref %s, method %s", scid.c_str(), action.c_str());
++          std::string scid         = split_result[split_result.size() - 3];
++          std::string callback_api = split_result[split_result.size() - 2];
++          std::string action       = split_result[split_result.size() - 1];
++          Logger::smf_api_server().info(
++              "smf_ref %s, method %s", scid.c_str(), action.c_str());
+ 
+-            // SM Policy Notification: Example of URI:
+-            // https://oai-smf::8080/nsmf-callback/1/sm-policy-control-notify/update
+-            if (boost::iequals(callback_api, "sm-policy-control-notify")) {
+-              try {
+-                if (boost::iequals(action, "update")) {
+-                  oai::model::pcf::SmPolicyNotification policyNotification = {};
+-                  nlohmann::json::parse(msg.c_str()).get_to(policyNotification);
+-                  this->modify_sm_context_handler(
+-                      scid, policyNotification, response);
+-
+-                } else if (boost::iequals(action, "terminate")) {
+-                  oai::model::pcf::TerminationNotification
+-                      terminationNotification = {};
+-                  nlohmann::json::parse(msg.c_str())
+-                      .get_to(terminationNotification);
+-                  this->terminate_policy_notification_handler(
+-                      scid, terminationNotification, response);
+-                } else {
+-                  response.write_head(http_status_code::BAD_REQUEST);
+-                  response.end();
+-                  return;
++          // SM Policy Notification: Example of URI:
++          // https://oai-smf::8080/nsmf-callback/1/sm-policy-control-notify/update
++          if (boost::iequals(callback_api, "sm-policy-control-notify")) {
++            try {
++              if (boost::iequals(action, "update")) {
++                nlohmann::json raw = nlohmann::json::parse(msg.c_str());
++                // TS 29.512: removed PCC rules / decisions are signalled with
++                // null values, which the generated models can not represent:
++                // validate the notification without them, but forward the raw
++                // JSON (including the null values) to the SMF application
++                nlohmann::json filtered = raw;
++                if (filtered.contains("smPolicyDecision") &&
++                    filtered["smPolicyDecision"].is_object()) {
++                  for (auto& [key, map] :
++                       filtered["smPolicyDecision"].items()) {
++                    if (!map.is_object()) continue;
++                    for (auto it = map.begin(); it != map.end();) {
++                      if (it->is_null())
++                        it = map.erase(it);
++                      else
++                        ++it;
++                    }
++                  }
+                 }
+-
+-              } catch (nlohmann::detail::exception& e) {
+-                Logger::smf_sbi().warn(
+-                    "Can not parse the JSON data (error: %s)!", e.what());
++                oai::model::pcf::SmPolicyNotification policyNotification = {};
++                filtered.get_to(policyNotification);
++                this->modify_sm_context_handler(scid, raw, response);
++
++              } else if (boost::iequals(action, "terminate")) {
++                oai::model::pcf::TerminationNotification
++                    terminationNotification = {};
++                nlohmann::json::parse(msg.c_str())
++                    .get_to(terminationNotification);
++                this->terminate_policy_notification_handler(
++                    scid, terminationNotification, response);
++              } else {
+                 response.write_head(http_status_code::BAD_REQUEST);
+                 response.end();
+-                return;
+-              } catch (std::exception& e) {
+-                Logger::smf_api_server().warn("Error: %s!", e.what());
+-                response.write_head(http_status_code::INTERNAL_SERVER_ERROR);
+-                response.end();
+-                return;
+               }
++              return;
++            } catch (nlohmann::detail::exception& e) {
++              Logger::smf_sbi().warn(
++                  "Can not parse the JSON data (error: %s)!", e.what());
++              response.write_head(http_status_code::BAD_REQUEST);
++              response.end();
++              return;
++            } catch (std::exception& e) {
++              Logger::smf_api_server().warn("Error: %s!", e.what());
++              response.write_head(http_status_code::INTERNAL_SERVER_ERROR);
++              response.end();
++              return;
+             }
+-
+-            // TODO:
+-            response.write_head(http_status_code::BAD_REQUEST);
+-            response.end();
+-            return;
+           }
++
++          // TODO:
++          response.write_head(http_status_code::BAD_REQUEST);
++          response.end();
++          return;
+         });
+       });
+ 
+@@ -1038,17 +1059,13 @@ void smf_http2_server::create_event_subscription_handler(
+ 
+ //------------------------------------------------------------------------------
+ void smf_http2_server::modify_sm_context_handler(
+-    const std::string& scid_str,
+-    const oai::model::pcf::SmPolicyNotification& smPolicyNotification,
++    const std::string& scid_str, const nlohmann::json& sm_policy_notification,
+     const response& response) {
+   Logger::smf_api_server().info(
+       "Received a PCF-initiated SM Policy Association Modification "
+       "(SmPolicyNotification Request)");
+ 
+   oai::app::smf::pdu_session_update_sm_context_request sm_context_req_msg = {};
+-  nlohmann::json sm_policy_notification                                   = {};
+-
+-  to_json(sm_policy_notification, smPolicyNotification);
+   sm_context_req_msg.set_json_data(sm_policy_notification);
+ 
+   // Handle the message in smf_app
+@@ -1095,19 +1112,27 @@ void smf_http2_server::modify_sm_context_handler(
+       http_response_code =
+           policy_notification_response[oai::http::kSbiResponseHttpResponseCode]
+               .get<int>();
++    } else if (
++        policy_notification_response.find("http_code") !=
++        policy_notification_response.end()) {
++      http_response_code =
++          policy_notification_response["http_code"].get<int>();
+     }
+ 
+-    if (http_response_code == 200) {
++    if (http_response_code == 200 || http_response_code == 204) {
+       response.write_head(http_status_code::OK);
+       response.end();
+ 
+     } else {
++      if (http_response_code == 0)
++        http_response_code = http_status_code::INTERNAL_SERVER_ERROR;
+       // Problem details
+-      if (policy_notification_response.find("ProblemDetails") !=
+-          policy_notification_response.end()) {
+-        json_data = policy_notification_response["ProblemDetails"];
+-      }
++      oai::model::common::ProblemDetails problem_details = {};
++      problem_details.setStatus(http_response_code);
++      problem_details.setCause("UNSPECIFIED");
++      to_json(json_data, problem_details);
+       h.emplace("content-type", header_value{"application/problem+json"});
++      response.write_head(http_response_code, h);
+       response.end(json_data.dump().c_str());
+     }
+   } else {
+diff --git a/src/api-server/smf-http2-server.h b/src/api-server/smf-http2-server.h
+index 859d1a07..4f0b422f 100644
+--- a/src/api-server/smf-http2-server.h
++++ b/src/api-server/smf-http2-server.h
+@@ -60,8 +60,7 @@ class smf_http2_server {
+       nlohmann::json& configuration_info, const response& response);
+ 
+   void modify_sm_context_handler(
+-      const std::string& scid,
+-      const oai::model::pcf::SmPolicyNotification& smPolicyNotification,
++      const std::string& scid, const nlohmann::json& sm_policy_notification,
+       const response& response);
+ 
+   void terminate_policy_notification_handler(
+diff --git a/src/smf_app/session_handler.cpp b/src/smf_app/session_handler.cpp
+index 0c0d3792..06c105a3 100644
+--- a/src/smf_app/session_handler.cpp
++++ b/src/smf_app/session_handler.cpp
+@@ -42,6 +42,12 @@ bool session_handler::has_session_graph() {
+ //------------------------------------------------------------------------------
+ qos_flow_context_updated session_handler::get_qos_flow_context_updated(
+     const pfcp::qfi_t& qfi) {
++  return build_qos_flow_context(qfi);
++}
++
++//------------------------------------------------------------------------------
++qos_flow_context_updated session_handler::build_qos_flow_context(
++    const pfcp::qfi_t& qfi) {
+   if (!has_session_graph()) {
+     Logger::smf_app().error(
+         "Cannot receive QoS flow because UPF graph does not exist");
+@@ -58,15 +64,27 @@ qos_flow_context_updated session_handler::get_qos_flow_context_updated(
+     flow.set_dl_fteid(edge->next_hop_fteid);
+     flow.set_ul_fteid(edge->fteid);
+ 
+-    // add QoS rule to flow
+-    auto rule = qos_rule_from_edge(edge);
+-    if (rule.GetNumberOfPacketFilters() != 0) {
+-      flow.add_qos_rule(rule);
+-    } else {
+-      Logger::smf_n1().warn(
+-          "QoS rule %u does not have a packet filter. This rule is not sent to "
+-          "UE (NAS). Please set packetFilterUsage to true in the PCC rules.",
+-          edge->qos_rule_id);
++    // add QoS rule(s) to flow. A dynamic QoS flow (PCF-initiated) may consist
++    // of several access edges with the same QFI (one per flow information of
++    // the PCC rule): one QoS rule with one packet filter is created per edge
++    // (TS 24.501 allows several QoS rules per QoS flow)
++    std::vector<std::shared_ptr<qos_upf_edge>> rule_edges = {edge};
++    if (!edge->default_qos) {
++      for (const auto& other : get_access_edges_for_qfi(edge->qfi.qfi)) {
++        if (other != edge && !other->default_qos) rule_edges.push_back(other);
++      }
++    }
++    for (const auto& rule_edge : rule_edges) {
++      auto rule = qos_rule_from_edge(rule_edge);
++      if (rule.GetNumberOfPacketFilters() != 0) {
++        flow.add_qos_rule(rule);
++      } else {
++        Logger::smf_n1().warn(
++            "QoS rule %u does not have a packet filter. This rule is not sent "
++            "to UE (NAS). Please set packetFilterUsage to true in the PCC "
++            "rules.",
++            rule_edge->qos_rule_id);
++      }
+     }
+ 
+     // add flow_description_content
+@@ -651,9 +669,75 @@ std::shared_ptr<qos_upf_edge> session_handler::get_edge_for_qfi(uint8_t qfi) {
+     }
+   }
+ 
++  // dynamic QoS flow (PCF-initiated) with several flow informations: all the
++  // edges share the same QoS profile, use the first one
++  if (!qfi_edges.empty()) {
++    return qfi_edges[0];
++  }
++
++  return nullptr;
++}
++
++//------------------------------------------------------------------------------
++void session_handler::add_dynamic_flow(
++    const std::string& pcc_rule_id, uint8_t qfi) {
++  std::unique_lock lock(m_session_handler_mutex);
++  m_dynamic_flows[pcc_rule_id] = qfi;
++}
++
++//------------------------------------------------------------------------------
++std::optional<uint8_t> session_handler::get_dynamic_flow(
++    const std::string& pcc_rule_id) {
++  std::shared_lock lock(m_session_handler_mutex);
++  auto it = m_dynamic_flows.find(pcc_rule_id);
++  if (it == m_dynamic_flows.end()) return std::nullopt;
++  return it->second;
++}
++
++//------------------------------------------------------------------------------
++void session_handler::remove_dynamic_flow(const std::string& pcc_rule_id) {
++  std::unique_lock lock(m_session_handler_mutex);
++  m_dynamic_flows.erase(pcc_rule_id);
++}
++
++//------------------------------------------------------------------------------
++std::map<std::string, uint8_t> session_handler::get_dynamic_flows() {
++  std::shared_lock lock(m_session_handler_mutex);
++  return m_dynamic_flows;
++}
++
++//------------------------------------------------------------------------------
++std::vector<std::shared_ptr<qos_upf_edge>>
++session_handler::get_access_edges_for_qfi(uint8_t qfi) {
++  std::vector<std::shared_ptr<qos_upf_edge>> edges;
++  if (!m_session_graph) return edges;
++  for (const auto& edge : m_session_graph->get_access_edges()) {
++    if (edge->qfi.qfi == qfi) edges.push_back(edge);
++  }
++  return edges;
++}
++
++//------------------------------------------------------------------------------
++std::shared_ptr<qos_upf_edge> session_handler::get_default_access_edge() {
++  if (!m_session_graph) return nullptr;
++  auto edges = m_session_graph->get_access_edges();
++  for (const auto& edge : edges) {
++    if (edge->default_qos) return edge;
++  }
++  if (!edges.empty()) return edges[0];
+   return nullptr;
+ }
+ 
++//------------------------------------------------------------------------------
++uint8_t session_handler::allocate_qos_rule_id() {
++  return generate_qos_rule_id();
++}
++
++//------------------------------------------------------------------------------
++void session_handler::free_qos_rule_id(uint8_t rule_id) {
++  release_qos_rule_id(rule_id);
++}
++
+ //------------------------------------------------------------------------------
+ void session_handler::deallocate_resources() {
+   for (const auto& edge : m_session_graph->get_access_edges()) {
+diff --git a/src/smf_app/session_handler.hpp b/src/smf_app/session_handler.hpp
+index 0d48bb20..140a062e 100644
+--- a/src/smf_app/session_handler.hpp
++++ b/src/smf_app/session_handler.hpp
+@@ -2,7 +2,9 @@
+  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
+  */
+ 
++#include <map>
+ #include <memory>
++#include <optional>
+ 
+ #include <smf_msg.hpp>
+ #include <smf_pfcp_association.hpp>
+@@ -178,7 +180,42 @@ class session_handler {
+   static bool is_downlink_eth_flow_direction(
+       const oai::model::pcf::FlowInformation& flow_direction);
+ 
++  //
++  // Dynamic QoS flows created by PCF-initiated PDU session modification
++  // (TS 23.502 4.3.3.2), keyed by PCC rule ID
++  //
++  void add_dynamic_flow(const std::string& pcc_rule_id, uint8_t qfi);
++  std::optional<uint8_t> get_dynamic_flow(const std::string& pcc_rule_id);
++  void remove_dynamic_flow(const std::string& pcc_rule_id);
++  std::map<std::string, uint8_t> get_dynamic_flows();
++
++  /**
++   * @return all the access (N3) edges carrying the given QFI
++   */
++  std::vector<std::shared_ptr<qos_upf_edge>> get_access_edges_for_qfi(
++      uint8_t qfi);
++
++  /**
++   * @return the access (N3) edge of the default QoS flow (or the first access
++   * edge if there is no default one), nullptr if there is no graph
++   */
++  std::shared_ptr<qos_upf_edge> get_default_access_edge();
++
++  /**
++   * Allocate a QoS rule ID for a new dynamic QoS flow
++   */
++  uint8_t allocate_qos_rule_id();
++  void free_qos_rule_id(uint8_t rule_id);
++
++  /**
++   * Build the QoS flow context (QoS profile, QoS rule, QoS flow description)
++   * for the given QFI, without changing the list of QFIs to be updated
++   */
++  qos_flow_context_updated build_qos_flow_context(const pfcp::qfi_t& qfi);
++
+  private:
++  std::map<std::string, uint8_t> m_dynamic_flows;  // PCC rule ID <-> QFI
++
+   std::shared_ptr<upf_graph> m_session_graph;
+   std::vector<pfcp::qfi_t> m_qfis_to_be_updated;
+   uint8_t m_cause_value = k5gsmCauseRequestAccepted;  // for NGAP cause
+diff --git a/src/smf_app/smf_context.cpp b/src/smf_app/smf_context.cpp
+index a7988bfd..3f9b1cca 100644
+--- a/src/smf_app/smf_context.cpp
++++ b/src/smf_app/smf_context.cpp
+@@ -2315,8 +2315,25 @@ bool smf_context::handle_pdu_session_update_sm_context_request(
+           // TODO:
+           return false;
+         }
+-        // need to update UPF accordingly
+-        update_upf = true;
++        // need to update UPF accordingly, but only if the gNB provided a new
++        // DL tunnel (e.g. not for a PCF/network-requested QoS flow
++        // modification, where the N3 tunnel is unchanged)
++        {
++          pfcp::fteid_t gnb_dl_fteid = {};
++          smreq->req.get_dl_fteid(gnb_dl_fteid);
++          auto default_edge =
++              sp->get_session_handler()->get_default_access_edge();
++          if (gnb_dl_fteid.is_zero() ||
++              (default_edge && default_edge->next_hop_fteid == gnb_dl_fteid)) {
++            Logger::smf_app().info(
++                "PDU Session Resource Modify Response: N3 tunnel unchanged, "
++                "no N4 update necessary");
++            sm_context_resp_pending->res.set_http_code(http_status_code::OK);
++            update_upf = false;
++          } else {
++            update_upf = true;
++          }
++        }
+       } break;
+ 
+       case n2_sm_info_type_e::PDU_RES_MOD_FAIL: {
+@@ -2563,11 +2580,9 @@ bool smf_context::handle_pdu_session_update_sm_context_request(
+   if (smreq->session_procedure_type ==
+       session_management_procedures_type_e::
+           PDU_SESSION_MODIFICATION_PCF_INITIATED) {
+-    // Process the request -> update UPF if necesssary
+-    // TODO:
+-    // example:
+-    pdu_session_release_procedure = false;
+-    update_upf                    = false;
++    // Process the request -> PCF-initiated PDU session modification if needed
++    return handle_pcf_initiated_policy_update(
++        smreq, sm_context_resp_pending, sp);
+   }
+ 
+   // Step 5. Create a procedure for update SM context and let the procedure
+@@ -4527,8 +4542,12 @@ void smf_context::send_pdu_session_update_response(
+     // Use the first TAI
+     smf_registration.setPlmnId((smf_info.getTaiList()[0]).getPlmnId());
+   }
+-  // Register with the UDM
+-  register_with_udm(supi, pdu_session_id, smf_registration);
++  // Register with the UDM (not for PCF-initiated modifications: the PCF is
++  // waiting synchronously for the response)
++  if (session_procedure_type != session_management_procedures_type_e::
++                                    PDU_SESSION_MODIFICATION_PCF_INITIATED) {
++    register_with_udm(supi, pdu_session_id, smf_registration);
++  }
+ 
+   // Process the response
+   if (resp->res.get_cause() == k5gsmCauseRequestAccepted) {
+@@ -4611,6 +4630,14 @@ void smf_context::send_pdu_session_update_response(
+             "PDU Session Modification UE-initiated (Step 2)");
+       } break;
+ 
++      case session_management_procedures_type_e::
++          PDU_SESSION_MODIFICATION_PCF_INITIATED: {
++        // N1N2MessageTransfer already triggered by the procedure, just answer
++        // the SmPolicyUpdateNotification
++        Logger::smf_app().info("PDU Session Modification PCF-initiated");
++        resp->res.set_http_code(http_status_code::OK);
++      } break;
++
+         // PDU Session Modification UE-initiated (Step 3)
+       case session_management_procedures_type_e::
+           PDU_SESSION_MODIFICATION_UE_INITIATED_STEP3: {
+@@ -4669,7 +4696,12 @@ void smf_context::send_pdu_session_update_response(
+       }
+     }
+   } else {
+-    resp->res.set_http_code(http_status_code::NOT_ACCEPTABLE);
++    if (session_procedure_type == session_management_procedures_type_e::
++                                      PDU_SESSION_MODIFICATION_PCF_INITIATED) {
++      resp->res.set_http_code(http_status_code::INTERNAL_SERVER_ERROR);
++    } else {
++      resp->res.set_http_code(http_status_code::NOT_ACCEPTABLE);
++    }
+   }
+ 
+   // send ITTI message to SMF_APP interface to trigger
+@@ -4981,3 +5013,311 @@ void smf_context::unsubscribe_sdm_subscriptions(
+         itti_msg->get_msg_name());
+   }
+ }
++
++//------------------------------------------------------------------------------
++bool smf_context::handle_pcf_initiated_policy_update(
++    std::shared_ptr<itti_sbi_update_sm_context_request>& smreq,
++    std::shared_ptr<itti_sbi_update_sm_context_response>& sm_context_resp,
++    std::shared_ptr<smf_pdu_session>& sp) {
++  Logger::smf_app().info(
++      "Handle PCF-initiated SM Policy Association Modification (PDU session "
++      "ID %d)",
++      sp->get_pdu_session_id());
++
++  if (!sp->policy_ptr) {
++    Logger::smf_app().warn(
++        "PDU session has no SM policy association, ignore the notification");
++    smf_app_inst->trigger_http_response(
++        http_status_code::NOT_FOUND, smreq->pid,
++        N11_SESSION_UPDATE_SM_CONTEXT_RESPONSE);
++    return true;
++  }
++
++  nlohmann::json notification = {};
++  smreq->req.get_json_data(notification);
++  nlohmann::json decision_json = nlohmann::json::object();
++  if (notification.contains("smPolicyDecision") &&
++      notification["smPolicyDecision"].is_object()) {
++    decision_json = notification["smPolicyDecision"];
++  }
++  Logger::smf_app().debug(
++      "SmPolicyDecision received from PCF: %s", decision_json.dump());
++
++  auto sh = sp->get_session_handler();
++  oai::model::pcf::SmPolicyDecision& decision = sp->policy_ptr->decision;
++  const oai::model::pcf::SmPolicyDecision old_decision = decision;
++
++  auto old_rules = decision.getPccRules();
++  auto rules     = old_rules;
++  auto qos_decs  = decision.getQosDecs();
++  std::set<std::string> changed_qos_ids;
++  pcf_policy_change change;
++
++  try {
++    // QoS decisions (null = removed, TS 29.512)
++    if (decision_json.contains("qosDecs") &&
++        decision_json["qosDecs"].is_object()) {
++      for (const auto& [id, value] : decision_json["qosDecs"].items()) {
++        if (value.is_null()) {
++          qos_decs.erase(id);
++        } else {
++          qos_decs[id] = value.get<oai::model::pcf::QosData>();
++        }
++        changed_qos_ids.insert(id);
++      }
++    }
++
++    std::map<std::string, oai::model::pcf::PccRule> updated_rules;
++    if (decision_json.contains("pccRules") &&
++        decision_json["pccRules"].is_object()) {
++      for (const auto& [id, value] : decision_json["pccRules"].items()) {
++        if (value.is_null()) {
++          rules.erase(id);
++          auto qfi = sh->get_dynamic_flow(id);
++          if (qfi.has_value()) {
++            pcf_qos_flow_change c;
++            c.pcc_rule_id = id;
++            c.qfi         = qfi.value();
++            change.to_release.push_back(c);
++          } else {
++            Logger::smf_app().info(
++                "Removal of PCC rule %s ignored: no dynamic QoS flow", id);
++          }
++        } else {
++          auto rule          = value.get<oai::model::pcf::PccRule>();
++          rules[id]          = rule;
++          updated_rules[id] = rule;
++        }
++      }
++    }
++
++    // rules whose QoS decision changed (without the rule itself being sent)
++    for (const auto& [id, qfi] : sh->get_dynamic_flows()) {
++      if (updated_rules.count(id) > 0 || rules.count(id) == 0) continue;
++      const auto& rule = rules[id];
++      if (!rule.getRefQosData().empty() &&
++          changed_qos_ids.count(rule.getRefQosData()[0]) > 0) {
++        updated_rules[id] = rule;
++      }
++    }
++
++    for (const auto& [id, rule] : updated_rules) {
++      if (rule.getRefQosData().empty() ||
++          qos_decs.count(rule.getRefQosData()[0]) == 0) {
++        Logger::smf_app().warn(
++            "PCC rule %s does not reference a known QoS decision, ignored", id);
++        continue;
++      }
++      const auto& qos = qos_decs[rule.getRefQosData()[0]];
++      auto qfi        = sh->get_dynamic_flow(id);
++
++      if (qfi.has_value()) {
++        // existing dynamic QoS flow
++        bool flows_changed =
++            old_rules.count(id) == 0 ||
++            !(old_rules[id].getFlowInfos() == rule.getFlowInfos()) ||
++            old_rules[id].getPrecedence() != rule.getPrecedence();
++        if (flows_changed) {
++          // packet filters changed: release and re-create the QoS flow
++          pcf_qos_flow_change rel;
++          rel.pcc_rule_id = id;
++          rel.qfi         = qfi.value();
++          change.to_release.push_back(rel);
++          pcf_qos_flow_change add;
++          add.pcc_rule_id = id;
++          add.pcc_rule    = rule;
++          add.qos         = qos;
++          change.to_add.push_back(add);
++        } else {
++          auto edges = sh->get_access_edges_for_qfi(qfi.value());
++          if (!edges.empty() && edges[0]->qos_profile == qos) {
++            Logger::smf_app().debug("PCC rule %s unchanged", id);
++            continue;
++          }
++          pcf_qos_flow_change mod;
++          mod.pcc_rule_id = id;
++          mod.pcc_rule    = rule;
++          mod.qos         = qos;
++          mod.qfi         = qfi.value();
++          change.to_modify.push_back(mod);
++        }
++      } else if (old_rules.count(id) > 0) {
++        Logger::smf_app().info(
++            "PCC rule %s was installed at PDU session establishment, "
++            "modification is not supported, ignored",
++            id);
++      } else {
++        // new PCC rule -> new QoS flow
++        bool has_filter = false;
++        for (const auto& flow : rule.getFlowInfos()) {
++          if (flow.flowDescriptionIsSet() &&
++              flow.getFlowDescription() != DEFAULT_FLOW_DESCRIPTION) {
++            has_filter = true;
++          }
++        }
++        if (!has_filter) {
++          Logger::smf_app().warn(
++              "PCC rule %s has no specific flow description, no dedicated QoS "
++              "flow created",
++              id);
++          continue;
++        }
++        pcf_qos_flow_change add;
++        add.pcc_rule_id = id;
++        add.pcc_rule    = rule;
++        add.qos         = qos;
++        change.to_add.push_back(add);
++      }
++    }
++
++    // Traffic control / session rules: stored only
++    if (decision_json.contains("traffContDecs") &&
++        decision_json["traffContDecs"].is_object()) {
++      auto tcs = decision.getTraffContDecs();
++      for (const auto& [id, value] : decision_json["traffContDecs"].items()) {
++        if (value.is_null()) {
++          tcs.erase(id);
++        } else {
++          tcs[id] = value.get<oai::model::pcf::TrafficControlData>();
++        }
++      }
++      decision.setTraffContDecs(tcs);
++    }
++  } catch (std::exception& e) {
++    Logger::smf_app().warn(
++        "Cannot process the SM policy decision from the PCF: %s", e.what());
++    decision = old_decision;
++    smf_app_inst->trigger_http_response(
++        http_status_code::BAD_REQUEST, smreq->pid,
++        N11_SESSION_UPDATE_SM_CONTEXT_RESPONSE);
++    return true;
++  }
++
++  decision.setPccRules(rules);
++  decision.setQosDecs(qos_decs);
++
++  if (change.empty()) {
++    Logger::smf_app().info(
++        "PCF-initiated modification: no QoS flow change for this PDU session");
++    smf_app_inst->trigger_http_response(
++        http_status_code::OK, smreq->pid,
++        N11_SESSION_UPDATE_SM_CONTEXT_RESPONSE);
++    return true;
++  }
++
++  auto proc = std::make_shared<session_update_sm_context_procedure>(sp);
++  std::shared_ptr<smf_procedure> sproc = proc;
++  proc->session_procedure_type         = session_management_procedures_type_e::
++      PDU_SESSION_MODIFICATION_PCF_INITIATED;
++  proc->pcf_change = change;
++  insert_procedure(sproc);
++  if (proc->run(smreq, sm_context_resp, shared_from_this()) ==
++      smf_procedure_code::ERROR) {
++    Logger::smf_app().warn("PCF-initiated PDU Session Modification failed");
++    remove_procedure(sproc.get());
++    decision = old_decision;
++    smf_app_inst->trigger_http_response(
++        http_status_code::INTERNAL_SERVER_ERROR, smreq->pid,
++        N11_SESSION_UPDATE_SM_CONTEXT_RESPONSE);
++  }
++  return true;
++}
++
++//------------------------------------------------------------------------------
++void smf_context::trigger_pcf_initiated_n1n2_message_transfer(
++    const std::shared_ptr<smf_pdu_session>& sp,
++    const pcf_policy_change& change) {
++  Logger::smf_app().info(
++      "PCF-initiated PDU Session Modification: send N1N2MessageTransfer");
++
++  std::shared_ptr<itti_nx_trigger_pdu_session_modification> itti_msg =
++      std::make_shared<itti_nx_trigger_pdu_session_modification>(
++          TASK_SMF_APP, TASK_SMF_SBI);
++  itti_msg->http_version = smf_cfg->get_http_version();
++  auto& msg              = itti_msg->msg;
++  msg.set_supi(supi);
++  msg.set_dnn(sp->get_dnn());
++  msg.set_pdu_session_id(sp->get_pdu_session_id());
++  msg.set_snssai(sp->get_snssai());
++  msg.pcf_initiated = true;
++  // network-initiated procedure: no procedure transaction identity assigned
++  procedure_transaction_id_t pti = {};
++  pti.procedure_transaction_id   = 0;
++  msg.set_pti(pti);
++
++  auto sh = sp->get_session_handler();
++  for (const auto& c : change.to_add) {
++    pfcp::qfi_t qfi(c.qfi);
++    msg.add_qfi(qfi);
++    msg.add_qos_flow_context_updated(sh->build_qos_flow_context(qfi));
++  }
++  for (const auto& c : change.to_modify) {
++    pfcp::qfi_t qfi(c.qfi);
++    msg.add_qfi(qfi);
++    msg.qfis_modified.insert(c.qfi);
++    msg.add_qos_flow_context_updated(sh->build_qos_flow_context(qfi));
++  }
++  for (const auto& c : change.to_release) {
++    // a released + re-added rule (packet filter change) is both in to_release
++    // and to_add with different QFIs
++    msg.qfis_to_release.push_back(c.qfi);
++    for (const auto& rule_id : c.qos_rule_ids) {
++      msg.qos_rules_to_delete.push_back(std::make_pair(rule_id, c.qfi));
++    }
++  }
++
++  std::string n1_sm_msg, n1_sm_msg_hex, n2_sm_info, n2_sm_info_hex;
++  // N1: PDU SESSION MODIFICATION COMMAND (PTI 0: network-initiated)
++  if (!smf_n1::get_instance().create_n1_pdu_session_modification_command(
++          msg, n1_sm_msg, k5gsmCauseRegularDeactivation)) {
++    Logger::smf_app().warn("Cannot create PDU Session Modification Command");
++  }
++  conv::convert_string_2_hex(n1_sm_msg, n1_sm_msg_hex);
++  msg.set_n1_sm_message(n1_sm_msg_hex);
++
++  // N2: PDU Session Resource Modify Request Transfer
++  if (!smf_n2::get_instance()
++           .create_n2_pdu_session_resource_modify_request_transfer(
++               msg, n2_sm_info_type_e::PDU_RES_MOD_REQ, n2_sm_info)) {
++    Logger::smf_app().warn(
++        "Cannot create PDU Session Resource Modify Request Transfer");
++    return;
++  }
++  conv::convert_string_2_hex(n2_sm_info, n2_sm_info_hex);
++  msg.set_n2_sm_information(n2_sm_info_hex);
++
++  std::string url = get_amf_addr() +
++                    oai::smf::api::smf_sbi_helper::
++                        get_amf_comm_ue_context_n1_n2_message_base_uri(supi);
++  msg.set_amf_url(url);
++  Logger::smf_app().debug(
++      "N1N2MessageTransfer will be sent to AMF with URL: %s", url.c_str());
++
++  nlohmann::json json_data = {};
++  json_data["n1MessageContainer"]["n1MessageClass"] =
++      oai::utils::N1N2_MESSAGE_CLASS;
++  json_data["n1MessageContainer"]["n1MessageContent"]["contentId"] =
++      oai::utils::N1_SM_CONTENT_ID;
++  json_data["n2InfoContainer"]["n2InformationClass"] =
++      oai::utils::N1N2_MESSAGE_CLASS;
++  json_data["n2InfoContainer"]["smInfo"]["pduSessionId"] =
++      sp->get_pdu_session_id();
++  json_data["n2InfoContainer"]["smInfo"]["n2InfoContent"]["ngapIeType"] =
++      "PDU_RES_MOD_REQ";
++  json_data["n2InfoContainer"]["smInfo"]["n2InfoContent"]["ngapData"]
++           ["contentId"] = N2_SM_CONTENT_ID;
++  json_data["n2InfoContainer"]["smInfo"]["sNssai"]["sst"] =
++      sp->get_snssai().sst;
++  json_data["n2InfoContainer"]["smInfo"]["sNssai"]["sd"] = sp->get_snssai().sd;
++  json_data["pduSessionId"] = sp->get_pdu_session_id();
++  msg.set_json_data(json_data);
++
++  Logger::smf_app().info(
++      "Sending ITTI message %s to task TASK_SMF_SBI", itti_msg->get_msg_name());
++  int ret = itti_inst->send_msg(itti_msg);
++  if (RETURNok != ret) {
++    Logger::smf_app().error(
++        "Could not send ITTI message %s to task TASK_SMF_SBI",
++        itti_msg->get_msg_name());
++  }
++}
+diff --git a/src/smf_app/smf_context.hpp b/src/smf_app/smf_context.hpp
+index 9291a312..e06bf399 100644
+--- a/src/smf_app/smf_context.hpp
++++ b/src/smf_app/smf_context.hpp
+@@ -474,6 +474,27 @@ class smf_context : public std::enable_shared_from_this<smf_context> {
+   void handle_pdu_session_modification_network_requested(
+       std::shared_ptr<itti_nx_trigger_pdu_session_modification> msg);
+ 
++  /*
++   * Handle a PCF-initiated SM Policy Association Modification
++   * (SmPolicyUpdateNotification, TS 29.512 4.2.4.2) and trigger the
++   * PCF-initiated PDU Session Modification (TS 23.502 4.3.3.2) when dynamic
++   * QoS flows have to be added, modified or released
++   * @return true if the request has been handled (a response is/will be sent)
++   */
++  bool handle_pcf_initiated_policy_update(
++      std::shared_ptr<itti_sbi_update_sm_context_request>& smreq,
++      std::shared_ptr<itti_sbi_update_sm_context_response>& sm_context_resp,
++      std::shared_ptr<smf_pdu_session>& sp);
++
++  /*
++   * Send Namf_Communication_N1N2MessageTransfer with N2 PDU Session Resource
++   * Modify Request Transfer and N1 PDU Session Modification Command for the
++   * given PCF-initiated QoS flow changes
++   */
++  void trigger_pcf_initiated_n1n2_message_transfer(
++      const std::shared_ptr<smf_pdu_session>& sp,
++      const pcf_policy_change& change);
++
+   /*
+    * Handle PDU Session Modification Request
+    * @param [std::shared_ptr<oai::nas::Nas5gsmMessage>&] nas_message: NAS
+diff --git a/src/smf_app/smf_msg.cpp b/src/smf_app/smf_msg.cpp
+index e1b76972..59af6d23 100644
+--- a/src/smf_app/smf_msg.cpp
++++ b/src/smf_app/smf_msg.cpp
+@@ -1338,3 +1338,10 @@ void pdu_session_msg::add_qos_flow_to_list(
+         "Failed to add a QoS Flow Context (QFI %d), invalid QFI", flow.qfi.qfi);
+   }
+ }
++
++//-----------------------------------------------------------------------------
++void pdu_session_modification_network_requested::
++    get_all_qos_flow_context_updateds(
++        std::map<uint8_t, qos_flow_context_updated>& all_flows) const {
++  all_flows = qos_flow_context_updateds;
++}
+diff --git a/src/smf_app/smf_msg.hpp b/src/smf_app/smf_msg.hpp
+index c7264b62..83e3e74f 100644
+--- a/src/smf_app/smf_msg.hpp
++++ b/src/smf_app/smf_msg.hpp
+@@ -5,6 +5,8 @@
+ #ifndef FILE_SMF_MSG_HPP_SEEN
+ #define FILE_SMF_MSG_HPP_SEEN
+ 
++#include <set>
++
+ #include "3gpp_23.003.h"
+ #include "3gpp_24.007.hpp"
+ #include "3gpp_24.501.hpp"
+@@ -544,6 +546,17 @@ class pdu_session_modification_network_requested
+   void add_qos_flow_context_updated(const qos_flow_context_updated& qos_flow);
+   bool get_qos_flow_context_updated(
+       const pfcp::qfi_t& qfi, qos_flow_context_updated& qos_flow);
++  void get_all_qos_flow_context_updateds(
++      std::map<uint8_t, qos_flow_context_updated>& all_flows) const;
++
++  // PCF-initiated PDU session modification (TS 23.502 4.3.3.2):
++  // QoS flows to be released (N2 QoS Flow to Release List, N1 delete QoS flow
++  // descriptions), QoS rules to be deleted, and QFIs which are modified (as
++  // opposed to newly created)
++  bool pcf_initiated = false;
++  std::vector<uint8_t> qfis_to_release;
++  std::vector<std::pair<uint8_t, uint8_t>> qos_rules_to_delete;  // rule, QFI
++  std::set<uint8_t> qfis_modified;
+ 
+  private:
+   std::string amf_url;
+diff --git a/src/smf_app/smf_n1.cpp b/src/smf_app/smf_n1.cpp
+index 8794d1ce..7edb683f 100644
+--- a/src/smf_app/smf_n1.cpp
++++ b/src/smf_app/smf_n1.cpp
+@@ -507,6 +507,72 @@ bool smf_n1::create_n1_pdu_session_modification_command(
+     }
+     */
+ 
++  if (msg.pcf_initiated) {
++    // PCF-initiated PDU session modification (TS 23.502 4.3.3.2): no 5GSM
++    // cause, the QoS rules / QoS flow descriptions are built from the QoS flow
++    // changes
++    std::map<uint8_t, qos_flow_context_updated> flows = {};
++    msg.get_all_qos_flow_context_updateds(flows);
++
++    std::vector<oai::nas::QosRule> qos_rule_list = {};
++    std::vector<oai::nas::QosFlowDescription> qos_flow_description_list = {};
++    for (const auto& [qfi, flow] : flows) {
++      oai::nas::QosFlowDescription qfd = flow.get_qos_flow_descriptions();
++      if (msg.qfis_modified.count(qfi) > 0) {
++        qfd.SetOperationCode(
++            oai::nas::
++                kQosFlowDescriptionRuleOperationCodeModifyExistingQosFlowDescriptionAndAddPacketFilters);
++      } else {
++        for (const auto& [rule_id, rule] : flow.qos_rules) {
++          qos_rule_list.push_back(rule);
++        }
++      }
++      qos_flow_description_list.push_back(qfd);
++    }
++    for (const auto& [rule_id, qfi] : msg.qos_rules_to_delete) {
++      oai::nas::QosRule rule = {};
++      rule.SetQosRuleId(rule_id);
++      rule.SetRuleOperationCode(
++          oai::nas::kQosRuleRuleOperationCodeDeleteExistingQosRule);
++      rule.SetDqrBit(oai::nas::kQosRuleTheQosRuleIsNotTheDefaultQosRule);
++      rule.SetNumberOfPacketFilters(0);
++      // NOTE: the NAS library always counts the precedence and QFI octets when
++      // encoding a QoS rule (ENCODE_U8 macro used in an unbraced "if"), so
++      // they are set explicitly to keep the encoding consistent with the
++      // length indicator
++      rule.SetPrecedence(0);
++      rule.SetSegregation(oai::nas::kQosRuleSegregationNotRequested);
++      rule.SetQfi(qfi);
++      rule.SetLengthIndicator();
++      qos_rule_list.push_back(rule);
++    }
++    for (const auto& qfi : msg.qfis_to_release) {
++      oai::nas::QosFlowDescription qfd = {};
++      qfd.SetQfi(qfi);
++      qfd.SetOperationCode(
++          oai::nas::
++              kQosFlowDescriptionRuleOperationCodeDeleteExistingQosFlowDescription);
++      qfd.SetEBit(oai::nas::kQosFlowDescriptionEBitReserved);
++      qfd.SetLength();
++      qos_flow_description_list.push_back(qfd);
++    }
++    if (!qos_rule_list.empty()) {
++      oai::nas::QosRules qos_rules(kIeiAuthorizedQosRules);
++      qos_rules.Set(qos_rule_list);
++      pdu_session_modification_command->SetAuthorizedQosRules(qos_rules);
++    }
++    if (!qos_flow_description_list.empty()) {
++      oai::nas::QosFlowDescriptions qos_flow_descriptions(
++          kIeiAuthorizedQosFlowDescriptions);
++      qos_flow_descriptions.Set(qos_flow_description_list);
++      pdu_session_modification_command->SetAuthorizedQosFlowDescriptions(
++          qos_flow_descriptions);
++    }
++    Logger::smf_n1().info(
++        "PDU Session Modification Command (PCF-initiated): %d QoS rule(s), %d "
++        "QoS flow description(s)",
++        (int) qos_rule_list.size(), (int) qos_flow_description_list.size());
++  } else {
+   // 5GSM Cause
+   _5gsmCause cause = {};
+   cause.SetValue(static_cast<uint8_t>(sm_cause));
+@@ -525,7 +591,7 @@ bool smf_n1::create_n1_pdu_session_modification_command(
+   std::vector<oai::nas::QosRule> qos_rule_list =
+       sp->get_session_handler()->get_qos_rules();
+ 
+-  oai::nas::QosRules qos_rules = {};
++  oai::nas::QosRules qos_rules(kIeiAuthorizedQosRules);
+   qos_rules.Set(qos_rule_list);
+   pdu_session_modification_command->SetAuthorizedQosRules(qos_rules);
+ 
+@@ -536,7 +602,8 @@ bool smf_n1::create_n1_pdu_session_modification_command(
+       sp->get_session_handler()->get_qos_flows_context_updated();
+ 
+   if (smf_app_inst->is_supi_2_smf_context(supi) and !qos_flows.empty()) {
+-    oai::nas::QosFlowDescriptions qos_flow_descriptions                 = {};
++    oai::nas::QosFlowDescriptions qos_flow_descriptions(
++        kIeiAuthorizedQosFlowDescriptions);
+     std::vector<oai::nas::QosFlowDescription> qos_flow_description_list = {};
+     for (const auto& qf : qos_flows) {
+       oai::nas::QosFlowDescription qos_flow_description =
+@@ -548,6 +615,8 @@ bool smf_n1::create_n1_pdu_session_modification_command(
+         qos_flow_descriptions);
+   }
+ 
++  }
++
+   // TODO: Extended protocol configuration options
+   // TODO: ATSSS container
+   // TODO: IP header compression Configuration
+diff --git a/src/smf_app/smf_n2.cpp b/src/smf_app/smf_n2.cpp
+index ccd5e8b5..d37f35a3 100644
+--- a/src/smf_app/smf_n2.cpp
++++ b/src/smf_app/smf_n2.cpp
+@@ -15,6 +15,12 @@
+ #include "3gpp_commons.h"
+ #include "Helpers.h"
+ #include "PduSessionResourceSetupRequestTransfer.hpp"
++#include "PduSessionResourceModifyRequestTransfer.hpp"
++#include "QosFlowListWithCause.hpp"
++#include "Ngap_PDUSessionResourceModifyRequestTransfer.h"
++#include "Ngap_ProtocolIE-Field.h"
++#include "Ngap_ProtocolIE-ID.h"
++#include "Ngap_CauseNas.h"
+ #include "PduSessionType.hpp"
+ #include "PreemptionCapability_anyOf.h"
+ #include "PreemptionVulnerability_anyOf.h"
+@@ -526,10 +532,105 @@ bool smf_n2::create_n2_pdu_session_resource_modify_request_transfer(
+     n2_sm_info_type_e ngap_info_type, std::string& ngap_msg_str) {
+   Logger::smf_n2().debug(
+       "Create N2 SM Information: NGAP PDU Session Resource Modify Request "
+-      "Transfer IE");
+-  // TODO:
+-  Logger::smf_n2().warn("This function has not been implemented!");
++      "Transfer IE (network-requested)");
++
++  PduSessionResourceModifyRequestTransfer transfer = {};
++
++  // QoS Flow Add or Modify Request List
++  std::map<uint8_t, qos_flow_context_updated> qos_flows = {};
++  msg.get_all_qos_flow_context_updateds(qos_flows);
++  if (!qos_flows.empty()) {
++    QosFlowAddOrModifyRequestList qos_flow_list = {};
++    for (const auto& [qfi, qos_flow] : qos_flows) {
++      if ((qfi < QOS_FLOW_IDENTIFIER_FIRST) or
++          (qfi > QOS_FLOW_IDENTIFIER_LAST)) {
++        Logger::smf_n2().error("Incorrect QFI %d", qfi);
++        return false;
++      }
++      Logger::smf_n2().info(
++          "QoS Flow Add or Modify: QFI %d, 5QI %d, ARP priority level %d", qfi,
++          qos_flow.qos_profile.getR5qi(),
++          qos_flow.qos_profile.getArp().getPriorityLevel());
++      QosFlowAddOrModifyRequestItem qos_flow_item = {};
++      QosFlowIdentifier qos_flow_identifier       = {};
++      qos_flow_identifier.set(qfi);
++      qos_flow_item.setQosFlowIdentifier(qos_flow_identifier);
++      qos_flow_item.setQosFlowLevelQosParameters(
++          get_qos_flow_level_qos_parameters(qos_flow));
++      qos_flow_list.addItem(qos_flow_item);
++    }
++    transfer.setQosFlowAddOrModifyRequestList(qos_flow_list);
++  }
++
++  uint8_t buffer[BUF_LEN];
++  int encoded_size = transfer.encode(buffer, BUF_LEN);
++  if (encoded_size < 0) {
++    Logger::smf_n2().warn(
++        "NGAP PDU Session Resource Modify Request Transfer encode failed");
++    return false;
++  }
++  // aper_encode_to_buffer returns the number of encoded bits
++  encoded_size = (encoded_size + 7) / 8;
++
++  // QoS Flow to Release List (not supported by the NGAP library class): add
++  // the IE at ASN.1 level and re-encode
++  if (!msg.qfis_to_release.empty()) {
++    Ngap_PDUSessionResourceModifyRequestTransfer_t* asn_msg = nullptr;
++    asn_dec_rval_t rc                                        = asn_decode(
++        nullptr, ATS_ALIGNED_CANONICAL_PER,
++        &asn_DEF_Ngap_PDUSessionResourceModifyRequestTransfer,
++        (void**) &asn_msg, buffer, encoded_size);
++    if (rc.code != RC_OK || !asn_msg) {
++      Logger::smf_n2().warn("Cannot decode PDU Session Resource Modify Request "
++                            "Transfer to add the QoS Flow to Release List");
++      ASN_STRUCT_FREE(
++          asn_DEF_Ngap_PDUSessionResourceModifyRequestTransfer, asn_msg);
++      return false;
++    }
++
++    QosFlowListWithCause release_list = {};
++    for (const auto& qfi : msg.qfis_to_release) {
++      Logger::smf_n2().info("QoS Flow to Release: QFI %d", qfi);
++      QosFlowWithCauseItem item             = {};
++      QosFlowIdentifier qos_flow_identifier = {};
++      qos_flow_identifier.set(qfi);
++      oai::ngap::Cause cause = {};
++      cause.set(Ngap_CauseNas_normal_release, Ngap_Cause_PR_nas);
++      item.set(qos_flow_identifier, cause);
++      release_list.addItem(item);
++    }
++
++    auto* ie = (Ngap_PDUSessionResourceModifyRequestTransferIEs_t*) calloc(
++        1, sizeof(Ngap_PDUSessionResourceModifyRequestTransferIEs_t));
++    ie->id          = Ngap_ProtocolIE_ID_id_QosFlowToReleaseList;
++    ie->criticality = Ngap_Criticality_reject;
++    ie->value.present =
++        Ngap_PDUSessionResourceModifyRequestTransferIEs__value_PR_QosFlowListWithCause;
++    if (!release_list.encode(ie->value.choice.QosFlowListWithCause) ||
++        ASN_SEQUENCE_ADD(&asn_msg->protocolIEs.list, ie) != 0) {
++      Logger::smf_n2().warn("Cannot encode the QoS Flow to Release List");
++      ASN_STRUCT_FREE(
++          asn_DEF_Ngap_PDUSessionResourceModifyRequestTransfer, asn_msg);
++      return false;
++    }
++
++    asn_enc_rval_t er = aper_encode_to_buffer(
++        &asn_DEF_Ngap_PDUSessionResourceModifyRequestTransfer, nullptr,
++        asn_msg, buffer, BUF_LEN);
++    ASN_STRUCT_FREE(
++        asn_DEF_Ngap_PDUSessionResourceModifyRequestTransfer, asn_msg);
++    if (er.encoded < 0) {
++      Logger::smf_n2().warn(
++          "NGAP PDU Session Resource Modify Request Transfer (with QoS Flow to "
++          "Release List) encode failed");
++      return false;
++    }
++    encoded_size = (er.encoded + 7) / 8;
++  }
+ 
++  oai::utils::output_wrapper::print_buffer(
++      {}, "N2 SM Buffer Data:", buffer, encoded_size);
++  ngap_msg_str.assign((char*) buffer, encoded_size);
+   return true;
+ }
+ 
+diff --git a/src/smf_app/smf_pfcp_association.cpp b/src/smf_app/smf_pfcp_association.cpp
+index 07ed8972..9b67e1dd 100644
+--- a/src/smf_app/smf_pfcp_association.cpp
++++ b/src/smf_app/smf_pfcp_association.cpp
+@@ -4,6 +4,8 @@
+ 
+ #include "smf_pfcp_association.hpp"
+ 
++#include <set>
++
+ #include "common_defs.h"
+ #include "logger.hpp"
+ #include "smf_n4.hpp"
+@@ -1436,3 +1438,89 @@ uint8_t upf_graph::generate_qfi() {
+ void upf_graph::release_qfi(uint8_t qfi) {
+   qfi_generator.free_uid(qfi);
+ }
++
++//---------------------------------------------------------------------------------------------
++std::shared_ptr<pfcp_association> upf_graph::get_upf_for_edge(
++    const std::shared_ptr<qos_upf_edge>& edge) const {
++  std::shared_lock graph_lock(graph_mutex);
++  for (const auto& [upf, edges] : adjacency_list) {
++    for (const auto& e : edges) {
++      if (e == edge) return upf;
++    }
++  }
++  return nullptr;
++}
++
++//---------------------------------------------------------------------------------------------
++size_t upf_graph::get_upf_count() const {
++  std::shared_lock graph_lock(graph_mutex);
++  return adjacency_list.size();
++}
++
++//---------------------------------------------------------------------------------------------
++uint8_t upf_graph::allocate_qfi() {
++  std::set<uint8_t> used;
++  for (const auto& edge : get_access_edges()) {
++    used.insert(edge->qfi.qfi);
++  }
++  std::unique_lock graph_lock(graph_mutex);
++  // QFI range is 1..63 (TS 38.415)
++  for (int i = 0; i < 64; i++) {
++    uint8_t qfi = qfi_generator.get_uid();
++    if (qfi >= 1 && qfi <= 63 && used.count(qfi) == 0) {
++      qfi_count++;
++      return qfi;
++    }
++  }
++  return 0;
++}
++
++//---------------------------------------------------------------------------------------------
++void upf_graph::free_qfi(uint8_t qfi) {
++  std::unique_lock graph_lock(graph_mutex);
++  qfi_generator.free_uid(qfi);
++  if (qfi_count > 0) qfi_count--;
++}
++
++//---------------------------------------------------------------------------------------------
++void upf_graph::add_qos_flow_edges(
++    const std::shared_ptr<pfcp_association>& upf,
++    const std::shared_ptr<qos_upf_edge>& n3_edge,
++    const std::shared_ptr<qos_upf_edge>& n6_edge) {
++  n3_edge->associated_edge = n6_edge;
++  n6_edge->associated_edge = n3_edge;
++  add_upf_graph_edge(upf, n3_edge);
++  add_upf_graph_edge(upf, n6_edge);
++  std::unique_lock graph_lock(graph_mutex);
++  access_edge_count++;
++  exit_edge_count++;
++  total_edge_count += 2;
++  associated_edge_count += 2;
++}
++
++//---------------------------------------------------------------------------------------------
++std::vector<std::shared_ptr<qos_upf_edge>> upf_graph::remove_qos_flow_edges(
++    uint8_t qfi) {
++  std::vector<std::shared_ptr<qos_upf_edge>> removed;
++  std::unique_lock graph_lock(graph_mutex);
++  UPInterfaceType n3_type;
++  n3_type.setEnumValue(UPInterfaceType_anyOf::eUPInterfaceType_anyOf::N3);
++  for (auto& [upf, edges] : adjacency_list) {
++    for (auto it = edges.begin(); it != edges.end();) {
++      if ((*it)->qfi.qfi == qfi) {
++        if ((*it)->type == n3_type) {
++          if (access_edge_count > 0) access_edge_count--;
++        } else {
++          if (exit_edge_count > 0) exit_edge_count--;
++        }
++        if (total_edge_count > 0) total_edge_count--;
++        if (associated_edge_count > 0) associated_edge_count--;
++        removed.push_back(*it);
++        it = edges.erase(it);
++      } else {
++        ++it;
++      }
++    }
++  }
++  return removed;
++}
+diff --git a/src/smf_app/smf_pfcp_association.hpp b/src/smf_app/smf_pfcp_association.hpp
+index 53902a2b..1332740f 100644
+--- a/src/smf_app/smf_pfcp_association.hpp
++++ b/src/smf_app/smf_pfcp_association.hpp
+@@ -385,6 +385,49 @@ class upf_graph {
+   void update_next_hop_fteid(
+       const std::shared_ptr<qos_upf_edge>& src_edge,
+       const pfcp::fteid_t& fteid);
++
++  //
++  // Dynamic QoS flows (PCF-initiated PDU session modification, TS 23.502
++  // 4.3.3.2). Only used on per-session graphs.
++  //
++
++  /**
++   * @return the UPF (graph node) owning the given edge, nullptr if not found
++   */
++  std::shared_ptr<pfcp_association> get_upf_for_edge(
++      const std::shared_ptr<qos_upf_edge>& edge) const;
++
++  /**
++   * @return number of UPFs (nodes) in this graph
++   */
++  size_t get_upf_count() const;
++
++  /**
++   * Allocates a QFI which is not used yet in this graph
++   * @return QFI, 0 if no QFI is available
++   */
++  uint8_t allocate_qfi();
++
++  /**
++   * Releases a QFI allocated with allocate_qfi
++   */
++  void free_qfi(uint8_t qfi);
++
++  /**
++   * Adds an associated pair of access (N3) / exit (N6) edges for a dynamic
++   * QoS flow to the given UPF node
++   */
++  void add_qos_flow_edges(
++      const std::shared_ptr<pfcp_association>& upf,
++      const std::shared_ptr<qos_upf_edge>& n3_edge,
++      const std::shared_ptr<qos_upf_edge>& n6_edge);
++
++  /**
++   * Removes all the edges (N3 and associated N6) of the given QFI
++   * @return the removed edges
++   */
++  std::vector<std::shared_ptr<qos_upf_edge>> remove_qos_flow_edges(
++      uint8_t qfi);
+ };
+ 
+ class pfcp_associations {
+diff --git a/src/smf_app/smf_procedure.cpp b/src/smf_app/smf_procedure.cpp
+index 9d1d005c..83165726 100644
+--- a/src/smf_app/smf_procedure.cpp
++++ b/src/smf_app/smf_procedure.cpp
+@@ -69,7 +69,11 @@ pfcp::fteid_t smf_session_procedure::pfcp_prepare_fteid(
+     pfcp::fteid_t& fteid, const bool& ftup_supported,
+     const oai::config::smf::upf& cfg) {
+   pfcp::fteid_t local_fteid;
+-  if (!ftup_supported) {
++  if (!ftup_supported && !fteid.is_zero() && fteid.ch == 0) {
++    // F-TEID already allocated by the SMF for this PDU session (e.g. additional
++    // QoS flow of a PCF-initiated PDU session modification): same N3 tunnel
++    local_fteid = fteid;
++  } else if (!ftup_supported) {
+     Logger::smf_app().info(
+         "Generating N3-UL TEID since current UPF does not support TEID "
+         "Creation");
+@@ -1362,6 +1366,13 @@ smf_procedure_code session_update_sm_context_procedure::run(
+     return smf_procedure_code::ERROR;
+   }
+ 
++  if (session_procedure_type == session_management_procedures_type_e::
++                                    PDU_SESSION_MODIFICATION_PCF_INITIATED) {
++    n11_trigger           = sm_context_req;
++    n11_triggered_pending = std::move(sm_context_resp);
++    return run_pcf_initiated(sc);
++  }
++
+   //  TODO: UPF insertion in case of Handover
+ 
+   graph->start_asynch_dfs_procedure(false);
+@@ -1572,6 +1583,11 @@ smf_procedure_code session_update_sm_context_procedure::handle_itti_msg(
+       "Handle N4 Session Modification Response (PDU Session Id %d)",
+       n11_trigger->req.get_pdu_session_id());
+ 
++  if (session_procedure_type == session_management_procedures_type_e::
++                                    PDU_SESSION_MODIFICATION_PCF_INITIATED) {
++    return handle_pcf_initiated_n4_response(resp, sc);
++  }
++
+   pfcp::cause_t cause = {};
+   resp.pfcp_ies.get(cause);
+ 
+@@ -1750,6 +1766,278 @@ smf_procedure_code session_update_sm_context_procedure::handle_itti_msg(
+   return smf_procedure_code::OK;
+ }
+ 
++//------------------------------------------------------------------------------
++smf_procedure_code session_update_sm_context_procedure::run_pcf_initiated(
++    const std::shared_ptr<oai::app::smf::smf_context>& sc) {
++  Logger::smf_app().info(
++      "PCF-initiated PDU Session Modification: %d QoS flow(s) to add, %d to "
++      "modify, %d to release",
++      (int) pcf_change.to_add.size(), (int) pcf_change.to_modify.size(),
++      (int) pcf_change.to_release.size());
++
++  auto sh    = sps->get_session_handler();
++  auto graph = sh->get_session_graph();
++  if (!graph) {
++    Logger::smf_app().warn("PDU session does not have a UPF graph");
++    return smf_procedure_code::ERROR;
++  }
++
++  UPInterfaceType n6_type;
++  n6_type.setEnumValue(UPInterfaceType_anyOf::eUPInterfaceType_anyOf::N6);
++
++  // The new QoS flows are cloned from the default QoS flow (same N3 tunnel,
++  // same UPF), only the QFI, QoS profile and packet filters differ
++  auto template_n3 = sh->get_default_access_edge();
++  if (!template_n3 || !template_n3->associated_edge) {
++    Logger::smf_app().warn("PDU session has no (associated) access edge");
++    return smf_procedure_code::ERROR;
++  }
++  auto template_n6 = template_n3->associated_edge;
++  if (!(template_n6->type == n6_type) || graph->get_upf_count() != 1) {
++    Logger::smf_app().warn(
++        "PCF-initiated QoS flows are only supported for PDU sessions served by "
++        "a single UPF (N3 <-> N6)");
++    return smf_procedure_code::ERROR;
++  }
++  auto upf = graph->get_upf_for_edge(template_n3);
++  if (!upf) {
++    Logger::smf_app().warn("Cannot find the UPF of the PDU session");
++    return smf_procedure_code::ERROR;
++  }
++  oai::config::smf::upf upf_cfg = upf->get_upf_config();
++
++  n4_triggered = std::make_shared<itti_n4_session_modification_request>(
++      TASK_SMF_APP, TASK_SMF_N4);
++  n4_triggered->seid    = sps->up_fseid.seid;
++  n4_triggered->trxn_id = this->trxn_id;
++  n4_triggered->r_endpoint =
++      endpoint(upf->node_id.u1.ipv4_address, pfcp::default_port);
++
++  // FAR towards the access network (DL), always forwarding (the option
++  // enable_dl_pdr_in_session_establishment only applies to the establishment)
++  auto create_dl_far = [&](const std::shared_ptr<qos_upf_edge>& edge) {
++    pfcp::create_far create_far = pfcp_create_far(edge);
++    if (upf_cfg.enable_dl_pdr_in_session_establishment()) {
++      pfcp::create_far far              = {};
++      pfcp::apply_action_t apply_action = {};
++      apply_action.forw                 = 1;
++      pfcp::forwarding_parameters forwarding_parameters   = {};
++      pfcp::destination_interface_t destination_interface = {};
++      destination_interface.interface_value = pfcp::INTERFACE_VALUE_ACCESS;
++      forwarding_parameters.set(destination_interface);
++      if (!edge->nw_instance.empty()) {
++        pfcp::network_instance_t network_instance = {};
++        network_instance.network_instance         = edge->nw_instance;
++        forwarding_parameters.set(network_instance);
++      }
++      pfcp::outer_header_creation_t outer_header_creation = {};
++      if (pfcp_outer_header_creation(edge, outer_header_creation)) {
++        forwarding_parameters.set(outer_header_creation);
++      }
++      far.set(edge->far_id);
++      far.set(apply_action);
++      far.set(forwarding_parameters);
++      return far;
++    }
++    return create_far;
++  };
++
++  //-------------------
++  // QoS flows to be released: remove PDRs, FARs, QERs
++  //-------------------
++  for (auto& change : pcf_change.to_release) {
++    std::set<uint32_t> removed_qers;
++    for (const auto& n3 : sh->get_access_edges_for_qfi(change.qfi)) {
++      if (n3->qos_rule_id != 0) change.qos_rule_ids.push_back(n3->qos_rule_id);
++      for (const auto& edge : {n3, n3->associated_edge}) {
++        if (!edge) continue;
++        if (edge->pdr_id.rule_id != 0) {
++          n4_triggered->pfcp_ies.set(pfcp_remove_pdr(edge));
++        }
++        if (edge->far_id.far_id != 0) {
++          n4_triggered->pfcp_ies.set(pfcp_remove_far(edge));
++        }
++        if (edge->qer_id.qer_id != 0 &&
++            removed_qers.count(edge->qer_id.qer_id) == 0) {
++          n4_triggered->pfcp_ies.set(pfcp_remove_qer(edge));
++          removed_qers.insert(edge->qer_id.qer_id);
++        }
++      }
++    }
++    Logger::smf_app().info(
++        "Release QoS flow QFI %d (PCC rule %s)", change.qfi,
++        change.pcc_rule_id.c_str());
++  }
++
++  //-------------------
++  // QoS flows to be modified: update the QoS profile and the QERs
++  //-------------------
++  for (auto& change : pcf_change.to_modify) {
++    std::set<uint32_t> updated_qers;
++    for (const auto& n3 : sh->get_access_edges_for_qfi(change.qfi)) {
++      for (const auto& edge : {n3, n3->associated_edge}) {
++        if (!edge) continue;
++        edge->qos_profile = change.qos;
++        if (upf_cfg.enable_qers() && edge->qer_id.qer_id != 0 &&
++            updated_qers.count(edge->qer_id.qer_id) == 0) {
++          n4_triggered->pfcp_ies.set(pfcp_update_qer(edge));
++          updated_qers.insert(edge->qer_id.qer_id);
++        }
++      }
++    }
++    Logger::smf_app().info(
++        "Modify QoS flow QFI %d (PCC rule %s): 5QI %d, ARP %d", change.qfi,
++        change.pcc_rule_id.c_str(), change.qos.getR5qi(),
++        change.qos.getArp().getPriorityLevel());
++  }
++
++  //-------------------
++  // QoS flows to be added: new edges (one N3/N6 pair per flow information),
++  // PDRs/FARs/QERs
++  //-------------------
++  for (auto& change : pcf_change.to_add) {
++    uint8_t qfi = graph->allocate_qfi();
++    if (qfi == 0) {
++      Logger::smf_app().warn("No QFI available for PCC rule %s",
++                             change.pcc_rule_id.c_str());
++      return smf_procedure_code::ERROR;
++    }
++    change.qfi = qfi;
++    pcf_added_qfis.push_back(qfi);
++
++    pfcp::qer_id_t ul_qer = {};
++    pfcp::qer_id_t dl_qer = {};
++    for (auto flow : change.pcc_rule.getFlowInfos()) {
++      if (!flow.flowDirectionIsSet()) {
++        FlowDirectionRm flow_direction;
++        flow_direction.setEnumValue(
++            FlowDirection_anyOf::eFlowDirection_anyOf::BIDIRECTIONAL);
++        flow.setFlowDirection(flow_direction);
++      }
++      auto n3 = std::make_shared<qos_upf_edge>(*template_n3);
++      auto n6 = std::make_shared<qos_upf_edge>(*template_n6);
++      for (const auto& edge : {n3, n6}) {
++        edge->qfi.qfi              = qfi;
++        edge->qos_profile          = change.qos;
++        edge->flow_information     = flow;
++        edge->precedence           = change.pcc_rule.getPrecedence();
++        edge->default_qos          = false;
++        edge->correlation_id       = change.pcc_rule_id;
++        edge->redirect_information = {};
++        edge->pdr_id               = {};
++        edge->far_id               = {};
++        edge->qer_id               = {};
++        edge->qos_rule_id          = 0;
++        edge->n4_update_necessary  = false;
++      }
++      // N3 edge keeps the UPF N3 F-TEID (fteid) and the gNB F-TEID
++      // (next_hop_fteid) of the PDU session: same N3 tunnel, new QFI
++      n3->qer_id = dl_qer;
++      n6->qer_id = ul_qer;
++      graph->add_qos_flow_edges(upf, n3, n6);
++
++      bool ul = session_handler::is_uplink_flow_direction(flow);
++      bool dl = session_handler::is_downlink_flow_direction(flow);
++      if (ul) {
++        // UL: PDR (source access, F-TEID + QFI + SDF) -> FAR/QER on N6 edge
++        n4_triggered->pfcp_ies.set(pfcp_create_far(n6));
++        if (upf_cfg.enable_qers() && ul_qer.qer_id == 0) {
++          n4_triggered->pfcp_ies.set(pfcp_create_qer(n6));
++          ul_qer = n6->qer_id;
++        }
++        n4_triggered->pfcp_ies.set(pfcp_create_pdr(n3));
++      }
++      if (dl) {
++        // DL: PDR (source core, UE IP + SDF) -> FAR (GTP-U to gNB, QFI) / QER
++        n4_triggered->pfcp_ies.set(create_dl_far(n3));
++        if (upf_cfg.enable_qers() && dl_qer.qer_id == 0) {
++          n4_triggered->pfcp_ies.set(pfcp_create_qer(n3));
++          dl_qer = n3->qer_id;
++        }
++        n4_triggered->pfcp_ies.set(pfcp_create_pdr(n6));
++      }
++      Logger::smf_app().info(
++          "Add QoS flow QFI %d (PCC rule %s, precedence %d): %s [UL %d, DL "
++          "%d]",
++          qfi, change.pcc_rule_id.c_str(), n3->precedence,
++          flow.getFlowDescription().c_str(), ul, dl);
++    }
++  }
++
++  graph->print_graph();
++
++  Logger::smf_app().info(
++      "Sending ITTI message %s to task TASK_SMF_N4",
++      n4_triggered->get_msg_name());
++  int ret = itti_inst->send_msg(n4_triggered);
++  if (RETURNok != ret) {
++    Logger::smf_app().error(
++        "Could not send ITTI message %s to task TASK_SMF_N4",
++        n4_triggered->get_msg_name());
++    return smf_procedure_code::ERROR;
++  }
++  return smf_procedure_code::OK;
++}
++
++//------------------------------------------------------------------------------
++smf_procedure_code
++session_update_sm_context_procedure::handle_pcf_initiated_n4_response(
++    itti_n4_session_modification_response& resp,
++    const std::shared_ptr<oai::app::smf::smf_context>& sc) {
++  pfcp::cause_t cause = {};
++  resp.pfcp_ies.get(cause);
++  auto sh    = sps->get_session_handler();
++  auto graph = sh->get_session_graph();
++
++  auto release_edges = [&](uint8_t qfi) {
++    if (!graph) return;
++    std::set<uint32_t> released_qers;
++    for (const auto& edge : graph->remove_qos_flow_edges(qfi)) {
++      if (edge->pdr_id.rule_id != 0) sh->release_pdr_id(edge->pdr_id);
++      if (edge->far_id.far_id != 0) sh->release_far_id(edge->far_id);
++      if (edge->qer_id.qer_id != 0 &&
++          released_qers.count(edge->qer_id.qer_id) == 0) {
++        sh->release_qer_id(edge->qer_id);
++        released_qers.insert(edge->qer_id.qer_id);
++      }
++      if (edge->qos_rule_id != 0) sh->free_qos_rule_id(edge->qos_rule_id);
++    }
++    graph->free_qfi(qfi);
++  };
++
++  if (cause.cause_value != CAUSE_VALUE_REQUEST_ACCEPTED) {
++    Logger::smf_app().warn(
++        "PCF-initiated PDU Session Modification: N4 Session Modification "
++        "rejected by the UPF (cause %d), rolling back",
++        cause.cause_value);
++    for (const auto& qfi : pcf_added_qfis) release_edges(qfi);
++    n11_triggered_pending->res.set_cause(k5gsmCauseRequestRejectedUnspecified);
++    n11_triggered_pending->res.set_http_code(
++        oai::common::sbi::http_status_code::INTERNAL_SERVER_ERROR);
++    return smf_procedure_code::ERROR;
++  }
++
++  // QoS flows released: remove the edges from the graph
++  for (const auto& change : pcf_change.to_release) {
++    release_edges(change.qfi);
++    sh->remove_dynamic_flow(change.pcc_rule_id);
++  }
++  for (const auto& change : pcf_change.to_add) {
++    sh->add_dynamic_flow(change.pcc_rule_id, change.qfi);
++  }
++
++  n11_triggered_pending->res.set_cause(k5gsmCauseRequestAccepted);
++  n11_triggered_pending->res.set_http_code(
++      oai::common::sbi::http_status_code::OK);
++
++  // Steps 3-4 of TS 23.502 4.3.3.2: Namf_Communication_N1N2MessageTransfer
++  // (N2 PDU Session Resource Modify Request Transfer, N1 PDU Session
++  // Modification Command)
++  sc->trigger_pcf_initiated_n1n2_message_transfer(sps, pcf_change);
++
++  return smf_procedure_code::OK;
++}
++
+ //------------------------------------------------------------------------------
+ void session_update_sm_context_procedure::remove_pdrs_fars_qers(
+     const std::vector<std::shared_ptr<qos_upf_edge>>& edges) {
+diff --git a/src/smf_app/smf_procedure.hpp b/src/smf_app/smf_procedure.hpp
+index 50e55110..6c82c04c 100644
+--- a/src/smf_app/smf_procedure.hpp
++++ b/src/smf_app/smf_procedure.hpp
+@@ -20,6 +20,8 @@
+ #include "uint_generator.hpp"
+ #include "smf_pfcp_association.hpp"
+ #include "smf_qos_upf_edge.hpp"
++#include "PccRule.h"
++#include "QosData.h"
+ 
+ namespace oai::app::smf {
+ 
+@@ -224,6 +226,28 @@ class session_create_sm_context_procedure : public smf_session_procedure {
+   smf_procedure_code send_n4_session_establishment_request();
+ };
+ 
++//------------------------------------------------------------------------------
++// One QoS flow change requested by the PCF (SmPolicyUpdateNotification)
++struct pcf_qos_flow_change {
++  std::string pcc_rule_id;
++  oai::model::pcf::PccRule pcc_rule;
++  oai::model::pcf::QosData qos;
++  uint8_t qfi = 0;  // allocated QFI (add) or existing QFI (modify/release)
++  std::vector<uint8_t> qos_rule_ids;  // QoS rules (release)
++};
++
++// Result of the comparison of the SM policy decision received from the PCF
++// with the dynamic QoS flows of the PDU session
++struct pcf_policy_change {
++  std::vector<pcf_qos_flow_change> to_add;
++  std::vector<pcf_qos_flow_change> to_modify;
++  std::vector<pcf_qos_flow_change> to_release;
++
++  [[nodiscard]] bool empty() const {
++    return to_add.empty() && to_modify.empty() && to_release.empty();
++  }
++};
++
+ //------------------------------------------------------------------------------
+ class session_update_sm_context_procedure : public smf_session_procedure {
+  public:
+@@ -263,7 +287,28 @@ class session_update_sm_context_procedure : public smf_session_procedure {
+   std::shared_ptr<itti_sbi_update_sm_context_response> n11_triggered_pending;
+   session_management_procedures_type_e session_procedure_type;
+ 
++  // PCF-initiated PDU session modification (TS 23.502 4.3.3.2)
++  pcf_policy_change pcf_change;
++
+  private:
++  /**
++   * PCF-initiated modification: add/modify/release the dynamic QoS flows in
++   * the session graph and send the N4 Session Modification Request
++   */
++  smf_procedure_code run_pcf_initiated(
++      const std::shared_ptr<oai::app::smf::smf_context>& sc);
++
++  /**
++   * PCF-initiated modification: handle the N4 Session Modification Response
++   * and trigger the N1N2MessageTransfer towards the AMF
++   */
++  smf_procedure_code handle_pcf_initiated_n4_response(
++      itti_n4_session_modification_response& resp,
++      const std::shared_ptr<oai::app::smf::smf_context>& sc);
++
++  // edges added by the PCF-initiated modification (for roll-back)
++  std::vector<uint8_t> pcf_added_qfis;
++
+   /**
+    * Sends a session modification request, based on the graph
+    * Does only consider normal DL procedures
+-- 
+2.43.0
+

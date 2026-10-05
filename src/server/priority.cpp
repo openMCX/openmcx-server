@@ -317,7 +317,7 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
     return reject(warn(Warning::invalid_mime_combination));
   if (alert_only && ((!info.alert && info.emergency != false) || info.imminent_peril || info.emergency == true))
     return reject(warn(Warning::invalid_mime_combination));
-  // TS 24.379 and TS 24.281 clause 6.3.3.1.13: the rights of the caller's user profile, the profile's group entry
+  // TS 24.379 clause 6.3.3.1.13 and TS 24.281 clause 6.3.3.1.12: the rights of the caller's user profile, the profile's group entry
   // (a dedicated group, or the group the user has selected) and the group document's action for the caller.
   const auto rights = user_profile(user.id);
   const auto group_rights = rights.value("group_call", Json::object());

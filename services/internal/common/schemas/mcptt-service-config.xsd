@@ -2,8 +2,8 @@
 <!-- Source: ETSI TS 124 484 V19.6.0 (2026-07), the MCPTT service configuration document schema (clause 8.4.2.3).
      Taken from the 3GPP/ETSI specification (clause cited above). The page headers and footers were removed and
      the lines the page width wrapped inside attribute values were joined; the schema text is otherwise unchanged.
-     Corrected: the published schema names an element "default-pqi " (with a trailing space), which is not an XML
-     name, so no schema processor accepts it; the space is removed (<default-pqi>, as clause 8.4.2.1 lists it). -->
+     Corrected: the published schema names an element "default-pqi " (with a trailing space); the space is removed
+     to match clause 8.4.2.1 and the MCVideo and MCData schemas (<default-pqi>). -->
 <xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified"
 xmlns:xs="http://www.w3.org/2001/XMLSchema"
 targetNamespace="urn:3gpp:ns:mcpttServiceConfig:1.0"

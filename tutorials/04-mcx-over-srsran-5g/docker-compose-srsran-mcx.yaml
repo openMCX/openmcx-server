@@ -1,0 +1,130 @@
+# openMCX: MCX over the OAI 5G core and the srsRAN gNB and srsUE (ZeroMQ virtual radio) (tutorials/04-mcx-over-srsran-5g/README.md).
+#
+# Tutorial 3 with another RAN: tutorial 3's openMCX system and OAI 5G core (with N5, ../03-mcx-over-oai-5g/
+# docker-compose-5g-core.yaml), its .env and ./config; here the srsRAN Project gNB and srsUE replace the OAI gNB and
+# nr-UE, and the dispatcher position runs inside srsUE. Tutorial 3's steps 1 to 3 come first (README).
+#
+#   docker compose -f docker-compose-srsran-mcx.yaml up -d
+#   open https://HOST_IP:8446/ (MCX Admin) and http://localhost:8080/ (the dispatcher)
+
+name: openmcx-5g
+include:
+- ../03-mcx-over-oai-5g/docker-compose-5g-core.yaml
+services:
+  srsran-gnb:
+    container_name: openmcx-srsran-gnb
+    image: ${SRSRAN_IMAGE_PREFIX-openmcx/}openmcx-srsran-gnb:${SRSRAN_GNB_TAG:-25.10-mcx}
+    command: ["-c", "/etc/srsran/gnb.yaml"]
+    cap_drop:
+    - ALL
+    cap_add:
+    - SYS_NICE
+    depends_on:
+    - oai-amf
+    - oai-upf
+    networks:
+      public:
+        ipv4_address: 192.168.71.140
+    volumes:
+    - ./srsran/gnb.yaml:/etc/srsran/gnb.yaml:ro
+    healthcheck:
+      test: /bin/bash -c "pgrep -x gnb"
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  srsue:
+    container_name: openmcx-srsue
+    image: ${SRSRAN_IMAGE_PREFIX-openmcx/}openmcx-srsue:${SRSRAN_UE_TAG:-25.10}
+    command: ["/etc/srsran/ue.conf"]
+    cap_drop:
+    - ALL
+    cap_add:
+    - NET_ADMIN
+    - SYS_NICE
+    devices:
+    - /dev/net/tun:/dev/net/tun
+    depends_on:
+      srsran-gnb:
+        condition: service_healthy
+    volumes:
+    - ./srsran/ue.conf:/etc/srsran/ue.conf:ro
+    ports:
+    - 127.0.0.1:8080:8080
+    extra_hosts:
+    - sip-core:${HOST_IP:?set HOST_IP in tutorial 3's .env}
+    networks:
+      public:
+        ipv4_address: 192.168.71.150
+    healthcheck:
+      test: /bin/bash -c "pgrep -x srsue"
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  ue-route:
+    container_name: openmcx-ue-route
+    image: ${SRSRAN_IMAGE_PREFIX-openmcx/}openmcx-srsue:${SRSRAN_UE_TAG:-25.10}
+    network_mode: service:srsue
+    cap_drop:
+    - ALL
+    cap_add:
+    - NET_ADMIN
+    depends_on:
+    - srsue
+    environment:
+      HOST_IP: ${HOST_IP:?set HOST_IP in tutorial 3's .env}
+    entrypoint:
+    - bash
+    - -c
+    - until ip -4 -o addr show tun_srsue 2>/dev/null | grep -q inet; do sleep 1; done; ip route replace "$$HOST_IP"/32 dev
+      tun_srsue; ip -4 -o addr show tun_srsue | awk '{print $$4}' | cut -d/ -f1 > /ue/ip; echo "UE address $$(cat /ue/ip),
+      $$HOST_IP through tun_srsue"; sleep infinity
+    volumes:
+    - ue:/ue
+    healthcheck:
+      test:
+      - CMD
+      - test
+      - -s
+      - /ue/ip
+      interval: 3s
+      timeout: 2s
+      retries: 100
+  dispatcher:
+    container_name: openmcx-dispatcher
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-v1}
+    network_mode: service:srsue
+    depends_on:
+      ue-route:
+        condition: service_healthy
+    environment:
+      HOST_IP: ${HOST_IP:?set HOST_IP in .env}
+    entrypoint:
+    - sh
+    - -c
+    - DISPATCHER_IP=$$(cat /ue/ip) && sed -e "s/DISPATCHER_IP/$$DISPATCHER_IP/g" -e "s/HOST_IP/$$HOST_IP/g" /tutorials/device.json.in
+      > /run/mcx/device.json && OLD=$$(cat /data/ue-ip 2>/dev/null || true) && if [ -n "$$OLD" ] && [ "$$OLD" != "$$DISPATCHER_IP"
+      ]; then for f in /data/accounts/*/config.json; do [ -f "$$f" ] && sed -i "s/\"$$OLD\"/\"$$DISPATCHER_IP\"/g" "$$f";
+      done; fi && echo "$$DISPATCHER_IP" > /data/ue-ip && exec dispatcher --listen 0.0.0.0:8080 --device /run/mcx/device.json
+      --data /data --outbox /data/outbox
+    volumes:
+    - ../03-mcx-over-oai-5g/setup/device.json.in:/tutorials/device.json.in:ro
+    - ue:/ue:ro
+    - dispatcher-data:/data
+    tmpfs:
+    - /run/mcx
+    healthcheck:
+      test:
+      - CMD
+      - curl
+      - --fail
+      - --silent
+      - http://127.0.0.1:8080/api/session
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+volumes:
+  ue: null
+  dispatcher-data: null

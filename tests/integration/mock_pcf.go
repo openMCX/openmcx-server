@@ -1,5 +1,6 @@
 // A mock PCF for the N5 lab: Npcf_PolicyAuthorization (TS 29.514) over HTTP/2
-// cleartext with prior knowledge and over HTTP/1.1, recording every request.
+// cleartext with prior knowledge only (TS 29.500 5.2.2.1), recording every request;
+// its notifications to the AF go the same way.
 //
 //	POST   /npcf-policyauthorization/v1/app-sessions              201 + Location
 //	PATCH  /npcf-policyauthorization/v1/app-sessions/{id}         200
@@ -169,8 +170,10 @@ func (p *pcf) serveMock(w http.ResponseWriter, r *http.Request) {
 			} `json:"ascReqData"`
 		}
 		json.Unmarshal(ctx, &c)
-		// The AF's receiver is HTTP/1.1 (TS 29.500 requires HTTP/2; see the AF docs).
-		client := http.Client{Timeout: 3 * time.Second}
+		// HTTP/2 over cleartext with prior knowledge, as on the SBI (TS 29.500 5.2.2.1).
+		transport := &http.Transport{Protocols: new(http.Protocols)}
+		transport.Protocols.SetUnencryptedHTTP2(true)
+		client := http.Client{Timeout: 3 * time.Second, Transport: transport}
 		resp, err := client.Post(c.AscReqData.NotifURI+"/"+n.Kind, "application/json", bytes.NewReader(n.Body))
 		status := 0
 		if err == nil {
@@ -204,8 +207,7 @@ func main() {
 	mux.HandleFunc("/mock/", p.serveMock)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	server := &http.Server{Addr: *listen, Handler: mux, Protocols: new(http.Protocols)}
-	server.Protocols.SetHTTP1(true)
 	server.Protocols.SetUnencryptedHTTP2(true)
-	log.Printf("mock PCF on %s (HTTP/1.1 and h2c prior knowledge)", *listen)
+	log.Printf("mock PCF on %s (HTTP/2 over cleartext with prior knowledge only)", *listen)
 	log.Fatal(server.ListenAndServe())
 }

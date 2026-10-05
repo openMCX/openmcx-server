@@ -275,6 +275,9 @@ struct MediaDescription {
   std::uint32_t floor_ssrc = 0, audio_ssrc = 0;
   bool octet_aligned = false, protected_media = false, queueing = false;
   bool implicit_request = false;
+  // RFC 4867 section 8.1 "mode-set" of the AMR-WB format: the codec modes (0 to 8) the peer accepts; empty when the
+  // peer gives none (every mode). TS 26.179 clause 4.1.3: support all modes, offer no particular mode set.
+  std::vector<std::uint8_t> mode_set;
   // Audio direction attribute (RFC 4566): "sendrecv", or "sendonly"/"recvonly"
   // in an ambient listening call (TS 24.379 clause 6.2.1 step 2c).
   std::string direction = "sendrecv";
@@ -410,4 +413,10 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id);
 // TS 24.379 clause 6.2.1 and clause 6.2.2 with TS 24.380 clause 14.2 and clause 14.3 (MCPTT), TS 24.281 clause
 // 6.2.1 with TS 24.581 clause 12.1.2 (MCVideo): reads an SDP offer or answer.
 MediaDescription parse_sdp(std::string_view sdp);
+
+//------------------------------------------------------------------------------
+// TS 26.179 clause 4.1.3 with RFC 4867 section 8.1: the AMR-WB mode to send with when the client would use `wanted`:
+// `wanted` if the peer's mode-set allows it (or gives none), else the highest allowed mode below it, else the lowest
+// allowed mode.
+int amr_wb_send_mode(int wanted, const std::vector<std::uint8_t> &mode_set);
 } // namespace mcx

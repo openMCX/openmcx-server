@@ -1,0 +1,47 @@
+From 903bfb59e725a880e7745c4e05d3c0029f29a170 Mon Sep 17 00:00:00 2001
+From: Rohan <kharade@eurecom.fr>
+Date: Sun, 4 Oct 2026 20:14:25 +0200
+Subject: [PATCH 2/2] chore: notices of the openMCX modifications (CSSL v1.0
+ section 5.2)
+
+Each file this branch changes carries a notice that openMCX modified it, as the Collaborative
+Standards Software License v1.0 section 5.2 requires for distribution; comments only.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013UXVKWJNq3UC36dmrQjjV3
+---
+ src/upf_app/simpleswitch/pfcp_session.cpp | 1 +
+ src/upf_app/simpleswitch/pfcp_switch.cpp  | 1 +
+ src/upf_app/simpleswitch/pfcp_switch.hpp  | 1 +
+ 3 files changed, 3 insertions(+)
+
+diff --git a/src/upf_app/simpleswitch/pfcp_session.cpp b/src/upf_app/simpleswitch/pfcp_session.cpp
+index 436d334..ef65760 100644
+--- a/src/upf_app/simpleswitch/pfcp_session.cpp
++++ b/src/upf_app/simpleswitch/pfcp_session.cpp
+@@ -1,3 +1,4 @@
++// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
+ /*
+  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
+  */
+diff --git a/src/upf_app/simpleswitch/pfcp_switch.cpp b/src/upf_app/simpleswitch/pfcp_switch.cpp
+index 389d4b0..d907931 100644
+--- a/src/upf_app/simpleswitch/pfcp_switch.cpp
++++ b/src/upf_app/simpleswitch/pfcp_switch.cpp
+@@ -1,3 +1,4 @@
++// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
+ /*
+  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
+  */
+diff --git a/src/upf_app/simpleswitch/pfcp_switch.hpp b/src/upf_app/simpleswitch/pfcp_switch.hpp
+index dea8053..0e139fb 100644
+--- a/src/upf_app/simpleswitch/pfcp_switch.hpp
++++ b/src/upf_app/simpleswitch/pfcp_switch.hpp
+@@ -1,3 +1,4 @@
++// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
+ /*
+  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
+  */
+-- 
+2.53.0
+
