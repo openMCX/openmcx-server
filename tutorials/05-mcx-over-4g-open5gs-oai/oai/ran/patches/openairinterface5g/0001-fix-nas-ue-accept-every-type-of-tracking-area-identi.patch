@@ -1,0 +1,202 @@
+From 271e6306ddbfc97353ab2bed435c682e160eb330 Mon Sep 17 00:00:00 2001
+From: openMCX <noreply@openmcx.invalid>
+Date: Mon, 5 Oct 2026 17:53:12 +0200
+Subject: [PATCH 1/4] fix(nas-ue): accept every type of tracking area identity
+ list (TS 24.301 9.9.3.33)
+
+The UE decoded only the first partial tracking area identity list of an Attach Accept and rejected any list but
+type 01 (one PLMN, consecutive TACs) with EMM cause 99 (IE not implemented). A network may send type 00 (one PLMN,
+non-consecutive TACs) or type 10 (several PLMNs), and several partial lists; Open5GS sends type 10 for one TAC.
+The decoder now lists every TAI of every partial list (at most 16), and the Attach Accept uses that list.
+---
+ .../NAS/COMMON/IES/TrackingAreaIdentityList.c | 84 +++++++++++++++----
+ .../NAS/COMMON/IES/TrackingAreaIdentityList.h | 13 +++
+ openair3/NAS/UE/EMM/SAP/emm_recv.c            | 36 ++++----
+ 3 files changed, 97 insertions(+), 36 deletions(-)
+
+diff --git a/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.c b/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.c
+index 6c54d14..214cc94 100644
+--- a/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.c
++++ b/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.c
+@@ -10,6 +10,22 @@
+ #include "TLVDecoder.h"
+ #include "TrackingAreaIdentityList.h"
+ 
++/* 3GPP TS 24.301 9.9.3.33.1: a PLMN identity (3 octets) */
++static void decode_tai_plmn(TrackingAreaIdentityList *list, int index, const uint8_t *plmn)
++{
++  list->tai[index].mccdigit2 = (plmn[0] >> 4) & 0xf;
++  list->tai[index].mccdigit1 = plmn[0] & 0xf;
++  list->tai[index].mncdigit3 = (plmn[1] >> 4) & 0xf;
++  list->tai[index].mccdigit3 = plmn[1] & 0xf;
++  list->tai[index].mncdigit2 = (plmn[2] >> 4) & 0xf;
++  list->tai[index].mncdigit1 = plmn[2] & 0xf;
++}
++
++/* 3GPP TS 24.301 9.9.3.33: the tracking area identity list is a sequence of
++ * partial tracking area identity lists, each of type 00 (one PLMN,
++ * non-consecutive TACs), 01 (one PLMN, consecutive TACs) or 10 (several
++ * PLMNs); all their TAIs are decoded, at most 16. The first partial list's
++ * header, PLMN and first TAC are also kept in the fields before tai[]. */
+ int decode_tracking_area_identity_list(TrackingAreaIdentityList *trackingareaidentitylist, uint8_t iei, uint8_t *buffer, uint32_t len)
+ {
+   int decoded = 0;
+@@ -23,20 +39,60 @@ int decode_tracking_area_identity_list(TrackingAreaIdentityList *trackingareaide
+   ielen = *(buffer + decoded);
+   decoded++;
+   CHECK_LENGTH_DECODER(len - decoded, ielen);
+-  trackingareaidentitylist->typeoflist = (*(buffer + decoded) >> 5) & 0x3;
+-  trackingareaidentitylist->numberofelements = *(buffer + decoded) & 0x1f;
+-  decoded++;
+-  trackingareaidentitylist->mccdigit2 = (*(buffer + decoded) >> 4) & 0xf;
+-  trackingareaidentitylist->mccdigit1 = *(buffer + decoded) & 0xf;
+-  decoded++;
+-  trackingareaidentitylist->mncdigit3 = (*(buffer + decoded) >> 4) & 0xf;
+-  trackingareaidentitylist->mccdigit3 = *(buffer + decoded) & 0xf;
+-  decoded++;
+-  trackingareaidentitylist->mncdigit2 = (*(buffer + decoded) >> 4) & 0xf;
+-  trackingareaidentitylist->mncdigit1 = *(buffer + decoded) & 0xf;
+-  decoded++;
+-  //IES_DECODE_U16(trackingareaidentitylist->tac, *(buffer + decoded));
+-  IES_DECODE_U16(buffer, decoded, trackingareaidentitylist->tac);
++  const int end = decoded + ielen;
++  trackingareaidentitylist->numberoftais = 0;
++  int first = 1;
++
++  while (decoded < end) {
++    const uint8_t type = (*(buffer + decoded) >> 5) & 0x3;
++    const int elements = (*(buffer + decoded) & 0x1f) + 1;
++    decoded++;
++    /* Length of the rest of this partial list */
++    int need;
++    if (type == 0)
++      need = 3 + 2 * elements;
++    else if (type == 1)
++      need = 3 + 2;
++    else if (type == 2)
++      need = 5 * elements;
++    else
++      return TLV_DECODE_VALUE_DOESNT_MATCH;
++    if (end - decoded < need)
++      return TLV_DECODE_BUFFER_TOO_SHORT;
++    if (first) {
++      trackingareaidentitylist->typeoflist = type;
++      trackingareaidentitylist->numberofelements = elements - 1;
++      trackingareaidentitylist->mccdigit2 = (*(buffer + decoded) >> 4) & 0xf;
++      trackingareaidentitylist->mccdigit1 = *(buffer + decoded) & 0xf;
++      trackingareaidentitylist->mncdigit3 = (*(buffer + decoded + 1) >> 4) & 0xf;
++      trackingareaidentitylist->mccdigit3 = *(buffer + decoded + 1) & 0xf;
++      trackingareaidentitylist->mncdigit2 = (*(buffer + decoded + 2) >> 4) & 0xf;
++      trackingareaidentitylist->mncdigit1 = *(buffer + decoded + 2) & 0xf;
++      trackingareaidentitylist->tac = (*(buffer + decoded + 3) << 8) | *(buffer + decoded + 4);
++      first = 0;
++    }
++    for (int i = 0; i < elements; i++) {
++      const int index = trackingareaidentitylist->numberoftais;
++      if (index >= TRACKING_AREA_IDENTITY_LIST_MAXIMUM_NUMBER_OF_TAIS)
++        return TLV_DECODE_VALUE_DOESNT_MATCH;
++      const uint8_t *element;
++      if (type == 0) {
++        decode_tai_plmn(trackingareaidentitylist, index, buffer + decoded);
++        element = buffer + decoded + 3 + 2 * i;
++        trackingareaidentitylist->tai[index].tac = (element[0] << 8) | element[1];
++      } else if (type == 1) {
++        decode_tai_plmn(trackingareaidentitylist, index, buffer + decoded);
++        element = buffer + decoded + 3;
++        trackingareaidentitylist->tai[index].tac = ((element[0] << 8) | element[1]) + i;
++      } else {
++        element = buffer + decoded + 5 * i;
++        decode_tai_plmn(trackingareaidentitylist, index, element);
++        trackingareaidentitylist->tai[index].tac = (element[3] << 8) | element[4];
++      }
++      trackingareaidentitylist->numberoftais++;
++    }
++    decoded += need;
++  }
+ #if defined (NAS_DEBUG)
+   dump_tracking_area_identity_list_xml(trackingareaidentitylist, iei);
+ #endif
+diff --git a/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.h b/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.h
+index fb3c564..6f3c59f 100644
+--- a/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.h
++++ b/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.h
+@@ -29,6 +29,19 @@ typedef struct TrackingAreaIdentityList_tag {
+   uint8_t  mncdigit2:4;
+   uint8_t  mncdigit1:4;
+   uint16_t tac;
++  /* 3GPP TS 24.301 9.9.3.33: every TAI of the list, from all its partial
++   * tracking area identity lists of type 00, 01 or 10 (at most 16 TAIs) */
++#define TRACKING_AREA_IDENTITY_LIST_MAXIMUM_NUMBER_OF_TAIS 16
++  uint8_t  numberoftais;
++  struct {
++    uint8_t  mccdigit1:4;
++    uint8_t  mccdigit2:4;
++    uint8_t  mccdigit3:4;
++    uint8_t  mncdigit1:4;
++    uint8_t  mncdigit2:4;
++    uint8_t  mncdigit3:4;
++    uint16_t tac;
++  } tai[TRACKING_AREA_IDENTITY_LIST_MAXIMUM_NUMBER_OF_TAIS];
+ } TrackingAreaIdentityList;
+ 
+ int encode_tracking_area_identity_list(TrackingAreaIdentityList *trackingareaidentitylist, uint8_t iei, uint8_t *buffer, uint32_t len);
+diff --git a/openair3/NAS/UE/EMM/SAP/emm_recv.c b/openair3/NAS/UE/EMM/SAP/emm_recv.c
+index 968d257..1c5209f 100644
+--- a/openair3/NAS/UE/EMM/SAP/emm_recv.c
++++ b/openair3/NAS/UE/EMM/SAP/emm_recv.c
+@@ -118,18 +118,11 @@ int emm_recv_attach_accept(nas_user_t *user, attach_accept_msg *msg, int *emm_ca
+   /*
+    * Message checking
+    */
+-  // supported cases:
+-  // typeoflist = 1 Or
+-  // typeoflist = 0 and numberofelements = 1 (ie numberofelements equal to zero see 3gpp 24.301 9.9.3.33.1)
+-  LOG_TRACE(DEBUG,"attach accept type of list: %d, number of element: %d\n",msg->tailist.typeoflist, msg->tailist.numberofelements);
+-  if (!( (msg->tailist.typeoflist == TRACKING_AREA_IDENTITY_LIST_ONE_PLMN_CONSECUTIVE_TACS) ||
+-         ((msg->tailist.typeoflist == 0) && ( msg->tailist.numberofelements == 0))
+-       )
+-     )
+-  {
+-    /* Only list of TACs belonging to one PLMN with consecutive
+-     * TAC values is supported */
+-    *emm_cause = EMM_CAUSE_IE_NOT_IMPLEMENTED;
++  /* 3GPP TS 24.301 9.9.3.33: every type of partial tracking area identity
++   * list (00, 01, 10) is accepted; the decoder lists all their TAIs */
++  LOG_TRACE(DEBUG,"attach accept type of list: %d, number of TAIs: %d\n",msg->tailist.typeoflist, msg->tailist.numberoftais);
++  if (msg->tailist.numberoftais == 0) {
++    *emm_cause = EMM_CAUSE_INVALID_MANDATORY_INFO;
+   } else if ( (msg->presencemask & ATTACH_ACCEPT_GUTI_PRESENT) &&
+               (msg->guti.guti.typeofidentity != EPS_MOBILE_IDENTITY_GUTI) ) {
+     /* The only supported type of EPS mobile identity is GUTI */
+@@ -158,19 +151,18 @@ int emm_recv_attach_accept(nas_user_t *user, attach_accept_msg *msg, int *emm_ca
+ 
+   /* Get the tracking area list the UE is registered to */
+ 
+-  /* LW: number of elements is coded as N-1 (0 -> 1 element, 1 -> 2 elements...),
+-   *  see 3GPP TS 24.301, section 9.9.3.33.1 */
+-  int n_tais = msg->tailist.numberofelements + 1;
++  /* All the TAIs of the list, as decoded (3GPP TS 24.301 9.9.3.33) */
++  int n_tais = msg->tailist.numberoftais;
+   tai_t tai[n_tais];
+ 
+   for (i = 0; i < n_tais; i++) {
+-    tai[i].plmn.MCCdigit1 = msg->tailist.mccdigit1;
+-    tai[i].plmn.MCCdigit2 = msg->tailist.mccdigit2;
+-    tai[i].plmn.MCCdigit3 = msg->tailist.mccdigit3;
+-    tai[i].plmn.MNCdigit1 = msg->tailist.mncdigit1;
+-    tai[i].plmn.MNCdigit2 = msg->tailist.mncdigit2;
+-    tai[i].plmn.MNCdigit3 = msg->tailist.mncdigit3;
+-    tai[i].tac = msg->tailist.tac + i;
++    tai[i].plmn.MCCdigit1 = msg->tailist.tai[i].mccdigit1;
++    tai[i].plmn.MCCdigit2 = msg->tailist.tai[i].mccdigit2;
++    tai[i].plmn.MCCdigit3 = msg->tailist.tai[i].mccdigit3;
++    tai[i].plmn.MNCdigit1 = msg->tailist.tai[i].mncdigit1;
++    tai[i].plmn.MNCdigit2 = msg->tailist.tai[i].mncdigit2;
++    tai[i].plmn.MNCdigit3 = msg->tailist.tai[i].mncdigit3;
++    tai[i].tac = msg->tailist.tai[i].tac;
+   }
+ 
+   /* Get the GUTI */
+-- 
+2.53.0
+

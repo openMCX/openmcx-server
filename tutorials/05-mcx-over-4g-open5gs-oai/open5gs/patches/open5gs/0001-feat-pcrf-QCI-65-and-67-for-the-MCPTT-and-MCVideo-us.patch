@@ -1,0 +1,126 @@
+From 6eebd798f15e10c827cc6cfed58c52ad0e1dcdb3 Mon Sep 17 00:00:00 2001
+From: openMCX <noreply@openmcx.invalid>
+Date: Mon, 5 Oct 2026 17:56:37 +0200
+Subject: [PATCH 1/2] feat(pcrf): QCI 65 and 67 for the MCPTT and MCVideo user
+ planes (TS 23.379 5.7.3, TS 23.203 table 6.1.7)
+
+The PCRF read no AF-Application-Identifier and gave every AUDIO media component of an AA-Request QCI 1 and every
+VIDEO component QCI 2. The AF-Application-Identifier (TS 29.214 5.3.5) is now kept with the Rx session data; an
+AUDIO component of an MCPTT AF session (the MCPTT ICSI, TS 29.214 annex A.13.1 NOTE 3) gets QCI 65 and a VIDEO
+component of an MCVideo AF session (annex A.15.1 NOTE 3) QCI 67, so that the PCC rule's QoS comes from the
+subscriber's rule with that QCI. Other AF sessions keep QCI 1 and 2.
+---
+ lib/diameter/rx/message.h |  1 +
+ lib/proto/types.c         |  5 +++++
+ lib/proto/types.h         |  7 +++++++
+ src/pcrf/pcrf-gx-path.c   | 14 ++++++++++++--
+ src/pcrf/pcrf-rx-path.c   | 11 +++++++++++
+ 5 files changed, 36 insertions(+), 2 deletions(-)
+
+diff --git a/lib/diameter/rx/message.h b/lib/diameter/rx/message.h
+index ea7c91e..63135eb 100644
+--- a/lib/diameter/rx/message.h
++++ b/lib/diameter/rx/message.h
+@@ -31,6 +31,7 @@ extern "C" {
+ #define OGS_DIAM_RX_APPLICATION_ID 16777236
+ 
+ #define OGS_DIAM_RX_AVP_CODE_SUBSCRIPTION_ID                (443)
++#define OGS_DIAM_RX_AVP_CODE_AF_APPLICATION_IDENTIFIER      (504)
+ #define OGS_DIAM_RX_AVP_CODE_SPECIFIC_ACTION                (513)
+ 
+ #define OGS_DIAM_RX_AVP_CODE_MEDIA_COMPONENT_DESCRIPTION    (517)
+diff --git a/lib/proto/types.c b/lib/proto/types.c
+index 8aa5bb4..25dc047 100644
+--- a/lib/proto/types.c
++++ b/lib/proto/types.c
+@@ -1004,6 +1004,11 @@ void ogs_ims_data_free(ogs_ims_data_t *ims_data)
+             }
+         }
+     }
++
++    if (ims_data->af_application_identifier) {
++        ogs_free(ims_data->af_application_identifier);
++        ims_data->af_application_identifier = NULL;
++    }
+ }
+ 
+ static int flow_rx_to_gx(ogs_flow_t *rx_flow, ogs_flow_t *gx_flow)
+diff --git a/lib/proto/types.h b/lib/proto/types.h
+index 6214d3e..c07b94a 100644
+--- a/lib/proto/types.h
++++ b/lib/proto/types.h
+@@ -471,6 +471,10 @@ typedef struct ogs_qos_s {
+ #define OGS_QOS_INDEX_1                                       1
+ #define OGS_QOS_INDEX_2                                       2
+ #define OGS_QOS_INDEX_5                                       5
++/* 3GPP TS 23.203 table 6.1.7: Mission Critical user plane Push To Talk voice
++ * (65) and Mission Critical Video user plane (67) */
++#define OGS_QOS_INDEX_65                                      65
++#define OGS_QOS_INDEX_67                                      67
+     uint8_t         index;
+ 
+     struct {
+@@ -1084,6 +1088,9 @@ typedef struct ogs_ims_data_s {
+ 
+     int num_of_ifc;
+     ogs_ifc_t ifc[OGS_MAX_NUM_OF_IFC];
++
++    /* 3GPP TS 29.214 5.3.5: the AF-Application-Identifier of an AA-Request */
++    char *af_application_identifier;
+ } ogs_ims_data_t;
+ 
+ void ogs_ims_data_free(ogs_ims_data_t *ims_data);
+diff --git a/src/pcrf/pcrf-gx-path.c b/src/pcrf/pcrf-gx-path.c
+index fda22af..bfe386f 100644
+--- a/src/pcrf/pcrf-gx-path.c
++++ b/src/pcrf/pcrf-gx-path.c
+@@ -1129,12 +1129,22 @@ int pcrf_gx_send_rar(
+             ogs_media_component_t *media_component =
+                 &rx_message->ims_data.media_component[i];
+ 
++            /* 3GPP TS 23.379 5.7.3, TS 23.281 and TS 23.203 table 6.1.7: the
++             * MCPTT and MCVideo user planes get QCI 65 and 67, recognised by
++             * the AF-Application-Identifier (the service's ICSI, TS 29.214
++             * annex A.13.1 NOTE 3 and annex A.15.1 NOTE 3) */
++            const char *af_app_id =
++                rx_message->ims_data.af_application_identifier;
++            const int mcptt = af_app_id && !strcmp(af_app_id,
++                    "urn:urn-7:3gpp-service.ims.icsi.mcptt");
++            const int mcvideo = af_app_id && !strcmp(af_app_id,
++                    "urn:urn-7:3gpp-service.ims.icsi.mcvideo");
+             switch(media_component->media_type) {
+             case OGS_DIAM_RX_MEDIA_TYPE_AUDIO:
+-                qos_index = OGS_QOS_INDEX_1;
++                qos_index = mcptt ? OGS_QOS_INDEX_65 : OGS_QOS_INDEX_1;
+                 break;
+             case OGS_DIAM_RX_MEDIA_TYPE_VIDEO:
+-                qos_index = OGS_QOS_INDEX_2;
++                qos_index = mcvideo ? OGS_QOS_INDEX_67 : OGS_QOS_INDEX_2;
+                 break;
+             case OGS_DIAM_RX_MEDIA_TYPE_CONTROL:
+                 qos_index = OGS_QOS_INDEX_5;
+diff --git a/src/pcrf/pcrf-rx-path.c b/src/pcrf/pcrf-rx-path.c
+index 49ec293..2d71966 100644
+--- a/src/pcrf/pcrf-rx-path.c
++++ b/src/pcrf/pcrf-rx-path.c
+@@ -430,6 +430,17 @@ static int pcrf_rx_aar_cb(struct msg **msg, struct avp *avp,
+             rx_message.ims_data.num_of_media_component++;
+             break;
+ 
++        case OGS_DIAM_RX_AVP_CODE_AF_APPLICATION_IDENTIFIER:
++            /* 3GPP TS 29.214 5.3.5: the service of the AF session, which the
++             * PCRF may use with the Media-Type to select the QCI */
++            if (!rx_message.ims_data.af_application_identifier) {
++                rx_message.ims_data.af_application_identifier = ogs_strndup(
++                        (char *)hdr->avp_value->os.data,
++                        hdr->avp_value->os.len);
++                ogs_assert(rx_message.ims_data.af_application_identifier);
++            }
++            break;
++
+         case AC_ORIGIN_REALM:
+         case AC_DESTINATION_REALM:
+         case AC_ROUTE_RECORD:
+-- 
+2.53.0
+

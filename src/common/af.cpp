@@ -1,6 +1,7 @@
 #include "mcx/af.hpp"
 #include "mcx/h2.hpp"
 #include <algorithm>
+#include <atomic>
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
@@ -637,12 +638,26 @@ void PolicyAuthorizationClient::listen() {
   const h2::Handler handler = [this](const h2::Request &r) {
     return h2::Response{receive(r.method, r.path, r.body), {}, {}};
   };
-  for (;;) {
-    if (stopping()) return;
-    pollfd p{listen_fd_, POLLIN, 0};
-    if (::poll(&p, 1, 200) <= 0) continue;
-    const int fd = ::accept4(listen_fd_, nullptr, nullptr, SOCK_CLOEXEC);
-    if (fd < 0) continue;
+  // Each connection is served on its own thread: a PCF may keep a connection open and open others (an HTTP/2 client
+  // reuses or pools connections, TS 29.500 clause 5.2.2), so one idle connection must not hold the next notification
+  // back. At most max_connections are served at once; a further one waits in the accept queue.
+  constexpr std::size_t max_connections = 16;
+  struct Served {
+    std::thread thread;
+    std::shared_ptr<std::atomic<bool>> done;
+  };
+  std::vector<Served> served;
+  const auto reap = [&served] {
+    for (auto it = served.begin(); it != served.end();) {
+      if (*it->done) {
+        it->thread.join();
+        it = served.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  };
+  const auto serve = [this, &handler, &stopping](int fd) {
     timeval timeout{2, 0};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout);
@@ -664,6 +679,26 @@ void PolicyAuthorizationClient::listen() {
           {"", "rejected", {{"reason", "not HTTP/2 (TS 29.500 5.2.2.1): " + data.substr(0, data.find('\r'))}}});
     }
     ::close(fd);
+  };
+  for (;;) {
+    reap();
+    if (stopping()) break;
+    if (served.size() >= max_connections) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      continue;
+    }
+    pollfd p{listen_fd_, POLLIN, 0};
+    if (::poll(&p, 1, 200) <= 0) continue;
+    const int fd = ::accept4(listen_fd_, nullptr, nullptr, SOCK_CLOEXEC);
+    if (fd < 0) continue;
+    auto done = std::make_shared<std::atomic<bool>>(false);
+    served.push_back({std::thread([serve, fd, done] {
+                        serve(fd);
+                        *done = true;
+                      }),
+                      done});
   }
+  // Every connection ends within one poll interval of stopping (h2::serve checks it).
+  for (auto &connection : served) connection.thread.join();
 }
 }  // namespace mcx::af

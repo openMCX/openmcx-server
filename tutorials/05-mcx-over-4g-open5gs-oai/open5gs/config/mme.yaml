@@ -1,0 +1,34 @@
+# Tutorial 5's EPC (Open5GS v2.8.0): addresses on the EPC network openmcx-4g-core 192.168.73.128/26.
+logger:
+  level: info
+global:
+mme:
+  freeDiameter: /opt/open5gs/etc/freeDiameter/mme.conf
+  s1ap:
+    server:
+      - address: 192.168.73.130
+  gtpc:
+    server:
+      - address: 192.168.73.130
+    client:
+      sgwc:
+        - address: 192.168.73.131
+      smf:
+        - address: 192.168.73.133
+  gummei:
+    - plmn_id:
+        mcc: 208
+        mnc: 96
+      mme_gid: 2
+      mme_code: 1
+  tai:
+    - plmn_id:
+        mcc: 208
+        mnc: 96
+      tac: 1
+  security:
+    integrity_order: [EIA2, EIA1, EIA0]
+    ciphering_order: [EEA0, EEA1, EEA2]
+  network_name:
+    full: openMCX
+  mme_name: openmcx-mme

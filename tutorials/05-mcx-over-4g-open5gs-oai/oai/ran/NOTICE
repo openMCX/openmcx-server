@@ -1,0 +1,58 @@
+openMCX modifications of the OpenAirInterface eNB and LTE UE
+============================================================
+
+The images openmcx/oai-enb:2026.w39-mcx and openmcx/oai-lte-ue:2026.w39-mcx built from this directory contain the
+OpenAirInterface eNB (lte-softmodem) and LTE UE (lte-uesoftmodem; OpenAirInterface Software Alliance,
+https://gitlab.eurecom.fr/oai/openairinterface5g), tag 2026.w39, commit 29d5fa7d38bb1ee8935ef7ae30a396d53772ea4f,
+modified by openMCX for tutorial 5 (MCX over LTE).
+
+License
+-------
+OpenAirInterface is distributed under the Collaborative Standards Software License v1.0 (CSSL), included as LICENSE
+in this directory and in the images (/usr/share/doc/openmcx-oai/LICENSE), and at https://openairinterface.org/oai-cssl/.
+The modifications (the patches in this directory) are distributed under the same license. The rest of the
+openmcx-server repository is under its own license (the repository's LICENSE); this directory is not.
+
+Patents (CSSL section 3): the patent license granted with the software covers study, testing and research purposes
+only (section 3.1). Any other use, for example commercial deployment, requires a license of the Essential Patents on
+FRAND terms from the Contributors and/or the Licensor (section 3.2).
+
+Modifications (CSSL section 5.2)
+--------------------------------
+Each modified file carries the notice "Modified by openMCX, 2026 (MCX over LTE)". The changes, as patches against
+commit 29d5fa7:
+
+  patches/openairinterface5g/0001   The UE accepts every type of tracking area identity list (TS 24.301 clause
+                                    9.9.3.33): the decoder lists the TAIs of every partial list of type 00, 01 or 10
+                                    (at most 16), and the Attach Accept uses them. Before, any list but type 01 was
+                                    rejected with EMM cause 99.
+  patches/openairinterface5g/0002   The modification notices.
+  patches/openairinterface5g/0003   An ESM message received with a new NAS signalling connection (TS 24.301 clause
+                                    5.3.1), for example the Activate Dedicated EPS Bearer Context Request of a bearer
+                                    set up after a service request, goes to ESM as on an established connection.
+                                    Before, the UE expected an EMM message there and answered EMM Status cause 98, so
+                                    the dedicated bearer was never accepted.
+  patches/openairinterface5g/0004   A Deactivate EPS Bearer Context Request without a PTI (a deactivation by the
+                                    network, TS 24.301 clause 6.4.4.2) is processed. Before, it was discarded as a PTI
+                                    mismatch and the released bearer stayed active in the UE.
+  patches/openairinterface5g/0005   The NAS messages of an RRCConnectionReconfiguration go to NAS as copies, which
+                                    NAS frees, and the decoded message is freed once. Before, the UE freed part of
+                                    the message twice and crashed on the RRCConnectionReconfiguration that releases a
+                                    dedicated bearer.
+  patches/openairinterface5g/0006   DRBs are released (TS 36.331 clause 5.3.10.2): the eNB and the UE delete the RLC
+                                    entity of each DRB of a drb-ToReleaseList, and the UE also its PDCP entity and
+                                    DRB configuration. Before, the eNB exited on the RRCConnectionReconfiguration
+                                    that releases a dedicated bearer, and the UE ignored the list.
+  patches/openairinterface5g/0007   The eNB deletes the GTP-U tunnel of a released E-RAB. Before, the released
+                                    bearer stayed in the UE's tunnel list, and when the network set the E-RAB up again
+                                    the eNB erased the whole list, the default bearer's tunnel included.
+  patches/openairinterface5g/0008   The UE removes a released EPS bearer context from its bearer table. Before, the
+                                    table kept a pointer to the freed context, and a bearer set up again with the same
+                                    EPS bearer identity was refused as already assigned.
+
+Corresponding source
+--------------------
+The complete source of the images is the upstream repository at tag 2026.w39 with the patches above applied:
+build-images.sh recreates it and builds the images from it with OAI's own Dockerfiles. Each image names the commit
+and the patches' SHA-256 in /usr/share/doc/openmcx-oai/SOURCE and as labels. This also provides the source of the
+third-party components the images contain, under their own licenses (OAI's LICENSES/ directory).

@@ -1,0 +1,76 @@
+From 93b42fd3da7c84bcdc120fb7c076a0b3be3eaad5 Mon Sep 17 00:00:00 2001
+From: openMCX <noreply@openmcx.invalid>
+Date: Mon, 5 Oct 2026 19:57:11 +0200
+Subject: [PATCH] fix(rrc-ue): NAS gets its own copy of the NAS messages of an
+ RRCConnectionReconfiguration
+
+The UE freed the dedicatedInfoNASList of an RRCConnectionReconfiguration but left the pointer in the decoded message,
+which it keeps until the next DL-DCCH message and then frees again: the UE crashed (SIGSEGV in SET_OF_free) on the
+RRCConnectionReconfiguration that releases a dedicated bearer, the DL-DCCH message after the one that set it up. The
+NAS task also read the NAS messages from that decoded message after RRC could have freed it. RRC now gives NAS a copy
+of each NAS message, which NAS frees, as for DLInformationTransfer, and the list is freed with the message.
+---
+ openair2/RRC/LTE/rrc_UE.c     | 7 ++++---
+ openair3/NAS/UE/nas_ue_task.c | 7 +++----
+ 2 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/openair2/RRC/LTE/rrc_UE.c b/openair2/RRC/LTE/rrc_UE.c
+index 50998b1..af5a9a9 100644
+--- a/openair2/RRC/LTE/rrc_UE.c
++++ b/openair2/RRC/LTE/rrc_UE.c
+@@ -1,5 +1,6 @@
+ /*
+  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
++ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/05-mcx-over-4g-open5gs-oai/oai/ran
+  */
+ 
+ /*!
+@@ -1783,8 +1784,10 @@ static void rrc_ue_process_rrcConnectionReconfiguration(const protocol_ctxt_t *c
+         MessageDef *msg_p;
+ 
+         for (list_count = 0; list_count < r_r8->dedicatedInfoNASList->list.count; list_count++) {
++          /* NAS gets its own copy and frees it: the message is freed with the next DL-DCCH message */
+           pdu_length = r_r8->dedicatedInfoNASList->list.array[list_count]->size;
+-          pdu_buffer = r_r8->dedicatedInfoNASList->list.array[list_count]->buf;
++          pdu_buffer = malloc(pdu_length);
++          memcpy(pdu_buffer, r_r8->dedicatedInfoNASList->list.array[list_count]->buf, pdu_length);
+           msg_p = itti_alloc_new_message(TASK_RRC_UE, 0, NAS_CONN_ESTABLI_CNF);
+           NAS_CONN_ESTABLI_CNF(msg_p).errCode = AS_SUCCESS;
+           NAS_CONN_ESTABLI_CNF(msg_p).nasMsg.length = pdu_length;
+@@ -1792,8 +1795,6 @@ static void rrc_ue_process_rrcConnectionReconfiguration(const protocol_ctxt_t *c
+           itti_send_msg_to_task(TASK_NAS_UE, ctxt_pP->instance, msg_p);
+         }
+         LOG_D(RRC, "Sent NAS_CONN_ESTABLI_CNF to NAS layer via itti!\n");
+-
+-        free (r_r8->dedicatedInfoNASList);
+       }
+ 
+     } // c1 present
+diff --git a/openair3/NAS/UE/nas_ue_task.c b/openair3/NAS/UE/nas_ue_task.c
+index a30c113..ba7d599 100644
+--- a/openair3/NAS/UE/nas_ue_task.c
++++ b/openair3/NAS/UE/nas_ue_task.c
+@@ -1,5 +1,6 @@
+ /*
+  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
++ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/05-mcx-over-4g-open5gs-oai/oai/ran
+  */
+ 
+ #include "utils.h"
+@@ -234,11 +235,9 @@ void *nas_ue_task(void *args_p)
+         if ((NAS_CONN_ESTABLI_CNF (msg_p).errCode == AS_SUCCESS)
+             || (NAS_CONN_ESTABLI_CNF (msg_p).errCode == AS_TERMINATED_NAS)) {
+           nas_proc_establish_cnf(user, NAS_CONN_ESTABLI_CNF(msg_p).nasMsg.nas_data, NAS_CONN_ESTABLI_CNF(msg_p).nasMsg.length);
+-
+-          /* TODO checks if NAS will free the nas message, better to do it there anyway! */
+-          // result = itti_free (ITTI_MSG_ORIGIN_ID(msg_p), NAS_CONN_ESTABLI_CNF(msg_p).nasMsg.data);
+-          // AssertFatal (result == EXIT_SUCCESS, "Failed to free memory (%d)!\n", result);
+         }
++        /* RRC hands over a copy of the NAS message, as for NAS_DOWNLINK_DATA_IND */
++        free(NAS_CONN_ESTABLI_CNF(msg_p).nasMsg.nas_data);
+ 
+         break;
+ 
+-- 
+2.53.0
+

@@ -1,0 +1,7 @@
+# Tutorial 5's EPC (Open5GS v2.8.0): addresses on the EPC network openmcx-4g-core 192.168.73.128/26.
+db_uri: mongodb://192.168.73.137/open5gs
+logger:
+  level: info
+global:
+pcrf:
+  freeDiameter: /opt/open5gs/etc/freeDiameter/pcrf.conf

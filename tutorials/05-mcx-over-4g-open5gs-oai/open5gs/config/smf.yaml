@@ -1,0 +1,31 @@
+# Tutorial 5's EPC (Open5GS v2.8.0): addresses on the EPC network openmcx-4g-core 192.168.73.128/26.
+# The SMF plays the P-GW-C (S5 GTP-C, Gx to the PCRF, PFCP to the UPF as P-GW-U). Its packet filters leave out the
+# UE's own address (the "local address" components, TS 24.008 table 10.5.162): the OAI LTE UE does not support them.
+# Online charging (Gy) is off: there is no OCS. No SBI: in the EPC the SMF has no 5G service interface.
+logger:
+  level: info
+global:
+  parameter:
+    no_ipv4v6_local_addr_in_packet_filter: true
+smf:
+  pfcp:
+    server:
+      - address: 192.168.73.133
+    client:
+      upf:
+        - address: 192.168.73.134
+  gtpc:
+    server:
+      - address: 192.168.73.133
+  gtpu:
+    server:
+      - address: 192.168.73.133
+  session:
+    - subnet: 10.45.0.0/16
+      gateway: 10.45.0.1
+  dns:
+    - 8.8.8.8
+  mtu: 1400
+  ctf:
+    enabled: no
+  freeDiameter: /opt/open5gs/etc/freeDiameter/smf.conf

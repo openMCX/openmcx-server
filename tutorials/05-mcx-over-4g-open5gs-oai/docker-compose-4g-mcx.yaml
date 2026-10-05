@@ -1,0 +1,134 @@
+# openMCX: MCX over the Open5GS 4G core and the OAI LTE RAN in rfsimulator mode (tutorials/05-mcx-over-4g-open5gs-oai/README.md).
+#
+# Tutorial 1's openMCX system, on the EPC's SGi network, with the Open5GS EPC (HSS, MME, S-GW, P-GW, PCRF; the PCRF
+# patched for MCPTT QoS, see open5gs/), the OAI eNB and one LTE UE (patched, see oai/ran/) over the rfsimulator, and a
+# dispatcher position inside the LTE UE: its traffic crosses the LTE radio and the EPC. The phones stay on the Wi-Fi
+# (HOST_IP), as in tutorial 1. The MCPTT server asks the PCRF for MCPTT QoS over Rx for the dispatcher's calls (a
+# dedicated bearer with QCI 65 for its speech).
+#
+#   cp .env.example .env                                             then set HOST_IP in .env
+#   sudo ./host-network.sh add                                       the route to the UE pool, once
+#   docker compose -f docker-compose-4g-mcx.yaml run --rm setup      once: writes ./config
+#   docker compose -f docker-compose-4g-mcx.yaml up -d
+#   open https://HOST_IP:8446/ (MCX Admin) and http://localhost:8080/ (the dispatcher)
+#
+# Networks: openmcx-4g-core 192.168.73.128/26 (S1, S11, S5, S6a, Gx, Rx), openmcx-4g-sgi 192.168.74.128/26 (SGi and
+# the openMCX system); the UE pool 10.45.0.0/16 (APN oai.ipv4).
+
+name: openmcx-4g
+include:
+- docker-compose-4g-core.yaml
+services:
+  oai-enb:
+    container_name: openmcx-oai-enb
+    image: ${ENB_IMG:-openmcx/oai-enb:2026.w39-mcx}
+    privileged: true
+    environment:
+      USE_ADDITIONAL_OPTIONS: --rfsim --log_config.global_log_options level,nocolor,time
+    depends_on:
+      epc-mme:
+        condition: service_healthy
+    networks:
+      public:
+        ipv4_address: 192.168.73.140
+    volumes:
+    - ./oai/ran/enb.conf:/opt/oai-enb/etc/enb.conf:ro
+    healthcheck:
+      # Healthy once the S1 association with the MME is up (SCTP to port 36412), so that the UE attaches through it.
+      test: /bin/bash -c "pgrep lte-softmodem && grep -q ' 36412 ' /proc/net/sctp/assocs"
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  oai-lte-ue:
+    container_name: openmcx-oai-lte-ue
+    image: ${UE_IMG:-openmcx/oai-lte-ue:2026.w39-mcx}
+    privileged: true
+    depends_on:
+      oai-enb:
+        condition: service_healthy
+    environment:
+      USE_ADDITIONAL_OPTIONS: --rfsim -C 2680000000 -r 25 --ue-rxgain 140 --ue-txgain 120 --rfsimulator.[0].serveraddr
+        192.168.73.140 --log_config.global_log_options level,nocolor,time
+    volumes:
+    - ./oai/ran/ue_usim.conf:/opt/oai-lte-ue/etc/ue_usim.conf:ro
+    - ./oai/ran/ue.conf:/opt/oai-lte-ue/etc/ue.conf:ro
+    ports:
+    - 127.0.0.1:8080:8080
+    extra_hosts:
+    - sip-core:${HOST_IP:?set HOST_IP in .env}
+    networks:
+      public:
+        ipv4_address: 192.168.73.150
+    healthcheck:
+      test: /bin/bash -c "pgrep lte-uesoftmodem"
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  ue-route:
+    container_name: openmcx-ue-route
+    image: ${UE_IMG:-openmcx/oai-lte-ue:2026.w39-mcx}
+    network_mode: service:oai-lte-ue
+    cap_drop:
+    - ALL
+    cap_add:
+    - NET_ADMIN
+    depends_on:
+    - oai-lte-ue
+    environment:
+      HOST_IP: ${HOST_IP:?set HOST_IP in .env}
+    entrypoint:
+    - bash
+    - -c
+    - rm -f /ue/ip; until ip -4 -o addr show oaitun_ue1 2>/dev/null | grep -q inet; do sleep 1; done; ip route replace "$$HOST_IP"/32 dev
+      oaitun_ue1; ip -4 -o addr show oaitun_ue1 | awk '{print $$4}' | cut -d/ -f1 > /ue/ip; echo "UE address $$(cat /ue/ip),
+      $$HOST_IP through oaitun_ue1"; sleep infinity
+    volumes:
+    - ue:/ue
+    healthcheck:
+      test:
+      - CMD
+      - test
+      - -s
+      - /ue/ip
+      interval: 3s
+      timeout: 2s
+      retries: 100
+  dispatcher:
+    container_name: openmcx-dispatcher
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-v1}
+    network_mode: service:oai-lte-ue
+    depends_on:
+      ue-route:
+        condition: service_healthy
+    environment:
+      HOST_IP: ${HOST_IP:?set HOST_IP in .env}
+    entrypoint:
+    - sh
+    - -c
+    - DISPATCHER_IP=$$(cat /ue/ip) && sed -e "s/DISPATCHER_IP/$$DISPATCHER_IP/g" -e "s/HOST_IP/$$HOST_IP/g" /tutorials/device.json.in
+      > /run/mcx/device.json && OLD=$$(cat /data/ue-ip 2>/dev/null || true) && if [ -n "$$OLD" ] && [ "$$OLD" != "$$DISPATCHER_IP"
+      ]; then for f in /data/accounts/*/config.json; do [ -f "$$f" ] && sed -i "s/\"$$OLD\"/\"$$DISPATCHER_IP\"/g" "$$f";
+      done; fi && echo "$$DISPATCHER_IP" > /data/ue-ip && exec dispatcher --listen 0.0.0.0:8080 --device /run/mcx/device.json
+      --data /data --outbox /data/outbox
+    volumes:
+    - ./setup/device.json.in:/tutorials/device.json.in:ro
+    - ue:/ue:ro
+    - dispatcher-data:/data
+    tmpfs:
+    - /run/mcx
+    healthcheck:
+      test:
+      - CMD
+      - curl
+      - --fail
+      - --silent
+      - http://127.0.0.1:8080/api/session
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+volumes:
+  ue: null
+  dispatcher-data: null

@@ -1,0 +1,40 @@
+From 29d3235b3322c4c64be433e932942c3327d06cfb Mon Sep 17 00:00:00 2001
+From: openMCX <noreply@openmcx.invalid>
+Date: Mon, 5 Oct 2026 19:14:33 +0200
+Subject: [PATCH 4/4] fix(nas-ue): a network-initiated EPS bearer deactivation
+ has no PTI (TS 24.301 6.4.4.2)
+
+The UE discarded a Deactivate EPS Bearer Context Request with PTI 0 (no procedure transaction identity assigned) as a
+PTI mismatch, so a dedicated bearer the network released stayed active in the UE. The PTI-in-use check of TS 24.301
+7.3.1 case m now applies to an assigned PTI only.
+---
+ openair3/NAS/UE/ESM/SAP/esm_recv.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/openair3/NAS/UE/ESM/SAP/esm_recv.c b/openair3/NAS/UE/ESM/SAP/esm_recv.c
+index da88a67..09daf00 100644
+--- a/openair3/NAS/UE/ESM/SAP/esm_recv.c
++++ b/openair3/NAS/UE/ESM/SAP/esm_recv.c
+@@ -1,5 +1,6 @@
+ /*
+  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
++ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/05-mcx-over-4g-open5gs-oai/oai/ran
+  */
+ 
+ /*****************************************************************************
+@@ -618,9 +619,10 @@ int esm_recv_deactivate_eps_bearer_context_request(nas_user_t *user, int pti, in
+      */
+     LOG_TRACE(WARNING, "ESM-SAP   - Invalid PTI value (pti=%d)", pti);
+     LOG_FUNC_RETURN (ESM_CAUSE_INVALID_PTI_VALUE);
+-  } else if ( esm_pt_is_not_in_use(esm_pt_data, pti) ) {
++  } else if ( (pti != ESM_PT_UNASSIGNED) && esm_pt_is_not_in_use(esm_pt_data, pti) ) {
+     /* 3GPP TS 24.301, section 7.3.1, case m
+-     * Assigned value does not match any PTI in use
++     * Assigned value does not match any PTI in use (a network-initiated
++     * deactivation has no PTI assigned, section 6.4.4.2)
+      */
+     LOG_TRACE(WARNING, "ESM-SAP   - PTI mismatch (pti=%d)", pti);
+     LOG_FUNC_RETURN (ESM_CAUSE_PTI_MISMATCH);
+-- 
+2.53.0
+

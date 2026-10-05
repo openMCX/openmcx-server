@@ -20,7 +20,7 @@ COPY compose.yaml /opt/mcxserver/compose.yaml
 COPY config/lab.json /opt/mcxserver/config/lab.json
 COPY docker /opt/mcxserver/docker
 COPY tools /opt/mcxserver/tools
-COPY tutorials/01-mcx-over-wlan-android/setup /opt/tutorial
+COPY tutorials/01-mcx-over-wlan-android/setup /opt/tutorials
 COPY LICENSE NOTICE /usr/share/doc/openmcx/
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.source="https://github.com/openMCX/openmcx-server"

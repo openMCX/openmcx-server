@@ -409,6 +409,36 @@ void test_client() {
   assert(post(notif, path + "/notify", "{}") == 505);
   events = pump(client, 1);
   assert(events.size() == 1 && events[0].kind == Event::Kind::notified && events[0].status == 505);
+  // A PCF keeps a connection open while it opens another (TS 29.500 5.2.2): an idle HTTP/2 connection must not hold
+  // back a notification on a second one (the receiver otherwise ends an idle connection only after 5 s).
+  {
+    const int idle = ::socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in to{};
+    to.sin_family = AF_INET;
+    to.sin_port = htons(static_cast<std::uint16_t>(notif));
+    inet_pton(AF_INET, "127.0.0.1", &to.sin_addr);
+    assert(::connect(idle, reinterpret_cast<sockaddr *>(&to), sizeof to) == 0);
+    const std::string hello = std::string(mcx::h2::preface) + std::string("\0\0\0\4\0\0\0\0\0", 9);  // empty SETTINGS
+    assert(::send(idle, hello.data(), hello.size(), 0) == static_cast<ssize_t>(hello.size()));
+    std::this_thread::sleep_for(100ms);
+    const auto started = std::chrono::steady_clock::now();
+    CURL *c = curl_easy_init();
+    const auto url = "http://127.0.0.1:" + std::to_string(notif) + path + "/notify";
+    curl_slist *headers = curl_slist_append(nullptr, "Content-Type: application/json");
+    curl_easy_setopt(c, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(c, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE);
+    curl_easy_setopt(c, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(c, CURLOPT_POSTFIELDS, R"({"evSubsUri":"x","evNotifs":[]})");
+    curl_easy_setopt(c, CURLOPT_TIMEOUT_MS, 3000L);
+    long status = 0;
+    const auto result = curl_easy_perform(c);
+    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(c);
+    const auto took = std::chrono::steady_clock::now() - started;
+    assert(result == CURLE_OK && status == 204 && took < 1500ms);
+    ::close(idle);
+  }
   assert(pcf.seen().back() == "POST /npcf-policyauthorization/v1/app-sessions/s1/delete ");
   assert(!client.tracking("dialog-1"));
   client.close("dialog-1");  // the leg's own teardown afterwards: nothing more is sent

@@ -1,0 +1,16 @@
+# Tutorial 5's EPC (Open5GS v2.8.0): addresses on the EPC network openmcx-4g-core 192.168.73.128/26.
+# The UPF plays the P-GW-U: GTP-U from the S-GW, the UE pool on its tunnel (ogstun), the SGi side on its second
+# network (openmcx-4g-sgi).
+logger:
+  level: info
+global:
+upf:
+  pfcp:
+    server:
+      - address: 192.168.73.134
+  gtpu:
+    server:
+      - address: 192.168.73.134
+  session:
+    - subnet: 10.45.0.0/16
+      gateway: 10.45.0.1

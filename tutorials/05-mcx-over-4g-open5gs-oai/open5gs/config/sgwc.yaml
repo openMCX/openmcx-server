@@ -1,0 +1,14 @@
+# Tutorial 5's EPC (Open5GS v2.8.0): addresses on the EPC network openmcx-4g-core 192.168.73.128/26.
+logger:
+  level: info
+global:
+sgwc:
+  gtpc:
+    server:
+      - address: 192.168.73.131
+  pfcp:
+    server:
+      - address: 192.168.73.131
+    client:
+      sgwu:
+        - address: 192.168.73.132
