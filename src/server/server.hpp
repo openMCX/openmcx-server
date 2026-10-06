@@ -587,7 +587,11 @@ protected:
 
   void send_priority_notification(const std::shared_ptr<Leg> &leg);
 
-  void priority_fanout(const std::string &group, const std::string &sender, McpttInfo change, bool alert_only = false);
+  // TS 24.379 clause 10.1.1.4.7 step 6: what an emergency request did to the group's in-progress emergency state.
+  enum class EmergencyChange { none, new_state, additional };
+  void priority_fanout(const std::string &group, const std::string &sender, McpttInfo change, bool alert_only = false,
+                       EmergencyChange emergency = EmergencyChange::none);
+  static EmergencyChange emergency_change(const McpttInfo &info, bool was_emergency, bool is_emergency);
 
   SipResponse &broadcast_priority_refused(SipResponse &response);
 

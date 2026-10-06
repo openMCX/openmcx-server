@@ -272,7 +272,8 @@ std::shared_ptr<McServer::Session> McServer::make_adhoc_session(const User &user
 // TS 24.379 clause 17.4.2.1.1: invite each listed user of a new ad hoc group call, then complete the setup.
 void McServer::schedule_adhoc_invitations(const std::shared_ptr<Session> &session,
                                           const std::vector<std::string> &invitees) {
-  schedule([this, session, invitees] {
+  auto invite = [this, session, invitees] {
+    session->invitation_deferred = false;
     for (const auto &id : invitees) {
       try {
         invite_adhoc_member(session, id);
@@ -281,7 +282,14 @@ void McServer::schedule_adhoc_invitations(const std::shared_ptr<Session> &sessio
       }
     }
     complete_setup(session);
-  });
+  };
+  // TS 24.379 clause 11.1.6.4.3: an ambient listening call of the initiator or an invitee being released ends first,
+  // with the BYE to its listening user, so that this user is free to be invited.
+  if (const auto ambient = releasing_ambient(session->members)) {
+    session->invitation_deferred = true;
+    ambient->after_release.push_back(std::move(invite));
+  } else
+    schedule(std::move(invite));
 }
 
 //------------------------------------------------------------------------------

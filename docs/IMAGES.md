@@ -1,4 +1,4 @@
-# openMCX images and containers
+# The openMCX images and containers
 
 Which image runs which program, and which lab container runs it. How to build them: `docs/BUILD.md`.
 

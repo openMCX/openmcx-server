@@ -7,7 +7,7 @@
        |_|
 ```
 
-# openMCX — 3GPP Release 19 MCx services
+# Project openMCX — 3GPP Release 19 MCx services
 
 The project **openMCX** implements **3GPP Release 19 mission-critical services (MCx)** for an IP network: the common service core,
 **MCPTT** (mission-critical push to talk), **MCData** (mission-critical data) and **MCVideo** (mission-critical
@@ -70,7 +70,7 @@ It is not an interoperability-certified implementation: see the current limits i
 
 ## Licence
 
-openMCX is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
+Project openMCX is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
 Third-party software and its licences: [NOTICE](NOTICE).
 
 ## 3GPP specification correction candidates

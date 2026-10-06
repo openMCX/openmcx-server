@@ -186,10 +186,20 @@ def main():
         bool(group_notices) and {regroup['action'] for _, regroup in group_notices} == {'create', 'remove'},
     )
     check(
-        'a group regroup notification repeats the temporary group identity, its preconfigured group and its constituents',
+        'a group regroup creation notice repeats the temporary group identity, its preconfigured group and its '
+        'constituents',
         all(
             regroup['regroup'] and regroup['preconfigured'] and len(regroup['groups']) >= 2
             for _, regroup in group_notices
+            if regroup['action'] == 'create'
+        ),
+    )
+    check(
+        'a group regroup removal notice carries no <groups-for-regroup> or <users-for-regroup> (16.2.2.5 step 3 e))',
+        all(
+            not regroup['groups'] and not regroup['users']
+            for _, regroup in group_notices
+            if regroup['action'] == 'remove'
         ),
     )
     check(

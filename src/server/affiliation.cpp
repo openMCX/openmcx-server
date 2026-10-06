@@ -158,6 +158,9 @@ void McServer::apply_affiliation(User &user, std::set<std::string> groups) {
           populate_priority(state, priority);
           priority_message(*target, state);
         }
+        // TS 24.379 clause 12.1.3.4 step 1: a late emergency alert only while no call is ongoing on the group; with a
+        // call, the user is brought into it (late entry) instead.
+        if (sessions_.contains(group)) continue;
         for (const auto &origin : priority.alerts) {
           McpttInfo alert;
           alert.calling_group = group;

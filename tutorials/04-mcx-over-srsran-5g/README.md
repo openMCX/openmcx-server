@@ -19,7 +19,7 @@ tells the MCPTT server, and the call goes on over the PDU session's default flow
   must be **stopped**: tutorial 4 uses the same containers and ports.
 - **A Linux computer** with Docker and Docker Compose v2, about 8 CPU cores free (the gNB and srsUE keep several cores
   busy) and **sudo** (for the route, as in tutorial 3).
-- **Images**: nothing to compile. openMCX's and OAI's come prebuilt from Docker Hub, as in tutorial 3, and so do the
+- **Images**: nothing to compile. The openMCX images and OAI's come prebuilt from Docker Hub, as in tutorial 3, and so do the
   srsRAN gNB (`openmcx/openmcx-srsran-gnb:25.10-mcx`, with openMCX's patch) and srsUE (`openmcx/openmcx-srsue:25.10`),
   built from [`srsran/Dockerfile`](srsran/Dockerfile) from the srsRAN sources pinned to the release 25.10 commits. To
   build them yourself, see step 2.

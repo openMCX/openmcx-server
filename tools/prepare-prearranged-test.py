@@ -472,7 +472,8 @@ def add_private_services(fixture):
     transfer target); client-d becomes callable and forwards
     to client-a on no answer after 3 s (TS 24.379 clause 6.3.2.5). A fifth user,
     "offline", never registers and forwards to client-a on no answer, so it is
-    forwarded at once (TS 24.379 clause 11.1.1.3.2 step 6)."""
+    forwarded at once (TS 24.379 clause 11.1.1.3.2 step 6). Each user may be in two private calls at a time, as a
+    transferred user is while it calls the target."""
     site_file = fixture / 'generated/site.json'
     site = json.loads(site_file.read_text())
     ids = {
@@ -505,6 +506,12 @@ def add_private_services(fixture):
     offline.pop('mcdata_id', None)
     site['users'] = [profile for profile in site['users'] if profile['username'] != 'offline'] + [offline]
     site_file.write_text(json.dumps(site, indent=2) + '\n')
+    # TS 24.379 clause 11.1.8.2.2: the transferred user keeps its call with the requester while it calls the target,
+    # so it is briefly in two private calls; the limit (N10, TS 24.484 <MaxCall>) must allow that.
+    server_file = fixture / 'generated/mcptt-server.json'
+    server = json.loads(server_file.read_text())
+    server['mcptt']['private_call']['max_calls'] = 2
+    server_file.write_text(json.dumps(server, indent=2) + '\n')
 
 
 # ------------------------------------------------------------------------------

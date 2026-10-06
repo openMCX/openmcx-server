@@ -559,6 +559,12 @@ void McServer::regroup_notify(const Regroup &regroup, bool created, const std::s
       if (!target) continue;
       Regroup notice = regroup;
       notice.action = created ? "create" : "remove";
+      // TS 24.379 clause 16.2.2.5 step 3 e): a removal notice carries no <users-for-regroup> or
+      // <groups-for-regroup>.
+      if (!created) {
+        notice.groups.clear();
+        notice.users.clear();
+      }
       sip_.request("MESSAGE", target->sip, regroup_mime_of(svc_), regroup_xml(notice, svc_),
                    user_route(*target, {{"P-Asserted-Service", svc_.icsi}, {"Accept-Contact", feature_accept()}}));
     }

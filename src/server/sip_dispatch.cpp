@@ -1119,6 +1119,7 @@ void McServer::priority_reinvite(const SipMessage &message, const User &user, Mc
   negotiate_priority(*leg, profile, message.remote_media->floor_priority);
   leg->pending_priority_info = correction;
   const bool was_priority = in_priority(session->group);
+  const bool was_emergency = priorities_.contains(session->group) && priorities_.at(session->group).emergency;
   apply_priority(session->group, user.id, info, profile, message_location(message));
   if (session->chat && !was_priority && in_priority(session->group))
     schedule([this, session] { invite_chat_members(session); });
@@ -1135,8 +1136,12 @@ void McServer::priority_reinvite(const SipMessage &message, const User &user, Mc
   for (const auto &header :
        priority_headers(profile.value("priority_policy", Json::object()), priorities_.at(session->group)))
     response.headers.push_back(header);
-  if (info.emergency || info.imminent_peril)
-    schedule([this, group = session->group, id = user.id, info] { priority_fanout(group, id, info); });
+  if (info.emergency || info.imminent_peril) {
+    const auto change = emergency_change(info, was_emergency, priorities_.at(session->group).emergency);
+    schedule([this, group = session->group, id = user.id, info, change] {
+      priority_fanout(group, id, info, false, change);
+    });
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -1253,7 +1258,9 @@ void McServer::answer_group_invite(const SipMessage &message, const User &user, 
   response.focus = true;
   const auto requested_priority = info;
   const bool was_priority = in_priority(session->group);
+  const bool was_emergency = priorities_.contains(session->group) && priorities_.at(session->group).emergency;
   apply_priority(session->group, user.id, info, profile, message_location(message));
+  const auto change = emergency_change(requested_priority, was_emergency, priorities_.at(session->group).emergency);
   // TS 24.379 clause 10.1.2.4.1 steps 14c-iv and 15c-iii: entering emergency or imminent peril
   // invites the affiliated members that have not joined the chat session.
   if (session->chat && !was_priority && in_priority(session->group))
@@ -1279,11 +1286,24 @@ void McServer::answer_group_invite(const SipMessage &message, const User &user, 
   // Do not publish a phantom session if media allocation or response creation fails.
   if (creating) sessions_[session->group] = session;
   add_leg(leg);
-  if (creating && !session->chat && session->awaiting_users.empty())
-    schedule([this, session, id = user.id] { fanout(session, id); });
+  if (creating && !session->chat && session->awaiting_users.empty()) {
+    auto start = [this, session, id = user.id] {
+      session->invitation_deferred = false;
+      fanout(session, id);
+    };
+    // TS 24.379 clause 11.1.6.4.3: a member's ambient listening call being released (the caller may be its
+    // listened-to user) ends first, with the BYE to its listening user, so that this user is free to be invited;
+    // until then the setup is not judged (complete_setup).
+    if (const auto ambient = releasing_ambient(session->members)) {
+      session->invitation_deferred = true;
+      ambient->after_release.push_back(std::move(start));
+    } else
+      schedule(std::move(start));
+  }
   if (!creating && (requested_priority.emergency || requested_priority.imminent_peril))
-    schedule(
-        [this, session, id = user.id, requested_priority] { priority_fanout(session->group, id, requested_priority); });
+    schedule([this, session, id = user.id, requested_priority, change] {
+      priority_fanout(session->group, id, requested_priority, false, change);
+    });
   event(creating ? "call_created" : "call_joined",
         {{"group_id", session->group}, {"user_id", user.id}, {"session_uri", session->uri}});
 }

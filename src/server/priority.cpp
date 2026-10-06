@@ -215,8 +215,13 @@ void McServer::send_priority_notification(const std::shared_ptr<Leg> &leg) {
 //------------------------------------------------------------------------------
 // TS 24.379 clauses 6.3.3.1.6 and 6.3.3.1.11: a priority state change of a group goes to its participants
 // in a SIP re-INVITE and to its affiliated members not in the call in a SIP MESSAGE; a new alert goes
-// to every affiliated member.
-void McServer::priority_fanout(const std::string &group, const std::string &sender, McpttInfo change, bool alert_only) {
+// to every affiliated member. An emergency request follows clause 10.1.1.4.7 step 6: when it puts the group into the
+// in-progress emergency state (new_state, step 6 d)), the participants learn of it from the re-INVITE and the others
+// from one MESSAGE carrying the emergency and the alert indication; when the group is already in that state and
+// another user indicates an emergency (additional, step 6 c)), every other affiliated member gets that MESSAGE and
+// nothing else.
+void McServer::priority_fanout(const std::string &group, const std::string &sender, McpttInfo change, bool alert_only,
+                               EmergencyChange emergency) {
   change.calling_group = group;
   change.calling_user = sender;
   change.broadcast.reset(); // state notifications describe priority, not the call type
@@ -228,8 +233,12 @@ void McServer::priority_fanout(const std::string &group, const std::string &send
   const auto &profile = state.profile;
   for (auto &[sip, target] : users_) {
     if (!affiliated(target.id, group) || !member(profile, target.id)) continue;
+    if (emergency == EmergencyChange::additional) {
+      if (target.id != sender) priority_message(target, change);
+      continue;
+    }
     // Alert state is per originator and independent of call-state coalescing.
-    if (target.id != sender && !alert_only && change.alert) {
+    if (target.id != sender && !alert_only && change.alert && emergency == EmergencyChange::none) {
       auto alert = change;
       alert.emergency.reset();
       alert.imminent_peril.reset();
@@ -266,6 +275,14 @@ void McServer::priority_fanout(const std::string &group, const std::string &send
     if (!participating && target.id != sender && !(session && session->chat && has_leg(*session, target.id)))
       priority_message(target, change);
   }
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 10.1.1.4.7 step 6: an authorised emergency request either put the group into the in-progress
+// emergency state (step 6 d)) or came while it was in it already (step 6 c)).
+McServer::EmergencyChange McServer::emergency_change(const McpttInfo &info, bool was_emergency, bool is_emergency) {
+  if (info.emergency != true || !is_emergency) return EmergencyChange::none;
+  return was_emergency ? EmergencyChange::additional : EmergencyChange::new_state;
 }
 
 //------------------------------------------------------------------------------

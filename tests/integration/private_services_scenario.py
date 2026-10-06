@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # ------------------------------------------------------------------------------
 def main():
-    """Run the checks PS-01 to PS-13 and write integration/private-services-results.json."""
+    """Run the checks PS-01 to PS-13 (and PS-06b) and write integration/private-services-results.json."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--compose', type=Path, required=True)
     parser.add_argument('--artifacts', type=Path, required=True)
@@ -240,6 +240,10 @@ def main():
             20,
         )
         wait(
+            'PS-06 the transferred user kept its call with the requester while it called the target',
+            lambda: bool(events('client-b', 'transferred_call_kept')),
+        )
+        wait(
             'PS-06 requester told of success and out of the call',
             lambda: (
                 outcome('client-a', 'transfer-private-call-response')()
@@ -254,6 +258,24 @@ def main():
         )
         command('client-b', 'hangup')
         wait('PS-07 released', idle)
+
+        # PS-06b failed transfer (TS 24.379 clauses 11.1.8.2.1 and 11.1.8.2.2): the transferred user keeps its call
+        # with the requester while it calls the target, so when that call fails the two stay in their call.
+        command('client-a', f"private {ids['client-b']} auto")
+        wait('PS-06b call to be transferred established', lambda: private_active('client-a', 'client-b'))
+        unknown = 'sip:nobody.mcptt@' + ids['client-d'].split('@', 1)[1]
+        command('client-a', f'transfer {unknown}')
+        wait(
+            'PS-06b requester told of failure, and the call with the transferred user goes on',
+            lambda: (
+                outcome('client-a', 'transfer-private-call-response', 'fail')()
+                and outcome('client-b', 'transfer', 'fail')()
+                and private_active('client-a', 'client-b')
+            ),
+            20,
+        )
+        command('client-a', 'hangup')
+        wait('PS-06b released', idle)
 
         # PS-08 manual forwarding of a ringing call (TS 24.379 clause 11.1.9.2.1).
         command('client-a', f"private {ids['client-b']} manual")

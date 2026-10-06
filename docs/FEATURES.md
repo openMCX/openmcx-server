@@ -1,6 +1,6 @@
-# openMCX features
+# The openMCX features
 
-openMCX is a working implementation of **3GPP Release 19 mission-critical services (MCX)** for an IP network: the
+Project openMCX is a working implementation of **3GPP Release 19 mission-critical services (MCX)** for an IP network: the
 common service core, **MCPTT** (mission-critical push to talk), **MCData** (mission-critical data) and **MCVideo**
 (mission-critical video), within one MC system. It runs as a set
 of containers — a SIP core, application servers, common services and clients — and every feature listed here is
