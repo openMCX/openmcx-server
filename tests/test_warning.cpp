@@ -103,6 +103,9 @@ int main() {
              .starts_with("176 user not authorized to request for binding"));
   assert(warning_text(mcvideo_service, Warning::group_selection_not_authorised) ==
          "155 user not authorised to change user's selected group");
+  // TS 24.379 clause 9A.2.2.2.3 step 4B: warning 201, which TS 24.281 clause 20.2.2.2.3 does not send.
+  assert(warning_text(mcptt_service, Warning::alias_status_not_authorised) ==
+         "201 user not authorized to change the functional alias status");
 
   // Functions MCVideo does not have, and a 100 without its detailed reason, are programming errors.
   const auto refused = [](auto function) {
@@ -115,6 +118,7 @@ int main() {
   };
   assert(refused([] { (void)warning_text(mcvideo_service, Warning::transfer_not_authorised); }));
   assert(refused([] { (void)warning_text(mcvideo_service, Warning::call_forwarded); }));
+  assert(refused([] { (void)warning_text(mcvideo_service, Warning::alias_status_not_authorised); }));
   assert(refused([] { (void)warning_text(mcptt_service, Warning::function_not_allowed); }));
   assert(refused([] { (void)warning_text(mcptt_service, Warning::not_affiliated, "detail"); }));
   std::cout << "warning tests passed\n";

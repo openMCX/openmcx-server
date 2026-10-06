@@ -113,7 +113,7 @@ docker compose exec client-b mcx-client --config /config/client-b.json --command
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/02-floor-queue-priority-run.pcap.gz`. The folder also holds a reference run,
-`captures/02-floor-queue-priority-full.pcap.gz` (79 KB, 1 242 frames): the frame numbers below and in the call flow
+`captures/02-floor-queue-priority-full.pcap.gz` (111 KB, 2 744 frames): the frame numbers below and in the call flow
 are those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.2.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -143,24 +143,25 @@ Two things Wireshark 4.2 shows in a confusing way:
 
 What to look for, in the reference run:
 
-- **Negotiation** (frames 423 to 468): client-a's INVITE (430, after the SIP core's `407` challenge to 423) offers
-  `a=fmtp:MCPTT mc_floor_ssrc=…;mc_priority=10;mc_queueing`. The server's INVITE to client-b (439) offers
-  `mc_priority=90`, client-b's maximum, and client-b's answer (445) accepts it; client-c (449) gets 10.
-- **Queued request** (frames 549 to 665): client-a's Floor Request (549), Floor Granted (550), Floor Taken to client-b
-  and client-c (551, 552), client-a's speech from 556. client-b's Floor Request (595) is answered with Floor Queue
-  Position Info (596), not with a Floor Deny. client-b's Floor Queue Position Request (664) gets a fresh one (665).
-- **Leaving the queue** (frames 724 to 726): client-b's Floor Release (724), the server's Floor Ack (725) and Floor
-  Taken (726).
-- **Queued grant, accepted** (frames 779 to 903): client-b queues again (779, 780). client-a releases (833), and the
-  server sends Floor Granted to client-b (835) and Floor Taken to client-a (836). client-b's speech starts at 841,
-  after its user's `floor-confirm`. Its Floor Release (901) leaves the floor idle (Floor Idle from 903).
-- **Queued grant, never accepted** (frames 909 to 1056): the server's Floor Granted to client-b (1044) is repeated at
-  1050 and 1052, one second apart (T20), although client-b acknowledges each one. Exactly 2 s after the first, client-b sends Floor
-  Release (1054): T132 has run out. No speech from client-b in between.
-- **Pre-emption** (frames 1062 to 1176): client-a holds the floor (1062, 1063). client-b's Floor Request at priority 90
-  (1126) makes the server send Floor Revoke to client-a (1127) and Floor Queue Position Info to client-b (1128).
-  client-a releases (1130), client-b gets Floor Granted (1132) and talks from 1138.
-- **End of the call** (frame 1182): client-a's BYE.
+- **Negotiation** (frames 476 to 516): client-a's INVITE (483, after the SIP core's `407` challenge to 476) offers
+  `a=fmtp:MCPTT mc_floor_ssrc=…;mc_priority=10;mc_queueing`. The server's INVITE to client-b (490) offers
+  `mc_priority=90`, client-b's maximum, and client-b's answer (496) accepts it; client-c (500) gets 10.
+- **Queued request** (frames 607 to 930): client-a's Floor Request (607), Floor Granted (608), Floor Taken to client-b
+  and client-c (609, 610), client-a's speech from 613. client-b's Floor Request (758) is answered with Floor Queue
+  Position Info (760), not with a Floor Deny. client-b's Floor Queue Position Request (929) gets a fresh one (930).
+- **Leaving the queue** (frames 1157 to 1159): client-b's Floor Release (1157), the server's Floor Ack (1158) and Floor
+  Taken (1159).
+- **Queued grant, accepted** (frames 1422 to 1776): client-b queues again (1422, 1423). client-a releases (1578), and the
+  server sends Floor Granted to client-b (1580) and Floor Taken to client-a (1581). client-b's speech starts at 1588,
+  after its user's `floor-confirm`. Its Floor Release (1774) leaves the floor idle (Floor Idle from 1776).
+- **Queued grant, never accepted** (frames 1782 to 2137): the server's Floor Granted to client-b (2127) is repeated
+  one second later (2133, T20), although client-b acknowledges each one. Exactly 2 s after the first, client-b sends
+  Floor Release (2135): T132 has run out. A third Floor Granted is due at the same moment, so another run may show it
+  just before the Floor Release. No speech from client-b in between.
+- **Pre-emption** (frames 2143 to 2668): client-a holds the floor (2143, 2144). client-b's Floor Request at priority 90
+  (2519) makes the server send Floor Revoke to client-a (2521) and Floor Queue Position Info to client-b (2522).
+  client-a releases (2523), client-b gets Floor Granted (2526) and talks from 2534.
+- **End of the call** (frame 2680): client-a's BYE.
 
 ## 5. Stop or start over
 
@@ -254,7 +255,6 @@ sequenceDiagram
     A->>S: Floor Release
     S->>B: Floor Granted
     S->>B: Floor Granted (T20, 1 s later)
-    S->>B: Floor Granted (T20, 1 s later)
     Note over B: T132 runs out (2 s)
     B->>S: Floor Release
     S->>A: Floor Idle
@@ -276,12 +276,12 @@ sequenceDiagram
 
 | Message | Frames |
 |---|---|
-| Step 3: A Floor Request; Floor Granted; Floor Taken to B and C | 549; 550; 551, 552 |
-| Step 3: B Floor Request; Floor Queue Position Info; Floor Queue Position Request; Floor Queue Position Info | 595; 596; 664; 665 |
-| Step 4: B Floor Release; Floor Ack; Floor Taken | 724; 725; 726 |
-| Step 5: B Floor Request; Floor Queue Position Info; A Floor Release; Floor Granted to B; Floor Taken to A | 779; 780; 833; 835; 836 |
-| Step 5: B's speech; B Floor Release; Floor Idle | from 841; 901; from 903 |
-| Step 6: A Floor Request; Floor Granted; B Floor Request; Floor Queue Position Info; A Floor Release | 909; 910; 982; 983; 1042 |
-| Step 6: Floor Granted to B, three times; B Floor Release; Floor Idle | 1044, 1050, 1052; 1054; from 1056 |
-| Step 7: A Floor Request; Floor Granted; B Floor Request; Floor Revoke to A; Floor Queue Position Info to B | 1062; 1063; 1126; 1127; 1128 |
-| Step 7: A Floor Release; Floor Granted to B; Floor Taken to A; B's speech; B Floor Release; Floor Idle | 1130; 1132; 1133; from 1138; 1174; from 1176 |
+| Step 3: A Floor Request; Floor Granted; Floor Taken to B and C | 607; 608; 609, 610 |
+| Step 3: B Floor Request; Floor Queue Position Info; Floor Queue Position Request; Floor Queue Position Info | 758; 760; 929; 930 |
+| Step 4: B Floor Release; Floor Ack; Floor Taken | 1157; 1158; 1159 |
+| Step 5: B Floor Request; Floor Queue Position Info; A Floor Release; Floor Granted to B; Floor Taken to A | 1422; 1423; 1578; 1580; 1581 |
+| Step 5: B's speech; B Floor Release; Floor Idle | from 1588; 1774; from 1776 |
+| Step 6: A Floor Request; Floor Granted; B Floor Request; Floor Queue Position Info; A Floor Release | 1782; 1783; 1951; 1958; 2125 |
+| Step 6: Floor Granted to B, twice; B Floor Release; Floor Idle | 2127, 2133; 2135; from 2137 |
+| Step 7: A Floor Request; Floor Granted; B Floor Request; Floor Revoke to A; Floor Queue Position Info to B | 2143; 2144; 2519; 2521; 2522 |
+| Step 7: A Floor Release; Floor Granted to B; Floor Taken to A; B's speech; B Floor Release; Floor Idle | 2523; 2526; 2527; from 2534; 2666; from 2668 |

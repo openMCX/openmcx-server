@@ -83,6 +83,16 @@ void SipEngine::Impl::answer_reinvite(pjsip_inv_session *invite, pjsip_rx_data *
                                        multipart_body(response.parts, boundary));
   }
   add_headers(answer.get(), response.headers);
+  if (response.status_code >= 200 && response.status_code < 300 && !config.reinvite_success_headers.empty()) {
+    // pjsip adds the endpoint's Supported header field ("100rel, timer") to an answer that has none; the option tags
+    // must join it rather than replace it.
+    if (pjsip_msg_find_hdr(answer->msg, PJSIP_H_SUPPORTED, nullptr) == nullptr) {
+      const auto *capability = pjsip_endpt_get_capability(endpoint, PJSIP_H_SUPPORTED, nullptr);
+      if (capability != nullptr)
+        pjsip_msg_add_hdr(answer->msg, static_cast<pjsip_hdr *>(pjsip_hdr_clone(answer->pool, capability)));
+    }
+    add_answer_headers(answer.get(), config.reinvite_success_headers);
+  }
   if (response.status_code < 300) {
     auto found = dialogs.find(dialog_id);
     if (found != dialogs.end()) found->second->pending_ack_cseq = cseq;
@@ -353,6 +363,10 @@ void SipEngine::Impl::take_session_refresh(pjsip_rx_data *data) {
                                              : make_invite_body(answer->pool, *response.local_media, parts);
     }
     add_headers(answer.get(), response.headers);
+    if (response.status_code > 100 && response.status_code < 200)
+      add_answer_headers(answer.get(), config.invite_provisional_headers);
+    else if (response.status_code >= 200 && response.status_code < 300)
+      add_answer_headers(answer.get(), config.invite_success_headers);
     require_success(pjsip_inv_send_msg(invite, answer.release()), "send INVITE answer");
   } catch (...) {
     // No stale entry and no session left: the INVITE is answered 500 in its dialog where that is still possible,

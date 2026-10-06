@@ -196,19 +196,31 @@ void DataServer::status_procedures() {
 // Helper: construct the server from its configuration: the SIP stack.
 DataServer::DataServer(Json cfg, bool disable_tls)
     : cfg_(std::move(cfg)), http_(cfg_.at("tls").at("ca_file")), control_(cfg_.at("control_fifo")),
-      sip_(sip_config(cfg_, disable_tls), {[this](const SipMessage &received) { return incoming(received); },
-                                           [this](std::string_view dialog, SipCallState state, int) {
-                                             if (state == SipCallState::disconnected) {
-                                               media_released(std::string(dialog));
-                                               ipcon_released(std::string(dialog));
-                                             }
-                                           },
-                                           {},
-                                           {},
-                                           [](std::string_view error) { event("sip_error", {{"reason", error}}); },
-                                           {}}),
+      sip_(
+          [&] {
+            // TS 24.282 clause 6.3.7.1.23 step 4: the 200 (OK) to an INVITE asserts the service's identity.
+            auto config = sip_config(cfg_, disable_tls);
+            // TS 24.282 annex C.2: the Contact of this server's own dialogs carries the MCData feature tag and ICSI.
+            config.service = &mcdata_service;
+            config.invite_success_headers = {
+                {"P-Asserted-Identity", "<" + cfg_.at("mcdata").at("service_uri").get<std::string>() + ">"}};
+            return config;
+          }(),
+          {[this](const SipMessage &received) { return incoming(received); },
+           [this](std::string_view dialog, SipCallState state, int) {
+             if (state == SipCallState::disconnected) {
+               media_released(std::string(dialog));
+               ipcon_released(std::string(dialog));
+             }
+           },
+           {},
+           {},
+           [](std::string_view error) { event("sip_error", {{"reason", error}}); },
+           {}}),
       core_address_(resolve_ipv4(cfg_.at("trusted_core"))) {
   service_uri_ = cfg_.at("mcdata").at("service_uri").get<std::string>();
+  session_service_ = service_uri_;
+  if (!disable_tls && session_service_.starts_with("sip:")) session_service_.insert(3, "s");
   status_ = {{"sip_transport", disable_tls ? "tcp" : "tls"}, {"instance_id", random_id()}, {"role", "mcdata-server"}};
 }
 
@@ -274,6 +286,31 @@ void DataServer::run() {
   }
   for (int index = 0; index < 20; index++) sip_.poll(std::chrono::milliseconds(10));
   sip_.stop();
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 6.3.7.1.23 step 5: an MCData session identity at this controlling function: the service URI with
+// the session's id (a fresh id without one), so that the SIP core routes the session's requests here.
+std::string DataServer::session_identity(const std::string &id) const {
+  return session_service_ + ";mcdata-session=" + (id.empty() ? random_id() : id);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 6.3.7.1.23 step 6 (clauses 9.2.3.4.3, 9.2.4.4.3, 10.2.5.4.3 and 20.4.1 step 7): the media feature
+// tag and g.3gpp.icsi-ref of an MCData subservice ("sds", "fd" or "ipconn") for a Contact header field.
+std::string DataServer::subservice_tags(const char *subservice) {
+  const std::string name(subservice);
+  return ";+g.3gpp.mcdata." + name + ";+g.3gpp.icsi-ref=\"" +
+         url_encode("urn:urn-7:3gpp-service.ims.icsi.mcdata." + name) + "\"";
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 6.3.7.1.23 steps 5 and 6: the Contact of the controlling function's answer: the MCData session
+// identity with the subservice's media feature tags and isfocus.
+void DataServer::session_contact(SipResponse &response, const std::string &identity, const char *subservice) {
+  response.contact_uri = identity;
+  response.contact_tags = subservice_tags(subservice);
+  response.focus = true;
 }
 
 } // namespace mcx

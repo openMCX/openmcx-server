@@ -130,6 +130,26 @@ def main():
             for response in accepted
         ),
     )
+    # TS 24.379 clause 17.4.2.2: the initiator gets no 180 (Ringing); clauses 6.3.2.1.5.2 and 6.3.3.2.3.2: the 200 (OK)
+    # asserts the service's identity and supports tdialog, norefersub, explicitsub and nosub.
+    check(
+        'the initiator gets no 180 (Ringing)',
+        not any(
+            response['status'] == 180
+            for message in originating
+            for response in responses[(message['call_id'], 'INVITE', header(message, 'cseq').split()[0])]
+        ),
+    )
+    check(
+        '200 OK to the initiator asserts the service identity and supports tdialog, norefersub, explicitsub, nosub',
+        bool(accepted)
+        and all(
+            args.service.replace('sips:', 'sip:') in header(response, 'p-asserted-identity').replace('sips:', 'sip:')
+            and {'tdialog', 'norefersub', 'explicitsub', 'nosub'}
+            <= {tag.strip().lower() for value in response['headers']['supported'] for tag in value.split(',')}
+            for response in accepted
+        ),
+    )
     identities = {response['info'].get('mcptt-calling-group-id') for response in accepted}
     check(
         'each ad hoc call gets a distinct generated group identity',

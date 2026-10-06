@@ -52,10 +52,11 @@ def main():
     parser.add_argument('--service', required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    messages, seen = [], set()
+    messages, seen, copies = [], set(), []
     for _, stream in tcp_streams(args.capture):
         for head, body in sip_messages(stream):
             message = parse(head, body)
+            copies.append(message)  # every hop's copy: the SIP core may change a header field on the way
             key = (message['call_id'], header(message, 'cseq'), message['line'])
             if key not in seen:
                 seen.add(key)
@@ -142,6 +143,16 @@ def main():
             for message in originating
             for response in answers(message)
             if response['status'] == 200
+        ),
+    )
+    # RFC 3261 section 20.4 with RFC 7462: Alert-Info belongs in the INVITE, 180 and 183 only, not in the 200 (OK).
+    calls = {(message['call_id'], header(message, 'cseq')) for message in originating}
+    check(
+        '200 OK to the originator carries no Alert-Info',
+        bool(ok)
+        and not any(
+            copy['status'] == 200 and (copy['call_id'], header(copy, 'cseq')) in calls and header(copy, 'alert-info')
+            for copy in copies
         ),
     )
     progress = [response for message in remote for response in answers(message) if response['status'] == 183]

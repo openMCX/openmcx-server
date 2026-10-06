@@ -558,6 +558,18 @@ McServer::McServer(const ServiceProfile &service, Json cfg, bool disable_tls)
             auto config = sip_config(cfg_, disable_tls);
             config.service = &svc_;
             config.asserts_service = true;
+            // TS 24.379 clauses 6.3.2.1.5.1 and 6.3.3.2.3.1 (TS 24.281 clauses 6.3.2.1.4.1 and 6.3.3.2.3.1): a
+            // provisional answer other than 100 asserts the service's identity and supports "norefersub"; TS 24.379
+            // clauses 6.3.2.1.5.2 and 6.3.3.2.3.2 (TS 24.281 clauses 6.3.2.1.4.2 and 6.3.3.2.3.2): the 200 (OK) also
+            // supports "tdialog", "explicitsub" and "nosub".
+            const auto identity = "<" + cfg_.at(svc_.name).at("service_uri").get<std::string>() + ">";
+            config.invite_provisional_headers = {{"P-Asserted-Identity", identity}, {"Supported", "norefersub"}};
+            config.invite_success_headers = {{"P-Asserted-Identity", identity},
+                                             {"Supported", "tdialog, norefersub, explicitsub, nosub"}};
+            // TS 24.379 clauses 10.1.1.3.1.3, 10.1.1.4.7 and 11.1.1.3.1.3 (TS 24.281 clauses 9.2.1.3.1.3, 9.2.1.4.7
+            // and 10.2.2.3.1.3): the 200 (OK) to a re-INVITE asserts the identity and supports "norefersub" and
+            // "tdialog".
+            config.reinvite_success_headers = {{"P-Asserted-Identity", identity}, {"Supported", "norefersub, tdialog"}};
             return config;
           }(),
           {[this](const SipMessage &message) { return incoming(message); },

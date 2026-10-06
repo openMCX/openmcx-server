@@ -174,7 +174,9 @@ def main():
                 service[key] = lab_service[key]
         service['networks'] = {'mcx': {'ipv4_address': f'{subnet}.{ADDRESSES[name]}'}}
         service['volumes'] = [volume(entry, generated) for entry in lab_service.get('volumes', [])]
-        if name.startswith('client-'):
+        # The spoken test messages, for tutorials that send speech (without the folder, Docker would create an
+        # empty root-owned one in the reader's checkout).
+        if name.startswith('client-') and (args.tutorial / 'speech').is_dir():
             service['volumes'].append('./speech:/speech:ro')
         depends = {
             other: {'condition': condition['condition']}

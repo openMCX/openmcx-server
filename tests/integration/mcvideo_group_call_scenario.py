@@ -337,7 +337,7 @@ def main():
         command('client-d', 'mcvideo-transmit')
         wait('MV-GC-05 client-d rejected with cause 1', lambda: status('client-d').get('mcvideo_reject_cause') == 1)
         # MV-GC-08 client-b releases; the queued client-c is granted without asking again.
-        command('client-b', 'mcvideo-release')
+        command('client-b', 'mcvideo-end')
         wait('MV-GC-08 client-c granted from the queue', lambda: status('client-c').get('mcvideo_transmitting') is True)
         granted_at = time.monotonic()
         wait(
@@ -494,7 +494,6 @@ def main():
         observations['transmission_control'] = sorted(f'{name}/{subtype}' for name, subtype in kinds)
         for label, name, subtype in (
             ('Transmission Request', 'MCV0', 0),
-            ('Transmission Release', 'MCV0', 2),
             ('Transmission Granted', 'MCV1', 0),
             ('Transmission Rejected', 'MCV1', 1),
             ('Transmission Arbitration Taken', 'MCV1', 2),
@@ -514,6 +513,13 @@ def main():
                 (name, subtype) in kinds,
                 observations['transmission_control'],
             )
+        # TS 24.581 clause 6.2.4.5.3: on-network, a participant ends its transmission with Transmission End Request;
+        # Transmission Release (MCV0, subtype 2) is the participating function's and off-network's (clauses 6.5, 7.2).
+        check(
+            'MV-GC-07 no Transmission Release (MCV0, subtype 2) on-network',
+            ('MCV0', 2) not in kinds,
+            observations['transmission_control'],
+        )
         granted = [
             payload
             for src, dst, payload in packets

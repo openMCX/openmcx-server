@@ -1,0 +1,72 @@
+From fa78e02cf68de5ed0178e36844944213a7da5aa0 Mon Sep 17 00:00:00 2001
+From: openMCX <noreply@openmcx.invalid>
+Date: Mon, 5 Oct 2026 17:56:48 +0200
+Subject: [PATCH 2/2] chore: notices of the openMCX modifications (AGPL-3.0
+ section 5(a))
+
+---
+ lib/diameter/rx/message.h | 1 +
+ lib/proto/types.c         | 1 +
+ lib/proto/types.h         | 1 +
+ src/pcrf/pcrf-gx-path.c   | 1 +
+ src/pcrf/pcrf-rx-path.c   | 1 +
+ 5 files changed, 5 insertions(+)
+
+diff --git a/lib/diameter/rx/message.h b/lib/diameter/rx/message.h
+index 63135eb..edacc13 100644
+--- a/lib/diameter/rx/message.h
++++ b/lib/diameter/rx/message.h
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2019 by Sukchan Lee <acetcom@gmail.com>
++ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/open5gs
+  *
+  * This file is part of Open5GS.
+  *
+diff --git a/lib/proto/types.c b/lib/proto/types.c
+index 25dc047..1001e16 100644
+--- a/lib/proto/types.c
++++ b/lib/proto/types.c
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2019-2024 by Sukchan Lee <acetcom@gmail.com>
++ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/open5gs
+  *
+  * This file is part of Open5GS.
+  *
+diff --git a/lib/proto/types.h b/lib/proto/types.h
+index c07b94a..72b9388 100644
+--- a/lib/proto/types.h
++++ b/lib/proto/types.h
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2019-2024 by Sukchan Lee <acetcom@gmail.com>
++ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/open5gs
+  *
+  * This file is part of Open5GS.
+  *
+diff --git a/src/pcrf/pcrf-gx-path.c b/src/pcrf/pcrf-gx-path.c
+index bfe386f..f8e73b6 100644
+--- a/src/pcrf/pcrf-gx-path.c
++++ b/src/pcrf/pcrf-gx-path.c
+@@ -1,5 +1,6 @@
+ /* Gx Interface, 3GPP TS 29.212 section 4
+  * Copyright (C) 2019-2025 by Sukchan Lee <acetcom@gmail.com>
++ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/open5gs
+  *
+  * This file is part of Open5GS.
+  *
+diff --git a/src/pcrf/pcrf-rx-path.c b/src/pcrf/pcrf-rx-path.c
+index 2d71966..9f18db7 100644
+--- a/src/pcrf/pcrf-rx-path.c
++++ b/src/pcrf/pcrf-rx-path.c
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2019-2025 by Sukchan Lee <acetcom@gmail.com>
++ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/open5gs
+  *
+  * This file is part of Open5GS.
+  *
+-- 
+2.53.0
+

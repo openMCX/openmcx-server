@@ -144,7 +144,7 @@ std::string functional_alias_status_xml(const FunctionalAliasStatus &status);
 FunctionalAliasStatus parse_functional_alias_status(std::string_view xml);
 //------------------------------------------------------------------------------
 // TS 24.484 clause 8.3.2.1 item 11: granted rights of an MCPTT user profile document (TS 24.484 clause 8.3), or of
-// an MCVideo one (TS 24.484 clause 9.3): the names of the boolean elements set to true in
+// an MCVideo or MCData one (TS 24.484 clauses 9.3 and 10.3): the names of the boolean elements set to true in
 // the actions of its <cp:ruleset>, directly or in their <anyExt>, for client-side
 // authorisation checks.
 std::set<std::string> parse_profile_actions(std::string_view xml);
@@ -162,6 +162,19 @@ struct McvideoProfile {
 //------------------------------------------------------------------------------
 // TS 24.484 clause 9.3.2.1: reads an MCVideo user profile.
 McvideoProfile parse_mcvideo_profile(std::string_view xml);
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 10.3: the MCData user profile document as the MCData client
+// reads it: its identity and index and its granted rights.
+struct McdataProfile {
+  std::string user_id;
+  unsigned profile_index = 1;
+  std::set<std::string> actions;
+};
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 10.3.2.1: reads an MCData user profile.
+McdataProfile parse_mcdata_profile(std::string_view xml);
 //------------------------------------------------------------------------------
 // TS 24.484 clause 8.3.2.1 item 4 and clause 9.3.2.1 item 4: the "user-profile-index" of an MCPTT or MCVideo user
 // profile; 1 when absent.

@@ -56,6 +56,7 @@ SipResponse DataServer::ipcon_invite(const SipMessage &request, const User &user
   tunnel->target = target;
   tunnel->called_alias = info.called_functional_alias;
   tunnel->origin_dialog = request.dialog_id;
+  tunnel->identity = session_identity({});
   tunnel->origin_peer = offer;
   const auto address = tunnel_address();
   tunnel->origin_socket = std::make_unique<UdpSocket>(address, 0);
@@ -79,6 +80,7 @@ SipResponse DataServer::ipcon_invite(const SipMessage &request, const User &user
   response.status_code = 100;
   response.reason = "Trying";
   response.local_sdp = tunnel->origin_sdp;
+  session_contact(response, tunnel->identity, "ipconn"); // the dialog keeps it for the 200 (OK)
   count("ipconn_sessions");
   event("mcdata_ipconn_requested", {{"user_id", user.id},
                                     {"target", target},
@@ -133,7 +135,8 @@ std::optional<SipResponse> DataServer::ipcon_alias_redirect(const User &user, co
     response.reason = "Multiple Choices";
     response.content_type = mcdata::info_mime;
     response.body = mcdata::info_xml(redirect);
-    response.headers = {{"Contact", "<" + service_uri_ + ">"}};
+    // Step 5a1 B) I): a Contact with a SIP URI for the MCData session identity.
+    response.headers = {{"Contact", "<" + session_identity({}) + ">"}};
     event("mcdata_functional_alias_resolved", {{"user_id", user.id}, {"alias", target}, {"selected", users.front()}});
     return response;
   }
@@ -158,6 +161,7 @@ void DataServer::ipcon_invite_target(const std::shared_ptr<IpconSession> &tunnel
       {"Accept-Contact", "*;+g.3gpp.mcdata.ipconn;require;explicit"}, // TS 24.282 clause 20.4.1 step 4
       {"Accept-Contact", "*;+g.3gpp.icsi-ref=\"" + url_encode(icsi) + "\";require;explicit"}, // step 5
       {"Referred-By", "<" + originator_sip + ">"},                                            // step 6
+      {"Contact", focus_contact(tunnel->identity, "ipconn")},                                 // step 7
       {"P-Asserted-Service", icsi}};                                                          // step 11
   const std::vector<BodyPart> clear{{mcdata::info_mime, mcdata::info_xml(info)}};
   const auto dialog = sip_.invite_sdp(
@@ -214,6 +218,7 @@ void DataServer::ipcon_target_answered(const std::shared_ptr<IpconSession> &tunn
   for (const auto &part : response.parts)
     if (part.content_type == mcdata::info_mime) answer.parts.push_back(part);
   answer.headers = {{"P-Asserted-Service", mcdata::ipconn_icsi}};
+  session_contact(answer, tunnel->identity, "ipconn"); // TS 24.282 clause 6.3.7.1.23 steps 5 and 6
   sip_.answer(tunnel->origin_dialog, answer);
   event("mcdata_ipconn_established",
         {{"user_id", tunnel->originator},

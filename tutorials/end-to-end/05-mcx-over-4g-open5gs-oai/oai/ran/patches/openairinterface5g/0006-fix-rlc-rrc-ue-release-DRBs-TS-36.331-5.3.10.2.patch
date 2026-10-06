@@ -1,0 +1,128 @@
+From 472d55b75542470b2000253c89f1faf713e076a2 Mon Sep 17 00:00:00 2001
+From: openMCX <noreply@openmcx.invalid>
+Date: Mon, 5 Oct 2026 20:25:15 +0200
+Subject: [PATCH] fix(rlc, rrc-ue): release DRBs (TS 36.331 5.3.10.2)
+
+The eNB exited ("rrc_rlc_config_asn1_req: TODO") on an RRCConnectionReconfiguration with a drb-ToReleaseList, sent
+when the network releases a dedicated bearer. RLC now deletes the RLC entity of each DRB to release, and a PDU or a
+data request for a logical channel already released is dropped instead of ending the process. The UE ignored the
+drb-ToReleaseList: it now releases the PDCP and RLC entities and the DRB configuration of each DRB to release, before
+any DRB addition (TS 36.331 5.3.10.1).
+---
+ openair2/LAYER2/rlc_v2/rlc_oai_api.c | 29 ++++++++++++++++-----
+ openair2/RRC/LTE/rrc_UE.c            | 38 ++++++++++++++++++++++++++++
+ 2 files changed, 61 insertions(+), 6 deletions(-)
+
+diff --git a/openair2/LAYER2/rlc_v2/rlc_oai_api.c b/openair2/LAYER2/rlc_v2/rlc_oai_api.c
+index 8f2ec5f..5889f44 100644
+--- a/openair2/LAYER2/rlc_v2/rlc_oai_api.c
++++ b/openair2/LAYER2/rlc_v2/rlc_oai_api.c
+@@ -1,5 +1,6 @@
+ /*
+  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
++ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/oai/ran
+  */
+ 
+ /* from openair */
+@@ -80,8 +81,8 @@ void mac_rlc_data_ind     (
+     rb->set_time(rb, rlc_current_time);
+     rb->recv_pdu(rb, buffer_pP, tb_sizeP);
+   } else {
+-    LOG_E(RLC, "fatal: no RB found (rnti %x channel ID %d)\n", rnti, channel_id);
+-    exit(1);
++    /* a PDU of a logical channel just released (TS 36.331 5.3.10.2) */
++    LOG_W(RLC, "no RB found (rnti %x channel ID %d), PDU discarded\n", rnti, channel_id);
+   }
+ 
+   rlc_manager_unlock(rlc_ue_manager);
+@@ -128,8 +129,8 @@ tbs_size_t mac_rlc_data_req(
+     maxsize = tb_sizeP;
+     ret = rb->generate_pdu(rb, buffer_pP, maxsize);
+   } else {
+-    LOG_E(RLC, "%s:%d:%s: fatal: data req for unknown RB\n", __FILE__, __LINE__, __FUNCTION__);
+-    exit(1);
++    /* a grant computed before the logical channel was released (TS 36.331 5.3.10.2) */
++    LOG_W(RLC, "%s:%d:%s: data req for unknown RB (rnti %x channel ID %d)\n", __FILE__, __LINE__, __FUNCTION__, rntiP, channel_idP);
+     ret = 0;
+   }
+ 
+@@ -874,9 +875,25 @@ rlc_op_status_t rrc_rlc_config_asn1_req (const protocol_ctxt_t   * const ctxt_pP
+ 
+   }
+ 
++  /* TS 36.331 5.3.10.2: release the RLC entity of each DRB to release */
+   if (drb2release_listP != NULL) {
+-    LOG_E(RLC, "%s:%d:%s: TODO\n", __FILE__, __LINE__, __FUNCTION__);
+-    exit(1);
++    rlc_ue_t *ue;
++    rlc_manager_lock(rlc_ue_manager);
++    ue = rlc_manager_get_ue(rlc_ue_manager, rnti);
++    for (i = 0; i < drb2release_listP->list.count; i++) {
++      long drb_id = *drb2release_listP->list.array[i];
++      if (drb_id < 1 || drb_id > 5) {
++        LOG_E(RLC, "%s:%d:%s: bad drb id %ld to release\n", __FILE__, __LINE__, __FUNCTION__, drb_id);
++        continue;
++      }
++      if (ue->drb[drb_id-1] != NULL) {
++        ue->drb[drb_id-1]->delete(ue->drb[drb_id-1]);
++        ue->drb[drb_id-1] = NULL;
++        LOG_I(RLC, "released DRB %ld of UE RNTI %x\n", drb_id, rnti);
++      } else
++        LOG_W(RLC, "releasing non allocated DRB %ld, do nothing\n", drb_id);
++    }
++    rlc_manager_unlock(rlc_ue_manager);
+   }
+ 
+   if (srb2add_listP != NULL) {
+diff --git a/openair2/RRC/LTE/rrc_UE.c b/openair2/RRC/LTE/rrc_UE.c
+index af5a9a9..b1c50e1 100644
+--- a/openair2/RRC/LTE/rrc_UE.c
++++ b/openair2/RRC/LTE/rrc_UE.c
+@@ -1317,6 +1317,44 @@ rrc_ue_process_radioResourceConfigDedicated(
+     }
+   }
+ 
++  /* TS 36.331 5.3.10.2: release the PDCP entity, the RLC entity and the logical channel of each DRB to release,
++   * before any DRB addition (5.3.10.1) */
++  if (radioResourceConfigDedicated->drb_ToReleaseList) {
++    rrc_pdcp_config_asn1_req(ctxt_pP,
++                             (LTE_SRB_ToAddModList_t *)NULL,
++                             (LTE_DRB_ToAddModList_t *)NULL,
++                             radioResourceConfigDedicated->drb_ToReleaseList,
++                             UE_rrc_inst[ctxt_pP->module_id].ciphering_algorithm |
++                             (UE_rrc_inst[ctxt_pP->module_id].integrity_algorithm << 4),
++                             NULL,
++                             NULL,
++                             NULL,
++                             (LTE_PMCH_InfoList_r9_t *)NULL,
++                             UE_rrc_inst[ctxt_pP->module_id].defaultDRB);
++    rrc_rlc_config_asn1_req(ctxt_pP,
++                            (LTE_SRB_ToAddModList_t *)NULL,
++                            (LTE_DRB_ToAddModList_t *)NULL,
++                            radioResourceConfigDedicated->drb_ToReleaseList,
++                            (LTE_PMCH_InfoList_r9_t *)NULL, 0, 0
++                           );
++
++    for (i=0; i<radioResourceConfigDedicated->drb_ToReleaseList->list.count; i++) {
++      long drb_identity = *radioResourceConfigDedicated->drb_ToReleaseList->list.array[i];
++
++      if (drb_identity < 1 || drb_identity > 8)
++        continue;
++
++      DRB_id = drb_identity - 1;
++
++      if (UE_rrc_inst[ctxt_pP->module_id].DRB_config[eNB_index][DRB_id]) {
++        ASN_STRUCT_FREE(asn_DEF_LTE_DRB_ToAddMod, UE_rrc_inst[ctxt_pP->module_id].DRB_config[eNB_index][DRB_id]);
++        UE_rrc_inst[ctxt_pP->module_id].DRB_config[eNB_index][DRB_id] = NULL;
++      }
++
++      LOG_I(RRC, "[UE %d] DRB %ld released\n", ctxt_pP->module_id, drb_identity);
++    }
++  }
++
+   // Establish DRBs if present
+   if (radioResourceConfigDedicated->drb_ToAddModList) {
+     if ( (UE_rrc_inst[ctxt_pP->module_id].defaultDRB == NULL) &&
+-- 
+2.53.0
+

@@ -499,7 +499,8 @@ McServer::make_private_session(const SipMessage &message, const User &user, cons
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 11.1.1.4.2: the caller's leg and the answer kept for it until an invitee answers; the
-// caller gets 180 Ringing (a first-to-answer caller 100 Trying), and the session and leg are stored.
+// caller gets 100 (Trying), 180 (Ringing) or 183 (Session Progress) only when an invitee rings, and the session and
+// leg are stored.
 // Returns the rejection, or nothing.
 std::optional<SipResponse>
 McServer::private_caller_answer(const SipMessage &message, const User &user, const McpttInfo &info,
@@ -536,15 +537,15 @@ McServer::private_caller_answer(const SipMessage &message, const User &user, con
   leg->pending_priority_info = correction;
   leg->answer = response;
   leg->awaiting_answer = true;
-  // A first-to-answer caller sees 183 once any invitee rings (TS 24.379 clause 11.1.1.4.2).
-  response.status_code = first_to_answer ? 100 : 180;
+  // The caller sees 180 (183 for first-to-answer) once an invitee rings (TS 24.379 clause 11.1.1.4.2).
+  response.status_code = 100;
   // A protected first-to-answer call has no SDP answer before the 200: its answer
   // carries the PCK of the invitee that answers (TS 33.180 clause 7.2.4.3 step 8).
   if (first_to_answer && session->protected_private) {
     response.local_media.reset();
     response.deferred = true; // the SIP engine sends the SDP answer with the 200
   }
-  response.reason = first_to_answer ? "Trying" : "Ringing";
+  response.reason = "Trying";
   sessions_[session->group] = session;
   add_leg(leg);
   return std::nullopt;
@@ -691,15 +692,17 @@ void McServer::invite_private_target(const std::shared_ptr<Session> &session, co
       [this, weak = std::weak_ptr<Session>(session)](const SipResponse &response) {
         const auto session = weak.lock();
         if (!session) return;
-        if (response.status_code == 180 && session->first_to_answer && !session->progress_sent) {
+        // TS 24.379 clause 11.1.1.4.2: the first invitee's 180 (Ringing) brings the caller 180 (Ringing) in a
+        // private call, 183 (Session Progress) in a first-to-answer call.
+        if (response.status_code == 180 && !session->progress_sent) {
           session->progress_sent = true;
           schedule([this, session] {
             if (!current_session(session)) return;
             for (const auto &leg : session_legs(*session))
               if (leg->awaiting_answer) {
                 SipResponse progress;
-                progress.status_code = 183;
-                progress.reason = "Session Progress";
+                progress.status_code = session->first_to_answer ? 183 : 180;
+                progress.reason = session->first_to_answer ? "Session Progress" : "Ringing";
                 sip_.answer(leg->dialog, progress);
               }
           });

@@ -207,7 +207,7 @@ def main():
         check(
             'MV-PC-01 client-b pictures equal client-a\'s', common >= 15 and equal == common, observations['b_from_a']
         )
-        command('client-a', 'mcvideo-release')
+        command('client-a', 'mcvideo-end')
         wait('MV-PC-01 client-a released', lambda: status('client-a').get('mcvideo_transmitting') is False)
         command('client-b', 'mcvideo-transmit')
         wait('MV-PC-01 client-b granted', lambda: status('client-b').get('mcvideo_transmitting') is True)

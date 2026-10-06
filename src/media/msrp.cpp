@@ -700,8 +700,12 @@ void Endpoint::poll() {
 void Endpoint::close() { state_->shutdown(); }
 
 //------------------------------------------------------------------------------
-// Helper: whether the connection is up (and its TLS handshake complete).
-bool Endpoint::connected() const { return state_->connection >= 0 && (!state_->session || state_->handshaken); }
+// Helper: whether a message can be sent: the connection is up (and its TLS handshake complete) and the peer is known.
+// A passive endpoint learns its peer from the binding SEND (RFC 6135), which can arrive after the connection is
+// accepted.
+bool Endpoint::connected() const {
+  return state_->connection >= 0 && (!state_->session || state_->handshaken) && !state_->peer.host.empty();
+}
 
 //------------------------------------------------------------------------------
 // Helper: whether the connection runs over TLS with a completed handshake.

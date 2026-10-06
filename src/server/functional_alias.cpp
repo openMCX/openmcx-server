@@ -19,16 +19,24 @@ bool McServer::is_functional_alias(const std::string &id) {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clauses 9A.2.2.2.3 and 9A.2.2.3.3: activation, refresh, take-over and deactivation.
-// All listed aliases are checked before any state changes.
+// TS 24.379 clause 9A.2.2.2.3 (TS 24.281 clause 20.2.2.2.3): a served user's functional alias status change. Only the
+// participating checks answer the PUBLISH with a refusal (403, 403 with warning 201, 423); past them it is answered
+// 200, and this server, owning the aliases as well, decides each alias on its own as TS 24.379 clause 9A.2.2.3.3
+// does (clause 9A.2.2.2.6: one status change per alias). The user learns the outcome from the NOTIFY of its status
+// subscription (clauses 9A.2.2.2.5 and 9A.2.1.3) carrying the handled p-id-fa: an activated alias is listed
+// "activated", one at its limit that the user may take over "take-over-possible", a refused one is left out.
+// From a participating server (`relayed`), this server only owns the aliases (TS 24.379 clause 9A.2.2.3.3): all
+// listed aliases are checked before any state changes, and the outcome is the response.
 SipResponse McServer::functional_alias_publish(const SipMessage &message, const User &user, const McpttInfo &info,
-                                               const std::string &body) {
+                                               const std::string &body, bool relayed) {
   SipResponse response;
-  const auto reject = [&](int status, const std::string &reason) {
+  const auto reject = [&](int status, const std::string &reason, const std::string &warning = {}) {
     response.status_code = status;
+    if (!warning.empty()) response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
     event("functional_alias_rejected", {{"user_id", user.id}, {"status", status}, {"reason", reason}});
     return response;
   };
+  // TS 24.379 clause 9A.2.2.2.3 step 4: the served MCPTT ID (<mcptt-request-uri>) is the originating one.
   if (info.request_uri != user.id) return reject(403, "request URI is not the publishing user");
   FunctionalAliasRequest request;
   try {
@@ -41,6 +49,26 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
     return reject(400, "functional alias of another service");
   if (request.user_id != user.id || request.client_id != user.client || request.aliases.empty())
     return reject(403, "identity mismatch");
+  std::map<std::string, Json> definitions;
+  for (const auto &alias : request.aliases) {
+    try {
+      definitions[alias] = internal("cms", "/internal/functional-alias?id=" + url_encode(alias));
+    } catch (const std::exception &) {
+      definitions[alias] = nullptr;
+    }
+  }
+  // TS 24.379 clause 9A.2.2.2.3 steps 4A and 4B (MCPTT only): each alias must be one the user may change, in the
+  // <FunctionalAliasList> of its user profile; openMCX's user profile has none, so the aliases whose
+  // <mcptt-user-list> names the user stand for it.
+  if (!relayed && svc_.service == Service::mcptt)
+    for (const auto &alias : request.aliases) {
+      const auto users = definitions[alias].is_null()
+                             ? std::vector<std::string>{}
+                             : definitions[alias].value(alias_user_list(), std::vector<std::string>{});
+      if (std::find(users.begin(), users.end(), user.id) == users.end())
+        return reject(403, "user may not change " + alias, warn(Warning::alias_status_not_authorised));
+    }
+  // TS 24.379 clause 9A.2.2.2.3 step 5 and clause 9A.2.2.3.3 step 3.
   const auto expires = std::string(get_header(message.headers, "Expires"));
   const bool deactivate = expires == "0";
   if (!deactivate && expires != "4294967295") {
@@ -48,29 +76,45 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
     response.headers = {{"Min-Expires", "4294967295"}};
     return response;
   }
+  // TS 24.379 clause 9A.2.2.3.3 steps 4 to 6: <mcptt-user-list> or, for MCVideo, <mcvideo-user-list> (TS 24.484
+  // clauses 8.4.2.1 and 9.4.2.1), <max-simultaneous-activations>; take-over needs <allow-takeover> and the user's
+  // <allow-takeover-functional-alias-other-user> (TS 24.484 clauses 8.4.2.1 and 8.3.2.1).
   auto change = functional_aliases_.change();
-  const AliasAdmissionRules rules{svc_.service, request.take_over, true, false,
-                                  [&] { return user_profile(user.id).value("functional_alias_takeover", false); }};
+  const auto may_take_over = [&] { return user_profile(user.id).value("functional_alias_takeover", false); };
+  const AliasAdmissionRules rules{svc_.service, request.take_over, true, false, may_take_over};
+  std::map<std::string, std::string> outcomes;
   for (const auto &alias : request.aliases) {
-    Json definition;
-    try {
-      definition = internal("cms", "/internal/functional-alias?id=" + url_encode(alias));
-    } catch (const std::exception &) {
-      return reject(403, "unknown functional alias " + alias);
+    const auto &definition = definitions[alias];
+    if (definition.is_null()) {
+      if (relayed) return reject(403, "unknown functional alias " + alias);
+      outcomes[alias] = "refused";
+      continue;
     }
     if (deactivate) {
       std::erase(change.next[alias], user.id);
+      outcomes[alias] = "deactivated";
       continue;
     }
-    // <mcptt-user-list> or, for MCVideo, <mcvideo-user-list> (TS 24.484 clauses 8.4.2.1 and 9.4.2.1); take-over needs
-    // <allow-takeover> and the user's <allow-takeover-functional-alias-other-user> (TS 24.484 clauses 8.4.2.1 and
-    // 8.3.2.1).
-    switch (AliasRegistry::admit(change, alias, user.id, definition, rules)) {
-    case AliasAdmission::NotListed: return reject(403, "user may not activate " + alias);
-    case AliasAdmission::NoneAllowed: return reject(403, "no activations allowed for " + alias);
-    case AliasAdmission::LimitReached: return reject(403, "maximum activations reached for " + alias);
+    const auto admission = AliasRegistry::admit(change, alias, user.id, definition, rules);
+    if (admission == AliasAdmission::Admitted) {
+      outcomes[alias] = "activated";
+      continue;
+    }
+    std::string reason;
+    switch (admission) {
+    case AliasAdmission::NotListed: reason = "user may not activate " + alias; break;
+    case AliasAdmission::NoneAllowed: reason = "no activations allowed for " + alias; break;
+    case AliasAdmission::LimitReached: reason = "maximum activations reached for " + alias; break;
     case AliasAdmission::Admitted: break;
     }
+    if (relayed) return reject(403, reason);
+    // TS 24.379 clause 3.1: "take-over-possible", the alias is used by others up to its limit, but the user may
+    // take it over.
+    const bool possible = admission == AliasAdmission::LimitReached && !request.take_over &&
+                          definition.value("allow_takeover", false) && may_take_over();
+    outcomes[alias] = possible ? "take-over-possible" : "refused";
+    event("functional_alias_refused",
+          {{"user_id", user.id}, {"alias", alias}, {"reason", reason}, {"take_over_possible", possible}});
   }
   const auto taken = functional_aliases_.commit(std::move(change));
   std::set<std::string> changed_users{user.id};
@@ -78,11 +122,22 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
     changed_users.insert(previous);
     event("functional_alias_taken_over", {{"alias", alias}, {"from", previous}, {"by", user.id}});
   }
+  auto &possible = alias_takeover_possible_[user.id];
+  for (const auto &[alias, outcome] : outcomes)
+    if (outcome == "take-over-possible")
+      possible.insert(alias);
+    else
+      possible.erase(alias);
+  if (possible.empty()) alias_takeover_possible_.erase(user.id);
   schedule([this, changed_users, aliases = std::set<std::string>(request.aliases.begin(), request.aliases.end()),
             publisher = user.id,
             pid = request.publish_id] { alias_status_changed(changed_users, aliases, publisher, pid); });
+  std::vector<std::string> changed;
+  for (const auto &[alias, outcome] : outcomes)
+    if (outcome == "activated" || outcome == "deactivated") changed.push_back(alias);
   event(deactivate ? "functional_alias_deactivated" : "functional_alias_activated",
-        {{"user_id", user.id}, {"aliases", request.aliases}, {"take_over", request.take_over}});
+        {{"user_id", user.id}, {"aliases", changed}, {"take_over", request.take_over}, {"outcomes", outcomes}});
+  // TS 24.379 clause 9A.2.2.2.3 step 8 and clause 9A.2.2.3.3 step 7.
   response.status_code = 200;
   response.headers = {{"Expires", deactivate ? "0" : "4294967295"}, {"SIP-ETag", random_id()}};
   return response;
@@ -93,13 +148,15 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
 // its status subscriptions.
 void McServer::deactivate_functional_aliases(const std::string &id) {
   const auto aliases = functional_aliases_.deactivate(id);
+  alias_takeover_possible_.erase(id);
   std::erase_if(alias_subscriptions_, [&](const auto &entry) { return entry.second.subscriber == id; });
   if (!aliases.empty()) schedule([this, id, aliases] { alias_status_changed({id}, aliases); });
 }
 
 //------------------------------------------------------------------------------
 // TS 24.379 clauses 9A.2.2.2.4 and 9A.2.2.3.4 (TS 24.281 clauses 20.2.2.2.4 and 20.2.2.3.4): a SUBSCRIBE with
-// <req-type> "functional-alias-status-determination" for the subscriber's own aliases, or
+// "functional-alias-status-determination" (MCPTT <request-type>, MCVideo <req-type>) for the subscriber's own
+// aliases, or
 // "fa-user-status-determination" for the users of an alias. The local policy of TS 24.379 clause 9A.2.2.3.4
 // step 5 (TS 24.281 clause 20.2.2.3.4 step 5) lets the users that may activate an alias follow it. Expires 0
 // fetches the state once; an in-dialog SUBSCRIBE refreshes or ends the subscription.
@@ -254,6 +311,12 @@ void McServer::notify_alias_status(const std::string &dialog, const std::string 
     for (const auto &[alias, users] : functional_aliases_.activations())
       if (std::find(users.begin(), users.end(), subscription.user) != users.end())
         status.entries.push_back({alias, {}, "activated"});
+    // TS 24.379 clause 9A.2.1.3: the aliases the user may take over.
+    if (const auto possible = alias_takeover_possible_.find(subscription.user);
+        possible != alias_takeover_possible_.end())
+      for (const auto &alias : possible->second)
+        if (!functional_aliases_.active(alias, subscription.user))
+          status.entries.push_back({alias, {}, "take-over-possible"});
   } else {
     status.entity = status.tuple_id = subscription.alias;
     status.per_alias = true;

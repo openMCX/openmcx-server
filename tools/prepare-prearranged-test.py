@@ -1587,6 +1587,13 @@ def main():
         action='store_true',
         help='With --private-call, add call-back, remote-call, transfer and forwarding permissions',
     )
+    parser.add_argument(
+        '--enforce-profile',
+        action='append',
+        default=[],
+        metavar='ROLE',
+        help='Let this client (e.g. client-b) check its own user profiles before a request (repeatable)',
+    )
     parser.add_argument('--mcdata', action='store_true', help='Provision differentiated MCData rulesets and SDS groups')
     parser.add_argument(
         '--mcvideo',
@@ -1915,11 +1922,18 @@ def main():
             parser.error('--rx runs on a combined server')
         add_rx(fixture)
     # Scenario clients leave authorisation to the server so its rejections are
-    # exercised; the private-services lab keeps client-d enforcing its profile.
-    for role in ['client-a', 'client-b', 'client-c', 'client-d']:
+    # exercised; the private-services lab keeps client-d enforcing its profile,
+    # and --enforce-profile names further clients that check their profiles.
+    roles = ['client-a', 'client-b', 'client-c', 'client-d']
+    for role in args.enforce_profile:
+        if role not in roles:
+            parser.error(f'--enforce-profile: unknown client {role}')
+    for role in roles:
         path = fixture / f'generated/{role}.json'
         config = json.loads(path.read_text())
-        config['mcptt']['enforce_profile_ruleset'] = args.private_services and role == 'client-d'
+        config['mcptt']['enforce_profile_ruleset'] = (
+            args.private_services and role == 'client-d'
+        ) or role in args.enforce_profile
         path.write_text(json.dumps(config, indent=2) + '\n')
     # The MCVideo service settings above were written to mcvideo-server; the
     # participating MCVideo servers take the same, keeping their own role and peers.

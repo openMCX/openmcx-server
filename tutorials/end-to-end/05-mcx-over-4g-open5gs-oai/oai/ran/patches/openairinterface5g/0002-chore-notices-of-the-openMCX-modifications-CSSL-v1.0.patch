@@ -1,0 +1,48 @@
+From 7a815c7dd92fb2e7ac0b4533154c961b1d0034c5 Mon Sep 17 00:00:00 2001
+From: openMCX <noreply@openmcx.invalid>
+Date: Mon, 5 Oct 2026 17:53:12 +0200
+Subject: [PATCH 2/4] chore: notices of the openMCX modifications (CSSL v1.0
+ section 5.2)
+
+---
+ openair3/NAS/COMMON/IES/TrackingAreaIdentityList.c | 1 +
+ openair3/NAS/COMMON/IES/TrackingAreaIdentityList.h | 1 +
+ openair3/NAS/UE/EMM/SAP/emm_recv.c                 | 1 +
+ 3 files changed, 3 insertions(+)
+
+diff --git a/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.c b/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.c
+index 214cc94..572aeae 100644
+--- a/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.c
++++ b/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.c
+@@ -1,5 +1,6 @@
+ /*
+  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
++ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/oai/ran
+  */
+ 
+ #include <stdio.h>
+diff --git a/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.h b/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.h
+index 6f3c59f..c421159 100644
+--- a/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.h
++++ b/openair3/NAS/COMMON/IES/TrackingAreaIdentityList.h
+@@ -1,5 +1,6 @@
+ /*
+  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
++ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/oai/ran
+  */
+ 
+ #include <stdio.h>
+diff --git a/openair3/NAS/UE/EMM/SAP/emm_recv.c b/openair3/NAS/UE/EMM/SAP/emm_recv.c
+index 1c5209f..1125085 100644
+--- a/openair3/NAS/UE/EMM/SAP/emm_recv.c
++++ b/openair3/NAS/UE/EMM/SAP/emm_recv.c
+@@ -1,5 +1,6 @@
+ /*
+  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
++ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/oai/ran
+  */
+ 
+ /*****************************************************************************
+-- 
+2.53.0
+

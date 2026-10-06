@@ -318,8 +318,12 @@ int main() {
       }
       return answer;
     };
+    // RFC 6135: an accepted connection is not ready to send before its binding SEND names the peer.
+    for (int attempt = 0; attempt < 50; ++attempt) passive.poll();
+    check(!passive.connected(), "an accepted connection without its binding SEND cannot be sent to");
     check(exchange(encode(bind) + encode(report)).empty() && received.empty(),
           "neither the binding SEND (Failure-Report: no) nor a REPORT is answered or delivered");
+    check(passive.connected(), "the binding SEND names the peer, which can then be sent to");
     Message data = bind;
     data.transaction = random_ident();
     data.failure_report.clear();

@@ -241,6 +241,13 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
       pjsip_inv_answer(invite, response.status_code, response.reason.empty() ? nullptr : &reason, sdp, &created),
       "create deferred INVITE answer");
   TxData data(created);
+  // pjsip builds the answer from the last provisional one: an Alert-Info of a 180 or 183 (RFC 3261 section 20.4,
+  // RFC 7462 section 4) does not belong in the final response.
+  if (response.status_code >= 200) {
+    static const pj_str_t alert_info = pj_str(const_cast<char *>("Alert-Info"));
+    while (auto *header = pjsip_msg_find_hdr_by_name(data->msg, &alert_info, nullptr))
+      pj_list_erase(static_cast<pjsip_hdr *>(header));
+  }
   if (response.status_code >= 200 && response.status_code < 300 && response.local_sdp)
     data->msg->body = make_body_with_sdp(data->pool, *response.local_sdp, impl_->answer_parts(response, entry.dialog));
   else if (response.status_code >= 200 && response.status_code < 300 && response.local_media)
@@ -253,6 +260,10 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
   if (response.status_code > 100 && response.status_code < 300)
     add_headers(data.get(), {{"Contact", entry.response_contact}});
   add_headers(data.get(), response.headers);
+  if (response.status_code > 100 && response.status_code < 200)
+    add_answer_headers(data.get(), impl_->config.invite_provisional_headers);
+  else if (response.status_code >= 200 && response.status_code < 300)
+    add_answer_headers(data.get(), impl_->config.invite_success_headers);
   entry.final_answer = response.status_code >= 200;
   if (response.status_code >= 200 && response.status_code < 300) {
     const auto *cseq = static_cast<const pjsip_cseq_hdr *>(pjsip_msg_find_hdr(data->msg, PJSIP_H_CSEQ, nullptr));

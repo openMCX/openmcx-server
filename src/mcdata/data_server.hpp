@@ -117,6 +117,22 @@ class DataServer {
   Control control_;
   SipEngine sip_;
   std::string core_address_, service_uri_;
+  // TS 24.282 clause 6.3.7.1.23 step 5: the URI the MCData session identities are built on: the service URI, as
+  // sips: when the signalling is protected by TLS.
+  std::string session_service_;
+
+  //------------------------------------------------------------------------------
+  // TS 24.282 clause 6.3.7.1.23 steps 5 and 6: an MCData session identity at this controlling function (a fresh one
+  // without an id), the Contact media feature tags of an MCData subservice ("sds", "fd" or "ipconn"), a focus
+  // Contact for a request, and the Contact of a response.
+  std::string session_identity(const std::string &id) const;
+  static std::string subservice_tags(const char *subservice);
+
+  std::string focus_contact(const std::string &identity, const char *subservice) const {
+    return "<" + identity + ">" + subservice_tags(subservice) + ";isfocus";
+  }
+
+  static void session_contact(SipResponse &response, const std::string &identity, const char *subservice);
   std::map<std::string, User> users_; // by public user identity
   std::map<std::string, Dispatched> dispatched_; // by Message ID text
 
@@ -228,6 +244,7 @@ class DataServer {
   struct IpconSession {
     std::string originator, target, called_alias;
     std::string origin_dialog, target_dialog;
+    std::string identity; // the MCData session identity (TS 24.282 clause 6.3.7.1.23 step 5)
     std::unique_ptr<UdpSocket> origin_socket, target_socket;
     ipconn::TunnelMedia origin_peer, target_peer; // each client's end of the tunnel
     std::string origin_sdp, target_sdp;           // this server's end on each leg
@@ -586,6 +603,10 @@ class DataServer {
   // media_invite: the queued invitation of every recipient of a session or file transfer.
   void media_invite_recipients(const User &user, const MediaInvite &invite, const MediaSession &leg,
                                const std::string &level);
+  void media_invite_file_recipient(const User &user, const MediaInvite &invite, const MediaSession &leg,
+                                   const std::string &level, const std::string &origin,
+                                   const SipResponse &final_answer);
+  void media_file_answered(const std::string &origin, const SipResponse &prepared, const SipResponse &response);
 
   // media_invite: the 200 (OK) response, a SIP INFO correction and the in-progress state notifications.
   void media_invite_answer(const SipMessage &request, const User &user, const mcdata::Info &info,

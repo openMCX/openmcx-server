@@ -1,0 +1,50 @@
+# openMCX: a dispatcher position for the system of tutorial 1 (tutorials/end-to-end/02-dispatcher-with-android/README.md).
+#
+# The position reaches the system as the phones do: through HOST_IP and the ports tutorial 1 publishes, from the
+# network of the computer it runs on: tutorial 1's computer, or another one on the same network (DISPATCHER_IP).
+# Tutorial 1's system must be running; this file adds only the position.
+#
+#   cp .env.example .env                                             then set HOST_IP (and DISPATCHER_IP) in .env
+#   docker compose -f docker-compose-dispatcher.yaml up -d
+#   open http://localhost:8080/   (on the dispatcher's computer: a secure context for the browser's microphone)
+#
+# Ports used on the dispatcher's computer: 8080/tcp (web UI, 127.0.0.1 only), 5071/tcp (SIP), 4400/udp and
+# 5400/udp (MCPTT speech and floor control), 4600, 5600 and 6600/udp (MCVideo), 7700-7701/udp (audio to the
+# browser, 127.0.0.1 only); none of them is one tutorial 1 publishes, so both run on one computer.
+
+name: openmcx-dispatcher
+
+services:
+  dispatcher:
+    container_name: openmcx-dispatcher
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-v1}
+    network_mode: host
+    # The SIP core's name, as the activation package names it, at the system's address (its certificate names
+    # sip-core); the other services are reached through the package's address map.
+    extra_hosts:
+      - "sip-core:${HOST_IP:?set HOST_IP in .env}"
+    environment:
+      HOST_IP: ${HOST_IP:?set HOST_IP in .env}
+      DISPATCHER_IP: ${DISPATCHER_IP:-${HOST_IP}}
+    # The position's device settings with the two addresses; accounts are activated in the browser.
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        sed -e "s/DISPATCHER_IP/$$DISPATCHER_IP/g" -e "s/HOST_IP/$$HOST_IP/g" /tutorials/device.json.in
+        > /run/mcx/device.json &&
+        exec dispatcher --listen 127.0.0.1:8080 --device /run/mcx/device.json --data /data --outbox /data/outbox
+    volumes:
+      - ./setup/device.json.in:/tutorials/device.json.in:ro
+      - dispatcher-data:/data
+    tmpfs:
+      - /run/mcx
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/api/session"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  dispatcher-data:

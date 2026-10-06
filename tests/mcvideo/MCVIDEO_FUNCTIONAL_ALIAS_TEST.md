@@ -15,9 +15,11 @@ Back to the [MCVideo test index](../MCVIDEO_TEST.md). Architecture: MCVideo desi
 - **Status change (§20.2.1.2).**
   - The client sends a PUBLISH to the MCVideo PSI with its mcvideo-info and a PIDF in `urn:3gpp:ns:mcvideoPresInfoFA:1.0`.
   - Expires 4294967295 activates the listed aliases, and a `<take-over>true</take-over>` takes them over. Expires 0 deactivates them.
+  - The client sends `<take-over>` only for aliases its own status NOTIFY offered as `take-over-possible` (step 6 d)). A take-over asked before the offer goes as an activation and follows once offered.
+  - The participating function answers 200 (§20.2.2.2.3 step 8; TS 24.281 has no step 4B). The owning checks decide each alias on its own, and the outcome reaches the user only in the NOTIFY of its own status subscription (§20.2.2.2.5): the alias `activated`, `take-over-possible` (at its limit, with `allow_takeover` and the user's right), or left out when refused. A client that does not follow its own status counts an accepted request as done.
   - A PIDF of another service's namespace is refused with 400.
 - **Status determination (§20.2.1.3, §20.2.2.2.4 and .5, §20.2.2.3.4 and .5).** The client sends a SUBSCRIBE (Event `presence`) with `<req-type>`:
-  - `functional-alias-status-determination` for its own aliases. The NOTIFY carries the per-user status: entity the user, tuple the client ID, one `<functionalAlias functionalAliasID status="activated">` per alias.
+  - `functional-alias-status-determination` for its own aliases. The NOTIFY carries the per-user status: entity the user, tuple the client ID, one `<functionalAlias functionalAliasID status="activated">` per alias, and `status="take-over-possible"` for the aliases offered for take-over.
   - `fa-user-status-determination` for the users of an alias. The NOTIFY carries the per-alias status: entity and tuple the alias, one `<functionalAlias user>` per user.
     - As local policy (§20.2.2.3.4 step 5), only the users that may activate the alias may follow it. Others get 403, as does an unknown alias.
   - Every activation, take-over, deactivation or end of service authorisation sends a NOTIFY to the subscriptions it concerns.
@@ -85,6 +87,7 @@ The lab (`--mcvideo`) defines:
 | MV-FA-12 | 2026-09-27 | same | Captured at `mcvideo-server` over debug TCP. The alias PUBLISHes use `mcvideoPresInfoFA`, and no MCPTT alias namespace; an activation has Expires 4294967295 and a deactivation Expires 0, and the take-over carries `<take-over>`. The SUBSCRIBEs carry both `<req-type>` values, and the NOTIFYs have `status="activated"` and the `user` attribute. The binding MESSAGEs carry `fa-group-binding-req`, `<binding-ind>`, `<binding-fa-uri>` or `<unbinding-fa-uri>`, and the group. The call to the alias has `<call-to-functional-alias-ind>`; the call after the 300 has `<called-functional-alias-URI>` in `<mcvideoURI>` without the indication; and the 300 names client-c | Passed |
 
 Run results:
+- **2026-10-06, status flow (200 + NOTIFY outcome, take-over after `take-over-possible`):** images `openmcx-*:alias` (`openmcx-mcvideo-server` `b29ead2c37d4`) and `openmcx-client:alias` (`161fd41621dd`), debug TCP: 80 checks, all passed. MV-FA-03 now expects 200 with the outcome `refused` / `take-over-possible` in the NOTIFY. MV-FA-04 expects client-b's take-over (`<take-over>`) to be `activated`, and client-a's to go without `<take-over>` (200). The rows below are from the earlier runs.
 - **Debug TCP:** the scenario made 76 checks (`artifacts/regress-v8c-tcp/mcvideo-functional-alias/`, capture `artifacts/integration/mcvideo-functional-alias.pcap`).
 - **TLS:** it made 64 checks with the wire checks skipped (`artifacts/regress-v8c-tls/`).
 - **MCPTT:** the `functional-alias` lab passed on the same images over both, since the core and the codec are shared. The `mcvideo` lab passed over TCP on the earlier V8c.1 images, which already had the codec fix.
@@ -104,7 +107,7 @@ Defects found by the runs and fixed:
 
 | Area | Gap |
 |---|---|
-| Status values | The per-user status reports only `activated`. The `activating`, `deactivating` and `take-over-possible` states of the owning server's procedure (§20.2.2.3.3), and the `expires` attribute, are not sent: activation is decided at once |
+| Status values | The per-user status reports `activated` and `take-over-possible`. The `activating` and `deactivating` states, and the `expires` attribute, are not sent: activation is decided at once. An offer stays until the user's next request for that alias |
 | Refresh and expiry | Activations do not expire, so there is no refresh near expiry (§20.2.1.2) and no automatic deactivation by expiry (§20.2.2.3.6). Deactivation by an administrator is not provided |
 | Other users' status | A subscription to another user's aliases (§20.2.2.2.4 step 4) is refused, since there is no policy for it |
 | Separate servers | With an alias controller, the participating function relays status changes but refuses status subscriptions: it does not hold the aliases. MCVideo on separate servers comes with V10 |

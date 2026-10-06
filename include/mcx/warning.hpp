@@ -79,6 +79,7 @@ enum class Warning {
   alias_binding_target_unknown,   // code 177 in TS 24.379 and TS 24.281 table 4.4.2-2
   alias_binding_exists,           // code 178 in TS 24.379 and TS 24.281 table 4.4.2-2
   group_selection_not_authorised, // code 155 in TS 24.379 table 4.4.2-2; TS 24.281 clause 9.2.4.3.1 step 3a
+  alias_status_not_authorised,    // code 201 in TS 24.379 table 4.4.2-2 (MCPTT only)
 };
 
 //------------------------------------------------------------------------------
@@ -169,6 +170,7 @@ constexpr WarningEntry mcptt_warning(Warning warning) {
   case Warning::alias_binding_exists:
     return {178, "MCPTT group binding already exists with other functional alias for the MCPTT user"};
   case Warning::group_selection_not_authorised: return {155, "user not authorised to change user's selected group"};
+  case Warning::alias_status_not_authorised: return {201, "user not authorized to change the functional alias status"};
   case Warning::adhoc_initiation_not_authorised:
     return {185, "user is not authorised to initiate the adhoc group call"};
   case Warning::adhoc_not_supported: return {186, "the MCPTT system do not support adhoc group call"};
@@ -255,7 +257,8 @@ constexpr WarningEntry mcvideo_warning(Warning warning) {
   // Not in TS 24.281 table 4.4.2-2, but sent by TS 24.281 clause 9.2.4.3.1 step 3a with this text.
   case Warning::group_selection_not_authorised: return {155, "user not authorised to change user's selected group"};
   // TS 24.281 has no first-to-answer, call-back, remotely initiated call,
-  // transfer or forwarding request, and no emergency regroup removal warning.
+  // transfer or forwarding request, no emergency regroup removal warning and no
+  // functional alias status warning (TS 24.281 clause 20.2.2.2.3 has no step 4B).
   case Warning::call_back_not_authorised:
   case Warning::call_back_cancel_not_authorised:
   case Warning::first_to_answer_none_callable:
@@ -265,7 +268,8 @@ constexpr WarningEntry mcvideo_warning(Warning warning) {
   case Warning::regroup_remove_in_emergency:
   case Warning::transfer_not_authorised:
   case Warning::forwarding_not_authorised:
-  case Warning::call_forwarded: return {};
+  case Warning::call_forwarded:
+  case Warning::alias_status_not_authorised: return {};
   }
   return {};
 }

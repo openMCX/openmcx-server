@@ -321,6 +321,9 @@ protected:
   // Functional alias activation state (TS 24.379 clause 9A.2.2.3.2): alias -> MCPTT
   // IDs in activation order. The server both serves the user and owns aliases.
   AliasRegistry functional_aliases_;
+  // The "take-over-possible" functional alias status (TS 24.379 clause 3.1, TS 24.281 clause 3.1): user -> the aliases
+  // whose activation it asked for and that it may take over, until its next request for them.
+  std::map<std::string, std::set<std::string>> alias_takeover_possible_;
 
   //------------------------------------------------------------------------------
   // Functional alias status subscriptions (TS 24.379 clauses 9A.2.2.2.4 and 9A.2.2.3.4, TS 24.281
@@ -684,7 +687,7 @@ protected:
   }
 
   SipResponse functional_alias_publish(const SipMessage &message, const User &user, const McpttInfo &info,
-                                       const std::string &body);
+                                       const std::string &body, bool relayed);
 
   void deactivate_functional_aliases(const std::string &id);
 

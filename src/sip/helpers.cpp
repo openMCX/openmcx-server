@@ -4,6 +4,8 @@
 
 #include "sip_impl.hpp"
 
+#include <sstream>
+
 namespace mcx {
 namespace sip_detail {
 
@@ -294,6 +296,37 @@ void add_headers(pjsip_tx_data *data, const std::vector<SipHeader> &headers) {
       while (pjsip_msg_find_remove_hdr(data->msg, PJSIP_H_CONTACT, nullptr)) {}
     }
     add_header(data, header);
+  }
+}
+
+//------------------------------------------------------------------------------
+// RFC 3261 sections 7.3.1 and 20.37: adds a server's own header fields to its answer to an initial INVITE: option
+// tags of a Supported header field join the answer's Supported header field; any other header field is added unless
+// the answer already has one of that name.
+void add_answer_headers(pjsip_tx_data *data, const std::vector<SipHeader> &headers) {
+  for (const auto &header : headers) {
+    if (ascii_equal(header.name, "Supported")) {
+      auto *supported = static_cast<pjsip_supported_hdr *>(pjsip_msg_find_hdr(data->msg, PJSIP_H_SUPPORTED, nullptr));
+      if (supported == nullptr) {
+        add_header(data, header);
+        continue;
+      }
+      std::istringstream tags(header.value);
+      for (std::string tag; std::getline(tags, tag, ',');) {
+        tag.erase(0, tag.find_first_not_of(" \t"));
+        tag.erase(tag.find_last_not_of(" \t") + 1);
+        if (tag.empty()) continue;
+        bool present = false;
+        for (unsigned i = 0; i < supported->count; ++i)
+          present = present || pj_stricmp2(&supported->values[i], tag.c_str()) == 0;
+        if (present) continue;
+        if (supported->count >= PJ_ARRAY_SIZE(supported->values)) throw std::runtime_error("too many option tags");
+        pj_strdup2(data->pool, &supported->values[supported->count++], tag.c_str());
+      }
+      continue;
+    }
+    auto name = pj_view(header.name);
+    if (pjsip_msg_find_hdr_by_name(data->msg, &name, nullptr) == nullptr) add_header(data, header);
   }
 }
 

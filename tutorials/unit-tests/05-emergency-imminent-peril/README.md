@@ -117,7 +117,7 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/05-emergency-imminent-peril-run.pcap.gz`. The folder also holds a reference
-run, `captures/05-emergency-imminent-peril-full.pcap.gz` (157 KB, 1 908 frames): the frame numbers below and in the
+run, `captures/05-emergency-imminent-peril-full.pcap.gz` (165 KB, 2 309 frames): the frame numbers below and in the
 call flow are those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.5.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -156,41 +156,43 @@ clause 6.3.4.3.4, not a reaction to the steps.
 
 What to look for, in the reference run:
 
-- **The normal call** (frames 423 to 467): client-a's INVITE with `Resource-Priority: mcpttp.0` (430) and the 200 OK
-  (467).
-- **Imminent peril** (frames 549 to 630): client-a's re-INVITE with `mcpttp.10` and `<imminentperil-ind>` true (556,
-  after the `407` to 549), the server's re-INVITEs to client-b (564) and client-c (569), the 200 OK to client-a (568),
-  and a Floor Idle with the E bit (630).
-- **The emergency alert** (frames 597 to 618): client-a's MESSAGE (600) with `<alert-ind>` true and an
-  `application/vnd.3gpp.mcptt-location-info+xml` part, the server's MESSAGEs to client-b (605) and client-c (608), and
-  the confirmation to client-a (612) with `<alert-ind-rcvd>` true.
-- **Emergency** (frames 636 to 713): client-a's re-INVITE with `mcpttp.15`, `<emergency-ind>` and `<alert-ind>` true
-  (643), the 200 OK (655), the re-INVITEs to client-b (651) and client-c (656), and a Floor Idle with the D bit (713).
+- **The normal call** (frames 507 to 548): client-a's INVITE with `Resource-Priority: mcpttp.0` (514) and the 200 OK
+  (548).
+- **Imminent peril** (frames 631 to 654): client-a's re-INVITE with `mcpttp.10` and `<imminentperil-ind>` true (638,
+  after the `407` to 631), the server's re-INVITEs to client-b (646) and client-c (651), the 200 OK to client-a (649),
+  and a Floor Idle with the E bit (654). The server's 200 OK to the re-INVITE (644) carries `P-Asserted-Identity` and
+  adds the `norefersub` and `tdialog` option tags to `Supported` (TS 24.379 clause 10.1.1.4.7 steps 3 and 4); so do
+  its 200 OKs to the later re-INVITEs.
+- **The emergency alert** (frames 685 to 706): client-a's MESSAGE (688) with `<alert-ind>` true and an
+  `application/vnd.3gpp.mcptt-location-info+xml` part, the server's MESSAGEs to client-b (693) and client-c (696), and
+  the confirmation to client-a (700) with `<alert-ind-rcvd>` true.
+- **Emergency** (frames 724 to 773): client-a's re-INVITE with `mcpttp.15`, `<emergency-ind>` and `<alert-ind>` true
+  (731), the 200 OK (741), the re-INVITEs to client-b (743) and client-c (746), and a Floor Idle with the D bit (773).
   The participants learn of the emergency and the alert from these re-INVITEs only; members not in the call would get
   one MESSAGE instead (TS 24.379 clause 10.1.1.4.7 step 6 d)), and here every affiliated member is in the call.
-- **The correction** (frames 685 to 705): client-b's re-INVITE with `mcpttp.10` (692), the 200 OK at `mcpttp.15`
-  (700), and the SIP INFO (703, 705) with `Info-Package: g.3gpp.mcptt-info`, `<emergency-ind>` true and
+- **The correction** (frames 785 to 805): client-b's re-INVITE with `mcpttp.10` (792), the 200 OK at `mcpttp.15`
+  (800), and the SIP INFO (803, 805) with `Info-Package: g.3gpp.mcptt-info`, `<emergency-ind>` true and
   `<imminentperil-ind>` false.
-- **A refused cancellation** (frames 719 to 733): client-c's re-INVITE with `mcpttp.0` (726), the 403 (730, 733) with
+- **A refused cancellation** (frames 825 to 841): client-c's re-INVITE with `mcpttp.0` (832), the 403 (838, 841) with
   `Warning: 399 mcx "emergency cancellation not authorized"` and `<emergency-ind>` true.
-- **Late entry** (frames 753 to 761): a MESSAGE to client-d as it affiliates (753, with `<emergency-ind>` true), then the
-  server's INVITE to client-d at `mcpttp.15` (758, 761), which also carries client-a's alert. There is no late alert
+- **Late entry** (frames 872 to 882): a MESSAGE to client-d as it affiliates (872, with `<emergency-ind>` true), then the
+  server's INVITE to client-d at `mcpttp.15` (879, 882), which also carries client-a's alert. There is no late alert
   MESSAGE: TS 24.379 clause 12.1.3.4 sends one only while the group has no call; with a call, the member is brought
   into it (late entry, clause 10.1.1.4.6).
-- **Emergency floor precedence** (frames 840 to 1033): client-b has the floor (840, 841); client-a's Floor Request
-  (929) makes the server send Floor Revoke to client-b (930) and Floor Queue Position Info to client-a (931);
-  client-b releases (933), client-a gets Floor Granted (935) and talks from 943.
-- **Back to normal** (frames 1041 to 1118): client-a's re-INVITE with `mcpttp.0` (1047), the re-INVITE to client-b
-  (1055), the 200 OK (1059); then the alert cancellation, a MESSAGE with `<alert-ind>` false (1104), sent on to the
-  others (1109 and on) and confirmed to client-a (1118).
-- **Refusals** (frames 1148 to 1177): client-c's re-INVITE for imminent peril (1154) and its alert MESSAGE (1172) both
-  get 403 (1164, 1177); no alert from client-c reaches anyone.
-- **Calls that start at a priority** (frames 1274 to 1778): an initial INVITE at `mcpttp.10` (1281) with every member
-  invited at `mcpttp.10` (client-d at 1308), lowered by a re-INVITE at `mcpttp.0` (1460); then an initial INVITE at
-  `mcpttp.15` (1611), ended by client-a's BYE (1781).
-- **The group's emergency state cancelled after the call** (frames 1865 to 1889): client-a's MESSAGE with
-  `Resource-Priority: mcpttp.0` and `<emergency-ind>` false (1868), the server's MESSAGEs to every member (client-d
-  at 1882) and the confirmation to client-a (1889) with `<emergency-ind-rcvd>` true.
+- **Emergency floor precedence** (frames 970 to 1357): client-b has the floor (970, 971); client-a's Floor Request
+  (1179) makes the server send Floor Revoke to client-b (1181) and Floor Queue Position Info to client-a (1182);
+  client-b releases (1187), client-a gets Floor Granted (1189) and talks from 1199.
+- **Back to normal** (frames 1373 to 1452): client-a's re-INVITE with `mcpttp.0` (1379), the re-INVITE to client-b
+  (1387), the 200 OK (1391); then the alert cancellation, a MESSAGE with `<alert-ind>` false (1433), sent on to the
+  others (1438 and on) and confirmed to client-a (1452).
+- **Refusals** (frames 1493 to 1530): client-c's re-INVITE for imminent peril (1500) and its alert MESSAGE (1525) both
+  get 403 (1509, 1530); no alert from client-c reaches anyone.
+- **Calls that start at a priority** (frames 1632 to 2182): an initial INVITE at `mcpttp.10` (1639) with every member
+  invited at `mcpttp.10` (client-d at 1664), lowered by a re-INVITE at `mcpttp.0` (1831); then an initial INVITE at
+  `mcpttp.15` (1988), ended by client-a's BYE (1781).
+- **The group's emergency state cancelled after the call** (frames 2266 to 2290): client-a's MESSAGE with
+  `Resource-Priority: mcpttp.0` and `<emergency-ind>` false (2269), the server's MESSAGEs to every member (client-d
+  at 2282) and the confirmation to client-a (2290) with `<emergency-ind-rcvd>` true.
 
 ## 5. Stop or start over
 
@@ -305,9 +307,9 @@ The same messages in the reference capture (A = client-a 172.31.5.101, B = clien
 
 | Message | Frames |
 |---|---|
-| A → S re-INVITE imminent peril (`mcpttp.10`); S → B, S → C re-INVITE; 200 OK to A | 556, 561; 564, 569; 568 |
-| A → S re-INVITE emergency, alert (`mcpttp.15`); 200 OK to A; S → B, S → C re-INVITE | 643, 648; 655; 651, 656 |
-| B → S re-INVITE imminent peril; 200 OK at emergency; S → B INFO | 692, 694; 700; 703, 705 |
-| B Floor Request; Floor Granted to B; A Floor Request; Floor Revoke to B; Floor Queue Position Info to A | 840; 841; 929; 930; 931 |
-| B Floor Release; Floor Granted to A; Floor Taken to B; A's speech | 933; 935; 936; from 943 |
-| A → S re-INVITE normal (`mcpttp.0`); S → B re-INVITE; 200 OK to A | 1047, 1052; 1055; 1059 |
+| A → S re-INVITE imminent peril (`mcpttp.10`); S → B, S → C re-INVITE; 200 OK to A | 638, 643; 646, 651; 649 |
+| A → S re-INVITE emergency, alert (`mcpttp.15`); 200 OK to A; S → B, S → C re-INVITE | 731, 736; 741; 743, 746 |
+| B → S re-INVITE imminent peril; 200 OK at emergency; S → B INFO | 792, 794; 800; 803, 805 |
+| B Floor Request; Floor Granted to B; A Floor Request; Floor Revoke to B; Floor Queue Position Info to A | 970; 971; 1179; 1181; 1182 |
+| B Floor Release; Floor Granted to A; Floor Taken to B; A's speech | 1187; 1189; 1190; from 1199 |
+| A → S re-INVITE normal (`mcpttp.0`); S → B re-INVITE; 200 OK to A | 1379, 1384; 1387; 1391 |

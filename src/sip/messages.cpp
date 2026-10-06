@@ -31,7 +31,7 @@ namespace mcx {
 
 //------------------------------------------------------------------------------
 // RFC 3261 section 8.1.1.8 and RFC 4579: the Contact of a response: this endpoint's, or the checked public URI with
-// the service tags, with ;isfocus for a conference focus.
+// the service tags (or the response's own), with ;isfocus for a conference focus.
 [[nodiscard]] std::string SipEngine::Impl::response_contact(const SipResponse &response) const {
   std::string contact = contact_uri();
   if (!response.contact_uri.empty()) {
@@ -40,7 +40,7 @@ namespace mcx {
         (!uri.starts_with("sip:") && !uri.starts_with("sips:"))) {
       throw std::invalid_argument("invalid public SIP Contact URI");
     }
-    contact = "<" + uri + ">" + service_tags();
+    contact = "<" + uri + ">" + (response.contact_tags.empty() ? service_tags() : response.contact_tags);
   }
   if (response.focus) contact += ";isfocus";
   return contact;

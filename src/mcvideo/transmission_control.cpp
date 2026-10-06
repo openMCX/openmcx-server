@@ -181,9 +181,10 @@ void McvideoServer::transmission_packet(Leg &leg, const Datagram &datagram) {
     event("transmission_released", {{"user_id", leg.user}});
     break;
   case Type::EndRequest:
-    // TS 24.581 clauses 9.2.20 and 9.2.21: the transmitter ends its transmission.
+    // TS 24.581 clauses 9.2.20 and 9.2.21: the transmitter ends its transmission (clause 6.3.4.4.6), or a queued
+    // participant withdraws its request (clause 6.2.4.9.4), which leaves the queue (clause 6.3.5.4.5 step 3).
     send_transmission({Type::EndResponse, false, leg.remote->floor_ssrc, transmitter_fields(session)}, leg);
-    if (arbitrator.owner() == leg.user) notices(*session, arbitrator.release(leg.user, monotonic_ms()));
+    notices(*session, arbitrator.release(leg.user, monotonic_ms()));
     event("transmission_ended", {{"user_id", leg.user}});
     break;
   case Type::ReceiveMediaRequest: {

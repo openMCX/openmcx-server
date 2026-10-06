@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="380" viewBox="0 0 900 380" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Unit Test Tutorial 11: alice and bob share the dispatcher alias (one at a time), client-c and client-d the medic alias; calls to an alias, alias presentation and a broadcast ad hoc call; the openMCX system on one computer, on the lab network 172.31.11.0/24</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6472"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3b6fd8"/>
+    </marker>
+  </defs>
+  <rect width="900" height="380" rx="14" fill="#ffffff"/>
+  <rect x="12" y="12" width="876" height="356" rx="16" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="32" y="40" font-size="15" font-weight="700" fill="#374151">Computer · Docker · lab network 172.31.11.0/24</text>
+  <text x="868" y="40" text-anchor="end" font-size="12" fill="#4b5563">nothing published outside the computer</text>
+
+  <!-- clients -->
+  <g font-size="14" fill="#1f2937">
+    <rect x="32" y="64" width="190" height="56" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
+    <text x="127" y="88" text-anchor="middle" font-weight="600">client-a · .101</text>
+    <text x="127" y="107" text-anchor="middle" font-size="12" fill="#4b5563">alice · dispatcher, reserve</text>
+    <rect x="32" y="130" width="190" height="56" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
+    <text x="127" y="154" text-anchor="middle" font-weight="600">client-b · .102</text>
+    <text x="127" y="173" text-anchor="middle" font-size="12" fill="#4b5563">bob · dispatcher, may take over</text>
+    <rect x="32" y="196" width="190" height="56" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
+    <text x="127" y="220" text-anchor="middle" font-weight="600">client-c · .103</text>
+    <text x="127" y="239" text-anchor="middle" font-size="12" fill="#4b5563">client-c · medic</text>
+    <rect x="32" y="262" width="190" height="56" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
+    <text x="127" y="286" text-anchor="middle" font-weight="600">client-d · .104</text>
+    <text x="127" y="305" text-anchor="middle" font-size="12" fill="#4b5563">client-d · medic</text>
+  </g>
+  <text x="127" y="342" text-anchor="middle" font-size="12" fill="#4b5563">headless clients, run.sh</text>
+
+  <!-- openMCX system -->
+  <rect x="380" y="56" width="488" height="292" rx="16" fill="#fff7ed" stroke="#ea8a1a" stroke-width="2"/>
+  <text x="400" y="82" font-size="15" font-weight="700" fill="#9a4b05">openMCX system</text>
+  <g font-size="13" fill="#1f2937">
+    <rect x="400" y="98" width="200" height="56" rx="10" fill="#ffffff" stroke="#f0b46b" stroke-width="1.5"/>
+    <text x="500" y="122" text-anchor="middle" font-weight="600">SIP core · .10</text>
+    <text x="500" y="141" text-anchor="middle" font-size="12" fill="#4b5563">Kamailio · SIP 5060/tcp, in clear</text>
+    <rect x="400" y="232" width="200" height="56" rx="10" fill="#ffffff" stroke="#c0392b" stroke-width="1.5"/>
+    <text x="500" y="256" text-anchor="middle" font-weight="600">MCPTT server · .20</text>
+    <text x="500" y="275" text-anchor="middle" font-size="12" fill="#4b5563">owns the functional aliases</text>
+    <rect x="640" y="98" width="208" height="56" rx="10" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="744" y="122" text-anchor="middle" font-weight="600">MCData server · .21</text>
+    <text x="744" y="141" text-anchor="middle" font-size="12" fill="#4b5563">running, not used here</text>
+    <rect x="640" y="168" width="208" height="120" rx="10" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="744" y="192" text-anchor="middle" font-weight="600">Common services</text>
+    <text x="744" y="212" text-anchor="middle" font-size="12" fill="#4b5563">IdMS · GMS · CMS · KMS · LMS</text>
+    <text x="744" y="230" text-anchor="middle" font-size="12" fill="#4b5563">HTTP proxy · user database</text>
+    <text x="744" y="248" text-anchor="middle" font-size="12" fill="#4b5563">content · message store</text>
+    <text x="744" y="274" text-anchor="middle" font-size="12" fill="#4b5563">HTTPS · CMS holds the aliases</text>
+  </g>
+
+  <!-- SIP: clients to SIP core, SIP core to the servers -->
+  <g stroke="#5b6472" stroke-width="1.6" fill="none">
+    <path d="M222,92 C300,92 320,118 398,118" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+    <path d="M222,158 C300,158 320,126 398,126" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+    <path d="M222,224 C310,224 320,134 398,134" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+    <path d="M222,290 C330,290 320,142 398,142" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+    <path d="M500,156 L500,230" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+    <path d="M602,126 L638,126" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  </g>
+  <rect x="508" y="182" width="40" height="22" rx="11" fill="#ffffff" stroke="#9ca3af"/>
+  <text x="528" y="198" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">SIP</text>
+
+  <!-- RTP and floor control: clients straight to the MCPTT server -->
+  <g stroke="#3b6fd8" stroke-width="1.6" fill="none" stroke-dasharray="6 4">
+    <path d="M222,108 C330,140 340,248 398,250" marker-end="url(#arrow-blue)" marker-start="url(#arrow-blue)"/>
+    <path d="M222,174 C320,200 340,254 398,256" marker-end="url(#arrow-blue)" marker-start="url(#arrow-blue)"/>
+    <path d="M222,240 C320,250 340,262 398,264" marker-end="url(#arrow-blue)" marker-start="url(#arrow-blue)"/>
+    <path d="M222,304 C320,300 340,274 398,272" marker-end="url(#arrow-blue)" marker-start="url(#arrow-blue)"/>
+  </g>
+  <rect x="236" y="320" width="130" height="38" rx="10" fill="#ffffff" stroke="#3b6fd8"/>
+  <text x="301" y="336" text-anchor="middle" font-size="12" font-weight="600" fill="#2c56b0">RTP speech</text>
+  <text x="301" y="351" text-anchor="middle" font-size="12" font-weight="600" fill="#2c56b0">RTCP floor (UDP)</text>
+</svg>

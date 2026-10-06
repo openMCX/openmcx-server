@@ -224,7 +224,7 @@ def main():
                 for key in ('mcvideo_revocations', 'mcvideo_transmitting', 'mcvideo_reject_cause')
             },
         )
-        command('client-a', 'mcvideo-release')
+        command('client-a', 'mcvideo-end')
         command('client-a', 'mcvideo-emergency off')
         wait('MV-EM-05 back to normal', lambda: all(priority(role) == 'normal' for role in ROLES))
         for role in ROLES:

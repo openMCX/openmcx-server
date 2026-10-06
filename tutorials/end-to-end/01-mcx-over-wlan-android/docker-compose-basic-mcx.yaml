@@ -1,0 +1,581 @@
+# openMCX: a basic MCX system on one computer (tutorials/end-to-end/01-mcx-over-wlan-android/README.md).
+#
+# The MCPTT, MCData and MCVideo servers, the common services (IdMS, GMS, CMS, KMS, LMS, Credential Service,
+# content server, message store, notification server, HTTP proxy, user database), the SIP core and MCX Admin,
+# from the published openMCX images. Two phones on the same Wi-Fi reach them through this computer (HOST_IP).
+#
+#   cp .env.example .env                                              then set HOST_IP in .env
+#   docker compose -f docker-compose-basic-mcx.yaml run --rm setup    once: writes ./config
+#   docker compose -f docker-compose-basic-mcx.yaml up -d
+#   open https://HOST_IP:8446/   (MCX Admin; the administrator and password are in config/ADMIN.txt)
+#
+# Ports published on this computer (phones and browser):
+#   5061/tcp          SIP core (TLS)
+#   8443/tcp          IdMS (sign-in)
+#   8444/tcp          HTTP proxy (CMS, GMS, KMS, LMS, files)
+#   8445/tcp          KMS
+#   8446/tcp          MCX Admin (console and activation)
+#   8447/tcp          Credential Service
+#   4000-4199/udp     MCPTT speech, 5000-5199/udp MCPTT floor control
+#   7000-7599/udp     MCVideo audio, transmission control and video
+#
+# Images: ${OPENMCX_IMAGE_PREFIX}openmcx-<program>:${OPENMCX_TAG} (.env.example); the generated configuration stays in
+# ./config, the data in Docker volumes (`down -v` removes them).
+
+name: openmcx-basic
+
+services:
+  # One-off: writes ./config (a new CA, the users, the servers and MCX Admin) for HOST_IP. Not started by `up`.
+  setup:
+    container_name: openmcx-setup
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-setup:${OPENMCX_TAG:-v1}
+    profiles: [setup]
+    environment:
+      HOST_IP: ${HOST_IP:?set HOST_IP in .env to this computer's address on the Wi-Fi}
+    volumes: ['.:/work']
+
+  # SIP core: Kamailio, with its MySQL (also MCX Admin's and the Credential Service's database).
+  sip-db:
+    container_name: openmcx-sip-db
+    image: mysql@sha256:a08db11d440f1426eb47fbdf7cf2e458aa11bc79341bd2a5461f0296f1272f88
+    environment:
+      MYSQL_DATABASE: mcx
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql-password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql-root-password
+      MYSQL_USER: mcx
+    volumes:
+    - sip-db:/var/lib/mysql
+    - ./config/mysql-password:/run/secrets/mysql-password:ro
+    - ./config/mysql-root-password:/run/secrets/mysql-root-password:ro
+    - ./config/sip-db.sql:/docker-entrypoint-initdb.d/01-subscriber.sql:ro
+    - ./config/mcxadmin.sql:/docker-entrypoint-initdb.d/02-mcxadmin.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, MYSQL_PWD=$$(cat /run/secrets/mysql-root-password) mysql -h 127.0.0.1 -u root -D mcx -e "SELECT 1 FROM subscriber LIMIT 1" >/dev/null]
+      timeout: 3s
+      interval: 3s
+      retries: 40
+  sip-core:
+    container_name: openmcx-sip-core
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-kamailio:${KAMAILIO_TAG:-6.1.4-2}
+    command: [-DD, -E, -A, CLIENT_SDP_CHECK, -A, CORE_RPC, -f, /config/kamailio.cfg]
+    ports: ['5061:5061']
+    volumes:
+    - ./config/kamailio.cfg:/config/kamailio.cfg:ro
+    - ./config/tls.cfg:/config/tls.cfg:ro
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/tls/sip-core.crt:/config/tls/sip-core.crt:ro
+    - ./config/tls/sip-core.key:/config/tls/sip-core.key:ro
+    - ./config/crl:/crl:ro
+    depends_on:
+      sip-db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, test -r /proc/1/comm && nc -z 127.0.0.1 5061]
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+
+  # Common services (one image, one role each): IdMS, GMS, CMS, KMS, LMS, Credential Service, content server,
+  # message store, notification server; the HTTP proxy in front of them for the phones; the MCPTT user database.
+  idms:
+    container_name: openmcx-idms
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/mcx-common]
+    command:
+    - --role
+    - idms
+    - --config
+    - /config/site.json
+    - --tls-cert
+    - /config/tls/idms.crt
+    - --tls-key
+    - /config/tls/idms.key
+    - --signing-key
+    - /config/oidc-private.pem
+    - --data-dir
+    - /data
+    - --ca-file
+    - /config/tls/ca.crt
+    init: true
+    tmpfs: [/run/mcx]
+    ports: ['8443:8443']
+    volumes:
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/site.json:/config/site.json:ro
+    - ./config/tls/idms.crt:/config/tls/idms.crt:ro
+    - ./config/tls/idms.key:/config/tls/idms.key:ro
+    - ./config/oidc-private.pem:/config/oidc-private.pem:ro
+    - ./config/idms-data:/data
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://idms:8443/readyz']
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+  gms:
+    container_name: openmcx-gms
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/mcx-common]
+    command:
+    - --role
+    - gms
+    - --config
+    - /config/site.json
+    - --tls-cert
+    - /config/tls/gms.crt
+    - --tls-key
+    - /config/tls/gms.key
+    - --verification-key
+    - /config/oidc-public.pem
+    - --data-dir
+    - /data
+    - --ca-file
+    - /config/tls/ca.crt
+    init: true
+    tmpfs: [/run/mcx]
+    volumes:
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/site.json:/config/site.json:ro
+    - ./config/tls/gms.crt:/config/tls/gms.crt:ro
+    - ./config/tls/gms.key:/config/tls/gms.key:ro
+    - ./config/oidc-public.pem:/config/oidc-public.pem:ro
+    - gms:/data
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://gms:8443/readyz']
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+  cms:
+    container_name: openmcx-cms
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/mcx-common]
+    command:
+    - --role
+    - cms
+    - --config
+    - /config/site.json
+    - --tls-cert
+    - /config/tls/cms.crt
+    - --tls-key
+    - /config/tls/cms.key
+    - --verification-key
+    - /config/oidc-public.pem
+    - --data-dir
+    - /data
+    - --ca-file
+    - /config/tls/ca.crt
+    init: true
+    tmpfs: [/run/mcx]
+    volumes:
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/site.json:/config/site.json:ro
+    - ./config/tls/cms.crt:/config/tls/cms.crt:ro
+    - ./config/tls/cms.key:/config/tls/cms.key:ro
+    - ./config/oidc-public.pem:/config/oidc-public.pem:ro
+    - cms:/data
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://cms:8443/readyz']
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+  kms:
+    container_name: openmcx-kms
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/mcx-common]
+    command:
+    - --role
+    - kms
+    - --config
+    - /config/site.json
+    - --tls-cert
+    - /config/tls/kms.crt
+    - --tls-key
+    - /config/tls/kms.key
+    - --verification-key
+    - /config/oidc-public.pem
+    - --data-dir
+    - /data
+    - --ca-file
+    - /config/tls/ca.crt
+    init: true
+    tmpfs: [/run/mcx]
+    ports: ['8445:8443']
+    volumes:
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/site.json:/config/site.json:ro
+    - ./config/tls/kms.crt:/config/tls/kms.crt:ro
+    - ./config/tls/kms.key:/config/tls/kms.key:ro
+    - ./config/oidc-public.pem:/config/oidc-public.pem:ro
+    - kms:/data
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://kms:8443/readyz']
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+  lms:
+    container_name: openmcx-lms
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/mcx-common]
+    command:
+    - --role
+    - lms
+    - --config
+    - /config/site.json
+    - --tls-cert
+    - /config/tls/lms.crt
+    - --tls-key
+    - /config/tls/lms.key
+    - --verification-key
+    - /config/oidc-public.pem
+    - --data-dir
+    - /data
+    - --ca-file
+    - /config/tls/ca.crt
+    init: true
+    tmpfs: [/run/mcx]
+    volumes:
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/site.json:/config/site.json:ro
+    - ./config/tls/lms.crt:/config/tls/lms.crt:ro
+    - ./config/tls/lms.key:/config/tls/lms.key:ro
+    - ./config/oidc-public.pem:/config/oidc-public.pem:ro
+    - lms:/data
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://lms:8443/readyz']
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+  credentials:
+    container_name: openmcx-credentials
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/mcx-common]
+    command:
+    - --role
+    - credentials
+    - --config
+    - /config/site.json
+    - --tls-cert
+    - /config/tls/credentials.crt
+    - --tls-key
+    - /config/tls/credentials.key
+    - --verification-key
+    - /config/oidc-public.pem
+    - --data-dir
+    - /data
+    - --ca-file
+    - /config/tls/ca.crt
+    init: true
+    tmpfs: [/run/mcx, /data]
+    ports: ['8447:8443']
+    volumes:
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/site.json:/config/site.json:ro
+    - ./config/tls/credentials.crt:/config/tls/credentials.crt:ro
+    - ./config/tls/credentials.key:/config/tls/credentials.key:ro
+    - ./config/oidc-public.pem:/config/oidc-public.pem:ro
+    - ./config/credentials-dsn:/config/credentials-dsn:ro
+    - ./config/issuer:/config/issuer:ro
+    - ./config/crl:/crl
+    depends_on:
+      sip-db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://credentials:8443/readyz']
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+  content-server:
+    container_name: openmcx-content-server
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/mcx-common]
+    command:
+    - --role
+    - content
+    - --config
+    - /config/site.json
+    - --tls-cert
+    - /config/tls/content-server.crt
+    - --tls-key
+    - /config/tls/content-server.key
+    - --verification-key
+    - /config/oidc-public.pem
+    - --data-dir
+    - /data
+    - --ca-file
+    - /config/tls/ca.crt
+    init: true
+    tmpfs: [/run/mcx]
+    volumes:
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/site.json:/config/site.json:ro
+    - ./config/tls/content-server.crt:/config/tls/content-server.crt:ro
+    - ./config/tls/content-server.key:/config/tls/content-server.key:ro
+    - ./config/oidc-public.pem:/config/oidc-public.pem:ro
+    - content:/data
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://content-server:8443/readyz']
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+  message-store:
+    container_name: openmcx-message-store
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/mcx-common]
+    command:
+    - --role
+    - msgstore
+    - --config
+    - /config/site.json
+    - --tls-cert
+    - /config/tls/message-store.crt
+    - --tls-key
+    - /config/tls/message-store.key
+    - --verification-key
+    - /config/oidc-public.pem
+    - --data-dir
+    - /data
+    - --ca-file
+    - /config/tls/ca.crt
+    init: true
+    tmpfs: [/run/mcx]
+    volumes:
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/site.json:/config/site.json:ro
+    - ./config/tls/message-store.crt:/config/tls/message-store.crt:ro
+    - ./config/tls/message-store.key:/config/tls/message-store.key:ro
+    - ./config/oidc-public.pem:/config/oidc-public.pem:ro
+    - msgstore:/data
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://message-store:8443/readyz']
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+  notification-server:
+    container_name: openmcx-notification-server
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/mcx-common]
+    command:
+    - --role
+    - notification
+    - --config
+    - /config/site.json
+    - --tls-cert
+    - /config/tls/notification-server.crt
+    - --tls-key
+    - /config/tls/notification-server.key
+    - --verification-key
+    - /config/oidc-public.pem
+    - --data-dir
+    - /data
+    init: true
+    tmpfs: [/run/mcx]
+    volumes:
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/site.json:/config/site.json:ro
+    - ./config/tls/notification-server.crt:/config/tls/notification-server.crt:ro
+    - ./config/tls/notification-server.key:/config/tls/notification-server.key:ro
+    - ./config/oidc-public.pem:/config/oidc-public.pem:ro
+    - notification:/data
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://notification-server:8443/readyz']
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+  http-proxy:
+    container_name: openmcx-http-proxy
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-http-proxy:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/mcx-http-proxy]
+    command: [--config, /config/http-proxy.json, --tls-cert, /config/tls/http-proxy.crt, --tls-key, /config/tls/http-proxy.key, --ca-file, /config/tls/ca.crt]
+    init: true
+    tmpfs: [/run/mcx]
+    ports: ['8444:8443']
+    volumes:
+    - ./config/http-proxy.json:/config/http-proxy.json:ro
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/tls/http-proxy.crt:/config/tls/http-proxy.crt:ro
+    - ./config/tls/http-proxy.key:/config/tls/http-proxy.key:ro
+    depends_on:
+      cms:
+        condition: service_healthy
+      content-server:
+        condition: service_healthy
+      gms:
+        condition: service_healthy
+      lms:
+        condition: service_healthy
+      message-store:
+        condition: service_healthy
+      notification-server:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://http-proxy:8443/readyz']
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+  mcx-user-db:
+    container_name: openmcx-mcx-user-db
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-user-db:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/mcx-user-db]
+    command: [--config, /shared/userdb.json, --diameter-config, /config/diameter-user-db.conf, --watch]
+    init: true
+    tmpfs: [/run/mcx]
+    volumes:
+    - ./config/site.json:/config/site.json:ro
+    - ./config/diameter-user-db.conf:/config/diameter-user-db.conf:ro
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/tls/mcx-user-db.crt:/config/tls/mcx-user-db.crt:ro
+    - ./config/tls/mcx-user-db.key:/config/tls/mcx-user-db.key:ro
+    - userdb:/shared
+    depends_on:
+      mcxadmin:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - test -r /proc/net/sctp/eps && python3 -c "import pathlib; assert any(int(row.split()[5]) == 3868 for row in pathlib.Path(\"/proc/net/sctp/eps\").read_text().splitlines()[1:])"
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+
+  # The three MC servers.
+  mcptt-server:
+    container_name: openmcx-mcptt-server
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcptt-server:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/openmcx-mcptt-server]
+    command: [--config, /config/mcptt-server.json]
+    init: true
+    tmpfs: [/run/mcx]
+    ports: ['4000-4199:4000-4199/udp', '5000-5199:5000-5199/udp']
+    volumes:
+    - ./config/artifacts:/artifacts
+    - ./config/mcptt-server.json:/config/mcptt-server.json:ro
+    - ./config/diameter-server.conf:/config/diameter-server.conf:ro
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/tls/mcptt-server.crt:/config/tls/mcptt-server.crt:ro
+    - ./config/tls/mcptt-server.key:/config/tls/mcptt-server.key:ro
+    depends_on:
+      cms:
+        condition: service_healthy
+      gms:
+        condition: service_healthy
+      idms:
+        condition: service_healthy
+      mcx-user-db:
+        condition: service_healthy
+      sip-core:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python3, /healthcheck.py, /artifacts/mcptt-server/status.json, ready]
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+  mcdata-server:
+    container_name: openmcx-mcdata-server
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcdata-server:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/openmcx-mcdata-server]
+    command: [--config, /config/mcdata-server.json]
+    init: true
+    tmpfs: [/run/mcx]
+    volumes:
+    - ./config/artifacts:/artifacts
+    - ./config/mcdata-server.json:/config/mcdata-server.json:ro
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/tls/mcdata-server.crt:/config/tls/mcdata-server.crt:ro
+    - ./config/tls/mcdata-server.key:/config/tls/mcdata-server.key:ro
+    depends_on:
+      cms:
+        condition: service_healthy
+      content-server:
+        condition: service_healthy
+      gms:
+        condition: service_healthy
+      idms:
+        condition: service_healthy
+      sip-core:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python3, /healthcheck.py, /artifacts/mcdata-server/status.json, ready]
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+  mcvideo-server:
+    container_name: openmcx-mcvideo-server
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcvideo-server:${OPENMCX_TAG:-v1}
+    entrypoint: [/usr/local/bin/openmcx-mcvideo-server]
+    command: [--config, /config/mcvideo-server.json]
+    init: true
+    tmpfs: [/run/mcx]
+    ports: ['7000-7199:7000-7199/udp', '7200-7399:7200-7399/udp', '7400-7599:7400-7599/udp']
+    volumes:
+    - ./config/artifacts:/artifacts
+    - ./config/mcvideo-server.json:/config/mcvideo-server.json:ro
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/tls/mcvideo-server.crt:/config/tls/mcvideo-server.crt:ro
+    - ./config/tls/mcvideo-server.key:/config/tls/mcvideo-server.key:ro
+    depends_on:
+      cms:
+        condition: service_healthy
+      gms:
+        condition: service_healthy
+      idms:
+        condition: service_healthy
+      sip-core:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python3, /healthcheck.py, /artifacts/mcvideo-server/status.json, ready]
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+
+  # MCX Admin: web console and API for users and groups; activation codes for the phones.
+  mcxadmin:
+    container_name: openmcx-mcxadmin
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-admin:${ADMIN_TAG:-v1}
+    command: [--config, /config/mcxadmin.json, --seed, /config/site.json]
+    ports: ['8446:8443']
+    volumes:
+    - ./config/site.json:/config/site.json:ro
+    - ./config/mcxadmin.json:/config/mcxadmin.json:ro
+    - ./config/mcxadmin-dsn:/config/mcxadmin-dsn:ro
+    - ./config/server-secret:/config/server-secret:ro
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/tls/mcxadmin.crt:/config/tls/mcxadmin.crt:ro
+    - ./config/tls/mcxadmin.key:/config/tls/mcxadmin.key:ro
+    - userdb:/shared
+    depends_on:
+      sip-db:
+        condition: service_healthy
+      credentials:
+        condition: service_healthy
+      gms:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://mcxadmin:8443/healthz']
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+volumes:
+  cms: {}
+  content: {}
+  gms: {}
+  kms: {}
+  lms: {}
+  msgstore: {}
+  notification: {}
+  sip-db: {}
+  userdb: {}

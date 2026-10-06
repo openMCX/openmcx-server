@@ -122,7 +122,7 @@ user.
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/04-private-call-services-run.pcap.gz`. The folder also holds a reference
-run, `captures/04-private-call-services-full.pcap.gz` (122 KB, 1 568 frames): the frame numbers below and in the call
+run, `captures/04-private-call-services-full.pcap.gz` (132 KB, 1 709 frames): the frame numbers below and in the call
 flows are those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.4.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -147,40 +147,40 @@ client sends it again with its credentials. The frames below name the second one
 
 What to look for, in the reference run:
 
-- **Call-back** (frames 398 to 506): client-a's MESSAGE with
-  `<request-type>private-call-call-back-request</request-type>` and `<urgency-ind>high</urgency-ind>` (398) reaches
-  client-b (408). client-b's call-back response (417) reaches
-  client-a (424). client-b's INVITE (439) reaches client-a with `Answer-Mode: Manual` (449), and client-a's 200 OK
-  (458) comes after its user answered. client-c's request is answered 403 with
-  `Warning: 399 mcx "151 user not authorised to make a private call call-back request"` (504, to client-c 506).
-- **Remotely initiated call** (frames 512 to 577): client-a's request (512) names client-d in `<mcptt-called-party-id>`
-  and asks for `<ric-commencement-mode>auto-mode</ric-commencement-mode>`. client-b gets it (520) and places the call
-  (533, to client-d 541). Its response with `<remotely-initiated-call-outcome>success</…>` (563) reaches client-a
-  (577).
-- **Transfer** (frames 608 to 721): client-a calls client-b (608). The transfer request (644) reaches client-b (652).
-  client-b, still in its call with client-a, calls client-d (663, to client-d 671) and reports
-  `<transfer-call-outcome>success</…>` (692, to client-a 707). Only then does client-a end its call with client-b
-  (BYE 716, to client-b 721), as TS 24.379 clause 11.1.8.2.1 step 2 says.
+- **Call-back** (frames 481 to 594): client-a's MESSAGE with
+  `<request-type>private-call-call-back-request</request-type>` and `<urgency-ind>high</urgency-ind>` (481) reaches
+  client-b (490). client-b's call-back response (499) reaches
+  client-a (506). client-b's INVITE (521) reaches client-a with `Answer-Mode: Manual` (531), and client-a's 200 OK
+  (542) comes after its user answered. client-c's request is answered 403 with
+  `Warning: 399 mcx "151 user not authorised to make a private call call-back request"` (592, to client-c 594).
+- **Remotely initiated call** (frames 600 to 665): client-a's request (600) names client-d in `<mcptt-called-party-id>`
+  and asks for `<ric-commencement-mode>auto-mode</ric-commencement-mode>`. client-b gets it (605) and places the call
+  (621, to client-d 631). Its response with `<remotely-initiated-call-outcome>success</…>` (651) reaches client-a
+  (665).
+- **Transfer** (frames 700 to 816): client-a calls client-b (700). The transfer request (736) reaches client-b (744).
+  client-b, still in its call with client-a, calls client-d (755, to client-d 765) and reports
+  `<transfer-call-outcome>success</…>` (788, to client-a 803). Only then does client-a end its call with client-b
+  (BYE 811, to client-b 816), as TS 24.379 clause 11.1.8.2.1 step 2 says.
 
-- **Announced transfer** (frames 752 to 923): client-a's call with client-b (752), the hold re-INVITE with
-  `a=sendonly` (791), client-a's call to client-d (811). The transfer request (848) carries `<replaces-header-value>`.
-  client-b, keeping the held call, calls client-d with a `Replaces` header (867, to client-d 879); client-d ends the
-  replaced call with client-a (BYE 886). client-b's response (896) reaches client-a (923), and client-a ends the held
-  call with client-b (BYE 930, to client-b 936).
-- **Forwarding by hand** (frames 971 to 1059): client-a's INVITE reaches client-b with `Answer-Mode: Manual` (981).
-  client-b's forwarding request with `<forwarding-reason>manual-input</forwarding-reason>` (994) reaches client-a
-  (1005) with `<forwarding-target-id>`, and client-b answers 480 with warning 175 (1003, to client-a 1017). client-a
-  calls client-d (1031, to client-d 1045) and sends the forward response (1050, to client-b 1059).
-- **Immediate forwarding** (frames 1107 to 1161): the server answers client-a's INVITE to client-c with 480 and
-  warning 175 itself (1111) and sends client-a a forwarding request with `<forwarding-reason>immediate</…>` (1115).
-  client-a calls bob (1133, to bob 1147); client-c never gets an INVITE, only the forward response (1161).
-- **Forwarding on no answer** (frames 1209 to 1305): client-d's INVITE (1219) is cancelled 3.0 s later (CANCEL
-  1228): TNP1 has run out. client-b gets 480 with warning 175 (1235) and a forwarding request with
-  `<forwarding-reason>no-answer</…>` (1243), calls alice (1263, to client-a 1271) and tells client-d (1305).
-- **First-to-answer** (frames 1337 to 1547): client-a's INVITE (1337) becomes INVITEs to bob (1348) and client-d
-  (1352), both with `Priv-Answer-Mode: Manual`. client-a gets 183 Session Progress (1364). client-b's 200 OK (1366)
-  makes the call (200 OK to client-a 1375), and client-d's INVITE is cancelled (CANCEL 1386, 487 1390). client-a's
-  speech starts at 1405; the call ends with client-a's BYE (1547).
+- **Announced transfer** (frames 847 to 1027): client-a's call with client-b (847), the hold re-INVITE with
+  `a=sendonly` (890), client-a's call to client-d (910). The transfer request (949) carries `<replaces-header-value>`.
+  client-b, keeping the held call, calls client-d with a `Replaces` header (969, to client-d 978); client-d ends the
+  replaced call with client-a (BYE 986). client-b's response (1009) reaches client-a (1027), and client-a ends the held
+  call with client-b (BYE 1034, to client-b 1041).
+- **Forwarding by hand** (frames 1077 to 1181): client-a's INVITE reaches client-b with `Answer-Mode: Manual` (1087).
+  client-b's forwarding request with `<forwarding-reason>manual-input</forwarding-reason>` (1102) reaches client-a
+  (1111) with `<forwarding-target-id>`, and client-b answers 480 with warning 175 (1113, to client-a 1125). client-a
+  calls client-d (1139, to client-d 1148) and sends the forward response (1168, to client-b 1181).
+- **Immediate forwarding** (frames 1213 to 1283): the server answers client-a's INVITE to client-c with 480 and
+  warning 175 itself (1217) and sends client-a a forwarding request with `<forwarding-reason>immediate</…>` (1221).
+  client-a calls bob (1239, to bob 1249); client-c never gets an INVITE, only the forward response (1283).
+- **Forwarding on no answer** (frames 1318 to 1417): client-d's INVITE (1328) is cancelled 3.0 s later (CANCEL
+  1342): TNP1 has run out. client-b gets 480 with warning 175 (1346) and a forwarding request with
+  `<forwarding-reason>no-answer</…>` (1357), calls alice (1375, to client-a 1384) and tells client-d (1417).
+- **First-to-answer** (frames 1449 to 1687): client-a's INVITE (1449) becomes INVITEs to bob (1459) and client-d
+  (1466), both with `Priv-Answer-Mode: Manual`. client-a gets 183 Session Progress (1476). client-b's 200 OK (1478)
+  makes the call (200 OK to client-a 1486), and client-d's INVITE is cancelled (CANCEL 1499, 487 1502). client-a's
+  speech starts at 1518; the call ends with client-a's BYE (1687).
 
 ## 5. Stop or start over
 
@@ -333,11 +333,11 @@ sequenceDiagram
 
 | Message | Frames |
 |---|---|
-| Call-back: request A → S, S → B; response B → S, S → A | 398, 408; 417, 424 |
-| Call-back: INVITE B → S, S → A (Manual); 200 OK from A | 439, 449; 458 |
-| Transfer: request A → S, S → B; B's INVITE to D, S → D | 644, 652; 663, 671 |
-| Transfer: response B → S, S → A; A's BYE, S → B | 692, 707; 716, 721 |
-| Forwarding: INVITE A → S, S → B; request B → S, S → A | 971, 981; 994, 1005 |
-| Forwarding: 480 from B, to A; INVITE A → S, S → D; response A → S, S → B | 1003, 1017; 1031, 1045; 1050, 1059 |
-| First-to-answer: INVITE A → S; S → B, S → D; 183 to A | 1337; 1348, 1352; 1364 |
-| First-to-answer: 200 OK from B, to A; CANCEL to D; 487 from D | 1366, 1375; 1386; 1390 |
+| Call-back: request A → S, S → B; response B → S, S → A | 481, 490; 499, 506 |
+| Call-back: INVITE B → S, S → A (Manual); 200 OK from A | 521, 531; 542 |
+| Transfer: request A → S, S → B; B's INVITE to D, S → D | 736, 744; 755, 765 |
+| Transfer: response B → S, S → A; A's BYE, S → B | 788, 803; 811, 816 |
+| Forwarding: INVITE A → S, S → B; request B → S, S → A | 1077, 1087; 1102, 1111 |
+| Forwarding: 480 from B, to A; INVITE A → S, S → D; response A → S, S → B | 1113, 1125; 1139, 1148; 1168, 1181 |
+| First-to-answer: INVITE A → S; S → B, S → D; 183 to A | 1449; 1459, 1466; 1476 |
+| First-to-answer: 200 OK from B, to A; CANCEL to D; 487 from D | 1478, 1486; 1499; 1502 |

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """MCVideo functional aliases (TS 24.281 clause 20): status determination subscriptions to a
-user's aliases and to an alias's users (clause 20.2.1.3), activation (clause 20.2.1.2), the
+user's aliases and to an alias's users (clause 20.2.1.3), activation (clause 20.2.1.2) answered
+200 (clause 20.2.2.2.3 step 8) with the outcome in the status NOTIFY (clause 20.2.2.2.5), the
 refusals of a user outside the alias's user list and beyond its activation limit (clause
-20.2.2.3.3), take-over, the alias presented in a group call and left out when no longer held
-(clause 10.2.2.3.1.1 step 17a), the binding of an alias to a group (clause 20.4) with refusals
+20.2.2.3.3), the "take-over-possible" offer and the take-over after it (clause 20.2.1.2 step 6
+d)), the alias presented in a group call and left out when no longer held (clause 10.2.2.3.1.1
+step 17a), the binding of an alias to a group (clause 20.4) with refusals
 176 (clause 20.4.2.2.2) and 178 (clause 20.4.2.3.2), a private call to an alias redirected with
 300 (clause 10.2.2.2.1), deactivation, and the wire format (clause 20.3.1, annex F.1).
 
@@ -176,9 +178,10 @@ def main():
         return (server_status().get('functional_aliases') or {}).get(alias) or []
 
     # ------------------------------------------------------------------------------
-    def fa(role, action, alias, code, label):
+    def fa(role, action, alias, code, label, outcome=None):
         """Send an activation, deactivation or take-over of the functional alias (TS 24.281 clause 20.2.1.2) and check
-        the status code of the answer.
+        the status code of the answer and, for a client following its own status, the alias's outcome in the NOTIFY
+        with the request's p-id-fa (clause 20.2.2.2.5).
         """
         before = json.dumps(status(role).get('mcvideo_functional_alias_result'))
         command(role, f'mcvideo-fa {action} {alias}')
@@ -187,11 +190,19 @@ def main():
             lambda: (
                 json.dumps(status(role).get('mcvideo_functional_alias_result')) != before
                 and (status(role).get('mcvideo_functional_alias_result') or {}).get('status', 0) >= 200
+                and (
+                    outcome is None
+                    or alias in ((status(role).get('mcvideo_functional_alias_result') or {}).get('outcomes') or {})
+                )
             ),
         )
-        outcome = status(role).get('mcvideo_functional_alias_result') or {}
-        observations[label] = outcome
-        check(label, outcome.get('status') == code, outcome)
+        result = status(role).get('mcvideo_functional_alias_result') or {}
+        observations[label] = result
+        check(
+            label,
+            result.get('status') == code and (outcome is None or (result.get('outcomes') or {}).get(alias) == outcome),
+            result,
+        )
 
     # ------------------------------------------------------------------------------
     def hang_up(*roles):
@@ -227,6 +238,11 @@ def main():
             'MV-FA-01 client-b\'s subscription to video-dispatcher gets the per-alias status, with no user',
             lambda: (status('client-b').get('mcvideo_alias_users') or {}).get(dispatcher) == [],
         )
+        command('client-b', 'mcvideo-fa-subscribe')
+        wait(
+            'MV-FA-01 client-b follows its own aliases too (clause 20.2.1.1)',
+            lambda: status('client-b').get('mcvideo_functional_alias_status_known') is True,
+        )
         command('client-d', f'mcvideo-fa-subscribe {dispatcher}')
         wait(
             'MV-FA-01 client-d\'s subscription to video-dispatcher is refused with 403',
@@ -258,14 +274,24 @@ def main():
         )
 
         # MV-FA-03 TS 24.281 clause 20.2.2.3.3: client-c is not in the alias's <mcvideo-user-list>, and one
-        # activation at a time refuses client-b's plain activation.
-        fa('client-c', 'activate', dispatcher, 403, 'MV-FA-03 client-c, not in the user list, is refused with 403')
+        # activation at a time refuses client-b's plain activation; both are answered 200 (clause 20.2.2.2.3
+        # step 8, which has no step 4B) and learn the outcome from their status NOTIFY. client-b, which may
+        # take the alias over, is offered "take-over-possible".
+        fa(
+            'client-c',
+            'activate',
+            dispatcher,
+            200,
+            'MV-FA-03 client-c, not in the user list: 200, then refused in the NOTIFY',
+            'refused',
+        )
         fa(
             'client-b',
             'activate',
             dispatcher,
-            403,
-            'MV-FA-03 client-b\'s activation beyond the limit is refused with 403',
+            200,
+            'MV-FA-03 client-b\'s activation beyond the limit: 200, then NOTIFY "take-over-possible"',
+            'take-over-possible',
         )
         check(
             'MV-FA-03 client-a still holds video-dispatcher',
@@ -275,7 +301,18 @@ def main():
 
         # MV-FA-04 TS 24.281 clause 20.2.1.2 step 6d: client-b takes it over (<take-over>), which the alias
         # allows and its profile permits; client-a, without the right, cannot take it back.
-        fa('client-b', 'takeover', dispatcher, 200, 'MV-FA-04 client-b\'s take-over is accepted with 200')
+        fa(
+            'client-b',
+            'takeover',
+            dispatcher,
+            200,
+            'MV-FA-04 client-b\'s take-over after the offer: 200, then NOTIFY "activated"',
+            'activated',
+        )
+        check(
+            'MV-FA-04 client-b\'s take-over carries <take-over>',
+            (status('client-b').get('mcvideo_functional_alias_result') or {}).get('take_over') is True,
+        )
         wait(
             'MV-FA-04 mcvideo-server holds client-b in place of client-a',
             lambda: holders(dispatcher) == [ids['client-b']],
@@ -288,8 +325,13 @@ def main():
             'client-a',
             'takeover',
             dispatcher,
-            403,
-            'MV-FA-04 client-a, without the take-over right, is refused with 403',
+            200,
+            'MV-FA-04 client-a, offered no take-over, asks for an activation (200) and does not get the alias',
+        )
+        check(
+            'MV-FA-04 client-a\'s request carries no <take-over> and client-b keeps video-dispatcher',
+            (status('client-a').get('mcvideo_functional_alias_result') or {}).get('take_over') is False
+            and holders(dispatcher) == [ids['client-b']],
         )
 
         # MV-FA-05 TS 24.281 clause 10.2.2.3.1.1 step 17a: client-a, which does not follow its status, still
@@ -537,6 +579,15 @@ def main():
                 'MV-FA-12 a per-user NOTIFY lists an alias with status="activated"',
                 any(
                     re.search(r'functionalAliasID="' + re.escape(medic) + r'" status="activated"', message)
+                    for message in notifies
+                ),
+            )
+            check(
+                'MV-FA-12 a per-user NOTIFY offers an alias with status="take-over-possible"',
+                any(
+                    re.search(
+                        r'functionalAliasID="' + re.escape(dispatcher) + r'" status="take-over-possible"', message
+                    )
                     for message in notifies
                 ),
             )

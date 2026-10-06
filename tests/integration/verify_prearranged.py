@@ -75,6 +75,12 @@ def sip_message(raw, packet):
 
 
 # ------------------------------------------------------------------------------
+def option_tags(value):
+    """The option tags of a Supported header field value, lower case."""
+    return {tag.strip().lower() for tag in value.split(',') if tag.strip()}
+
+
+# ------------------------------------------------------------------------------
 def raw_sip_values(node):
     """Yield the raw hex of every SIP message in tshark's JSON output for one packet."""
     if isinstance(node, dict):
@@ -388,6 +394,17 @@ def verify(messages, require_refresh=False, require_conference=False):
         focus_uris.add(uri(headers.get('contact', '')))
     completed = 0
     for origin in origins:
+        # TS 24.379 clause 10.1.1.4.2: the controlling function answers the originator with the 200 (OK) only; it
+        # sends no 180 (Ringing).
+        check(
+            not any(
+                message['method'] == 'INVITE'
+                and message['status'] == 180
+                and message['headers']['call-id'] == origin['headers']['call-id']
+                for message in unique
+            ),
+            f"packet {origin['packet']} originating INVITE: no 180 (Ringing) from the controlling function",
+        )
         replies = [message for message in success if message['headers']['call-id'] == origin['headers']['call-id']]
         if not replies:
             continue  # A deliberately cancelled/rejected attempt need not receive 200.
@@ -406,6 +423,12 @@ def verify(messages, require_refresh=False, require_conference=False):
             prefix + ': allocated session URI (or retained rejoin URI)',
         )
         check('isfocus' in contact.lower(), prefix + ': Contact has isfocus')
+        # TS 24.379 clauses 6.3.2.1.5.2 and 6.3.3.2.3.2: the service's identity and the option tags of the 200 (OK).
+        check(bool(reply['headers'].get('p-asserted-identity')), prefix + ': P-Asserted-Identity present')
+        check(
+            {'tdialog', 'norefersub', 'explicitsub', 'nosub'} <= option_tags(reply['headers'].get('supported', '')),
+            prefix + ': Supported has tdialog, norefersub, explicitsub and nosub',
+        )
         check(session in focus_uris, prefix + ': session URI matches fanout')
         matching_fanouts = [message for message in fanouts if uri(message['headers'].get('contact', '')) == session]
         fanout_ids = {message['headers']['call-id'] for message in matching_fanouts}

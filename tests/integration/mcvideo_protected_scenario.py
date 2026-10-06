@@ -229,7 +229,7 @@ def main():
                 common >= 10 and equal == common,
                 observations[f'{role}_from_a'],
             )
-        command('client-a', 'mcvideo-release')
+        command('client-a', 'mcvideo-end')
         wait('MV-SE-02 client-a releases', lambda: status('client-a').get('mcvideo_transmitting') is False)
 
         # MV-SE-03: a second sender under the same GMK, keyed by its own identity (GUK-ID).
@@ -247,7 +247,7 @@ def main():
             common >= 10 and equal == common,
             dict(received=received, equal=equal, compared=common),
         )
-        command('client-b', 'mcvideo-release')
+        command('client-b', 'mcvideo-end')
         for role in ROLES:
             if status(role).get('mcvideo_call_state') not in (None, 'idle'):
                 command(role, 'mcvideo-hangup')

@@ -306,7 +306,9 @@ void DataServer::media_group_notify(const std::shared_ptr<MediaSession> &leg, bo
     notice.calling_group = leg->group;
     notice.emergency = emergency;
     if (!emergency) notice.imminent_peril = imminent;
-    auto headers = std::vector<SipHeader>{{"P-Asserted-Service", mcdata::sds_icsi}};
+    // TS 24.282 clause 6.3.7.1.8 step 1: the session identity with g.3gpp.mcdata and isfocus.
+    auto headers = std::vector<SipHeader>{{"P-Asserted-Service", mcdata::sds_icsi},
+                                          {"Contact", "<" + session_identity(leg->key) + ">;+g.3gpp.mcdata;isfocus"}};
     for (const auto &header : media_priority_headers(group_level(leg->group))) headers.push_back(header);
     pending_.push_back([this, dialog, notice, headers, sdp = other->sdp] {
       try {
@@ -400,7 +402,9 @@ std::string DataServer::media_deliver(const std::string &originator, const std::
         std::vector<SipHeader> headers{
             {"Accept-Contact", std::string("*;+g.3gpp.mcdata.") + (file ? "fd" : "sds") + ";require;explicit"},
             {"Accept-Contact", "*;+g.3gpp.icsi-ref=\"" + url_encode(icsi) + "\";require;explicit"},
-            {"P-Asserted-Service", icsi}};
+            {"P-Asserted-Service", icsi},
+            // TS 24.282 clauses 9.2.3.4.3, 9.2.4.4.3 and 10.2.5.4.3 step 7: the session identity, as focus.
+            {"Contact", focus_contact(session_identity(key), file ? "fd" : "sds")}};
         if (level != "normal")
           for (const auto &header : media_priority_headers(level.c_str())) headers.push_back(header);
         // TS 24.282 clause 24.4.2.1.1 step 6: the public user identity of the inviting client.

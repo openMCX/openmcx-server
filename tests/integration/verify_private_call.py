@@ -166,9 +166,12 @@ def main():
     originating = [message for message in invites if message['target'] == args.service]
     terminating = [message for message in invites if message['target'] != args.service]
     finals = collections.defaultdict(list)
+    provisionals = collections.defaultdict(list)
     for sip_message in messages:
         if not sip_message['request'] and sip_message['method'] == 'INVITE' and sip_message['status'] >= 200:
             finals[sip_message['call_id']].append(sip_message)
+        elif not sip_message['request'] and sip_message['method'] == 'INVITE' and sip_message['status'] > 100:
+            provisionals[sip_message['call_id']].append(sip_message)
     check('originating private INVITEs captured', len(originating) > 0)
     check(
         'every originating INVITE names exactly one called party in resource-lists',
@@ -266,6 +269,43 @@ def main():
                 for status_code, warning_text in outcomes
             ),
         )
+    # TS 24.379 clause 11.1.1.4.2: a caller gets 180 (Ringing) only when its callee rings.
+    rang = {
+        (message['info'].get('mcptt-calling-user-id'), message['info'].get('mcptt-request-uri'))
+        for message in terminating
+        if any(response['status'] == 180 for response in provisionals.get(message['call_id'], []))
+    }
+    caller_ringing = [
+        (message['info'].get('mcptt-calling-user-id'), (message['targets'] or [''])[0])
+        for message in originating
+        if any(response['status'] == 180 for response in provisionals.get(message['call_id'], []))
+    ]
+    check('callers get 180 (Ringing) only for a callee that rang', all(pair in rang for pair in caller_ringing))
+    # TS 24.379 clauses 6.3.2.1.5 and 6.3.3.2.3: the service's identity in the provisional responses other than
+    # 100 (Trying) and the 200 (OK), whose Supported also has tdialog, norefersub, explicitsub and nosub.
+    to_callers = [
+        response
+        for message in originating
+        for response in provisionals.get(message['call_id'], []) + finals.get(message['call_id'], [])
+        if response['status'] < 300
+    ]
+    check(
+        'provisional and 200 responses to callers assert the service identity',
+        bool(to_callers)
+        and all(
+            args.service.replace('sips:', 'sip:') in header(response, 'p-asserted-identity').replace('sips:', 'sip:')
+            for response in to_callers
+        ),
+    )
+    check(
+        '200 responses to callers support tdialog, norefersub, explicitsub and nosub',
+        all(
+            {'tdialog', 'norefersub', 'explicitsub', 'nosub'}
+            <= {tag.strip().lower() for value in response['headers']['supported'] for tag in value.split(',')}
+            for response in to_callers
+            if response['status'] == 200
+        ),
+    )
     callee_declines = [
         response
         for message in terminating
@@ -348,6 +388,12 @@ def main():
         check(
             'first-to-answer caller receives 183 Session Progress before answer',
             bool(answered) and all(offer['call_id'] in progress for offer, _ in answered),
+        )
+        check(
+            'first-to-answer callers get no 180 (Ringing)',
+            not any(
+                response['status'] == 180 for offer in fta_orig for response in provisionals.get(offer['call_id'], [])
+            ),
         )
         check(
             'first-to-answer 200 OK identifies an invitee in mcptt-called-party-id',

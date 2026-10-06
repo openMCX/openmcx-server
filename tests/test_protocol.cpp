@@ -824,6 +824,18 @@ int main() {
     ric.service["ric-app-level-priority"] = bad;
     rejects([&] { (void)mcptt_info_xml(ric); });
   }
+  // TS 24.379 clause 9A.2.1.3 step 2 b) and annex F.1.3: the functional alias status determination is a
+  // <request-type> value; the users of an alias are asked for with <req-type> (step 2a b)).
+  McpttInfo status_request;
+  status_request.service = {{"request-type", "functional-alias-status-determination"}};
+  check(mcptt_info_xml(status_request).find("<request-type>functional-alias-status-determination</request-type>") !=
+            std::string::npos,
+        "functional alias status determination not in <request-type>");
+  check(parse_mcptt_info(mcptt_info_xml(status_request)).service == status_request.service,
+        "functional alias status determination lost");
+  status_request.service = {{"req-type", "fa-user-status-determination"}};
+  check(parse_mcptt_info(mcptt_info_xml(status_request)).service == status_request.service,
+        "functional alias user status determination lost");
   // TS 24.379 clauses 11.1.8.2.3 and 11.1.8.2.1: announced transfer, <transfer-announced-ind> and
   // <replaces-header-value>.
   McpttInfo announced;
@@ -1051,6 +1063,25 @@ int main() {
       (void)parse_mcvideo_profile("<mcptt-user-profile xmlns=\"urn:3gpp:mcptt:user-profile:1.0\" XUI-URI=\"sip:a@x\" "
                                   "user-profile-index=\"3\"><Status>true</Status></mcptt-user-profile>");
     });
+    // TS 24.484 clause 10.3.2.1: the MCData user profile: identity, index and the MCData rights only.
+    const std::string data_profile =
+        "<mcdata-user-profile xmlns=\"urn:3gpp:ns:mcdata:user-profile:1.0\" XUI-URI=\"sip:d@x\" "
+        "user-profile-index=\"2\"><Status>true</Status><Common index=\"0\"><MCDataUserID><uri-entry>sip:d@x"
+        "</uri-entry></MCDataUserID></Common><cp:ruleset xmlns:cp=\"urn:ietf:params:xml:ns:common-policy\"><cp:rule "
+        "id=\"r\"><cp:actions><allow-transmit-data>true</allow-transmit-data><allow-activate-emergency-alert>false"
+        "</allow-activate-emergency-alert><anyExt><allow-takeover-functional-alias-other-user>true"
+        "</allow-takeover-functional-alias-other-user></anyExt><allow-private-call "
+        "xmlns=\"urn:3gpp:mcptt:user-profile:1.0\">true</allow-private-call></cp:actions></cp:rule></cp:ruleset>"
+        "</mcdata-user-profile>";
+    const auto data = parse_mcdata_profile(data_profile);
+    check(data.user_id == "sip:d@x" && data.profile_index == 2 &&
+              data.actions ==
+                  std::set<std::string>({"allow-transmit-data", "allow-takeover-functional-alias-other-user"}),
+          "MCData user profile");
+    auto stranger = data_profile;
+    stranger.replace(stranger.find("XUI-URI=\"sip:d@x\""), 17, "XUI-URI=\"sip:o@x\"");
+    rejects([&] { (void)parse_mcdata_profile(stranger); });
+    rejects([&] { (void)parse_mcdata_profile(video_profile); });
   }
   std::cout << "MCPTT XML, PIDF, multipart and SDP tests passed\n";
 }

@@ -364,8 +364,10 @@ SipResponse McServer::adhoc_invite(const SipMessage &message, const User &user, 
   response.headers = priority_headers(cfg_.at(svc_.name), priority);
   leg->answer = response;
   leg->awaiting_answer = true;
-  response.status_code = 180;
-  response.reason = "Ringing";
+  // TS 24.379 clause 17.4.2.2: the controlling function answers the caller with the 200 (OK) that an invited member's
+  // 200 (OK) or 183 (Session Progress) brings, and sends no other provisional response.
+  response.status_code = 100;
+  response.reason = "Trying";
   sessions_[session->group] = session;
   add_leg(leg);
   schedule_adhoc_invitations(session, invitees);

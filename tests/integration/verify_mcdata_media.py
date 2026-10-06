@@ -217,6 +217,39 @@ def main():
             for message in deliveries
         ),
     )
+
+    # TS 24.282 clause 6.3.7.1.23 steps 5 and 6 (the 200 (OK) to the originator) and clauses 9.2.3.4.3, 9.2.4.4.3
+    # and 10.2.5.4.3 step 7 (the INVITE to a recipient): the Contact is a SIP URI for the MCData session identity at
+    # the controlling function, with the subservice's media feature tag, its ICSI and isfocus.
+    def focus_contact(message, subservice):
+        contact = header(message, 'contact')
+        return bool(
+            re.match(r'<sips?:[^@>]+@[^:;>]+;[^>]*>', contact)
+            and f'+g.3gpp.mcdata.{subservice}' in contact
+            and f'+g.3gpp.icsi-ref="urn%3Aurn-7%3A3gpp-service.ims.icsi.mcdata.{subservice}"' in contact
+            and re.search(r';isfocus(;|$)', contact)
+            and 'g.3gpp.mcptt' not in contact
+        )
+
+    file_accepted = [response for message in file_offers for response in answers(message) if response['status'] == 200]
+    if offers:
+        check(
+            "the server's 200 to an SDS offer has the session identity Contact with the SDS tags and isfocus (6.3.7.1.23)",
+            bool(accepted) and all(focus_contact(response, 'sds') for response in accepted),
+        )
+        check(
+            "the server's INVITE to an SDS recipient has the session identity Contact with isfocus (9.2.3.4.3 step 7)",
+            bool(deliveries) and all(focus_contact(message, 'sds') for message in deliveries),
+        )
+    if file_offers:
+        check(
+            "the server's 200 to a file offer has the session identity Contact with the FD tags and isfocus (6.3.7.1.23)",
+            bool(file_accepted) and all(focus_contact(response, 'fd') for response in file_accepted),
+        )
+        check(
+            "the server's INVITE to a file recipient has the session identity Contact with isfocus (10.2.5.4.3 step 7)",
+            bool(file_deliveries) and all(focus_contact(message, 'fd') for message in file_deliveries),
+        )
     rejected = [
         (response['status'], header(response, 'warning'))
         for message in offers

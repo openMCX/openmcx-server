@@ -125,7 +125,7 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/03-private-calls-run.pcap.gz`. The folder also holds a reference run,
-`captures/03-private-calls-full.pcap.gz` (148 KB, 3 698 frames): the frame numbers below and in the call flow are
+`captures/03-private-calls-full.pcap.gz` (147 KB, 3 751 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.3.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -151,33 +151,35 @@ permission" (TS 24.380 clause 8.2.6.2).
 
 What to look for, in the reference run:
 
-- **Automatic commencement** (frames 417 to 451): client-a's INVITE (424, after the SIP core's `407` challenge to
-  417) has `Answer-Mode: Auto`, an `application/resource-lists+xml` body naming `bob`, the MCPTT XML with
+- **Automatic commencement** (frames 450 to 484): client-a's INVITE (457, after the SIP core's `407` challenge to
+  450) has `Answer-Mode: Auto`, an `application/resource-lists+xml` body naming `bob`, the MCPTT XML with
   `<session-type>private</session-type>`, and an SDP with `m=audio` and `m=application 5000 udp MCPTT`. The server
-  sends 180 Ringing (428), invites client-b (430, 434), and answers client-a's INVITE with 200 OK (448) once client-b
-  has answered (436). Floor Idle goes to both (443, 451). There is no conference subscription: a private call has
-  none.
-- **Floor control** (frames 457 to 1860): client-a's Floor Request (457), Floor Granted (458), Floor Taken to client-b
-  (459), speech from 462. client-b's Floor Request (500) gets a Floor Deny (501). client-a's Floor Release (1139),
-  client-b's Floor Request (1145) and Floor Granted (1146), its Floor Release (1860).
-- **Release by the callee** (frames 1866 to 1876): client-b's BYE (1866), and the server's BYE to client-a (1876).
-- **Manual commencement** (frames 1883 to 1928): the INVITE has `Answer-Mode: Manual` (1889); client-b's 180 Ringing
-  (1901) and its 200 OK when the user answers (1908).
-- **Declined** (frames 1946 to 1981): client-b's 480 with `Warning: 399 mcx "110 user declined the call invitation"`
-  (1972), relayed to client-a (1981).
-- **Forced automatic answer** (frames 1988 to 2004): the INVITE has `Priv-Answer-Mode: Auto` (1994, 2002), and client-b
-  answers 200 OK (2004) without a 180 Ringing.
-- **Cancelled** (frames 2045 to 2084): client-b rings (2064); client-a's CANCEL (2071), the CANCEL to client-b (2080)
-  and 487 to client-a (2084).
-- **Not answered** (frames 2099 to 2130): client-b rings (2115); 5 s later the server answers client-a 408 (2124,
-  2128) and cancels client-b's invitation (2130).
-- **Refused** (frames 2146 to 2178): client-d's INVITE gets 403 with Warning 107 (2160), client-a's INVITE to client-d
-  403 with Warning 144 (2178). Neither reaches the called user.
-- **Busy** (frames 2183 to 2236): while client-a and client-b are in a call, client-c's INVITE (2229) gets 486 Busy
-  Here from the server (2233, 2236); no INVITE goes to client-b.
-- **Without floor control** (frames 2262 to 3682): client-a's INVITE (2269) offers only `m=audio 4000 RTP/AVP 96`, and
-  client-b's 200 OK (2281) answers the same. No floor message at all. Speech from client-a starts at 2298 and from
-  client-b at 2310, and the two run at the same time (337 and 355 packets). client-b's BYE (3682) ends the call.
+  invites client-b (463, 467) and answers client-a's INVITE with 200 OK (475, 480) once client-b has answered (469).
+  client-a gets no 180 Ringing, since client-b never rings: the server sends one only when the callee's arrives
+  (TS 24.379 clause 11.1.1.4.2). The server's 200 OK carries `P-Asserted-Identity` (the MCPTT service) and the
+  option tags `tdialog`, `norefersub`, `explicitsub` and `nosub` in `Supported` (clause 6.3.3.2.3.2). Floor Idle
+  goes to both (478, 484). There is no conference subscription: a private call has none.
+- **Floor control** (frames 490 to 1893): client-a's Floor Request (490), Floor Granted (491), Floor Taken to client-b
+  (492), speech from 495. client-b's Floor Request (595) gets a Floor Deny (596). client-a's Floor Release (1172),
+  client-b's Floor Request (1178) and Floor Granted (1179), its Floor Release (1893).
+- **Release by the callee** (frames 1899 to 1909): client-b's BYE (1899), and the server's BYE to client-a (1909).
+- **Manual commencement** (frames 1916 to 1967): the INVITE has `Answer-Mode: Manual` (1922); client-b's 180 Ringing
+  (1934), which the server passes on to client-a (1938, 1940), and its 200 OK when the user answers (1943).
+- **Declined** (frames 1985 to 2022): client-b's 480 with `Warning: 399 mcx "110 user declined the call invitation"`
+  (2013), relayed to client-a (2022).
+- **Forced automatic answer** (frames 2029 to 2045): the INVITE has `Priv-Answer-Mode: Auto` (2035, 2043), and client-b
+  answers 200 OK (2045) without a 180 Ringing.
+- **Cancelled** (frames 2089 to 2134): client-b rings (2108); client-a's CANCEL (2117), the CANCEL to client-b (2126)
+  and 487 to client-a (2134).
+- **Not answered** (frames 2145 to 2179): client-b rings (2161); 5 s later the server answers client-a 408 (2172,
+  2176) and cancels client-b's invitation (2179).
+- **Refused** (frames 2194 to 2226): client-d's INVITE gets 403 with Warning 107 (2208), client-a's INVITE to client-d
+  403 with Warning 144 (2226). Neither reaches the called user.
+- **Busy** (frames 2231 to 2284): while client-a and client-b are in a call, client-c's INVITE (2277) gets 486 Busy
+  Here from the server (2281, 2284); no INVITE goes to client-b.
+- **Without floor control** (frames 2315 to 3735): client-a's INVITE (2322) offers only `m=audio 4000 RTP/AVP 96`, and
+  client-b's 200 OK (2335) answers the same. No floor message at all. Speech from client-a starts at 2351 and from
+  client-b at 2399, and the two run at the same time (337 and 355 packets). client-b's BYE (3735) ends the call.
 
 ## 5. Stop or start over
 
@@ -245,7 +247,6 @@ sequenceDiagram
     participant B as Callee B
     A->>S: INVITE service URI, mcptt-info private, resource-lists B, Answer-Mode Auto, SDP
     Note over S: Resolve B, check A's ruleset, limits and SDP
-    S-->>A: 180 Ringing
     S->>B: INVITE B, request-uri B, calling user A, Answer-Mode Auto, focus Contact, SDP
     B-->>S: 200 OK and SDP
     S->>B: ACK
@@ -275,9 +276,9 @@ sequenceDiagram
     participant S as MCPTT server
     participant B as Callee B
     A->>S: INVITE, resource-lists B, Answer-Mode Manual
-    S-->>A: 180 Ringing
     S->>B: INVITE, Answer-Mode Manual, focus Contact
     B-->>S: 180 Ringing
+    S-->>A: 180 Ringing
     alt User answers
         B-->>S: 200 OK
         S-->>A: 200 OK
@@ -302,16 +303,16 @@ both legs, through the SIP core:
 
 | Message | Frames |
 |---|---|
-| Step 2: A INVITE (Answer-Mode Auto); 180 Ringing from the server | 424, 426; 428 |
-| Step 2: INVITE to B; B 200 OK; 200 OK to A | 430, 434; 436; 448 |
-| Step 2: Floor Idle to B and A; A Floor Request; Floor Granted; Floor Taken to B | 443, 451; 457; 458; 459 |
-| Step 2: B Floor Request; Floor Deny; A Floor Release; B Floor Request; Floor Granted; B Floor Release | 500; 501; 1139; 1145; 1146; 1860 |
-| Step 2: B BYE; BYE to A | 1866; 1876 |
-| Step 3: A INVITE (Answer-Mode Manual); to B; B 180 Ringing; B 200 OK; A BYE | 1889; 1899; 1901; 1908; 1928 |
-| Step 4: A INVITE; B 480 (Warning 110); 480 to A | 1953; 1972; 1981 |
-| Step 5: A INVITE (Priv-Answer-Mode Auto); to B; B 200 OK | 1994; 2002; 2004 |
-| Step 6: A INVITE; B 180 Ringing; A CANCEL; CANCEL to B; 487 to A | 2052; 2064; 2071; 2080; 2084 |
-| Step 7: A INVITE; B 180 Ringing; 408 to A; CANCEL to B | 2105; 2115; 2124, 2128; 2130 |
-| Step 8: client-d INVITE; 403 (107); A INVITE to client-d; 403 (144) | 2153; 2160; 2171; 2178 |
-| Step 9: client-c INVITE to B; 486 Busy Here | 2229; 2233, 2236 |
-| Step 10: A INVITE (m=audio only); to B; B 200 OK; 200 OK to A; A's and B's speech; B BYE | 2269; 2279; 2281; 2291; from 2298 and 2310; 3682 |
+| Step 2: A INVITE (Answer-Mode Auto); 200 OK to A | 457, 459; 475, 480 |
+| Step 2: INVITE to B; B 200 OK; 200 OK to A | 463, 467; 469; 480 |
+| Step 2: Floor Idle to B and A; A Floor Request; Floor Granted; Floor Taken to B | 478, 484; 490; 491; 492 |
+| Step 2: B Floor Request; Floor Deny; A Floor Release; B Floor Request; Floor Granted; B Floor Release | 595; 596; 1172; 1178; 1179; 1893 |
+| Step 2: B BYE; BYE to A | 1899; 1909 |
+| Step 3: A INVITE (Answer-Mode Manual); to B; B 180 Ringing; 180 Ringing to A; B 200 OK; A BYE | 1922; 1932; 1934; 1938, 1940; 1943; 1967 |
+| Step 4: A INVITE; B 480 (Warning 110); 480 to A | 1992; 2013; 2022 |
+| Step 5: A INVITE (Priv-Answer-Mode Auto); to B; B 200 OK | 2035; 2043; 2045 |
+| Step 6: A INVITE; B 180 Ringing; A CANCEL; CANCEL to B; 487 to A | 2096; 2108; 2117; 2126; 2134 |
+| Step 7: A INVITE; B 180 Ringing; 408 to A; CANCEL to B | 2151; 2161; 2172, 2176; 2179 |
+| Step 8: client-d INVITE; 403 (107); A INVITE to client-d; 403 (144) | 2201; 2208; 2219; 2226 |
+| Step 9: client-c INVITE to B; 486 Busy Here | 2277; 2281, 2284 |
+| Step 10: A INVITE (m=audio only); to B; B 200 OK; 200 OK to A; A's and B's speech; B BYE | 2322; 2333; 2335; 2343; from 2351 and 2399; 3735 |

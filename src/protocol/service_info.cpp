@@ -18,7 +18,7 @@ const std::vector<std::pair<std::string, std::set<std::string>>> &service_elemen
        {"private-call-call-back-request", "private-call-call-back-cancel-request",
         "remotely-initiated-private-call-request", "remotely-initiated-group-call-request",
         "transfer-private-call-request", "forward-private-call-request", "fa-group-binding-req",
-        "group-selection-change-request"}},
+        "group-selection-change-request", "functional-alias-status-determination"}},
       {"response-type",
        {"private-call-call-back-response", "private-call-call-back-cancel-response",
         "remotely-initiated-private-call-response", "remotely-initiated-group-call-response",

@@ -8,14 +8,16 @@
 namespace mcx {
 
 //------------------------------------------------------------------------------
-// TS 24.484 clause 8.3.2.1 and clause 9.3.2.1: the root of an MCPTT or an MCVideo user profile; ns receives its
-// namespace.
+// TS 24.484 clauses 8.3.2.1, 9.3.2.1 and 10.3.2.1: the root of an MCPTT, an MCVideo or an MCData user profile; ns
+// receives its namespace.
 static xmlNode *profile_root(xmlDoc *doc, const char **ns) {
   auto root = xmlDocGetRootElement(doc);
   if (is(root, "mcptt-user-profile", profile_ns))
     *ns = profile_ns;
   else if (is(root, "mcvideo-user-profile", mcvideo_profile_ns))
     *ns = mcvideo_profile_ns;
+  else if (is(root, "mcdata-user-profile", mcdata_profile_ns))
+    *ns = mcdata_profile_ns;
   else
     invalid("wrong user profile root");
   return root;
@@ -84,6 +86,23 @@ std::set<std::string> parse_profile_actions(std::string_view xml) {
     }
   }
   return actions;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 10.3.2.1: reads an MCData user profile: its index (item 4), the MCData ID (<Common>/<MCDataUserID>,
+// equal to "XUI-URI") and the granted rights of its ruleset (item 11 b).
+McdataProfile parse_mcdata_profile(std::string_view xml) {
+  auto doc = document(xml);
+  const char *ns = nullptr;
+  auto root = profile_root(doc.get(), &ns);
+  if (ns != mcdata_profile_ns) invalid("not an MCData user profile");
+  McdataProfile out;
+  out.profile_index = profile_index_of(root);
+  auto common = unique_child(root, "Common", ns);
+  out.user_id = text(unique_child(unique_child(common, "MCDataUserID", ns), "uri-entry", ns));
+  if (out.user_id.empty() || attr(root, "XUI-URI") != out.user_id) invalid("MCData user profile identity mismatch");
+  out.actions = parse_profile_actions(xml);
+  return out;
 }
 
 //------------------------------------------------------------------------------

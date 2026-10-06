@@ -99,7 +99,7 @@ public:
   void send_parts(const std::vector<std::pair<std::string, std::string>> &parts);
   void poll(); // accepts, reads and writes without blocking
   void close();
-  bool connected() const;
+  bool connected() const; // ready to send: connected, TLS handshake done, peer known
   bool secure() const; // the connection runs over TLS and its handshake completed
   std::uint16_t port() const;
   const Uri &local() const;

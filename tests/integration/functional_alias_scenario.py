@@ -6,8 +6,10 @@ Run against a separate four-client fixture prepared with
 IDs match tests/mcptt/FUNCTIONAL_ALIAS_TEST.md.
 
 The procedures under test: the functional alias status change by the client (TS 24.379 clause
-9A.2.1.2) and at the MCPTT server owning the alias (clause 9A.2.2.3.3: activation, the
-<mcptt-user-list>, the maximum simultaneous activations and take-over), the private call to an
+9A.2.1.2) after its status subscription (clauses 9A.2.1.1 and 9A.2.1.3), at the participating
+function (clause 9A.2.2.2.3: 200, or 403 with warning 201) and at the MCPTT server owning the alias
+(clause 9A.2.2.3.3: activation, the <mcptt-user-list>, the maximum simultaneous activations and
+take-over), its outcome in the status NOTIFY (clause 9A.2.2.2.5), the private call to an
 alias redirected with 300 (Multiple Choices) (clauses 11.1.1.2.1.1 and 11.1.1.4.2), the calling
 alias presented in calls (clause 10.1.1.3.1.1 step 6a), and ad hoc participant lists naming an
 alias (clause 17.4.2.2 step 12b).
@@ -99,13 +101,23 @@ def main():
         return status('mcptt-server').get('functional_aliases', {})
 
     # ------------------------------------------------------------------------------
-    def fa_result(role, action, code):
-        """A predicate: the role's last functional alias request was the action and got the status code
-        (TS 24.379 clause 9A.2.2.3.3)."""
-        return lambda: (
-            (status(role).get('last_fa_result') or {}).get('action') == action
-            and (status(role).get('last_fa_result') or {}).get('status') == code
-        )
+    def fa_result(role, action, code, alias=None, outcome=None, warning=''):
+        """A predicate: the role's last functional alias request was the action and got the status code (TS 24.379
+        clause 9A.2.2.2.3) with the warning, and the status NOTIFY with its p-id-fa gave the alias the outcome
+        (clause 9A.2.2.2.5): activated, deactivated, take-over-possible or refused."""
+
+        # ------------------------------------------------------------------------------
+        def check():
+            """The last request's action, status code, warning and the alias's outcome."""
+            last = status(role).get('last_fa_result') or {}
+            return (
+                last.get('action') == action
+                and last.get('status') == code
+                and warning in last.get('warning', '')
+                and (alias is None or (last.get('outcomes') or {}).get(alias) == outcome)
+            )
+
+        return check
 
     # ------------------------------------------------------------------------------
     def private_active(caller, callee):
@@ -144,36 +156,72 @@ def main():
         for role in roles:
             command(role, 'answer-mode auto')
 
-        # FA-01 activation by permitted users (TS 24.379 clause 9A.2.2.3.3 steps 4a, 5 and 12).
+        # FA-01 activation by permitted users (TS 24.379 clause 9A.2.2.3.3 steps 4a, 5 and 12): the client
+        # subscribes to its own status first (clause 9A.2.1.1), the PUBLISH is answered 200 (clause
+        # 9A.2.2.2.3 step 8) and the NOTIFY with its p-id-fa lists the alias "activated" (clause 9A.2.2.2.5).
         command('client-c', f'fa activate {medic}')
-        wait('FA-01 first user activates the alias', fa_result('client-c', 'activate', 200))
+        wait(
+            'FA-01 the client subscribes to its functional alias status before the change (200)',
+            lambda: status('client-c').get('functional_alias_subscription_result') == 200,
+        )
+        wait(
+            'FA-01 first user activates the alias: 200, then NOTIFY "activated"',
+            fa_result('client-c', 'activate', 200, medic, 'activated'),
+        )
         command('client-d', f'fa activate {medic}')
         wait(
             'FA-01 second user activates the same alias within its limit',
             lambda: active_aliases().get(medic) == [ids['client-c'], ids['client-d']],
         )
 
-        # FA-02 a user outside <mcptt-user-list> is refused.
+        # FA-02 an alias the user may not change (TS 24.379 clause 9A.2.2.2.3 steps 4A and 4B; openMCX's
+        # <FunctionalAliasList> is the aliases whose <mcptt-user-list> names the user) is refused by the
+        # participating function.
         command('client-c', f'fa activate {dispatcher}')
         wait(
-            'FA-02 activation by a user not in the alias user list rejected with 403',
-            fa_result('client-c', 'activate', 403),
+            'FA-02 activation by a user not in the alias user list rejected with 403 warning 201',
+            fa_result(
+                'client-c', 'activate', 403, warning='201 user not authorized to change the functional alias status'
+            ),
         )
 
         # FA-03 <max-simultaneous-activations> and FA-04 take-over.
         command('client-a', f'fa activate {dispatcher}')
         wait('FA-03 dispatcher activated by client a', lambda: active_aliases().get(dispatcher) == [ids['client-a']])
+        # Beyond the limit the owning check refuses (clause 9A.2.2.3.3 step 5); client-b, which may take the alias
+        # over, is told "take-over-possible" (clause 3.1, clause 9A.2.1.3).
         command('client-b', f'fa activate {dispatcher}')
-        wait('FA-03 activation beyond the limit rejected with 403', fa_result('client-b', 'activate', 403))
+        wait(
+            'FA-03 activation beyond the limit: 200, then NOTIFY "take-over-possible"',
+            lambda: (
+                fa_result('client-b', 'activate', 200, dispatcher, 'take-over-possible')()
+                and active_aliases().get(dispatcher) == [ids['client-a']]
+            ),
+        )
+        # FA-04 the take-over request carries <take-over> after the offer (clause 9A.2.1.2 step 6 d)); client-a
+        # learns from its NOTIFY that it lost the alias.
         command('client-b', f'fa takeover {dispatcher}')
         wait(
-            'FA-04 permitted take-over replaces the current holder',
-            lambda: fa_result('client-b', 'takeover', 200)() and active_aliases().get(dispatcher) == [ids['client-b']],
+            'FA-04 permitted take-over replaces the current holder: NOTIFY "activated"',
+            lambda: (
+                fa_result('client-b', 'takeover', 200, dispatcher, 'activated')()
+                and active_aliases().get(dispatcher) == [ids['client-b']]
+            ),
         )
+        wait(
+            'FA-04 the previous holder is notified that it no longer holds the alias',
+            lambda: dispatcher not in status('client-a').get('active_functional_aliases', [dispatcher]),
+        )
+        # client-a, without <allow-takeover-functional-alias-other-user>, is offered no take-over, so its
+        # take-over goes as an activation without <take-over> and is refused in the NOTIFY.
         command('client-a', f'fa takeover {dispatcher}')
         wait(
-            'FA-04 take-over without <allow-takeover-functional-alias-other-user> rejected with 403',
-            lambda: fa_result('client-a', 'takeover', 403)() and active_aliases().get(dispatcher) == [ids['client-b']],
+            'FA-04 take-over without <allow-takeover-functional-alias-other-user>: 200, then refused in the NOTIFY',
+            lambda: (
+                fa_result('client-a', 'takeover', 200, dispatcher, 'refused')()
+                and (status('client-a').get('last_fa_result') or {}).get('take_over') is False
+                and active_aliases().get(dispatcher) == [ids['client-b']]
+            ),
         )
 
         # FA-05 private call to a functional alias: 300 redirect to an activated user.
@@ -293,8 +341,11 @@ def main():
         # FA-10 deactivation and FA-11 an alias nobody has activated.
         command('client-c', f'fa deactivate {medic}')
         wait(
-            'FA-10 deactivation removes the user from the alias',
-            lambda: active_aliases().get(medic) == [ids['client-d']],
+            'FA-10 deactivation removes the user from the alias: 200, then NOTIFY without it',
+            lambda: (
+                fa_result('client-c', 'deactivate', 200, medic, 'deactivated')()
+                and active_aliases().get(medic) == [ids['client-d']]
+            ),
         )
         # The redirected INVITE is an ordinary private call, so the caller's
         # <PrivateCall> list applies to the selected user: client-b may call anyone.

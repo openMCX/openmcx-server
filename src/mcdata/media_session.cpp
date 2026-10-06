@@ -99,7 +99,9 @@ SipResponse DataServer::media_reinvite(const SipMessage &request, const std::sha
     notice.request_uri = other->owner;
     notice.calling_user = leg->owner;
     notice.emergency = emergency;
-    auto headers = std::vector<SipHeader>{{"P-Asserted-Service", mcdata::sds_icsi}};
+    // TS 24.282 clause 6.3.7.1.8 step 1: the session identity with g.3gpp.mcdata and isfocus.
+    auto headers = std::vector<SipHeader>{{"P-Asserted-Service", mcdata::sds_icsi},
+                                          {"Contact", "<" + session_identity(leg->key) + ">;+g.3gpp.mcdata;isfocus"}};
     if (emergency)
       for (const auto &header : media_priority_headers()) headers.push_back(header);
     pending_.push_back([this, dialog, notice, headers, sdp = other->sdp] {
@@ -242,9 +244,30 @@ SipResponse DataServer::media_invite(const SipMessage &request) {
                                                                                             : "normal";
   MsrpMedia answer;
   const auto leg = media_invite_leg(request, user, invite, level, answer);
-  if (invite.session || invite.file_request) media_invite_recipients(user, invite, *leg, level);
+  // TS 24.282 clause 10.2.5.4.4: the inviting client of a one-to-one file over the media plane is answered upon
+  // the invited client's 200 (OK) response (or given its refusal); until then it gets 100 (Trying).
+  const bool await_recipient =
+      invite.file_request && !invite.group_request && !invite.adhoc && invite.recipients.size() == 1;
+  if (!await_recipient && (invite.session || invite.file_request)) media_invite_recipients(user, invite, *leg, level);
   media_invite_answer(request, user, info, invite, *leg, level, response);
+  // TS 24.282 clause 6.3.7.1.23 steps 5 and 6: the session identity, as focus, with the subservice's tags (a
+  // standalone SDS has no session id of its own and gets a fresh identity).
+  session_contact(response, session_identity(leg->key), invite.file_request ? "fd" : "sds");
   if (invite.file_request) media_invite_transfer(user, invite);
+  if (await_recipient) {
+    media_invite_file_recipient(user, invite, *leg, level, request.dialog_id, response);
+    // The provisional answer carries the SDP answer and the Contact, so that the SIP engine keeps the dialog, with
+    // its session identity, for the final one.
+    const auto sdp = response.local_sdp;
+    const auto prepared = response;
+    response = SipResponse{};
+    response.status_code = 100;
+    response.reason = "Trying";
+    response.local_sdp = sdp;
+    response.contact_uri = prepared.contact_uri;
+    response.contact_tags = prepared.contact_tags;
+    response.focus = prepared.focus;
+  }
   count(invite.file_request ? "media_files" : "media_sds");
   if (invite.adhoc) count("media_adhoc");
   event("mcdata_media_session", {{"user_id", user.id},
@@ -568,6 +591,53 @@ void DataServer::media_invite_recipients(const User &user, const MediaInvite &in
                     alias);
     });
   }
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 10.2.5.4.4: the recipient of a one-to-one file over the media plane is invited, and the
+// inviting client gets the prepared 200 (OK) response (final) upon the recipient's 200 (OK), or the recipient's
+// refusal, with its warning.
+void DataServer::media_invite_file_recipient(const User &user, const MediaInvite &invite, const MediaSession &leg,
+                                             const std::string &level, const std::string &origin,
+                                             const SipResponse &final_answer) {
+  const auto originator = user.id, key = leg.key, recipient = invite.recipients.front();
+  const auto offered = std::make_shared<FileOffer>(invite.file_offer);
+  const auto alert_location = invite.alert_location;
+  const bool alert = invite.alert;
+  const auto alias = invite.called_aliases.contains(recipient) ? invite.called_aliases.at(recipient) : std::string{};
+  const auto prepared = std::make_shared<SipResponse>(final_answer);
+  pending_.push_back(
+      [this, originator, recipient, key, level, offered, alert_location, alert, alias, origin, prepared] {
+        const auto dialog = media_deliver(originator, recipient, {}, {}, {}, key, level, offered.get(), alert_location,
+                                          alert, alias, false, [this, origin, prepared](const SipResponse &response) {
+                                            pending_.push_back([this, origin, prepared, response] {
+                                              media_file_answered(origin, *prepared, response);
+                                            });
+                                          });
+        if (dialog.empty()) {
+          SipResponse unreachable;
+          unreachable.status_code = 480;
+          media_file_answered(origin, *prepared, unreachable);
+        }
+      });
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 10.2.5.4.4: the invited client's final response completes the inviting client's INVITE.
+void DataServer::media_file_answered(const std::string &origin, const SipResponse &prepared,
+                                     const SipResponse &response) {
+  if (!media_session(origin)) return; // the inviting client gave up
+  if (response.status_code >= 200 && response.status_code < 300) {
+    sip_.answer(origin, prepared);
+    return;
+  }
+  SipResponse refusal;
+  refusal.status_code = response.status_code;
+  refusal.reason = response.reason;
+  if (const auto warning = get_header(response.headers, "Warning"); !warning.empty())
+    refusal.headers.push_back({"Warning", std::string(warning)});
+  media_.erase(origin);
+  sip_.answer(origin, refusal);
 }
 
 //------------------------------------------------------------------------------

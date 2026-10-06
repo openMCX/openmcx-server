@@ -31,6 +31,13 @@ struct SipTlsConfig {
 };
 
 //------------------------------------------------------------------------------
+// RFC 3261 section 7.3.1: a header field, name and value.
+struct SipHeader {
+  std::string name;
+  std::string value;
+};
+
+//------------------------------------------------------------------------------
 // Helper: the configuration of a SIP endpoint, its registration, session timer and MC service.
 struct SipConfig {
   std::string listen_address;
@@ -64,13 +71,15 @@ struct SipConfig {
   // over the connection it registered on, never by connecting to its Contact (a client behind NAT, or on the
   // server's own computer). Empty (servers): plain Contacts.
   std::string outbound_instance;
-};
-
-//------------------------------------------------------------------------------
-// RFC 3261 section 7.3.1: a header field, name and value.
-struct SipHeader {
-  std::string name;
-  std::string value;
+  // A server's own header fields of its answers to an initial INVITE, other than 100 (Trying): its
+  // P-Asserted-Identity and the option tags of its Supported header field (TS 24.379 clauses 6.3.2.1.5 and
+  // 6.3.3.2.3, TS 24.281 clauses 6.3.2.1.4 and 6.3.3.2.3, TS 24.282 clause 6.3.7.1.23). Empty for a client.
+  std::vector<SipHeader> invite_provisional_headers;
+  std::vector<SipHeader> invite_success_headers;
+  // A server's own header fields of its 200 (OK) to a re-INVITE: its P-Asserted-Identity and the "norefersub" and
+  // "tdialog" option tags (TS 24.379 clauses 10.1.1.3.1.3, 10.1.1.4.7, 11.1.1.3.1.3; TS 24.281 clauses 9.2.1.3.1.3,
+  // 9.2.1.4.7, 10.2.2.3.1.3). Empty for a client.
+  std::vector<SipHeader> reinvite_success_headers;
 };
 
 //------------------------------------------------------------------------------
@@ -116,6 +125,9 @@ struct SipResponse {
   // Optional public session URI, without angle brackets or header parameters.
   std::string contact_uri;
   bool focus = false;
+  // With contact_uri: the media feature tags of the Contact, each with its leading ';', in place of the configured
+  // services' tags, such as an MCData subservice's (TS 24.282 clause 6.3.7.1.23 step 6).
+  std::string contact_tags;
   // For an incoming INVITE from a peer server reached without the SIP core: the
   // Route header value used for every request in the new dialog.
   std::string peer_route;

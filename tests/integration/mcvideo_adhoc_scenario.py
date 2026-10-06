@@ -234,7 +234,7 @@ def main():
                 got['compared'] >= 10 and got['equal'] == got['compared'],
                 got,
             )
-        command('client-a', 'mcvideo-release')
+        command('client-a', 'mcvideo-end')
         wait('MV-AH-01 client-a released', lambda: status('client-a').get('mcvideo_transmitting') is False)
         command('client-b', 'mcvideo-transmit')
         wait('MV-AH-01 client-b granted in turn', lambda: status('client-b').get('mcvideo_transmitting') is True)

@@ -2,8 +2,12 @@
 """Verify functional alias signaling from a clear-SIP server-side capture.
 
 Functional alias status changes (TS 24.379 clause 9A.2.1.2): PUBLISH with the presence event and the functional alias
-PIDF extension (clause 9A.3.1), Expires 4294967295 to activate and 0 to deactivate, take-over requests, accepted or
-refused by alias policy (clause 9A.2.2). Private calls to an alias are redirected with 300 naming the selected MCPTT ID
+PIDF extension (clause 9A.3.1), Expires 4294967295 to activate and 0 to deactivate, after the client's subscription to
+its own functional alias status (clauses 9A.2.1.1 and 9A.2.1.3, <request-type> "functional-alias-status-determination").
+The participating server answers 200, or 403 with warning 201 for an alias the user may not change (clause 9A.2.2.2.3
+steps 4A, 4B and 8), and tells the outcome by NOTIFY with the PUBLISH's <p-id-fa> (clause 9A.2.2.2.5): "activated",
+"take-over-possible", or the alias left out; <take-over> follows only a "take-over-possible" (clause 9A.2.1.2 step
+6 d)). Private calls to an alias are redirected with 300 naming the selected MCPTT ID
 (clause 11.1.1.4.2 step 8a), and the caller re-invites it with the called alias; an alias without activated users is
 rejected with warning 145 (table 4.4.2-2); terminating INVITEs present the caller's alias only when it is activated
 (clause 10.1.1.3.1.1 step 6a).
@@ -83,15 +87,78 @@ def main():
             for message in publishes
         ),
     )
-    outcomes = collections.Counter(
-        response['status'] for message in publishes for response in responses(message) if response['status'] >= 200
+    finals = [
+        (message, response) for message in publishes for response in responses(message) if response['status'] >= 200
+    ]
+    outcomes = collections.Counter(response['status'] for _, response in finals)
+    check(
+        'status changes are answered 200, or 403 with warning 201 only (9A.2.2.2.3 steps 4B and 8)',
+        outcomes[200] > 0
+        and outcomes[403] > 0
+        and set(outcomes) <= {200, 403}
+        and all(
+            header(response, 'warning').startswith('399 ')
+            and '201 user not authorized to change the functional alias status' in header(response, 'warning')
+            for _, response in finals
+            if response['status'] == 403
+        ),
+    )
+    subscribes = [
+        message
+        for message in messages
+        if message['request']
+        and message['method'] == 'SUBSCRIBE'
+        and '<request-type>functional-alias-status-determination</request-type>' in message['body']
+    ]
+    publishers = {re.search(r'entity="([^"]+)"', message['body']).group(1) for message in publishes}
+    check(
+        'every publishing user subscribes to its own functional alias status with Expires 4294967295 (9A.2.1.3)',
+        all(
+            any(
+                message['info'].get('mcptt-request-uri') == user and header(message, 'expires') == '4294967295'
+                for message in subscribes
+            )
+            for user in publishers
+        ),
+    )
+    notifies = [
+        message
+        for message in messages
+        if message['request'] and message['method'] == 'NOTIFY' and FA_NS in message['body']
+    ]
+
+    # ------------------------------------------------------------------------------
+    def pid(body):
+        """The <p-id-fa> of a functional alias PIDF, or None."""
+        found = re.search(r'<(?:\w+:)?p-id-fa>([^<]+)</', body)
+        return found.group(1) if found else None
+
+    accepted = [message for message, response in finals if response['status'] == 200]
+    notified = {pid(message['body']) for message in notifies} - {None}
+    check(
+        'each accepted status change is followed by a NOTIFY with its p-id-fa (9A.2.2.2.5 step 2c)',
+        bool(accepted) and all(pid(message['body']) in notified for message in accepted),
     )
     check(
-        'status changes are accepted (200) and refused (403) per alias policy', outcomes[200] > 0 and outcomes[403] > 0
+        'the per-user NOTIFYs list activated aliases and offer take-over (status attribute, 9A.3.1.2)',
+        any('status="activated"' in message['body'] for message in notifies)
+        and any('status="take-over-possible"' in message['body'] for message in notifies),
     )
+    offered = {
+        (re.search(r'entity="([^"]+)"', message['body']).group(1), alias)
+        for message in notifies
+        for alias in re.findall(r'functionalAliasID="([^"]+)" status="take-over-possible"', message['body'])
+    }
+    take_overs = [message for message in publishes if 'take-over>true<' in message['body']]
     check(
-        'take-over requests carry the take-over element',
-        any('take-over>true<' in message['body'] for message in publishes),
+        'take-over requests carry the take-over element only for aliases offered as take-over-possible (9A.2.1.2 '
+        'step 6 d))',
+        bool(take_overs)
+        and all(
+            (re.search(r'entity="([^"]+)"', message['body']).group(1), alias) in offered
+            for message in take_overs
+            for alias in re.findall(r'functionalAliasID="([^"]+)"', message['body'])
+        ),
     )
 
     invites = [
@@ -168,6 +235,8 @@ def main():
         counts=dict(
             publishes=len(publishes),
             publish_outcomes=dict(outcomes),
+            status_subscriptions=len(subscribes),
+            status_notifies=len(notifies),
             redirects=len(redirects),
             presented_invites=len(presented),
         ),

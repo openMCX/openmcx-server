@@ -249,11 +249,45 @@ def main():
             for message, response in accepted
         ),
     )
+
+    # TS 24.282 clause 6.3.7.1.23 steps 5 and 6 (the 200 (OK) to the caller) and clause 20.4.1 step 7 (the INVITE to
+    # the called client): a SIP URI for the MCData session identity at the controlling function, with the IP
+    # connectivity feature tag, its ICSI and isfocus; the same identity on both legs.
+    def focus_contact(message):
+        contact = header(message, 'contact')
+        return bool(
+            re.match(r'<sips?:[^@>]+@[^:;>]+;[^>]*>', contact)
+            and '+g.3gpp.mcdata.ipconn' in contact
+            and f'+g.3gpp.icsi-ref="{ICSI_ENCODED}"' in contact
+            and re.search(r';isfocus(;|$)', contact)
+            and 'g.3gpp.mcptt' not in contact
+        )
+
+    def identity(message):
+        return header(message, 'contact').split('>')[0]
+
+    check(
+        "the server's 200 to the caller has the session identity Contact with the IP connectivity tags and isfocus "
+        '(6.3.7.1.23 steps 5 and 6)',
+        bool(accepted) and all(focus_contact(response) for _, response in accepted),
+    )
+    check(
+        "the server's INVITE to the called client has the session identity Contact with isfocus (20.4.1 step 7)",
+        bool(legs)
+        and all(focus_contact(message) for message in legs)
+        and {identity(response) for _, response in accepted} <= {identity(message) for message in legs},
+    )
     alias_offers = [message for message in offers if message['info'].get('call-to-functional-alias-ind') == 'true']
     redirects = [response for message in alias_offers for response in answers(message) if response['status'] == 300]
     check(
-        'a request to a functional alias is answered 300 naming the selected user (20.4.2 step 5a1)',
-        bool(redirects) and all(response['info'].get('mcdata-request-uri') for response in redirects),
+        'a request to a functional alias is answered 300 naming the selected user, with a session identity Contact '
+        '(20.4.2 step 5a1)',
+        bool(redirects)
+        and all(
+            response['info'].get('mcdata-request-uri')
+            and re.match(r'<sips?:[^@>]+@[^:;>]+;[^>]*>', header(response, 'contact'))
+            for response in redirects
+        ),
     )
     check(
         'the caller then invites that user with <called-functional-alias-URI> (20.2.1)',

@@ -131,6 +131,12 @@ void add_header(pjsip_tx_data *data, const SipHeader &header);
 void add_headers(pjsip_tx_data *data, const std::vector<SipHeader> &headers);
 
 //------------------------------------------------------------------------------
+// RFC 3261 sections 7.3.1 and 20.37: adds a server's own header fields to its answer to an initial INVITE: option
+// tags of a Supported header field join the answer's Supported header field; any other header field is added unless
+// the answer already has one of that name.
+void add_answer_headers(pjsip_tx_data *data, const std::vector<SipHeader> &headers);
+
+//------------------------------------------------------------------------------
 // RFC 4566: parses SDP text into a pjmedia session allocated in the pool.
 [[nodiscard]] pjmedia_sdp_session *parse_sdp_text(pj_pool_t *pool, const std::string &text);
 

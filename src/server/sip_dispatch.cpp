@@ -152,7 +152,7 @@ bool McServer::peer_presence_publish(const SipMessage &message, const std::strin
   auto &user = authenticated(message);
   for (const auto &part : message.parts)
     if (part.content_type == "application/pidf+xml") {
-      response = functional_alias_publish(message, user, message_info(message, svc_), part.body);
+      response = functional_alias_publish(message, user, message_info(message, svc_), part.body, true);
       return true;
     }
   return false;
@@ -537,7 +537,13 @@ bool McServer::alias_status_subscribe(const SipMessage &message, const User &use
   } catch (const std::exception &) {
     // No (or no valid) info body: the affiliation status subscription, decided below by its event package.
   }
-  const auto req_type = info.service.contains("req-type") ? info.service.at("req-type") : std::string{};
+  auto req_type = info.service.contains("req-type") ? info.service.at("req-type") : std::string{};
+  // TS 24.379 clauses 9A.2.1.3 step 2 and 9A.2.2.2.4: MCPTT carries "functional-alias-status-determination" in
+  // <request-type> (annex F.1.3); MCVideo in <req-type> (TS 24.281 clause 20.2.1.3 step 2).
+  if (svc_.service == Service::mcptt && req_type == "functional-alias-status-determination") req_type.clear();
+  if (svc_.service == Service::mcptt && info.service.contains("request-type") &&
+      info.service.at("request-type") == "functional-alias-status-determination")
+    req_type = info.service.at("request-type");
   if (alias_subscriptions_.contains(message.dialog_id) || req_type == "functional-alias-status-determination" ||
       req_type == "fa-user-status-determination") {
     response = alias_subscribe(message, user, info, req_type);
@@ -591,7 +597,7 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
         response = relay_publish(message, user, owner);
         return;
       }
-      response = functional_alias_publish(message, user, info, part.body);
+      response = functional_alias_publish(message, user, info, part.body, false);
       return;
     }
   if (info.client_id != user.client || info.request_uri != user.id) {
@@ -1246,9 +1252,10 @@ std::shared_ptr<McServer::Leg> McServer::group_call_leg(const SipMessage &messag
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 10.1.1.4.2 (and clause 10.1.2.4.1 steps 11 and 16 for a chat call): answer the caller (180 for a
-// new prearranged call, which fans out; 200 otherwise), apply the requested priority, publish the session and its
-// leg.
+// TS 24.379 clause 10.1.1.4.2 (and clause 10.1.2.4.1 steps 11 and 16 for a chat call): answer the caller (for a
+// new prearranged call, which fans out, 100 (Trying) until the 200 (OK) that the invited members' answers bring: the
+// controlling function sends no other provisional response; 200 otherwise), apply the requested priority, publish
+// the session and its leg.
 void McServer::answer_group_invite(const SipMessage &message, const User &user, McpttInfo &info,
                                    const std::shared_ptr<Session> &session, const Json &profile,
                                    const std::shared_ptr<Leg> &leg, bool creating, bool session_addressed,
@@ -1278,8 +1285,8 @@ void McServer::answer_group_invite(const SipMessage &message, const User &user, 
   } else if (creating) {
     leg->answer = response;
     leg->awaiting_answer = true;
-    response.status_code = 180;
-    response.reason = "Ringing";
+    response.status_code = 100;
+    response.reason = "Trying";
   } else if (!session_addressed && !session->chat) {
     response.headers.push_back({"Warning", "399 mcx \"" + warn(Warning::session_exists) + "\""});
   }
