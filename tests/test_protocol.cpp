@@ -556,6 +556,12 @@ int main() {
   auto multi = multipart_body(parts, "fixture-boundary");
   auto decoded = parse_body_parts("multipart/mixed; boundary=\"fixture-boundary\"", multi);
   check(decoded.size() == 2 && decoded[1].body == sdp, "multipart body changed");
+  // RFC 3261 section 7.4: one part travels as it is, several as multipart/mixed.
+  const auto single = message_body({parts.front()}, "fixture-boundary");
+  const auto several = message_body(parts, "fixture-boundary");
+  check(single.first == parts.front().content_type && single.second == fixture &&
+            several.first == "multipart/mixed; boundary=fixture-boundary" && several.second == multi,
+        "message body of one or several parts");
   // RFC 2046 section 5.1.1 and RFC 2045 section 5.1: the boundary loses its quotes only when it has both (the IS
   // proxy rebuilds a body with it).
   check(multipart_boundary("multipart/mixed; boundary=\"fixture-boundary\"") == "fixture-boundary" &&
@@ -585,6 +591,30 @@ int main() {
             std::string::npos,
         "associated-group-id not encoded in schema order");
   check(parse_mcptt_info(associated_xml).associated_group == "sip:subordinate@mcx.test", "associated-group-id lost");
+  {
+    // TS 24.281 annex F.1: the MCVideo <associated-group-id> is an xs:string (plain text, not <mcvideoURI>); it is
+    // read plain or wrapped, in <mcvideo-Params> or in <anyExt> (TS 24.281 clause 9.2.1.2.1.1 step 14 d) i)).
+    McpttInfo video;
+    video.session_type = "prearranged";
+    video.request_uri = "sip:regroup@mcx.test";
+    video.associated_group = "sip:constituent@mcx.test";
+    const auto video_xml = service_info_xml(video, mcvideo_service);
+    check(video_xml.find("<associated-group-id>sip:constituent@mcx.test</associated-group-id>") != std::string::npos,
+          "MCVideo associated-group-id must be plain text");
+    check(parse_service_info(video_xml, mcvideo_service).associated_group == video.associated_group,
+          "MCVideo associated-group-id lost");
+    auto wrapped_xml = video_xml;
+    wrapped_xml.replace(wrapped_xml.find("sip:constituent@mcx.test"), 24,
+                        "<mcvideoURI>sip:constituent@mcx.test</mcvideoURI>");
+    check(parse_service_info(wrapped_xml, mcvideo_service).associated_group == video.associated_group,
+          "a wrapped MCVideo associated-group-id must be read");
+    auto in_ext = video_xml;
+    const auto element = std::string("<associated-group-id>sip:constituent@mcx.test</associated-group-id>");
+    in_ext.erase(in_ext.find(element), element.size());
+    in_ext.replace(in_ext.find("</mcvideo-Params>"), 17, "<anyExt>" + element + "</anyExt></mcvideo-Params>");
+    check(parse_service_info(in_ext, mcvideo_service).associated_group == video.associated_group,
+          "an MCVideo associated-group-id in <anyExt> must be read");
+  }
   broadcast_info.associated_group.clear();
   broadcast_info.broadcast.reset();
   check(!parse_mcptt_info(mcptt_info_xml(broadcast_info)).broadcast, "absent broadcast-ind must mean non-broadcast");

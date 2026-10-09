@@ -315,4 +315,11 @@ inline std::string warning_text(const ServiceProfile &service, Warning warning, 
     throw std::logic_error("warning 100, and only 100, takes a detailed reason");
   return std::to_string(entry.code) + " " + entry.text + std::string(detail);
 }
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 4.4.1 (TS 24.281 and TS 24.282 likewise) and RFC 3261 section 20.43: a Warning header field
+// value: code 399 (miscellaneous warning), the server's host name as warn-agent, and the quoted text.
+inline std::string warning_value(std::string_view host, std::string_view text) {
+  return "399 " + std::string(host) + " \"" + std::string(text) + "\"";
+}
 } // namespace mcx

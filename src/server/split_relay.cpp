@@ -39,7 +39,7 @@ void McServer::expire_no_answer(const std::shared_ptr<Session> &session) {
       leg->awaiting_answer = false;
       SipResponse failure;
       failure.status_code = 480;
-      failure.headers = {{"Warning", "399 mcx \"" + warn(Warning::call_forwarded) + "\""}};
+      failure.headers = {{"Warning", warning_value(warn(Warning::call_forwarded))}};
       sip_.answer(leg->dialog, failure);
     } else
       sip_.bye(leg->dialog);
@@ -145,7 +145,7 @@ SipResponse McServer::relay_incoming(const SipMessage &message, const std::strin
     }
     if (const auto decision = authorize_private_callee(policy, info.calling_user, svc_); !decision) {
       response.status_code = decision.status;
-      response.headers = {{"Warning", "399 mcx \"" + decision.warning + "\""}};
+      response.headers = {{"Warning", warning_value(decision.warning)}};
       return response;
     }
   }
@@ -492,8 +492,8 @@ void McServer::forward_conference(ConferenceRelay &relay, const std::string &sta
     }
   const auto boundary = "mcx-" + random_id();
   try {
-    sip_.notify(relay.client_dialog, "conference", state, "multipart/mixed; boundary=" + boundary,
-                multipart_body(parts, boundary));
+    const auto [type, body] = message_body(parts, boundary);
+    sip_.notify(relay.client_dialog, "conference", state, type, body);
   } catch (const std::exception &error) {
     event("conference_relay_failed", {{"reason", error.what()}});
   }

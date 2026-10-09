@@ -13,7 +13,7 @@ namespace mcx {
 SipResponse McServer::ambient_rejected(SipResponse &response, const User &user, int status,
                                        const std::string &warning) {
   response.status_code = status;
-  if (!warning.empty()) response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
+  if (!warning.empty()) response.headers = {{"Warning", warning_value(warning)}};
   event("ambient_call_rejected", {{"user_id", user.id}, {"status", status}, {"warning", warning}});
   return response;
 }

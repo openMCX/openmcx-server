@@ -37,7 +37,7 @@ sequenceDiagram
     A->>S: INVITE, mcptt-info and resource-lists encrypted under alice's CSK
     Note over S: decrypts by the XPK-ID before handling
     S->>B: INVITE, the same content encrypted under bob's CSK
-    B-->>S: 200 OK, encrypted under bob's CSK
+    B-->>S: 200 OK, SDP only: no MCPTT XML to protect
     S-->>A: 200 OK, encrypted under alice's CSK
     Note over A,B: with integrity on, each message also carries an mcptt-signed+xml body signing its XML bodies under the same XPK
     Note over S: with separate participating and controlling servers, the hop between them uses their SPK

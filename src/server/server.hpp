@@ -12,9 +12,9 @@
 // TS 24.484 V19.6.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), TS 24.545, TS 29.283, RFC 3891, RFC 5359, RFC 5874.
 #pragma once
 
-#include "mcx/af.hpp"
 #include "mcx/adhoc_call.hpp"
 #include "mcx/admission.hpp"
+#include "mcx/af.hpp"
 #include "mcx/diameter.hpp"
 #include "mcx/floor.hpp"
 #include "mcx/http.hpp"
@@ -23,9 +23,9 @@
 #include "mcx/location.hpp"
 #include "mcx/media.hpp"
 #include "mcx/private_call.hpp"
-#include "mcx/rx.hpp"
 #include "mcx/protected_call.hpp"
 #include "mcx/runtime.hpp"
+#include "mcx/rx.hpp"
 #include "mcx/seal_location.hpp"
 #include "mcx/video.hpp"
 #include "mcx/warning.hpp"
@@ -275,6 +275,12 @@ protected:
 
   [[nodiscard]] std::string warn(Warning warning, std::string_view detail = {}) const;
 
+  // TS 24.379 clause 4.4.1 (TS 24.281 clause 4.4.1): a Warning header field value from this server, with its host
+  // name (the SIP advertised host) as warn-agent.
+  [[nodiscard]] std::string warning_value(std::string_view text) const {
+    return mcx::warning_value(cfg_.at("sip").at("advertise").get<std::string>(), text);
+  }
+
   [[nodiscard]] Affiliation service_affiliation(const std::string &user, const std::string &client) const {
     return mcx::service_affiliation(svc_, user, client, random_id());
   }
@@ -488,6 +494,13 @@ protected:
     CapacityReached() : std::runtime_error("call capacity reached") {}
   };
 
+  // No binding of the requesting public user identity to an MC service ID, or an expired one: answered with 404 and
+  // Warning 141 (TS 24.379 clause 10.1.1.3.1.1 step 2a and the other originating procedures, TS 24.281
+  // clause 10.1.1.3.1.1), not with the 403 of a refused request.
+  struct UnknownUser : std::runtime_error {
+    UnknownUser() : std::runtime_error("service authorization required") {}
+  };
+
   // The Retry-After of that answer, in seconds: media.capacity_retry_after_s, default 5.
   unsigned capacity_retry_after() const;
 
@@ -613,6 +626,7 @@ protected:
   Json service_config_ = Json::object();
   std::uint64_t service_config_at_ = 0;
   void refresh_service_config(std::uint64_t now);
+
   Json service_resource_priority() const { return service_config_.value("resource_priority", Json::object()); }
 
   void schedule(std::function<void()> task) { pending_.push_back(std::move(task)); }
@@ -770,6 +784,14 @@ protected:
   // non-controlling function for it and marks its own group regrouped; for a
   // user regroup (clause 16.3) the participating function of each member notifies it
   // and considers it affiliated. Every function involved keeps the same record.
+  // TS 24.379 clauses 16.2.2.4 step 3 b) and d), 16.2.3.1 step 4 c) and e) and 16.2.4.1 step 7 b) and d) (TS 24.281
+  // clause 21 likewise): what a regroup request carries on, function to function and on to each member: its MC
+  // service information body and all its Accept-Contact and Reject-Contact header fields.
+  struct RegroupCarry {
+    std::string info;               // the application/vnd.3gpp.mcptt-info+xml (or MCVideo) body, if any
+    std::vector<SipHeader> contact; // the Accept-Contact and Reject-Contact header fields, in order
+  };
+
   struct RegroupState {
     std::string preconfigured;       // the group whose configuration the regroup takes
     std::string creator;             // the MCPTT ID that asked for it
@@ -786,6 +808,7 @@ protected:
     // reaches them after their affiliation to it has gone (the call on a removed
     // temporary group can release them before this function sees the removal).
     std::set<std::string> told;
+    RegroupCarry carry; // of the request that created the regroup
   };
 
   std::map<std::string, RegroupState> regroups_; // by temporary group identity
@@ -816,6 +839,7 @@ protected:
   struct PendingRegroup {
     std::string transaction, creator, warning;
     Regroup regroup;
+    RegroupCarry carry;
     std::size_t outstanding = 0;
     bool failed = false;
     std::vector<std::string> accepted; // the non-controlling functions that said yes
@@ -825,7 +849,12 @@ protected:
                         const std::string &warning);
 
   RegroupState &regroup_store(const Regroup &regroup, const std::string &creator, bool controlling,
-                              const std::string &controller = {});
+                              const std::string &controller = {}, const RegroupCarry &carry = {});
+
+  RegroupCarry regroup_carry(const SipMessage &message) const;
+
+  void send_regroup(const std::string &uri, const Regroup &regroup, const RegroupCarry &carry,
+                    std::vector<SipHeader> headers, bool to_user, SipResponseHandler handler = {});
 
   //------------------------------------------------------------------------------
   // TS 24.379 clause 16.3.3.1: the controlling function of the preconfigured group offers a user
@@ -834,6 +863,7 @@ protected:
   struct PendingUserRegroup {
     std::string transaction, creator;
     Regroup regroup;
+    RegroupCarry carry;
     std::size_t outstanding = 0;
     std::vector<std::string> local; // members served by this server's own participating function
     std::set<std::string> accepted; // members whose participating function accepted
@@ -846,15 +876,16 @@ protected:
 
   SipResponse regroup_user_finish(const PendingUserRegroup &pending);
 
-  SipResponse regroup_from_function(const std::string &peer, const std::string &body);
+  SipResponse regroup_from_function(const std::string &peer, const std::string &body, const RegroupCarry &carry);
 
   void regroup_relayed(const std::string &peer, const std::string &body);
 
   void regroup_discard(const std::string &id, const RegroupState state);
 
-  SipResponse regroup_remove(const User &user, const Regroup &regroup);
+  SipResponse regroup_remove(const User &user, const Regroup &regroup, const RegroupCarry &carry);
 
-  void regroup_teardown(const std::string &id, const RegroupState state, const std::string &by);
+  void regroup_teardown(const std::string &id, const RegroupState state, const std::string &by,
+                        const RegroupCarry &carry = {});
 
   bool regroup_decide_remove(const std::string &id);
 
@@ -862,9 +893,11 @@ protected:
 
   void end_group_calls(const std::string &group);
 
-  void regroup_notify(const Regroup &regroup, bool created, const std::set<std::string> &was_told = {});
+  void regroup_notify(const Regroup &regroup, bool created, const std::set<std::string> &was_told = {},
+                      const RegroupCarry &carry = {});
 
-  void regroup_user_notify(Regroup notice, const std::vector<std::string> &ids, bool created);
+  void regroup_user_notify(Regroup notice, const std::vector<std::string> &ids, bool created,
+                           const RegroupCarry &carry = {});
 
   // ---- Private calls (private_call.cpp): TS 24.379 clause 11.1 ----
   Json user_profile(const std::string &id);
@@ -952,6 +985,9 @@ protected:
   void send_adhoc_alert(const AdhocAlert &alert, const std::string &group, const std::string &target, bool active);
 
   void update_adhoc_alert(const std::string &group);
+
+  void send_adhoc_alert_receipt(const std::string &group, const std::string &id, const std::string &client, bool active,
+                                const std::string &criteria);
 
   SipResponse adhoc_alert_message(const SipMessage &message, const User &user, const McpttInfo &info);
 
@@ -1124,6 +1160,11 @@ protected:
     void schedule(std::function<void()> task) override;
     // LocationHost (location.cpp).
     [[nodiscard]] Json location_settings() const override;
+
+    [[nodiscard]] std::string location_warning(std::string_view text) const override {
+      return server_.warning_value(text);
+    }
+
     Json location_profile(const std::string &id) override;
     std::optional<LocationUser> location_user_by_id(const std::string &id) override;
     std::optional<LocationUser> location_user_by_sip(const std::string &sip) override;
@@ -1177,6 +1218,8 @@ protected:
   void notices(const Session &session, const std::vector<FloorNotice> &floor_notices);
 
   static bool reachable_via_hierarchy(const Session &session, const User &user);
+
+  bool regroup_affiliated(const User &user, const std::string &group) const;
 
   bool eligible(const Leg &leg);
 

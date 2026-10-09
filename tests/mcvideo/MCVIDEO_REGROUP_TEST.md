@@ -11,13 +11,16 @@ Back to the [MCVideo test index](../MCVIDEO_TEST.md). Architecture: MCVideo desi
   - An authorised client (`<allow-regroup>`, stored as `regroup` in its MCVideo profile) sends a MESSAGE to the MCVideo PSI. It carries its mcvideo-info and a regroup body: the temporary group identity, the preconfigured group, and the constituent groups or users.
   - `mcvideo-server` answers 200.
   - For a group regroup, every affiliated member of the constituent groups is told (§21.2.2.4); for a user regroup, only the users named (§21.3.2.4).
+  - Each notice carries a copy of the request's mcvideo-info body and all its Accept-Contact and Reject-Contact header fields (§21.2.2.4 and §21.3.2.4 step 3 b) and d), §21.2.2.5 step 3 b) and d)): a multipart body with the mcvideo-info part first. A removal the server decides itself (§21.2.3.3) has no request to copy; its notices carry the regroup body and the `+g.3gpp.mcvideo` Accept-Contact.
 - **Configuration.** The regroup takes its whole configuration from the preconfigured group, priority policy included (§21.1). The lab's preconfigured group `video-regroup` is marked preconfigured-use-only and carries the MCVideo group's settings.
 - **Calls.**
-  - A call on a group regroup names, in `<mcvideo-calling-group-id>`, the constituent group it is placed from. The client uses its own group if it is one of them (as TS 24.379 §10.1.2.4.1 step 5a).
+  - A call on a group regroup names, in `<associated-group-id>`, the constituent group it is placed from (§9.2.1.2.1.1 step 14 d) i)). The client uses its own group if it is one of them. The function of that group passes it on in `<mcvideo-calling-group-id>` (§6.3.4.1.4 step 4 c)); `mcvideo-server` is both functions for its own users, so it reads `<associated-group-id>` from a client and `<mcvideo-calling-group-id>` from another function.
+  - The invitation to each member names the regroup in `<mcvideo-calling-group-id>` and the member's constituent group in `<associated-group-id>` (§6.3.4.1.2 steps 6a and 6b).
+  - TS 24.281 annex F.1 types `<associated-group-id>` as `xs:string`, so it is written as plain text, not in `<mcvideoURI>`; both forms are read, in `<mcvideo-Params>` or in `<anyExt>` (where §9.2.1.2.1.1 step 14 d) i) puts it).
   - A call on a constituent group while it is regrouped is refused with 403 and warning `148`.
 - **Affiliation to the regroup.**
   - A client counts itself affiliated with a regroup it is told of (§21.2.1.3 step 4), and de-affiliated when it is removed (§21.2.1.4 step 3).
-  - The shared core counts a member as affiliated when its client affiliates to the regroup's identity. So, as in the MCPTT regroup scenario (`group <tgi>`), the MCVideo members affiliate to the regroup (`mcvideo-affiliate <tgi>`) before its calls.
+  - The server counts each member it tells of a group regroup as affiliated with it (§21.2.2.4 step 3 h)), so a call on the regroup invites them without an affiliation request of their own.
   - On removal the client drops that affiliation, so its later affiliation requests no longer name the regroup.
 - **Removal** by an authorised client tells every member. An unauthorised creation is refused with 403 `160`, an unauthorised removal with 403 `161`.
 
@@ -67,6 +70,5 @@ Defects found by the runs and fixed:
 
 | Area | Gap |
 |---|---|
-| Implicit affiliation | The core counts a regroup member once its client affiliates to the regroup; §21.2.1.3 step 4 has the client consider itself affiliated without signalling. The MCPTT regroup scenario uses the same explicit step |
 | Chat regroups | A regroup of chat groups (§21.2.1.3 step 6) is not exercised for MCVideo |
 | Decision to remove | Removal decided by the controlling function (§21.2.3.3) is not exercised for MCVideo |

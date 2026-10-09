@@ -92,8 +92,8 @@ SipResponse DataServer::media_storage_discovery(const User &user, const mcdata::
   const std::vector<BodyPart> parts{{mcdata::info_mime, mcdata::info_xml(answer)}};
   pending_.push_back([this, id = user.id, parts] {
     if (const auto *target = by_id(id)) {
-      const auto boundary = "mcdata-" + random_id();
-      sip_.request("MESSAGE", target->sip, "multipart/mixed; boundary=" + boundary, multipart_body(parts, boundary),
+      const auto [type, body] = message_body(parts, "mcdata-" + random_id());
+      sip_.request("MESSAGE", target->sip, type, body,
                    {{"Accept-Contact", "*;+g.3gpp.icsi-ref=\"" + url_encode(mcdata::fd_icsi) + "\";require;explicit"},
                     {"P-Asserted-Service", mcdata::fd_icsi}});
     }

@@ -27,7 +27,7 @@ void McServer::relay_service_message(const User &target, McpttInfo info, bool ke
 SipResponse McServer::private_service_rejected(SipResponse &response, const User &user, int status,
                                                const std::string &warning) {
   response.status_code = status;
-  if (!warning.empty()) response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
+  if (!warning.empty()) response.headers = {{"Warning", warning_value(warning)}};
   event("private_service_rejected", {{"user_id", user.id}, {"status", status}, {"warning", warning}});
   return response;
 }

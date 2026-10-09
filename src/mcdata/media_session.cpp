@@ -31,8 +31,7 @@ msrp::Endpoint::Callbacks DataServer::media_callbacks(const std::shared_ptr<Medi
             // A standalone delivery is complete: release the leg rather than
             // hold it, so the recipient is free for the next transfer. A
             // session leg stays open until the session ends (TS 24.282 clause 9.2.4).
-            if (const auto held = weak.lock(); held && !held->session)
-              held->deadline = monotonic_ms();
+            if (const auto held = weak.lock(); held && !held->session) held->deadline = monotonic_ms();
           }};
 }
 
@@ -164,7 +163,7 @@ SipResponse DataServer::media_group_reinvite(const std::shared_ptr<MediaSession>
   response.headers = {{"P-Asserted-Service", leg->file ? mcdata::fd_icsi : mcdata::sds_icsi}};
   for (const auto &header : media_priority_headers(group_level(leg->group))) response.headers.push_back(header);
   if (corrected) {
-    response.headers.push_back({"Warning", "399 mcdata \"149 SIP INFO request pending\""});
+    response.headers.push_back({"Warning", warning_value("149 SIP INFO request pending")});
     send_priority_info(leg->dialog, leg->owner, leg->group);
   } else {
     media_group_notify(leg, in_emergency, in_imminent);
@@ -670,7 +669,7 @@ void DataServer::media_invite_answer(const SipMessage &request, const User &user
     for (const auto &header : media_priority_headers(level.c_str())) response.headers.push_back(header);
   if (corrected || alert_refused) {
     // TS 24.282 clause 9.2.4.4.4 step 3 and clause 10.2.5.4.3: the correction follows in a SIP INFO request.
-    response.headers.push_back({"Warning", "399 mcdata \"149 SIP INFO request pending\""});
+    response.headers.push_back({"Warning", warning_value("149 SIP INFO request pending")});
     send_priority_info(request.dialog_id, user.id, group, corrected ? std::optional<bool>(false) : std::nullopt, true,
                        alert_refused ? std::optional<bool>(false) : std::nullopt);
   }

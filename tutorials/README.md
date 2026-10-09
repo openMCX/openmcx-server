@@ -43,10 +43,9 @@ capture of every SIP, speech and floor control packet to follow in Wireshark, an
 | 16 | [MCPTT&nbsp;and&nbsp;MCData&nbsp;location:&nbsp;reports,&nbsp;triggers,&nbsp;requests&nbsp;and&nbsp;areas](unit-tests/16-location/README.md) | Four headless clients: configuration, trigger reports, requests with filters and refusals, group and alert areas. |
 | 17 | [MCVideo&nbsp;group&nbsp;and&nbsp;private&nbsp;calls&nbsp;with&nbsp;transmission&nbsp;control](unit-tests/17-mcvideo-calls/README.md) | Four headless clients: a group call with grant, reception, queue, reject and revoke; private calls with and without transmission control. |
 | 18 | [MCVideo&nbsp;pull&nbsp;and&nbsp;push&nbsp;of&nbsp;video,&nbsp;and&nbsp;ambient&nbsp;viewing&nbsp;calls](unit-tests/18-mcvideo-pull-push-ambient/README.md) | Four headless clients: push and pull to and from a user and the server's recording, remote transmission, ambient viewing, refusals. |
-| 19 | MCVideo&nbsp;emergency,&nbsp;ad&nbsp;hoc&nbsp;and&nbsp;regrouped&nbsp;video&nbsp;calls | Planned. |
-| 20 | Identity&nbsp;and&nbsp;tokens:&nbsp;MCX&nbsp;Admin&nbsp;activation&nbsp;and&nbsp;token&nbsp;refresh | Planned. |
-| 21 | MCPTT&nbsp;QoS&nbsp;over&nbsp;N5&nbsp;towards&nbsp;a&nbsp;policy&nbsp;function&nbsp;(mock&nbsp;PCF) | Planned. |
-| 22 | Resilience:&nbsp;server&nbsp;restart&nbsp;and&nbsp;SIP&nbsp;outbound&nbsp;flows | Planned. |
+| 19 | [MCVideo&nbsp;emergency,&nbsp;ad&nbsp;hoc&nbsp;and&nbsp;regrouped&nbsp;video&nbsp;calls](unit-tests/19-mcvideo-emergency-adhoc-regroup/README.md) | Four headless clients: emergency and imminent peril calls, pre-emption, alerts, ad hoc group calls, group and user regroups. |
+| 20 | [Identity&nbsp;and&nbsp;tokens:&nbsp;MCX&nbsp;Admin&nbsp;activation&nbsp;and&nbsp;token&nbsp;refresh](unit-tests/20-admin-activation-token-refresh/README.md) | Five headless clients: a device activated from MCX Admin, access tokens renewed by refresh token, a call past expiry. |
+| 21 | [Resilience:&nbsp;server&nbsp;restart&nbsp;and&nbsp;SIP&nbsp;outbound&nbsp;flows](unit-tests/21-resilience-restart-outbound/README.md) | Four headless clients: a client and the MCPTT server restart, sign-in again after a 412, a client reached over its flow. |
 
 Each has its own folder in `unit-tests/` with its Docker Compose file, `run.sh` and a reference capture. A title without a
 link is planned; it gets its link when the tutorial is published.

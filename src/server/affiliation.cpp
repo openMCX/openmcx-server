@@ -31,7 +31,7 @@ bool McServer::affiliation_limit_reached(const User &user, const McpttInfo &info
 // so the request is refused with SIP 486 (Busy Here) and warning 102 (table 4.4.2-2).
 SipResponse &McServer::too_many_affiliations(SipResponse &response, const User &user) {
   response.status_code = 486;
-  response.headers = {{"Warning", "399 mcx \"" + warn(Warning::too_many_affiliations) + "\""}};
+  response.headers = {{"Warning", warning_value(warn(Warning::too_many_affiliations))}};
   event("implicit_affiliation_refused", {{"user_id", user.id}, {"reason", "N2"}});
   return response;
 }
@@ -169,10 +169,10 @@ void McServer::apply_affiliation(User &user, std::set<std::string> groups) {
           priority_message(*target, alert);
         }
       }
-      // Private calls do not depend on group affiliation.
+      // Private calls do not depend on group affiliation; a regroup's on the regroup affiliation.
       for (const auto &[group, session] : sessions_)
         if (!session->private_call && !session->adhoc && !target->groups.contains(group) &&
-            !reachable_via_hierarchy(*session, *target))
+            !regroup_affiliated(*target, group) && !reachable_via_hierarchy(*session, *target))
           disconnect_user(id, session);
     }
   });

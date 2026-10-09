@@ -53,7 +53,6 @@ struct LocationInfo {
 //------------------------------------------------------------------------------
 // Where the MCPTT and MCVideo core and the MCData server differ, kept as each has always behaved.
 struct LocationTraits {
-  const char *warning_agent;        // the warn-agent of the 399 Warning header field: "mcx" or "mcdata"
   bool filtered_names_side;         // "in" (the filter's side of the area) in the location_filtered event
   bool failure_names_kind;          // "what" (request, configuration, report) in location_message_failed
   bool reports_through_client;      // reports go to a requesting user served here only, as any request to a client
@@ -61,9 +60,9 @@ struct LocationTraits {
 };
 
 // The MCPTT and MCVideo core (McServer).
-inline constexpr LocationTraits core_location_traits{"mcx", true, false, false, false};
+inline constexpr LocationTraits core_location_traits{true, false, false, false};
 // The MCData server (DataServer).
-inline constexpr LocationTraits mcdata_location_traits{"mcdata", false, true, true, true};
+inline constexpr LocationTraits mcdata_location_traits{false, true, true, true};
 
 //------------------------------------------------------------------------------
 // What the location procedures need from their server besides ServiceHost, called per request.
@@ -71,6 +70,8 @@ class LocationHost : public virtual ServiceHost {
 public:
   // The configuration's "<service>.location" section.
   [[nodiscard]] virtual Json location_settings() const = 0;
+  // A Warning header field value from this server (TS 24.379 clause 4.4.1): its host name as warn-agent.
+  [[nodiscard]] virtual std::string location_warning(std::string_view text) const = 0;
   // The user profile of a user (its "location" object holds the rights); throws when there is none.
   virtual Json location_profile(const std::string &id) = 0;
   // The served or known user with the MC service ID, or with the public user identity.

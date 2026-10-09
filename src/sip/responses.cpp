@@ -77,11 +77,8 @@ void SipEngine::Impl::answer_reinvite(pjsip_inv_session *invite, pjsip_rx_data *
                                            : make_invite_body(answer->pool, *response.local_media, response.parts);
   else if (!response.content_type.empty())
     answer->msg->body = make_text_body(answer->pool, response.content_type, response.body);
-  else if (!response.parts.empty()) {
-    const auto boundary = "mcx-reinvite-error";
-    answer->msg->body = make_text_body(answer->pool, "multipart/mixed; boundary=mcx-reinvite-error",
-                                       multipart_body(response.parts, boundary));
-  }
+  else if (!response.parts.empty())
+    answer->msg->body = make_parts_body(answer->pool, response.parts, "mcx-reinvite-error");
   add_headers(answer.get(), response.headers);
   if (response.status_code >= 200 && response.status_code < 300 && !config.reinvite_success_headers.empty()) {
     // pjsip adds the endpoint's Supported header field ("100rel, timer") to an answer that has none; the option tags
@@ -196,11 +193,8 @@ void SipEngine::Impl::respond_deferred(const std::string &id, const SipResponse 
     add_headers(data, response.headers);
     if (!response.content_type.empty())
       data->msg->body = make_text_body(data->pool, response.content_type, response.body);
-    else if (!response.parts.empty()) {
-      const auto boundary = "mcx-deferred";
-      data->msg->body = make_text_body(data->pool, "multipart/mixed; boundary=mcx-deferred",
-                                       multipart_body(response.parts, boundary));
-    }
+    else if (!response.parts.empty())
+      data->msg->body = make_parts_body(data->pool, response.parts, "mcx-deferred");
   } catch (...) {
     pjsip_tx_data_dec_ref(data);
     throw;

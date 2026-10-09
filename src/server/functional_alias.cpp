@@ -32,7 +32,7 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
   SipResponse response;
   const auto reject = [&](int status, const std::string &reason, const std::string &warning = {}) {
     response.status_code = status;
-    if (!warning.empty()) response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
+    if (!warning.empty()) response.headers = {{"Warning", warning_value(warning)}};
     event("functional_alias_rejected", {{"user_id", user.id}, {"status", status}, {"reason", reason}});
     return response;
   };
@@ -267,7 +267,7 @@ SipResponse McServer::alias_binding_message(const SipMessage &message, const Use
   SipResponse response;
   const auto refuse = [&](const std::string &warning) {
     response.status_code = 403;
-    response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
+    response.headers = {{"Warning", warning_value(warning)}};
     event("functional_alias_binding_rejected", {{"user_id", user.id}, {"warning", warning}});
     return response;
   };

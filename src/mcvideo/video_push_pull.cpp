@@ -13,7 +13,7 @@ namespace mcx {
 SipResponse McvideoServer::server_video_rejected(SipResponse &response, const User &user, const McpttInfo &info,
                                                  int status, const std::string &warning) {
   response.status_code = status;
-  if (!warning.empty()) response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
+  if (!warning.empty()) response.headers = {{"Warning", warning_value(warning)}};
   event("server_video_rejected",
         {{"user_id", user.id}, {"session_type", info.session_type}, {"status", status}, {"warning", warning}});
   return response;

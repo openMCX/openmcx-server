@@ -96,6 +96,8 @@ wait_for 'client-a, client-b and client-c in a normal call' \
 step '3. client-a raises the call to imminent peril'
 mcx client-a imminent on
 wait_for 'the call and every participant at imminent peril' "prio('imminent','client-a','client-b','client-c')"
+# The server repeats Floor Idle each time T7 (1 s) expires (TS 24.380 clause 6.3.4.3.4); wait for one at imminent peril.
+sleep 1.5
 
 step '4. client-a sends an emergency alert, with its location'
 mcx client-a alert on

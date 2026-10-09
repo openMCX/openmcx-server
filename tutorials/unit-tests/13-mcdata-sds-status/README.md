@@ -135,7 +135,7 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/13-mcdata-sds-status-run.pcap.gz`. The folder also holds a reference run,
-`captures/13-mcdata-sds-status-full.pcap.gz` (89 KB, 970 frames): the frame numbers below and in the call flow are
+`captures/13-mcdata-sds-status-full.pcap.gz` (86 KB, 959 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.13.1 and (tcp port 5060 or (udp and not port 53) or icmp)`: SIP on
@@ -152,7 +152,7 @@ Useful display filters:
 | `frame contains "one-to-one-sds"` | The one-to-one SDS and their replies. |
 | `frame contains "group-sds"` | The group SDS and the enhanced statuses (which are group SDS). |
 | `sip.Status-Code == 202` | The server accepting an SDS or a notification. |
-| `sip.Status-Code == 403` | The refusals, each with its `Warning: 399 mcx "<code> …"`. |
+| `sip.Status-Code == 403` | The refusals, each with its `Warning: 399 mcdata-server "<code> …"`. |
 
 Wireshark 4.2 shows the `mcdata-info` and `resource-lists` XML, but not the binary MCData parts: it lists
 `Media type: application/vnd.3gpp.mcdata-signalling (38 bytes)` and `…mcdata-payload (15 bytes)`. Their first octet
@@ -170,40 +170,40 @@ says what they are (TS 24.282 clause 15): `01` SDS SIGNALLING PAYLOAD, `05` SDS 
 
 What to look for, in the reference run:
 
-- **MCData sign-in** (frames 35 to 392): each client's PUBLISH `poc-settings` to `sip:mcdata@mcx.test` (client-c's
-  35, alice's 60, bob's 118, client-d's 192, each challenged by the SIP core with `407` first), then its affiliation,
-  a PUBLISH `presence` with an MCData PIDF (from 227).
-- **One-to-one SDS** (frames 426 to 459): alice's MESSAGE (430, after the `407` to 426) with
+- **MCData sign-in** (frames 21 to 363): each client's PUBLISH `poc-settings` to `sip:mcdata@mcx.test` (client-d's 21,
+  bob's 94, alice's 130, client-c's 187, each challenged by the SIP core with `407` first), then its affiliation,
+  a PUBLISH `presence` with an MCData PIDF (from 223).
+- **One-to-one SDS** (frames 416 to 449): alice's MESSAGE (420, after the `407` to 416) with
   `<request-type>one-to-one-sds</request-type>`, a `resource-lists` entry for bob and the two binary parts; the SIP
-  core passes it to the MCData server (432), which sends it to bob (434, to bob 439) with
-  `<mcdata-calling-user-id>sip:alice.mcdata@mcx.test</mcdata-calling-user-id>` and answers alice `202` (436, to alice
-  438). bob's reply (450, to alice 459) carries the InReplyTo field `21` with the first message's ID.
-- **Notifications** (frames 470 to 574): alice's SDS asking for delivery (470, the SDS SIGNALLING PAYLOAD ends with
-  `81`); bob's notification (483), a MESSAGE to the MCData service naming alice in `resource-lists`, with an SDS
-  NOTIFICATION of type `02`; the server passes it to alice (493). The read request (510, `82`) gets a type `03` only
-  after bob's display (bob's 526, to alice 534); the delivery-and-read request (550, `83`) gets one type `04` (574).
-- **Refusals** (frames 586 to 620): client-d's SDS (590) gets `403` with `Warning: 399 mcx "200 …"` (594, to client-d
-  596); alice's to client-d (602) gets `229` (606); client-c's to bob (614) gets `230` (618). None is sent on.
-- **Group SDS and one aggregated notification** (frames 622 to 685): alice's group SDS (626) with
-  `<request-type>group-sds</request-type>` and `81`; the server sends it to bob (630), client-c (632) and client-d
-  (639), with `<mcdata-calling-group-id>sip:operations@mcx.test</mcdata-calling-group-id>`, never to alice, and
-  answers `202` (634). The members' notifications (663, 667, 671) come back as one MESSAGE to alice (685) with three
+  core passes it to the MCData server (422), which sends it to bob (424, to bob 429) with
+  `<mcdata-calling-user-id>sip:alice.mcdata@mcx.test</mcdata-calling-user-id>` and answers alice `202` (426, to alice
+  428). bob's reply (440, to alice 449) carries the InReplyTo field `21` with the first message's ID.
+- **Notifications** (frames 460 to 564): alice's SDS asking for delivery (460, the SDS SIGNALLING PAYLOAD ends with
+  `81`); bob's notification (473), a MESSAGE to the MCData service naming alice in `resource-lists`, with an SDS
+  NOTIFICATION of type `02`; the server passes it to alice (483). The read request (500, `82`) gets a type `03` only
+  after bob's display (bob's 516, to alice 524); the delivery-and-read request (540, `83`) gets one type `04` (564).
+- **Refusals** (frames 576 to 610): client-d's SDS (580) gets `403` with `Warning: 399 mcdata-server "200 …"` (584, to
+  client-d 586); alice's to client-d (592) gets `229` (596); client-c's to bob (604) gets `230` (608). None is sent on.
+- **Group SDS and one aggregated notification** (frames 612 to 674): alice's group SDS (616) with
+  `<request-type>group-sds</request-type>` and `81`; the server sends it to bob (620), client-c (622) and client-d
+  (629), with `<mcdata-calling-group-id>sip:operations@mcx.test</mcdata-calling-group-id>`, never to alice, and
+  answers `202` (624). The members' notifications (651, 655, 663) come back as one MESSAGE to alice (674) with three
   SDS NOTIFICATION parts, each with its Sender, and the calling group but no calling user.
-- **Gathering for TDC1** (frames 700 to 777): after bob and client-d display the group SDS read request (704), the
-  first READ reaches the server at 736 and the two go to alice together at 760, 3.0 s later (TDC1). client-c's late
-  READ goes on its own (777), with client-c as calling user.
-- **Not affiliated** (frames 789 to 837): client-d's PUBLISH with `Expires: 0` (789, 792) ends its affiliation; the
-  group SDS (809) goes to bob (813) and client-c (815) only. client-d affiliates again (833, 837).
-- **Enhanced status** (frames 855 to 967): alice's status (855) is a group SDS whose DATA PAYLOAD holds content type
-  `06` and the text `1`; the server sends it to the three others (859, 861, 863), and each shows "On scene". bob's `2`
-  (891, sent on from 895). alice's unknown id `9`, sent with the test aid (927, sent on from 931), is discarded by each
-  member. client-c's status (963) gets `403` with warning `201` (967). The two the client refused itself (a group
+- **Gathering for TDC1** (frames 691 to 767): after bob and client-d display the group SDS read request (695), the
+  first READ reaches the server at 727 and the two go to alice together at 751, 3.0 s later (TDC1). client-c's late
+  READ goes on its own (767), with client-c as calling user.
+- **Not affiliated** (frames 779 to 826): client-d's PUBLISH with `Expires: 0` (779, 782) ends its affiliation; the
+  group SDS (798) goes to bob (802) and client-c (804) only. client-d affiliates again (822, 826).
+- **Enhanced status** (frames 844 to 956): alice's status (844) is a group SDS whose DATA PAYLOAD holds content type
+  `06` and the text `1`; the server sends it to the three others (848, 850, 852), and each shows "On scene". bob's `2`
+  (880, sent on from 884). alice's unknown id `9`, sent with the test aid (916, sent on from 920), is discarded by each
+  member. client-c's status (952) gets `403` with warning `201` (956). The two the client refused itself (a group
   without enhanced status, an unknown id) never reach the network.
 
 One detail about order: TS 24.282 clause 9.2.2.4.2 lists the server sending the SDS on (step 6) before answering `202`
 (steps 7 and 8). The server's answer and its messages to the members are separate SIP transactions, so on the wire the
-`202` can come before the last copy: for the group SDS above, `202` (634) goes between client-c's copy (632) and
-client-d's (639).
+`202` can come before the last copy, and in the reference run it does: for the group SDS above, `202` (624) comes
+after the copies to bob (620) and client-c (622) and before the one to client-d (629).
 
 ## 5. Stop or start over
 
@@ -296,8 +296,8 @@ sequenceDiagram
 
 | Message | Frames |
 |---|---|
-| A → S MESSAGE group SDS with DELIVERY (alice to the SIP core, the SIP core to the server) | 626, 628 |
-| S → B, C, D MESSAGE (server to the SIP core) | 630, 632, 639 |
-| S → A 202 Accepted (server to the SIP core) | 634 |
-| B, C, D → S MESSAGE SDS NOTIFICATION DELIVERED (after the SIP core's `407`) | 663, 667, 671 |
-| S → A MESSAGE with the three notifications (server to the SIP core) | 685 |
+| A → S MESSAGE group SDS with DELIVERY (alice to the SIP core, the SIP core to the server) | 616, 618 |
+| S → B, C, D MESSAGE (server to the SIP core) | 620, 622, 629 |
+| S → A 202 Accepted (server to the SIP core) | 624 |
+| B, C, D → S MESSAGE SDS NOTIFICATION DELIVERED (after the SIP core's `407`) | 651, 655, 663 |
+| S → A MESSAGE with the three notifications (server to the SIP core) | 674 |

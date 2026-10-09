@@ -1,7 +1,9 @@
-# Kamailio versus OpenSIPS for openMCX
+# Choosing the SIP core for openMCX: Kamailio, OpenSIPS, Asterisk and FreeSWITCH
 
-Research date: 2026-09-20. Status: source-based architecture recommendation;
-neither candidate has been built or benchmarked in this repository.
+Research date: 2026-09-20 (Kamailio and OpenSIPS); comparison with Asterisk and
+FreeSWITCH added 2026-10-09. Status: source-based architecture recommendation;
+none of the candidates has been benchmarked in this repository. Kamailio 6.1.4 has
+since been built and is the SIP core of every openMCX lab and tutorial.
 
 ## Recommendation
 
@@ -60,6 +62,64 @@ OpenSIPS is preferable if the team already has a qualified OpenSIPS service-AS
 integration or the planned B2BUA framework substantially reduces verified MCPTT
 application work. No such existing integration is present in this repository.
 Re-evaluate the choice if the same protocol suite demonstrates that advantage.
+
+## PBX and media servers: Asterisk and FreeSWITCH
+
+Asterisk and FreeSWITCH are often named as open-source SIP servers. They were not
+candidates in the comparison above because they fill a different role: both are
+back-to-back user agents (B2BUA) that end each call on one side and start a new
+one on the other, and both handle the media (mixing, transcoding, recording). The
+SIP core in front of the MC servers is a proxy role: it routes and forwards
+requests and leaves the dialog and the media between the MC client and the MC
+server.
+
+| What openMCX needs from the SIP core | Kamailio | OpenSIPS | Asterisk | FreeSWITCH |
+|---|---|---|---|---|
+| Licence | GPL-2.0 (some modules BSD) | GPL-2.0 | GPL-2.0; commercial licences from Sangoma | MPL 1.1 |
+| Kind of server | SIP proxy and registrar | SIP proxy and registrar (B2BUA module optional) | PBX, B2BUA | Softswitch, B2BUA, media server |
+| One end-to-end dialog from MC client to MC server | Fits (proxy) | Fits (proxy) | Does not fit: two dialogs per call | Does not fit: two dialogs per call |
+| MCPTT signalling passed on unchanged (`application/vnd.3gpp.mcptt-info+xml`, Accept-Contact feature tags, P-Asserted-Identity, Resource-Priority) | Fits: a proxy forwards the request | Fits: a proxy forwards the request | Possible with work: each header and body copied between the two dialogs | Possible with work: as Asterisk |
+| IMS CSCF behaviour (TS 24.229) | Fits: P-, I- and S-CSCF modules, Diameter (`cdp`) | Fits: IMS Community Edition | Does not fit: not a CSCF | Does not fit: not a CSCF |
+| Hand requests to the MC server as application server | Fits: `ims_isc` (iFC), or script routing as used today | Possible with work: CE service/application routing documented as not handled | Does not fit: it is itself the endpoint | Does not fit: it is itself the endpoint |
+| Media | Fits: not touched; the MCPTT server relays media under floor control (TS 24.380) | Fits: not touched | Does not fit: a second media layer beside the MC servers | Does not fit: as Asterisk |
+| Mutual TLS with verified peer certificates | Fits (`tls`) | Fits | Fits | Fits |
+| RFC 5626 outbound flows | Fits (registrar, `nathelper`) | Fits | Possible with work | Possible with work |
+| Footprint of a distributable image | Fits: only the modules needed are built | Fits | Large: PBX applications and codecs | Large: media modules |
+| Remote control (MCX Admin, dashboard) | Fits (`xhttp`, `jsonrpcs`) | Fits (MI) | Fits (AMI, ARI) | Fits (Event Socket) |
+
+"Possible with work" means the feature exists or can be added but needs project
+work or qualification for this role; no capacity or performance comparison is
+asserted.
+
+Using Asterisk or FreeSWITCH as the MC server itself was not chosen either. They
+supply SIP call legs, conferencing and media, but none of the MC service: floor
+control (TS 24.380), affiliation, group and private call procedures, priority and
+emergency handling, MCX service authorisation, MIKEY-SAKKE key distribution and
+XML protection would all remain to be written on top of a PBX call model. openMCX
+implements these in its own MCPTT, MCVideo and MCData servers.
+
+## How Kamailio fits openMCX as built
+
+- **Proxy role.** The client's request reaches the participating function as the
+  client sent it, so the MC server, not the SIP core, applies TS 24.379 / 24.281 /
+  24.282.
+- **Media stays in the MC servers.** MCPTT media is not mixed: one talker at a time
+  is relayed under floor control. A proxy that never touches RTP leaves that to the
+  MCPTT server.
+- **MCX rules are configuration.** `docker/kamailio.cfg` enforces mutual TLS with a
+  verified peer certificate, the From identity of the authenticated user, routing
+  of client requests only to the MC servers ("Route forbidden" otherwise), the
+  sender's own address in a client's SDP, and RFC 5626 flows. The same image with
+  another configuration is a plain registrar and proxy.
+- **Small, reproducible image.** `docker/Dockerfile.kamailio` builds the pinned
+  6.1.4 source (SHA-256 checked) with only `tls auth_db db_mysql http_client`
+  added to the default module set, and ships its source and notices.
+- **Clean licence boundary.** GPL-2.0 Kamailio runs as its own program in its own
+  container and talks to the AGPL openMCX servers only over SIP and its RPC.
+- **Growth path to IMS.** The IMS modules (CSCFs, ISC/iFC, Diameter Cx/Rx) remain
+  available for a full IMS core. They are not loaded today: the current
+  configuration routes to the MC servers with project script routes generated per
+  lab.
 
 ## Packaging and interface decisions
 

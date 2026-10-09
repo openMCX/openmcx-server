@@ -57,7 +57,8 @@ inline PrivateCallDecision authorize_private_call(const nlohmann::json &policy, 
     return deny(403, warning_text(service, Warning::called_party_unknown));
   if (!flag("allow")) return deny(403, warning_text(service, Warning::private_call_not_authorised));
   if (!request.priv_answer_mode.empty()) {
-    if (request.priv_answer_mode != "Auto") return deny(400, "invalid Priv-Answer-Mode");
+    if (request.priv_answer_mode != "Auto")
+      return deny(400, warning_text(service, Warning::function_not_allowed, "invalid Priv-Answer-Mode"));
     if (!flag("force_auto_answer")) return deny(403, warning_text(service, Warning::force_auto_answer_not_authorised));
   } else if (request.answer_mode == "Auto") {
     if (!flag("automatic_commencement"))
@@ -66,7 +67,7 @@ inline PrivateCallDecision authorize_private_call(const nlohmann::json &policy, 
     if (!flag("manual_commencement"))
       return deny(403, warning_text(service, Warning::manual_commencement_not_authorised));
   } else if (!request.answer_mode.empty()) {
-    return deny(400, "invalid Answer-Mode");
+    return deny(400, warning_text(service, Warning::function_not_allowed, "invalid Answer-Mode"));
   }
   std::vector<std::string> targets;
   if (policy.is_object() && policy.contains("targets")) targets = policy.at("targets").get<std::vector<std::string>>();

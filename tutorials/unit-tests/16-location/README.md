@@ -120,18 +120,18 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 
 | Step | Commands | What happens (TS 24.379 unless noted) |
 |---|---|---|
-| 1 | none | Each client gets its configuration after its service authorisation (clause 13.2.2) and reports its log-on position (t1). client-d may not report: 403 with "location reporting not authorised", nothing stored (clause 13.2.4.1). |
+| 1 | none | Each client gets its configuration after its service authorisation (clause 13.2.2) and reports its log-on position (t1). client-d may not report: the MCPTT server answers 403 with warning 100 "function not allowed due to user authorisation: location reporting not authorised", the MCData server 403 without a warning (TS 24.282 table 4.9.2-2 has no code for it); nothing stored (clause 13.2.4.1). |
 | 2 | `location position …`, `location radio cell …`, `call`, `hangup` | client-a moves 287 m (t3), enters and leaves the zone (t4, t5), changes cell (t6, the report carries the new cell) and starts a group call (t2) (clause 13.3.4.1, annex F.3). |
 | 3 | `location request <bob>`, `location request refresh <bob>` | alice asks where bob is. The server answers alice 200, then asks bob for a fresh report (its stored one is older than 4 s, or refresh is set) and passes it on to alice with her RequestId as ReportID (clauses 13.2.3.1, 13.2.3.2). |
 | 4 | `location request filter t4 in …`, `… out …`, `location request <client-c>` | A filter keeps only users inside (or outside) the zone t4: bob is outside, so "in" gives nothing and "out" gives his report. client-c does not share with alice: accepted, nothing reported. |
-| 5 | `location request` by bob, a request naming nobody, `location configure` by client-c | 403 with warnings 193 (not allowed to request), 192 (no target) and 215 (not allowed to configure) (table 4.4.2-2). Nothing is passed on. |
+| 5 | `location request` by bob, a request naming nobody, `location configure` by client-c | 403 with warnings 193 (not allowed to request), 192 (no target) and 194 (not allowed to configure) (table 4.4.2-2). Nothing is passed on. |
 | 6 | `location configure <bob> {"scope": "update", …}` | alice adds a periodic trigger to bob's configuration: 200, the server sends bob the update, and bob reports every 2 s (clause 13.2.2A). |
 | 7 | `location position …` for client-c and bob, `alert off <bob>` | client-c enters, leaves and re-enters the group's geographic area: each time the server tells it (clause 6.3.2.4), and it de-affiliates and affiliates again (clause 12.1.1.6). bob enters the emergency alert area: told so, his client raises an emergency alert with its location (clause 12.1.1.4), and reports as Emergency on t7. alice cancels bob's alert, and bob leaves the area. |
 
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/16-location-run.pcap.gz`. The folder also holds a reference run,
-`captures/16-location-full.pcap.gz` (138 KB, 1 406 frames): the frame numbers below and in the call flow are
+`captures/16-location-full.pcap.gz` (132 KB, 1 396 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.16.1 and (tcp port 5060 or (udp and not port 53) or icmp)`: SIP on
@@ -154,34 +154,37 @@ A client request often appears twice, because the SIP core first challenges it w
 
 What to look for, in the reference run:
 
-- **Configuration and log-on** (frames 44 to 470): the MCPTT server's configurations to
-  alice (44), bob (256), client-c (277) and client-d (71), and the
-  MCData server's to each of them (alice 92). The log-on reports with `<TriggerId>t1</TriggerId>` from
-  alice (459), bob (498) and client-c (502); client-d's (468) gets 403 (470).
-- **Triggers** (frames 537 to 777): alice's reports on t3 (537), t4 (552), t5 (567), t6 (582,
-  with `<Ecgi>` of the new cell) and, after her group call INVITE (593), t2 (777). Each report also goes to MCData.
-- **A request** (frames 876 to 895): alice's `<Request>` naming bob (876), the 200 (880), the server's request
-  to bob (883), bob's report (893), and the report to alice (895) with her RequestId as `ReportID` and
-  `<mcptt-reporting-uri>` bob. With refresh (909) the same: the request to bob (916), the report to alice
-  (928).
-- **Filters and sharing** (frames 945 to 995): the request with the filter "in" (945) gets no report; with "out"
-  (957) bob's report reaches alice (977); the request for client-c (991) is accepted (995) and nothing
+- **Configuration and log-on** (frames 174 to 529): the MCPTT server's configurations to
+  alice (336), bob (334), client-c (338) and client-d (332), and the
+  MCData server's to each of them (alice 213). The log-on reports with `<TriggerId>t1</TriggerId>` from
+  alice (508), bob (502) and client-c (516); client-d's (505) gets 403 (520, relayed 521) with `399 mcptt-server
+  "100 function not allowed due to user authorisation: location reporting not authorised"`. The 200s to alice and
+  client-c share one TCP segment (526). client-d's MCData report is refused too (468, relayed 470), with no
+  Warning: TS 24.282 table 4.9.2-2 has no code for it, and the Warning is optional (clause 4.9.1).
+- **Triggers** (frames 539 to 776): alice's reports on t3 (539), t4 (556), t5 (571), t6 (586,
+  with `<Ecgi>` of the new cell) and, after her group call INVITE (597), t2 (776). Each report also goes to MCData.
+- **A request** (frames 872 to 891): alice's `<Request>` naming bob (872), the 200 (876), the server's request
+  to bob (879), bob's report (889), and the report to alice (891) with her RequestId as `ReportID` and
+  `<mcptt-reporting-uri>` bob. With refresh (905) the same: the request to bob (912), the report to alice
+  (924).
+- **Filters and sharing** (frames 939 to 988): the request with the filter "in" (939) gets no report; with "out"
+  (951) bob's report reaches alice (970); the request for client-c (984) is accepted (988) and nothing
   follows.
-- **Refusals** (frames 1002 to 1027): 403 with warning 193 (1006), 192 (1015) and 215 (1027).
-- **A configuration change** (frames 1035 to 1063): alice's `<Configuration ConfigScope="Update">` with
-  `<PeriodicReport TriggerId="every-2s">2</PeriodicReport>` (1035), the 200 (1039), the update to bob (1042), and his
-  reports every 2 s (1054, 1063, …).
-- **The group area** (frames 1075 to 1204): the notices to client-c with `<group-geo-area-ind>` true (1075), false
-  (1135), then client-c's de-affiliation (PUBLISH with `Expires: 0`, 1134), and true again (1204) followed by its
-  affiliation (1205).
-- **The emergency alert area** (frames 1263 to 1397): the notice to bob with `<emergency-alert-area-ind>` true
-  (1263); bob's emergency alert, a `<Report>` with `<alert-ind>` true (1278); the alert to alice (1289), client-c
-  (1291) and client-d (1296), and the confirmation to bob with `<alert-ind-rcvd>` (1304); bob's
-  `ReportType="Emergency"` report on t7 (1327); alice's cancellation (1337); and the notice that bob has left the
-  area (1397).
+- **Refusals** (frames 995 to 1020): 403 with warning 193 (999), 192 (1008) and 194 (1020).
+- **A configuration change** (frames 1028 to 1056): alice's `<Configuration ConfigScope="Update">` with
+  `<PeriodicReport TriggerId="every-2s">2</PeriodicReport>` (1028), the 200 (1032), the update to bob (1035), and his
+  reports every 2 s (1047, 1056, …).
+- **The group area** (frames 1068 to 1194): the notices to client-c with `<group-geo-area-ind>` true (1068), false
+  (1127), then client-c's de-affiliation (PUBLISH with `Expires: 0`, 1140), and true again (1194) followed by its
+  affiliation (1207).
+- **The emergency alert area** (frames 1267 to 1387): the notice to bob with `<emergency-alert-area-ind>` true
+  (1267); bob's emergency alert, a `<Report>` with `<alert-ind>` true (1279); the alert to alice (1284), client-c
+  (1287) and client-d (1291), and the confirmation to bob with `<alert-ind-rcvd>` (1297); bob's
+  `ReportType="Emergency"` report on t7 (1319); alice's cancellation (1328); and the notice that bob has left the
+  area (1387).
 
 > **bob's client checks its own MCData rights.** The MCData server also tells bob that he has entered the
-> emergency alert area (1282). TS 24.282 clause 16.2.1.5 has the client start an MCData emergency alert, but clause
+> emergency alert area (1252). TS 24.282 clause 16.2.1.5 has the client start an MCData emergency alert, but clause
 > 16.2.1.1 has it check first whether the user may send one (clause 6.2.8.1.6) and, if not, tell the user and stop.
 > bob may not, so his client checks his MCData user profile and sends no MCData alert: the capture has no MESSAGE
 > from bob to the MCData server here and no 403. In this lab only bob's client checks its own profiles
@@ -292,13 +295,13 @@ In this tutorial client-c plays the group area part and bob the emergency alert 
 
 | Message | Frames |
 |---|---|
-| Configuration from the MCPTT server to alice, bob, client-c, client-d | 44, 256, 277, 71 |
-| Log-on reports (t1) from alice, bob, client-c; client-d's, refused 403 | 459, 498, 502; 468, 470 |
-| Trigger reports t3, t4, t5, t6, t2 from alice | 537, 552, 567, 582, 777 |
-| alice's request for bob; 200; request to bob; bob's report; report to alice | 876; 880; 883; 893; 895 |
-| With refresh: alice's request; request to bob; report to alice | 909; 916; 928 |
-| Refusals 193, 192, 215 | 1006, 1015, 1027 |
-| alice's configuration update; 200; update to bob; bob's periodic reports | 1035; 1039; 1042; 1054, 1063 |
-| Group area notices to client-c: in, out, in | 1075, 1135, 1204 |
-| Emergency alert area notice to bob; bob's alert; alert to alice, client-c, client-d; confirmation to bob | 1263; 1278; 1289, 1291, 1296; 1304 |
-| bob's Emergency report (t7); alice's cancellation; the notice that bob left the area | 1327; 1337; 1397 |
+| Configuration from the MCPTT server to alice, bob, client-c, client-d | 336, 334, 338, 332 |
+| Log-on reports (t1) from alice, bob, client-c; client-d's, refused 403 (MCPTT; MCData) | 508, 502, 516; 505, 520; 468 |
+| Trigger reports t3, t4, t5, t6, t2 from alice | 539, 556, 571, 586, 776 |
+| alice's request for bob; 200; request to bob; bob's report; report to alice | 872; 876; 879; 889; 891 |
+| With refresh: alice's request; request to bob; report to alice | 905; 912; 924 |
+| Refusals 193, 192, 194 | 999, 1008, 1020 |
+| alice's configuration update; 200; update to bob; bob's periodic reports | 1028; 1032; 1035; 1047, 1056 |
+| Group area notices to client-c: in, out, in | 1068, 1127, 1194 |
+| Emergency alert area notice to bob; bob's alert; alert to alice, client-c, client-d; confirmation to bob | 1267; 1279; 1284, 1287, 1291; 1297 |
+| bob's Emergency report (t7); alice's cancellation; the notice that bob left the area | 1319; 1328; 1387 |

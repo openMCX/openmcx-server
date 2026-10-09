@@ -23,6 +23,7 @@
 #include "mcx/mcdata.hpp"
 #include "mcx/msrp.hpp"
 #include "mcx/runtime.hpp"
+#include "mcx/warning.hpp"
 #include "mcx/xml_security.hpp"
 
 // Shared with the MCPTT and MCVideo servers: Expires and percent-encoding parsing, and the service parts.
@@ -81,6 +82,12 @@ class DataServer {
   std::unique_ptr<KeyClient> keys_;
   unsigned signalling_opened_ = 0, signalling_sealed_ = 0, signalling_refused_ = 0;
 
+  // TS 24.282 clause 4.4 (as TS 24.379 clause 4.4.1): a Warning header field value from this server, with its host
+  // name (the SIP advertised host) as warn-agent.
+  [[nodiscard]] std::string warning_value(std::string_view text) const {
+    return mcx::warning_value(cfg_.at("sip").at("advertise").get<std::string>(), text);
+  }
+
   bool protect_signalling() const { return keys_ && cfg_.at("mcdata").value("protect_signalling", false); }
 
   keying::KeyParameterWireProfile payload_profile() const;
@@ -133,7 +140,7 @@ class DataServer {
   }
 
   static void session_contact(SipResponse &response, const std::string &identity, const char *subservice);
-  std::map<std::string, User> users_; // by public user identity
+  std::map<std::string, User> users_;            // by public user identity
   std::map<std::string, Dispatched> dispatched_; // by Message ID text
 
   //------------------------------------------------------------------------------
@@ -205,8 +212,8 @@ class DataServer {
   struct MediaSession {
     std::unique_ptr<msrp::Endpoint> endpoint;
     std::string dialog, originator, target, group, message_id;
-    std::string owner; // the MCData ID of the client on this leg
-    std::string sdp;   // this leg's own media, repeated in a re-INVITE or its answer
+    std::string owner;                   // the MCData ID of the client on this leg
+    std::string sdp;                     // this leg's own media, repeated in a re-INVITE or its answer
     bool originating = false;            // the leg from the sender
     std::vector<std::string> recipients; // the affiliated members of a group request
     std::uint64_t max_bytes = 0;         // the group's SDS size limit, checked on arrival
@@ -447,9 +454,8 @@ class DataServer {
                                             std::vector<const User *> &targets);
 
   // sds: the group checks and affiliated recipients of a group SDS, or the refusal.
-  std::optional<SipResponse> sds_group(const User &sender, mcdata::Info &info,
-                                       const std::string &request, std::size_t size,
-                                       std::vector<const User *> &targets);
+  std::optional<SipResponse> sds_group(const User &sender, mcdata::Info &info, const std::string &request,
+                                       std::size_t size, std::vector<const User *> &targets);
 
   std::optional<SipResponse> adhoc_recipients(const SipMessage &sip_request, const User &sender, mcdata::Info &info,
                                               const Json &policy, std::vector<const User *> &targets,
@@ -876,6 +882,11 @@ class DataServer {
     void schedule(std::function<void()> task) override;
     // LocationHost (location.cpp).
     [[nodiscard]] Json location_settings() const override;
+
+    [[nodiscard]] std::string location_warning(std::string_view text) const override {
+      return server_.warning_value(text);
+    }
+
     Json location_profile(const std::string &id) override;
     std::optional<LocationUser> location_user_by_id(const std::string &id) override;
     std::optional<LocationUser> location_user_by_sip(const std::string &sip) override;
@@ -884,6 +895,7 @@ class DataServer {
     std::vector<std::string> location_alias_users(const std::string &alias) override;
     LocationInfo location_info(const SipMessage &message, const BodyPart &info_part) override;
     std::vector<BodyPart> location_info_parts(const LocationInfo &info) override;
+
   private:
     DataServer &server_;
   };

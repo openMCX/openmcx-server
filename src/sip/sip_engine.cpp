@@ -255,10 +255,16 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
   else if (response.status_code >= 300 && !response.content_type.empty())
     data->msg->body = make_text_body(data->pool, response.content_type, response.body);
   else if (response.status_code >= 300 && !response.parts.empty())
-    data->msg->body = make_text_body(data->pool, "multipart/mixed; boundary=mcx-answer",
-                                     multipart_body(response.parts, "mcx-answer"));
+    data->msg->body = make_parts_body(data->pool, response.parts, "mcx-answer");
   if (response.status_code > 100 && response.status_code < 300)
     add_headers(data.get(), {{"Contact", entry.response_contact}});
+  // A header field this answer sets replaces the copy pjsip kept from the last provisional answer, so that it is
+  // not sent twice (a Resource-Priority of RFC 4412 section 3.1, for example).
+  for (const auto &header : response.headers) {
+    const auto name = pj_view(header.name);
+    while (auto *kept = pjsip_msg_find_hdr_by_name(data->msg, &name, nullptr))
+      pj_list_erase(static_cast<pjsip_hdr *>(kept));
+  }
   add_headers(data.get(), response.headers);
   if (response.status_code > 100 && response.status_code < 200)
     add_answer_headers(data.get(), impl_->config.invite_provisional_headers);

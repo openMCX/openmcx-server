@@ -52,14 +52,27 @@ bool McServer::reachable_via_hierarchy(const Session &session, const User &user)
 }
 
 //------------------------------------------------------------------------------
+// Helper: whether the user is affiliated with a regroup: told of it (TS 24.379 clauses 16.2.2.4 step 3 h) and
+// 16.3.2.4 step 3 h)), or affiliated to one of its constituent groups, from which a call on it is placed
+// (TS 24.379 clause 10.1.2.4.1 NOTE 4).
+bool McServer::regroup_affiliated(const User &user, const std::string &group) const {
+  const auto found = regroups_.find(group);
+  if (found == regroups_.end()) return false;
+  return found->second.affiliated.contains(user.id) ||
+         std::any_of(found->second.groups.begin(), found->second.groups.end(),
+                     [&](const std::string &constituent) { return user.groups.contains(constituent); });
+}
+
+//------------------------------------------------------------------------------
 // Helper: whether a leg takes part in media and floor control now: active, not held, its user registered
-// and still a member of the call (or reached by the broadcast hierarchy), and its floor key ready.
+// and still a member of the call (affiliated to its group or regroup, or reached by the broadcast hierarchy), and
+// its floor key ready.
 bool McServer::eligible(const Leg &leg) {
   auto *user = by_id(leg.user);
   return leg.active && !leg.held && leg.remote && user && user->expires > std::time(nullptr) &&
          current_session(leg.session) &&
          (leg.session->private_call || leg.session->adhoc || user->groups.contains(leg.session->group) ||
-          reachable_via_hierarchy(*leg.session, *user)) &&
+          regroup_affiliated(*user, leg.session->group) || reachable_via_hierarchy(*leg.session, *user)) &&
          floor_key_ready(leg);
 }
 

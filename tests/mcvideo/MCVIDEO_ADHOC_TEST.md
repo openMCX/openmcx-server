@@ -45,7 +45,7 @@ tools/regress.py --image openmcx:v8 --client-image openmcx-client:v8 --select mc
 
 The scenario made 22 checks (`artifacts/regress-v8a-try1/mcvideo-adhoc/`, capture `artifacts/integration/mcvideo-adhoc.pcap`). The smoke labs passed on the same images. With MV-AH-06 it makes 28 (`artifacts/regress-v8-adhoc-alert/`).
 
-MV-AH-06 uses the shared core's ad hoc alert (TS 24.379 12.1A, which TS 24.281 12.1A follows) and the client command `mcvideo-adhoc-alert <criteria>|cancel`. `status.json` adds `mcvideo_adhoc_alert_state` (annex G.20: 1 none, 2 confirm pending, 3 initiated), `mcvideo_adhoc_alert_group`, `mcvideo_received_adhoc_alerts` and `mcvideo_adhoc_alert_result`.
+MV-AH-06 uses the shared core's ad hoc alert (TS 24.379 12.1A, which TS 24.281 12.1A follows) and the client command `mcvideo-adhoc-alert <criteria>|cancel`. A cancellation is confirmed to the originator by a receipt with `<adhoc-alert-ind>` false and `<adhoc-alert-ind-rcvd>` true (§12.1A.3.2 step 4 g)). `status.json` adds `mcvideo_adhoc_alert_state` (annex G.20: 1 none, 2 confirm pending, 3 initiated, 4 cancel pending until that receipt), `mcvideo_adhoc_alert_group`, `mcvideo_received_adhoc_alerts` and `mcvideo_adhoc_alert_result`.
 
 ## Coverage gaps
 

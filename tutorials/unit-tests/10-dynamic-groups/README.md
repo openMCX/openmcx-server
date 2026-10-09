@@ -109,9 +109,9 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 
 | Step | Command | What happens (TS 24.379 unless noted) |
 |---|---|---|
-| 2 | `client-b: regroup create …`, `client-a: regroup create …` | bob has no `<allow-regroup>`: 403 with warning 160 (clause 16.2.2.2 step 3), nothing is created. alice's request is accepted (clause 16.2.3.1): the server marks both groups regrouped, answers 200 and tells every affiliated member of both groups (clauses 16.2.4.1 and 16.2.2.4). |
+| 2 | `client-b: regroup create …`, `client-a: regroup create …` | bob has no `<allow-regroup>`: 403 with warning 160 (clause 16.2.2.2 step 3), nothing is created. alice's request is accepted (clause 16.2.3.1): the server marks both groups regrouped, answers 200 and tells every affiliated member of both groups (clauses 16.2.4.1 and 16.2.2.4), who is then affiliated with the regroup (clause 16.2.2.4 step 3 h)). Each notice carries a copy of alice's mcptt-info body and her Accept-Contact header fields (clause 16.2.2.4 step 3 b) and d)). |
 | 3 | `client-a: call` | client-a calls its own group, which is regrouped: 403 with warning 148, and the server sends client-a a copy of the regroup notice (clause 10.1.1.4.1 step 5 b)). |
-| 4 | every client `group <regroup>`, `client-a: call`, `client-a: ptt` | The clients use the regroup at once, with the preconfigured group's configuration (clause 16.1). The call on it invites the members of both groups, and client-a's speech reaches client-c and client-d. |
+| 4 | every client `group <regroup>`, `client-a: call`, `client-a: ptt` | The clients use the regroup at once, with the preconfigured group's configuration (clause 16.1), and target it rather than their own groups (clause 16.2.1.3 step 5). client-a's call names the group it calls from, `operations-north`, in `<associated-group-id>` (clause 10.1.1.2.1.1 step 14 d)). The call invites the members of both groups, each INVITE naming the regroup in `<mcptt-calling-group-id>` and the member's own group in `<associated-group-id>` (clause 6.3.4.1.2 step 6b), and client-a's speech reaches client-c and client-d. |
 | 5 | `client-a: regroup remove …`, every client back to its group | Removal (clause 16.2.3.2): 200, the call on the regroup is released, every member is told, and the groups are free again. |
 | 6 | `client-a: regroup users …`, `client-a: group <user regroup>`, `client-a: call`, `client-a: regroup remove …` | A user regroup of alice and client-c (clause 16.3): only they are told; client-c is invited to the call without having selected the regroup, and bob and client-d are not. The removal tells both, without the list of users (clause 16.2.2.5). |
 | 7 | `client-b: temporary-create …`, `client-a: temporary-create …`, calls, `client-a: temporary-delete …` | A temporary group formed by the GMS (TS 24.481 clauses 6.3.14 and 6.3.15): bob is refused 403, alice's request forms it. The MCPTT server applies it as a group regroup: the members are told, a call on `operations-north` is refused with 148, a call on the temporary group joins both groups, and alice's teardown ends the call and frees the groups. |
@@ -119,7 +119,7 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/10-dynamic-groups-run.pcap.gz`. The folder also holds a reference run,
-`captures/10-dynamic-groups-full.pcap.gz` (175 KB, 2 884 frames): the frame numbers below and in the call flow are
+`captures/10-dynamic-groups-full.pcap.gz` (172 KB, 2 922 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.10.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -145,40 +145,47 @@ the client sends it again with its credentials. The frame numbers below are thos
 
 What to look for, in the reference run:
 
-- **A refused regroup** (frames 404 to 410): bob's MESSAGE (404) with `<regroup-action>create</regroup-action>`, the
-  server's 403 (408) with `Warning: 399 mcx "160 user not authorised to request creation of a regroup"`. No notice
+- **A refused regroup** (frames 422 to 428): bob's MESSAGE (422) with `<regroup-action>create</regroup-action>`, the
+  server's 403 (426) with `Warning: 399 mcptt-server "160 user not authorised to request creation of a regroup"`. No notice
   follows.
-- **The group regroup** (frames 416 to 439): alice's MESSAGE (416) names `sip:operations-regroup-1@mcx.test` in
+- **The group regroup** (frames 434 to 465): alice's MESSAGE (434) names `sip:operations-regroup-1@mcx.test` in
   `<mcptt-regroup-uri>`, the preconfigured group and both groups in `<groups-for-regroup>`. The server answers 200
-  (420, to alice 422) and tells alice (424), bob (429), client-c (436) and client-d (439), each with the same three
-  items.
-- **A call on a regrouped group** (frames 453 to 467): alice's INVITE on `operations-north` (453) gets 403 (457, to
-  alice 467) with `Warning: 399 mcx "148 group is regrouped"`, and the server sends her a copy of the regroup notice
-  (461). Nobody is invited.
-- **The call on the regroup** (frames 550 to 737): alice's INVITE (550) and the server's INVITEs to bob (561),
-  client-c (570) and client-d (580), members of both groups. alice's Floor Request (725) and Floor Granted (726), her
-  speech from 733, reaching client-c from 737.
-- **Removal** (frames 2096 to 2147): alice's MESSAGE with `<regroup-action>remove</regroup-action>` (2096), the 200
-  (2100), the call released with BYEs to client-d (2104), bob (2110), alice (2116) and client-c (2113), then the
-  removal notices to alice (2128), bob (2132), client-c (2138) and client-d (2147).
+  (438, to alice 440) and tells alice (445), bob (449), client-c (461) and client-d (465), each with the same three
+  items. Each notice is a multipart body: first a copy of alice's `application/vnd.3gpp.mcptt-info+xml` body (her
+  `<mcptt-client-id>`), then the regroup body; and it has both Accept-Contact header fields of her request,
+  `+g.3gpp.mcptt` and the MCPTT ICSI (clause 16.2.2.4 step 3 b) and d)). The removal and user regroup notices below
+  are built the same way from their own requests.
+- **A call on a regrouped group** (frames 481 to 497): alice's INVITE on `operations-north` (481) gets 403 (485, to
+  alice 497) with `Warning: 399 mcptt-server "148 group is regrouped"`, and the server sends her a copy of the regroup notice
+  (490). Nobody is invited.
+- **The call on the regroup** (frames 580 to 759): alice's INVITE (580), with `operations-north` in
+  `<associated-group-id>`, and the server's INVITEs to bob (591), client-c (600) and client-d (606), members of both
+  groups. Each names `operations-regroup-1` in `<mcptt-calling-group-id>` and the member's own group in
+  `<associated-group-id>`: `operations-north` for bob, `operations-south` for client-c and client-d. alice's Floor Request (749) and Floor Granted (750), her
+  speech from 755, reaching client-c from 759.
+- **Removal** (frames 2120 to 2172): alice's MESSAGE with `<regroup-action>remove</regroup-action>` (2120), the 200
+  (2124), the call released with BYEs to client-c (2129), client-d (2134), alice (2137) and bob (2142), then the
+  removal notices to alice (2154), bob (2158), client-c (2166) and client-d (2172).
 
   Like every removal notice, they carry neither `<groups-for-regroup>` nor `<users-for-regroup>`: TS 24.379 clause
   16.2.2.5 step 3 e) leaves both out.
-- **The user regroup** (frames 2283 to 2434): alice's MESSAGE (2283) with `<users-for-regroup>` naming alice and
-  client-c, the 200 (2287), the notices to alice (2291) and client-c (2296) only. alice's call on the user regroup
-  (2327) invites client-c (2337) and nobody else. The removal (2410) ends the call (BYE to client-c 2424) and the
-  notices to alice (2432) and client-c (2434) name neither users nor groups.
-- **The temporary group** (frames 2482 to 2824): its formation and teardown are XCAP requests over HTTPS, so the
-  capture shows only their effect. The regroup notices for `sip:operations-temp-1@mcx.test` to alice (2482), bob
-  (2487), client-c (2494) and client-d (2497). alice's call on `operations-north` (2510) is refused 403 with warning
-  148 (2514), followed by a copy of the notice (2518). The call on the temporary group (2607) invites bob (2618),
-  client-c (2627) and client-d (2636). After alice's teardown the server releases the call (BYE 2783) and sends the
-  removal notices (2808 to 2824).
+- **The user regroup** (frames 2314 to 2468): alice's MESSAGE (2314) with `<users-for-regroup>` naming alice and
+  client-c, the 200 (2318), the notices to alice (2324) and client-c (2329) only. alice's call on the user regroup
+  (2363) invites client-c (2373) and nobody else. The removal (2445) ends the call (BYE to client-c 2454) and the
+  notices to alice (2465) and client-c (2468) name neither users nor groups.
+- **The temporary group** (frames 2518 to 2859): its formation and teardown are XCAP requests over HTTPS, so the
+  capture shows only their effect. The regroup notices for `sip:operations-temp-1@mcx.test` to alice (2518), bob
+  (2523), client-c (2528) and client-d (2533). alice's call on `operations-north` (2545) is refused 403 with warning
+  148 (2549), followed by a copy of the notice (2553). The call on the temporary group (2642) invites bob (2653),
+  client-c (2662) and client-d (2668). After alice's teardown the server releases the call (BYE 2819) and sends the
+  removal notices (2844 to 2859).
 
   > **Note.** Telling the members of a temporary group with the regroup notice is an openMCX choice: TS 24.481 lets a
   > client learn of it from its group documents, and does not define a SIP notice. Following that choice, the server
-  > also sends the copy of the notice after a refused call (2518), which TS 24.379 clause 10.1.1.4.1 step 5 b) iii)
-  > asks for only when the group is regrouped "based on a preconfigured group".
+  > also sends the copy of the notice after a refused call (2553), which TS 24.379 clause 10.1.1.4.1 step 5 b) iii)
+  > asks for only when the group is regrouped "based on a preconfigured group". No SIP request formed the temporary
+  > group, so these notices have no mcptt-info body to copy: they carry the regroup body alone, with the
+  > `+g.3gpp.mcptt` Accept-Contact header field.
 
 ## 5. Stop or start over
 
@@ -227,7 +234,7 @@ To use images you built yourself, change the `image:` lines in `docker-compose.y
   `tests/integration/regroup_scenario.py` and TG-01, TG-02, TG-04, TG-05 and TG-06 of
   `tests/integration/temporary_group_scenario.py`. Left out: removal by an unauthorised user and of an unknown regroup
   (warnings 161, 163), a reused identity (165), the late notice to a member affiliating later, removal decided by the
-  server, chat calls on a regroup or temporary group, and the GMS's own refusals (408).
+  server, chat calls on a regroup or temporary group, and the GMS's own refusals (430).
 - `speech/`: the two spoken test messages the clients transmit (16 kHz WAV, made with espeak-ng).
 - `captures/10-dynamic-groups-full.pcap.gz`: the reference run.
 
@@ -248,17 +255,17 @@ sequenceDiagram
     S-->>B: 403, warning 160
     A->>S: MESSAGE regroup create (north, south)
     S-->>A: 200 OK
-    S->>A: MESSAGE regroup notice
-    S->>B: MESSAGE regroup notice
-    S->>CD: MESSAGE regroup notice
+    S->>A: MESSAGE regroup notice (copy of A's mcptt-info + regroup body)
+    S->>B: MESSAGE regroup notice (copy of A's mcptt-info + regroup body)
+    S->>CD: MESSAGE regroup notice (copy of A's mcptt-info + regroup body)
     Note over A,CD: Step 3: a call on a regrouped group
     A->>S: INVITE operations-north
     S-->>A: 403, warning 148
     S->>A: MESSAGE copy of the regroup notice
     Note over A,CD: Step 4: a call on the regroup
-    A->>S: INVITE operations-regroup-1
-    S->>B: INVITE
-    S->>CD: INVITE
+    A->>S: INVITE operations-regroup-1, associated-group-id north
+    S->>B: INVITE calling-group-id regroup, associated-group-id north
+    S->>CD: INVITE calling-group-id regroup, associated-group-id south
     A->>S: Floor Request
     S->>A: Floor Granted
     A->>S: AMR-WB RTP
@@ -276,12 +283,12 @@ sequenceDiagram
 
 | Message | Frames |
 |---|---|
-| B's regroup request; 403 with warning 160 | 404; 408, 410 |
-| A's regroup request; 200 OK | 416; 420, 422 |
-| Notices to A, B, C, D | 424, 429, 436, 439 |
-| A's INVITE on `operations-north`; 403 with warning 148; copy of the notice | 453; 457, 467; 461 |
-| A's INVITE on the regroup; INVITEs to B, C, D | 550; 561, 570, 580 |
-| Floor Request; Floor Granted; A's speech; to C | 725; 726; 733; 737 |
-| A's removal request; 200 OK | 2096; 2100 |
-| BYEs to D, B, A, C | 2104, 2110, 2116, 2113 |
-| Removal notices to A, B, C, D | 2128, 2132, 2138, 2147 |
+| B's regroup request; 403 with warning 160 | 422; 426, 428 |
+| A's regroup request; 200 OK | 434; 438, 440 |
+| Notices to A, B, C, D | 445, 449, 461, 465 |
+| A's INVITE on `operations-north`; 403 with warning 148; copy of the notice | 481; 485, 497; 490 |
+| A's INVITE on the regroup; INVITEs to B, C, D | 580; 591, 600, 606 |
+| Floor Request; Floor Granted; A's speech; to C | 749; 750; 755; 759 |
+| A's removal request; 200 OK | 2120; 2124 |
+| BYEs to A, D, B, C | 2137, 2134, 2142, 2129 |
+| Removal notices to A, B, C, D | 2154, 2158, 2166, 2172 |

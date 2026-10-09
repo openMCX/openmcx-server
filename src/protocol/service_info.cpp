@@ -110,7 +110,14 @@ std::string service_info_xml(const McpttInfo &info, const ServiceProfile &servic
   flag("alert-ind", info.alert);
   flag("imminentperil-ind", info.imminent_peril);
   flag("broadcast-ind", info.broadcast);
-  out += wrapped("associated-group-id", names.uri, info.associated_group);
+  // TS 24.379 annex F.1.2: <associated-group-id> is a contentType (wrapped in <mcpttURI>); TS 24.281 annex F.1.2 types
+  // it xs:string, so the MCVideo element holds the group identity as its text.
+  if (names.prefix == "mcvideo") {
+    if (!info.associated_group.empty())
+      out += "<associated-group-id>" + xml_escape(info.associated_group) + "</associated-group-id>";
+  } else {
+    out += wrapped("associated-group-id", names.uri, info.associated_group);
+  }
   out += wrapped("originated-by", names.uri, info.originated_by);
   out += wrapped(names.element("client-id"), names.str, info.client_id);
   flag("alert-ind-rcvd", info.alert_received);
@@ -276,6 +283,17 @@ std::string info_value(xmlNode *params, std::string_view name, bool wrap, const 
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 annex F.1.2 and TS 24.281 annex F.1.2: <associated-group-id>, wrapped in <mcpttURI> (MCPTT
+// contentType) or as plain text (MCVideo xs:string); either form is read.
+std::string associated_group_id(xmlNode *parent, const InfoNames &names) {
+  auto node = unique_child(parent, "associated-group-id", names.ns.c_str(), false);
+  if (!node) return {};
+  for (auto child = node->children; child; child = child->next)
+    if (child->type == XML_ELEMENT_NODE) return content(node, names);
+  return scalar(node);
+}
+
+//------------------------------------------------------------------------------
 // TS 24.379 annex F.1.2 and TS 24.281 annex F.1.2: an optional boolean of <mcpttinfo-Params>, wrapped in
 // <mcpttBoolean> (unprotected) except <broadcast-ind>.
 std::optional<bool> info_flag(xmlNode *params, const char *name, const InfoNames &names) {
@@ -403,9 +421,14 @@ McpttInfo parse_service_info(std::string_view xml, const ServiceProfile &service
   out.alert_received = info_flag(params, "alert-ind-rcvd", names);
   out.emergency_received = info_flag(params, "emergency-ind-rcvd", names);
   out.originated_by = info_value(params, "originated-by", true, names);
-  out.associated_group = info_value(params, "associated-group-id", true, names);
+  out.associated_group = associated_group_id(params, names);
   out.video_pull_url = info_value(params, "video-pull-url", true, names);
-  if (auto ext = unique_child(params, "anyExt", info_ns, false)) parse_info_extensions(ext, names, out);
+  if (auto ext = unique_child(params, "anyExt", info_ns, false)) {
+    parse_info_extensions(ext, names, out);
+    // TS 24.281 clause 9.2.1.2.1.1 step 14 d) i) places <associated-group-id> in <anyExt>, while annex F.1 has it in
+    // <mcvideo-Params> (written there): read either.
+    if (out.associated_group.empty()) out.associated_group = associated_group_id(ext, names);
+  }
   return out;
 }
 

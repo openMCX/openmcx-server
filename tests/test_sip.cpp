@@ -654,6 +654,8 @@ void run_call_client(const std::string &directory) {
     if (request.method == "INVITE") {
       check(mcx::get_header(request.headers, "X-Test-Change") == "reverse",
             "server can reverse re-INVITE direction on existing dialog");
+      check(request.content_type == "application/sdp" && request.remote_media,
+            "a re-INVITE with SDP only has a plain application/sdp body");
       ++reverse_received;
       response.local_media = call_media(43000);
     }
@@ -714,13 +716,15 @@ void run_call_client(const std::string &directory) {
   for (int iteration = 0; iteration < 500 && !after_refusal; ++iteration) engine.poll(std::chrono::milliseconds(10));
   check(refused == 500 && after_refusal == 200, "a refused in-dialog request is reported and the dialog stays usable");
   int changed = 0;
-  engine.reinvite(dialog, call_media(43000), {{"application/test+xml", "<change/>"}},
-                  [&](const mcx::SipResponse &response) {
-                    changed = response.status_code;
-                    check(mcx::get_header(response.headers, "X-Test-Change") == "accepted",
-                          "re-INVITE reaches application");
-                  },
-                  {{"X-Test-Change", "emergency"}});
+  engine.reinvite(
+      dialog, call_media(43000), {{"application/test+xml", "<change/>"}},
+      [&](const mcx::SipResponse &response) {
+        changed = response.status_code;
+        check(mcx::get_header(response.headers, "X-Test-Change") == "accepted", "re-INVITE reaches application");
+        check(response.content_type == "application/sdp" && response.body.find("m=audio") != std::string::npos,
+              "an answer with SDP only has a plain application/sdp body");
+      },
+      {{"X-Test-Change", "emergency"}});
   for (int iteration = 0; iteration < 500 && changed == 0; ++iteration) engine.poll(std::chrono::milliseconds(10));
   check(changed == 200 && disconnected == 0 && confirmed == 1,
         "re-INVITE changes existing session without duplicate confirmation or teardown");

@@ -30,7 +30,7 @@ SipResponse DataServer::incoming(const SipMessage &request) {
             {{"user_id", found->second.id}, {"method", request.method}, {"reason", error.what()}});
       SipResponse response;
       response.status_code = 403;
-      response.headers = {{"Warning", "399 mcx \"140 unable to decrypt XML content\""}};
+      response.headers = {{"Warning", warning_value("140 unable to decrypt XML content")}};
       return response;
     }
     opened.parts = std::move(parts);

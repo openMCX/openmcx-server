@@ -120,7 +120,7 @@ docker compose exec client-b mcx-client --config /config/client-b.json --command
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/14-mcdata-files-msgstore-run.pcap.gz`. The folder also holds a reference run,
-`captures/14-mcdata-files-msgstore-full.pcap.gz` (77 KB, 935 frames): the frame numbers below and in the call flow
+`captures/14-mcdata-files-msgstore-full.pcap.gz` (75 KB, 850 frames): the frame numbers below and in the call flow
 are those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is
@@ -150,32 +150,32 @@ file over HTTP, and in `a=file-selector` for a file over the media plane.
 
 What to look for, in the reference run:
 
-- **A file to one user over HTTP** (frames 557 to 612): client-a opens a connection to the HTTP proxy (557) and
-  uploads the file, then sends the FD request (561, again 565 after the SIP core's `407`; 567 at the MCData server)
+- **A file to one user over HTTP** (frames 493 to 545): client-a opens a connection to the HTTP proxy (493) and
+  uploads the file, then sends the FD request (497, again 501 after the SIP core's `407`; 503 at the MCData server)
   with `<request-type>one-to-one-fd</request-type>` and a `resource-lists` body naming bob. The MCData server checks
-  the file at the content server (569), offers it to bob (571, at bob 575) and answers client-a 202 (572). bob tells
-  the server it accepted it (580) and only then downloads it (582). client-a gets two notifications, accepted and completed
-  (603, 612).
-- **A file to the group** (frames 628 to 716): the request (628, 632; 634 at the server) has
-  `<request-type>group-fd</request-type>` and no `resource-lists`. The offers reach bob (641), client-c (649) and
-  client-d (655), not client-a. Their decisions come back (bob 666, client-c 690, client-d 702), and client-a gets them
-  all in one SIP MESSAGE with three FD signalling parts (716), 3 s (TDC1) after the first.
-- **A file over the media plane** (frames 722 to 801): client-a's INVITE (722, 729; 731 at the server) offers an
-  `m=message` stream with `a=file-selector`. The MCData server answers `100 Trying` (733) and invites bob
-  first (735, at bob 739). Only upon bob's 200 OK (741; 748 at the server) does it answer client-a 200 OK
-  (751, at client-a 755), as TS 24.282 clause 10.2.5.4.4 requires. The invitation and the 200 OK carry the MCData
+  the file at the content server (505), offers it to bob (507, at bob 512) and answers client-a 202 (509). bob tells
+  the server it accepted it (516) and only then downloads it (518). client-a gets two notifications, accepted and completed
+  (536, 545).
+- **A file to the group** (frames 562 to 650): the request (562, 566; 568 at the server) has
+  `<request-type>group-fd</request-type>` and no `resource-lists`. The offers reach bob (578), client-c (585) and
+  client-d (589), not client-a. Their decisions come back (bob 600, client-c 624, client-d 636), and client-a gets them
+  all in one SIP MESSAGE with three FD signalling parts (650), 3 s (TDC1) after the first.
+- **A file over the media plane** (frames 656 to 735): client-a's INVITE (656, 663; 665 at the server) offers an
+  `m=message` stream with `a=file-selector`. The MCData server answers `100 Trying` (667) and invites bob
+  first (669, at bob 673). Only upon bob's 200 OK (675; 682 at the server) does it answer client-a 200 OK
+  (685, at client-a 689), as TS 24.282 clause 10.2.5.4.4 requires. The invitation and the 200 OK carry the MCData
   session identity as Contact, with `g.3gpp.mcdata.fd`, its ICSI and `isfocus` (clause 6.3.7.1.23 steps 5 and 6).
-  Then client-a sends the file over MSRP (763,
-  `Byte-Range: 1-200/200`, `application/vnd.3gpp.mcdata-file`), answered with an MSRP 200 (769); the server relays it
-  to bob (765) and gets bob's MSRP 200 (776). The server releases bob's leg (786) and client-a its own (801).
-- **The message store** (frames 815 to 906): client-a's storage control request (815, 818; 820 at the server) has
+  Then client-a sends the file over MSRP (697,
+  `Byte-Range: 1-200/200`, `application/vnd.3gpp.mcdata-file`); the server relays it to bob (700), gets bob's MSRP 200
+  (708) and answers client-a's SEND with an MSRP 200 (709). The server releases bob's leg (715) and client-a its own (735).
+- **The message store** (frames 749 to 833): client-a's storage control request (749, 752; 753 at the server) has
   `<request-type>store-comms-in-msgstore-ctrl-req</request-type>` with `<store-all-private-comms-in-msgstore>` and
-  `<store-all-group-comms-in-msgstore>`, answered 200 (822). bob's (826, 830) names alice in a
-  `vnd.3gpp.mcdata-msgstore-ctrl-request+xml` body, answered 200 (834). client-c's (838, 841) is refused 403 with
+  `<store-all-group-comms-in-msgstore>`, answered 200 (754). bob's (758, 762) names alice in a
+  `vnd.3gpp.mcdata-msgstore-ctrl-request+xml` body, answered 200 (766). client-c's (770, 773) is refused 403 with
   warning `234 user not authorized to enable or disable the storage of MCData communications into the MCData message
-  store` (741). After the SDS (745, 749; 751 at the server, 755 at bob, 202 at 761) the MCData server opens a
-  connection to the message store (868) to deposit it; after the next file distribution (885, 889; 891 at the server)
-  it deposits that too (906).
+  store` (775). After the SDS (779, 783; 785 at the server, 789 at bob, 202 at 795) the MCData server opens a
+  connection to the message store (798) to deposit it; after the next file distribution (813, 817; 819 at the server)
+  it deposits that too (833).
 
 ## 5. Stop or start over
 
@@ -306,11 +306,11 @@ sequenceDiagram
 
 | Message | Frames |
 |---|---|
-| Upload connection; FD request A → core, core → S; S checks the file | 557; 561, 565, 567; 569 |
-| Offer S → core, core → B; 202 to A; B's notification; download connection | 571, 575; 572; 580; 582 |
-| Notifications to A (accepted and completed) | 603, 612 |
-| Group FD request; offers to B, C, D; decisions from B, C, D; the aggregate to A | 628, 632, 634; 641, 649, 655; 666, 690, 702; 716 |
-| Media plane: INVITE A; 100 from S; INVITE to B; B's 200, at S; 200 from S, at A | 722, 729, 731; 733; 735, 739; 741, 748; 751, 755 |
-| Media plane: MSRP SEND from A; SEND to B; MSRP 200s; BYE to B; A's BYE | 763; 765; 769, 776; 786; 801 |
-| Storage control A, B, C; answers | 815, 826, 838; 822, 834, 845 |
-| SDS A → B; 202; deposit connection; file deposit connection | 849, 859; 865; 868; 906 |
+| Upload connection; FD request A → core, core → S; S checks the file | 493; 497, 501, 503; 505 |
+| Offer S → core, core → B; 202 to A; B's notification; download connection | 507, 512; 509; 516; 518 |
+| Notifications to A (accepted and completed) | 536, 545 |
+| Group FD request; offers to B, C, D; decisions from B, C, D; the aggregate to A | 562, 566, 568; 578, 585, 589; 600, 624, 636; 650 |
+| Media plane: INVITE A; 100 from S; INVITE to B; B's 200, at S; 200 from S, at A | 656, 663, 665; 667; 669, 673; 675, 682; 685, 689 |
+| Media plane: MSRP SEND from A; SEND to B; MSRP 200s; BYE to B; A's BYE | 697; 700; 708, 709; 715; 735 |
+| Storage control A, B, C; answers | 749, 758, 770; 754, 766, 775 |
+| SDS A → B; 202; deposit connection; file deposit connection | 779, 789; 795; 798; 833 |

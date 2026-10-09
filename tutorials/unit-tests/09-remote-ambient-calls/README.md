@@ -130,7 +130,7 @@ docker compose exec mcptt-server openmcx-mcptt-server --config /config/mcptt-ser
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/09-remote-ambient-calls-run.pcap.gz`. The folder also holds a reference run,
-`captures/09-remote-ambient-calls-full.pcap.gz` (331 KB, 7 705 frames, most of it the speech of the 30 s ambient
+`captures/09-remote-ambient-calls-full.pcap.gz` (318 KB, 7 612 frames, most of it the speech of the 30 s ambient
 listening call): the frame numbers below and in the call flows are those of the reference. Wireshark opens the
 compressed file directly (or `gunzip` it first).
 
@@ -160,43 +160,43 @@ The Floor Deny's Reject Cause shows in Wireshark 4.2 only as the number `5` ("Re
 
 What to look for, in the reference run:
 
-- **Remotely initiated group call** (frames 409 to 540): client-a's MESSAGE (409) with `remotely-initiated-group-call-request`,
-  `<mcptt-request-uri>` the group and a `resource-lists` entry for bob. The server relays it to client-b (417) with
-  the group in `<mcptt-calling-group-id>` and bob in `<mcptt-request-uri>`. client-b's INVITE to the group (430) is an
-  ordinary prearranged call; the server invites alice (437), client-c (448) and client-d (456). client-b's report (488)
-  carries `remotely-initiated-call-outcome` `success` and reaches client-a (540). client-b then talks (from 640).
-- **Silent request** (frames 2165 to 2186): the relay to client-b (2172) has `<notify-remote-user>false`, and
-  client-b still places the call (2186).
-- **Refused requests** (frames 2468 to 2486, and 3094 to 3100): the 403s with warnings 157 (2474), 120 (2486) and 167
-  (3100); no MESSAGE reaches client-b for them.
-- **Busy remote user** (frames 2495 to 2688): client-b's own call (2495), the relayed request (2671), client-b's
-  report with outcome `fail` (2679) and no INVITE from client-b in between.
-- **Application priority** (frames 2784 to 2805): the relay carries `<ric-app-level-priority>mcpttp.5` (2789), and
-  client-b's INVITE carries `Resource-Priority: mcpttp.5` (2805).
-- **Ambient listening, remote-init** (frames 3109 to 3809): client-a's INVITE (3109) with `<session-type>ambient-listening`,
+- **Remotely initiated group call** (frames 429 to 576): client-a's MESSAGE (429) with `remotely-initiated-group-call-request`,
+  `<mcptt-request-uri>` the group and a `resource-lists` entry for bob. The server relays it to client-b (437) with
+  the group in `<mcptt-calling-group-id>` and bob in `<mcptt-request-uri>`. client-b's INVITE to the group (450) is an
+  ordinary prearranged call; the server invites alice (456), client-c (464) and client-d (473). client-b's report (512)
+  carries `remotely-initiated-call-outcome` `success` and reaches client-a (576). client-b then talks (from 649).
+- **Silent request** (frames 2172 to 2193): the relay to client-b (2180) has `<notify-remote-user>false`, and
+  client-b still places the call (2193).
+- **Refused requests** (frames 2491 to 2509, and 3119 to 3125): the 403s with warnings 157 (2497), 120 (2509) and 167
+  (3125); no MESSAGE reaches client-b for them.
+- **Busy remote user** (frames 2518 to 2709): client-b's own call (2518), the relayed request (2692), client-b's
+  report with outcome `fail` (2702) and no INVITE from client-b in between.
+- **Application priority** (frames 2810 to 2831): the relay carries `<ric-app-level-priority>mcpttp.5` (2818), and
+  client-b's INVITE carries `Resource-Priority: mcpttp.5` (2831).
+- **Ambient listening, remote-init** (frames 3134 to 3764): client-a's INVITE (3134) with `<session-type>ambient-listening`,
   `<ambient-listening-type>remote-init`, `Priv-Answer-Mode: Auto`, `mc_implicit_request` and `a=recvonly`. The server
-  invites client-b (3119) with `Alert-Info: <file:///dev/null>` and `a=recvonly`; client-b answers `sendonly` (3121).
-  client-a gets a 183 (3128) and a 200 OK (3131) with `Feature-Caps: *;+g.3gpp.mcptt.ambient-listening-call-release`.
-  Floor Granted goes to client-b (3134), Floor Taken naming bob, with no permission to request, to client-a (3135).
-  Speech flows only client-b → server → client-a (from 3137, 327 packets each way). client-a's Floor Request (3500)
-  gets a Floor Deny with cause 5 (3501). client-b sends no BYE; client-a's BYE (3801) ends the call (the server's BYE
-  to client-b, 3809).
-- **Ambient listening, local-init** (frames 3824 to 3916): client-b's INVITE (3824) with `local-init` and
-  `a=sendonly`; client-a is invited with the `Feature-Caps` release capability (3834), and client-b's 200 OK carries it
-  too (3847). client-b's BYE (3908) ends it.
+  invites client-b (3144) with `Alert-Info: <file:///dev/null>` and `a=recvonly`; client-b answers `sendonly` (3146).
+  client-a gets a 183 (3153) and a 200 OK (3155) with `Feature-Caps: *;+g.3gpp.mcptt.ambient-listening-call-release`.
+  Floor Granted goes to client-b (3159), Floor Taken naming bob, with no permission to request, to client-a (3160).
+  Speech flows only client-b → server → client-a (from 3162, 292 packets each way). client-a's Floor Request (3503)
+  gets a Floor Deny with cause 5 (3505). client-b sends no BYE; client-a's BYE (3756) ends the call (the server's BYE
+  to client-b, 3764).
+- **Ambient listening, local-init** (frames 3779 to 3856): client-b's INVITE (3779) with `local-init` and
+  `a=sendonly`; client-a is invited with the `Feature-Caps` release capability (3789), and client-b's 200 OK carries it
+  too (3800). client-b's BYE (3847) ends it.
 - **Server releases**: each time BYE to client-b first, then, after client-b's 200 OK, BYE with the `<release-reason>`
-  to client-a: `administrator-action` (4001, 4008), `call-request-initiated-by-listened-to-client` (4108, 4117),
-  `call-request-for-listened-to-client` (4461, 4469; the server invites client-b to client-c's call only after that,
-  4474) and `private-call-expiry`, 30.0 s after the INVITE (4526 → 7560, 7568).
-- **Refused ambient listening calls** (frames 7582 to 7626): the 403s with warnings 154 (7589), 144 (7607) and 127
-  (7626), with no invitation sent.
-- **Busy target** (frames 7637 to 7683): client-c's private call to client-b (7637), then client-a's ambient request
-  (7676) answered 480 (7683); client-b is not invited.
+  to client-a: `administrator-action` (3926, 3933), `call-request-initiated-by-listened-to-client` (4022, 4030),
+  `call-request-for-listened-to-client` (4370, 4378; the server invites client-b to client-c's call only after that,
+  4383) and `private-call-expiry`, 30.0 s after the INVITE (4434 → 7468, 7475).
+- **Refused ambient listening calls** (frames 7489 to 7533): the 403s with warnings 154 (7496), 144 (7514) and 127
+  (7533), with no invitation sent.
+- **Busy target** (frames 7544 to 7590): client-c's private call to client-b (7544), then client-a's ambient request
+  (7583) answered 480 (7590); client-b is not invited.
 
-- **A group call by the listened-to user** (frames 4104 to 4129): client-b's group call (4104) first ends the ambient
-  call: BYE to client-b (4108), its 200 OK (4112), then BYE to client-a with `call-request-initiated-by-listened-to-client`
-  (4117), as TS 24.379 clause 11.1.6.4.3 orders it. Only then is client-a, an affiliated member, invited to client-b's
-  group call (4124), and it joins (200 OK, 4129).
+- **A group call by the listened-to user** (frames 4018 to 4041): client-b's group call (4018) first ends the ambient
+  call: BYE to client-b (4022), its 200 OK (4026), then BYE to client-a with `call-request-initiated-by-listened-to-client`
+  (4030), as TS 24.379 clause 11.1.6.4.3 orders it. Only then is client-a, an affiliated member, invited to client-b's
+  group call (4035), and it joins (200 OK, 4041).
 
 ## 5. Stop or start over
 
@@ -306,9 +306,9 @@ sequenceDiagram
 
 | Message | Frames |
 |---|---|
-| Remote call: request A → S; relay S → B; B's INVITE; fan-out to A, client-c, client-d | 409; 417; 430; 437, 448, 456 |
-| Remote call: 200 OK to B; B's report; report to A | 473; 488; 540 |
-| Ambient: L's INVITE; S → T INVITE; T's 200 OK; 183 and 200 OK to L | 3109; 3119; 3121; 3128, 3131 |
-| Ambient: Floor Granted to T, Floor Taken to L; T's speech, to L; L's request, Floor Deny | 3134, 3135; 3137, 3139; 3500, 3501 |
-| Administrator release: BYE to T; T's 200 OK; BYE with release-reason to L | 4001; 4005; 4008 |
-| Timer release: INVITE; 30.0 s later BYE to T; BYE with release-reason to L | 4526; 7560; 7568 |
+| Remote call: request A → S; relay S → B; B's INVITE; fan-out to A, client-c, client-d | 429; 437; 450; 456, 464, 473 |
+| Remote call: 200 OK to B; B's report; report to A | 493; 512; 576 |
+| Ambient: L's INVITE; S → T INVITE; T's 200 OK; 183 and 200 OK to L | 3134; 3144; 3146; 3153, 3155 |
+| Ambient: Floor Granted to T, Floor Taken to L; T's speech, to L; L's request, Floor Deny | 3159, 3160; 3162, 3164; 3503, 3505 |
+| Administrator release: BYE to T; T's 200 OK; BYE with release-reason to L | 3926; 3930; 3933 |
+| Timer release: INVITE; 30.0 s later BYE to T; BYE with release-reason to L | 4434; 7468; 7475 |

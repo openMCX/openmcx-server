@@ -10,8 +10,9 @@ in a container of its own: one connection to the SIP core, never a listener, and
     the flow;
   - an initial request to its AoR (the INVITE of client-a's private call) reaches it over
     the flow;
-  - after it closes the flow, the next private call to it fails at once, and the core
-    does not dial the binding;
+  - the registrar answers its REGISTER with Require: outbound (RFC 5626 section 6);
+  - after it closes the flow, the next private call to it fails at once: the core answers
+    430 (Flow Failed, RFC 5626 section 5.3.1) and does not dial the binding;
   - client-a, a listening client, keeps its binding without a received address.
 
 The flow is the SIP Outbound flow of RFC 5626 section 4.2 (registrations); the requests over
@@ -169,6 +170,11 @@ def main():
             'the core opened a connection to the flow client'
         )
         checks.append('the core log shows no connection opened to the flow client')
+        # RFC 5626 section 5.3.1: the core answered the INVITE to the closed flow with 430 (Flow Failed).
+        failed = [line.strip() for line in logs.splitlines() if 'flow failed: 430 Flow Failed for INVITE' in line]
+        observations['flow_failed_lines'] = failed[-3:]
+        assert failed, 'the core did not answer the INVITE to the closed flow with 430 (Flow Failed)'
+        checks.append('the core answered the INVITE to the closed flow with 430 (Flow Failed)')
         query = subprocess.run(
             cli
             + ['exec', '-T', 'client-a', 'python3', '-', '--config', '/config/client-a.json', '--query']

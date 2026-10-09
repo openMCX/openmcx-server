@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="460" viewBox="0 0 900 460" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Unit Test Tutorial 20: alice creates erin in MCX Admin and issues her an activation URL; erin's device (client-e) activates over HTTPS with MCX Admin, IdMS and the Credential Service, then registers and publishes its access token over SIP; every client renews its access token at IdMS with its refresh token and publishes the new one; the openMCX system (SIP core, MCPTT and MCData servers, common services, MCX Admin) on one computer, on the lab network 172.31.20.0/24</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6472"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3b6fd8"/>
+    </marker>
+  </defs>
+  <rect width="900" height="460" rx="14" fill="#ffffff"/>
+  <rect x="12" y="12" width="876" height="436" rx="16" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="32" y="40" font-size="15" font-weight="700" fill="#374151">Computer · Docker · lab network 172.31.20.0/24</text>
+  <text x="868" y="40" text-anchor="end" font-size="12" fill="#4b5563">nothing published outside the computer</text>
+
+  <!-- clients -->
+  <g font-size="14" fill="#1f2937">
+    <rect x="32" y="64" width="190" height="56" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
+    <text x="127" y="88" text-anchor="middle" font-weight="600">client-a · .101</text>
+    <text x="127" y="107" text-anchor="middle" font-size="12" fill="#4b5563">alice · administrator, admin.py</text>
+    <rect x="32" y="130" width="190" height="56" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
+    <text x="127" y="154" text-anchor="middle" font-weight="600">client-b · .102</text>
+    <text x="127" y="173" text-anchor="middle" font-size="12" fill="#4b5563">bob · renews its token</text>
+    <rect x="32" y="196" width="190" height="56" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
+    <text x="127" y="220" text-anchor="middle" font-weight="600">client-c, client-d</text>
+    <text x="127" y="239" text-anchor="middle" font-size="12" fill="#4b5563">.103, .104 · signed in, not used</text>
+    <rect x="32" y="292" width="190" height="72" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="2" stroke-dasharray="5 3"/>
+    <text x="127" y="316" text-anchor="middle" font-weight="600">client-e · .105</text>
+    <text x="127" y="335" text-anchor="middle" font-size="12" fill="#4b5563">erin's device, started with</text>
+    <text x="127" y="352" text-anchor="middle" font-size="12" fill="#4b5563">the activation URL only</text>
+  </g>
+  <text x="127" y="392" text-anchor="middle" font-size="12" fill="#4b5563">headless clients, run.sh</text>
+
+  <!-- openMCX system -->
+  <rect x="380" y="56" width="488" height="376" rx="16" fill="#fff7ed" stroke="#ea8a1a" stroke-width="2"/>
+  <text x="400" y="82" font-size="15" font-weight="700" fill="#9a4b05">openMCX system</text>
+  <g font-size="13" fill="#1f2937">
+    <rect x="400" y="98" width="200" height="56" rx="10" fill="#ffffff" stroke="#f0b46b" stroke-width="1.5"/>
+    <text x="500" y="122" text-anchor="middle" font-weight="600">SIP core · .10</text>
+    <text x="500" y="141" text-anchor="middle" font-size="12" fill="#4b5563">Kamailio · SIP 5060/tcp, in clear</text>
+    <rect x="640" y="98" width="208" height="56" rx="10" fill="#ffffff" stroke="#c0392b" stroke-width="1.5"/>
+    <text x="744" y="122" text-anchor="middle" font-weight="600">MCPTT server · .20</text>
+    <text x="744" y="141" text-anchor="middle" font-size="12" fill="#4b5563">authorised until the token expires</text>
+    <rect x="640" y="164" width="208" height="56" rx="10" fill="#ffffff" stroke="#c0392b" stroke-width="1.5"/>
+    <text x="744" y="188" text-anchor="middle" font-weight="600">MCData server · .21</text>
+    <text x="744" y="207" text-anchor="middle" font-size="12" fill="#4b5563">the same, for MCData</text>
+    <rect x="400" y="236" width="448" height="104" rx="10" fill="#ffffff" stroke="#c0392b" stroke-width="1.5"/>
+    <text x="624" y="258" text-anchor="middle" font-weight="600">Common services</text>
+    <text x="420" y="282" font-size="12" fill="#1f2937"><tspan font-weight="600">IdMS · .40</tspan> sign-in, access and refresh tokens (120 s)</text>
+    <text x="420" y="302" font-size="12" fill="#1f2937"><tspan font-weight="600">MCX Admin · .50</tspan> users, set-password and activation links</text>
+    <text x="420" y="322" font-size="12" fill="#1f2937"><tspan font-weight="600">Credential Service · .49</tspan> SIP credential, device certificate</text>
+    <rect x="400" y="352" width="448" height="56" rx="10" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="624" y="376" text-anchor="middle" font-size="12" fill="#4b5563">CMS · GMS · KMS · LMS · HTTP proxy · user database</text>
+    <text x="624" y="395" text-anchor="middle" font-size="12" fill="#4b5563">HTTPS: not captured</text>
+  </g>
+
+  <!-- SIP: clients to SIP core, SIP core to the servers -->
+  <g stroke="#5b6472" stroke-width="1.6" fill="none">
+    <path d="M222,92 C300,92 320,116 398,116" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+    <path d="M222,158 C300,158 320,124 398,124" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+    <path d="M222,224 C310,224 320,132 398,132" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+    <path d="M222,312 C340,312 320,140 398,140" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+    <path d="M602,126 L638,126" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+    <path d="M590,156 C600,190 610,192 638,192" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  </g>
+  <rect x="300" y="168" width="64" height="22" rx="11" fill="#ffffff" stroke="#9ca3af"/>
+  <text x="332" y="184" text-anchor="middle" font-size="12" font-weight="600" fill="#374151">SIP</text>
+
+  <!-- HTTPS: the clients to the common services (sign-in, refresh, activation) -->
+  <g stroke="#3b6fd8" stroke-width="1.6" fill="none" stroke-dasharray="6 4">
+    <path d="M222,344 C300,344 330,300 398,300" marker-end="url(#arrow-blue)" marker-start="url(#arrow-blue)"/>
+    <path d="M222,108 C270,108 300,270 398,270" marker-end="url(#arrow-blue)" marker-start="url(#arrow-blue)"/>
+  </g>
+  <rect x="236" y="400" width="130" height="38" rx="10" fill="#ffffff" stroke="#3b6fd8"/>
+  <text x="301" y="416" text-anchor="middle" font-size="12" font-weight="600" fill="#3b6fd8">HTTPS: activation,</text>
+  <text x="301" y="431" text-anchor="middle" font-size="12" font-weight="600" fill="#3b6fd8">sign-in, refresh</text>
+</svg>

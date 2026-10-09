@@ -125,7 +125,7 @@ docker compose exec client-b mcx-client --config /config/client-b.json --command
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/07-chat-group-calls-run.pcap.gz`. The folder also holds a reference run,
-`captures/07-chat-group-calls-full.pcap.gz` (140 KB, 2 696 frames): the frame numbers below and in the call flow are
+`captures/07-chat-group-calls-full.pcap.gz` (136 KB, 2 572 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.7.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -154,30 +154,30 @@ meaning is "Another MCPTT client has permission" (TS 24.380 clause 8.2.6.2).
 
 What to look for, in the reference run:
 
-- **The first join** (frames 538 to 571): client-a's INVITE (545, after the 407 to 538) with
-  `<session-type>chat</session-type>`. The server answers 200 OK (550, to client-a 552) with no 180 Ringing before
-  it, and a Contact with `isfocus` and the session URI. Floor Idle (556), then client-a's conference subscription
-  (559) and its first roster (571). No INVITE goes from the server to anyone.
-- **The second join** (frames 589 to 610): client-b's INVITE (596) gets the same session URI in its 200 OK (604);
-  the server sends client-b a Floor Idle (609) and client-a a new roster (610).
-- **Floor control** (frames 658 to 2064): client-a's Floor Request (658), Floor Granted (659), Floor Taken to client-b
-  (660), client-a's speech from 663. client-b's Floor Request (767) is answered with Floor Deny (768). client-a's
-  Floor Release (1340) and Floor Idle (1342); then client-b's request (1346), grant (1347), speech from 1350 and
-  release (2064). 337 and 355 RTP packets reach the listener, about 6.7 and 7.1 s of speech.
-- **One too many** (frames 2161 to 2176): client-d's INVITE (2168) is refused with 486 and `Warning: 399 mcx "122
-  too many participants"` (2172, to client-d 2176).
-- **The creator leaves and comes back** (frames 2193 to 2249): client-a's BYE (2196) ends only its own part: its
-  conference subscription ends (NOTIFY `terminated`, 2206), client-b's roster drops it (2210), and the server sends
-  no BYE to anyone. client-a's new INVITE (2241) joins the same session (200 OK 2249).
-- **Release when one is left** (frames 2311 to 2379): client-b leaves (2314) and the session goes on; client-c leaves
-  (2351) and the server releases client-a with a BYE (2362, to client-a 2369). client-a answers 200 OK (2370) and its
-  subscription ends (2379).
-- **Release when nobody talks** (frames 2386 to 2445): client-d's lone session starts at 2400 (27.9 s) and the
-  server's BYE comes at 2445 (47.9 s), 20 s later.
-- **Call type and group checks** (frames 2458 to 2692): 403 with warning 118 (2469), 117 (2506), 120 (2544), 167
-  (2651) and 148 (2688).
-- **Implicit affiliation** (frames 2553 to 2609): client-d's chat INVITE (2559) is accepted (200 OK 2564), and the
-  server tells client-d of its new affiliation with a presence NOTIFY (2568). client-d leaves (2608).
+- **The first join** (frames 471 to 504): client-a's INVITE (478, after the 407 to 471) with
+  `<session-type>chat</session-type>`. The server answers 200 OK (482, to client-a 486) with no 180 Ringing before
+  it, and a Contact with `isfocus` and the session URI. Floor Idle (489), then client-a's conference subscription
+  (492) and its first roster (504). No INVITE goes from the server to anyone.
+- **The second join** (frames 516 to 537): client-b's INVITE (523) gets the same session URI in its 200 OK (531);
+  the server sends client-b a Floor Idle (536) and client-a a new roster (537).
+- **Floor control** (frames 577 to 1980): client-a's Floor Request (577), Floor Granted (578), Floor Taken to client-b
+  (579), client-a's speech from 581. client-b's Floor Request (616) is answered with Floor Deny (617). client-a's
+  Floor Release (1259) and Floor Idle (1261); then client-b's request (1265), grant (1266), speech from 1270 and
+  release (1980). 337 and 355 RTP packets reach the listener, about 6.7 and 7.1 s of speech.
+- **One too many** (frames 2057 to 2072): client-d's INVITE (2064) is refused with 486 and `Warning: 399 mcptt-server "122
+  too many participants"` (2068, to client-d 2072).
+- **The creator leaves and comes back** (frames 2083 to 2132): client-a's BYE (2086) ends only its own part: its
+  conference subscription ends (NOTIFY `terminated`, 2103), client-b's roster drops it (2095), and the server sends
+  no BYE to anyone. client-a's new INVITE (2124) joins the same session (200 OK 2132).
+- **Release when one is left** (frames 2190 to 2258): client-b leaves (2193) and the session goes on; client-c leaves
+  (2230) and the server releases client-a with a BYE (2241, to client-a 2248). client-a answers 200 OK (2249) and its
+  subscription ends (2258).
+- **Release when nobody talks** (frames 2265 to 2327): client-d's lone session starts at 2279 (26.1 s) and the
+  server's BYE comes at 2327 (46.1 s), 20 s later.
+- **Call type and group checks** (frames 2340 to 2568): 403 with warning 118 (2351), 117 (2388), 120 (2426), 167
+  (2527) and 148 (2564).
+- **Implicit affiliation** (frames 2435 to 2485): client-d's chat INVITE (2441) is accepted (200 OK 2445), and the
+  server tells client-d of its new affiliation with a presence NOTIFY (2447). client-d leaves (2484).
 
 ## 5. Stop or start over
 
@@ -272,10 +272,10 @@ server releases client-a.
 
 | Message | Frames |
 |---|---|
-| A → S INVITE (chat), S → A 200 OK (no 180) | 545, 547; 550, 552 |
-| S → A Floor Idle; A's conference SUBSCRIBE and first roster | 556; 559, 571 |
-| B → S INVITE (chat), S → B 200 OK (same session URI) | 596, 598; 604 |
-| S → B Floor Idle; roster to A | 609; 610 |
-| A Floor Request; Floor Granted; Floor Taken to B; A's speech | 658; 659; 660; from 663 |
-| A Floor Release; Floor Idle to A | 1340; 1342 |
-| Release (step 7): B's BYE; C's BYE; S → A BYE, 200 OK from A | 2314; 2351; 2362, 2369, 2370 |
+| A → S INVITE (chat), S → A 200 OK (no 180) | 478, 480; 482, 486 |
+| S → A Floor Idle; A's conference SUBSCRIBE and first roster | 489; 492, 504 |
+| B → S INVITE (chat), S → B 200 OK (same session URI) | 523, 525; 531 |
+| S → B Floor Idle; roster to A | 536; 537 |
+| A Floor Request; Floor Granted; Floor Taken to B; A's speech | 577; 578; 579; from 581 |
+| A Floor Release; Floor Idle to A | 1259; 1261 |
+| Release (step 7): B's BYE; C's BYE; S → A BYE, 200 OK from A | 2193; 2230; 2241, 2248, 2249 |

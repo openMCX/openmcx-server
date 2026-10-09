@@ -18,8 +18,7 @@ McServer::User &McServer::authenticated(const SipMessage &message) {
   if (!peer.empty() && role_ == "participating")
     throw std::runtime_error("a participating server does not control calls");
   auto found = users_.find(asserted);
-  if (found == users_.end() || found->second.expires <= std::time(nullptr))
-    throw std::runtime_error("service authorization required");
+  if (found == users_.end() || found->second.expires <= std::time(nullptr)) throw UnknownUser();
   if (found->second.peer != peer) throw std::runtime_error("user is not served by the requesting server");
   return found->second;
 }

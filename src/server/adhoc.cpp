@@ -52,7 +52,7 @@ std::shared_ptr<McServer::Leg> McServer::incoming_leg(const SipMessage &message,
 // return the response.
 SipResponse McServer::adhoc_rejected(SipResponse &response, const User &user, int status, const std::string &warning) {
   response.status_code = status;
-  if (!warning.empty()) response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
+  if (!warning.empty()) response.headers = {{"Warning", warning_value(warning)}};
   event("adhoc_call_rejected", {{"user_id", user.id}, {"status", status}, {"warning", warning}});
   return response;
 }
@@ -169,8 +169,11 @@ std::optional<SipResponse> McServer::adhoc_priority(const SipMessage &message, c
       current.imminent_peril = false;
     response.content_type = svc_.info_mime;
     response.body = service_info_xml_(current);
-    return reject(403, info.adhoc_emergency ? "emergency adhoc group call not authorized"
-                                            : "imminent peril adhoc group call not authorized");
+    return reject(
+        403, info.adhoc_emergency
+                 ? warn(Warning::function_not_allowed, "user authorisation: emergency adhoc group call not authorized")
+                 : warn(Warning::function_not_allowed,
+                        "user authorisation: imminent peril adhoc group call not authorized"));
   }
   priority.emergency = info.adhoc_emergency == true;
   priority.imminent = info.imminent_peril == true;
@@ -181,7 +184,7 @@ std::optional<SipResponse> McServer::adhoc_priority(const SipMessage &message, c
     const auto values = service_resource_priority();
     if (!requested.empty() && ((requested == values.value("emergency", std::string{}) && !priority.emergency) ||
                                (requested == values.value("imminent", std::string{}) && !priority.imminent)))
-      return reject(403, "Resource-Priority is not authorized by call state");
+      return reject(403, warn(Warning::function_not_allowed, "Resource-Priority not authorized by call state"));
     try {
       (void)priority_headers(cfg_.at(svc_.name), priority);
     } catch (const std::exception &) {
@@ -387,7 +390,9 @@ void McServer::invite_adhoc_member(const std::shared_ptr<Session> &session, cons
   // TS 24.379 clause 17.4.2.2.1 step 6 (the terminating participating function): an invitee whose user profile has no
   // <allow-adhoc-group-call-participation> is not invited (403, warning 188).
   if (!user_profile(id).value("adhoc_call", Json::object()).value("participation", false)) {
-    event("adhoc_invitee_rejected", {{"user_id", id}, {"group_id", session->group}, {"status", 403},
+    event("adhoc_invitee_rejected", {{"user_id", id},
+                                     {"group_id", session->group},
+                                     {"status", 403},
                                      {"warning", warn(Warning::adhoc_participation_not_allowed)}});
     return;
   }
@@ -482,7 +487,7 @@ SipResponse McServer::adhoc_modify(const SipMessage &message, const User &user, 
   const auto session = leg->session;
   const auto reject = [&](int status, const std::string &warning = {}) {
     response.status_code = status;
-    if (!warning.empty()) response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
+    if (!warning.empty()) response.headers = {{"Warning", warning_value(warning)}};
     event("adhoc_modify_rejected", {{"user_id", user.id}, {"status", status}, {"warning", warning}});
     return response;
   };
@@ -564,8 +569,8 @@ void McServer::send_adhoc_alert(const AdhocAlert &alert, const std::string &grou
   info.participant_criteria = alert.criteria;
   auto parts = service_parts(info);
   if (active && alert.location) parts.push_back({svc_.location_mime, service_location_xml(*alert.location, svc_)});
-  const auto boundary = "mcx-" + random_id();
-  sip_.request("MESSAGE", user->sip, "multipart/mixed; boundary=" + boundary, multipart_body(parts, boundary),
+  const auto [type, body] = message_body(parts, "mcx-" + random_id());
+  sip_.request("MESSAGE", user->sip, type, body,
                user_route(*user, {{"P-Asserted-Service", svc_.icsi},
                                   {"Accept-Contact", feature_accept()},
                                   {"Accept-Contact", icsi_accept()}}));
@@ -597,7 +602,7 @@ SipResponse McServer::adhoc_alert_message(const SipMessage &message, const User 
   SipResponse response;
   const auto reject = [&](int status, const std::string &warning) {
     response.status_code = status;
-    if (!warning.empty()) response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
+    if (!warning.empty()) response.headers = {{"Warning", warning_value(warning)}};
     McpttInfo current;
     current.adhoc_alert = !*info.adhoc_alert;
     response.content_type = svc_.info_mime;
@@ -611,7 +616,8 @@ SipResponse McServer::adhoc_alert_message(const SipMessage &message, const User 
   const auto policy = user_profile(user.id).value("adhoc_call", Json::object());
   if (*info.adhoc_alert) {
     if (!policy.is_object() || !policy.value("alert", false))
-      return reject(403, "adhoc group emergency alert not authorized");
+      return reject(
+          403, warn(Warning::function_not_allowed, "user authorisation: adhoc group emergency alert not authorized"));
     if (info.participant_criteria.empty()) return reject(403, warn(Warning::adhoc_participants_unknown));
     try {
       (void)parse_participant_criteria(info.participant_criteria);
@@ -634,31 +640,47 @@ SipResponse McServer::adhoc_alert_message(const SipMessage &message, const User 
     response.body = service_info_xml_(answer);
     // TS 24.379 clause 12.1A.3.1 step 3e: confirm receipt to the originator.
     schedule([this, group, id = user.id, client = user.client] {
-      auto *target = by_id(id);
-      if (!target || !adhoc_alerts_.contains(group)) return;
-      McpttInfo receipt;
-      receipt.request_uri = id;
-      receipt.client_id = client;
-      receipt.calling_group = group;
-      receipt.adhoc_alert = true;
-      receipt.adhoc_alert_received = true;
-      receipt.participant_criteria = adhoc_alerts_.at(group).criteria;
-      sip_.request("MESSAGE", target->sip, svc_.info_mime, service_info_xml_(receipt),
-                   user_route(*target, {{"P-Asserted-Service", svc_.icsi}, {"Accept-Contact", feature_accept()}}));
+      if (adhoc_alerts_.contains(group))
+        send_adhoc_alert_receipt(group, id, client, true, adhoc_alerts_.at(group).criteria);
     });
     event("adhoc_alert_started",
           {{"user_id", user.id}, {"group_id", group}, {"recipients", adhoc_alerts_.at(group).recipients}});
     return response;
   }
   if (!policy.is_object() || !policy.value("alert_cancel", false))
-    return reject(403, "adhoc group emergency alert cancellation not authorized");
+    return reject(403, warn(Warning::function_not_allowed,
+                            "user authorisation: adhoc group emergency alert cancellation not authorized"));
   auto found = adhoc_alerts_.find(info.request_uri);
   if (found == adhoc_alerts_.end() || found->second.initiator != user.id) return reject(404, "");
   for (const auto &id : found->second.recipients) send_adhoc_alert(found->second, found->first, id, false);
   event("adhoc_alert_cancelled", {{"user_id", user.id}, {"group_id", found->first}});
+  // TS 24.379 clause 12.1A.3.2 step 4 g) (TS 24.281 clause 12.1A.3.2 step 4 g)): after the 200 (OK), confirm
+  // receipt of the cancellation to the originator, with the client ID of the request.
+  schedule([this, group = found->first, id = user.id, client = info.client_id] {
+    send_adhoc_alert_receipt(group, id, client, false, {});
+  });
   adhoc_alerts_.erase(found);
   response.status_code = 200;
   return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 12.1A.3.1 step 3e and 12.1A.3.2 step 4 g) with clause 6.3.3.1.20: the SIP MESSAGE to the
+// originator confirming receipt of the ad hoc group emergency alert (<adhoc-alert-ind> "true") or of its
+// cancellation ("false"), with <adhoc-alert-ind-rcvd> "true" and the ad hoc group identity.
+void McServer::send_adhoc_alert_receipt(const std::string &group, const std::string &id, const std::string &client,
+                                        bool active, const std::string &criteria) {
+  auto *target = by_id(id);
+  if (!target) return;
+  McpttInfo receipt;
+  receipt.request_uri = id;
+  receipt.client_id = client;
+  receipt.calling_group = group;
+  receipt.adhoc_alert = active;
+  receipt.adhoc_alert_received = true;
+  receipt.participant_criteria = criteria;
+  sip_.request("MESSAGE", target->sip, svc_.info_mime, service_info_xml_(receipt),
+               user_route(*target, {{"P-Asserted-Service", svc_.icsi}, {"Accept-Contact", feature_accept()}}));
 }
 
 //------------------------------------------------------------------------------

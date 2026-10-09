@@ -17,6 +17,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace mcx {
@@ -406,6 +407,10 @@ std::optional<EmergencyLocation> parse_emergency_location_parts(const std::vecto
 //------------------------------------------------------------------------------
 // RFC 2046 section 5.1.1 with RFC 5621: writes a multipart body with the given boundary.
 std::string multipart_body(const std::vector<BodyPart> &parts, std::string_view boundary);
+//------------------------------------------------------------------------------
+// RFC 3261 section 7.4 with RFC 5621: the Content-Type and body of a request carrying the parts: one part as it is,
+// several as a multipart/mixed body with the given boundary.
+std::pair<std::string, std::string> message_body(const std::vector<BodyPart> &parts, std::string_view boundary);
 //------------------------------------------------------------------------------
 // RFC 2046 section 5.1.1 with RFC 5621: splits a multipart body into its parts; any other type is a single part.
 std::vector<BodyPart> parse_body_parts(std::string_view type, std::string_view body);

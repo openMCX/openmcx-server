@@ -111,7 +111,7 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/01-group-call-run.pcap.gz`. The folder also holds a reference run,
-`captures/01-group-call-full.pcap.gz` (154 KB, 3 245 frames): the frame numbers below and in the call flow are
+`captures/01-group-call-full.pcap.gz` (155 KB, 3 143 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.1.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -135,31 +135,31 @@ Useful display filters:
 
 What to look for, in the reference run:
 
-- **Registration and service authorisation** (frames 4 to 478): each client registers with the SIP core
+- **Registration and service authorisation** (frames 4 to 435): each client registers with the SIP core
   (REGISTER, `401` challenge, REGISTER, `200`). Then it subscribes to its configuration and affiliates (PUBLISH and
   SUBSCRIBE to `mcptt@mcx.test`); the SIP core challenges those with `407` first. The client's access token from the
   IdMS travels in SIP for service authorisation, so it is in the capture. In the reference run it comes from a
   throwaway system: its signing key and users no longer exist and the tokens expired after an hour. Treat a capture
   of your own system as secret.
-- **The group call** (frames 479 to 575): client-a's INVITE to the MCPTT service (486) carries a multipart body.
+- **The group call** (frames 436 to 524): client-a's INVITE to the MCPTT service (443) carries a multipart body.
   It has the SDP offer and the MCPTT XML with the group. In the SDP, `m=audio 4000 RTP/AVP 96` offers AMR-WB speech
   (`a=rtpmap:96 AMR-WB/16000/1`) with RTCP on 4001, and `m=application 5000 udp MCPTT` with
-  `a=fmtp:MCPTT mc_floor_ssrc=…;mc_priority=0` offers floor control. The server's answer (508) gives 172.31.1.20 for
-  both. The server invites client-b (493, 497) with `Answer-Mode: Auto`, so client-b answers at once.
+  `a=fmtp:MCPTT mc_floor_ssrc=…;mc_priority=0` offers floor control. The server's answer (466) gives 172.31.1.20 for
+  both. The server invites client-b (449, 453) with `Answer-Mode: Auto`, so client-b answers at once.
   client-a gets no `180 Ringing`: the controlling function of a group call sends none (TS 24.379 clause 10.1.1.4.2),
   and answers `200` once client-b has. Its `200` carries `P-Asserted-Identity` (the MCPTT service) and the option
   tags `tdialog`, `norefersub`, `explicitsub` and `nosub` in `Supported` (clause 6.3.3.2.3.2).
-- **Floor control and speech** (frames 571 to 1255): Floor Request (571), Floor Granted to client-a (572), Floor
-  Taken to client-b (573), each confirmed with a Floor Ack. Then about 6.7 s of speech, 337 RTP packets each way
-  through the server (client-a → server, server → client-b), and Floor Release (1250) and Floor Idle (1252, 1253).
-- **Late entry** (frame 1273): the MCPTT server sends an INVITE to client-c on its own, just after client-c's
+- **Floor control and speech** (frames 520 to 1203): Floor Request (520), Floor Granted to client-a (521), Floor
+  Taken to client-b (522), each confirmed with a Floor Ack. Then about 6.7 s of speech, 337 RTP packets each way
+  through the server (client-a → server, server → client-b), and Floor Release (1199) and Floor Idle (1201, 1202).
+- **Late entry** (frame 1222): the MCPTT server sends an INVITE to client-c on its own, just after client-c's
   affiliation. client-c did not call.
-- **Leave and rejoin** (frames 1349 to 1408): client-b's BYE, then its INVITE to the session URI
-  (`mcptt-session=…`, 1386 and 1393).
-- **Release by the initiator** (from frame 1469): client-a's BYE (1469, challenged with `407`, again 1472),
-  then the server's BYEs to client-b (1476, 1479) and client-c (1478, 1488) and the final conference NOTIFYs.
-- **Two groups** (frames 1567 to 3233): two calls with different session URIs. Two floors are granted 0.1 s apart
-  (1744, 1800) and four speech streams run at once, each only within its own group.
+- **Leave and rejoin** (frames 1285 to 1355): client-b's BYE, then its INVITE to the session URI
+  (`mcptt-session=…`, 1322 and 1329).
+- **Release by the initiator** (from frame 1395): client-a's BYE (1395, challenged with `407`, again 1398),
+  then the server's BYEs to client-b (1402, 1407) and client-c (1404, 1414) and the final conference NOTIFYs.
+- **Two groups** (frames 1494 to 3131): two calls with different session URIs. Two floors are granted 0.1 s apart
+  (1663, 1679) and four speech streams run at once, each only within its own group.
 
 ## 5. Stop or start over
 
@@ -261,19 +261,19 @@ server, or the other way:
 
 | Message | Frames |
 |---|---|
-| A → S INVITE group and SDP | 486, 488 |
-| S → B INVITE (target B, calling group, `Answer-Mode: Auto`) | 493, 497 |
-| B → S 200 OK and SDP | 499, 501 |
-| S → B ACK | 503, 504 |
-| S → A 200 OK (session URI, SDP) | 505, 508 |
-| A → S ACK | 512, 517 |
-| S → B, S → A Floor Idle, and their Floor Acks | 507, 511; 518, 519 |
-| B → S SUBSCRIBE conference, 200 OK, NOTIFY roster, 200 OK | 515, 522, 523, 527, 526, 530, 531, 532 |
-| A → S SUBSCRIBE conference, 200 OK, NOTIFY roster, 200 OK | 537, 539, 541, 544, 542, 548, 551, 557 |
-| A → S Floor Request; S → A Floor Granted; S → B Floor Taken; Acks | 571; 572; 573; 575, 574 |
-| AMR-WB RTP, A → S and S → B | 576 onwards, until 1249 |
-| A → S Floor Release; S → A Floor Ack; Floor Idle to A and B; Acks | 1250; 1251; 1252, 1253; 1255, 1254 |
-| A → S BYE, 200 OK (after late entry and rejoin, step 6) | 1472, 1473; 1474, 1477 |
+| A → S INVITE group and SDP | 443, 445 |
+| S → B INVITE (target B, calling group, `Answer-Mode: Auto`) | 449, 453 |
+| B → S 200 OK and SDP | 455, 457 |
+| S → B ACK | 459, 463 |
+| S → A 200 OK (session URI, SDP) | 460, 466 |
+| A → S ACK | 469, 474 |
+| S → B, S → A Floor Idle, and their Floor Acks | 462, 468; 475, 487 |
+| B → S SUBSCRIBE conference, 200 OK, NOTIFY roster, 200 OK | 472, 478, 479, 480, 483, 486, 488, 489 |
+| A → S SUBSCRIBE conference, 200 OK, NOTIFY roster, 200 OK | 494, 496, 498, 501, 504, 510, 512, 518 |
+| A → S Floor Request; S → A Floor Granted; S → B Floor Taken; Acks | 520; 521; 522; 524, 523 |
+| AMR-WB RTP, A → S and S → B | 525 onwards, until 1198 |
+| A → S Floor Release; S → A Floor Ack; Floor Idle to A and B; Acks | 1199; 1200; 1201, 1202; 1203, 1204 |
+| A → S BYE, 200 OK (after late entry and rejoin, step 6) | 1398, 1399; 1400, 1403 |
 
 The conference subscription and the Floor Idle can come in another order than in the diagram, since they are
 independent. In the capture, client-b subscribes before client-a.

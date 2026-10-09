@@ -46,7 +46,7 @@ bool DataServer::accepts(const SipMessage &request, std::string_view icsi) {
 SipResponse DataServer::reject(int status, const std::string &warning, const std::string &user, const char *what) {
   SipResponse response;
   response.status_code = status;
-  if (!warning.empty()) response.headers = {{"Warning", "399 mcdata \"" + warning + "\""}};
+  if (!warning.empty()) response.headers = {{"Warning", warning_value(warning)}};
   count("rejected");
   event("mcdata_rejected", {{"user_id", user}, {"request", what}, {"status", status}, {"warning", warning}});
   return response;
@@ -79,15 +79,15 @@ void DataServer::deliver(const User &target, mcdata::Info info, const std::vecto
       {"P-Asserted-Service", service}};
   // TS 24.282 clause 13.2.3.3.4 step 2a: the reason of a server-initiated release.
   if (!reason.empty()) headers.push_back({"Reason", "SIP ;cause=200 ;text=\"" + reason + "\""});
-  sip_.request("MESSAGE", target.sip, "multipart/mixed; boundary=" + boundary, multipart_body(parts, boundary), headers,
-               [this, id = target.id, what](const SipResponse &response) {
-                 if (response.status_code < 200) return;
-                 if (response.status_code < 300 && what == "sds") count("sds_delivered");
-                 event("mcdata_delivery_result", {{"user_id", id},
-                                                  {"request", what},
-                                                  {"status", response.status_code},
-                                                  {"warning", std::string(get_header(response.headers, "Warning"))}});
-               });
+  const auto [type, body] = message_body(parts, boundary);
+  sip_.request("MESSAGE", target.sip, type, body, headers, [this, id = target.id, what](const SipResponse &response) {
+    if (response.status_code < 200) return;
+    if (response.status_code < 300 && what == "sds") count("sds_delivered");
+    event("mcdata_delivery_result", {{"user_id", id},
+                                     {"request", what},
+                                     {"status", response.status_code},
+                                     {"warning", std::string(get_header(response.headers, "Warning"))}});
+  });
 }
 
 //------------------------------------------------------------------------------

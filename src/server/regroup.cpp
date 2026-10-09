@@ -52,6 +52,49 @@ std::vector<SipHeader> McServer::function_headers(const std::string &peer) const
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clauses 16.2.2.2 step 5, 16.2.3.1 step 4 and 16.2.4.1 step 7 (TS 24.281 clause 21 likewise): what a
+// regroup request carries on: its MC service information body and its Accept-Contact and Reject-Contact header
+// fields.
+McServer::RegroupCarry McServer::regroup_carry(const SipMessage &message) const {
+  RegroupCarry carry;
+  if (message.content_type == svc_.info_mime) carry.info = message.body;
+  for (const auto &part : message.parts)
+    if (part.content_type == svc_.info_mime) carry.info = part.body;
+  const auto named = [](const std::string &name, std::string_view wanted) {
+    return name.size() == wanted.size() && std::equal(name.begin(), name.end(), wanted.begin(), [](char a, char b) {
+             return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+           });
+  };
+  for (const auto &header : message.headers)
+    if (named(header.name, "Accept-Contact") || named(header.name, "Reject-Contact")) carry.contact.push_back(header);
+  return carry;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 16.2.2.4 step 3 and 16.2.2.5 step 3 (to a member, `to_user`), 16.2.3.1 step 4 and 16.2.4.1
+// step 7 (to another function): a regroup SIP MESSAGE with the regroup body and, copied from the request, the MC
+// service information body and the Accept-Contact and Reject-Contact header fields. A regroup this function decided
+// on itself (TS 24.379 clause 16.2.3.3) has no request: a member is then addressed by the service's feature tag.
+void McServer::send_regroup(const std::string &uri, const Regroup &regroup, const RegroupCarry &carry,
+                            std::vector<SipHeader> headers, bool to_user, SipResponseHandler handler) {
+  // regroup_carry() keeps only Accept-Contact and Reject-Contact, told apart by their first letter.
+  const bool accept = std::any_of(carry.contact.begin(), carry.contact.end(), [](const SipHeader &header) {
+    return std::tolower(static_cast<unsigned char>(header.name.front())) == 'a';
+  });
+  headers.insert(headers.end(), carry.contact.begin(), carry.contact.end());
+  if (to_user && !accept) headers.push_back({"Accept-Contact", feature_accept()});
+  if (carry.info.empty()) {
+    sip_.request("MESSAGE", uri, regroup_mime_of(svc_), regroup_xml(regroup, svc_), headers, std::move(handler));
+    return;
+  }
+  const auto boundary = "mcx-" + random_id();
+  sip_.request(
+      "MESSAGE", uri, "multipart/mixed; boundary=" + boundary,
+      multipart_body({{svc_.info_mime, carry.info}, {regroup_mime_of(svc_), regroup_xml(regroup, svc_)}}, boundary),
+      headers, std::move(handler));
+}
+
+//------------------------------------------------------------------------------
 // TS 24.379 clauses 16.2.2.2 and 16.2.2.3 (clauses 16.3.2.2 and 16.3.2.3 for a user regroup): the
 // participating function authorises its own user, then the request goes to the
 // controlling function of the preconfigured group, or of the regroup to remove.
@@ -75,8 +118,8 @@ SipResponse McServer::regroup_message(const SipMessage &message, User &user, con
     }
     if (!allowed) {
       response.status_code = 403;
-      response.headers = {{"Warning", create ? "399 mcx \"" + warn(Warning::regroup_create_not_authorised) + "\""
-                                             : "399 mcx \"" + warn(Warning::regroup_remove_not_authorised) + "\""}};
+      response.headers = {{"Warning", create ? warning_value(warn(Warning::regroup_create_not_authorised))
+                                             : warning_value(warn(Warning::regroup_remove_not_authorised))}};
       event("regroup_refused", {{"user_id", user.id},
                                 {"action", regroup.action},
                                 {"regroup", regroup.regroup_uri},
@@ -91,7 +134,7 @@ SipResponse McServer::regroup_message(const SipMessage &message, User &user, con
       return relay_message(message, peers_.at(owner).service_uri,
                            route_to(owner, {{"P-Asserted-Identity", "<" + user.sip + ">"}}));
   }
-  if (!create) return regroup_remove(user, regroup);
+  if (!create) return regroup_remove(user, regroup, regroup_carry(message));
   return regroup.users.empty() ? regroup_create(message, user, regroup) : regroup_user_create(message, user, regroup);
 }
 
@@ -111,7 +154,7 @@ SipResponse McServer::regroup_create(const SipMessage &message, User &user, cons
   // TS 24.379 clause 16.2.3.1 step 3: the proposed identity must be free, as a regroup and as a group.
   if (regroup_identity_taken(regroup.regroup_uri)) {
     response.status_code = 403;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::regroup_id_in_use) + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::regroup_id_in_use))}};
     event("regroup_refused", {{"user_id", user.id}, {"regroup", regroup.regroup_uri}, {"warning", 165}});
     return response;
   }
@@ -124,7 +167,7 @@ SipResponse McServer::regroup_create(const SipMessage &message, User &user, cons
       // TS 24.379 clause 16.2.4.1 step 2a locally: a group may belong to one regroup only.
       if (is_regrouped(group)) {
         response.status_code = 403;
-        response.headers = {{"Warning", "399 mcx \"" + warn(Warning::regrouped) + "\""}};
+        response.headers = {{"Warning", warning_value(warn(Warning::regrouped))}};
         return response;
       }
       try {
@@ -140,8 +183,9 @@ SipResponse McServer::regroup_create(const SipMessage &message, User &user, cons
       functions.insert(owner);
     }
   }
+  const auto carry = regroup_carry(message);
   if (functions.empty()) {
-    regroup_store(regroup, user.id, true);
+    regroup_store(regroup, user.id, true, {}, carry);
     response.status_code = 200;
     return response;
   }
@@ -152,10 +196,11 @@ SipResponse McServer::regroup_create(const SipMessage &message, User &user, cons
   pending->transaction = message.transaction_id;
   pending->regroup = regroup;
   pending->creator = user.id;
+  pending->carry = carry;
   pending->accepted.reserve(functions.size());
   for (const auto &owner : functions) {
-    sip_.request("MESSAGE", peers_.at(owner).service_uri, regroup_mime_of(svc_), regroup_xml(regroup, svc_),
-                 function_headers(owner), [this, pending, owner](const SipResponse &answer) {
+    send_regroup(peers_.at(owner).service_uri, regroup, carry, function_headers(owner), false,
+                 [this, pending, owner](const SipResponse &answer) {
                    if (answer.status_code < 200) return;
                    schedule([this, pending, owner, status = answer.status_code,
                              warning = std::string(get_header(answer.headers, "Warning"))] {
@@ -182,7 +227,7 @@ void McServer::regroup_answered(const std::shared_ptr<PendingRegroup> &pending, 
   creating_regroups_.erase(pending->regroup.regroup_uri);
   SipResponse reply;
   if (!pending->failed) {
-    regroup_store(pending->regroup, pending->creator, true);
+    regroup_store(pending->regroup, pending->creator, true, {}, pending->carry);
     reply.status_code = 200;
   } else {
     reply.status_code = 480;
@@ -190,8 +235,7 @@ void McServer::regroup_answered(const std::shared_ptr<PendingRegroup> &pending, 
     Regroup undo = pending->regroup;
     undo.action = "remove";
     for (const auto &accepted : pending->accepted)
-      sip_.request("MESSAGE", peers_.at(accepted).service_uri, regroup_mime_of(svc_), regroup_xml(undo, svc_),
-                   function_headers(accepted));
+      send_regroup(peers_.at(accepted).service_uri, undo, {}, function_headers(accepted), false);
     event("regroup_failed", {{"regroup", pending->regroup.regroup_uri}, {"warning", pending->warning}});
   }
   sip_.respond(pending->transaction, reply);
@@ -202,7 +246,7 @@ void McServer::regroup_answered(const std::shared_ptr<PendingRegroup> &pending, 
 // (identity, preconfigured group, constituent groups or users), mark the constituent groups this function
 // controls as regrouped and notify their members.
 McServer::RegroupState &McServer::regroup_store(const Regroup &regroup, const std::string &creator, bool controlling,
-                                                const std::string &controller) {
+                                                const std::string &controller, const RegroupCarry &carry) {
   RegroupState state;
   state.preconfigured = regroup.preconfigured_group;
   state.creator = creator;
@@ -210,6 +254,7 @@ McServer::RegroupState &McServer::regroup_store(const Regroup &regroup, const st
   state.users = regroup.users;
   state.controller = controller;
   state.controlling = controlling;
+  state.carry = carry;
   auto &stored = regroups_[regroup.regroup_uri] = state;
   // Each function marks only the constituent groups it controls.
   for (const auto &group : regroup.groups)
@@ -220,7 +265,7 @@ McServer::RegroupState &McServer::regroup_store(const Regroup &regroup, const st
                             {"users", regroup.users},
                             {"controlling", controlling},
                             {"user_id", creator}});
-  if (!regroup.groups.empty()) schedule([this, regroup] { regroup_notify(regroup, true); });
+  if (!regroup.groups.empty()) schedule([this, regroup, carry] { regroup_notify(regroup, true, {}, carry); });
   return stored;
 }
 
@@ -239,7 +284,7 @@ SipResponse McServer::regroup_user_create(const SipMessage &message, const User 
   // TS 24.379 clause 16.3.3.1 step 3: the proposed identity must be free.
   if (regroup_identity_taken(regroup.regroup_uri)) {
     response.status_code = 403;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::regroup_id_in_use) + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::regroup_id_in_use))}};
     event("regroup_refused", {{"user_id", user.id}, {"regroup", regroup.regroup_uri}, {"warning", 165}});
     return response;
   }
@@ -250,6 +295,7 @@ SipResponse McServer::regroup_user_create(const SipMessage &message, const User 
   pending->transaction = message.transaction_id;
   pending->regroup = regroup;
   pending->creator = user.id;
+  pending->carry = regroup_carry(message);
   std::map<std::string, std::vector<std::string>> remote;
   for (const auto &id : regroup.users) {
     const auto *target = by_id(id);
@@ -270,8 +316,8 @@ SipResponse McServer::regroup_user_create(const SipMessage &message, const User 
     }
     Regroup offer = regroup;
     offer.users = ids;
-    sip_.request(
-        "MESSAGE", peers_.at(peer).service_uri, regroup_mime_of(svc_), regroup_xml(offer, svc_), function_headers(peer),
+    send_regroup(
+        peers_.at(peer).service_uri, offer, pending->carry, function_headers(peer), false,
         [this, pending, ids](const SipResponse &answer) {
           if (answer.status_code < 200) return;
           schedule([this, pending, ids, status = answer.status_code] { regroup_user_answered(pending, ids, status); });
@@ -301,12 +347,13 @@ SipResponse McServer::regroup_user_finish(const PendingUserRegroup &pending) {
     event("regroup_failed", {{"regroup", pending.regroup.regroup_uri}});
     return reply;
   }
-  auto &state = regroup_store(pending.regroup, pending.creator, true);
+  auto &state = regroup_store(pending.regroup, pending.creator, true, {}, pending.carry);
   state.affiliated = pending.accepted;
   // TS 24.379 clause 16.3.2.4 at this server's own participating function.
   Regroup notice = pending.regroup;
   notice.users = pending.local;
-  if (!notice.users.empty()) schedule([this, notice] { regroup_user_notify(notice, notice.users, true); });
+  if (!notice.users.empty())
+    schedule([this, notice, carry = pending.carry] { regroup_user_notify(notice, notice.users, true, carry); });
   reply.status_code = 200;
   return reply;
 }
@@ -317,7 +364,8 @@ SipResponse McServer::regroup_user_finish(const PendingUserRegroup &pending) {
 // function of members of a user regroup (TS 24.379 clauses 16.3.2.4 and 16.2.2.5), or the
 // non-controlling function of constituent groups of a group regroup (TS 24.379 clauses 16.2.4.1 and
 // 16.2.4.2).
-SipResponse McServer::regroup_from_function(const std::string &peer, const std::string &body) {
+SipResponse McServer::regroup_from_function(const std::string &peer, const std::string &body,
+                                            const RegroupCarry &carry) {
   SipResponse response;
   response.status_code = 200;
   Regroup regroup;
@@ -332,8 +380,7 @@ SipResponse McServer::regroup_from_function(const std::string &peer, const std::
   if (found != regroups_.end() && found->second.controller != peer) {
     // Only the function that controls a regroup changes it.
     response.status_code = 403;
-    if (regroup.action == "create")
-      response.headers = {{"Warning", "399 mcx \"" + warn(Warning::regroup_id_in_use) + "\""}};
+    if (regroup.action == "create") response.headers = {{"Warning", warning_value(warn(Warning::regroup_id_in_use))}};
     return response;
   }
   if (regroup.action == "remove") {
@@ -350,9 +397,9 @@ SipResponse McServer::regroup_from_function(const std::string &peer, const std::
     notice.groups = state.groups;
     notice.users.clear();
     if (!state.groups.empty())
-      schedule([this, notice, was_told = state.told] { regroup_notify(notice, false, was_told); });
+      schedule([this, notice, was_told = state.told, carry] { regroup_notify(notice, false, was_told, carry); });
     else
-      schedule([this, notice, told] { regroup_user_notify(notice, told, false); });
+      schedule([this, notice, told, carry] { regroup_user_notify(notice, told, false, carry); });
     return response;
   }
   if (!regroup.groups.empty()) {
@@ -360,21 +407,21 @@ SipResponse McServer::regroup_from_function(const std::string &peer, const std::
     for (const auto &group : regroup.groups)
       if (non_controlling(group).empty() && is_regrouped(group)) {
         response.status_code = 403;
-        response.headers = {{"Warning", "399 mcx \"" + warn(Warning::regrouped) + "\""}};
+        response.headers = {{"Warning", warning_value(warn(Warning::regrouped))}};
         return response;
       }
-    regroup_store(regroup, {}, false, peer);
+    regroup_store(regroup, {}, false, peer, carry);
     return response;
   }
   // TS 24.379 clause 16.3.2.4 steps 3 and 4: notify the members not yet told, consider them
   // affiliated, and keep the regroup until it is removed.
   std::set<std::string> known = found != regroups_.end() ? found->second.affiliated : std::set<std::string>{};
-  auto &state = regroup_store(regroup, {}, false, peer);
+  auto &state = regroup_store(regroup, {}, false, peer, carry);
   state.affiliated = known;
   std::vector<std::string> fresh;
   for (const auto &id : regroup.users)
     if (state.affiliated.insert(id).second) fresh.push_back(id);
-  if (!fresh.empty()) schedule([this, regroup, fresh] { regroup_user_notify(regroup, fresh, true); });
+  if (!fresh.empty()) schedule([this, regroup, fresh, carry] { regroup_user_notify(regroup, fresh, true, carry); });
   return response;
 }
 
@@ -417,13 +464,13 @@ void McServer::regroup_discard(const std::string &id, const RegroupState state) 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 16.2.3.2 (clause 16.3.3.2 for a user regroup): the controlling function removes the regroup
 // on a user's request, everywhere it is held (TS 24.379 clause 16.2.4.2 at the non-controlling functions).
-SipResponse McServer::regroup_remove(const User &user, const Regroup &regroup) {
+SipResponse McServer::regroup_remove(const User &user, const Regroup &regroup, const RegroupCarry &carry) {
   SipResponse response;
   const auto found = regroups_.find(regroup.regroup_uri);
   // TS 24.379 clause 16.2.3.2 step 3: the regroup does not exist.
   if (found == regroups_.end()) {
     response.status_code = 403;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::group_unknown) + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::group_unknown))}};
     return response;
   }
   const auto state = found->second;
@@ -432,10 +479,10 @@ SipResponse McServer::regroup_remove(const User &user, const Regroup &regroup) {
   if (const auto emergency = priorities_.find(regroup.regroup_uri);
       emergency != priorities_.end() && emergency->second.emergency) {
     response.status_code = 403;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::regroup_remove_in_emergency) + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::regroup_remove_in_emergency))}};
     return response;
   }
-  regroup_teardown(regroup.regroup_uri, state, user.id);
+  regroup_teardown(regroup.regroup_uri, state, user.id, carry);
   response.status_code = 200;
   return response;
 }
@@ -446,7 +493,8 @@ SipResponse McServer::regroup_remove(const User &user, const Regroup &regroup) {
 // of each constituent group and the participating function of each member of a
 // user regroup are told, the call on the regroup is released, and the members
 // this server serves are notified.
-void McServer::regroup_teardown(const std::string &id, const RegroupState state, const std::string &by) {
+void McServer::regroup_teardown(const std::string &id, const RegroupState state, const std::string &by,
+                                const RegroupCarry &carry) {
   const Regroup regroup{"remove", id, {}, {}, {}};
   regroup_discard(id, state);
   std::vector<std::string> local;
@@ -459,24 +507,24 @@ void McServer::regroup_teardown(const std::string &id, const RegroupState state,
     std::set<std::string> functions;
     for (const auto &group : state.groups)
       if (const auto owner = non_controlling(group); !owner.empty() && peers_.contains(owner)) functions.insert(owner);
-    // TS 24.379 clause 16.2.3.2 step 6: the participating function of each affiliated member, with its own members.
+    // TS 24.379 clause 16.3.3.2: the participating function of each affiliated member of a user regroup, with its
+    // own members (the members of a group regroup are told through the non-controlling functions, step 5).
     std::map<std::string, std::vector<std::string>> remote;
-    for (const auto &member_id : state.affiliated) {
-      const auto *target = by_id(member_id);
-      if (target && !target->peer.empty())
-        remote[target->peer].push_back(member_id);
-      else
-        local.push_back(member_id);
-    }
+    if (state.groups.empty())
+      for (const auto &member_id : state.affiliated) {
+        const auto *target = by_id(member_id);
+        if (target && !target->peer.empty())
+          remote[target->peer].push_back(member_id);
+        else
+          local.push_back(member_id);
+      }
     for (const auto &owner : functions)
-      sip_.request("MESSAGE", peers_.at(owner).service_uri, regroup_mime_of(svc_), regroup_xml(forward, svc_),
-                   function_headers(owner));
+      send_regroup(peers_.at(owner).service_uri, forward, carry, function_headers(owner), false);
     for (const auto &[peer, ids] : remote) {
       if (!peers_.contains(peer)) continue;
       Regroup members = forward;
       members.users = ids;
-      sip_.request("MESSAGE", peers_.at(peer).service_uri, regroup_mime_of(svc_), regroup_xml(members, svc_),
-                   function_headers(peer));
+      send_regroup(peers_.at(peer).service_uri, members, carry, function_headers(peer), false);
     }
   }
   schedule([this, id] { end_group_calls(id); });
@@ -485,9 +533,9 @@ void McServer::regroup_teardown(const std::string &id, const RegroupState state,
   notice.preconfigured_group = state.preconfigured;
   notice.groups = state.groups;
   if (!state.groups.empty())
-    schedule([this, notice, was_told = state.told] { regroup_notify(notice, false, was_told); });
+    schedule([this, notice, was_told = state.told, carry] { regroup_notify(notice, false, was_told, carry); });
   else
-    schedule([this, notice, local] { regroup_user_notify(notice, local, false); });
+    schedule([this, notice, local, carry] { regroup_user_notify(notice, local, false, carry); });
 }
 
 //------------------------------------------------------------------------------
@@ -512,8 +560,10 @@ void McServer::regroup_member_added(const std::string &user, const std::string &
   if (found == regroups_.end() || !target) return;
   const Regroup notice{"create", mapped->second, found->second.preconfigured, found->second.groups, {}};
   found->second.told.insert(user);
-  sip_.request("MESSAGE", target->sip, regroup_mime_of(svc_), regroup_xml(notice, svc_),
-               user_route(*target, {{"P-Asserted-Service", svc_.icsi}, {"Accept-Contact", feature_accept()}}));
+  // TS 24.379 clause 16.2.2.4 step 3 h): affiliated with the regroup as it is told.
+  found->second.affiliated.insert(user);
+  send_regroup(target->sip, notice, found->second.carry, user_route(*target, {{"P-Asserted-Service", svc_.icsi}}),
+               true);
   event("regroup_member_notified", {{"regroup", mapped->second}, {"group_id", group}, {"user_id", user}});
 }
 
@@ -539,7 +589,8 @@ void McServer::end_group_calls(const std::string &group) {
 // removal): every affiliated member of a
 // constituent group is told that its group has been regrouped, and by which
 // temporary group identity, so that it can use the regroup at once.
-void McServer::regroup_notify(const Regroup &regroup, bool created, const std::set<std::string> &was_told) {
+void McServer::regroup_notify(const Regroup &regroup, bool created, const std::set<std::string> &was_told,
+                              const RegroupCarry &carry) {
   std::set<std::string> told;
   for (const auto &group : regroup.groups) {
     if (!non_controlling(group).empty()) continue; // told by its own controlling function
@@ -565,13 +616,16 @@ void McServer::regroup_notify(const Regroup &regroup, bool created, const std::s
         notice.groups.clear();
         notice.users.clear();
       }
-      sip_.request("MESSAGE", target->sip, regroup_mime_of(svc_), regroup_xml(notice, svc_),
-                   user_route(*target, {{"P-Asserted-Service", svc_.icsi}, {"Accept-Contact", feature_accept()}}));
+      send_regroup(target->sip, notice, carry, user_route(*target, {{"P-Asserted-Service", svc_.icsi}}), true);
     }
   }
+  // TS 24.379 clause 16.2.2.4 step 3 h) (TS 24.281 clause 21.2.2.4 step 3 h)): each member told of the creation is
+  // affiliated with the regroup, without an affiliation request of its own.
   if (created)
-    if (const auto found = regroups_.find(regroup.regroup_uri); found != regroups_.end())
+    if (const auto found = regroups_.find(regroup.regroup_uri); found != regroups_.end()) {
       found->second.told.insert(told.begin(), told.end());
+      found->second.affiliated.insert(told.begin(), told.end());
+    }
   event("regroup_notified", {{"regroup", regroup.regroup_uri}, {"created", created}, {"notified", told.size()}});
 }
 
@@ -579,7 +633,8 @@ void McServer::regroup_notify(const Regroup &regroup, bool created, const std::s
 // TS 24.379 clauses 16.3.2.4 step 3 and 16.2.2.5 step 3: each member served here is told of the
 // user regroup. A creation names the members (without <groups-for-regroup>);
 // a removal names neither list.
-void McServer::regroup_user_notify(Regroup notice, const std::vector<std::string> &ids, bool created) {
+void McServer::regroup_user_notify(Regroup notice, const std::vector<std::string> &ids, bool created,
+                                   const RegroupCarry &carry) {
   notice.action = created ? "create" : "remove";
   notice.groups.clear();
   if (!created) notice.users.clear();
@@ -587,8 +642,7 @@ void McServer::regroup_user_notify(Regroup notice, const std::vector<std::string
   for (const auto &id : ids) {
     const auto *target = by_id(id);
     if (!target || !target->peer.empty() || target->expires <= std::time(nullptr)) continue;
-    sip_.request("MESSAGE", target->sip, regroup_mime_of(svc_), regroup_xml(notice, svc_),
-                 {{"P-Asserted-Service", svc_.icsi}, {"Accept-Contact", feature_accept()}});
+    send_regroup(target->sip, notice, carry, {{"P-Asserted-Service", svc_.icsi}}, true);
     ++told;
   }
   event("regroup_notified", {{"regroup", notice.regroup_uri}, {"created", created}, {"notified", told}});

@@ -121,7 +121,7 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/06-broadcast-group-call-run.pcap.gz`. The folder also holds a reference
-run, `captures/06-broadcast-group-call-full.pcap.gz` (217 KB, 6 738 frames, most of them speech): the frame numbers
+run, `captures/06-broadcast-group-call-full.pcap.gz` (209 KB, 6 523 frames, most of them speech): the frame numbers
 below and in the call flow are those of the reference. Wireshark opens the compressed file directly (or `gunzip` it
 first).
 
@@ -152,31 +152,31 @@ Two things Wireshark 4.2 shows in a confusing way:
 
 What to look for, in the reference run:
 
-- **The broadcast call** (frames 438 to 493): client-a's INVITE (445, after the SIP core's `407` challenge to 438)
-  has `<broadcast-ind>true</broadcast-ind>`. The server invites client-b (452, 456), client-c (462) and client-d (470),
-  each with `<broadcast-ind>true` and `Answer-Mode: Auto`, and answers client-a (486). The Floor Idle messages (483,
-  493) carry the Floor Indicator "Broadcast group call".
-- **Receive only** (frames 513 to 1139): client-b's Floor Request on the idle floor (513) gets Floor Deny, cause 5
-  (514). client-a's Floor Request (524) is granted (525); client-b, client-c and client-d get Floor Taken (526 to
-  528) with "The receiver is not permitted to request floor (0)". client-a's speech starts at 532; client-c's request
-  (1138) is denied (1139).
-- **End of the transmission** (frames 1884 to 1923): client-a's Floor Release (1884), Floor Idle (from 1886), and the
-  server's BYEs to all four (from 1894; the one to client-a reaches it at 1910). No client sent a BYE.
-- **No conference subscription** (frames 1925 to 2018): a new broadcast (1925, 1931). client-b's SUBSCRIBE (1991)
-  is answered 480 with warning 105 (2006, 2007). client-a's BYE (2010) ends the broadcast for everyone (server BYEs
-  from 2018).
-- **Not authorised** (frames 2041 to 2056): client-c's broadcast INVITE (2041), answered 403 with warning 100 (2052,
-  2056). The server invites nobody.
-- **Group call in progress** (frames 2061 to 3409): a normal group call (2061), whose members do subscribe to the
-  roster (client-b at 2111). client-b leaves (2235) and tries a broadcast (2288): 486 with warning 100 (2300, 2303).
-  client-c talks in the normal call (2314, 2315) and client-a gets Floor Taken (2316) with "Normal call" and "The
+- **The broadcast call** (frames 391 to 443): client-a's INVITE (398, after the SIP core's `407` challenge to 391)
+  has `<broadcast-ind>true</broadcast-ind>`. The server invites client-b (404, 408), client-c (415) and client-d (422),
+  each with `<broadcast-ind>true` and `Answer-Mode: Auto`, and answers client-a (438). The Floor Idle messages (435,
+  443) carry the Floor Indicator "Broadcast group call".
+- **Receive only** (frames 457 to 574): client-b's Floor Request on the idle floor (457) gets Floor Deny, cause 5
+  (458). client-a's Floor Request (467) is granted (469); client-b, client-c and client-d get Floor Taken (470 to
+  472) with "The receiver is not permitted to request floor (0)". client-a's speech starts at 474; client-c's request
+  (573) is denied (574).
+- **End of the transmission** (frames 1828 to 1861): client-a's Floor Release (1828), Floor Idle (from 1830), and the
+  server's BYEs to all four (from 1834; the one to client-a reaches it at 1855). No client sent a BYE.
+- **No conference subscription** (frames 1863 to 1946): a new broadcast (1863, 1869). client-b's SUBSCRIBE (1928)
+  is answered 480 with warning 105 (1935, 1936). client-a's BYE (1939) ends the broadcast for everyone (server BYEs
+  from 1946).
+- **Not authorised** (frames 1970 to 1985): client-c's broadcast INVITE (1970), answered 403 with warning 100 (1981,
+  1985). The server invites nobody.
+- **Group call in progress** (frames 1990 to 3301): a normal group call (1990), whose members do subscribe to the
+  roster (client-b at 2031). client-b leaves (2159) and tries a broadcast (2201): 486 with warning 100 (2212, 2216).
+  client-c talks in the normal call (2221, 2222) and client-a gets Floor Taken (2223) with "Normal call" and "The
   receiver is permitted to request floor (1)".
-- **Late entry** (frames 3491 to 4959): the broadcast (3491) reaches client-a, client-b and client-c only. client-d's
-  affiliation (PUBLISH, 3553) makes the server invite it into the running call (3569, 3574). client-a's transmission
-  (3595) reaches client-d too (Floor Taken 3599); it ends at 4952 and the call with it (BYEs from 4959).
-- **Override** (frames 4988 to 6708): client-c's request (5175) is denied (5177). client-d's request (5267) makes the
-  server send Floor Revoke to client-a (5271), which releases (5272); client-d is granted (5274), client-a gets Floor
-  Taken (5275), and client-d's speech starts at 5281. Its release (6702) ends the call (BYEs from 6708).
+- **Late entry** (frames 3381 to 4830): the broadcast (3381) reaches client-a, client-b and client-c only. client-d's
+  affiliation (PUBLISH, 3434) makes the server invite it into the running call (3450, 3453). client-a's transmission
+  (3467) reaches client-d too (Floor Taken 3471); it ends at 4824 and the call with it (BYEs from 4830).
+- **Override** (frames 4858 to 6496): client-c's request (5007) is denied (5008). client-d's request (5054) makes the
+  server send Floor Revoke to client-a (5059), which releases (5060); client-d is granted (5062), client-a gets Floor
+  Taken (5063), and client-d's speech starts at 5070. Its release (6490) ends the call (BYEs from 6496).
 
 ## 5. Stop or start over
 
@@ -274,13 +274,13 @@ gets). In the tutorial, client-b's denied request comes before client-a talks (s
 
 | Message | Frames |
 |---|---|
-| A → S INVITE with `broadcast-ind` | 445, 447 |
-| S → B, S → C INVITE with `broadcast-ind` | 452, 456; 462 |
-| S → A 200 OK | 486 |
-| S → B, S → A Floor Idle (B-bit) | 483; 493 |
-| B → S Floor Request; S → B Floor Deny cause 5 | 513; 514 |
-| A → S Floor Request; S → A Floor Granted; Floor Taken to B, C, D | 524; 525; 526 to 528 |
-| A → S AMR-WB RTP | from 532 |
-| C → S Floor Request; S → C Floor Deny cause 5 | 1138; 1139 |
-| A → S Floor Release; Floor Idle | 1884; from 1886 |
-| S → A, B, C, D BYE | from 1894 |
+| A → S INVITE with `broadcast-ind` | 398, 400 |
+| S → B, S → C INVITE with `broadcast-ind` | 404, 408; 415 |
+| S → A 200 OK | 438 |
+| S → B, S → A Floor Idle (B-bit) | 435; 443 |
+| B → S Floor Request; S → B Floor Deny cause 5 | 457; 458 |
+| A → S Floor Request; S → A Floor Granted; Floor Taken to B, C, D | 467; 469; 470 to 472 |
+| A → S AMR-WB RTP | from 474 |
+| C → S Floor Request; S → C Floor Deny cause 5 | 573; 574 |
+| A → S Floor Release; Floor Idle | 1828; from 1830 |
+| S → A, B, C, D BYE | from 1834 |

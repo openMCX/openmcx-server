@@ -3,7 +3,7 @@
 # procedure; the comments of the matrix name the clauses each lab exercises.
 #
 # Specifications: TS 24.281 V19.6.0, TS 24.379 V19.7.0, TS 24.481 V19.3.0, TS 24.484 V19.6.0,
-# TS 33.180 V19.4.0 (all Rel-19); RFC 4825, RFC 5626.
+# TS 33.180 V19.4.0 (all Rel-19); RFC 3903, RFC 4825, RFC 5626.
 """Run the lab regression matrix: prepare each lab, run its scenarios, tear it down.
 
 Each lab is a separate Docker Compose project, so labs run in parallel (--jobs);
@@ -98,11 +98,13 @@ LABS = [
         ['smoke', 'mcdata'],
     ),
     # Two-minute tokens: the clients renew them before expiry and keep their service authorisation.
+    # server_restart_scenario: a restarted MCPTT server refuses unknown users with 404/141; the clients'
+    # next authorisation refresh gets 412, and they publish anew (TS 24.379 clause 7.2.2, RFC 3903 section 5).
     lab(
         'token-refresh',
         'single',
         ['--private-call', '--mcdata', '--token-ttl', '120'],
-        ['token_refresh_scenario'],
+        ['token_refresh_scenario', 'server_restart_scenario'],
         ['mcptt', 'mcdata', 'common'],
     ),
     lab(

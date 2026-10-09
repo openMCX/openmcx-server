@@ -411,6 +411,9 @@ def main():
         ]
         expected = f"sip:{flow.local[0]}:{flow.local[1]};transport={flow.transport}"
         check("registered over the flow", response.status == 200 and len(bindings) == 1, status=response.status)
+        # RFC 5626 section 6: reg-id and Supported: outbound, so the registrar answers with Require: outbound.
+        required = [tag.strip().lower() for value in response.all("Require") for tag in value.split(",")]
+        check("registrar answered with Require: outbound", "outbound" in required, require=response.all("Require"))
         check(
             "binding records the flow as its received address",
             received == [expected],

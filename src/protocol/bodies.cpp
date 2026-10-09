@@ -31,6 +31,14 @@ std::string multipart_body(const std::vector<BodyPart> &parts, std::string_view 
 }
 
 //------------------------------------------------------------------------------
+// RFC 3261 section 7.4 with RFC 5621: the Content-Type and body of a request carrying the parts: one part as it is,
+// several as a multipart/mixed body with the given boundary.
+std::pair<std::string, std::string> message_body(const std::vector<BodyPart> &parts, std::string_view boundary) {
+  if (parts.size() == 1 && parts.front().content_id.empty()) return {parts.front().content_type, parts.front().body};
+  return {"multipart/mixed; boundary=" + std::string(boundary), multipart_body(parts, boundary)};
+}
+
+//------------------------------------------------------------------------------
 // RFC 3420: reads the body parts of a message/sip (or message/sipfrag) body: its Content-Type (or compact "c")
 // header and the body after the blank line, which parse_body_parts() splits.
 std::vector<BodyPart> parse_sip_fragment_parts(std::string_view message) {

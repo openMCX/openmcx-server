@@ -137,7 +137,7 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/18-mcvideo-pull-push-ambient-run.pcap.gz`. The folder also holds a reference
-run, `captures/18-mcvideo-pull-push-ambient-full.pcap.gz` (225 KB, 2 009 frames, a third of them video): the frame
+run, `captures/18-mcvideo-pull-push-ambient-full.pcap.gz` (211 KB, 1 848 frames, more than a quarter of them video): the frame
 numbers below and in the call flows are those of the reference. Wireshark opens the compressed file directly (or
 `gunzip` it first).
 
@@ -171,52 +171,52 @@ Useful display filters:
 
 What to look for, in the reference run:
 
-- **Video push to bob** (frames 564 to 658): alice's INVITE (564) with `<session-type>one-to-one video push`, bob in a
-  `resource-lists` entry and `mc_implicit_request` in the SDP. The server invites bob (570, 574); bob answers (576),
-  and only then does alice get her 200 OK (581, 587). The server tells bob the transmission is idle (583), grants alice
-  (590) with no Transmission Request from her, and tells bob who transmits: Media reception notification (591) and
-  Transmission Arbitration Taken (592). bob asks for the video, Receive media request (593), and the server answers
-  (594). The video flows alice → server → bob (from 595 and 598). alice's BYE (650) ends it.
-- **Video pull from bob** (frames 673 to 821): the INVITE (673) with `one-to-one video pull`; bob's 200 OK (685) carries
-  his implicit request, so it is bob who is granted (692). alice gets Media reception notification (699) and
-  Transmission Arbitration Taken (700), asks for the video (701, 705), and receives it (from 702 and 711). alice sends
+- **Video push to bob** (frames 544 to 644): alice's INVITE (544) with `<session-type>one-to-one video push`, bob in a
+  `resource-lists` entry and `mc_implicit_request` in the SDP. The server invites bob (550, 554); bob answers (556),
+  and only then does alice get her 200 OK (561, 567). The server tells bob the transmission is idle (563), grants alice
+  (570) with no Transmission Request from her, and tells bob who transmits: Media reception notification (571) and
+  Transmission Arbitration Taken (572). bob asks for the video, Receive media request (573), and the server answers
+  (574). The video flows alice → server → bob (from 575 and 578). alice's BYE (636) ends it.
+- **Video pull from bob** (frames 659 to 748): the INVITE (659) with `one-to-one video pull`; bob's 200 OK (671) carries
+  his implicit request, so it is bob who is granted (678). alice gets Media reception notification (685) and
+  Transmission Arbitration Taken (686), asks for the video (687, 688), and receives it (from 689 and 692). alice sends
   no video.
-- **Video push to the server** (frames 843 to 934): the INVITE (843) with `one-to-server video push` and no
-  `resource-lists`; the server answers 200 OK at once (847, 851) and invites nobody. Its INFO (854, to alice 856) has
+- **Video push to the server** (frames 770 to 860): the INVITE (770) with `one-to-server video push` and no
+  `resource-lists`; the server answers 200 OK at once (774, 778) and invites nobody. Its INFO (781, to alice 783) has
   `Info-Package: g.3gpp.mcvideo-info` and the `<video-push-url>`
-  `https://mcvideo-server/recordings/6f75464e555f68554972425561666b69`, inside `<anyExt>` as the schema has it. alice
-  answers 200 OK (860); her video (from 857, SSRC `0xe14ab317`) goes to the server only.
-- **Video pull from the server** (frames 948 to 1033): bob's INVITE (948) with `one-from-server video pull` and that URL
-  in `<video-pull-url>`; 200 OK (952, 956). The server's video to bob (from 960) has alice's SSRC `0xe14ab317` and
+  `https://mcvideo-server/recordings/63477632464d5f45737a333578707132`, inside `<anyExt>` as the schema has it. alice
+  answers 200 OK (784); her video (from 788, SSRC `0xfbea8351`) goes to the server only.
+- **Video pull from the server** (frames 874 to 958): bob's INVITE (874) with `one-from-server video pull` and that URL
+  in `<video-pull-url>`; 200 OK (878, 882). The server's video to bob (from 886) has alice's SSRC `0xfbea8351` and
   her RTP timestamps: the recording, replayed.
-- **Refusals** (frames 1047 to 1111): 403 with warning `100 function not allowed due to video pull from server not
-  authorised` (1069) and `… video push to server not authorised` (1088) for client-c; 404 for the unknown recording
-  (1089); 403 with warning `107 user not authorised to make private calls` for client-d's push (1108). No INVITE leaves
+- **Refusals** (frames 972 to 1036): 403 with warning `100 function not allowed due to video pull from server not
+  authorised` (976) and `… video push to server not authorised` (995) for client-c; 404 for the unknown recording
+  (1014); 403 with warning `107 user not authorised to make private calls` for client-d's push (1033). No INVITE leaves
   the server for any of them.
-- **Remote transmission** (frames 1123 to 1432): the group call (1123) reaches bob (1133), client-c (1143) and
-  client-d (1150); nobody transmits. alice's Remote Transmission request (`MCV0` 7, 1287) names bob: bob is granted
-  (1288), the others are told bob transmits (client-c's Transmission Arbitration Taken, 1292), and alice gets the
-  Remote Transmission response (`MCV1` 11, 1295). bob's video reaches client-c (from 1298 and 1302). client-c's cancel
-  request (1366) gets its response (1367) and changes nothing. alice's cancel request (1416) makes the server revoke
-  bob (`MCV1` 4, 1417), tell everyone the transmission is idle (client-c, 1420), and answer alice (1422); bob ends his
-  transmission, Transmission end request (`MCV2` 0, 1423) and response (1424). client-c's request for client-d (1425,
-  1426) and alice's cancel for client-d (1427, 1428) grant nothing: client-d never transmits.
-- **Ambient viewing, remote-init** (frames 1519 to 1726): alice's INVITE (1519) with `<session-type>ambient-viewing`
-  and `<ambient-viewing-type>remote-init`. The server invites bob (1525, 1529) with `Priv-Answer-Mode: Auto` and
-  `Alert-Info: <file:///dev/null>`, without the release capability; bob answers (1531) and alice gets her 200 OK with
-  `Feature-Caps: *;+g.3gpp.mcvideo.ambient-viewing-call-release` (1536, 1541), without the null `Alert-Info`, which
-  belongs only in the INVITE and in 180 and 183 responses (RFC 3261, RFC 7462). bob is granted (1544) and his video
-  goes to alice (from 1549 and 1552). bob's client sends no BYE; alice's BYE (1720) ends the call (the server's BYE to bob,
-  1726).
-- **Ambient viewing, local-init** (frames 1742 to 1856): alice's INVITE (1742) with `local-init`; bob is invited with
-  the release capability (1748, 1752) and no null alert. alice is granted (1767), her video reaches bob (from 1771 and
-  1775), and bob's BYE (1849) ends it.
-- **Refused ambient viewing call** (frames 1870 to 1878): bob's INVITE, 403 with warning `154 user not authorised to
-  make ambient viewing call` (2001); alice is not invited.
-- **Release by a call to the viewed-to user** (frames 1889 to 1995): alice views bob again (1889, 200 OK 1911).
-  client-c's private call to bob (1948) reaches the server (1950); the server sends BYE to bob (1953), waits for his
-  200 OK (1959), then sends BYE to alice with `<release-reason>call-request-for-viewed-to-client` (1961, 1962), and
-  only then invites bob to client-c's call (1966, 1969); client-c gets its 200 OK (1984).
+- **Remote transmission** (frames 1048 to 1315): the group call (1048) reaches bob (1057), client-c (1068) and
+  client-d (1074); nobody transmits. alice's Remote Transmission request (`MCV0` 7, 1212) names bob: bob is granted
+  (1213), the others are told bob transmits (client-c's Transmission Arbitration Taken, 1217), and alice gets the
+  Remote Transmission response (`MCV1` 11, 1220). bob's video reaches client-c (from 1223 and 1227). client-c's cancel
+  request (1279) gets its response (1281) and changes nothing. alice's cancel request (1299) makes the server revoke
+  bob (`MCV1` 4, 1300), tell everyone the transmission is idle (client-c, 1303), and answer alice (1305); bob ends his
+  transmission, Transmission end request (`MCV2` 0, 1306) and response (1307). client-c's request for client-d (1308,
+  1309) and alice's cancel for client-d (1310, 1311) grant nothing: client-d never transmits.
+- **Ambient viewing, remote-init** (frames 1404 to 1576): alice's INVITE (1404) with `<session-type>ambient-viewing`
+  and `<ambient-viewing-type>remote-init`. The server invites bob (1410, 1414) with `Priv-Answer-Mode: Auto` and
+  `Alert-Info: <file:///dev/null>`, without the release capability; bob answers (1416) and alice gets her 200 OK with
+  `Feature-Caps: *;+g.3gpp.mcvideo.ambient-viewing-call-release` (1421, 1425), without the null `Alert-Info`, which
+  belongs only in the INVITE and in 180 and 183 responses (RFC 3261, RFC 7462). bob is granted (1429) and his video
+  goes to alice (from 1433 and 1437). bob's client sends no BYE; alice's BYE (1569) ends the call (the server's BYE to bob,
+  1576).
+- **Ambient viewing, local-init** (frames 1591 to 1691): alice's INVITE (1591) with `local-init`; bob is invited with
+  the release capability (1597, 1601) and no null alert. alice is granted (1616), her video reaches bob (from 1621 and
+  1624), and bob's BYE (1684) ends it.
+- **Refused ambient viewing call** (frames 1705 to 1713): bob's INVITE, 403 with warning `154 user not authorised to
+  make ambient viewing call` (1709); alice is not invited.
+- **Release by a call to the viewed-to user** (frames 1724 to 1834): alice views bob again (1724, 200 OK 1746).
+  client-c's private call to bob (1787) reaches the server (1790); the server sends BYE to bob (1792), waits for his
+  200 OK (1798), then sends BYE to alice with `<release-reason>call-request-for-viewed-to-client` (1800, 1801), and
+  only then invites bob to client-c's call (1805, 1808); client-c gets its 200 OK (1822).
 
 ## 5. Stop or start over
 
@@ -360,14 +360,14 @@ sequenceDiagram
 
 | Message | Frames |
 |---|---|
-| Push to bob: INVITE; server → bob; bob's 200 OK; 200 OK to alice; Granted to alice; first video in, out | 564; 570, 574; 576; 581, 587; 590; 595, 598 |
-| Pull from bob: INVITE; bob's 200 OK; Granted to bob; first video in, out | 673; 685; 692; 702, 711 |
-| Push to the server: INVITE; 200 OK; INFO with the URL; alice's 200 OK; first video | 843; 847; 854, 856; 860; 857 |
-| Pull from the server: INVITE; 200 OK; first replayed video | 948; 952; 960 |
-| Refusals: client-c pull, push (403); unknown recording (404); client-d push (403) | 1051; 1070; 1089; 1108 |
-| Remote transmission: request; Granted to bob; response; bob's first video, to client-c | 1287; 1288; 1295; 1298, 1302 |
-| Remote cancel: client-c's request, response; alice's request; Revoked; response; bob's end request, response | 1366, 1367; 1416; 1417; 1422; 1423, 1424 |
-| Ambient remote-init: INVITE; server → bob; bob's 200 OK; 200 OK to alice; Granted to bob; first video in, out | 1519; 1525, 1529; 1531; 1536, 1541; 1544; 1549, 1552 |
-| Ambient local-init: INVITE; server → bob; bob's 200 OK; Granted to alice; bob's BYE | 1742; 1748, 1752; 1754; 1767; 1849 |
-| Ambient refused (154) | 1874 |
-| Release: client-c's INVITE; BYE to bob; his 200 OK; BYE to alice with the reason; bob invited to client-c's call | 1948; 1953; 1959; 1961; 1966 |
+| Push to bob: INVITE; server → bob; bob's 200 OK; 200 OK to alice; Granted to alice; first video in, out | 544; 550, 554; 556; 561, 567; 570; 575, 578 |
+| Pull from bob: INVITE; bob's 200 OK; Granted to bob; first video in, out | 659; 671; 678; 689, 692 |
+| Push to the server: INVITE; 200 OK; INFO with the URL; alice's 200 OK; first video | 770; 774; 781, 783; 784; 788 |
+| Pull from the server: INVITE; 200 OK; first replayed video | 874; 878; 886 |
+| Refusals: client-c pull, push (403); unknown recording (404); client-d push (403) | 976; 995; 1014; 1033 |
+| Remote transmission: request; Granted to bob; response; bob's first video, to client-c | 1212; 1213; 1220; 1223, 1227 |
+| Remote cancel: client-c's request, response; alice's request; Revoked; response; bob's end request, response | 1279, 1281; 1299; 1300; 1305; 1306, 1307 |
+| Ambient remote-init: INVITE; server → bob; bob's 200 OK; 200 OK to alice; Granted to bob; first video in, out | 1404; 1410, 1414; 1416; 1421, 1425; 1429; 1433, 1437 |
+| Ambient local-init: INVITE; server → bob; bob's 200 OK; Granted to alice; bob's BYE | 1591; 1597, 1601; 1603; 1616; 1684 |
+| Ambient refused (154) | 1709 |
+| Release: client-c's INVITE; BYE to bob; his 200 OK; BYE to alice with the reason; bob invited to client-c's call | 1787; 1792; 1798; 1800; 1805 |

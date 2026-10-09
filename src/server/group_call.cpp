@@ -131,6 +131,23 @@ void McServer::invite_member(const std::shared_ptr<Session> &session, const std:
       associated = *user->groups.begin();
     }
     if (associated.empty()) return;
+  } else if (const auto held = regroups_.find(session->group); held != regroups_.end()) {
+    // TS 24.379 clause 6.3.4.1.2 step 6b (TS 24.281 clause 6.3.4.1.2 step 6b)): the invitation to a call on a group
+    // regroup names the member's constituent group in <associated-group-id>: one it is affiliated to, else one it
+    // belongs to.
+    for (const auto &constituent : held->second.groups)
+      if (affiliated(id, constituent)) {
+        associated = constituent;
+        break;
+      }
+    for (const auto &constituent : held->second.groups) {
+      if (!associated.empty()) break;
+      try {
+        if (member(group_profile(constituent), id)) associated = constituent;
+      } catch (const std::exception &) {
+        // The constituent group's document is not available: not this one.
+      }
+    }
   }
   if (session->dialogs.size() >= session->policy.value("max_participants", session->members.size())) return;
   if (!user->peer.empty() && !floor_keys(*user) && !session->private_call && !session->adhoc) {

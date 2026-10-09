@@ -167,9 +167,8 @@ std::vector<BodyPart> McServer::priority_parts(const McpttInfo &info, const Prio
 // peril state or of an emergency alert.
 void McServer::priority_message(User &target, McpttInfo info) {
   info.request_uri = target.id;
-  const auto boundary = "mcx-" + random_id();
-  sip_.request("MESSAGE", target.sip, "multipart/mixed; boundary=" + boundary,
-               multipart_body(priority_parts(info), boundary),
+  const auto [type, body] = message_body(priority_parts(info), "mcx-" + random_id());
+  sip_.request("MESSAGE", target.sip, type, body,
                user_route(target, {{"P-Asserted-Service", svc_.icsi},
                                    {"Accept-Contact", feature_accept()},
                                    {"Accept-Contact", icsi_accept()}}));
@@ -291,10 +290,8 @@ McServer::EmergencyChange McServer::emergency_change(const McpttInfo &info, bool
 // transmit, TS 24.380 clause 6.3.5.3.4).
 SipResponse &McServer::broadcast_priority_refused(SipResponse &response) {
   response.status_code = 403;
-  response.headers = {
-      {"Warning", "399 mcx \"" +
-                      warn(Warning::function_not_allowed, "priority change by a broadcast group call receiver") +
-                      "\""}};
+  response.headers = {{"Warning", warning_value(warn(Warning::function_not_allowed,
+                                                     "priority change by a broadcast group call receiver"))}};
   event("broadcast_priority_refused", {});
   return response;
 }
@@ -311,7 +308,7 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
   const PriorityState state = found == priorities_.end() ? PriorityState{} : found->second;
   auto reject = [&](const std::string &reason) {
     response.status_code = 403;
-    response.headers.push_back({"Warning", "399 mcx \"" + reason + "\""});
+    response.headers.push_back({"Warning", warning_value(reason)});
     McpttInfo current;
     current.emergency = state.emergency;
     current.imminent_peril = state.imminent;
@@ -322,13 +319,14 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
     return false;
   };
   const auto location = message_location(message);
-  if (info.alert == true && !location) return reject("emergency alert requires CurrentCoordinate location");
+  if (info.alert == true && !location)
+    return reject(warn(Warning::function_not_allowed, "emergency alert requires CurrentCoordinate location"));
   // Broadcast is a call-setup indication; an alert MESSAGE never carries it. An
   // emergency or imminent-peril broadcast group call is allowed (local policy,
   // TS 24.380 clause 8.2.3.15: the Floor Indicator combines B with D or E).
   if (info.broadcast.value_or(false) && alert_only) return reject(warn(Warning::invalid_mime_combination));
   if ((!info.calling_user.empty() && info.calling_user != user.id) || info.alert_received || info.emergency_received)
-    return reject("priority identity mismatch");
+    return reject(warn(Warning::function_not_allowed, "priority identity mismatch"));
   if (!alert_only && ((info.emergency == true && (!info.alert || info.imminent_peril)) ||
                       (info.imminent_peril && (info.emergency || info.alert)) || (!info.emergency && info.alert)))
     return reject(warn(Warning::invalid_mime_combination));
@@ -339,7 +337,7 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
   const auto rights = user_profile(user.id);
   const auto group_rights = rights.value("group_call", Json::object());
   const auto private_rights = rights.value("private_call", Json::object());
-  const auto& group_id = info.request_uri;
+  const auto &group_id = info.request_uri;
   auto entry_allows = [&](const char *key) {
     const auto dedicated = group_rights.value(key, std::string());
     return dedicated.empty() || dedicated == group_id;
@@ -348,29 +346,32 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
     return profile.value(action, false) || priority_allowed(policy, members, user.id);
   };
   const bool alert_right = group_rights.value("alert", false) || private_rights.value("alert", false);
-  const bool alert_cancel_right = group_rights.value("alert_cancel", false) || private_rights.value("alert_cancel", false);
+  const bool alert_cancel_right =
+      group_rights.value("alert_cancel", false) || private_rights.value("alert_cancel", false);
   // Clause 6.3.3.1.13.2.
   if (info.emergency == true && !(group_rights.value("emergency", false) && entry_allows("emergency_group") &&
                                   group_allows("allow_emergency_call", "emergency_users")))
-    return reject("emergency call not authorized");
+    return reject(warn(Warning::function_not_allowed, "user authorisation: emergency call not authorized"));
   // Clause 6.3.3.1.13.4: local policy: the user's <allow-cancel-group-emergency>, or the group's list of those who
   // may cancel.
   if (info.emergency == false &&
       !(group_rights.value("emergency_cancel", false) || priority_allowed(policy, "emergency_cancel_users", user.id)))
-    return reject("emergency cancellation not authorized");
+    return reject(warn(Warning::function_not_allowed, "user authorisation: emergency cancellation not authorized"));
   // Clause 6.3.3.1.13.5.
   if (info.imminent_peril == true && !(group_rights.value("imminent", false) && entry_allows("imminent_group") &&
                                        group_allows("allow_imminent_peril", "imminent_users")))
-    return reject("imminent peril not authorized");
+    return reject(warn(Warning::function_not_allowed, "user authorisation: imminent peril not authorized"));
   // Clause 6.3.3.1.13.6: <allow-cancel-imminent-peril> of the user profile.
   if (info.imminent_peril == false && !group_rights.value("imminent_cancel", false))
-    return reject("imminent peril cancellation not authorized");
+    return reject(
+        warn(Warning::function_not_allowed, "user authorisation: imminent peril cancellation not authorized"));
   if (!info.originated_by.empty() && (!info.alert || *info.alert))
-    return reject("originated-by requires alert cancellation");
+    return reject(warn(Warning::function_not_allowed, "originated-by requires alert cancellation"));
   // Clause 6.3.3.1.13.1: <allow-activate-emergency-alert>, the <EmergencyAlert> entry and the group's action.
   if (info.alert == true &&
       !(alert_right && entry_allows("alert_group") && group_allows("allow_emergency_alert", "alert_users"))) {
-    if (alert_only) return reject("emergency alert not authorized");
+    if (alert_only)
+      return reject(warn(Warning::function_not_allowed, "user authorisation: emergency alert not authorized"));
     correction = McpttInfo{};
     correction->emergency = true;
     correction->alert = false;
@@ -378,7 +379,8 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
   }
   if (info.alert == false && info.emergency != true &&
       state.alerts.contains(info.originated_by.empty() ? user.id : info.originated_by) && !alert_cancel_right) {
-    if (alert_only) return reject("alert cancellation not authorized");
+    if (alert_only)
+      return reject(warn(Warning::function_not_allowed, "user authorisation: alert cancellation not authorized"));
     correction = McpttInfo{};
     correction->alert = true;
     info.alert.reset();
@@ -389,13 +391,13 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
     correction->emergency = true;
     info.imminent_peril.reset();
   }
-  if (correction) response.headers.push_back({"Warning", "399 mcx \"" + warn(Warning::info_pending) + "\""});
+  if (correction) response.headers.push_back({"Warning", warning_value(warn(Warning::info_pending))});
   if (info.emergency == false) {
     const auto session = sessions_.find(info.request_uri);
     if (session != sessions_.end()) {
       const auto owner = session->second->arbitrator->owner();
       if (owner && *owner != user.id && state.emergency_users.contains(*owner))
-        return reject("another emergency user is transmitting");
+        return reject(warn(Warning::function_not_allowed, "another emergency user is transmitting"));
     }
   }
   const auto requested = std::string(get_header(message.headers, "Resource-Priority"));
@@ -407,13 +409,13 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
     if (!known ||
         (requested == values.value("emergency", std::string{}) && !state.emergency && requested_emergency != true) ||
         (requested == values.value("imminent", std::string{}) && !state.imminent && requested_imminent != true))
-      return reject("Resource-Priority is not authorized by call state");
+      return reject(warn(Warning::function_not_allowed, "Resource-Priority not authorized by call state"));
   }
   PriorityState next = state;
   if (info.emergency) next.emergency = *info.emergency;
   if (info.imminent_peril && !next.emergency) next.imminent = *info.imminent_peril;
   if (info.emergency == true && !policy.value("emergency_timeout_ms", 300000u))
-    return reject("invalid emergency timer configuration");
+    return reject(warn(Warning::function_not_allowed, "invalid emergency timer configuration"));
   (void)priority_headers(policy, next); // Validate provisioning before publishing any state.
   return true;
 }

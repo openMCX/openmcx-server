@@ -61,13 +61,13 @@ bool LocationService::shares(const std::string &target, const std::string &reque
 }
 
 //------------------------------------------------------------------------------
-// Helper: a counted refusal of a location request with a Warning header field (TS 24.379 clause 4.4, TS 24.282
-// clause 4.9).
+// Helper: a counted refusal of a location request, with a Warning header field unless warning is empty (TS 24.379
+// clause 4.4, TS 24.282 clause 4.9).
 SipResponse LocationService::refusal(int status, const std::string &warning) {
   count("refused");
   SipResponse response;
   response.status_code = status;
-  response.headers = {{"Warning", std::string("399 ") + traits_.warning_agent + " \"" + warning + "\""}};
+  if (!warning.empty()) response.headers = {{"Warning", host_.location_warning(warning)}};
   return response;
 }
 
@@ -336,7 +336,14 @@ void LocationService::notify_area(const LocationUser &user, const std::string &n
 // TS 24.379 clause 13.2.4.1: a location information report from a client served here answers the waiting requests
 // and is checked against the configured areas.
 SipResponse LocationService::report(const LocationUser &user, const location::Report &report) {
-  if (!rights(user.id).value("report", true)) return refusal(403, "location reporting not authorised");
+  // The refusal is not in the procedure. TS 24.379 and TS 24.281 have code 100 "function not allowed due to
+  // <detailed reason>"; TS 24.282 table 4.9.2-2 has neither it nor a location reporting code, and its warn-text must
+  // carry a code (clause 4.9.2), so the MCData 403 carries no Warning header field (optional, clause 4.9.1).
+  if (!rights(user.id).value("report", true))
+    return refusal(403, warning_entry(service_, Warning::function_not_allowed).code
+                            ? warning_text(service_, Warning::function_not_allowed,
+                                           "user authorisation: location reporting not authorised")
+                            : std::string{});
   const auto waiters = registry_.reported(user.id, report, monotonic_ms());
   count("reports");
   auto detail = location::to_json(report);

@@ -6,6 +6,7 @@
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
+#include "mcx/warning.hpp"
 #include "parts/location_service.hpp"
 #include "parts/message_parts.hpp"
 
@@ -44,6 +45,10 @@ public:
   unsigned client_seals = 0, peer_seals = 0;
 
   [[nodiscard]] Json location_settings() const override { return settings; }
+
+  [[nodiscard]] std::string location_warning(std::string_view text) const override {
+    return warning_value("server.example", text);
+  }
 
   Json location_profile(const std::string &id) override { return profiles.at(id); }
 
@@ -268,10 +273,10 @@ void Clause_13_2_3_2_RequestAnsweredFromFreshReport(bool mcdata) {
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 4.4 and clause 13.2.3.2 steps 2 to 6 (TS 24.282 clause 4.9 and table 4.9.2-2): the refusals, each
-// with the service's Warning code and warn-agent.
+// with the service's Warning code and the server's host name as warn-agent (TS 24.379 clause 4.4.1).
 void Clause_13_2_3_2_Refusals(bool mcdata) {
   Fixture fixture(mcdata);
-  const std::string agent = mcdata ? "399 mcdata \"" : "399 mcx \"";
+  const std::string agent = "399 server.example \"";
   const auto warning = [](const std::optional<SipResponse> &response) {
     return std::string(get_header(response->headers, "Warning"));
   };
@@ -287,6 +292,15 @@ void Clause_13_2_3_2_Refusals(bool mcdata) {
   assert(warning(no_target) == agent + (mcdata ? "244" : "192") + " invalid location request target client list\"");
   assert(fixture.service.status().at("counters").at("refused") == 3);
   assert(!fixture.service.from_client(Fixture::message("sip:alice@example.com", {list})));
+  // A report from a user not authorised to report: code 100 for MCPTT; TS 24.282 table 4.9.2-2 has no code for it, so
+  // the MCData 403 carries no Warning header field (TS 24.282 clauses 4.9.1 and 4.9.2).
+  fixture.host.profiles["sip:bob@mcx.example"] = {{"location", {{"report", false}}}};
+  const auto report = fixture.bob_reports(48.0, 2.0);
+  assert(report && report->status_code == 403);
+  assert(warning(report) ==
+         (mcdata ? ""
+                 : agent + "100 function not allowed due to user authorisation: location reporting not authorised\""));
+  assert(fixture.service.status().at("counters").at("refused") == 4);
 }
 
 //------------------------------------------------------------------------------

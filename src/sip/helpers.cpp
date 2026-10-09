@@ -373,16 +373,28 @@ void add_answer_headers(pjsip_tx_data *data, const std::vector<SipHeader> &heade
 }
 
 //------------------------------------------------------------------------------
-// RFC 5621 and RFC 2046 section 5.1.3: builds a multipart/mixed body with the SDP first, then the given parts.
+// RFC 3261 section 7.4 and RFC 5621: the body of an answer without SDP: one part as a plain body of its own type,
+// several as multipart/mixed with the boundary.
+[[nodiscard]] pjsip_msg_body *make_parts_body(pj_pool_t *pool, const std::vector<BodyPart> &parts,
+                                              std::string_view boundary) {
+  if (parts.size() == 1 && parts.front().content_id.empty())
+    return make_text_body(pool, parts.front().content_type, parts.front().body);
+  return make_text_body(pool, "multipart/mixed; boundary=" + std::string(boundary), multipart_body(parts, boundary));
+}
+
+//------------------------------------------------------------------------------
+// RFC 5621 and RFC 2046 section 5.1.3: builds a multipart/mixed body with the SDP first, then the given parts; the SDP
+// alone is a plain application/sdp body (RFC 3261 section 7.4).
 [[nodiscard]] pjsip_msg_body *make_body_with_sdp(pj_pool_t *pool, const std::string &sdp,
                                                  const std::vector<BodyPart> &parts) {
+  if (parts.empty()) return make_text_body(pool, "application/sdp", sdp);
   std::vector<BodyPart> all{{"application/sdp", sdp}};
   all.insert(all.end(), parts.begin(), parts.end());
   return make_multipart_body(pool, all);
 }
 
 //------------------------------------------------------------------------------
-// RFC 5621: builds an INVITE multipart/mixed body from the local SDP (session version 1) and the given parts.
+// RFC 5621: builds an INVITE body from the local SDP (session version 1) and the given parts (see make_body_with_sdp).
 [[nodiscard]] pjsip_msg_body *make_invite_body(pj_pool_t *pool, const MediaDescription &media,
                                                const std::vector<BodyPart> &parts) {
   return make_body_with_sdp(pool, make_sdp(media, 1), parts);

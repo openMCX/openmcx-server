@@ -124,7 +124,7 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/08-adhoc-group-calls-run.pcap.gz`. The folder also holds a reference run,
-`captures/08-adhoc-group-calls-full.pcap.gz` (196 KB, 3 621 frames): the frame numbers below and in the call
+`captures/08-adhoc-group-calls-full.pcap.gz` (192 KB, 3 618 frames): the frame numbers below and in the call
 flow are those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.8.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -153,37 +153,37 @@ One thing Wireshark 4.2 shows in a confusing way: the Floor Deny's Reject Cause 
 
 What to look for, in the reference run:
 
-- **The list call** (frames 415 to 456): client-a's INVITE (422) has `<session-type>adhoc</session-type>`
-  and a `resource-lists` part with bob and client-c, and no group. The server invites bob (429) and client-c
-  (439) with `Answer-Mode: Auto`, an `isfocus` Contact, alice as
+- **The list call** (frames 418 to 460): client-a's INVITE (425) has `<session-type>adhoc</session-type>`
+  and a `resource-lists` part with bob and client-c, and no group. The server invites bob (431) and client-c
+  (441) with `Answer-Mode: Auto`, an `isfocus` Contact, alice as
   `<mcptt-calling-user-id>` and the generated `sip:adhoc-…` as `<mcptt-calling-group-id>`. The 200 to client-a
-  (456) follows bob's 200 (435), with no 180 before it (TS 24.379 clause 17.4.2.2). No INVITE goes to client-d.
-- **Floor control** (frames 545 to 1568): client-a's Floor Request (545), Floor Granted (546),
-  Floor Taken to client-b and client-c (547, 548), client-a's speech from 552 (6.7 s, 337 RTP
-  packets to the server and the same to each listener). client-b's Floor Request (597) gets a Floor Deny
-  (598). client-a's Floor Release (1566) and Floor Idle (1568).
-- **Leave and rejoin** (frames 1577 to 1626): client-b's BYE (1577), then its INVITE to the same session
-  URI (1618), answered 200 (1626).
-- **The initiator alone, then gone** (frames 1688 to 1755): client-b's and client-c's BYEs (1688,
-  1721). The server keeps the call with client-a alone (it repeats Floor Idle every second, T7, TS 24.380 clause
-  6.3.4.3.4) until client-a's BYE (1754).
-- **Refusals** (frames 1793 to 1859): 403 with `Warning: 399 mcx "185 …"` (1797), `"189 …"` (1817),
-  `"187 …"` (1835), and 480 for the unknown user (1856, to client-a 1859), each without an INVITE to anyone.
-- **Manual answer** (frames 1870 to 2030): bob rings (180, 1882); client-c answers (1892) and client-a gets
-  its 200 (1902); bob answers later (1958). client-a's BYE (2024) makes the server end the call for
-  client-c (2028) and bob (2030).
-- **Decline** (frames 2090 to 2211): bob's 480 with `Warning: 399 mcx "110 user declined the call invitation"`
-  (2179) stays at the server; client-a and client-c go on, and client-a's BYE (2207) ends the call
-  (2211, to client-c only).
-- **Modification** (frames 2249 to 2489): client-a's re-INVITE to the session (2332) with an `INVITE` entry for
-  client-c makes the server invite client-c (2338); the next (2416), with a `BYE` entry for bob, makes it
-  send bob a BYE (2422). client-c's attempt (2470) gets 403 with warning 190 (2474).
-- **Emergency ad hoc call** (frames 2532 to 2731): client-b's INVITE with `Resource-Priority: mcpttp.15` (2532) gets
-  403 with `<adhoc-emergency-ind>` false (2536). client-a's (2552) is accepted: the invitations to bob (2557)
-  and client-c (2567) carry `<adhoc-emergency-ind>` true and `mcpttp.15`, and the floor messages the D bit
-  (Floor Indicator "Emergency call"). 12 s after the 200 (2587) the server ends the call (BYE 2731): TNG2.
-- **Call timer** (frames 2792 to 3589): an ordinary ad hoc call, 200 at 2815, and the server's BYE 30 s later
-  (3589): TNG3.
+  (460) follows bob's 200 (437), with no 180 before it (TS 24.379 clause 17.4.2.2). No INVITE goes to client-d.
+- **Floor control** (frames 553 to 1576): client-a's Floor Request (553), Floor Granted (554),
+  Floor Taken to client-b and client-c (555, 556), client-a's speech from 559 (6.7 s, 337 RTP
+  packets to the server and the same to each listener). client-b's Floor Request (594) gets a Floor Deny
+  (595). client-a's Floor Release (1574) and Floor Idle (1576).
+- **Leave and rejoin** (frames 1585 to 1630): client-b's BYE (1585), then its INVITE to the same session
+  URI (1622), answered 200 (1630).
+- **The initiator alone, then gone** (frames 1691 to 1760): client-b's and client-c's BYEs (1691,
+  1728). The server keeps the call with client-a alone (it repeats Floor Idle every second, T7, TS 24.380 clause
+  6.3.4.3.4) until client-a's BYE (1759).
+- **Refusals** (frames 1798 to 1864): 403 with `Warning: 399 mcptt-server "185 …"` (1802), `"189 …"` (1822),
+  `"187 …"` (1840), and 480 for the unknown user (1861, to client-a 1864), each without an INVITE to anyone.
+- **Manual answer** (frames 1875 to 2029): bob rings (180, 1886); client-c answers (1895) and client-a gets
+  its 200 (1907); bob answers later (1963). client-a's BYE (2023) makes the server end the call for
+  client-c (2029) and bob (2028).
+- **Decline** (frames 2088 to 2207): bob's 480 with `Warning: 399 mcx "110 user declined the call invitation"`
+  (2175) stays at the server; client-a and client-c go on, and client-a's BYE (2203) ends the call
+  (2207, to client-c only).
+- **Modification** (frames 2245 to 2482): client-a's re-INVITE to the session (2329) with an `INVITE` entry for
+  client-c makes the server invite client-c (2335); the next (2413), with a `BYE` entry for bob, makes it
+  send bob a BYE (2419). client-c's attempt (2467) gets 403 with warning 190 (2471).
+- **Emergency ad hoc call** (frames 2525 to 2728): client-b's INVITE with `Resource-Priority: mcpttp.15` (2525) gets
+  403 with `<adhoc-emergency-ind>` false (2529). client-a's (2545) is accepted: the invitations to bob (2550)
+  and client-c (2560) carry `<adhoc-emergency-ind>` true and `mcpttp.15`, and the floor messages the D bit
+  (Floor Indicator "Emergency call"). 12 s after the 200 (2582) the server ends the call (BYE 2728): TNG2.
+- **Call timer** (frames 2789 to 3586): an ordinary ad hoc call, 200 at 2812, and the server's BYE 30 s later
+  (3586): TNG3.
 
 ## 5. Stop or start over
 
@@ -279,14 +279,14 @@ is the message on both legs, client to core and core to server, or the other way
 
 | Message | Frames |
 |---|---|
-| A → S INVITE, session-type adhoc, resource-lists B C | 422, 424 |
-| S → B, S → C INVITE with the ad hoc group | 429, 439 |
-| B → S 200 OK; S → A 200 OK | 435; 456 |
-| A → S Floor Request; Floor Granted; Floor Taken to B and C | 545; 546; 547, 548 |
-| AMR-WB RTP from A | from 552 |
-| B → S BYE; B → S INVITE session URI (rejoin); 200 OK | 1577, 1578; 1618, 1620; 1626 |
-| A → S BYE (the initiator leaves; B and C had left before) | 1754, 1755 |
+| A → S INVITE, session-type adhoc, resource-lists B C | 425, 427 |
+| S → B, S → C INVITE with the ad hoc group | 431, 441 |
+| B → S 200 OK; S → A 200 OK | 437; 460 |
+| A → S Floor Request; Floor Granted; Floor Taken to B and C | 553; 554; 555, 556 |
+| AMR-WB RTP from A | from 559 |
+| B → S BYE; B → S INVITE session URI (rejoin); 200 OK | 1585, 1586; 1622, 1624; 1630 |
+| A → S BYE (the initiator leaves; B and C had left before) | 1759, 1760 |
 
 In this run the clients leave one by one (step 5), so the server's own BYEs to the remaining participants, the last
 part of the diagram, appear in step 7 instead, when client-a leaves a call with bob and client-c in it: frames 2028
-and 2030.
+and 2029.

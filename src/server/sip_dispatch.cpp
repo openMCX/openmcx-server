@@ -11,7 +11,8 @@ namespace mcx {
 // TS 24.379 and TS 24.281, the server side of their procedures: dispatch an incoming SIP request (from the SIP
 // core or from a peer MCPTT/MCVideo server) to the procedure it starts or continues, and answer it. XML
 // protection errors are answered first (TS 24.379 clause 6.6.1.4); each branch below names the clause it
-// implements. A request that fails with an exception is refused with 403.
+// implements. A request that fails with an exception is refused with 403, one from a user without a binding with
+// 404 (UnknownUser).
 //
 // The procedures below answer in `response` (this function's answer, also when they throw), so that an implicit
 // affiliation guard they hold sees the final status (TS 24.379 clause 9.2.2.3.11).
@@ -72,6 +73,13 @@ SipResponse McServer::incoming(const SipMessage &message) {
     response.reason = "Server Internal Error";
     response.headers.push_back({"Retry-After", std::to_string(capacity_retry_after())});
     return response;
+  } catch (const UnknownUser &error) {
+    // TS 24.379 clause 10.1.1.3.1.1 step 2a (and the same step of every originating procedure), TS 24.281 clause
+    // 10.1.1.3.1.1: no binding between the public user identity and an MC service ID, or an expired one.
+    event("sip_request_rejected", {{"method", message.method}, {"reason", error.what()}});
+    response.status_code = 404;
+    response.headers = {{"Warning", warning_value(warn(Warning::unknown_user))}};
+    return response;
   } catch (const std::exception &error) {
     event("sip_request_rejected", {{"method", message.method}, {"reason", error.what()}});
     response.status_code = 403;
@@ -89,8 +97,8 @@ void McServer::refuse_unprotectable(const SipMessage &message, SipResponse &resp
   // TS 24.379 clause 6.6.3.4.2: 139 for a failed integrity check; TS 24.379 clause 6.6.2.4.2: 140 for
   // decryption.
   response.headers = {{"Warning", message.protection_error.starts_with("139")
-                                      ? "399 mcx \"" + warn(Warning::integrity_check_failed) + "\""
-                                      : "399 mcx \"" + warn(Warning::decrypt_failed) + "\""}};
+                                      ? warning_value(warn(Warning::integrity_check_failed))
+                                      : warning_value(warn(Warning::decrypt_failed))}};
 }
 
 //------------------------------------------------------------------------------
@@ -117,7 +125,7 @@ bool McServer::peer_request(const SipMessage &message, const std::string &peer, 
           target == users_.end() || !target->second.peer.empty()) {
         const auto user = users_.find(asserted_identity(message));
         if (user == users_.end() || user->second.peer != peer) {
-          response = regroup_from_function(peer, *regroup);
+          response = regroup_from_function(peer, *regroup, regroup_carry(message));
           return true;
         }
       }
@@ -211,7 +219,7 @@ void McServer::service_authorization(const SipMessage &message, SipResponse &res
   if (!checked) {
     // TS 24.379 clause 7.3.3 step 6, TS 24.281 clause 7.3.3 step 6.
     response.status_code = 403;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::service_authorisation_failed) + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::service_authorisation_failed))}};
     return;
   }
   const auto &claims = *checked;
@@ -258,7 +266,7 @@ bool McServer::open_with_uploaded_csk(const SipMessage &message, SipMessage &ope
       opened.parts = verify_parts(std::move(opened.parts), key);
     } catch (const std::exception &) {
       response.status_code = 403;
-      response.headers = {{"Warning", "399 mcx \"" + warn(Warning::integrity_check_failed) + "\""}};
+      response.headers = {{"Warning", warning_value(warn(Warning::integrity_check_failed))}};
       return false;
     }
     try {
@@ -270,7 +278,7 @@ bool McServer::open_with_uploaded_csk(const SipMessage &message, SipMessage &ope
     } catch (const std::exception &) {
       ++xml_refused_;
       response.status_code = 403;
-      response.headers = {{"Warning", "399 mcx \"" + warn(Warning::decrypt_failed) + "\""}};
+      response.headers = {{"Warning", warning_value(warn(Warning::decrypt_failed))}};
       return false;
     }
     if (opened.parts.size() == 1) opened.body = opened.parts.front().body;
@@ -310,8 +318,7 @@ void McServer::bind_authorized_user(const Json &claims, const McpttInfo &info, c
   user.auth_etag = random_id();
   users_[asserted] = user;
   schedule([this, sip = asserted] {
-    if (const auto found = users_.find(sip); found != users_.end())
-      register_with_controllers(found->second);
+    if (const auto found = users_.find(sip); found != users_.end()) register_with_controllers(found->second);
   });
   response.headers = {{"SIP-ETag", user.auth_etag}, {"Expires", "4294967295"}};
   event("service_authorized", {{"user_id", user.id}, {"profile_bytes", profile.size()}});
@@ -394,8 +401,7 @@ bool McServer::client_document_subscribe(const SipMessage &message, const User &
       response.status_code = 403;
       return true;
     }
-    response =
-        groups.empty() ? config_subscribe(message, user.id, profiles) : doc_subscribe(message, user.id, groups);
+    response = groups.empty() ? config_subscribe(message, user.id, profiles) : doc_subscribe(message, user.id, groups);
     return true;
   }
   return false;
@@ -502,12 +508,12 @@ void McServer::conference_subscribe(const SipMessage &message, const User &user,
   }
   if (session->broadcast) {
     response.status_code = 480;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::broadcast_subscription) + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::broadcast_subscription))}};
     return;
   }
   if (!policy_allows(session->policy, "conference_members", user.id)) {
     response.status_code = 403;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::conference_subscription_not_allowed) + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::conference_subscription_not_allowed))}};
     return;
   }
   // RFC 3261 section 20.19: a missing or malformed Expires is a bad request.
@@ -692,7 +698,7 @@ bool McServer::message_to_controller(const SipMessage &message, User &user, cons
   if (type == "fa-group-binding-req" && !controller.empty())
     if (const auto warning = alias_binding_refusal(user, message, info); !warning.empty()) {
       response.status_code = 403;
-      response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
+      response.headers = {{"Warning", warning_value(warning)}};
       return true;
     }
   if (type == "transfer-private-call-request" || type == "forward-private-call-request")
@@ -704,7 +710,7 @@ bool McServer::message_to_controller(const SipMessage &message, User &user, cons
   if (!controller.empty() && call_service)
     if (const auto warning = service_request_refusal(user, info); !warning.empty()) {
       response.status_code = 403;
-      response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
+      response.headers = {{"Warning", warning_value(warning)}};
       return true;
     }
   if (!controller.empty()) {
@@ -727,10 +733,14 @@ void McServer::group_alert_message(const SipMessage &message, User &user, McpttI
   // in-progress emergency (or imminent peril) state of a group, with implicit affiliation for an alert.
   auto profile = group_profile(info.request_uri);
   ImplicitAffiliation implicit;
-  if (!user.groups.contains(info.request_uri) && info.alert == true && info.client_id == user.client)
+  // A member told of a regroup is affiliated with it (TS 24.379 clauses 16.2.2.4 and 16.3.2.4 step 3 h)).
+  const bool regrouped_member = regroup_affiliated(user, info.request_uri);
+  if (!user.groups.contains(info.request_uri) && !regrouped_member && info.alert == true &&
+      info.client_id == user.client)
     (void)implicitly_affiliate(user, info.request_uri, profile, response, implicit);
-  if (info.client_id != user.client || !user.groups.contains(info.request_uri) || !member(profile, user.id) ||
-      message.request_uri != cfg_.at(svc_.name).at("service_uri").get<std::string>() || !accepts_mcptt(message)) {
+  if (info.client_id != user.client || (!user.groups.contains(info.request_uri) && !regrouped_member) ||
+      !member(profile, user.id) || message.request_uri != cfg_.at(svc_.name).at("service_uri").get<std::string>() ||
+      !accepts_mcptt(message)) {
     response.status_code = 403;
     return;
   }
@@ -762,15 +772,14 @@ void McServer::invite_request(const SipMessage &message, User &user, SipResponse
   if (message.request_uri == pre_established_uri() && !legs_.contains(message.dialog_id)) {
     response.status_code = 403;
     response.headers = {
-        {"Warning",
-         "399 mcx \"" + warn(Warning::function_not_allowed, "pre-established session not supported") + "\""}};
+        {"Warning", warning_value(warn(Warning::function_not_allowed, "pre-established session not supported"))}};
     event("pre_established_session_refused", {{"user_id", user.id}, {"reason", "resource sharing not supported"}});
     return;
   }
   auto info = message_info(message, svc_);
   if (!legs_.contains(message.dialog_id) && user.peer.empty() && info.session_type == "chat" &&
-      !user.groups.contains(info.request_uri) && group_controller(info.request_uri) != "" &&
-      affiliation_limit_reached(user, info)) {
+      !user.groups.contains(info.request_uri) && !regroup_affiliated(user, info.request_uri) &&
+      group_controller(info.request_uri) != "" && affiliation_limit_reached(user, info)) {
     too_many_affiliations(response, user);
     return;
   }
@@ -820,7 +829,7 @@ bool McServer::invite_to_controller(const SipMessage &message, User &user, const
     if (info.session_type == "private")
       if (const auto warning = check_service_mapping(user.id, message, info); !warning.empty()) {
         response.status_code = 403;
-        response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
+        response.headers = {{"Warning", warning_value(warning)}};
         return true;
       }
     if (target.empty()) {
@@ -855,8 +864,8 @@ void McServer::group_invite(const SipMessage &message, User &user, McpttInfo &in
   std::string calling_constituent;
   if (!regroup_constituent_allowed(user, info, calling_constituent, response)) return;
   ImplicitAffiliation implicit;
-  if (!user.groups.contains(info.request_uri) && user.peer.empty() && chat_request &&
-      affiliation_limit_reached(user, info)) {
+  if (!user.groups.contains(info.request_uri) && !regroup_affiliated(user, info.request_uri) && user.peer.empty() &&
+      chat_request && affiliation_limit_reached(user, info)) {
     too_many_affiliations(response, user);
     return;
   }
@@ -876,8 +885,7 @@ void McServer::group_invite(const SipMessage &message, User &user, McpttInfo &in
   if (hierarchy && !info.broadcast.value_or(false)) {
     response.status_code = 403;
     response.headers = {
-        {"Warning",
-         "399 mcx \"" + warn(Warning::function_not_allowed, "broadcast group requires broadcast-ind") + "\""}};
+        {"Warning", warning_value(warn(Warning::function_not_allowed, "broadcast group requires broadcast-ind"))}};
     return;
   }
   if (!group_media_acceptable(message, user, profile, response)) return;
@@ -941,22 +949,28 @@ bool McServer::regroup_constituent_allowed(const User &user, const McpttInfo &in
   // not required. A user regroup has no constituent groups and needs none.
   if (const auto held = regroups_.find(info.request_uri); held != regroups_.end() && !held->second.groups.empty()) {
     const auto &groups = held->second.groups;
-    if (info.calling_group.empty()) {
+    // TS 24.379 clause 10.1.1.2.1.1 step 14 d) (TS 24.281 clause 9.2.1.2.1.1 step 14 d) i)): a client names the
+    // constituent group in <associated-group-id>; the function of that group passes it on in <mcptt-calling-group-id>
+    // (TS 24.281 clause 6.3.4.1.4 step 4 c)), as a request from another function carries it. This server is both
+    // functions for its own users; <mcptt-calling-group-id> from a user is still read (earlier clients).
+    const auto constituent =
+        user.peer.empty() && !info.associated_group.empty() ? info.associated_group : info.calling_group;
+    if (constituent.empty()) {
       event("regroup_call_refused",
             {{"user_id", user.id}, {"regroup", info.request_uri}, {"reason", "no calling group identity"}});
       response.status_code = 403;
       return false;
     }
-    if (std::find(groups.begin(), groups.end(), info.calling_group) == groups.end()) {
+    if (std::find(groups.begin(), groups.end(), constituent) == groups.end()) {
       event("regroup_call_refused", {{"user_id", user.id},
                                      {"regroup", info.request_uri},
-                                     {"calling_group", info.calling_group},
+                                     {"calling_group", constituent},
                                      {"reason", "not a constituent group"}});
       response.status_code = 403;
-      response.headers = {{"Warning", "399 mcx \"" + warn(Warning::not_affiliated) + "\""}};
+      response.headers = {{"Warning", warning_value(warn(Warning::not_affiliated))}};
       return false;
     }
-    calling_constituent = info.calling_group;
+    calling_constituent = constituent;
   }
   return true;
 }
@@ -970,6 +984,8 @@ bool McServer::group_call_affiliated(User &user, const McpttInfo &info, bool cha
                                      SipResponse &response) {
   if (!calling_constituent.empty() && user.groups.contains(calling_constituent)) {
     // Affiliated to the constituent group: that is the affiliation step 6 asks for.
+  } else if (regroup_affiliated(user, info.request_uri)) {
+    // Affiliated with the regroup by its notice (TS 24.379 clauses 16.2.2.4 and 16.3.2.4 step 3 h)).
   } else if (!user.groups.contains(info.request_uri)) {
     bool affiliated_now = false;
     if (chat_request || info.emergency == true || info.imminent_peril == true) {
@@ -982,7 +998,7 @@ bool McServer::group_call_affiliated(User &user, const McpttInfo &info, bool cha
     }
     if (!affiliated_now) {
       response.status_code = 403;
-      response.headers = {{"Warning", "399 mcx \"" + warn(Warning::not_affiliated) + "\""}};
+      response.headers = {{"Warning", warning_value(warn(Warning::not_affiliated))}};
       return false;
     }
   }
@@ -998,33 +1014,33 @@ bool McServer::group_call_type_allowed(const User &user, const McpttInfo &info, 
   // TS 24.379 and TS 24.281 clause 6.3.5.2 step 5a: a disabled group (<on-network-disabled>).
   if (profile.value("disabled", false)) {
     response.status_code = 403;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::group_disabled) + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::group_disabled))}};
     return false;
   }
   // Step 5b: the caller is not in the group's <list>.
   if (!member(profile, user.id)) {
     response.status_code = 403;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::not_group_member) + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::not_group_member))}};
     return false;
   }
   // TS 24.379 clause 4.4.2 warnings 117 and 118: the requested call type must match the group type.
   const bool chat_group = profile.value("type", std::string("prearranged")) == "chat";
   if (chat_request != chat_group) {
     response.status_code = 403;
-    response.headers = {{"Warning", chat_group ? "399 mcx \"" + warn(Warning::chat_group_mismatch) + "\""
-                                               : "399 mcx \"" + warn(Warning::prearranged_group_mismatch) + "\""}};
+    response.headers = {{"Warning", chat_group ? warning_value(warn(Warning::chat_group_mismatch))
+                                               : warning_value(warn(Warning::prearranged_group_mismatch))}};
     return false;
   }
   // TS 24.379 clause 10.1.2.4.1 steps 4b and 4c (clause 10.1.1.4.2 steps 5a1 and 5b): group document
   // restrictions.
   if (profile.value("preconfigured_use_only", false)) {
     response.status_code = 403;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::preconfigured_use_only) + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::preconfigured_use_only))}};
     return false;
   }
   if (profile.value("regrouped", false) || is_regrouped(info.request_uri)) {
     response.status_code = 403;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::regrouped) + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::regrouped))}};
     // TS 24.379 clause 10.1.2.4.1 step 4c-ii (clause 10.1.1.4.2 step 5b-iii): when the group was regrouped
     // using a preconfigured group, a copy of the notification of clause 16.2.4.1 goes to the caller as well.
     if (is_regrouped(info.request_uri))
@@ -1054,11 +1070,9 @@ bool McServer::group_media_acceptable(const SipMessage &message, const User &use
   if (!user.peer.empty() && !floor_keys(user) &&
       (profile.value("protect_media", false) || profile.value("protect_floor", false))) {
     response.status_code = 488;
-    response.headers = {
-        {"Warning", "399 mcx \"" +
-                        warn(Warning::function_not_allowed,
-                             std::string("protected media not supported across ") + svc_.label + " servers") +
-                        "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::function_not_allowed,
+                                                       std::string("protected media not supported across ") +
+                                                           svc_.label + " servers"))}};
     return false;
   }
   return true;
@@ -1079,15 +1093,14 @@ bool McServer::group_call_admitted(const SipMessage &message, const User &user, 
   }
   if (!policy_allows(admission_policy, session ? "join_members" : "initiate_members", user.id)) {
     response.status_code = 403;
-    response.headers = {{"Warning", session
-                                        ? "399 mcx \"" + warn(Warning::group_call_join_not_authorised) + "\""
-                                        : "399 mcx \"" + warn(Warning::group_call_initiation_not_authorised) + "\""}};
+    response.headers = {{"Warning", session ? warning_value(warn(Warning::group_call_join_not_authorised))
+                                            : warning_value(warn(Warning::group_call_initiation_not_authorised))}};
     return false;
   }
   if (!session && !sufficient_affiliation(info.request_uri, profile.at("members").get<std::vector<std::string>>(),
                                           admission_policy, true)) {
     response.status_code = 480;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::required_members_abandoned) + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::required_members_abandoned))}};
     return false;
   }
   return true;
@@ -1161,22 +1174,20 @@ bool McServer::group_join_allowed(const User &user, const McpttInfo &info, const
   if (chat_request && broadcast_request) {
     response.status_code = 403;
     response.headers = {
-        {"Warning",
-         "399 mcx \"" + warn(Warning::function_not_allowed, "broadcast chat group call not implemented") + "\""}};
+        {"Warning", warning_value(warn(Warning::function_not_allowed, "broadcast chat group call not implemented"))}};
     return false;
   }
   if (broadcast_request && session && !session->broadcast) {
     // A broadcast on the same group cannot replace its ongoing call.
     response.status_code = 486;
-    response.headers = {
-        {"Warning", "399 mcx \"" + warn(Warning::function_not_allowed, "group call in progress") + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::function_not_allowed, "group call in progress"))}};
     return false;
   }
   // TS 24.379 clause 4.12: any member may broadcast unless call_policy.broadcast_members restricts it.
   if (broadcast_request && !session && !policy_allows(admission_policy, "broadcast_members", user.id)) {
     response.status_code = 403;
     response.headers = {
-        {"Warning", "399 mcx \"" + warn(Warning::function_not_allowed, "broadcast group call not authorised") + "\""}};
+        {"Warning", warning_value(warn(Warning::function_not_allowed, "broadcast group call not authorised"))}};
     return false;
   }
   if (session && has_leg(*session, user.id)) {
@@ -1186,7 +1197,7 @@ bool McServer::group_join_allowed(const User &user, const McpttInfo &info, const
   if (session && session->dialogs.size() >= session->policy.value("max_participants", session->members.size()) &&
       !preempt_lower_priority_participant(session, profile, user.id, info)) {
     response.status_code = 486;
-    response.headers = {{"Warning", "399 mcx \"" + warn(Warning::too_many_participants) + "\""}};
+    response.headers = {{"Warning", warning_value(warn(Warning::too_many_participants))}};
     return false;
   }
   return true;
@@ -1288,7 +1299,7 @@ void McServer::answer_group_invite(const SipMessage &message, const User &user, 
     response.status_code = 100;
     response.reason = "Trying";
   } else if (!session_addressed && !session->chat) {
-    response.headers.push_back({"Warning", "399 mcx \"" + warn(Warning::session_exists) + "\""});
+    response.headers.push_back({"Warning", warning_value(warn(Warning::session_exists))});
   }
   // Do not publish a phantom session if media allocation or response creation fails.
   if (creating) sessions_[session->group] = session;

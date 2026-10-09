@@ -138,7 +138,7 @@ docker compose exec client-c mcx-client --config /config/client-c.json --command
 ## 4. Look at the capture
 
 `run.sh` copies the capture to `captures/11-functional-aliases-run.pcap.gz`. The folder also holds a reference run,
-`captures/11-functional-aliases-full.pcap.gz` (152 KB, 2 579 frames): the frame numbers below and in the call flow are
+`captures/11-functional-aliases-full.pcap.gz` (149 KB, 2 555 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.11.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -166,44 +166,44 @@ request again with credentials); the frames below are those of the request that 
 
 What to look for, in the reference run:
 
-- **The status subscription and activation** (frames 421 to 493): client-c's SUBSCRIBE (421, 424; 425 at the server)
+- **The status subscription and activation** (frames 397 to 469): client-c's SUBSCRIBE (397, 400; 401 at the server)
   has `Event: presence`, `Expires: 4294967295` and `<request-type>functional-alias-status-determination</request-type>`;
-  the server answers 200 (426) and sends the first NOTIFY (428, at client-c 432), with no alias. client-c's PUBLISH
-  (430, 436; 440 at the server) carries `Expires: 4294967295`, a `<p-id-fa>` and
-  `<fa:functionalAlias functionalAliasID="sip:medic.alias@mcx.test"/>`; the server's 200 (442, to client-c 444)
-  repeats `Expires`, and its NOTIFY (443, at client-c 445) carries the same `<p-id-fa>` and medic with
-  `status="activated"`. client-d subscribes (455) and activates medic the same way (467; 200 473; NOTIFY 474).
-  client-c's PUBLISH for dispatcher (487) gets 403 with `Warning: 399 mcx "201 user not authorized to change the
-  functional alias status"` (491, 493), and no NOTIFY.
-- **The limit and take-over** (frames 495 to 592): alice subscribes (498) and activates dispatcher (510; 200
-  516; NOTIFY 517, `activated`). bob subscribes (529); his PUBLISH (541) gets 200 (547), and his NOTIFY (548)
-  lists dispatcher with `status="take-over-possible"`. bob's next PUBLISH (561) adds `<fa:take-over>true</fa:take-over>`:
-  200 (565), and the NOTIFY (573) lists dispatcher `activated`; alice's NOTIFY (567, at alice 569) no longer lists it.
-  alice's request (584) has no `<take-over>`, since she was not offered one: 200 (588), and her NOTIFY (590) still
+  the server answers 200 (402) and sends the first NOTIFY (404, at client-c 408), with no alias. client-c's PUBLISH
+  (406, 412; 416 at the server) carries `Expires: 4294967295`, a `<p-id-fa>` and
+  `<fa:functionalAlias functionalAliasID="sip:medic.alias@mcx.test"/>`; the server's 200 (418, to client-c 420)
+  repeats `Expires`, and its NOTIFY (419, at client-c 421) carries the same `<p-id-fa>` and medic with
+  `status="activated"`. client-d subscribes (431) and activates medic the same way (443; 200 449; NOTIFY 450).
+  client-c's PUBLISH for dispatcher (463) gets 403 with `Warning: 399 mcptt-server "201 user not authorized to change
+  the functional alias status"` (467, 469), and no NOTIFY.
+- **The limit and take-over** (frames 471 to 567): alice subscribes (474) and activates dispatcher (486; 200
+  492; NOTIFY 493, `activated`). bob subscribes (505); his PUBLISH (517) gets 200 (523), and his NOTIFY (524)
+  lists dispatcher with `status="take-over-possible"`. bob's next PUBLISH (537) adds `<fa:take-over>true</fa:take-over>`:
+  200 (541), and the NOTIFY (549) lists dispatcher `activated`; alice's NOTIFY (544, at alice 545) no longer lists it.
+  alice's request (560) has no `<take-over>`, since she was not offered one: 200 (564), and her NOTIFY (566) still
   lists no alias.
-- **A private call to medic** (frames 598 to 660): client-a's INVITE (605) has `<call-to-functional-alias-ind>true` and
-  the resource list `sip:medic.alias@mcx.test`. The server answers 300 (609, to client-a 613) with `<mcptt-request-uri>`
-  `sip:client-c.mcptt@mcx.test`, the session identity in the Contact, and nobody invited. client-a's new INVITE (623)
+- **A private call to medic** (frames 574 to 636): client-a's INVITE (581) has `<call-to-functional-alias-ind>true` and
+  the resource list `sip:medic.alias@mcx.test`. The server answers 300 (585, to client-a 589) with `<mcptt-request-uri>`
+  `sip:client-c.mcptt@mcx.test`, the session identity in the Contact, and nobody invited. client-a's new INVITE (599)
   names client-c in its list, carries `<called-functional-alias-URI>` medic and no indicator; the server's INVITE to
-  client-c (633) carries the called alias too; client-a gets 200 (648) and ends the call (660).
-- **Presentation** (frames 675 to 825): bob's INVITE to alice (682) and the server's INVITE to her (692) carry
-  `<functional-alias-URI>` dispatcher. alice's INVITE (740) asks for dispatcher too, but the server's INVITE to client-c
-  (750) leaves it out: dispatcher is bob's. bob's group call (798) presents dispatcher to alice (808), client-c (818)
-  and client-d (825).
-- **First-to-answer** (frames 1050 to 1108): client-a's INVITE (1057), `<session-type>first-to-answer</session-type>`
-  with the indicator; INVITEs to client-c (1068) and client-d (1074) with `Priv-Answer-Mode: Manual` and the called alias;
-  client-d's 200 (1086), the 200 to client-a (1094), then the CANCEL to client-c (1105) and its 487 (1108).
-- **Ad hoc** (frames 1139 to 1165): client-a's INVITE (1146) lists only `sip:medic.alias@mcx.test`; the server invites
-  client-c (1156) and client-d (1165), each with the called alias, and not bob.
-- **Broadcast ad hoc** (frames 1325 to 2448): client-a's INVITE (1332) has `<broadcast-ind>true` and lists bob and
-  client-c, who are invited with it (1342, 1349). bob's Floor Request (1412) is denied (1413, cause 5). client-a's
-  Floor Request (1421), Floor Granted (1422), Floor Taken to bob and client-c (1423, 1424), then about 6.7 s of speech
-  from 1428, 337 RTP packets to each listener. client-a's Floor Release (2439) ends the call: BYEs to bob (2444), alice
-  (2446) and client-c (2448).
-- **Deactivation and an alias nobody holds** (frames 2465 to 2575): client-c's PUBLISH with `Expires: 0` (2469) gets 200
-  (2473), and its NOTIFY (2475) no longer lists medic. bob's call to medic now gets a 300 naming client-d (2494), and
-  bob's INVITE (2508) reaches client-d (2518). bob's call to reserve (2567) gets 403 with `Warning: 399 mcx "145 unable to
-  determine called party"` (2548, 2552); nobody is invited.
+  client-c (609) carries the called alias too; client-a gets 200 (624) and ends the call (636).
+- **Presentation** (frames 651 to 800): bob's INVITE to alice (658) and the server's INVITE to her (668) carry
+  `<functional-alias-URI>` dispatcher. alice's INVITE (716) asks for dispatcher too, but the server's INVITE to client-c
+  (726) leaves it out: dispatcher is bob's. bob's group call (774) presents dispatcher to alice (784), client-c (794)
+  and client-d (800).
+- **First-to-answer** (frames 1030 to 1090): client-a's INVITE (1037), `<session-type>first-to-answer</session-type>`
+  with the indicator; INVITEs to client-c (1049) and client-d (1052) with `Priv-Answer-Mode: Manual` and the called alias;
+  client-d's 200 (1066), the 200 to client-a (1075), then the CANCEL to client-c (1086) and its 487 (1090).
+- **Ad hoc** (frames 1119 to 1144): client-a's INVITE (1126) lists only `sip:medic.alias@mcx.test`; the server invites
+  client-c (1136) and client-d (1144), each with the called alias, and not bob.
+- **Broadcast ad hoc** (frames 1309 to 2424): client-a's INVITE (1316) has `<broadcast-ind>true` and lists bob and
+  client-c, who are invited with it (1326, 1335). bob's Floor Request (1394) is denied (1395, cause 5). client-a's
+  Floor Request (1397), Floor Granted (1398), Floor Taken to bob and client-c (1399, 1400), then about 6.7 s of speech
+  from 1404, 337 RTP packets to each listener. client-a's Floor Release (2415) ends the call: BYEs to bob (2420), alice
+  (2422) and client-c (2424).
+- **Deactivation and an alias nobody holds** (frames 2441 to 2551): client-c's PUBLISH with `Expires: 0` (2445) gets 200
+  (2449), and its NOTIFY (2451) no longer lists medic. bob's call to medic now gets a 300 naming client-d (2470), and
+  bob's INVITE (2484) reaches client-d (2494). bob's call to reserve (2543) gets 403 with
+  `Warning: 399 mcptt-server "145 unable to determine called party"` (2547, 2551); nobody is invited.
 
 ## 5. Stop or start over
 
@@ -305,14 +305,14 @@ sequenceDiagram
 
 | Message | Frames |
 |---|---|
-| client-c's status SUBSCRIBE; 200; first NOTIFY | 421, 424, 425; 426, 429; 428, 432 |
-| client-c's PUBLISH (medic); 200; NOTIFY, medic activated | 430, 436, 440; 442, 444; 443, 445 |
-| client-c's PUBLISH (dispatcher); 403, warning 201 | 483, 487, 489; 491, 493 |
-| alice's PUBLISH (dispatcher); 200; NOTIFY, activated | 504, 510, 514; 516, 518; 517, 519 |
-| bob's PUBLISH (dispatcher); 200; NOTIFY, take-over-possible | 535, 541, 545; 547, 550; 548, 549 |
-| bob's PUBLISH with take-over; 200; NOTIFY, activated; alice's NOTIFY | 557, 561, 563; 565, 568; 573, 574; 567, 569 |
-| alice's PUBLISH (dispatcher, no offer); 200; NOTIFY without it | 580, 584, 586; 588, 591; 590, 592 |
-| alice's INVITE to medic; 300 | 605, 607; 609, 613 |
-| alice's INVITE to client-c; INVITE to client-c; 200 to alice | 623, 626; 633; 648 |
-| bob's INVITE to alice; INVITE to alice with dispatcher | 682, 684; 692 |
-| alice's INVITE to client-c; INVITE to client-c without the alias | 740, 742; 750 |
+| client-c's status SUBSCRIBE; 200; first NOTIFY | 397, 400, 401; 402, 405; 404, 408 |
+| client-c's PUBLISH (medic); 200; NOTIFY, medic activated | 406, 412, 416; 418, 420; 419, 421 |
+| client-c's PUBLISH (dispatcher); 403, warning 201 | 459, 463, 465; 467, 469 |
+| alice's PUBLISH (dispatcher); 200; NOTIFY, activated | 480, 486, 490; 492, 494; 493, 495 |
+| bob's PUBLISH (dispatcher); 200; NOTIFY, take-over-possible | 512, 517, 521; 523, 525; 524, 526 |
+| bob's PUBLISH with take-over; 200; NOTIFY, activated; alice's NOTIFY | 533, 537, 539; 541, 543; 549, 550; 544, 545 |
+| alice's PUBLISH (dispatcher, no offer); 200; NOTIFY without it | 556, 560, 562; 564, 570; 566, 567 |
+| alice's INVITE to medic; 300 | 581, 583; 585, 589 |
+| alice's INVITE to client-c; INVITE to client-c; 200 to alice | 599, 602; 609; 624 |
+| bob's INVITE to alice; INVITE to alice with dispatcher | 658, 660; 668 |
+| alice's INVITE to client-c; INVITE to client-c without the alias | 716, 718; 726 |

@@ -116,7 +116,7 @@ bool McServer::in_call(const std::string &id) const {
 SipResponse McServer::private_call_rejected(SipResponse &response, const User &user, int status,
                                             const std::string &warning) {
   response.status_code = status;
-  if (!warning.empty()) response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
+  if (!warning.empty()) response.headers = {{"Warning", warning_value(warning)}};
   event("private_call_rejected", {{"user_id", user.id}, {"status", status}, {"warning", warning}});
   return response;
 }
@@ -306,7 +306,8 @@ std::optional<SipResponse> McServer::private_call_emergency(const SipMessage &me
     current.emergency = false;
     response.content_type = svc_.info_mime;
     response.body = service_info_xml_(current);
-    return reject(403, "emergency private call not authorized");
+    return reject(403,
+                  warn(Warning::function_not_allowed, "user authorisation: emergency private call not authorized"));
   }
   priority.emergency = true;
   priority.emergency_users.insert(user.id);
@@ -344,7 +345,7 @@ std::optional<SipResponse> McServer::private_call_media_refusal(const SipMessage
   if (!ric_priority(user.id, request.target, std::string(get_header(message.headers, "Resource-Priority")),
                     service_resource_priority()) &&
       !private_resource_priority_allowed(message, priority, info.emergency == true))
-    return reject(403, "Resource-Priority is not authorized by call state");
+    return reject(403, warn(Warning::function_not_allowed, "Resource-Priority not authorized by call state"));
   try {
     (void)priority_headers(cfg_.at(svc_.name), priority);
   } catch (const std::exception &) {
@@ -533,7 +534,7 @@ McServer::private_caller_answer(const SipMessage &message, const User &user, con
   populate_priority(answer, priority);
   response.parts = priority_parts(answer, &session->priority);
   response.headers = priority_headers(cfg_.at(svc_.name), priority);
-  if (correction) response.headers.push_back({"Warning", "399 mcx \"" + warn(Warning::info_pending) + "\""});
+  if (correction) response.headers.push_back({"Warning", warning_value(warn(Warning::info_pending))});
   leg->pending_priority_info = correction;
   leg->answer = response;
   leg->awaiting_answer = true;
@@ -748,7 +749,7 @@ SipResponse McServer::private_priority_rejected(SipResponse &response, const Use
                                                 const PriorityState &state, int status, const std::string &warning,
                                                 bool with_state) {
   response.status_code = status;
-  if (!warning.empty()) response.headers = {{"Warning", "399 mcx \"" + warning + "\""}};
+  if (!warning.empty()) response.headers = {{"Warning", warning_value(warning)}};
   if (with_state) {
     // TS 24.379 clause 11.1.1.4.4 steps 3b and 3c: report the unchanged emergency and alert state.
     McpttInfo current;
@@ -803,7 +804,9 @@ std::optional<SipResponse> McServer::private_priority_request(const SipMessage &
   const auto peer = user.id == session.initiator ? session.private_request.target : session.initiator;
   const auto policy = user_profile(user.id).value("private_call", Json::object());
   if (*info.emergency) {
-    if (!authorize_emergency_private(policy, peer)) return reject(403, "emergency private call not authorized", true);
+    if (!authorize_emergency_private(policy, peer))
+      return reject(
+          403, warn(Warning::function_not_allowed, "user authorisation: emergency private call not authorized"), true);
     next.emergency = true;
     next.emergency_users.insert(user.id);
     if (info.alert == true) {
@@ -820,7 +823,10 @@ std::optional<SipResponse> McServer::private_priority_request(const SipMessage &
     }
   } else {
     if (!private_policy_flag(policy, "emergency_cancel"))
-      return reject(403, "emergency private call cancellation not authorized", true);
+      return reject(
+          403,
+          warn(Warning::function_not_allowed, "user authorisation: emergency private call cancellation not authorized"),
+          true);
     next.emergency = false;
     next.emergency_users.clear();
     if (info.alert == false) {
@@ -892,10 +898,9 @@ SipResponse McServer::private_reinvite(const SipMessage &message, const User &us
   if (auto refused = private_priority_request(message, user, info, *session, response, next, correction))
     return *refused;
   if (!private_resource_priority_allowed(message, state, *info.emergency) ||
-      (!*info.emergency &&
-       std::string(get_header(message.headers, "Resource-Priority")) ==
-           service_resource_priority().value("emergency", std::string{})))
-    return reject(403, "Resource-Priority is not authorized by call state");
+      (!*info.emergency && std::string(get_header(message.headers, "Resource-Priority")) ==
+                               service_resource_priority().value("emergency", std::string{})))
+    return reject(403, warn(Warning::function_not_allowed, "Resource-Priority not authorized by call state"));
   std::vector<SipHeader> headers;
   try {
     headers = priority_headers(cfg_.at(svc_.name), next);
@@ -915,7 +920,7 @@ SipResponse McServer::private_reinvite(const SipMessage &message, const User &us
   response.parts = priority_parts(current, &state);
   response.headers = headers;
   if (correction) {
-    response.headers.push_back({"Warning", "399 mcx \"" + warn(Warning::info_pending) + "\""});
+    response.headers.push_back({"Warning", warning_value(warn(Warning::info_pending))});
     schedule([this, dialog = leg->dialog] { send_priority_correction(dialog); });
   }
   notify_private_priority_change(*session, leg, user, info, headers);
