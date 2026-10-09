@@ -20,12 +20,14 @@ import argparse
 import collections
 import json
 from pathlib import Path
+import re
 import struct
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from verify_private_call import header, parse, sip_messages, tcp_streams  # noqa: E402
 from verify_broadcast_call import floor_messages  # noqa: E402
+from floor_causes import causes, summary  # noqa: E402
+from verify_private_call import header, parse, sip_messages, tcp_streams, timed_messages  # noqa: E402
 
 
 # ------------------------------------------------------------------------------
@@ -108,6 +110,41 @@ def main():
             for message in upgrades
         ),
     )
+    # TS 24.379 clause 10.1.1.4.7 step 6 d): the participants learn an emergency upgrade from the re-INVITE; the
+    # emergency MESSAGE is for the affiliated members that are not participating (step 6 d) v)), so no participant
+    # gets both.
+    timeline = timed_messages(args.capture)
+
+    def aor(message):
+        return re.sub(r'^.*?<?(sips?:[^;>]+).*$', r'\1', header(message, 'to'))
+
+    upgrade_reinvites = [
+        message
+        for message in timeline
+        if message['request']
+        and message['method'] == 'INVITE'
+        and 'mcptt-server' in header(message, 'via')
+        and re.search(r';\s*tag=', header(message, 'to'), re.I)
+        and message['info'].get('emergency-ind') == 'true'
+    ]
+    emergency_messages = [
+        message
+        for message in timeline
+        if message['request']
+        and message['method'] == 'MESSAGE'
+        and 'mcptt-server' in header(message, 'via')
+        and message['info'].get('emergency-ind') == 'true'
+    ]
+    doubled = [
+        aor(reinvite)
+        for reinvite in upgrade_reinvites
+        for notice in emergency_messages
+        if aor(notice) == aor(reinvite) and abs(notice['time'] - reinvite['time']) < 1.0
+    ]
+    check(
+        'a participant told of an emergency upgrade by re-INVITE gets no emergency MESSAGE as well (10.1.1.4.7)',
+        bool(upgrade_reinvites) and not doubled,
+    )
     downgrades = [message for message in from_server if message['info'].get('emergency-ind') == 'false']
     check('cancellation is signalled explicitly with emergency-ind false', bool(downgrades))
     rejected = [
@@ -117,6 +154,37 @@ def main():
         if response['status'] == 403
     ]
     check('unauthorised priority requests are rejected with 403', bool(rejected))
+    # The body of each 403 tells the client the state it did not get (TS 24.379 clauses 6.3.3.1.14, 10.1.1.4.4 steps
+    # 7 and 11 and 12.1.3.1 step 4a): the MCPTT info elements per kind of refused request.
+    expected_body = {
+        'emergency call': (lambda info: info.get('emergency-ind') == 'true',
+                           {'emergency-ind': 'false', 'alert-ind': 'false'}),
+        'imminent peril call': (lambda info: info.get('imminentperil-ind') == 'true', {'imminentperil-ind': 'false'}),
+        'emergency cancellation': (lambda info: info.get('emergency-ind') == 'false', {'emergency-ind': 'true'}),
+        'emergency alert': (lambda info: info.get('alert-ind') == 'true' and 'emergency-ind' not in info,
+                            {'alert-ind': 'false'}),
+        'emergency alert cancellation': (lambda info: info.get('alert-ind') == 'false' and 'emergency-ind' not in info,
+                                         {'alert-ind': 'true'}),
+    }
+    client_requests = [
+        message
+        for message in messages
+        if message['request'] and message['method'] in ('INVITE', 'MESSAGE') and 'mcptt-server' not in header(message, 'via')
+    ]
+    refusals = collections.defaultdict(list)
+    for message in client_requests:
+        for response in finals(message):
+            if response['status'] != 403 or 'mcptt-server' not in header(response, 'warning'):
+                continue
+            for kind, (matches, elements) in expected_body.items():
+                if matches(message['info']):
+                    refusals[kind].append(all(response['info'].get(key) == value for key, value in elements.items()))
+                    break
+    for kind, (_, elements) in expected_body.items():
+        check(
+            f'a refused {kind} gets 403 with ' + ', '.join(f'<{key}> {value}' for key, value in elements.items()),
+            bool(refusals[kind]) and all(refusals[kind]),
+        )
     alerts = [
         message
         for message in messages
@@ -128,6 +196,20 @@ def main():
         and any(
             'mcptt-location-info' in message['body'] and 'CurrentCoordinate' in message['body'] for message in alerts
         ),
+    )
+    # TS 24.379 clause 6.3.3.1.12 steps 2 and 3: every emergency alert the controlling function sends carries the
+    # <mc-org> of the originator's user profile.
+    server_alerts = [
+        message
+        for message in messages
+        if message['request']
+        and message['method'] in ('MESSAGE', 'INVITE')
+        and 'mcptt-server' in header(message, 'via')
+        and message['info'].get('alert-ind') == 'true'
+    ]
+    check(
+        'every emergency alert from the server carries <mc-org> (6.3.3.1.12)',
+        bool(server_alerts) and all(message['info'].get('mc-org') for message in server_alerts),
     )
     cancels = [
         message
@@ -152,6 +234,11 @@ def main():
         'floor messages carry the emergency D-bit and the imminent-peril E-bit during those calls',
         indicators[0x1000] > 0 and indicators[0x0800] > 0,
     )
+    reject_causes, cause_violations = causes(args.capture)
+    check('every Floor Deny and Floor Revoke carries a Reject Cause defined for it (TS 24.380 8.2.6.2, 8.2.10.2)',
+          not cause_violations)
+    check('the pre-empted talker gets Floor Revoke with cause #4 Media Burst pre-empted (TS 24.380 6.3.4.4.7, 8.2.10.2)',
+          reject_causes[('Revoke', 4)] > 0)
     result = dict(
         capture=str(args.capture),
         passed=not failures,
@@ -164,10 +251,14 @@ def main():
             server_priority_invites=len(upgrades),
             explicit_downgrades=len(downgrades),
             rejected=len(rejected),
+            refusal_bodies={kind: outcomes for kind, outcomes in refusals.items()},
             alert_messages=len(alerts),
             alert_cancellations=len(cancels),
             info_corrections=len(infos),
+            floor_reject_causes=summary(reject_causes),
             floor_call_types={f'{key:#06x}': value for key, value in indicators.items()},
+            upgrade_reinvites=len(upgrade_reinvites),
+            doubled_upgrade_notices=doubled,
         ),
     )
     args.output.write_text(json.dumps(result, indent=2) + '\n')

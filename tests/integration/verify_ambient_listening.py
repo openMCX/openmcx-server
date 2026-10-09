@@ -192,6 +192,19 @@ def main():
         all(message['call_id'] in ambient_calls for message in reasoned),
     )
 
+    # RFC 3261 section 20.4 with TS 24.229: Alert-Info belongs in an INVITE or a 180 (Ringing), never in a final
+    # answer (the ambient listening 200 once copied the INVITE's).
+    check(
+        'no 2xx answer to an INVITE carries Alert-Info',
+        not any(
+            not message['request']
+            and message['method'] == 'INVITE'
+            and 200 <= message['status'] < 300
+            and header(message, 'alert-info')
+            for message in messages
+        ),
+    )
+
     result = dict(
         capture=str(args.capture),
         passed=not failures,

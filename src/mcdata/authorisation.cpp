@@ -36,13 +36,14 @@ SipResponse DataServer::authorise(const SipMessage &request) {
   for (const auto &[sip, other] : users_)
     if (other.id == id && sip != asserted)
       return reject(403, "101 service authorisation failed", asserted, "authorisation");
-  // Every check comes before the user's entry is made or changed, so that a refused request changes nothing.
-  const auto existing = users_.find(asserted);
-  const auto match = std::string(get_header(request.headers, "SIP-If-Match"));
-  if (!match.empty() && (existing == users_.end() || match != existing->second.auth_etag))
-    return reject(412, "", asserted, "authorisation");
   // The CSK was signed by the MCData ID the access token names.
   if (csk && uploader != id) return reject(403, "101 service authorisation failed", asserted, "authorisation");
+  // TS 24.282 clause 7.3.3 steps 5 and 7: the user is bound before the PUBLISH is processed by RFC 3903, so a
+  // SIP-If-Match that names no publication of this server (RFC 3903 section 6 step 3) is answered 412 after the
+  // binding, and leaves no publication.
+  const auto existing = users_.find(asserted);
+  const auto match = std::string(get_header(request.headers, "SIP-If-Match"));
+  const bool unknown_etag = !match.empty() && (existing == users_.end() || match != existing->second.auth_etag);
   auto &user = users_[asserted];
   if (!user.id.empty() && (user.id != id || user.client != info.client_id)) {
     user.groups.clear();
@@ -53,6 +54,7 @@ SipResponse DataServer::authorise(const SipMessage &request) {
   user.sip = asserted;
   if (csk) user.csk = csk;
   user.expires = claims.at("exp").get<std::int64_t>();
+  if (unknown_etag) return reject(412, "", asserted, "authorisation");
   user.auth_etag = random_id();
   response.status_code = 200;
   response.headers = {{"SIP-ETag", user.auth_etag}, {"Expires", "4294967295"}};
@@ -139,6 +141,12 @@ SipResponse DataServer::affiliate(const SipMessage &request, User &user) {
     if (!affiliation.mcdata || affiliation.user_id != user.id || affiliation.client_id != user.client)
       return reject(403, "", user.id, "affiliation");
   }
+  // TS 24.282 clause 8.3.2.3 step 5: an affiliation lasts until changed, so Expires is 4294967295 (or 0 to end it).
+  if (const auto expires = get_header(request.headers, "Expires"); expires != "0" && expires != "4294967295") {
+    auto brief = reject(423, "", user.id, "affiliation");
+    brief.headers = {{"Min-Expires", "4294967295"}};
+    return brief;
+  }
   // RFC 3903 section 6: a PUBLISH without SIP-If-Match is an initial publication,
   // which replaces the event state rather than being refused. A client that
   // restarted has no entity tag and must still be able to affiliate; only a
@@ -149,9 +157,13 @@ SipResponse DataServer::affiliate(const SipMessage &request, User &user) {
   if (!removing)
     for (const auto &group : affiliation.groups) {
       const auto document = group_document(group);
+      // Clause 8.3.2.3 step 8: the PUBLISH is answered 200 (OK) whatever the outcome per group; a group the user is
+      // not a member of is refused by its controlling function and removed, so the notified status does not list it.
       if (!document || !document->contains("mcdata") ||
-          !listed(document->at("mcdata").value("members", Json::array()), user.id))
-        return reject(403, "", user.id, "affiliation");
+          !listed(document->at("mcdata").value("members", Json::array()), user.id)) {
+        event("mcdata_affiliation_refused", {{"user_id", user.id}, {"group_id", group}, {"reason", "not a member"}});
+        continue;
+      }
       groups.insert(group);
     }
   const auto previous = user.groups;

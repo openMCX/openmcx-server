@@ -13,6 +13,9 @@ every lab is torn down after its last scenario, whatever the outcome; its logs a
 kept. The summary is printed as a table and written to <output>/summary.json and
 summary.md.
 
+Over debug TCP SIP, a scenario with a wire verifier is also checked on the wire
+(tests/integration/wire_check.py), reported as <scenario>/wire.
+
 To keep the run short, a lab with several scenarios is prepared once per scenario
 (unit <lab>.<n>, reported under the lab), so its scenarios run in parallel, and the
 longest units start first, by the durations of earlier runs kept in
@@ -107,6 +110,19 @@ LABS = [
         ['token_refresh_scenario', 'server_restart_scenario'],
         ['mcptt', 'mcdata', 'common'],
     ),
+    # Raw requests from client-a's container: affiliation PUBLISH refusals and per-group outcome (TS 24.379 clause
+    # 9.2.2.2.3, TS 24.282 clause 8.3.2.3, RFC 3903), and the digest, service authorisation (warning 101), CMS and
+    # IdMS refusals (sip_negative.py).
+    lab(
+        'negative',
+        'single',
+        ['--private-call', '--mcdata'],
+        ['affiliation_publish_scenario', 'sip_negative_scenario'],
+        ['mcptt', 'mcdata', 'failure'],
+    ),
+    # TS 24.379 clauses 6.3.5.2, 6.3.5.3, 6.3.8.2 and 10.1.1.4.2: group calls refused by the group document and its
+    # call policy (warnings 115, 119, 121 and 112).
+    lab('group-admission', 'single', ['--admission-groups'], ['group_admission_scenario'], ['mcptt', 'failure']),
     lab(
         'smoke-mcvideo',
         'single',
@@ -182,7 +198,13 @@ LABS = [
         call_types=True,
     ),
     # N5 AF role (TS 29.514): QoS requested from a recording mock PCF over HTTP/2 cleartext.
-    lab('pcf-n5', 'single', ['--pcf', '--priority', '--floor-queue', '--private-call'], ['pcf_n5_scenario'], ['mcptt', '5gc']),
+    lab(
+        'pcf-n5',
+        'single',
+        ['--pcf', '--priority', '--floor-queue', '--private-call'],
+        ['pcf_n5_scenario'],
+        ['mcptt', '5gc'],
+    ),
     # Rx AF role (TS 29.214, TS 23.379 clause 7.5.2.6): EPS UEs get Rx sessions, the WLAN UE none (TS 24.379 clause 4.13).
     lab('rx', 'single', ['--rx', '--priority', '--floor-queue', '--private-call'], ['rx_scenario'], ['mcptt', 'epc']),
     lab('floor-queue', 'single', ['--floor-queue'], ['prearranged_floor_scenario'], ['mcptt']),
@@ -435,7 +457,7 @@ def run_lab(spec, args, output, stamp):
             run(compose + ['up', '-d', '--wait'], log, timeout=600)
             script = directory / 'call-types.log'
             code = run(
-                ['bash', 'tests/integration/run_all_call_types.sh', str(directory), project],
+                ['bash', 'tests/integration/run_all_call_types.sh', str(directory), project, ' '.join(flags)],
                 script,
                 timeout=args.timeout * 8,
             )
@@ -451,7 +473,7 @@ def run_lab(spec, args, output, stamp):
                             passed=found.group(2) == 'PASS',
                             checks=None,
                             error='' if found.group(2) == 'PASS' else found.group(2),
-                            log=str(directory / f'{found.group(1)}.log'),
+                            log=str(directory / re.sub(r'-wire$', '.wire', found.group(1))) + '.log',
                         )
                     )
             if not results:
@@ -471,8 +493,25 @@ def run_lab(spec, args, output, stamp):
             run(compose + ['down', '-v', '--remove-orphans'], log, timeout=300)
             for status in (directory / 'artifacts').glob('*/status.json'):
                 status.unlink()
-            run(compose + ['up', '-d', '--wait'], log, timeout=600)
             scenario_log = directory / f'{"_".join([scenario] + [argument.strip("-") for argument in extra])}.log'
+            # The scenario's wire check (tests/integration/wire_check.py): its server's capture starts before the
+            # clients authorise.
+            wire = [
+                'python3',
+                'tests/integration/wire_check.py',
+                '--compose',
+                str(directory / 'compose.json'),
+                '--project',
+                project,
+                '--artifacts',
+                str(directory / 'artifacts'),
+                '--scenario',
+                scenario,
+                '--lab-flags=' + ' '.join(flags),
+            ]
+            wire_log = scenario_log.with_name(scenario_log.stem + '.wire.log')
+            wire_started = not extra and run(wire[:2] + ['start'] + wire[2:], wire_log, timeout=360) == 0
+            run(compose + ['up', '-d', '--wait'], log, timeout=600)
             try:
                 code = run(
                     [
@@ -507,11 +546,26 @@ def run_lab(spec, args, output, stamp):
                     log=str(scenario_log),
                 )
             )
+            if wire_started:
+                run(wire[:2] + ['finish'] + wire[2:], wire_log, timeout=900)
+                checked = scenario_result(wire_log)
+                if checked and not checked.get('skipped'):
+                    results.append(
+                        dict(
+                            lab=lab_name,
+                            scenario=f'{entry}/wire',
+                            passed=bool(checked.get('passed')),
+                            checks=None,
+                            error=checked.get('error', '')[:300],
+                            log=str(wire_log),
+                        )
+                    )
     except Exception as error:  # preparation or startup failure
         results.append(
             dict(lab=lab_name, scenario='(lab)', passed=False, checks=None, error=str(error)[:300], log=str(log))
         )
     finally:
+        subprocess.run(['docker', 'rm', '-f', f'{project}-wire'], capture_output=True)
         run(compose + ['logs', '--no-color'], directory / 'lab.log', timeout=300) if (
             directory / 'compose.json'
         ).exists() else None

@@ -24,7 +24,7 @@ Back to the [MCVideo test index](../MCVIDEO_TEST.md). Architecture: MCVideo desi
 | Emergency private call | Established with both parties in the emergency state | 24.281 §6.2.8.3 |
 | Emergency alert | MESSAGE with the MCVideo location body, delivered to the other members, then cancelled | §11.2 |
 
-Configuration: the lab of `tools/prepare-prearranged-test.py --mcvideo` gives group operations an MCVideo `priority_policy`: client-a and client-b may raise and cancel emergency, imminent peril and alerts (only client-a cancels alerts); client-c may not. client-a's MCVideo private-call ruleset allows emergency private calls to anyone. Clients and `mcvideo-server` have `mcvideo.resource_priority` (`mcptt.0`, `mcptt.10`, `mcptt.15`).
+Configuration: the lab of `tools/prepare-prearranged-test.py --mcvideo` gives group operations an MCVideo `priority_policy`: client-a and client-b may raise and cancel emergency, imminent peril and alerts (only client-a cancels alerts); client-c may not. client-a's MCVideo private-call ruleset allows emergency private calls to anyone. Clients and `mcvideo-server` have `mcvideo.resource_priority` (`mcpttp.0`, `mcpttp.10`, `mcpttp.15`).
 
 ### Client commands and status
 

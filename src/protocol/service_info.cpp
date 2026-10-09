@@ -110,6 +110,7 @@ std::string service_info_xml(const McpttInfo &info, const ServiceProfile &servic
   flag("alert-ind", info.alert);
   flag("imminentperil-ind", info.imminent_peril);
   flag("broadcast-ind", info.broadcast);
+  if (!info.organization.empty()) out += "<mc-org>" + xml_escape(info.organization) + "</mc-org>";
   // TS 24.379 annex F.1.2: <associated-group-id> is a contentType (wrapped in <mcpttURI>); TS 24.281 annex F.1.2 types
   // it xs:string, so the MCVideo element holds the group identity as its text.
   if (names.prefix == "mcvideo") {
@@ -418,6 +419,7 @@ McpttInfo parse_service_info(std::string_view xml, const ServiceProfile &service
   out.imminent_peril = info_flag(params, "imminentperil-ind", names);
   out.alert = info_flag(params, "alert-ind", names);
   out.broadcast = info_flag(params, "broadcast-ind", names);
+  out.organization = info_value(params, "mc-org", false, names);
   out.alert_received = info_flag(params, "alert-ind-rcvd", names);
   out.emergency_received = info_flag(params, "emergency-ind-rcvd", names);
   out.originated_by = info_value(params, "originated-by", true, names);

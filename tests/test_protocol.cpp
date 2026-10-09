@@ -590,6 +590,14 @@ int main() {
             "</broadcast-ind><associated-group-id type=\"Normal\"><mcpttURI>sip:subordinate@mcx.test</mcpttURI>") !=
             std::string::npos,
         "associated-group-id not encoded in schema order");
+  // TS 24.379 clause 6.3.3.1.12 and annex F.1: <mc-org>, an xs:string between <broadcast-ind> and
+  // <associated-group-id>.
+  broadcast_info.organization = "Alpha <Fire>";
+  const auto organization_xml = mcptt_info_xml(broadcast_info);
+  check(organization_xml.find("</broadcast-ind><mc-org>Alpha &lt;Fire&gt;</mc-org><associated-group-id") !=
+            std::string::npos,
+        "mc-org not encoded in schema order");
+  check(parse_mcptt_info(organization_xml).organization == "Alpha <Fire>", "mc-org lost");
   check(parse_mcptt_info(associated_xml).associated_group == "sip:subordinate@mcx.test", "associated-group-id lost");
   {
     // TS 24.281 annex F.1: the MCVideo <associated-group-id> is an xs:string (plain text, not <mcvideoURI>); it is

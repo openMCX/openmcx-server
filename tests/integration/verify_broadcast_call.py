@@ -44,24 +44,30 @@ def floor_messages(path):
         offset += 16
         packet = raw[offset : offset + captured]
         offset += captured
-        if len(packet) < 34 or packet[12:14] != b'\x08\x00':
-            continue
-        ip = packet[14:]
-        ihl = (ip[0] & 15) * 4
-        if ip[9] != 17:
-            continue
-        payload = ip[ihl + 8 : struct.unpack_from('!H', ip, 2)[0]]
-        if len(payload) < 12 or payload[0] >> 6 != 2 or payload[1] != 204 or payload[8:12] != b'MCPT':
-            continue
-        fields, at = {}, 12
-        while at + 2 <= len(payload):
-            ident = payload[at]
-            size = payload[at + 1] if ident < 192 else struct.unpack_from('!H', payload, at + 1)[0]
-            start = at + (2 if ident < 192 else 3)
-            fields[ident] = payload[start : start + size]
-            at = start + size
-            at += (-at) % 4
-        yield payload[0] & 0x0F, fields
+        yield from floor_frame(packet)
+
+
+# ------------------------------------------------------------------------------
+def floor_frame(packet):
+    """Yield (subtype, fields) of the floor control message in one Ethernet frame, if it carries one."""
+    if len(packet) < 34 or packet[12:14] != b'\x08\x00':
+        return
+    ip = packet[14:]
+    ihl = (ip[0] & 15) * 4
+    if ip[9] != 17:
+        return
+    payload = ip[ihl + 8 : struct.unpack_from('!H', ip, 2)[0]]
+    if len(payload) < 12 or payload[0] >> 6 != 2 or payload[1] != 204 or payload[8:12] != b'MCPT':
+        return
+    fields, at = {}, 12
+    while at + 2 <= len(payload):
+        ident = payload[at]
+        size = payload[at + 1] if ident < 192 else struct.unpack_from('!H', payload, at + 1)[0]
+        start = at + (2 if ident < 192 else 3)
+        fields[ident] = payload[start : start + size]
+        at = start + size
+        at += (-at) % 4
+    yield payload[0] & 0x0F, fields
 
 
 # ------------------------------------------------------------------------------

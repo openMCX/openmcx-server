@@ -254,6 +254,9 @@ SipResponse DataServer::media_invite(const SipMessage &request) {
   session_contact(response, session_identity(leg->key), invite.file_request ? "fd" : "sds");
   if (invite.file_request) media_invite_transfer(user, invite);
   if (await_recipient) {
+    // The final answer is sent later, past the protection of the answers in sip_dispatch.cpp: its XML is protected
+    // here like any other sent to this client (TS 24.282 clause 6.5.2.4.1).
+    response.parts = encrypt_xml(xml_key(user.sip), std::move(response.parts));
     media_invite_file_recipient(user, invite, *leg, level, request.dialog_id, response);
     // The provisional answer carries the SDP answer and the Contact, so that the SIP engine keeps the dialog, with
     // its session identity, for the final one.

@@ -49,7 +49,7 @@ bash tests/integration/run_all_call_types.sh artifacts/fta-lab openmcx-fta      
 python3 tests/integration/first_to_answer_emergency_scenario.py \
   --compose artifacts/fta-lab/compose.json --artifacts artifacts/fta-lab/artifacts --project openmcx-fta
 python3 tests/integration/verify_first_to_answer_emergency.py artifacts/fta-lab/artifacts/integration/fta-emergency.pcap \
-  --service sip:mcptt@mcx.test --emergency-priority mcptt.15 \
+  --service sip:mcptt@mcx.test --emergency-priority mcpttp.15 \
   --output artifacts/fta-lab/artifacts/integration/fta-emergency-sip-wire.json
 ```
 
@@ -74,7 +74,7 @@ Recorded on **2026-09-22** against image `openmcx:0.18-emergency` (`18502ee52297
 | FE-06 | A decline restores the decliner's MEPP and leaves the other invitee ringing; the caller CANCEL clears it | 3 | Same report |
 | FE-07 | Only the authorised emergency recipient is invited; with none authorised → 403 and the caller back to MEPC 1 | 4 | Same report |
 | FE-08 | An alert not authorised for every invitee is withdrawn (MPEA 1) while the emergency call proceeds | 3 | Same report |
-| FE-09 | Wire (10): emergency-ind, Resource-Priority `mcptt.15` and two or more invitees on originating INVITEs; alert with location; invitee INVITEs with emergency-ind, Resource-Priority and `Priv-Answer-Mode: Manual`; the 200 names the selected invitee and confirms `emergency-ind`; 403 with `emergency-ind` false; 200 with warning 149 and the INFO withdrawal; unselected invitees cancelled; in-dialog cancellation re-INVITE; every floor message (client and server) carries the D-bit | 10 | [Wire report](../../artifacts/fta-lab/artifacts/integration/fta-emergency-sip-wire.json), [capture](../../artifacts/fta-lab/artifacts/integration/fta-emergency.pcap) |
+| FE-09 | Wire (10): emergency-ind, Resource-Priority `mcpttp.15` and two or more invitees on originating INVITEs; alert with location; invitee INVITEs with emergency-ind, Resource-Priority and `Priv-Answer-Mode: Manual`; the 200 names the selected invitee and confirms `emergency-ind`; 403 with `emergency-ind` false; 200 with warning 149 and the INFO withdrawal; unselected invitees cancelled; in-dialog cancellation re-INVITE; every floor message (client and server) carries the D-bit | 10 | [Wire report](../../artifacts/fta-lab/artifacts/integration/fta-emergency-sip-wire.json), [capture](../../artifacts/fta-lab/artifacts/integration/fta-emergency.pcap) |
 
 These runs found and fixed two defects:
 - The server rebuilt the caller's first-to-answer 200 without the emergency and alert state.

@@ -389,11 +389,14 @@ func (svc *service) getInternalServiceConfig(writer http.ResponseWriter, request
 	switch request.URL.Query().Get("service") {
 	case "mcptt":
 		conf := sc.mcptt()
+		// <floor-control-queue>/<depth> as the CMS publishes it to the clients (TS 24.484 clause 8.4.2.7 step 10).
 		writeJSON(writer, http.StatusOK, map[string]any{"resource_priority": values(conf.ResourcePriority),
 			"transmit_time_limit_ms": conf.TransmitTimeLimitMs, "floor_queue": conf.FloorQueue,
-			"fc_timers_counters": conf.FloorTimers})
+			"floor_queue_depth": max(conf.FloorQueueDepth, 1), "fc_timers_counters": conf.FloorTimers,
+			"organization": svc.cfg.organization()})
 	case "mcvideo":
-		writeJSON(writer, http.StatusOK, map[string]any{"resource_priority": values(sc.mcvideo().ResourcePriority)})
+		writeJSON(writer, http.StatusOK, map[string]any{"resource_priority": values(sc.mcvideo().ResourcePriority),
+			"organization": svc.cfg.organization()})
 	case "mcdata":
 		conf := sc.mcdata()
 		writeJSON(writer, http.StatusOK, map[string]any{"resource_priority": values(conf.ResourcePriority),

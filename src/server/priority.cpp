@@ -145,7 +145,12 @@ std::optional<EmergencyLocation> McServer::message_location(const SipMessage &me
 //------------------------------------------------------------------------------
 // TS 24.379 clause 6.3.3.1.12: the mcptt-info and, for an emergency alert, the location-info of its
 // originator.
-std::vector<BodyPart> McServer::priority_parts(const McpttInfo &info, const PriorityState *state) const {
+std::vector<BodyPart> McServer::priority_parts(const McpttInfo &request, const PriorityState *state) const {
+  auto info = request;
+  // TS 24.379 clause 6.3.3.1.12 steps 2 and 3: an emergency alert carries the <mc-org> of its originator, the
+  // <MissionCriticalOrganization> of the user profile, which is the system's (service configuration).
+  if (info.alert == true && info.organization.empty())
+    info.organization = service_config_.value("organization", std::string{});
   auto parts = service_parts(info);
   if (info.alert == true) {
     if (!state) {
@@ -521,6 +526,7 @@ FloorArbitratorOptions McServer::floor_options() const {
     options.idle_retry_ms = timers.value("t7", 1000u);
     options.max_idle_transmissions = timers.value("c7", 10u);
     options.queue_enabled = service_config_.value("floor_queue", false);
+    options.queue_depth = service_config_.value("floor_queue_depth", 1u);
     return options;
   }
   // MCVideo transmission control (TS 24.581): the MCVideo server's settings.
@@ -533,6 +539,7 @@ FloorArbitratorOptions McServer::floor_options() const {
   options.idle_retry_ms = settings.value("floor_idle_retry_ms", 0u);
   options.max_idle_transmissions = settings.value("floor_idle_transmissions", 10u);
   options.queue_enabled = settings.value("floor_queue", false);
+  options.queue_depth = settings.value("floor_queue_depth", 253u);
   return options;
 }
 

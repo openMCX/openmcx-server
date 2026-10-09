@@ -189,9 +189,15 @@ def media_legs(messages):
             and not message['status']
             and message['headers']['call-id'] == headers['call-id']
         ]
+        # The legs of one call share the session identity of the controlling function's isfocus Contact (TS 24.379
+        # clause 6.3.3.2.3.2), in the INVITE to a member or the 200 (OK) to the originator. Under XML protection
+        # (TS 24.379 clause 6.6.2) the group identity is encrypted for each leg's recipient and cannot match.
+        focus = re.search(r';mcptt-session=([^;>]+)', (invite if fanout else answer)['headers'].get('contact', ''))
         legs.append(
             dict(
-                group=fields.get('mcptt-calling-group-id') if fanout else fields.get('mcptt-request-uri'),
+                group=focus.group(1)
+                if focus
+                else (fields.get('mcptt-calling-group-id') if fanout else fields.get('mcptt-request-uri')),
                 client=client,
                 server=server,
                 start=answer['frame'],
@@ -488,6 +494,29 @@ def verify(messages, require_refresh=False, require_conference=False):
         and message['method'] == 'NOTIFY'
         and message['headers'].get('event', '').split(';')[0].strip().lower() == 'conference'
     ]
+    # RFC 6665 section 4.1.3: a subscriber answers a NOTIFY of its subscription 200, also after the call (until the
+    # subscription is terminated), and one of no subscription 481; never 403 or another failure.
+    for notify in conferences:
+        refused = [
+            message['status']
+            for message in unique
+            if message['status'] >= 300
+            and message['method'] == 'NOTIFY'
+            and message['headers']['call-id'] == notify['headers']['call-id']
+            and message['headers']['cseq'] == notify['headers']['cseq']
+        ]
+        check(
+            all(status == 481 for status in refused),
+            f"packet {notify['packet']} conference NOTIFY: answered 200 or 481 only",
+        )
+    # TS 24.229 and RFC 3261 section 20.4: Alert-Info belongs in an INVITE or a 180 (Ringing), never in a final answer.
+    check(
+        not any(
+            message['method'] == 'INVITE' and 200 <= message['status'] < 300 and message['headers'].get('alert-info')
+            for message in unique
+        ),
+        'No Alert-Info in a 2xx answer to an INVITE',
+    )
     if require_conference:
         check(bool(conferences), 'At least one conference NOTIFY decoded')
         identity_map = {

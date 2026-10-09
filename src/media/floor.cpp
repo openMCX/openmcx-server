@@ -890,7 +890,8 @@ std::vector<FloorNotice> FloorArbitrator::request(std::string_view participant, 
       const auto found = std::find_if(queue_.begin(), queue_.end(),
                                       [&](const auto &entry) { return entry.participant == participant; });
       if (found == queue_.end()) {
-        if (queue_.size() >= 253) return {{FloorNoticeKind::Denied, id, *owner_, 7}};
+        if (queue_.size() >= std::clamp(options_.queue_depth, 1u, 253u))
+          return {{FloorNoticeKind::Denied, id, *owner_, 7}}; // cause #7 (Queue full)
         queue_.push_back({id, priority, preemptive});
       } else {
         found->priority = priority;

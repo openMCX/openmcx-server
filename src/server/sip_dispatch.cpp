@@ -233,16 +233,16 @@ void McServer::service_authorization(const SipMessage &message, SipResponse &res
   if (auto *existing = by_id(claims.at(svc_.id_claim)); existing && existing->sip != asserted)
     throw std::runtime_error("MCPTT identity already bound to another SIP identity");
   auto match = get_header(request.headers, "SIP-If-Match");
-  if (!match.empty() && (old == users_.end() || match != old->second.auth_etag)) {
-    response.status_code = 412;
-    return;
-  }
+  // TS 24.379 clause 7.3.3 steps 5 and 7: the user is bound before the PUBLISH is processed by RFC 3903, so a
+  // SIP-If-Match that names no publication of this server (RFC 3903 section 6 step 3) is answered 412 after the
+  // binding.
+  const bool unknown_etag = !match.empty() && (old == users_.end() || match != old->second.auth_etag);
   std::string profile; // MCPTT-2 only
   if (diameter_) {
     profile = diameter_->pull(claims.at(svc_.id_claim).get<std::string>());
     if (profile.empty()) throw std::runtime_error("empty Diameter user profile");
   }
-  bind_authorized_user(claims, info, asserted, old, match, uploaded, uploader, profile, response);
+  bind_authorized_user(claims, info, asserted, old, match, unknown_etag, uploaded, uploader, profile, response);
 }
 
 //------------------------------------------------------------------------------
@@ -288,13 +288,15 @@ bool McServer::open_with_uploaded_csk(const SipMessage &message, SipMessage &ope
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 7.3.3 (TS 24.281 clause 7.3.3): bind the service authorised user (its MCPTT ID from the
-// introspected token, its client ID and its SIP identity) with its uploaded CSK.
+// introspected token, its client ID and its SIP identity) with its uploaded CSK (step 5), then process the PUBLISH
+// by RFC 3903 (step 7): a SIP-If-Match naming no publication is answered 412 and leaves no publication, and the
+// client's new publication (RFC 3903 section 5) then keeps the binding.
 void McServer::bind_authorized_user(const Json &claims, const McpttInfo &info, const std::string &asserted,
                                     std::map<std::string, User>::iterator old, std::string_view match,
-                                    const std::optional<keying::KeyMessage> &uploaded, const std::string &uploader,
-                                    const std::string &profile, SipResponse &response) {
+                                    bool unknown_etag, const std::optional<keying::KeyMessage> &uploaded,
+                                    const std::string &uploader, const std::string &profile, SipResponse &response) {
   User user;
-  if (old != users_.end() && !match.empty())
+  if (old != users_.end() && (!match.empty() || old->second.auth_etag.empty()))
     user = old->second;
   else if (old != users_.end()) {
     auto id = old->second.id;
@@ -315,11 +317,18 @@ void McServer::bind_authorized_user(const Json &claims, const McpttInfo &info, c
     user.protection->set_floor(*uploaded);
     user.csk = uploaded;
   }
-  user.auth_etag = random_id();
+  const bool fresh = old == users_.end();
+  if (!unknown_etag) user.auth_etag = random_id();
   users_[asserted] = user;
-  schedule([this, sip = asserted] {
-    if (const auto found = users_.find(sip); found != users_.end()) register_with_controllers(found->second);
-  });
+  if (fresh || !unknown_etag)
+    schedule([this, sip = asserted] {
+      if (const auto found = users_.find(sip); found != users_.end()) register_with_controllers(found->second);
+    });
+  if (unknown_etag) {
+    response.status_code = 412;
+    event("service_publication_unknown", {{"user_id", user.id}});
+    return;
+  }
   response.headers = {{"SIP-ETag", user.auth_etag}, {"Expires", "4294967295"}};
   event("service_authorized", {{"user_id", user.id}, {"profile_bytes", profile.size()}});
   // TS 24.379 clause 13.2.2: location reporting is configured upon successful service authorisation.
@@ -610,8 +619,17 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
     response.status_code = 403;
     return;
   }
-  auto match = get_header(message.headers, "SIP-If-Match");
-  if (!user.affiliation_etag.empty() && match != user.affiliation_etag) {
+  // TS 24.379 clause 9.2.2.2.3 step 5: an affiliation lasts until changed, so Expires is 4294967295 (or 0 to end it).
+  const auto expires = std::string(get_header(message.headers, "Expires"));
+  if (expires != "0" && expires != "4294967295") {
+    response.status_code = 423;
+    response.headers = {{"Min-Expires", "4294967295"}};
+    return;
+  }
+  // RFC 3903 section 6 step 3: a PUBLISH without SIP-If-Match is an initial publication, which replaces the state
+  // (a restarted client has no entity tag); one naming an entity tag other than the current one is refused with 412.
+  const auto match = get_header(message.headers, "SIP-If-Match");
+  if (!match.empty() && match != user.affiliation_etag) {
     response.status_code = 412;
     return;
   }
@@ -621,21 +639,29 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
       if (affiliation) throw std::runtime_error("duplicate PIDF");
       affiliation = parse_affiliation(part.body);
     }
+  // The PUBLISH does not depend on a subscription to the affiliation status: without one, the outcome is not notified
+  // (clause 9.2.2.2.5).
   if (!affiliation || !own_affiliation(*affiliation) || affiliation->user_id != user.id ||
-      affiliation->client_id != user.client || user.subscription.empty() ||
-      user.subscription_expires <= std::time(nullptr)) {
+      affiliation->client_id != user.client) {
     response.status_code = 403;
     return;
   }
-  bool removing = get_header(message.headers, "Expires") == "0";
+  const bool removing = expires == "0";
   std::set<std::string> groups;
   const auto limit = removing ? 0u : affiliation_limit(user.id);
   if (!removing)
     for (auto &group : affiliation->groups) {
-      auto profile = group_profile(group);
-      if (!member(profile, user.id)) {
-        response.status_code = 403;
-        return;
+      // Clause 9.2.2.2.3 step 8: the PUBLISH is answered 200 (OK) whatever the outcome per group. The controlling
+      // function refuses a user who is not a member (clause 9.2.2.3.3 step 5), and the participating function then
+      // removes the group (clause 9.2.2.2.6), so the notified status (clause 9.2.2.2.5) does not list it.
+      bool admitted = false;
+      try {
+        admitted = member(group_profile(group), user.id);
+      } catch (const std::exception &) { // an unknown group
+      }
+      if (!admitted) {
+        event("affiliation_refused", {{"user_id", user.id}, {"group_id", group}, {"reason", "not a member"}});
+        continue;
       }
       // TS 24.379 clause 9.2.2.2.3 step 7c: beyond N2, keep the groups in the order requested.
       if (limit && groups.size() >= limit) {
@@ -649,7 +675,7 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
   apply_affiliation(user, std::move(groups));
   response.headers = {{"Expires", removing ? "0" : "4294967295"}};
   if (!removing) response.headers.push_back({"SIP-ETag", user.affiliation_etag});
-  event(removing ? "deaffiliated" : "affiliated", {{"user_id", user.id}});
+  event(removing ? "deaffiliated" : "affiliated", {{"user_id", user.id}, {"groups", user.groups}});
 }
 
 //------------------------------------------------------------------------------
@@ -1023,10 +1049,11 @@ bool McServer::group_call_type_allowed(const User &user, const McpttInfo &info, 
     response.headers = {{"Warning", warning_value(warn(Warning::not_group_member))}};
     return false;
   }
-  // TS 24.379 clause 4.4.2 warnings 117 and 118: the requested call type must match the group type.
+  // Steps 5c and 5d: the requested call type must match the group type (<on-network-invite-members>), else 404
+  // (Not Found) with warning 117 or 118 (clause 4.4.2).
   const bool chat_group = profile.value("type", std::string("prearranged")) == "chat";
   if (chat_request != chat_group) {
-    response.status_code = 403;
+    response.status_code = 404;
     response.headers = {{"Warning", chat_group ? warning_value(warn(Warning::chat_group_mismatch))
                                                : warning_value(warn(Warning::prearranged_group_mismatch))}};
     return false;

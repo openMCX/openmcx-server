@@ -424,6 +424,31 @@ void test_timed_arbitration_and_queue() {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.380 clause 6.3.5.4.4 with TS 24.484 clause 8.4.2.7: once the queue holds <floor-control-queue>/<depth>
+// requests, a further one is denied with cause #7 (Queue full); a free place takes a request again.
+void test_queue_depth() {
+  mcx::FloorArbitratorOptions options;
+  options.queue_enabled = true;
+  options.queue_depth = 1;
+  mcx::FloorArbitrator floor({"a", "b", "c"}, options);
+  (void)floor.request("a", 0, 3);
+  assert(floor.request("b", 100, 3, true)[0].kind == mcx::FloorNoticeKind::QueuePosition);
+  const auto full = floor.request("c", 200, 3, true);
+  assert(full.size() == 1 && full[0].kind == mcx::FloorNoticeKind::Denied && full[0].reject_cause == 7);
+  (void)floor.release("b", 300); // b leaves the queue
+  assert(floor.request("c", 400, 3, true)[0].kind == mcx::FloorNoticeKind::QueuePosition);
+  // A depth above 253 is held to 253 (Queue Position Info 254 and 255 are reserved).
+  options.queue_depth = 1000;
+  std::vector<std::string> many{"owner"};
+  for (int index = 0; index < 255; ++index) many.push_back("p" + std::to_string(index));
+  mcx::FloorArbitrator large(many, options);
+  (void)large.request("owner", 0, 3);
+  for (int index = 0; index < 253; ++index)
+    assert(large.request("p" + std::to_string(index), 1, 3, true)[0].kind == mcx::FloorNoticeKind::QueuePosition);
+  assert(large.request("p253", 2, 3, true)[0].reject_cause == 7);
+}
+
+//------------------------------------------------------------------------------
 // TS 24.380 clause 6.3.4.4.9 and clause 6.3.4.4.10: the Floor Granted to a queued participant is repeated on
 // timer T20 (Floor Granted) up to counter C20; then timer T1 (clause 6.3.4.4.3) moves on to the next queued
 // participant, whose first RTP media stops T20.
@@ -765,6 +790,7 @@ int main() {
   test_on_network_fields_and_reliability();
   test_arbitration();
   test_timed_arbitration_and_queue();
+  test_queue_depth();
   test_queued_grant_retransmission();
   test_participant_timers();
   test_release_state_reordering();

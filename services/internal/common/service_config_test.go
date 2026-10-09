@@ -64,9 +64,13 @@ func TestServiceConfigurationDocuments(test *testing.T) {
 	var internal struct {
 		ResourcePriority map[string]string `json:"resource_priority"`
 		Timers           map[string]int    `json:"fc_timers_counters"`
+		QueueDepth       int               `json:"floor_queue_depth"`
+		Organization     string            `json:"organization"`
 	}
+	// <floor-control-queue>/<depth> as published (at least 1), and the organisation (the domain when not set).
 	if rr.Code != http.StatusOK || json.Unmarshal(rr.Body.Bytes(), &internal) != nil ||
-		internal.ResourcePriority["emergency"] != "mcpttq.14" || internal.Timers["t1"] != 5500 || internal.Timers["t8"] != 1000 {
+		internal.ResourcePriority["emergency"] != "mcpttq.14" || internal.Timers["t1"] != 5500 || internal.Timers["t8"] != 1000 ||
+		internal.QueueDepth < 1 || internal.Organization != cfg.organization() || internal.Organization == "" {
 		test.Fatalf("internal service configuration %d %s", rr.Code, rr.Body.String())
 	}
 }

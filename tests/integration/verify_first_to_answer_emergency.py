@@ -19,12 +19,51 @@ import argparse
 import collections
 import json
 from pathlib import Path
+import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from verify_private_call import header, parse, sip_messages, tcp_streams  # noqa: E402
-from verify_broadcast_call import floor_messages  # noqa: E402
+from verify_broadcast_call import floor_frame  # noqa: E402
 import struct
+
+
+# ------------------------------------------------------------------------------
+def packets(path):
+    """Yield (time, Ethernet frame) of each packet in the classic PCAP at path."""
+    raw = Path(path).read_bytes()
+    endian = '<' if raw[:4] in (b'\xd4\xc3\xb2\xa1', b'\x4d\x3c\xb2\xa1') else '>'
+    nano = raw[:4] in (b'\x4d\x3c\xb2\xa1', b'\xa1\xb2\x3c\x4d')
+    offset = 24
+    while offset + 16 <= len(raw):
+        seconds, fraction, captured, _ = struct.unpack_from(endian + 'IIII', raw, offset)
+        offset += 16
+        yield seconds + fraction / (1e9 if nano else 1e6), raw[offset : offset + captured]
+        offset += captured
+
+
+# ------------------------------------------------------------------------------
+def cancellation_window(path):
+    """The capture times from the first re-INVITE that cancels the emergency (<emergency-ind> false) to the next
+    originating INVITE (the next call), or None."""
+    start = None
+    for stamp, frame in packets(path):
+        if b'INVITE sip:' not in frame:
+            continue
+        if start is None:
+            if b';mcptt-session=' in frame and re.search(rb'<emergency-ind[^>]*>\s*<mcpttBoolean>\s*false', frame):
+                start = stamp
+        elif re.search(rb'INVITE sip:mcptt@[^ ;]+ SIP/2\.0', frame):
+            return start, stamp
+    return (start, float('inf')) if start is not None else None
+
+
+# ------------------------------------------------------------------------------
+def timed_floor_messages(path):
+    """Yield (time, subtype, fields) of every floor control message, as floor_messages does, with its time."""
+    for stamp, frame in packets(path):
+        for subtype, fields in floor_frame(frame):
+            yield stamp, subtype, fields
 
 
 # ------------------------------------------------------------------------------
@@ -160,16 +199,26 @@ def main():
             for message in reinvites
         ),
     )
-    # TS 24.380 clause 8.2.3.15: floor messages of the emergency call carry the D-bit (0x1000).
-    indicators = collections.Counter()
-    for subtype, fields in floor_messages(args.capture):
+    # TS 24.380 clause 8.2.3.15: floor messages of the emergency call carry the D-bit (0x1000); once the in-dialog
+    # re-INVITE has cancelled the emergency (TS 24.379 clause 11.1.3), the call is a normal one and its floor
+    # messages carry the A-bit (0x8000) instead.
+    window = cancellation_window(args.capture)
+    indicators, after = collections.Counter(), collections.Counter()
+    for stamp, subtype, fields in timed_floor_messages(args.capture):
         if 13 in fields:
-            indicators[f'{subtype}:{struct.unpack("!H", fields[13][:2])[0]:#06x}'] += 1
-    # The only floor traffic in this capture belongs to the emergency call (FE-03).
+            key = f'{subtype}:{struct.unpack("!H", fields[13][:2])[0]:#06x}'
+            (after if window and window[0] < stamp < window[1] else indicators)[key] += 1
+    # The only floor traffic in this capture belongs to the emergency calls (FE-03). The Floor Release of the call
+    # whose emergency is cancelled may come after the cancellation.
     check(
         'every floor message of the emergency call, client and server, carries the D-bit',
-        all(indicators[f'{invitation}:0x1000'] for invitation in (0, 1, 2, 4, 5))
+        all(indicators[f'{invitation}:0x1000'] for invitation in (0, 1, 2, 5))
+        and (indicators['4:0x1000'] or after['4:0x8000'])
         and all(key.endswith('0x1000') for key in indicators),
+    )
+    check(
+        'after the emergency is cancelled, the floor messages carry the A-bit only',
+        all(key.endswith('0x8000') for key in after),
     )
     result = dict(
         capture=str(args.capture),
@@ -184,6 +233,7 @@ def main():
             alert_withdrawals=len(infos),
             cancellation_reinvites=len(reinvites),
             floor_indicators=dict(indicators),
+            floor_indicators_after_cancellation=dict(after),
             caller_final_responses=dict(
                 collections.Counter(
                     f'{status_code} {warning_text}'.strip() for status_code, warning_text, _ in outcomes

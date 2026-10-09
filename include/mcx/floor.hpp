@@ -336,6 +336,9 @@ struct FloorArbitratorOptions {
   std::uint64_t revoke_grace_ms{3000};
   std::uint64_t revoke_retry_ms{1000};
   bool queue_enabled{false};
+  // TS 24.380 clause 6.3.5.4.4: the maximum queue length (<floor-control-queue>/<depth>, TS 24.484 clause 8.4.2.7);
+  // at most 253, as Queue Position Info 254 and 255 have their own meanings (TS 24.380 clause 8.2.3.5).
+  unsigned queue_depth{253};
   std::uint64_t grant_retry_ms{1000};
   unsigned max_grant_transmissions{3};
   std::uint64_t idle_retry_ms{0}; // T7: deployment supplies radio-dependent interval

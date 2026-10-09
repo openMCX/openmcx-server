@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """MCVideo service authorisation and affiliation (TS 24.281 clauses 7 and 8): service authorisation by SIP
 PUBLISH (TS 24.281 clauses 7.2.2 and 7.3.3), the affiliation status determination and change procedures
-(TS 24.281 clauses 8.2.1.3 and 8.2.1.2) and the refusal of a non-member (TS 24.281 clause 8.2.2.2.3).
+(TS 24.281 clauses 8.2.1.3 and 8.2.1.2) and a group the user is not a member of left out (TS 24.281 clause 8.2.2.2.3).
 
 Run against a fixture prepared with --mcvideo (add_mcvideo_policy in
 tools/prepare-prearranged-test.py): the four clients are MCVideo members of group
@@ -148,16 +148,20 @@ def main():
             refused,
         )
         check('MV-AF-04 the client stays authorised', status('client-b').get('mcvideo_authorized') is True)
-        # MV-AF-05 TS 24.281 clause 8.2.2.2.3: affiliation to a group the user is not an MCVideo member of is refused.
+        # MV-AF-05 TS 24.281 clause 8.2.2.2.3 step 8: the PUBLISH naming a group the user is not an MCVideo member of
+        # is answered 200 (OK); the group is refused by its controlling function (clause 8.2.2.3.3) and removed, so
+        # the NOTIFY (clause 8.2.2.2.5) still lists operations only.
         earlier = status('client-b').get('mcvideo_last_result')
         command('client-b', f'mcvideo-affiliate {closed}')
-        outcome = wait('MV-AF-05 non-member affiliation answered', lambda: refusal('client-b', 'affiliate', earlier))
+        outcome = wait(
+            'MV-AF-05 non-member affiliation answered',
+            lambda: (lambda result: result if result and result != earlier else None)(last('client-b', 'affiliate')),
+        )
         observations['non_member_affiliation'] = outcome
-        check('MV-AF-05 403 for a non-member', outcome['status'] == 403, outcome)
-        check(
+        check('MV-AF-05 200 for a PUBLISH naming a non-member group', outcome['status'] == 200, outcome)
+        wait(
             'MV-AF-05 still affiliated to operations only',
-            status('client-b').get('mcvideo_affiliations') == [group],
-            status('client-b').get('mcvideo_affiliations'),
+            lambda: status('client-b').get('mcvideo_affiliations') == [group],
         )
         # MV-AF-06 a member affiliates to a second group; the NOTIFY lists both.
         command('client-a', f'mcvideo-affiliate {closed}')

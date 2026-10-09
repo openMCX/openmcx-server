@@ -226,6 +226,13 @@ tools/regress.py --image openmcx:<tag> --client-image openmcx-client:<tag> --sel
 
 A soak stops early when a whole round fails within a minute, since that means the labs could not start.
 
+Over debug TCP SIP (the default), each scenario that has a wire verifier (`tests/integration/verify_*.py`) is also
+checked on the wire: `tests/integration/wire_check.py` captures at the scenario's server from before the clients sign
+in, and the verifier checks the messages themselves (their order, bodies and the messages that must not be sent),
+independently of the C++ code. The summary reports it as `<scenario>/wire`; the capture and the verifier's report are
+kept as `integration/<scenario>-wire.pcap` and `-wire.json`. Labs over TLS and split labs skip it. Some verifiers
+need `tshark`.
+
 ## Readable SIP in Wireshark
 
 Both native executables accept `--disable-tls` for isolated-lab SIP debugging.

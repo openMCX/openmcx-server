@@ -140,11 +140,11 @@ wait_for 'released by the inactivity timer' "idle()" 35
 
 step '9. The call type must match the group type'
 mcx client-a call
-wait_for 'a prearranged call on the chat group: 403 with warning 118' "rejected('client-a', 403, '118 the group identity indicated in the request is a chat group')"
+wait_for 'a prearranged call on the chat group: 404 with warning 118' "rejected('client-a', 404, '118 the group identity indicated in the request is a chat group')"
 mcx client-a group "$PREARRANGED"
 wait_for 'client-a on the prearranged group operations' "on(['client-a'], '$PREARRANGED')"
 mcx client-a chat
-wait_for 'a chat call on the prearranged group: 403 with warning 117' "rejected('client-a', 403, '117 the group identity indicated in the request is a prearranged group')"
+wait_for 'a chat call on the prearranged group: 404 with warning 117' "rejected('client-a', 404, '117 the group identity indicated in the request is a prearranged group')"
 
 step '10. Implicit affiliation: client-d leaves the group, then joins the chat anyway'
 mcx client-d deaffiliate

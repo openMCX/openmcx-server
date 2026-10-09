@@ -48,7 +48,7 @@ python3 tools/regress.py --image openmcx:v1 --select =mcvideo --output artifacts
 | MV-AF-02 | 2026-09-26 | same | Four clients affiliated to operations after their status subscription; four affiliated users at the server; the NOTIFY echoes the PUBLISH's `p-id` | Passed |
 | MV-AF-03 | 2026-09-26 | same | MCPTT authorised and affiliated beside MCVideo; `mcptt-server` keeps its four MCPTT users | Passed |
 | MV-AF-04 | 2026-09-26 | same | A PUBLISH with an invalid token gets 403 `399 mcx "101 service authorisation failed"`; the client stays authorised | Passed |
-| MV-AF-05 | 2026-09-26 | same | client-b's affiliation to video-closed, where it is not an MCVideo member, gets 403; it stays affiliated to operations only | Passed |
+| MV-AF-05 | 2026-09-26 | same | client-b's affiliation PUBLISH naming video-closed, where it is not an MCVideo member, gets 200 (TS 24.281 clause 8.2.2.2.3 step 8; 403 before 2026-10-09); the NOTIFY leaves video-closed out, so it stays affiliated to operations only | Passed |
 | MV-AF-06 | 2026-09-26 | same | client-a, a member, affiliates to video-closed too; the NOTIFY lists both groups | Passed |
 | MV-AF-07 | 2026-09-26 | same | client-d de-affiliates with Expires 0; three affiliated users remain; its MCPTT affiliation is untouched | Passed |
 

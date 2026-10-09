@@ -5,9 +5,10 @@ The MCPTT server keeps its bindings in memory, so a restarted server knows nobod
   - a call from a client the restarted server does not know is refused with 404 (Not Found) and Warning
     "141 user unknown to the participating function" (TS 24.379 clause 10.1.1.3.1.1 step 2a);
   - the client's next service authorisation PUBLISH, a refresh with SIP-If-Match, gets 412 (Conditional Request
-    Failed); the client considers itself not authorised (TS 24.379 clause 7.2.2) and publishes anew without
-    SIP-If-Match (RFC 3903 section 5), and so is authorised again, subscribes to its affiliation status and
-    affiliates again (TS 24.379 clauses 9.2.1.3 and 9.2.1.2), without restarting;
+    Failed) after the server bound the user (TS 24.379 clause 7.3.3 steps 5 and 7); the client considers itself not
+    authorised (TS 24.379 clause 7.2.2) and publishes anew without SIP-If-Match (RFC 3903 section 5), and so is
+    authorised again, subscribes to its affiliation status and affiliates again (TS 24.379 clauses 9.2.1.3 and
+    9.2.1.2), without restarting;
   - a group call with the four clients works afterwards.
 
 Run in a lab with two-minute access tokens (--token-ttl 120), so that each client renews its token, and
@@ -88,6 +89,23 @@ def main():
         return list(value.values()) if isinstance(value, dict) else value
 
     # ------------------------------------------------------------------------------
+    def server_events(names):
+        """The MCPTT server's JSON log entries whose 'event' is one of names, in log order."""
+        run = subprocess.run(
+            cli + ['logs', '--no-color', '--no-log-prefix', 'mcptt-server'], capture_output=True, text=True, timeout=30
+        )
+        found = []
+        for line in run.stdout.splitlines():
+            start = line.find('{"')
+            try:
+                entry = json.loads(line[start:]) if start >= 0 else {}
+            except json.JSONDecodeError:
+                continue
+            if entry.get('event') in names:
+                found.append(entry)
+        return found
+
+    # ------------------------------------------------------------------------------
     def server_knows(count):
         """The MCPTT server holds count authorised and count affiliated users."""
         server = status('mcptt-server')
@@ -145,6 +163,17 @@ def main():
             lambda: all(signed_in(role) for role in roles) and server_knows(4),
             30,
         )
+        # TS 24.379 clause 7.3.3: each user is bound (step 5) before its refresh is answered 412 (step 7), and its
+        # new publication, without SIP-If-Match, then succeeds.
+        entries = server_events({'service_publication_unknown', 'service_authorized'})
+        unknown = [entry for entry in entries if entry['event'] == 'service_publication_unknown']
+        observations['publication_unknown'] = [entry.get('user_id') for entry in unknown]
+        users = {entry.get('user_id') for entry in unknown}
+        assert len(users) == len(roles), f'412 after binding for {sorted(users)}, not for the {len(roles)} users'
+        for user in users:
+            last = max(i for i, entry in enumerate(entries) if entry.get('user_id') == user)
+            assert entries[last]['event'] == 'service_authorized', f'{user}: no new publication after the 412'
+        checks.append('each refresh answered 412 after the binding, then a new publication authorised')
         observations['clients'] = {
             role: {key: status(role).get(key) for key in ('instance_id', 'token_renewals', 'authorized', 'affiliated')}
             for role in roles

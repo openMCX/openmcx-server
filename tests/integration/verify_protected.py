@@ -265,7 +265,12 @@ def keying_evidence(messages):
                     root.tag == '{urn:ietf:params:xml:ns:xcap-diff}xcap-diff' and root.get('xcap-root'),
                     'missing RFC5874 xcap-diff namespace/root',
                 )
+                # The same xcap-diff subscription also notifies document changes (<document> entries, TS 24.481
+                # clause 6.3.13 and TS 24.484 clause 6.3.13): only a notification selecting a GKTP is a key
+                # notification (TS 24.481 clause 7.7).
                 elements = root.findall('{urn:ietf:params:xml:ns:xcap-diff}element')
+                if not any('MCPTT-GKTP' in element.get('sel', '') for element in elements):
+                    continue
                 require(len(elements) == 1, 'key notification must contain one selected element')
                 element = elements[0]
                 selector = element.get('sel', '')

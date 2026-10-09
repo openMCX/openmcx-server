@@ -59,7 +59,9 @@ type profileCommon struct {
 	MCPTTUserID profileEntry        `xml:"MCPTTUserID"`
 	PrivateCall *profilePrivateCall `xml:"PrivateCall,omitempty"`
 	GroupCall   profileGroupCall    `xml:"MCPTT-group-call"`
-	AnyExt      *locationURIExt     `xml:"anyExt,omitempty"`
+	// TS 24.484 clause 8.3.2.1 item 8g: one <MissionCriticalOrganization>.
+	Organization string          `xml:"MissionCriticalOrganization,omitempty"`
+	AnyExt       *locationURIExt `xml:"anyExt,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -549,10 +551,12 @@ func octets(hexText string) int {
 }
 
 // ------------------------------------------------------------------------------
-// TS 24.484 clause 8.3.2.1 item 8: the user profile document the CMS serves, with the <LocationUserProfileURI> of the
-// user's location user configuration data document (clause 7.4.1.2).
+// TS 24.484 clause 8.3.2.1 item 8: the user profile document the CMS serves, with the system's
+// <MissionCriticalOrganization> (item 8g) and the <LocationUserProfileURI> of the user's location user configuration
+// data document (clause 7.4.1.2).
 func (svc *service) servedProfileXML(user User) profileXML {
 	doc := userProfileXML(user)
+	doc.Common.Organization = svc.cfg.organization()
 	doc.Common.AnyExt = &locationURIExt{LocationURI: svc.locationDocumentURI(user.MCPTTID, user.profileIndex())}
 	return doc
 }

@@ -171,9 +171,15 @@ Within what is implemented:
 - **Broadcast group calls.** Group-broadcast and user-broadcast hierarchies are a project profile, because TS 24.379
   §4.12 defines no procedure for them.
 - **Ad hoc group calls.** End-to-end security is not implemented; the calls are clear.
-- **Functional aliases.** The MCPTT server serves status subscriptions and group binding, but the MCPTT lab client has no commands for them; MCData has neither. Activations do not expire, the status reports only activated aliases, and the alias-to-alias call policy (warnings 171 and 172) is not implemented.
+- **Functional aliases.** The MCPTT lab client activates, deactivates and takes over functional aliases (`fa`) and
+  learns each outcome from its status subscription (TS 24.379 clause 9A.2.1); the MCData server handles activation and
+  deactivation (TS 24.282 clause 22.2.2.2.3). Activations do not expire, the status lists the activated aliases and
+  those the user may take over, leaving out deactivated and refused ones, and the alias-to-alias call policy (warnings
+  171 and 172) is not implemented.
 - **Location.** Positions and radio measurements are simulated. The SEAL location management server (TS 24.545) has
   no CoAP, SIP-based subscription, location-based query or trigger other than the periodic one.
-- **Interfaces and deployment.** Speech is read from and written to WAV files; there is no microphone or speaker
-  interface and no 5G SA integration. The lab's common-service configuration shares credentials between services and
-  needs further secret isolation for production.
+- **Interfaces and deployment.** The Linux lab client reads and writes speech as WAV files, with no microphone or
+  speaker interface (the Android app and the dispatcher position have one). MCX runs over 5G SA cores with QoS over N5
+  and over a 4G core with QoS over Rx in tutorials 3 to 5, with a simulated RAN; it has not been run on a production
+  network. The lab's common-service configuration shares credentials between services and needs further secret isolation
+  for production.

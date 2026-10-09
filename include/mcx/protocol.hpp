@@ -54,6 +54,9 @@ struct McpttInfo {
   std::string access_token, session_type, request_uri, calling_user, client_id;
   std::string calling_group;
   std::optional<bool> emergency, imminent_peril, alert, broadcast;
+  // <mc-org> (an xs:string after <broadcast-ind>): the mission critical organisation of an emergency alert's originator
+  // (TS 24.379 clause 6.3.3.1.12 steps 2 and 3, TS 24.281 the same).
+  std::string organization;
   std::string originated_by;
   std::optional<bool> alert_received;
   std::optional<bool> emergency_received;

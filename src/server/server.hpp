@@ -1425,7 +1425,7 @@ protected:
                               SipResponse &response);
   // TS 24.379 clause 7.3.3: bind the service authorised user.
   void bind_authorized_user(const Json &claims, const McpttInfo &info, const std::string &asserted,
-                            std::map<std::string, User>::iterator old, std::string_view match,
+                            std::map<std::string, User>::iterator old, std::string_view match, bool unknown_etag,
                             const std::optional<keying::KeyMessage> &uploaded, const std::string &uploader,
                             const std::string &profile, SipResponse &response);
   // TS 24.481 clause 6.3.13.2.2: an MCS server of this system subscribes to group documents.

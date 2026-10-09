@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Regression of every call-type scenario against one server instance.
 #
-# Usage: tests/integration/run_all_call_types.sh LAB_DIRECTORY PROJECT
+# Usage: tests/integration/run_all_call_types.sh LAB_DIRECTORY PROJECT [LAB_FLAGS]
 # The lab must be prepared with
 #   tools/prepare-prearranged-test.py --private-call --broadcast --chat --adhoc ...
 # and its speech fixtures copied. Clients are restarted between scenarios so
@@ -14,13 +14,26 @@ COMPOSE=("$ROOT/.cache/deps/docker-compose-linux-x86_64" -p "$PROJECT" -f "$LAB/
 ARTIFACTS="$LAB/artifacts"
 "${COMPOSE[@]}" up -d >/dev/null
 failed=0
+# Each scenario's wire check (wire_check.py) runs alongside it and is reported as NAME-wire.
+WIRE=(python3 "$ROOT/tests/integration/wire_check.py" --compose "$LAB/compose.json" --project "$PROJECT"
+  --artifacts "$ARTIFACTS" "--lab-flags=${3:-}")
 run() {
   local name=$1 script=$2
+  "${WIRE[@]}" start --scenario "${script%.py}" > "$LAB/$name.wire.log" 2>&1
+  local wire=$?
   timeout 900 python3 "$ROOT/tests/integration/$script" --compose "$LAB/compose.json" \
     --artifacts "$ARTIFACTS" --project "$PROJECT" > "$LAB/$name.log" 2>&1
   local status=$?
   echo "$name: $([ $status -eq 0 ] && echo PASS || echo "FAIL ($status)")"
   [ $status -eq 0 ] || failed=1
+  if [ $wire -eq 0 ]; then
+    "${WIRE[@]}" finish --scenario "${script%.py}" >> "$LAB/$name.wire.log" 2>&1
+    wire=$?
+    if ! tail -1 "$LAB/$name.wire.log" | grep -q '"skipped"'; then
+      echo "$name-wire: $([ $wire -eq 0 ] && echo PASS || echo "FAIL ($wire)")"
+      [ $wire -eq 0 ] || failed=1
+    fi
+  fi
   "${COMPOSE[@]}" restart client-a client-b client-c client-d >/dev/null
 }
 run prearranged prearranged_scenario.py

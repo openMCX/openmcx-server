@@ -70,6 +70,10 @@ type Config struct {
 	Credentials *CredentialsConfig `json:"credentials,omitempty"`
 	// The SEAL location management server of the LMS role (TS 24.545); nil without one.
 	SealLM *SealLMConfig `json:"seal_lm,omitempty"`
+	// The mission critical organisation of this system: <MissionCriticalOrganization> of every user profile (TS 24.484
+	// clauses 8.3.2.1, 9.3.2.1 and 10.3.2.1) and <mc-org> of emergency alerts (TS 24.379 clause 6.3.3.1.12); the
+	// domain when not set. An MCData user's own organization (MCDataPolicy) takes precedence for MCData.
+	Organization string `json:"organization,omitempty"`
 }
 
 // FunctionalAlias is the subset of the functional alias configuration used by the
@@ -767,4 +771,13 @@ func (cfg Config) redirectAllowed(uri string) bool {
 		}
 	}
 	return false
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the mission critical organisation of this system (Config.Organization, else the domain).
+func (c *Config) organization() string {
+	if c.Organization != "" {
+		return c.Organization
+	}
+	return c.Domain
 }

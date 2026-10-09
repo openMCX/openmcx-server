@@ -28,6 +28,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from verify_private_call import header, parse, sip_messages, tcp_streams  # noqa: E402
 from verify_broadcast_call import floor_messages  # noqa: E402
+from floor_causes import causes, summary  # noqa: E402
 
 # TS 24.380 clause 8.2.3.15: the Floor Indicator bits A (normal call), B (broadcast group call), D (emergency call)
 # and E (imminent peril call).
@@ -84,7 +85,7 @@ def main():
         message['call_id']
         for message in chat
         for response in responses[(message['call_id'], 'INVITE', header(message, 'cseq').split()[0])]
-        if response['status'] == 403 and any(code in header(response, 'warning') for code in ('117 ', '167 ', '148 '))
+        if response['status'] in (403, 404) and any(code in header(response, 'warning') for code in ('117 ', '167 ', '148 '))
     }
     check(
         'chat INVITEs target the service URI; all but the 117/167/148 negative tests name the chat group',
@@ -139,7 +140,8 @@ def main():
     check('later joiners receive the same session URI as the creator', bool(uris) and max(uris.values()) >= 3)
     for code, warning in [
         (486, '122 too many participants'),
-        (403, '117 the group identity indicated in the request is a prearranged group'),
+        # TS 24.379 clause 6.3.5.2 steps 5c and 5d: a call type not matching the group type is not found (404).
+        (404, '117 the group identity indicated in the request is a prearranged group'),
     ]:
         check(
             f'chat request rejected with {code} warning {warning[:3]}',
@@ -151,9 +153,9 @@ def main():
         if message['info'].get('session-type') == 'prearranged' and message['target'] == args.service
     ]
     check(
-        'prearranged request on the chat group rejected with 403 warning 118',
+        'prearranged request on the chat group rejected with 404 warning 118',
         any(
-            response['status'] == 403
+            response['status'] == 404
             and '118 the group identity indicated in the request is a chat group' in header(response, 'warning')
             for message in prearranged
             for response in responses[(message['call_id'], 'INVITE', header(message, 'cseq').split()[0])]
@@ -194,14 +196,20 @@ def main():
         if subtype == 2 and 5 in fields and struct.unpack('!H', fields[5][:2])[0] != 1:
             violations.append('normal Taken without permission to request')
     check('floor messages use the normal A-bit and Floor Taken permits requests', bool(floor) and not violations)
+    reject_causes, cause_violations = causes(args.capture)
+    check('every Floor Deny and Floor Revoke carries a Reject Cause defined for it (TS 24.380 8.2.6.2, 8.2.10.2)',
+          not cause_violations)
+    check('a floor request while another member has permission is denied with cause #1 (TS 24.380 6.3.5.4.4)',
+          reject_causes[('Deny', 1)] > 0)
 
     result = dict(
         capture=str(args.capture),
         passed=not failures,
         checks=checks,
         failures=failures,
-        violations=violations,
+        violations=violations + cause_violations,
         counts=dict(
+            floor_reject_causes=summary(reject_causes),
             sip_messages=len(messages),
             chat_invites=len(chat),
             server_chat_invites=len(server_invites),

@@ -3,10 +3,11 @@
 
 SIP: REGISTER and PUBLISH must be challenged and a wrong digest password refused (RFC 3261 section 22), a PUBLISH whose
 From does not match the authenticated identity is refused, a service authorisation PUBLISH with an invalid access token
-is answered 403 (TS 24.379 clause 7.3.3 step 6), a forged in-dialog BYE must authenticate, and with --peer-config a
-CANCEL carrying another connection's transaction identifiers is refused (RFC 3261 section 9.2). HTTP: the CMS requires a
-bearer access token (TS 33.180 annex B.10), its internal route is hidden, and the IdMS authorization endpoint accepts a
-PKCE request (TS 33.180 annex B.4.2.2) but refuses a wrong password.
+is answered 403 with warning 101 (TS 24.379 clause 7.3.3 step 6; for MCData, TS 24.282 clause 7.3.3), a forged in-dialog
+BYE must authenticate, and with --peer-config a CANCEL carrying another connection's transaction identifiers is refused
+(RFC 3261 section 9.2). HTTP: the CMS refuses a request without a bearer access token with 403 and challenges an invalid
+one with 401 (TS 24.482 annex A.2.3, RFC 6750; TS 33.180 annex B.10), its internal route is hidden, and the IdMS
+authorization endpoint accepts a PKCE request (TS 33.180 annex B.4.2.2) but refuses a wrong password.
 
 Example: python3 sip_negative.py --config /config/client-a.json
 The temporary REGISTER Contact uses Expires: 0 and never removes another binding.
@@ -155,6 +156,7 @@ def main():
     parser.add_argument("--peer-config", help="Second TLS client identity for transaction peer-binding probes")
     parser.add_argument("--output", default="/artifacts/integration/security-results.json")
     parser.add_argument("--disable-tls", action="store_true")
+    parser.add_argument("--mcdata", action="store_true", help="also probe the MCData service authorisation")
     args = parser.parse_args()
     results = {"passed": False, "checks": []}
 
@@ -194,30 +196,43 @@ def main():
             {403},
         )
 
-        info = (
-            '<mcpttinfo xmlns="urn:3gpp:ns:mcpttInfo:1.0"><mcptt-Params><mcptt-access-token type="Normal"><mcpttString>invalid-security-probe-token</mcpttString></mcptt-access-token><mcptt-client-id type="Normal"><mcpttString>'
-            + escape(cfg["mcptt"]["client_id"])
-            + '</mcpttString></mcptt-client-id></mcptt-Params></mcpttinfo>'
-        )
-        settings = (
-            '<poc-settings xmlns="urn:oma:params:xml:ns:poc:poc-settings" xmlns:mc="urn:3gpp:mcsSettings:1.0"><entity id="'
-            + escape(cfg["mcptt"]["client_id"], {'"': '&quot;'})
-            + '"><am-settings><answer-mode>automatic</answer-mode></am-settings><mc:selected-user-profile-index><mc:user-profile-index>0</mc:user-profile-index></mc:selected-user-profile-index><mc:multiplex-support>true</mc:multiplex-support></entity></poc-settings>'
-        )
-        boundary = "probe-" + secrets.token_hex(12)
-        body = f"--{boundary}\r\nContent-Type: application/vnd.3gpp.mcptt-info+xml\r\n\r\n{info}\r\n--{boundary}\r\nContent-Type: application/poc-settings+xml\r\n\r\n{settings}\r\n--{boundary}--\r\n"
-        fields = {
-            "Event": "poc-settings",
-            "Expires": "4294967295",
-            "Content-Type": "multipart/mixed; boundary=" + boundary,
-        }
-        challenge = sip.request("PUBLISH", service, fields, body)
-        valid = sip.digest("PUBLISH", service, challenge)
-        check(
-            "mcptt_invalid_access_token_rejected",
-            sip.request("PUBLISH", service, fields, body, authorization=valid)[0],
-            {403},
-        )
+        # ------------------------------------------------------------------------------
+        def invalid_token(service):
+            """A service authorisation PUBLISH to the service's PSI with an access token the IdMS never issued: the
+            final status and Warning (TS 24.379 clause 7.3.3 step 6, TS 24.282 clause 7.3.3)."""
+            root, prefix, string = ("mcdatainfo", "mcdata", "mcdataString") if service == "mcdata" else (
+                "mcpttinfo", "mcptt", "mcpttString")
+            namespace = "urn:3gpp:ns:mcdataInfo:1.0" if service == "mcdata" else "urn:3gpp:ns:mcpttInfo:1.0"
+            info = (
+                f'<{root} xmlns="{namespace}"><{prefix}-Params><{prefix}-access-token type="Normal"><{string}>'
+                "invalid-security-probe-token"
+                f'</{string}></{prefix}-access-token><{prefix}-client-id type="Normal"><{string}>'
+                + escape(cfg["mcptt"]["client_id"])
+                + f"</{string}></{prefix}-client-id></{prefix}-Params></{root}>"
+            )
+            settings = (
+                '<poc-settings xmlns="urn:oma:params:xml:ns:poc:poc-settings" xmlns:mc="urn:3gpp:mcsSettings:1.0"><entity id="'
+                + escape(cfg["mcptt"]["client_id"], {'"': '&quot;'})
+                + '"><am-settings><answer-mode>automatic</answer-mode></am-settings><mc:selected-user-profile-index><mc:user-profile-index>0</mc:user-profile-index></mc:selected-user-profile-index><mc:multiplex-support>true</mc:multiplex-support></entity></poc-settings>'
+            )
+            boundary = "probe-" + secrets.token_hex(12)
+            body = f"--{boundary}\r\nContent-Type: application/vnd.3gpp.{service}-info+xml\r\n\r\n{info}\r\n--{boundary}\r\nContent-Type: application/poc-settings+xml\r\n\r\n{settings}\r\n--{boundary}--\r\n"
+            uri = cfg[service]["service_uri"]
+            fields = {
+                "Event": "poc-settings",
+                "Expires": "4294967295",
+                "Content-Type": "multipart/mixed; boundary=" + boundary,
+            }
+            challenge = sip.request("PUBLISH", uri, fields, body)
+            valid = sip.digest("PUBLISH", uri, challenge)
+            return sip.request("PUBLISH", uri, fields, body, authorization=valid)
+
+        for service in ["mcptt"] + (["mcdata"] if args.mcdata else []):
+            code, headers = invalid_token(service)
+            check(f"{service}_invalid_access_token_rejected", code, {403})
+            # The warning text is fixed by the specification; only whether it matched is recorded.
+            warned = "101 service authorisation failed" in headers.get("warning", "")
+            check(f"{service}_invalid_access_token_warning_101", warned, {True})
         core = cfg["sip"]["core_uri"]
         check(
             "sip_dialog_route_requires_authentication",
@@ -253,11 +268,29 @@ def main():
             except urllib.error.HTTPError as error:
                 return error.code, error.read()
 
+        # ------------------------------------------------------------------------------
+        def http_with(method, url, headers):
+            """An HTTPS GET with extra header fields, trusting the configured CA: the status and body."""
+            request = urllib.request.Request(url, method=method, headers=headers)
+            try:
+                with urllib.request.urlopen(request, context=context, timeout=10) as response:
+                    return response.status, response.read()
+            except urllib.error.HTTPError as error:
+                return error.code, error.read()
+
         cms = cfg["endpoints"]["cms"]
         user_id = urllib.parse.quote(cfg["mcptt"]["user_id"], safe="")
+        # TS 24.482 annex A.2.3 step 1: a request without a bearer access token (and without X-3GPP-Asserted-Identity)
+        # is refused with 403 (Forbidden); RFC 6750's 401 is for an invalid token (step 2a).
         check(
             "cms_requires_bearer_token",
             http("GET", cms + "/xcap-root/org.3gpp.mcptt.user-profile/users/" + user_id + "/mcptt-user-profile-1.xml")[0],
+            {403},
+        )
+        check(
+            "cms_invalid_bearer_token_challenged",
+            http_with("GET", cms + "/xcap-root/org.3gpp.mcptt.user-profile/users/" + user_id + "/mcptt-user-profile-1.xml",
+                      {"Authorization": "Bearer invalid-security-probe-token"})[0],
             {401},
         )
         check("proxy_internal_cms_route_hidden", http("GET", cms + "/internal/user?mcptt_id=" + user_id)[0], {404})

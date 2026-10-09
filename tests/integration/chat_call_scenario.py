@@ -255,15 +255,15 @@ def main():
         # CH-08 call type must match the group type.
         command('client-a', 'call')
         wait(
-            'CH-08 prearranged request on a chat group rejected with 403 warning 118',
-            rejected('client-a', 403, '118 the group identity indicated in the request is a chat group'),
+            'CH-08 prearranged request on a chat group rejected with 404 warning 118',
+            rejected('client-a', 404, '118 the group identity indicated in the request is a chat group'),
         )
         select('client-a', prearranged)
         wait('CH-08 client a affiliated to the prearranged group', on_group(['client-a'], prearranged))
         command('client-a', 'chat')
         wait(
-            'CH-08 chat request on a prearranged group rejected with 403 warning 117',
-            rejected('client-a', 403, '117 the group identity indicated in the request is a prearranged group'),
+            'CH-08 chat request on a prearranged group rejected with 404 warning 117',
+            rejected('client-a', 404, '117 the group identity indicated in the request is a prearranged group'),
         )
 
         # CH-09 a chat session and a prearranged group call run side by side.

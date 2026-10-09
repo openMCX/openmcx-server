@@ -60,6 +60,50 @@ def tcp_streams(path, port=5060):
 
 
 # ------------------------------------------------------------------------------
+def timed_messages(path, port=5060, parser=None):
+    """The SIP messages of a capture, parsed (by parser, parse by default), each with the capture time of the
+    segment it starts in ('time'), in time order: the order across TCP connections that the order checks need."""
+    raw = Path(path).read_bytes()
+    endian = '<' if raw[:4] in (b'\xd4\xc3\xb2\xa1', b'\x4d\x3c\xb2\xa1') else '>'
+    nano = raw[:4] in (b'\x4d\x3c\xb2\xa1', b'\xa1\xb2\x3c\x4d')
+    segments = collections.defaultdict(dict)
+    offset = 24
+    while offset + 16 <= len(raw):
+        seconds, fraction, captured, _ = struct.unpack_from(endian + 'IIII', raw, offset)
+        offset += 16
+        packet = raw[offset : offset + captured]
+        offset += captured
+        if len(packet) < 34 or packet[12:14] != b'\x08\x00':
+            continue
+        ip = packet[14:]
+        ihl = (ip[0] & 15) * 4
+        if ip[9] != 6 or len(ip) < ihl + 20:
+            continue
+        tcp = ip[ihl : struct.unpack_from('!H', ip, 2)[0]]
+        sport, dport, seq = struct.unpack_from('!HHI', tcp, 0)
+        payload = tcp[(tcp[12] >> 4) * 4 :]
+        if payload and (port is None or port in (sport, dport)):
+            stamp = seconds + fraction / (1e9 if nano else 1e6)
+            segments[(ip[12:16], sport, ip[16:20], dport)].setdefault(seq, (payload, stamp))
+    messages = []
+    for parts in segments.values():
+        stream, starts = b'', []
+        for sequence_number in sorted(parts):
+            payload, stamp = parts[sequence_number]
+            starts.append((len(stream), stamp))
+            stream += payload
+        at = 0
+        for head, body in sip_messages(stream):
+            begin = stream.find(head.encode('utf-8', 'replace')[:40], at)
+            at = max(begin, at)
+            stamp = max((time for start, time in starts if start <= at), default=0.0)
+            message = (parser or parse)(head, body)
+            message['time'] = stamp
+            messages.append(message)
+    return sorted(messages, key=lambda message: message['time'])
+
+
+# ------------------------------------------------------------------------------
 def sip_messages(stream):
     """Yield (head, body) of every SIP message in a TCP stream, the body cut by Content-Length."""
     offset = 0
@@ -177,10 +221,12 @@ def main():
         'every originating INVITE names exactly one called party in resource-lists',
         all(message['targets'] is not None and len(message['targets']) == 1 for message in originating),
     )
+    # TS 24.379 clause 11.1.1.2.1.1 step 14 c): the client's mcptt-info names the session type (and its anyExt
+    # elements) only; the participating function adds the calling user (clause 11.1.1.3.1.1).
     check(
-        'originating INVITEs carry calling user and no group or request URI',
+        'originating INVITEs carry no calling user or group identity',
         all(
-            message['info'].get('mcptt-calling-user-id') and 'mcptt-calling-group-id' not in message['info']
+            'mcptt-calling-user-id' not in message['info'] and 'mcptt-calling-group-id' not in message['info']
             for message in originating
         ),
     )
@@ -270,19 +316,21 @@ def main():
             ),
         )
     # TS 24.379 clause 11.1.1.4.2: a caller gets 180 (Ringing) only when its callee rings.
+    # The caller is named on the terminating leg only (step 14 c) above), so a call is matched by its callee.
     rang = {
-        (message['info'].get('mcptt-calling-user-id'), message['info'].get('mcptt-request-uri'))
+        message['info'].get('mcptt-request-uri')
         for message in terminating
         if any(response['status'] == 180 for response in provisionals.get(message['call_id'], []))
     }
     caller_ringing = [
-        (message['info'].get('mcptt-calling-user-id'), (message['targets'] or [''])[0])
+        (message['targets'] or [''])[0]
         for message in originating
         if any(response['status'] == 180 for response in provisionals.get(message['call_id'], []))
     ]
-    check('callers get 180 (Ringing) only for a callee that rang', all(pair in rang for pair in caller_ringing))
+    check('callers get 180 (Ringing) only for a callee that rang', all(callee in rang for callee in caller_ringing))
     # TS 24.379 clauses 6.3.2.1.5 and 6.3.3.2.3: the service's identity in the provisional responses other than
     # 100 (Trying) and the 200 (OK), whose Supported also has tdialog, norefersub, explicitsub and nosub.
+    initial_cseq = {message['call_id']: header(message, 'cseq') for message in originating}
     to_callers = [
         response
         for message in originating
@@ -303,7 +351,22 @@ def main():
             {'tdialog', 'norefersub', 'explicitsub', 'nosub'}
             <= {tag.strip().lower() for value in response['headers']['supported'] for tag in value.split(',')}
             for response in to_callers
+            # TS 24.379 clause 6.3.3.2.3.2: the 200 (OK) to the initial INVITE; a re-INVITE's is by TS 24.229 alone.
             if response['status'] == 200
+            and response['call_id'] in initial_cseq
+            and header(response, 'cseq') == initial_cseq[response['call_id']]
+        ),
+    )
+    # RFC 3261 section 20.4 with TS 24.229: Alert-Info belongs in an INVITE or a 180 (Ringing), never in a final
+    # answer (the ambient listening 200 once copied the INVITE's).
+    check(
+        'no 2xx answer to an INVITE carries Alert-Info',
+        not any(
+            not message['request']
+            and message['method'] == 'INVITE'
+            and 200 <= message['status'] < 300
+            and header(message, 'alert-info')
+            for message in messages
         ),
     )
     callee_declines = [

@@ -61,13 +61,13 @@ cp artifacts/speech/{alpha,bravo}.wav artifacts/emergency-lab/artifacts/speech/
 .cache/deps/docker-compose-linux-x86_64 -p openmcx-emergency -f artifacts/emergency-lab/compose.json up -d
 ```
 
-`--priority` authorises client-a and client-b for emergency, imminent peril and alerts. Only client-a may cancel alerts. client-b is a permitted numeric preemptor at priority 75 or higher. The fixture also sets the Resource-Priority values (normal `mcptt.0`, imminent `mcptt.10`, emergency `mcptt.15`) and `emergency_timeout_ms=300000`.
+`--priority` authorises client-a and client-b for emergency, imminent peril and alerts. Only client-a may cancel alerts. client-b is a permitted numeric preemptor at priority 75 or higher. The fixture also sets the Resource-Priority values (normal `mcpttp.0`, imminent `mcpttp.10`, emergency `mcpttp.15`) and `emergency_timeout_ms=300000`.
 
 ```bash
 python3 tests/integration/prearranged_priority_scenario.py \
   --compose artifacts/emergency-lab/compose.json --artifacts artifacts/emergency-lab/artifacts --project openmcx-emergency
 python3 tests/integration/verify_group_priority.py artifacts/emergency-lab/artifacts/integration/group-priority.pcap \
-  --service sip:mcptt@mcx.test --emergency-priority mcptt.15 --imminent-priority mcptt.10 \
+  --service sip:mcptt@mcx.test --emergency-priority mcpttp.15 --imminent-priority mcpttp.10 \
   --output artifacts/emergency-lab/artifacts/integration/group-priority-sip-wire.json
 # TNG2: temporarily set priority_policy.emergency_timeout_ms to 8000 in generated/site.json, restart gms, then:
 python3 tests/integration/prearranged_priority_scenario.py \

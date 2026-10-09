@@ -51,6 +51,40 @@ def add_parallel_group(fixture, source):
 
 
 # ------------------------------------------------------------------------------
+def add_admission_groups(fixture):
+    """Four prearranged groups of the four clients, each refusing a group call for one reason (TS 24.379 clauses
+    6.3.5.2 step 5a, 10.1.1.4.2 and 6.3.8.2): <on-network-disabled> (warning 115), initiation by client-b only (119),
+    joining by client-b and client-c only (121) and client-d a required affiliated member (480, 112). Every client may
+    select them.
+    """
+    site_file = fixture / 'generated/site.json'
+    site = json.loads(site_file.read_text())
+    roles = ['client-a', 'client-b', 'client-c', 'client-d']
+    configs = {role: json.loads((fixture / f'generated/{role}.json').read_text()) for role in roles}
+    ids = {role: config['mcptt']['user_id'] for role, config in configs.items()}
+    base = configs['client-a']['mcptt']['group_id']
+    members = list(ids.values())
+    groups = {
+        'disabled': dict(disabled=True),
+        'initiate': dict(call_policy=dict(initiate_members=[ids['client-b']])),
+        'join': dict(call_policy=dict(join_members=[ids['client-b'], ids['client-c']])),
+        'required': dict(call_policy=dict(required_affiliated_members=[ids['client-d']])),
+    }
+    names = [base.replace('@', f'-{kind}@') for kind in groups]
+    site['groups'] = [group for group in site['groups'] if group['id'] not in names]
+    for name, extra in zip(names, groups.values()):
+        site['groups'].append(dict(id=name, members=members, protect_media=False, protect_floor=False, **extra))
+    for user in site['users']:
+        if user['mcptt_id'] in members:
+            user['groups'] += [name for name in names if name not in user['groups']]
+    site_file.write_text(json.dumps(site, indent=2) + '\n')
+    for role, config in configs.items():
+        allowed = config['mcptt'].get('allowed_groups', [config['mcptt']['group_id']])
+        config['mcptt']['allowed_groups'] = allowed + [name for name in names if name not in allowed]
+        (fixture / f'generated/{role}.json').write_text(json.dumps(config, indent=2) + '\n')
+
+
+# ------------------------------------------------------------------------------
 def add_private_call_policy(fixture, refresh=False):
     """Give each fixture user a different TS 24.484 private-call ruleset.
 
@@ -348,6 +382,8 @@ def service_configuration(fixture):
                 mcptt['transmit_time_limit_ms'] = cfg['mcptt']['max_talk_ms']
             if cfg.get('mcptt', {}).get('floor_queue'):
                 mcptt['floor_queue'] = True
+                # <floor-control-queue>/<depth>: room for the three clients other than the talker.
+                mcptt['floor_queue_depth'] = 3
         if path.name == 'mcdata-server.json':
             fd = cfg.get('mcdata', {}).get('fd', {})
             if 'default_file_availability_ms' in fd:
@@ -1596,6 +1632,11 @@ def main():
     )
     parser.add_argument('--mcdata', action='store_true', help='Provision differentiated MCData rulesets and SDS groups')
     parser.add_argument(
+        '--admission-groups',
+        action='store_true',
+        help='Add groups refusing a group call: disabled (115), initiation (119), join (121), required member (112)',
+    )
+    parser.add_argument(
         '--mcvideo',
         action='store_true',
         help='Add mcvideo-server: openmcx-mcvideo-server with the MCVideo service profile (TS 24.281), and '
@@ -1741,6 +1782,8 @@ def main():
         check=True,
     )
     add_parallel_group(fixture, source)
+    if args.admission_groups:
+        add_admission_groups(fixture)
     server_file = fixture / 'generated/mcptt-server.json'
     server = json.loads(server_file.read_text())
     server['mcptt']['call_policy'] = dict(end_when_initiator_leaves=True, setup_timeout_ms=3000, minimum_participants=2)

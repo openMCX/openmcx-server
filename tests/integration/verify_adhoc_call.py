@@ -29,6 +29,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from verify_private_call import header, parse, sip_messages, tcp_streams  # noqa: E402
 from verify_broadcast_call import floor_messages  # noqa: E402
+from floor_causes import causes, summary  # noqa: E402
 
 # TS 24.380 clause 8.2.3.15: the Floor Indicator bits A (normal call), B (broadcast group call), D (emergency call)
 # and E (imminent peril call).
@@ -155,13 +156,17 @@ def main():
         'each ad hoc call gets a distinct generated group identity',
         len(identities) == len(accepted) and len(identities) >= 3,
     )
+    # A rejoin the SIP core challenges (407) is sent again with the next CSeq in the same Call-ID (RFC 3261
+    # section 22.2): the rejoin is accepted when an INVITE of its Call-ID is.
     check(
         'rejoin by session identity is accepted with 200',
         bool(rejoins)
         and all(
             any(
                 response['status'] == 200
-                for response in responses[(message['call_id'], 'INVITE', header(message, 'cseq').split()[0])]
+                for (call_id, method, _), found in responses.items()
+                if call_id == message['call_id'] and method == 'INVITE'
+                for response in found
             )
             for message in rejoins
         ),
@@ -204,19 +209,32 @@ def main():
     check('the server releases ad hoc participants itself (initiator leave, timer)', len(server_byes) >= 2)
     floor = collections.Counter()
     violations = []
+    broadcast_calls = [message for message in originating if message['info'].get('broadcast-ind') == 'true']
     for subtype, fields in floor_messages(args.capture):
         if 13 not in fields:
             continue
         indicator = struct.unpack('!H', fields[13][:2])[0]
         floor[f'{subtype}:{indicator:#06x}'] += 1
-        if indicator & BROADCAST_BIT:
-            violations.append('broadcast bit in ad hoc capture')
+        # A broadcast ad hoc call (<broadcast-ind>, TS 24.379 clause 17.2.1.1) carries the B-bit, and its Floor
+        # Taken gives no permission to request the floor (TS 24.380 clause 6.3.4.4.2).
+        broadcast = bool(indicator & BROADCAST_BIT)
+        if broadcast and not broadcast_calls:
+            violations.append('broadcast bit without a broadcast ad hoc call')
         # A normal call carries the A-bit, an emergency or imminent peril call the D- or E-bit instead.
         if bool(indicator & NORMAL_BIT) == bool(indicator & (EMERGENCY_BIT | IMMINENT_BIT)):
             violations.append(f'Floor Indicator {indicator:#06x}: not one of the A-bit and the D- or E-bit')
-        if subtype == 2 and 5 in fields and struct.unpack('!H', fields[5][:2])[0] != 1:
+        if subtype == 2 and 5 in fields and struct.unpack('!H', fields[5][:2])[0] != 1 and not broadcast:
             violations.append('Taken without permission to request')
-    check('floor messages use the normal A-bit and Floor Taken permits requests', bool(floor) and not violations)
+    check(
+        'floor messages carry the A-bit or the D- or E-bit, the B-bit only in a broadcast call, and Floor Taken '
+        'permits requests except in a broadcast call',
+        bool(floor) and not violations,
+    )
+    reject_causes, cause_violations = causes(args.capture)
+    check('every Floor Deny and Floor Revoke carries a Reject Cause defined for it (TS 24.380 8.2.6.2, 8.2.10.2)',
+          not cause_violations)
+    check('a floor request while another participant has permission is denied with cause #1 (TS 24.380 6.3.5.4.4)',
+          reject_causes[('Deny', 1)] > 0)
 
     # Priority ad hoc calls (TS 24.379 clause 17.4.2.1.1 steps 6 and 7): invitees learn the state with
     # Resource-Priority.
@@ -264,8 +282,9 @@ def main():
         passed=not failures,
         checks=checks,
         failures=failures,
-        violations=violations,
+        violations=violations + cause_violations,
         counts=dict(
+            floor_reject_causes=summary(reject_causes),
             sip_messages=len(messages),
             originating_invites=len(originating),
             terminating_invites=len(terminating),

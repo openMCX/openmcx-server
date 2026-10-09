@@ -61,7 +61,9 @@ type mcvideoCommon struct {
 	UserID      profileEntry        `xml:"MCVideoUserID"`
 	PrivateCall *mcvideoPrivateCall `xml:"PrivateCall,omitempty"`
 	GroupCall   mcvideoGroupCall    `xml:"MCVideo-group-call"`
-	AnyExt      *locationURIExt     `xml:"anyExt,omitempty"`
+	// TS 24.484 clause 9.3.2.1: one <MissionCriticalOrganization>, the system's.
+	Organization string          `xml:"MissionCriticalOrganization"`
+	AnyExt       *locationURIExt `xml:"anyExt,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -242,7 +244,7 @@ func (svc *service) mcvideoProfileXML(user User) (mcvideoProfileXML, error) {
 	}
 	doc := mcvideoProfileXML{XUIURI: user.MCVideoID, ProfileIndex: user.profileIndex(), Status: true,
 		ProfileName: mcvideoProfileDocumentName(user.profileIndex()),
-		Common: mcvideoCommon{Index: "0", UserID: profileEntry{URI: user.MCVideoID},
+		Common: mcvideoCommon{Index: "0", UserID: profileEntry{URI: user.MCVideoID}, Organization: svc.cfg.organization(),
 			GroupCall: mcvideoGroupCall{MaxCallsN6: 1, Emergency: mcvideoGroupInitiation{Entry: groupInitiationEntry("")},
 				Imminent: mcvideoGroupInitiation{Entry: groupInitiationEntry("")}, Alert: profileAlert{Entry: groupInitiationEntry("")}}},
 		Ruleset: rulesetOf(mcvideoProfileRights(rights), mcvideoProfileNS, mcvideoDirectActions)}

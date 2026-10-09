@@ -567,6 +567,8 @@ void McServer::send_adhoc_alert(const AdhocAlert &alert, const std::string &grou
   info.calling_group = group;
   info.adhoc_alert = active;
   info.participant_criteria = alert.criteria;
+  // TS 24.379 clause 6.3.3.1.23 steps 3 and 4: the <mc-org> of the alert's originator (the system's organisation).
+  if (active) info.organization = service_config_.value("organization", std::string{});
   auto parts = service_parts(info);
   if (active && alert.location) parts.push_back({svc_.location_mime, service_location_xml(*alert.location, svc_)});
   const auto [type, body] = message_body(parts, "mcx-" + random_id());

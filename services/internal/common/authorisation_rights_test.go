@@ -141,3 +141,25 @@ func TestUserProfilePrivateEmergencyRecipient(test *testing.T) {
 		test.Fatalf("locally determined recipient: %s", raw)
 	}
 }
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clauses 8.3.2.1 item 8g and 9.3.2.1: the served MCPTT and MCVideo user profiles carry one
+// <MissionCriticalOrganization>, the system's (Config.Organization, else the domain).
+func TestUserProfileMissionCriticalOrganization(test *testing.T) {
+	svc := &service{cfg: Config{Domain: "mcx.test"}}
+	user := User{MCPTTID: "sip:a.mcptt@mcx.test", MCVideoID: "sip:a.mcvideo@mcx.test"}
+	raw, _ := xml.Marshal(svc.servedProfileXML(user))
+	if !strings.Contains(string(raw), "<MissionCriticalOrganization>mcx.test</MissionCriticalOrganization>") {
+		test.Fatalf("MCPTT profile without the domain as organisation: %s", raw)
+	}
+	svc.cfg.Organization = "Alpha Fire"
+	raw, _ = xml.Marshal(svc.servedProfileXML(user))
+	if !strings.Contains(string(raw), "<MissionCriticalOrganization>Alpha Fire</MissionCriticalOrganization>") {
+		test.Fatalf("MCPTT profile without the configured organisation: %s", raw)
+	}
+	video, err := svc.mcvideoProfileXML(user)
+	raw, _ = xml.Marshal(video)
+	if err != nil || !strings.Contains(string(raw), "<MissionCriticalOrganization>Alpha Fire</MissionCriticalOrganization>") {
+		test.Fatalf("MCVideo profile without the organisation: %v %s", err, raw)
+	}
+}

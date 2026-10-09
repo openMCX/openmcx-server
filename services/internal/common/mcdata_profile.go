@@ -5,6 +5,7 @@
 package common
 
 import (
+	"cmp"
 	"encoding/xml"
 	"fmt"
 	"net/http"
@@ -184,7 +185,7 @@ func (svc *service) mcdataProfileXML(user User) mcdataProfileXML {
 	kms := profileEntry{URI: svc.cfg.Endpoints.KMS}
 	doc := mcdataProfileXML{XUIURI: user.MCDataID, ProfileIndex: user.profileIndex(), Status: true,
 		ProfileName: mcdataProfileDocumentName(user.profileIndex()),
-		Common: mcdataCommon{Index: "0", UserID: profileEntry{URI: user.MCDataID}, Organization: policy.Organization,
+		Common: mcdataCommon{Index: "0", UserID: profileEntry{URI: user.MCDataID}, Organization: cmp.Or(policy.Organization, svc.cfg.organization()),
 			TxRx:       mcdataTxRxControl{MaxData1To1: mcdataNoDataLimit, MaxTime1To1: mcdataMaxTime1To1},
 			GroupAlert: profileAlert{Entry: groupInitiationEntry("")},
 			AnyExt:     &locationURIExt{LocationURI: svc.locationDocumentURI(user.MCDataID, user.profileIndex())}},
