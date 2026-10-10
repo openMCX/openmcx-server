@@ -1,0 +1,23 @@
+openMCX {{ .Chart.AppVersion }} in namespace {{ .Release.Namespace }}, for phones and browsers reaching {{ include "openmcx.externalAddress" . }} ({{ .Values.expose.type }}).
+
+1. Wait until every pod is ready (mcptt-server starts last):
+
+     kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+2. The administrator's password (MCX Admin):
+
+     kubectl -n {{ .Release.Namespace }} get secret {{ .Values.config.secretName }} -o jsonpath='{.data.ADMIN\.txt}' | base64 -d
+
+3. Open MCX Admin at https://{{ include "openmcx.externalAddress" . }}:{{ .Values.expose.ports.admin }}/ and sign in as admin. The system has its
+   own CA: accept the browser's warning there and at https://{{ include "openmcx.externalAddress" . }}:{{ .Values.expose.ports.idms }}.
+   Then follow tutorial 1 from step 5 (users alice and bob from the template phone-user, activation codes for the
+   phones): tutorials/end-to-end/01-mcx-over-wlan-android/README.md.
+
+{{- if eq .Values.expose.type "hostPort" }}
+
+The edge pods bind their ports on one node; {{ include "openmcx.externalAddress" . }} must be that node's address
+(expose.nodeSelector pins them).
+{{- end }}
+
+The configuration Secret {{ .Values.config.secretName }} is not removed by `helm uninstall`: a reinstall keeps the CA
+the phones trust. Delete it (and the PersistentVolumeClaims) to start over with a new system.

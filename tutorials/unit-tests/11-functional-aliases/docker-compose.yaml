@@ -14,7 +14,7 @@
 name: openmcx-ut11
 services:
   setup:
-    image: docker.io/openmcx/openmcx-setup:v1
+    image: docker.io/openmcx/openmcx-setup:1.0.0
     profiles: [setup]
     entrypoint: [sh, -c]
     command:
@@ -44,7 +44,7 @@ services:
       sip-core:
         condition: service_started
   sip-core:
-    image: docker.io/openmcx/openmcx-kamailio:6.1.4-2
+    image: docker.io/openmcx/openmcx-kamailio:1.0.0
     command: [-DD, -E, -A, SIP_DEBUG_NO_TLS, -f, /config/kamailio.cfg]
     healthcheck:
       test: [CMD-SHELL, nc -z 127.0.0.1 5060]
@@ -65,7 +65,7 @@ services:
       sip-db:
         condition: service_healthy
   mcptt-server:
-    image: docker.io/openmcx/openmcx-mcptt-server:v1
+    image: docker.io/openmcx/openmcx-mcptt-server:1.0.0
     entrypoint: [/usr/local/bin/openmcx-mcptt-server]
     command: [--config, /config/mcptt-server.json, --disable-tls]
     init: true
@@ -103,7 +103,7 @@ services:
       sip-core:
         condition: service_healthy
   mcdata-server:
-    image: docker.io/openmcx/openmcx-mcdata-server:v1
+    image: docker.io/openmcx/openmcx-mcdata-server:1.0.0
     entrypoint: [/usr/local/bin/openmcx-mcdata-server]
     command: [--config, /config/mcdata-server.json, --disable-tls]
     init: true
@@ -163,7 +163,7 @@ services:
     - ./config/mysql-root-password:/run/secrets/mysql-root-password:ro
     - ./config/sip-db.sql:/docker-entrypoint-initdb.d/01-subscriber.sql:ro
   mcx-user-db:
-    image: docker.io/openmcx/openmcx-user-db:v1
+    image: docker.io/openmcx/openmcx-user-db:1.0.0
     entrypoint: [/usr/local/bin/mcx-user-db]
     command:
     - --config
@@ -190,7 +190,7 @@ services:
     - ./config/tls/mcx-user-db.crt:/config/tls/mcx-user-db.crt:ro
     - ./config/tls/mcx-user-db.key:/config/tls/mcx-user-db.key:ro
   idms:
-    image: docker.io/openmcx/openmcx-common:v1
+    image: docker.io/openmcx/openmcx-common:1.0.0
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -231,7 +231,7 @@ services:
     - ./config/oidc-private.pem:/config/oidc-private.pem:ro
     - idms:/data
   gms:
-    image: docker.io/openmcx/openmcx-common:v1
+    image: docker.io/openmcx/openmcx-common:1.0.0
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -272,7 +272,7 @@ services:
     - ./config/oidc-public.pem:/config/oidc-public.pem:ro
     - gms:/data
   cms:
-    image: docker.io/openmcx/openmcx-common:v1
+    image: docker.io/openmcx/openmcx-common:1.0.0
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -313,7 +313,7 @@ services:
     - ./config/oidc-public.pem:/config/oidc-public.pem:ro
     - cms:/data
   kms:
-    image: docker.io/openmcx/openmcx-common:v1
+    image: docker.io/openmcx/openmcx-common:1.0.0
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -354,7 +354,7 @@ services:
     - ./config/oidc-public.pem:/config/oidc-public.pem:ro
     - kms:/data
   lms:
-    image: docker.io/openmcx/openmcx-common:v1
+    image: docker.io/openmcx/openmcx-common:1.0.0
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -395,7 +395,7 @@ services:
     - ./config/oidc-public.pem:/config/oidc-public.pem:ro
     - lms:/data
   http-proxy:
-    image: docker.io/openmcx/openmcx-http-proxy:v1
+    image: docker.io/openmcx/openmcx-http-proxy:1.0.0
     entrypoint: [/usr/local/bin/mcx-http-proxy]
     command:
     - --config
@@ -443,7 +443,7 @@ services:
       notification-server:
         condition: service_healthy
   content-server:
-    image: docker.io/openmcx/openmcx-common:v1
+    image: docker.io/openmcx/openmcx-common:1.0.0
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -486,7 +486,7 @@ services:
     - ./config/oidc-public.pem:/config/oidc-public.pem:ro
     - content:/data
   message-store:
-    image: docker.io/openmcx/openmcx-common:v1
+    image: docker.io/openmcx/openmcx-common:1.0.0
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -529,7 +529,7 @@ services:
     - ./config/oidc-public.pem:/config/oidc-public.pem:ro
     - msgstore:/data
   notification-server:
-    image: docker.io/openmcx/openmcx-common:v1
+    image: docker.io/openmcx/openmcx-common:1.0.0
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -570,7 +570,7 @@ services:
     - ./config/oidc-public.pem:/config/oidc-public.pem:ro
     - notification:/data
   client-a:
-    image: docker.io/openmcx/openmcx-client:v1
+    image: docker.io/openmcx/openmcx-client:1.0.0
     entrypoint: [/usr/local/bin/mcx-client]
     command: [--config, /config/client-a.json, --disable-tls]
     init: true
@@ -608,7 +608,7 @@ services:
       capture:
         condition: service_started
   client-b:
-    image: docker.io/openmcx/openmcx-client:v1
+    image: docker.io/openmcx/openmcx-client:1.0.0
     entrypoint: [/usr/local/bin/mcx-client]
     command: [--config, /config/client-b.json, --disable-tls]
     init: true
@@ -644,7 +644,7 @@ services:
       mcptt-server:
         condition: service_healthy
   client-c:
-    image: docker.io/openmcx/openmcx-client:v1
+    image: docker.io/openmcx/openmcx-client:1.0.0
     entrypoint: [/usr/local/bin/mcx-client]
     command: [--config, /config/client-c.json, --disable-tls]
     init: true
@@ -680,7 +680,7 @@ services:
       mcptt-server:
         condition: service_healthy
   client-d:
-    image: docker.io/openmcx/openmcx-client:v1
+    image: docker.io/openmcx/openmcx-client:1.0.0
     entrypoint: [/usr/local/bin/mcx-client]
     command: [--config, /config/client-d.json, --disable-tls]
     init: true

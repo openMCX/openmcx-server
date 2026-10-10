@@ -62,10 +62,10 @@ Recorded on **2026-09-25** against a layered test image (`openmcx:sig-q`, `2c06e
 
 | ID | Checks | Evidence |
 |---|---|---|
-| XP-00 | The clients are authorised with protection enabled | [Combined server](../../artifacts/regress-sig1/xml-integrity/artifacts/xml-protection.json); [separate participating and controlling servers](../../artifacts/regress-sig1/xml-integrity-split/artifacts/xml-protection.json) |
+| XP-00 | The clients are authorised with protection enabled | Combined server (`artifacts/regress-sig1/xml-integrity/artifacts/xml-protection.json`); separate participating and controlling servers (`artifacts/regress-sig1/xml-integrity-split/artifacts/xml-protection.json`) |
 | XP-01 | The service authorisation was protected: the servers decrypted every client's access token | Same reports |
 | XP-02 | A group call with protected mcptt-info | Same reports |
-| XP-03 | A private call with the called party protected | [Combined server](../../artifacts/regress-sig1/xml-integrity/artifacts/xml-protection.json) |
+| XP-03 | A private call with the called party protected | Combined server (`artifacts/regress-sig1/xml-integrity/artifacts/xml-protection.json`) |
 | XP-04 | Every client and server encrypted and decrypted MCPTT XML | Both reports |
 | XP-05 | Nothing was refused | Both reports |
 | XP-06 | Every client and server signed its XML bodies and verified those it received | Both reports |

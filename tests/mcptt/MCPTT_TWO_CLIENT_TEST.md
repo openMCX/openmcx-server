@@ -178,10 +178,10 @@ floor contention, teardown and restart passed. TShark 4.6.4 decoded all 29 floor
 packets with zero expert diagnostics.** This validates the tested lab subset,
 not full MCPTT conformance.
 
-- [Server SIP + RTP + floor capture](../../artifacts/integration/mcptt-debug.pcap)
-- [SIP-core capture, including registration](../../artifacts/integration/sip-debug.pcap)
-- [Wire/dissector results](../../artifacts/integration/wire-debug-results.json)
-- [Speech results](../../artifacts/integration/speech-debug-results.json)
-- [Restart results](../../artifacts/integration/restart-debug-results.json)
+- Server SIP + RTP + floor capture (`artifacts/integration/mcptt-debug.pcap`)
+- SIP-core capture, including registration (`artifacts/integration/sip-debug.pcap`)
+- Wire/dissector results (`artifacts/integration/wire-debug-results.json`)
+- Speech results (`artifacts/integration/speech-debug-results.json`)
+- Restart results (`artifacts/integration/restart-debug-results.json`)
 
 Capture files are written by the host user with private artifact permissions.

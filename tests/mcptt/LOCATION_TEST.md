@@ -162,7 +162,7 @@ Recorded on **2026-09-25** against image `openmcx:0.68-loc` (`088f3e9629d4`), bu
 
 | ID | Checks | Evidence |
 |---|---|---|
-| LOC-01–LOC-02 | Configuration after service authorisation (TriggerIds t1 to t7); the log-on report of each client, stored with its coordinate | [Scenario report](../../artifacts/loc-lab-f2/artifacts/location.json) |
+| LOC-01–LOC-02 | Configuration after service authorisation (TriggerIds t1 to t7); the log-on report of each client, stored with its coordinate | Scenario report (`artifacts/loc-lab-f2/artifacts/location.json`) |
 | LOC-03 | A user whose profile denies reporting is refused 403 and nothing is stored | Same report |
 | LOC-04–LOC-07 | Travelled distance, zone entry and exit with border widths, cell change with the serving ECGI, a group call | Same report |
 | LOC-08–LOC-11 | A request answered with the RequestId and the reporting user; refresh through a request to the client; LocationFilter in and out; a user who does not share is not reported | Same report |
@@ -172,7 +172,7 @@ Recorded on **2026-09-25** against image `openmcx:0.68-loc` (`088f3e9629d4`), bu
 | LOC-17 | Emergency alert area: entry raises the client's alert; Emergency reports on the emergency trigger; exit recorded | Same report |
 | SL-01–SL-06 | The SEAL location management server: bob's client reads its configuration and reports every 2 s; the MCPTT server subscribes to bob, carol and dave, and is notified of bob's positions, including after he moves; an on-demand request; offline, bob's client stores its positions and sends them as history, which reaches the server; on demand with history; unsubscription (11 checks) | `location.json` of the `location` lab |
 
-The location scenario passed 39 checks. `verify_location.py` passed 14 wire checks (W-00 to W-07) on the capture of the server namespace ([result](../../artifacts/loc-lab-f2/artifacts/integration/location-wire.json)): 7 configurations, 9 requests and 29 reports, with the emergency alert's own location told apart.
+The location scenario passed 39 checks. `verify_location.py` passed 14 wire checks (W-00 to W-07) on the capture of the server namespace (result (`artifacts/loc-lab-f2/artifacts/integration/location-wire.json`)): 7 configurations, 9 requests and 29 reports, with the emergency alert's own location told apart.
 
 The SEAL checks were recorded on **2026-09-26** against image `openmcx:item7-b` (`f190af423284`): the location scenario passed 50 checks. The Go unit tests cover the SLM-S. The C++ unit tests cover the location-info documents.
 

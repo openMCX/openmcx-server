@@ -1,0 +1,19 @@
+apiVersion: v2
+name: openmcx
+description: >-
+  openMCX, 3GPP Release 19 mission-critical services: MCPTT, MCData and MCVideo servers, the common services
+  (IdMS, GMS, CMS, KMS, LMS, Credential Service, content server, message store, notification server), the SIP core
+  and MCX Admin. Experimental: validated with helm lint, helm template and kubeconform, not yet installed on a
+  cluster.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.26.0-0"
+home: https://github.com/openMCX/openmcx-server
+sources:
+  - https://github.com/openMCX/openmcx-server
+  - https://github.com/openMCX/openmcx-admin
+  - https://github.com/openMCX/openmcx-client
+keywords: [mcptt, mcdata, mcvideo, mission-critical, 3gpp, sip]
+annotations:
+  licenses: AGPL-3.0-or-later

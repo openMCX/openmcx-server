@@ -1,0 +1,61 @@
+{{- /*
+MCX Admin (openMCX/openmcx-admin): web console and API for users and groups, activation codes for the phones. It
+seeds its database from the configuration's site.json on the first start and projects the users for the MCPTT user
+database into the shared volume.
+*/ -}}
+{{- $edge := ne .Values.expose.type "none" -}}
+{{ include "openmcx.service" (dict "root" . "name" "mcxadmin" "notReady" true "ports" (list (dict "name" "https" "port" 8443))) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcxadmin
+  labels:
+    {{- include "openmcx.componentLabels" (dict "root" . "name" "mcxadmin" "edge" $edge) | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "openmcx.selector" (dict "root" . "name" "mcxadmin") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openmcx.componentLabels" (dict "root" . "name" "mcxadmin" "edge" $edge) | nindent 8 }}
+    spec:
+      {{- include "openmcx.podSpec" (dict "root" . "name" "mcxadmin" "edge" $edge) | nindent 6 }}
+      initContainers:
+        {{- include "openmcx.waitFor" (dict "root" . "peers" (list "sip-db:3306" "credentials:8443" "gms:8443")) | nindent 8 }}
+      containers:
+        - name: mcxadmin
+          image: {{ include "openmcx.image" (dict "root" . "program" "openmcx-admin" "tag" .Values.images.tag) }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          args: [--config, /config/mcxadmin.json, --seed, /config/site.json]
+          ports:
+            {{- if $edge }}
+            {{- include "openmcx.edgePorts" (dict "root" . "ports" (list (dict "name" "ext-mcxadmin" "containerPort" 8443 "external" .Values.expose.ports.admin))) | nindent 12 }}
+            {{- else }}
+            - {name: https, containerPort: 8443, protocol: TCP}
+            {{- end }}
+          readinessProbe:
+            exec:
+              command: [curl, --fail, --silent, --cacert, /config/tls/ca.crt, --resolve, 'mcxadmin:8443:127.0.0.1', 'https://mcxadmin:8443/healthz']
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 8443
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: userdb, mountPath: /shared}
+          {{- include "openmcx.containerExtras" (dict "root" . "name" "mcxadmin") | nindent 10 }}
+      volumes:
+        {{- include "openmcx.configVolume" (dict "root" . "name" "config" "items" (dict "site.json" "site.json" "mcxadmin.json" "mcxadmin.json" "mcxadmin-dsn" "mcxadmin-dsn" "server-secret" "server-secret" "ca.crt" "tls/ca.crt" "mcxadmin.crt" "tls/mcxadmin.crt" "mcxadmin.key" "tls/mcxadmin.key")) | nindent 8 }}
+        - name: userdb
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-userdb

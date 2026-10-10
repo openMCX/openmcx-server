@@ -1,0 +1,72 @@
+{{- /*
+The MCPTT user database: Diameter (MCPTT-2) over SCTP with the MCPTT server, from the users MCX Admin projects into
+the shared volume. The nodes need SCTP (README.md, "SCTP").
+*/ -}}
+{{ include "openmcx.service" (dict "root" . "name" "mcx-user-db" "notReady" true "ports" (list (dict "name" "diameter" "port" 3868 "protocol" "SCTP") (dict "name" "diameter-tls" "port" 5868 "protocol" "SCTP"))) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcx-user-db
+  labels:
+    {{- include "openmcx.componentLabels" (dict "root" . "name" "mcx-user-db") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "openmcx.selector" (dict "root" . "name" "mcx-user-db") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openmcx.componentLabels" (dict "root" . "name" "mcx-user-db") | nindent 8 }}
+    spec:
+      {{- include "openmcx.podSpec" (dict "root" . "name" "mcx-user-db" "with" "mcxadmin") | nindent 6 }}
+      shareProcessNamespace: true
+      initContainers:
+        # As depends_on mcxadmin (healthy): MCX Admin has written the users' projection.
+        - name: wait-for-userdb
+          image: {{ .Values.images.wait }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: [sh, -c, 'until test -s /shared/userdb.json; do echo "waiting for MCX Admin (userdb.json)"; sleep 2; done']
+          volumeMounts:
+            - {name: userdb, mountPath: /shared, readOnly: true}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      containers:
+        - name: mcx-user-db
+          image: {{ include "openmcx.image" (dict "root" . "program" "openmcx-user-db") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: [/usr/local/bin/mcx-user-db]
+          args: [--config, /shared/userdb.json, --diameter-config, /config/diameter-user-db.conf, --watch]
+          ports:
+            - {name: diameter, containerPort: 3868, protocol: SCTP}
+            - {name: diameter-tls, containerPort: 5868, protocol: SCTP}
+          # Listening on SCTP port 3868, as the Compose file's health check.
+          readinessProbe:
+            exec:
+              command: [python3, -c, 'import pathlib; assert any(int(row.split()[5]) == 3868 for row in pathlib.Path("/proc/net/sctp/eps").read_text().splitlines()[1:])']
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: [python3, -c, 'import pathlib; assert any(int(row.split()[5]) == 3868 for row in pathlib.Path("/proc/net/sctp/eps").read_text().splitlines()[1:])']
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: userdb, mountPath: /shared, readOnly: true}
+            - {name: run, mountPath: /run/mcx}
+          {{- include "openmcx.containerExtras" (dict "root" . "name" "mcx-user-db") | nindent 10 }}
+      volumes:
+        {{- include "openmcx.configVolume" (dict "root" . "name" "config" "items" (dict "site.json" "site.json" "diameter-user-db.conf" "diameter-user-db.conf" "ca.crt" "tls/ca.crt" "mcx-user-db.crt" "tls/mcx-user-db.crt" "mcx-user-db.key" "tls/mcx-user-db.key")) | nindent 8 }}
+        - name: userdb
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-userdb
+        - name: run
+          emptyDir: {medium: Memory}

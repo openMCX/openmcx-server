@@ -1,0 +1,62 @@
+{{- /*
+expose.type LoadBalancer or NodePort: one Service for every port the phones and the browser use, on the edge pods.
+Each target port is a container port name only one edge pod has, so each port reaches its own component.
+externalTrafficPolicy Local keeps the phones' addresses, which the SIP core checks against their SDP.
+*/ -}}
+{{- $type := .Values.expose.type -}}
+{{- if not (has $type (list "hostPort" "LoadBalancer" "NodePort" "none")) }}
+{{- fail (printf "expose.type %q: use hostPort, LoadBalancer, NodePort or none" $type) }}
+{{- end }}
+{{- if or (eq $type "LoadBalancer") (eq $type "NodePort") }}
+{{- $p := .Values.expose.ports -}}
+{{- $m := .Values.expose.media -}}
+{{- $ports := list
+  (dict "name" "sip" "port" $p.sip "target" "ext-sip")
+  (dict "name" "idms" "port" $p.idms "target" "ext-idms")
+  (dict "name" "http-proxy" "port" $p.httpProxy "target" "ext-http-proxy")
+  (dict "name" "kms" "port" $p.kms "target" "ext-kms")
+  (dict "name" "mcxadmin" "port" $p.admin "target" "ext-mcxadmin")
+  (dict "name" "credentials" "port" $p.credentials "target" "ext-credentials")
+-}}
+{{- $bases := list $m.mcptt.rtpPort $m.mcptt.floorPort -}}
+{{- if .Values.mcvideo.enabled }}
+{{- $bases = concat $bases (list $m.mcvideo.rtpPort $m.mcvideo.floorPort $m.mcvideo.videoPort) -}}
+{{- end }}
+{{- range $base := $bases }}
+{{- range (include "openmcx.mediaPorts" (dict "base" $base "count" $m.portsPerBase) | fromYamlArray) }}
+{{- $ports = append $ports (dict "name" .name "port" .containerPort "target" .name "protocol" "UDP") -}}
+{{- end }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: openmcx-external
+  labels:
+    {{- include "openmcx.labels" . | nindent 4 }}
+  {{- include "openmcx.annotations" .Values.expose.service.annotations | nindent 2 }}
+spec:
+  type: {{ $type }}
+  externalTrafficPolicy: Local
+  {{- if eq $type "LoadBalancer" }}
+  {{- with .Values.expose.service.loadBalancerClass }}
+  loadBalancerClass: {{ . }}
+  {{- end }}
+  {{- if not (kindIs "invalid" .Values.expose.service.loadBalancerIP) }}
+  loadBalancerIP: {{ .Values.expose.service.loadBalancerIP | default (include "openmcx.externalAddress" .) }}
+  {{- end }}
+  {{- end }}
+  selector:
+    app.kubernetes.io/name: openmcx
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    openmcx.org/edge: "true"
+  ports:
+    {{- range $ports }}
+    - name: {{ .name }}
+      port: {{ .port }}
+      targetPort: {{ .target }}
+      protocol: {{ .protocol | default "TCP" }}
+      {{- if eq $type "NodePort" }}
+      nodePort: {{ .port }}
+      {{- end }}
+    {{- end }}
+{{- end }}

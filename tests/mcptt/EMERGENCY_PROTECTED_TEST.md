@@ -16,9 +16,9 @@ The final application image is `8d2c91f1439c`. The native suite passed all 16 te
 | Live SRTP/SRTCP replay and tamper injection | 16 checks passed; valid speech continued |
 | Debug-SIP refresh capture | 2 accepted refreshes and 7 conference notifications verified |
 
-See the [final TLS reports and capture](../../artifacts/protected-tls-lab/artifacts/integration/) (`passed-image7-*-results.json`, `protected-tls-image7.pcap`), [live negative report](../../artifacts/protected-lab/artifacts/integration/protected-negative-results.json), and [refresh wire report](../../artifacts/protected-lab/artifacts/integration/protected-refresh-v7-wire.json).
+See the final TLS reports and capture (`artifacts/protected-tls-lab/artifacts/integration`) (`passed-image7-*-results.json`, `protected-tls-image7.pcap`), live negative report (`artifacts/protected-lab/artifacts/integration/protected-negative-results.json`), and refresh wire report (`artifacts/protected-lab/artifacts/integration/protected-refresh-v7-wire.json`).
 
-The preceding image6 protected lifecycle run additionally passed a real GKTP renewal check with manual deaffiliation preserved. Its [independent wire report](../../artifacts/protected-lab/artifacts/integration/protected-v6-wire-verification.json) verified 692 byte-identical encrypted relays, 38 SRTCP packets, 8 negotiated protected legs, 4 CSK publications and 10 GKTP notifications. Separate tests passed all 7 emergency-timeout checks and 14 SIP/HTTPS security probes. TLS captures remain encrypted; the debug-SIP capture provides the accepted-refresh wire evidence.
+The preceding image6 protected lifecycle run additionally passed a real GKTP renewal check with manual deaffiliation preserved. Its independent wire report (`artifacts/protected-lab/artifacts/integration/protected-v6-wire-verification.json`) verified 692 byte-identical encrypted relays, 38 SRTCP packets, 8 negotiated protected legs, 4 CSK publications and 10 GKTP notifications. Separate tests passed all 7 emergency-timeout checks and 14 SIP/HTTPS security probes. TLS captures remain encrypted; the debug-SIP capture provides the accepted-refresh wire evidence.
 
 ## Run a separate lab
 
@@ -59,7 +59,7 @@ python3 tests/integration/prearranged_priority_scenario.py \
 | Negative crypto | Published vectors, wrong recipient/key, tamper, replay, stale group-key rollback, expiry and SSRC reuse; live SRTP/SRTCP replay/tamper injection with continued valid speech |
 | SIP peer isolation | A matching CANCEL from another client certificate is rejected; the originating peer remains accepted |
 
-Results and captures are in [protected integration artifacts](../../artifacts/protected-lab/artifacts/integration/) and [priority integration artifacts](../../artifacts/priority-lab/artifacts/integration/). These private lab captures contain signaling; do not publish them unreviewed.
+Results and captures are in protected integration artifacts (`artifacts/protected-lab/artifacts/integration`) and priority integration artifacts (`artifacts/priority-lab/artifacts/integration`). These private lab captures contain signaling; do not publish them unreviewed.
 
 Client control commands include `call emergency`, `call imminent`,
 `emergency on|off`, `imminent on|off`, `alert on|off`,

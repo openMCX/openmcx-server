@@ -1,0 +1,161 @@
+{{- /*
+The common services, one image (openmcx-common) with one role each: IdMS, GMS, CMS, KMS, LMS, Credential Service,
+content server, message store and notification server.
+*/ -}}
+{{- $root := . -}}
+{{- $p := .Values.expose.ports -}}
+{{- $roles := list
+  (dict "name" "idms" "role" "idms" "volume" "idms" "key" "signing" "external" $p.idms "seedIdms" true)
+  (dict "name" "gms" "role" "gms" "volume" "gms")
+  (dict "name" "cms" "role" "cms" "volume" "cms")
+  (dict "name" "kms" "role" "kms" "volume" "kms" "external" $p.kms)
+  (dict "name" "lms" "role" "lms" "volume" "lms")
+  (dict "name" "credentials" "role" "credentials" "external" $p.credentials "credentials" true "peers" (list "sip-db:3306"))
+  (dict "name" "content-server" "role" "content" "volume" "content")
+  (dict "name" "message-store" "role" "msgstore" "volume" "msgstore")
+  (dict "name" "notification-server" "role" "notification" "volume" "notification" "noCaFile" true)
+-}}
+{{- range $c := $roles }}
+{{- $edge := and (hasKey $c "external") (ne $root.Values.expose.type "none") }}
+{{- $items := dict "ca.crt" "tls/ca.crt" "site.json" "site.json" (printf "%s.crt" $c.name) (printf "tls/%s.crt" $c.name) (printf "%s.key" $c.name) (printf "tls/%s.key" $c.name) }}
+{{- if eq ($c.key | default "") "signing" }}
+{{- $_ := set $items "oidc-private.pem" "oidc-private.pem" }}
+{{- else }}
+{{- $_ := set $items "oidc-public.pem" "oidc-public.pem" }}
+{{- end }}
+{{- if $c.credentials }}
+{{- $_ := set $items "credentials-dsn" "credentials-dsn" }}
+{{- $_ := set $items "issuer.ca.key" "issuer/ca.key" }}
+{{- end }}
+---
+{{ include "openmcx.service" (dict "root" $root "name" $c.name "notReady" (eq $c.name "credentials") "ports" (list (dict "name" "https" "port" 8443))) }}
+{{- if and $c.volume $root.Values.persistence.enabled }}
+---
+{{ include "openmcx.pvc" (dict "root" $root "name" $c.volume "size" (get $root.Values.persistence.sizes $c.volume)) }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $c.name }}
+  labels:
+    {{- include "openmcx.componentLabels" (dict "root" $root "name" $c.name "edge" $edge) | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "openmcx.selector" (dict "root" $root "name" $c.name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openmcx.componentLabels" (dict "root" $root "name" $c.name "edge" $edge) | nindent 8 }}
+    spec:
+      {{- include "openmcx.podSpec" (dict "root" $root "name" $c.name "edge" $edge) | nindent 6 }}
+      # The Compose file runs these with an init process (init: true): the pause container reaps.
+      shareProcessNamespace: true
+      initContainers:
+        {{- include "openmcx.waitFor" (dict "root" $root "peers" $c.peers) | nindent 8 }}
+        {{- if $c.seedIdms }}
+        # IdMS's credential file (verifiers of the system's users' passwords), from the configuration on the first start.
+        - name: seed-data
+          image: {{ $root.Values.images.wait }}
+          imagePullPolicy: {{ $root.Values.images.pullPolicy }}
+          command: [sh, -c, 'test -e /data/idms-credentials.json || { cp /seed/idms-credentials.json /data/ && chmod 666 /data/idms-credentials.json; }']
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: seed, mountPath: /seed}
+          {{- with $root.Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
+        {{- if $c.credentials }}
+        # The device CRL the SIP core checks, from the configuration on the first start.
+        - name: seed-crl
+          image: {{ $root.Values.images.wait }}
+          imagePullPolicy: {{ $root.Values.images.pullPolicy }}
+          command: [sh, -c, 'test -e /crl/devices.crl || { cp /seed/devices.crl /crl/ && chmod 666 /crl/devices.crl; }; chmod 777 /crl || true']
+          volumeMounts:
+            - {name: crl, mountPath: /crl}
+            - {name: seed, mountPath: /seed}
+          {{- with $root.Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
+      containers:
+        - name: {{ $c.name }}
+          image: {{ include "openmcx.image" (dict "root" $root "program" "openmcx-common") }}
+          imagePullPolicy: {{ $root.Values.images.pullPolicy }}
+          command: [/usr/local/bin/mcx-common]
+          args:
+            - --role
+            - {{ $c.role }}
+            - --config
+            - /config/site.json
+            - --tls-cert
+            - /config/tls/{{ $c.name }}.crt
+            - --tls-key
+            - /config/tls/{{ $c.name }}.key
+            {{- if eq ($c.key | default "") "signing" }}
+            - --signing-key
+            - /config/oidc-private.pem
+            {{- else }}
+            - --verification-key
+            - /config/oidc-public.pem
+            {{- end }}
+            - --data-dir
+            - /data
+            {{- if not $c.noCaFile }}
+            - --ca-file
+            - /config/tls/ca.crt
+            {{- end }}
+          ports:
+            {{- if $edge }}
+            {{- include "openmcx.edgePorts" (dict "root" $root "ports" (list (dict "name" (printf "ext-%s" (trunc 11 $c.name)) "containerPort" 8443 "external" $c.external))) | nindent 12 }}
+            {{- else }}
+            - {name: https, containerPort: 8443, protocol: TCP}
+            {{- end }}
+          readinessProbe:
+            exec:
+              command: [curl, --fail, --silent, --cacert, /config/tls/ca.crt, --resolve, '{{ $c.name }}:8443:127.0.0.1', 'https://{{ $c.name }}:8443/readyz']
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 8443
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: data, mountPath: /data}
+            - {name: run, mountPath: /run/mcx}
+            {{- if $c.credentials }}
+            - {name: crl, mountPath: /crl}
+            {{- end }}
+          {{- include "openmcx.containerExtras" (dict "root" $root "name" $c.name) | nindent 10 }}
+      volumes:
+        {{- include "openmcx.configVolume" (dict "root" $root "name" "config" "items" $items) | nindent 8 }}
+        - name: run
+          emptyDir: {medium: Memory}
+        {{- if $c.volume }}
+        {{- include "openmcx.dataVolume" (dict "root" $root "name" $c.volume) | nindent 8 }}
+        {{- else }}
+        # As the Compose file: the Credential Service's data on tmpfs.
+        - name: data
+          emptyDir: {medium: Memory}
+        {{- end }}
+        {{- if $c.seedIdms }}
+        {{- include "openmcx.configVolume" (dict "root" $root "name" "seed" "items" (dict "idms-credentials.json" "idms-credentials.json")) | nindent 8 }}
+        {{- end }}
+        {{- if $c.credentials }}
+        {{- include "openmcx.configVolume" (dict "root" $root "name" "seed" "items" (dict "devices.crl" "devices.crl")) | nindent 8 }}
+        - name: crl
+          persistentVolumeClaim:
+            claimName: {{ $root.Release.Name }}-crl
+        {{- end }}
+{{- end }}

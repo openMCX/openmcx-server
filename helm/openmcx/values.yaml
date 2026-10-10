@@ -1,0 +1,133 @@
+# openMCX: a complete MCX system (MCPTT, MCData, MCVideo servers, common services, SIP core, MCX Admin) on Kubernetes
+# or OpenShift. See README.md in this directory.
+#
+# The chart deploys what tutorials/end-to-end/01-mcx-over-wlan-android/docker-compose-basic-mcx.yaml runs, one pod
+# per Compose service, with the same names, images, configuration and ports. One release per namespace.
+
+# The IPv4 address the phones and the browser reach the system on (HOST_IP of tutorial 1): with expose.type hostPort
+# the address of the node the edge pods run on; with LoadBalancer the Service's address. Required. It is written into
+# the configuration (SDP of the MC servers, activation codes, MCX Admin console): changing it needs a new
+# configuration (config.secretName deleted, phones activated again).
+externalAddress: ""
+
+images:
+  # The openMCX images: <prefix>openmcx-<program>:<tag>, as OPENMCX_IMAGE_PREFIX and OPENMCX_TAG of the tutorial.
+  # Images in a private registry: "registry.example.com/openmcx/".
+  prefix: openmcx/
+  tag: 1.0.0
+  # A whole image reference per program, replacing prefix and tag, e.g. openmcx-mcptt-server: my.registry/x:1.
+  overrides: {}
+  # MySQL for the SIP core, MCX Admin and the Credential Service: the digest the Compose file pins.
+  mysql: mysql@sha256:a08db11d440f1426eb47fbdf7cf2e458aa11bc79341bd2a5461f0296f1272f88
+  # The init containers that wait for a component's peers (nc).
+  wait: busybox:1.36.1
+  pullPolicy: IfNotPresent
+  # Names of Secrets of type kubernetes.io/dockerconfigjson.
+  pullSecrets: []
+
+# The system's configuration: a new CA and the servers' certificates, the users and groups, every server's
+# configuration, as the tutorial's setup container writes into ./config. The pods read it from one Secret.
+config:
+  secretName: openmcx-config
+  # true: a Job (pre-install and pre-upgrade hook) runs the setup image (openmcx-setup) when the Secret does not
+  # exist yet, and stores its result in the Secret. The Secret is not part of the release: it outlives
+  # `helm uninstall`, so that a reinstall keeps the CA the activated phones trust. Delete it to start over.
+  # false: create the Secret yourself, e.g. from a tutorial's ./config (README.md, "Configuration from a directory").
+  generate: true
+  # The setup Job's container security context; it runs as any user (also OpenShift's restricted-v2).
+  setupSecurityContext: {}
+  setupResources: {}
+
+# How the phones and the browser reach the system on externalAddress.
+expose:
+  # hostPort:     the edge pods bind their ports on their node, as the Compose file publishes them; externalAddress
+  #               is that node's address. Set nodeSelector to pin them to it in a cluster of several nodes.
+  # LoadBalancer: one Service of type LoadBalancer (e.g. MetalLB) with every port, at externalAddress.
+  # NodePort:     one Service of type NodePort; every external port (ports and media below) must be in the
+  #               cluster's NodePort range (30000-32767 by default), as the servers announce their own port numbers.
+  # none:         no external access (in-cluster tests only).
+  type: hostPort
+  # The edge pods (SIP core, IdMS, HTTP proxy, KMS, Credential Service, MCX Admin, MCPTT and MCVideo servers) on one
+  # node: the SIP core compares each phone's source address with its SDP, so the external traffic keeps the
+  # phone's address (externalTrafficPolicy Local), which reaches only pods on the node that receives it.
+  colocate: true
+  nodeSelector: {}
+  service:
+    # e.g. MetalLB address pool: metallb.io/address-pool: <pool>.
+    annotations: {}
+    loadBalancerClass: ""
+    # The Service's spec.loadBalancerIP; empty: externalAddress. null (~): not set, the provider picks one (then set
+    # externalAddress to it and generate the configuration again).
+    loadBalancerIP: ""
+  # The ports on externalAddress. Others than the tutorial's are written into the configuration by the setup Job.
+  ports:
+    sip: 5061          # SIP core (TLS)
+    idms: 8443         # IdMS: sign-in and passwords
+    httpProxy: 8444    # HTTP proxy: CMS, GMS, KMS, LMS, files
+    kms: 8445          # KMS
+    admin: 8446        # MCX Admin: web console and activation
+    credentials: 8447  # Credential Service
+  # The MC servers' media: the first port of each range; a server uses 100 ports from each (50 pairs).
+  # The servers announce these ports in SDP, so they are the same inside the pod and outside.
+  media:
+    portsPerBase: 100
+    mcptt:
+      rtpPort: 4000    # speech (RTP and RTCP)
+      floorPort: 5000  # floor control
+    mcvideo:
+      rtpPort: 7000    # audio
+      floorPort: 7200  # transmission control
+      videoPort: 7400  # video
+
+# Optional services.
+mcdata:
+  enabled: true
+mcvideo:
+  enabled: true
+
+persistence:
+  enabled: true
+  storageClass: ""     # "" the cluster's default; "-" no class
+  accessMode: ReadWriteOnce
+  # Keep the PersistentVolumeClaims on `helm uninstall` (users, groups, messages survive a reinstall).
+  keep: false
+  # Two volumes are shared by two pods: the device CRL (Credential Service writes, SIP core reads) and the user
+  # database projection (MCX Admin writes, MCPTT user database reads). ReadWriteOnce schedules each pair on one node;
+  # ReadWriteMany (with a storage class that has it) lets them run anywhere.
+  sharedAccessMode: ReadWriteOnce
+  sizes:
+    sip-db: 2Gi
+    idms: 256Mi
+    gms: 256Mi
+    cms: 256Mi
+    kms: 256Mi
+    lms: 256Mi
+    content: 2Gi
+    msgstore: 1Gi
+    notification: 256Mi
+    crl: 64Mi
+    userdb: 64Mi
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# OpenShift. The openMCX images and MySQL run as root, and hostPort needs host ports: with create true the chart makes
+# a SecurityContextConstraints for the release's service account (installing it needs cluster-admin). Otherwise bind
+# the service account to an SCC yourself (README.md, "OpenShift").
+openshift:
+  enabled: false
+  scc:
+    create: true
+
+# Pod placement and security for every pod (the edge pods add expose.nodeSelector).
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podSecurityContext: {}
+securityContext: {}
+
+# Resources per component, by name: sip-db, sip-core, idms, gms, cms, kms, lms, credentials, content-server,
+# message-store, notification-server, http-proxy, mcx-user-db, mcptt-server, mcdata-server, mcvideo-server, mcxadmin.
+resources: {}

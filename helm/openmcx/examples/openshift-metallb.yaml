@@ -1,0 +1,23 @@
+# OpenShift 4 with MetalLB (or another LoadBalancer provider) and SCTP enabled on the nodes (README.md):
+#
+#   oc new-project openmcx
+#   helm install openmcx helm/openmcx -n openmcx -f helm/openmcx/examples/openshift-metallb.yaml \
+#       --set externalAddress=<address from the MetalLB pool>
+#
+# Installing needs cluster-admin (the chart's SecurityContextConstraints).
+
+externalAddress: ""
+
+openshift:
+  enabled: true
+  scc:
+    create: true
+
+expose:
+  type: LoadBalancer
+  service:
+    annotations: {}
+    #  metallb.io/address-pool: openmcx
+
+persistence:
+  storageClass: ""

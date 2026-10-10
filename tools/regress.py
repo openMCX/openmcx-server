@@ -112,12 +112,17 @@ LABS = [
     ),
     # Raw requests from client-a's container: affiliation PUBLISH refusals and per-group outcome (TS 24.379 clause
     # 9.2.2.2.3, TS 24.282 clause 8.3.2.3, RFC 3903), and the digest, service authorisation (warning 101), CMS and
-    # IdMS refusals (sip_negative.py).
+    # IdMS refusals (sip_negative.py), session refresh by re-INVITE and the in-dialog affiliation status refresh.
     lab(
         'negative',
         'single',
         ['--private-call', '--mcdata'],
-        ['affiliation_publish_scenario', 'sip_negative_scenario'],
+        [
+            'affiliation_publish_scenario',
+            'sip_negative_scenario',
+            'reinvite_refresh_scenario',
+            'affiliation_refresh_scenario',
+        ],
         ['mcptt', 'mcdata', 'failure'],
     ),
     # TS 24.379 clauses 6.3.5.2, 6.3.5.3, 6.3.8.2 and 10.1.1.4.2: group calls refused by the group document and its

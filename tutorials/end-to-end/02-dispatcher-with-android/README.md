@@ -14,7 +14,7 @@ runs on tutorial 1's computer or on another computer on the same network, unchan
 - **Tutorial 1 done**: its system running, the phones activated as `alice` and `bob` in the group `operations`.
 - **Docker** with Docker Compose v2 on the dispatcher's computer (tutorial 1's, or another one).
 - **A browser** on the dispatcher's computer, with a microphone and a speaker or headset.
-- Nothing to compile: the tutorial uses the **prebuilt image from Docker Hub** (`openmcx/openmcx-dispatcher:v1`). To
+- Nothing to compile: the tutorial uses the **prebuilt image from Docker Hub** (`openmcx/openmcx-dispatcher:1.0.0`). To
   build it yourself, see [Build](https://github.com/openMCX/openmcx-client#build) in openmcx-client, then set
   `OPENMCX_IMAGE_PREFIX=` (empty) and your tag in `.env`.
 
@@ -41,7 +41,7 @@ NAME                 STATUS
 openmcx-dispatcher   Up 10 seconds (healthy)
 ```
 
-The image is `openmcx/openmcx-dispatcher:v1` from Docker Hub: the openMCX client engine and the dispatcher's web
+The image is `openmcx/openmcx-dispatcher:1.0.0` from Docker Hub: the openMCX client engine and the dispatcher's web
 service. The position has no user yet; it gets one in step 4.
 
 ## 3. Create the dispatcher user

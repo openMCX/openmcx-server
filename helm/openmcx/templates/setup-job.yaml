@@ -1,0 +1,140 @@
+{{- /*
+config.generate: before install and upgrade, a Job makes the configuration Secret when it does not exist: the
+tutorial's setup (openmcx-setup image) for externalAddress, with the chart's external ports. The Secret is not part
+of the release, so that it outlives an uninstall (the activated phones trust its CA).
+*/ -}}
+{{- if .Values.config.generate }}
+{{- $name := printf "%s-openmcx-setup" .Release.Name | trunc 63 | trimSuffix "-" }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "openmcx.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "openmcx.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+rules:
+  # Read only the configuration Secret; create it (create cannot be limited to a name).
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ include "openmcx.configSecret" . }}]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "openmcx.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "openmcx.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+data:
+  openmcx-config.py: |
+    {{- .Files.Get "files/openmcx-config.py" | nindent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "openmcx.componentLabels" (dict "root" . "name" "setup") | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        {{- include "openmcx.componentLabels" (dict "root" . "name" "setup") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $name }}
+      restartPolicy: Never
+      enableServiceLinks: false
+      {{- with .Values.images.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: setup
+          image: {{ include "openmcx.image" (dict "root" . "program" "openmcx-setup") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: [python3, /scripts/openmcx-config.py]
+          workingDir: /tmp
+          env:
+            - {name: HOST_IP, value: {{ include "openmcx.externalAddress" . | quote }}}
+            - {name: OPENMCX_SECRET, value: {{ include "openmcx.configSecret" . | quote }}}
+            - {name: OPENMCX_PORTS, value: {{ .Values.expose.ports | toJson | quote }}}
+            - name: OPENMCX_MEDIA
+              value: {{ dict "mcptt" .Values.expose.media.mcptt "mcvideo" .Values.expose.media.mcvideo | toJson | quote }}
+            - {name: HOME, value: /tmp}
+          volumeMounts:
+            - {name: scripts, mountPath: /scripts, readOnly: true}
+            - {name: work, mountPath: /work}
+            - {name: tmp, mountPath: /tmp}
+          {{- with .Values.config.setupSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.config.setupResources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ $name }}
+        - name: work
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+{{- end }}

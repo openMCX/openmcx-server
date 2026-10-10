@@ -19,7 +19,7 @@ phones on WLAN, gets no request and its calls work as before (TS 24.379 clause 4
   tutorials 3 and 4) must be **stopped**: tutorial 5 runs its own system with the same ports.
 - **A Linux computer** with Docker and Docker Compose v2, about 8 CPU cores free (the rfsimulator's eNB and UE keep
   several cores busy) and **sudo** (step 3).
-- **The images**, from Docker Hub: openMCX's (`openmcx/openmcx-*:v1`, as in tutorial 1, with Rx) and three patched
+- **The images**, from Docker Hub: openMCX's (`openmcx/openmcx-*:1.0.0`, as in tutorial 1, with Rx) and three patched
   images:
   - `openmcx/open5gs:2.8.0-mcx`: Open5GS v2.8.0 for every EPC function, with a PCRF change: an MCPTT AF session's
     audio gets QCI 65 (and an MCVideo session's video QCI 67), as TS 23.379 clause 5.7.3 asks, instead of the QCI 1

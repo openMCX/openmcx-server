@@ -28,7 +28,7 @@ services:
   # One-off: writes ./config (a new CA, the users, the servers and MCX Admin) for HOST_IP. Not started by `up`.
   setup:
     container_name: openmcx-setup
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-setup:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-setup:${OPENMCX_TAG:-1.0.0}
     profiles: [setup]
     environment:
       HOST_IP: ${HOST_IP:?set HOST_IP in .env to this computer's address on the Wi-Fi}
@@ -56,7 +56,7 @@ services:
       retries: 40
   sip-core:
     container_name: openmcx-sip-core
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-kamailio:${KAMAILIO_TAG:-6.1.4-2}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-kamailio:${OPENMCX_TAG:-1.0.0}
     command: [-DD, -E, -A, CLIENT_SDP_CHECK, -A, CORE_RPC, -f, /config/kamailio.cfg]
     ports: ['5061:5061']
     volumes:
@@ -80,7 +80,7 @@ services:
   # message store, notification server; the HTTP proxy in front of them for the phones; the MCPTT user database.
   idms:
     container_name: openmcx-idms
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -115,7 +115,7 @@ services:
       start_period: 10s
   gms:
     container_name: openmcx-gms
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -149,7 +149,7 @@ services:
       start_period: 10s
   cms:
     container_name: openmcx-cms
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -183,7 +183,7 @@ services:
       start_period: 10s
   kms:
     container_name: openmcx-kms
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -218,7 +218,7 @@ services:
       start_period: 10s
   lms:
     container_name: openmcx-lms
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -252,7 +252,7 @@ services:
       start_period: 10s
   credentials:
     container_name: openmcx-credentials
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -292,7 +292,7 @@ services:
       start_period: 10s
   content-server:
     container_name: openmcx-content-server
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -326,7 +326,7 @@ services:
       start_period: 10s
   message-store:
     container_name: openmcx-message-store
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -360,7 +360,7 @@ services:
       start_period: 10s
   notification-server:
     container_name: openmcx-notification-server
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
     command:
     - --role
@@ -392,7 +392,7 @@ services:
       start_period: 10s
   http-proxy:
     container_name: openmcx-http-proxy
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-http-proxy:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-http-proxy:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-http-proxy]
     command: [--config, /config/http-proxy.json, --tls-cert, /config/tls/http-proxy.crt, --tls-key, /config/tls/http-proxy.key, --ca-file, /config/tls/ca.crt]
     init: true
@@ -424,7 +424,7 @@ services:
       start_period: 10s
   mcx-user-db:
     container_name: openmcx-mcx-user-db
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-user-db:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-user-db:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-user-db]
     command: [--config, /shared/userdb.json, --diameter-config, /config/diameter-user-db.conf, --watch]
     init: true
@@ -451,7 +451,7 @@ services:
   # The three MC servers.
   mcptt-server:
     container_name: openmcx-mcptt-server
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcptt-server:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcptt-server:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/openmcx-mcptt-server]
     command: [--config, /config/mcptt-server.json]
     init: true
@@ -483,7 +483,7 @@ services:
       start_period: 10s
   mcdata-server:
     container_name: openmcx-mcdata-server
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcdata-server:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcdata-server:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/openmcx-mcdata-server]
     command: [--config, /config/mcdata-server.json]
     init: true
@@ -513,7 +513,7 @@ services:
       start_period: 10s
   mcvideo-server:
     container_name: openmcx-mcvideo-server
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcvideo-server:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcvideo-server:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/openmcx-mcvideo-server]
     command: [--config, /config/mcvideo-server.json]
     init: true
@@ -544,7 +544,7 @@ services:
   # MCX Admin: web console and API for users and groups; activation codes for the phones.
   mcxadmin:
     container_name: openmcx-mcxadmin
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-admin:${ADMIN_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-admin:${OPENMCX_TAG:-1.0.0}
     command: [--config, /config/mcxadmin.json, --seed, /config/site.json]
     ports: ['8446:8443']
     volumes:

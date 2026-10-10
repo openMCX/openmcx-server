@@ -59,12 +59,12 @@ Recorded on **2026-09-23** against image `openmcx:0.47-mcdata` (`72745e819dbc`),
 
 | ID | Scenario | Result evidence |
 |---|---|---|
-| ES-01 | The group document allows enhanced status and names the three operational values | [Scenario report](../../artifacts/status47-lab/artifacts/integration/mcdata-status-results.json) |
+| ES-01 | The group document allows enhanced status and names the three operational values | Scenario report (`artifacts/status47-lab/artifacts/integration/mcdata-status-results.json`) |
 | ES-02 | A status is accepted with 202 and every other affiliated member renders "On scene" from its own group document; the sender does not receive it; another member reports "En route" | Same report |
 | ES-03 | The client refuses a group without `<mcdata-allow-enhanced-status>` and an id the group does not know | Same report |
 | ES-04 | An id without a matching operational value, sent with the test aid, is relayed by the server and discarded by each member without being rendered | Same report |
 | ES-05 | A member without transmit permission on the group is rejected with 403/201 | Same report |
-| ES-06 | SIP wire checks (6), with the DATA PAYLOAD decoded independently of the C++ codec: a `group-sds` to the PSI with one ENHANCED STATUS payload carrying the id, the ids sent, the delivery of the same payload to each member with the calling group and the calling user | [Wire report](../../artifacts/status47-lab/artifacts/integration/mcdata-status-sip-wire.json), [capture](../../artifacts/status47-lab/artifacts/integration/mcdata-status.pcap) |
+| ES-06 | SIP wire checks (6), with the DATA PAYLOAD decoded independently of the C++ codec: a `group-sds` to the PSI with one ENHANCED STATUS payload carrying the id, the ids sent, the delivery of the same payload to each member with the calling group and the calling user | Wire report (`artifacts/status47-lab/artifacts/integration/mcdata-status-sip-wire.json`), capture (`artifacts/status47-lab/artifacts/integration/mcdata-status.pcap`) |
 | ES-07 | Unit tests: the enhanced status elements of a group document, and the rejection of an invalid flag and of a missing or repeated id (`test_protocol`); the GMS serving them, with XML escaping (`go test`) | Image build and `go test ./...` |
 
 ## Coverage gaps

@@ -18,7 +18,7 @@ Back to the [MCVideo test index](../MCVIDEO_TEST.md). Architecture: MCVideo desi
 |---|---|---|
 | Authorisation | Token introspection; MCVideo ID from the token, client ID and SIP identity must match; 403 `101` otherwise; the token's subject stays the MCPTT ID | 24.281 §7.2.1A, §7.2.2, §7.3.3 |
 | Registration | One Contact with both MC services' feature tags and ICSIs | §7.1, §7.2.1AA |
-| Affiliation | Status subscription first; PIDF in the MCVideo namespace with `p-id`; MCVideo membership from the GMS; 403 for a non-member or another service's document; Expires 0 de-affiliates | §8.2.1.2, §8.2.1.3, §8.2.2.2.3, §8.3.1 |
+| Affiliation | Status subscription first; PIDF in the MCVideo namespace with `p-id`; MCVideo membership from the GMS; a group the user is not a member of left out of the NOTIFY (200 to the PUBLISH), 403 for another service's document; Expires 0 de-affiliates | §8.2.1.2, §8.2.1.3, §8.2.2.2.3, §8.3.1 |
 | NOTIFY `p-id` | The NOTIFY a PUBLISH triggers carries that PUBLISH's `p-id` | §8.2.2.2.5 step d |
 | MCPTT | Unchanged beside MCVideo, with two spec corrections made in the shared core: a failed authorisation carries warning `101` (TS 24.379 §7.3.3 step 6) and the NOTIFY echoes the handled `p-id` (§9.2.2.2.5) | TS 24.379 §7.3.3, §9.2.2.2.5 |
 

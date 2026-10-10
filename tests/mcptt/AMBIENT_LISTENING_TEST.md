@@ -88,7 +88,7 @@ Recorded on **2026-09-22** against image `openmcx:0.21-fixes` (`a2ddb25a01bf`), 
 
 | ID | Scenario | Checks | Result evidence |
 |---|---|---|---|
-| AL-01 | Remote-init: client-a listens to client-b. Server session records the type, the listening and listened-to users and the floor owner. Client-a caches its role, may release and saw a null alert in the 183. Client-b shows no call but is transmitting, with no release permission. Client-a gets Floor Taken naming client-b with no permission to request | 5 | [Scenario report](../../artifacts/fixes-lab/artifacts/integration/ambient-listening-results.json) |
+| AL-01 | Remote-init: client-a listens to client-b. Server session records the type, the listening and listened-to users and the floor owner. Client-a caches its role, may release and saw a null alert in the 183. Client-b shows no call but is transmitting, with no release permission. Client-a gets Floor Taken naming client-b with no permission to request | 5 | Scenario report (`artifacts/fixes-lab/artifacts/integration/ambient-listening-results.json`) |
 | AL-02 | Client-b's speech reaches client-a (150+ packets); no other client receives it | 2 | Same report |
 | AL-03 | Client-a's floor request is denied with cause 5; the floor stays with client-b | 2 | Same report |
 | AL-04 | `hangup` by the listened-to user of a remote-init call changes nothing | 1 | Same report |
@@ -102,8 +102,8 @@ Recorded on **2026-09-22** against image `openmcx:0.21-fixes` (`a2ddb25a01bf`), 
 | AL-11 | Private call timer expiry releases the call with `private-call-expiry` after 30.1 s (not before 29 s) | 3 | Same report |
 | AL-12 | Rejections with no ambient session created: requester without the remote-init ruleset (154); a local-only user asking for remote-init (154); target outside `<PrivateCall>` (144); uncallable target (127) | 8 | Same report |
 | AL-13 | An ambient request to a user already in a private call gets 480 and does not disturb that call | 4 | Same report |
-| AL-14 | SIP wire checks (12): originating INVITE content; `recvonly`/`sendonly` by type; listened-to invitee headers and offer; listening invitee Feature-Caps and offer; 200 OK Feature-Caps and direction; 183 with null Alert-Info; 403/154, 403/144 and 403/127; 480 for a busy user; each release reason on the listening user's BYE; release reasons only in ambient dialogs. The capture held 11 originating INVITEs (9 remote-init, 2 local-init) and 6 terminating INVITEs | 12 | [Wire report](../../artifacts/fixes-lab/artifacts/integration/ambient-listening-sip-wire.json), [capture](../../artifacts/fixes-lab/artifacts/integration/ambient-listening.pcap) |
-| AL-15 | Regression on the same image: the all-call-types run on one server instance (see the [test index](../MCPTT_TEST.md#one-server-for-all-call-types)), private services 32 | — | [All-types run](../../artifacts/all-types-lab/run.log) |
+| AL-14 | SIP wire checks (12): originating INVITE content; `recvonly`/`sendonly` by type; listened-to invitee headers and offer; listening invitee Feature-Caps and offer; 200 OK Feature-Caps and direction; 183 with null Alert-Info; 403/154, 403/144 and 403/127; 480 for a busy user; each release reason on the listening user's BYE; release reasons only in ambient dialogs. The capture held 11 originating INVITEs (9 remote-init, 2 local-init) and 6 terminating INVITEs | 12 | Wire report (`artifacts/fixes-lab/artifacts/integration/ambient-listening-sip-wire.json`), capture (`artifacts/fixes-lab/artifacts/integration/ambient-listening.pcap`) |
+| AL-15 | Regression on the same image: the all-call-types run on one server instance (see the [test index](../MCPTT_TEST.md#one-server-for-all-call-types)), private services 32 | — | All-types run (`artifacts/all-types-lab/run.log`) |
 
 An earlier run on `openmcx:0.20-ambient` (before AL-09a was added) passed 48 checks and the same 12 wire checks.
 

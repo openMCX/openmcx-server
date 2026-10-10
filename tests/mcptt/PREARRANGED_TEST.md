@@ -90,11 +90,11 @@ Membership changes produce further conference notifications. The queue scenario 
 
 ## Captured evidence
 
-- [Lifecycle and simultaneous groups](../../artifacts/prearranged-lab/artifacts/integration/prearranged-results.json)
-- [Reject, CANCEL, timeout and refresh](../../artifacts/prearranged-lab/artifacts/integration/prearranged-failure-results.json)
-- [Queued-floor behavior](../../artifacts/prearranged-lab/artifacts/integration/prearranged-floor-results.json)
-- [SIP and media-isolation verification](../../artifacts/prearranged-lab/artifacts/integration/prearranged-v6-wire.json)
-- [Floor field and TShark checks](../../artifacts/prearranged-lab/artifacts/integration/prearranged-v6-floor-wire.json)
-- [Clear SIP, RTP and RTCP capture](../../artifacts/prearranged-lab/artifacts/integration/prearranged-v6.pcap)
+- Lifecycle and simultaneous groups (`artifacts/prearranged-lab/artifacts/integration/prearranged-results.json`)
+- Reject, CANCEL, timeout and refresh (`artifacts/prearranged-lab/artifacts/integration/prearranged-failure-results.json`)
+- Queued-floor behavior (`artifacts/prearranged-lab/artifacts/integration/prearranged-floor-results.json`)
+- SIP and media-isolation verification (`artifacts/prearranged-lab/artifacts/integration/prearranged-v6-wire.json`)
+- Floor field and TShark checks (`artifacts/prearranged-lab/artifacts/integration/prearranged-v6-floor-wire.json`)
+- Clear SIP, RTP and RTCP capture (`artifacts/prearranged-lab/artifacts/integration/prearranged-v6.pcap`)
 
 The v6 capture contains 98 RTCP messages with zero TShark expert diagnostics, two accepted SIP refreshes and 46 conference notifications. Queue cancellation completed in 197 ms; an unconfirmed queued grant sent no RTP. These results establish the scenarios above, not complete standards coverage.

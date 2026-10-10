@@ -82,7 +82,7 @@ Recorded on **2026-09-21** against image `openmcx:0.4-chat` (`8bbbd3fed314`), bu
 
 | ID | Scenario | Assertions | Result evidence |
 |---|---|---|---|
-| CH-01 | The first joiner creates a chat session alone; no other member is invited (checked for 2 s) | 2 | [Scenario report](../../artifacts/chat-lab/artifacts/integration/chat-call-results.json) |
+| CH-01 | The first joiner creates a chat session alone; no other member is invited (checked for 2 s) | 2 | Scenario report (`artifacts/chat-lab/artifacts/integration/chat-call-results.json`) |
 | CH-02 | A second member joins the same session URI; both conference rosters list both members | 2 | Same report |
 | CH-03 | Floor contention (competing request denied) and two-way decoded speech (337 and 355 RTP packets relayed in the capture) | 7 | Same report |
 | CH-04 | A third member joins and the roster shows three; a fourth join beyond `max_participants` gets 486 with warning 122 | 3 | Same report |
@@ -91,12 +91,12 @@ Recorded on **2026-09-21** against image `openmcx:0.4-chat` (`8bbbd3fed314`), bu
 | CH-07 | A lone joiner is released by the 20 s inactivity timer (observed 20.04 s) | 2 | Same report |
 | CH-08 | Prearranged request on the chat group → 403 warning 118; chat request on the prearranged group → 403 warning 117 | 3 | Same report |
 | CH-09 | A chat session and a prearranged group call run concurrently with independent floor owners; ending the group call leaves the chat session, which then releases when one participant remains | 7 | Same report |
-| CH-10 | SIP and floor wire checks (11): chat INVITEs to the service URI; zero server-originated chat INVITEs; 200 without 180 and an `isfocus` session Contact on every join; 4 joins sharing one session URI; warnings 122, 117 and 118; conference NOTIFYs for the chat group; 3 server-originated releases; A-bit floor with Permission to Request 1 | 11 | [SIP/floor wire report](../../artifacts/chat-lab/artifacts/integration/chat-call-sip-wire.json) |
-| CH-11 | Independent floor/RTP decode: Request, Granted, Taken, Deny, Release, Idle and ACK; 8 Audio SSRC fields validated | decoder | [Floor wire report](../../artifacts/chat-lab/artifacts/integration/chat-call-floor-wire.json) |
-| CH-12 | Regression on the same image, run after adding the broadcast and private-call policies to this fixture: prearranged lifecycle 21, failure/refresh 15, broadcast 32, private call 53 | 121 | [Lifecycle](../../artifacts/chat-lab/artifacts/integration/prearranged-results.json), [failure](../../artifacts/chat-lab/artifacts/integration/prearranged-failure-results.json), [broadcast](../../artifacts/chat-lab/artifacts/integration/broadcast-call-results.json), [private](../../artifacts/chat-lab/artifacts/integration/private-call-results.json) |
+| CH-10 | SIP and floor wire checks (11): chat INVITEs to the service URI; zero server-originated chat INVITEs; 200 without 180 and an `isfocus` session Contact on every join; 4 joins sharing one session URI; warnings 122, 117 and 118; conference NOTIFYs for the chat group; 3 server-originated releases; A-bit floor with Permission to Request 1 | 11 | SIP/floor wire report (`artifacts/chat-lab/artifacts/integration/chat-call-sip-wire.json`) |
+| CH-11 | Independent floor/RTP decode: Request, Granted, Taken, Deny, Release, Idle and ACK; 8 Audio SSRC fields validated | decoder | Floor wire report (`artifacts/chat-lab/artifacts/integration/chat-call-floor-wire.json`) |
+| CH-12 | Regression on the same image, run after adding the broadcast and private-call policies to this fixture: prearranged lifecycle 21, failure/refresh 15, broadcast 32, private call 53 | 121 | Lifecycle (`artifacts/chat-lab/artifacts/integration/prearranged-results.json`), failure (`artifacts/chat-lab/artifacts/integration/prearranged-failure-results.json`), broadcast (`artifacts/chat-lab/artifacts/integration/broadcast-call-results.json`), private (`artifacts/chat-lab/artifacts/integration/private-call-results.json`) |
 | CH-13 | Unit and service tests: Go `TestGMSServesChatGroupTypeAndRejectsUnknownTypes`; native suite 17/17; Go tests pass | native/Go | `tools/mcx test` |
 
-The capture of every chat scenario is [chat-call.pcap](../../artifacts/chat-lab/artifacts/integration/chat-call.pcap); the regression runs came after it. [Container identities](../../artifacts/chat-lab/artifacts/integration/chat-containers.txt) record the deployment. TShark was unavailable, so external Wireshark dissection was not run.
+The capture of every chat scenario is chat-call.pcap (`artifacts/chat-lab/artifacts/integration/chat-call.pcap`); the regression runs came after it. Container identities (`artifacts/chat-lab/artifacts/integration/chat-containers.txt`) record the deployment. TShark was unavailable, so external Wireshark dissection was not run.
 
 ### Rerun with emergency, implicit affiliation and chat variants — 2026-09-22
 

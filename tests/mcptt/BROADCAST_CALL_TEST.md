@@ -69,7 +69,7 @@ Recorded on **2026-09-21** against image `openmcx:0.3-broadcast` (`8041823d997c`
 
 | ID | Scenario | Assertions | Result evidence |
 |---|---|---|---|
-| BC-01 | `call broadcast` reaches all four clients; `call_type` broadcast on every leg; initiator recorded by the server | 1 | [Scenario report](../../artifacts/broadcast-lab/artifacts/integration/broadcast-call-results.json) |
+| BC-01 | `call broadcast` reaches all four clients; `call_type` broadcast on every leg; initiator recorded by the server | 1 | Scenario report (`artifacts/broadcast-lab/artifacts/integration/broadcast-call-results.json`) |
 | BC-02 | No client subscribes to conference events | 1 | Same report |
 | BC-03 | A receiver's request on an idle floor is denied with cause 5 | 1 | Same report |
 | BC-04 | Initiator granted; receivers see Floor Taken with B-bit and Permission to Request 0; a receiver's request during transmission is denied with cause 5; all three receivers get the speech (337 RTP packets each in the capture); the initiator receives no media | 5 | Same report |
@@ -79,12 +79,12 @@ Recorded on **2026-09-21** against image `openmcx:0.3-broadcast` (`8041823d997c`
 | BC-08 | A broadcast while a normal group call runs is rejected with 486 ("group call in progress"); the running call is undisturbed | 4 | Same report |
 | BC-09 | A normal call afterwards keeps normal floor rules: another member is granted, Floor Taken has the A-bit and Permission to Request 1, and speech is delivered | 5 | Same report |
 | BC-10 | Late entry: a member who affiliates during a broadcast joins as a receiver, gets the speech, and the call is released when the transmission ends | 5 | Same report |
-| BC-11 | SIP and floor wire checks (15): `broadcast-ind` on the originating INVITE, 9 fan-out INVITEs and the 200 OK; normal INVITEs omit it; 403, 486, and 480 with warning 105; server-originated BYEs release the initiators; B-bit on broadcast Granted/Taken/Deny/Idle and A-bit on normal ones; Permission to Request and Deny cause rules with zero violations | 15 | [SIP/floor wire report](../../artifacts/broadcast-lab/artifacts/integration/broadcast-call-sip-wire.json) |
-| BC-12 | Independent floor/RTP decode: every floor message type decodes; 11 Audio SSRC fields validated; per-receiver RTP relay counts | decoder | [Floor wire report](../../artifacts/broadcast-lab/artifacts/integration/broadcast-call-floor-wire.json) |
-| BC-13 | Regression on the same image: prearranged lifecycle (21 checks), reject/CANCEL/timeout/refresh (15 checks), and the full private-call scenario (53 checks, run after adding the private-call policies to this fixture) | 89 | [Lifecycle](../../artifacts/broadcast-lab/artifacts/integration/prearranged-results.json), [failure](../../artifacts/broadcast-lab/artifacts/integration/prearranged-failure-results.json), [private](../../artifacts/broadcast-lab/artifacts/integration/private-call-results.json) |
+| BC-11 | SIP and floor wire checks (15): `broadcast-ind` on the originating INVITE, 9 fan-out INVITEs and the 200 OK; normal INVITEs omit it; 403, 486, and 480 with warning 105; server-originated BYEs release the initiators; B-bit on broadcast Granted/Taken/Deny/Idle and A-bit on normal ones; Permission to Request and Deny cause rules with zero violations | 15 | SIP/floor wire report (`artifacts/broadcast-lab/artifacts/integration/broadcast-call-sip-wire.json`) |
+| BC-12 | Independent floor/RTP decode: every floor message type decodes; 11 Audio SSRC fields validated; per-receiver RTP relay counts | decoder | Floor wire report (`artifacts/broadcast-lab/artifacts/integration/broadcast-call-floor-wire.json`) |
+| BC-13 | Regression on the same image: prearranged lifecycle (21 checks), reject/CANCEL/timeout/refresh (15 checks), and the full private-call scenario (53 checks, run after adding the private-call policies to this fixture) | 89 | Lifecycle (`artifacts/broadcast-lab/artifacts/integration/prearranged-results.json`), failure (`artifacts/broadcast-lab/artifacts/integration/prearranged-failure-results.json`), private (`artifacts/broadcast-lab/artifacts/integration/private-call-results.json`) |
 | BC-14 | Unit tests: `test_floor` (literal B-bit Floor Taken with Permission to Request 0, Deny cause 5, rejection of B+A and B+D bits) and `test_protocol` (`broadcast-ind` round trip, absent means non-broadcast); native suite 17/17 | native | `tools/mcx test` |
 
-The capture of every broadcast scenario is [broadcast-call.pcap](../../artifacts/broadcast-lab/artifacts/integration/broadcast-call.pcap). The regression runs came after it and are not included. [Container identities](../../artifacts/broadcast-lab/artifacts/integration/broadcast-containers.txt) record the deployment. TShark was unavailable, so external Wireshark dissection was not run.
+The capture of every broadcast scenario is broadcast-call.pcap (`artifacts/broadcast-lab/artifacts/integration/broadcast-call.pcap`). The regression runs came after it and are not included. Container identities (`artifacts/broadcast-lab/artifacts/integration/broadcast-containers.txt`) record the deployment. TShark was unavailable, so external Wireshark dissection was not run.
 
 ### Rerun with hierarchies and override — 2026-09-22
 
@@ -98,7 +98,7 @@ Image `openmcx:0.17` (`7a42efef3b69`), fixture `--broadcast`, which adds a group
 
 ### Emergency and imminent-peril broadcast (H7) — 2026-09-22
 
-Image `openmcx:0.22-h7` (`ce0e1df78d04`), fixture `--broadcast`, which now also lets client-a and client-b raise and cancel emergency and imminent peril on the first group. The scenario made **72 assertions**, all **PASS**; BC-01–BC-17 repeat the earlier scenarios. SIP and floor wire checks: 21, all **PASS** with zero violations. Evidence: `artifacts/h7-broadcast-lab/artifacts/integration/` ([scenario](../../artifacts/h7-broadcast-lab/artifacts/integration/broadcast-call-results.json), [wire](../../artifacts/h7-broadcast-lab/artifacts/integration/broadcast-call-sip-wire.json), [capture](../../artifacts/h7-broadcast-lab/artifacts/integration/broadcast-call.pcap)).
+Image `openmcx:0.22-h7` (`ce0e1df78d04`), fixture `--broadcast`, which now also lets client-a and client-b raise and cancel emergency and imminent peril on the first group. The scenario made **72 assertions**, all **PASS**; BC-01–BC-17 repeat the earlier scenarios. SIP and floor wire checks: 21, all **PASS** with zero violations. Evidence: `artifacts/h7-broadcast-lab/artifacts/integration/` (scenario (`artifacts/h7-broadcast-lab/artifacts/integration/broadcast-call-results.json`), wire (`artifacts/h7-broadcast-lab/artifacts/integration/broadcast-call-sip-wire.json`), capture (`artifacts/h7-broadcast-lab/artifacts/integration/broadcast-call.pcap`)).
 
 | ID | Scenario | Assertions |
 |---|---|---|

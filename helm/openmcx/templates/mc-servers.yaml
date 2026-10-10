@@ -1,0 +1,104 @@
+{{- /*
+The MC servers: MCPTT (TS 24.379), MCData (TS 24.282) and MCVideo (TS 24.281). The MCPTT and MCVideo servers announce
+externalAddress and their own media ports in SDP: the phones send media to externalAddress on the same ports.
+*/ -}}
+{{- $root := . -}}
+{{- $m := .Values.expose.media -}}
+{{- $n := int $m.portsPerBase -}}
+{{- $exposed := ne .Values.expose.type "none" -}}
+{{- $servers := list
+  (dict "name" "mcptt-server" "program" "openmcx-mcptt-server" "config" "mcptt-server.json" "diameter" true "media" (list $m.mcptt.rtpPort $m.mcptt.floorPort)
+        "peers" (list "sip-core:5061" "idms:8443" "gms:8443" "cms:8443" "mcx-user-db:3868"))
+-}}
+{{- if .Values.mcdata.enabled }}
+{{- $servers = append $servers (dict "name" "mcdata-server" "program" "openmcx-mcdata-server" "config" "mcdata-server.json"
+        "peers" (list "sip-core:5061" "idms:8443" "gms:8443" "cms:8443" "content-server:8443")) }}
+{{- end }}
+{{- if .Values.mcvideo.enabled }}
+{{- $servers = append $servers (dict "name" "mcvideo-server" "program" "openmcx-mcvideo-server" "config" "mcvideo-server.json" "media" (list $m.mcvideo.rtpPort $m.mcvideo.floorPort $m.mcvideo.videoPort)
+        "peers" (list "sip-core:5061" "idms:8443" "gms:8443" "cms:8443")) }}
+{{- end }}
+{{- range $s := $servers }}
+{{- $edge := and $s.media $exposed }}
+{{- $items := dict $s.config $s.config "ca.crt" "tls/ca.crt" (printf "%s.crt" $s.name) (printf "tls/%s.crt" $s.name) (printf "%s.key" $s.name) (printf "tls/%s.key" $s.name) }}
+{{- if $s.diameter }}
+{{- $_ := set $items "diameter-server.conf" "diameter-server.conf" }}
+{{- end }}
+{{- $servicePorts := list (dict "name" "sip" "port" 5060) (dict "name" "sips" "port" 5061) }}
+{{- if $s.diameter }}
+{{- $servicePorts = concat $servicePorts (list (dict "name" "diameter" "port" 3869 "protocol" "SCTP") (dict "name" "diameter-tls" "port" 5869 "protocol" "SCTP")) }}
+{{- end }}
+---
+{{ include "openmcx.service" (dict "root" $root "name" $s.name "notReady" true "ports" $servicePorts) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $s.name }}
+  labels:
+    {{- include "openmcx.componentLabels" (dict "root" $root "name" $s.name "edge" $edge) | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "openmcx.selector" (dict "root" $root "name" $s.name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openmcx.componentLabels" (dict "root" $root "name" $s.name "edge" $edge) | nindent 8 }}
+    spec:
+      {{- include "openmcx.podSpec" (dict "root" $root "name" $s.name "edge" $edge) | nindent 6 }}
+      shareProcessNamespace: true
+      initContainers:
+        {{- /* The user database's SCTP port cannot be probed with nc: wait for the TCP peers only. */}}
+        {{- include "openmcx.waitFor" (dict "root" $root "peers" (without $s.peers "mcx-user-db:3868")) | nindent 8 }}
+      containers:
+        - name: {{ $s.name }}
+          image: {{ include "openmcx.image" (dict "root" $root "program" $s.program) }}
+          imagePullPolicy: {{ $root.Values.images.pullPolicy }}
+          command: [/usr/local/bin/{{ $s.program }}]
+          args: [--config, /config/{{ $s.config }}]
+          ports:
+            - {name: sip, containerPort: 5060, protocol: TCP}
+            - {name: sips, containerPort: 5061, protocol: TCP}
+            {{- if $s.diameter }}
+            - {name: diameter, containerPort: 3869, protocol: SCTP}
+            - {name: diameter-tls, containerPort: 5869, protocol: SCTP}
+            {{- end }}
+            {{- range $base := $s.media }}
+            {{- $ports := include "openmcx.mediaPorts" (dict "base" $base "count" $n) | fromYamlArray }}
+            {{- if $edge }}
+            {{- include "openmcx.edgePorts" (dict "root" $root "ports" $ports) | nindent 12 }}
+            {{- else }}
+            {{- range $ports }}
+            - {name: {{ .name }}, containerPort: {{ .containerPort }}, protocol: UDP}
+            {{- end }}
+            {{- end }}
+            {{- end }}
+          readinessProbe:
+            exec:
+              command: [python3, /healthcheck.py, /artifacts/{{ $s.name }}/status.json, ready]
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 5061
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: artifacts, mountPath: /artifacts/{{ $s.name }}}
+            - {name: run, mountPath: /run/mcx}
+          {{- include "openmcx.containerExtras" (dict "root" $root "name" $s.name) | nindent 10 }}
+      volumes:
+        {{- include "openmcx.configVolume" (dict "root" $root "name" "config" "items" $items) | nindent 8 }}
+        # The server's status file (readiness) and its recordings.
+        - name: artifacts
+          emptyDir: {}
+        - name: run
+          emptyDir: {medium: Memory}
+{{- end }}

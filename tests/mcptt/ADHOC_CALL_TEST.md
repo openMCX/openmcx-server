@@ -86,7 +86,7 @@ Recorded on **2026-09-21** against image `openmcx:0.6-adhoc` (`e29489f3ef0b`), b
 
 | ID | Scenario | Assertions | Result evidence |
 |---|---|---|---|
-| AH-01 | Listed users b and c are invited into one generated ad hoc group; c was deaffiliated beforehand and still joins (implicit affiliation); unlisted d is not invited | 3 | [Scenario report](../../artifacts/adhoc-lab/artifacts/integration/adhoc-call-results.json) |
+| AH-01 | Listed users b and c are invited into one generated ad hoc group; c was deaffiliated beforehand and still joins (implicit affiliation); unlisted d is not invited | 3 | Scenario report (`artifacts/adhoc-lab/artifacts/integration/adhoc-call-results.json`) |
 | AH-02 | Conference rosters list the three participants under the ad hoc group identity | 1 | Same report |
 | AH-03 | Floor contention and two-way decoded speech (337 and 355 RTP packets relayed in the capture) | 7 | Same report |
 | AH-04 | A participant leaves, the call continues with an updated roster, and the participant rejoins the same session and group by session identity | 3 | Same report |
@@ -96,12 +96,12 @@ Recorded on **2026-09-21** against image `openmcx:0.6-adhoc` (`e29489f3ef0b`), b
 | AH-08 | Manual invitee: the initiator connects when another invitee answers, and the manual invitee joins after `answer`; a decline (480 + warning 110) leaves the call running with the others | 6 | Same report |
 | AH-09 | An ad hoc call alongside a prearranged group call, with independent floors; ending the ad hoc call keeps the group call | 7 | Same report |
 | AH-10 | The TNG3 call timer (30 s) releases the call while speech flows (observed 30.03 s) | 2 | Same report |
-| AH-11 | SIP and floor wire checks (15): participant list only on originating INVITEs; invitee INVITEs with the ad hoc group, initiator and `isfocus` Contact and no `Priv-Answer-Mode`; 200 returns the group identity; 6 distinct identities for 6 calls; rejoin 200; warnings 185/189/187 and 480; invitee decline seen; conference NOTIFY entity is the ad hoc group; server-originated releases; A-bit floor | 15 | [SIP/floor wire report](../../artifacts/adhoc-lab/artifacts/integration/adhoc-call-sip-wire.json) |
-| AH-12 | Independent floor/RTP decode: all floor types present, 12 Audio SSRC fields validated | decoder | [Floor wire report](../../artifacts/adhoc-lab/artifacts/integration/adhoc-call-floor-wire.json) |
-| AH-13 | Regression on the same image, run after adding the private-call, broadcast and chat settings to this fixture: prearranged lifecycle 21, failure/refresh 15, broadcast 32, private 53, chat 35 | 156 | [Lifecycle](../../artifacts/adhoc-lab/artifacts/integration/prearranged-results.json), [failure](../../artifacts/adhoc-lab/artifacts/integration/prearranged-failure-results.json), [broadcast](../../artifacts/adhoc-lab/artifacts/integration/broadcast-call-results.json), [private](../../artifacts/adhoc-lab/artifacts/integration/private-call-results.json), [chat](../../artifacts/adhoc-lab/artifacts/integration/chat-call-results.json) |
+| AH-11 | SIP and floor wire checks (15): participant list only on originating INVITEs; invitee INVITEs with the ad hoc group, initiator and `isfocus` Contact and no `Priv-Answer-Mode`; 200 returns the group identity; 6 distinct identities for 6 calls; rejoin 200; warnings 185/189/187 and 480; invitee decline seen; conference NOTIFY entity is the ad hoc group; server-originated releases; A-bit floor | 15 | SIP/floor wire report (`artifacts/adhoc-lab/artifacts/integration/adhoc-call-sip-wire.json`) |
+| AH-12 | Independent floor/RTP decode: all floor types present, 12 Audio SSRC fields validated | decoder | Floor wire report (`artifacts/adhoc-lab/artifacts/integration/adhoc-call-floor-wire.json`) |
+| AH-13 | Regression on the same image, run after adding the private-call, broadcast and chat settings to this fixture: prearranged lifecycle 21, failure/refresh 15, broadcast 32, private 53, chat 35 | 156 | Lifecycle (`artifacts/adhoc-lab/artifacts/integration/prearranged-results.json`), failure (`artifacts/adhoc-lab/artifacts/integration/prearranged-failure-results.json`), broadcast (`artifacts/adhoc-lab/artifacts/integration/broadcast-call-results.json`), private (`artifacts/adhoc-lab/artifacts/integration/private-call-results.json`), chat (`artifacts/adhoc-lab/artifacts/integration/chat-call-results.json`) |
 | AH-14 | Unit and service tests: `test_adhoc_call` (multi-entry resource list; warnings 185/186/187/189), Go `TestCMSServesAdhocCallPolicy`; native suite 18/18; Go tests pass | native/Go | `tools/mcx test` |
 
-The capture of every ad hoc scenario is [adhoc-call.pcap](../../artifacts/adhoc-lab/artifacts/integration/adhoc-call.pcap); the regression runs came after it. [Container identities](../../artifacts/adhoc-lab/artifacts/integration/adhoc-containers.txt) record the deployment. TShark was unavailable, so external Wireshark dissection was not run.
+The capture of every ad hoc scenario is adhoc-call.pcap (`artifacts/adhoc-lab/artifacts/integration/adhoc-call.pcap`); the regression runs came after it. Container identities (`artifacts/adhoc-lab/artifacts/integration/adhoc-containers.txt`) record the deployment. TShark was unavailable, so external Wireshark dissection was not run.
 
 ### Rerun with priority, criteria, modification and alerts — 2026-09-22
 
@@ -117,7 +117,7 @@ Functional-alias entries and broadcast ad hoc calls are recorded in the [functio
 
 ### Emergency broadcast ad hoc call (H7) — 2026-09-22
 
-Image `openmcx:0.22-h7` (`ce0e1df78d04`), fixture `--adhoc`. The scenario made **84 assertions**, all **PASS**; AH-01–AH-17 repeat the earlier run. Evidence: [scenario report](../../artifacts/h7-adhoc-lab/artifacts/integration/adhoc-call-results.json).
+Image `openmcx:0.22-h7` (`ce0e1df78d04`), fixture `--adhoc`. The scenario made **84 assertions**, all **PASS**; AH-01–AH-17 repeat the earlier run. Evidence: scenario report (`artifacts/h7-adhoc-lab/artifacts/integration/adhoc-call-results.json`).
 
 | ID | Scenario | Assertions |
 |---|---|---|

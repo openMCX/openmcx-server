@@ -65,6 +65,7 @@ It is not an interoperability-certified implementation: see the current limits i
 
 - **[Feature list](docs/FEATURES.md)**: what each service supports, how it is verified, and the current limits
 - **[Using the lab](docs/USAGE.md)**: build, run, client commands, verification and SIP debugging
+- **[Developer guide](docs/DEVELOPER_GUIDE.md)**: architecture, source tree, request flow, state machines, testing and workflow
 - **Tests**: [MCPTT](tests/README.md), [MCData](tests/MCDATA_TEST.md) and [MCVideo](tests/MCVIDEO_TEST.md) test indexes, with call flows and evidence
 - **Acceptance matrices**: [MCPTT](docs/architecture/mcptt-standards-and-acceptance.md), [MCData](docs/architecture/mcdata-standards-and-acceptance.md) and [MCVideo](docs/architecture/mcvideo-standards-and-acceptance.md)
 

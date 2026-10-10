@@ -1,0 +1,23 @@
+# NodePort: every external port in the cluster's NodePort range (30000-32767). The servers announce their own media
+# ports, so the media ranges move too; the setup Job writes these ports into the configuration (activation codes,
+# MCX Admin, IdMS links, SDP).
+
+externalAddress: ""   # the address of the node the edge pods run on
+
+expose:
+  type: NodePort
+  ports:
+    sip: 30561
+    idms: 30443
+    httpProxy: 30444
+    kms: 30445
+    admin: 30446
+    credentials: 30447
+  media:
+    mcptt:
+      rtpPort: 31000
+      floorPort: 31100
+    mcvideo:
+      rtpPort: 31200
+      floorPort: 31300
+      videoPort: 31400

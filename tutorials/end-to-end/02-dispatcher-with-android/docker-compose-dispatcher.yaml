@@ -17,7 +17,7 @@ name: openmcx-dispatcher
 services:
   dispatcher:
     container_name: openmcx-dispatcher
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-1.0.0}
     network_mode: host
     # The SIP core's name, as the activation package names it, at the system's address (its certificate names
     # sip-core); the other services are reached through the package's address map.

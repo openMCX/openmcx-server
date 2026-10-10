@@ -104,7 +104,7 @@ services:
       retries: 100
   dispatcher:
     container_name: openmcx-dispatcher
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-v1}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-1.0.0}
     network_mode: service:oai-nr-ue
     depends_on:
       ue-route:

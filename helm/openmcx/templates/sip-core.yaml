@@ -1,0 +1,74 @@
+{{- /*
+The SIP core (Kamailio). The phones reach it on externalAddress:expose.ports.sip; it checks each client's SDP address
+against the connection's source (CLIENT_SDP_CHECK), so the external traffic keeps the phone's address.
+*/ -}}
+{{- $edge := ne .Values.expose.type "none" -}}
+{{ include "openmcx.service" (dict "root" . "name" "sip-core" "notReady" true "ports" (list (dict "name" "sip" "port" 5060) (dict "name" "sips" "port" 5061))) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sip-core
+  labels:
+    {{- include "openmcx.componentLabels" (dict "root" . "name" "sip-core" "edge" $edge) | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "openmcx.selector" (dict "root" . "name" "sip-core") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openmcx.componentLabels" (dict "root" . "name" "sip-core" "edge" $edge) | nindent 8 }}
+    spec:
+      {{- include "openmcx.podSpec" (dict "root" . "name" "sip-core" "edge" $edge "with" "credentials") | nindent 6 }}
+      initContainers:
+        {{- include "openmcx.waitFor" (dict "root" . "peers" (list "sip-db:3306")) | nindent 8 }}
+        # The device CRL, from the configuration if the Credential Service has not written it yet.
+        - name: seed-crl
+          image: {{ .Values.images.wait }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: [sh, -c, 'test -e /crl/devices.crl || { cp /seed/devices.crl /crl/ && chmod 666 /crl/devices.crl; }; chmod 777 /crl || true']
+          volumeMounts:
+            - {name: crl, mountPath: /crl}
+            - {name: seed, mountPath: /seed}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      containers:
+        - name: kamailio
+          image: {{ include "openmcx.image" (dict "root" . "program" "openmcx-kamailio" "tag" .Values.images.tag) }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          args: [-DD, -E, -A, CLIENT_SDP_CHECK, -A, CORE_RPC, -f, /config/kamailio.cfg]
+          ports:
+            - {name: sip, containerPort: 5060, protocol: TCP}
+            {{- if $edge }}
+            {{- include "openmcx.edgePorts" (dict "root" . "ports" (list (dict "name" "ext-sip" "containerPort" 5061 "external" .Values.expose.ports.sip))) | nindent 12 }}
+            {{- else }}
+            - {name: sips, containerPort: 5061, protocol: TCP}
+            {{- end }}
+          readinessProbe:
+            exec:
+              command: [sh, -c, 'test -r /proc/1/comm && nc -z 127.0.0.1 5061']
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 5061
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: crl, mountPath: /crl, readOnly: true}
+          {{- include "openmcx.containerExtras" (dict "root" . "name" "sip-core") | nindent 10 }}
+      volumes:
+        {{- include "openmcx.configVolume" (dict "root" . "name" "config" "items" (dict "kamailio.cfg" "kamailio.cfg" "tls.cfg" "tls.cfg" "ca.crt" "tls/ca.crt" "sip-core.crt" "tls/sip-core.crt" "sip-core.key" "tls/sip-core.key")) | nindent 8 }}
+        {{- include "openmcx.configVolume" (dict "root" . "name" "seed" "items" (dict "devices.crl" "devices.crl")) | nindent 8 }}
+        - name: crl
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-crl

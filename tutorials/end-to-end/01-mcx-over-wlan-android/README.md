@@ -16,7 +16,7 @@ on the same Wi-Fi as the computer activate with them. Then they call, chat and m
   the phones. Its firewall must let the phones reach the ports below.
 - Two Android phones (Android 11 or later) with the openMCX app. Phones and computer on the same network, with no
   client isolation between devices (guest networks often have it).
-- Nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub** (`openmcx/openmcx-*:v1`).
+- Nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub** (`openmcx/openmcx-*:1.0.0`).
   To build the images yourself, see [Images](#images) and [Building openMCX](../../../docs/BUILD.md).
 
 | Port on the computer | Service |
@@ -187,14 +187,17 @@ rm -rf config                                                 # with down -v: st
 
 The compose file takes the images from `${OPENMCX_IMAGE_PREFIX}openmcx-<program>:${OPENMCX_TAG}` (`.env`):
 `openmcx-setup`, `openmcx-mcptt-server`, `openmcx-mcvideo-server`, `openmcx-mcdata-server`, `openmcx-common`,
-`openmcx-http-proxy` and `openmcx-user-db`, with `openmcx-kamailio` (`KAMAILIO_TAG`) and MCX Admin's `openmcx-admin`
-(`ADMIN_TAG`, from the `openMCX/openmcx-admin` repository). MySQL comes from Docker Hub.
+`openmcx-http-proxy`, `openmcx-user-db`, `openmcx-kamailio` (the SIP core) and MCX Admin's `openmcx-admin` (from the
+`openMCX/openmcx-admin` repository), all with the same tag, the release. MySQL comes from Docker Hub.
 
-To use images built on this computer instead, set `OPENMCX_IMAGE_PREFIX=` (empty) and the tags you built:
+To use images built on this computer instead, set `OPENMCX_IMAGE_PREFIX=` (empty) and `OPENMCX_TAG` to the tag you
+built every image with:
 
 ```bash
 tools/build-images u2404                                                  # the server images (docs/BUILD.md)
 docker build -f tutorials/end-to-end/01-mcx-over-wlan-android/setup/Dockerfile -t openmcx-setup:u2404 .        # the setup image
+docker build -t openmcx-kamailio:u2404 -f docker/Dockerfile.kamailio .    # the SIP core
+docker build -t openmcx-admin:u2404 ../openmcx-admin                      # MCX Admin, from its repository
 ```
 
 ## When something does not work

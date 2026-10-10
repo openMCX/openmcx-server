@@ -1,0 +1,7 @@
+{{- /*
+The two volumes two pods share (always claims, also with persistence.enabled false): the device CRL (the Credential
+Service writes it, the SIP core reads it) and MCX Admin's projection of the users for the MCPTT user database.
+*/ -}}
+{{ include "openmcx.pvc" (dict "root" . "name" "crl" "size" .Values.persistence.sizes.crl "accessMode" .Values.persistence.sharedAccessMode) }}
+---
+{{ include "openmcx.pvc" (dict "root" . "name" "userdb" "size" .Values.persistence.sizes.userdb "accessMode" .Values.persistence.sharedAccessMode) }}

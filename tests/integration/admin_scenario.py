@@ -417,6 +417,7 @@ def main():
             lambda: sip_rows('subscriber', 'erin') == '0' and sip_rows('subscriber_suspended', 'erin') == '1',
             30,
         )
+        since = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
         restored = helper('api', token, 'POST', '/v1/users/erin/restore', suspended['etag'])
         check('ADM-07 alice restores erin', restored['status'] == 200, restored)
         wait(
@@ -424,6 +425,19 @@ def main():
             lambda: sip_rows('subscriber', 'erin') == '1' and sip_rows('subscriber_suspended', 'erin') == '0',
             30,
         )
+        # The user database applies the rewritten file on its own poll; a client restarted
+        # before that is refused service authorisation (Diameter 5001, SIP 403). The last
+        # reload since the restore must hold every user of the file, erin included.
+        def userdb_reloaded():
+            logins = userdb_logins()
+            out = subprocess.run(
+                cli + ['logs', '--no-color', '--since', since, 'mcx-user-db'], capture_output=True, text=True
+            ).stdout
+            reloads = [line for line in out.splitlines() if '"profiles_reloaded"' in line]
+            counts = [json.loads(line[line.index('{') :])['users'] for line in reloads]
+            return 'erin' in logins and bool(counts) and counts[-1] == len(logins)
+
+        wait('ADM-07 the user database has reloaded erin\'s profile', userdb_reloaded, 30)
         restarted = time.time()
         subprocess.run(cli + ['--profile', 'activation', 'restart', 'client-e'], check=True, capture_output=True)
         status_file = args.artifacts / 'client-e' / 'status.json'

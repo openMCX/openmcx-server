@@ -1,0 +1,71 @@
+{{- /* MySQL: the SIP core's subscribers, MCX Admin's and the Credential Service's databases. */ -}}
+{{ include "openmcx.service" (dict "root" . "name" "sip-db" "ports" (list (dict "name" "mysql" "port" 3306))) }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: sip-db
+  labels:
+    {{- include "openmcx.componentLabels" (dict "root" . "name" "sip-db") | nindent 4 }}
+spec:
+  replicas: 1
+  serviceName: sip-db
+  selector:
+    matchLabels:
+      {{- include "openmcx.selector" (dict "root" . "name" "sip-db") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openmcx.componentLabels" (dict "root" . "name" "sip-db") | nindent 8 }}
+    spec:
+      {{- include "openmcx.podSpec" (dict "root" . "name" "sip-db") | nindent 6 }}
+      containers:
+        - name: mysql
+          image: {{ .Values.images.mysql }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          env:
+            - {name: MYSQL_DATABASE, value: mcx}
+            - {name: MYSQL_USER, value: mcx}
+            - {name: MYSQL_PASSWORD_FILE, value: /run/secrets/mysql-password}
+            - {name: MYSQL_ROOT_PASSWORD_FILE, value: /run/secrets/mysql-root-password}
+          ports:
+            - {name: mysql, containerPort: 3306, protocol: TCP}
+          readinessProbe:
+            exec:
+              command: [sh, -c, 'MYSQL_PWD=$(cat /run/secrets/mysql-root-password) mysql -h 127.0.0.1 -u root -D mcx -e "SELECT 1 FROM subscriber LIMIT 1" >/dev/null']
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 3306
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/mysql}
+            - {name: secrets, mountPath: /run/secrets, readOnly: true}
+            - {name: initdb, mountPath: /docker-entrypoint-initdb.d, readOnly: true}
+          {{- include "openmcx.containerExtras" (dict "root" . "name" "sip-db") | nindent 10 }}
+      volumes:
+        {{- include "openmcx.configVolume" (dict "root" . "name" "secrets" "items" (dict "mysql-password" "mysql-password" "mysql-root-password" "mysql-root-password")) | nindent 8 }}
+        {{- include "openmcx.configVolume" (dict "root" . "name" "initdb" "items" (dict "sip-db.sql" "01-subscriber.sql" "mcxadmin.sql" "02-mcxadmin.sql")) | nindent 8 }}
+        {{- if not .Values.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "openmcx.labels" . | nindent 10 }}
+      spec:
+        accessModes: [{{ .Values.persistence.accessMode }}]
+        {{- with .Values.persistence.storageClass }}
+        storageClassName: {{ if eq . "-" }}""{{ else }}{{ . }}{{ end }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ get .Values.persistence.sizes "sip-db" }}
+  {{- end }}

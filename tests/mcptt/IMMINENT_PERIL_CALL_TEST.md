@@ -54,12 +54,12 @@ Recorded on **2026-09-22** against image `openmcx:0.18-emergency` (`18502ee52297
 
 | ID | Scenario | Checks | Result evidence |
 |---|---|---|---|
-| IP-01 | An imminent-peril initial call reaches all participants with the imminent state; it is downgraded and closes | 3 | [Priority report](../../artifacts/emergency-lab/artifacts/integration/prearranged-priority-results.json) |
+| IP-01 | An imminent-peril initial call reaches all participants with the imminent state; it is downgraded and closes | 3 | Priority report (`artifacts/emergency-lab/artifacts/integration/prearranged-priority-results.json`) |
 | IP-02 | A normal call is upgraded to imminent peril | 1 | Same report |
 | IP-03 | Emergency precedence: an imminent call is upgraded to emergency, and a post-ACK INFO confirms that the emergency takes precedence | 2 | Same report |
 | IP-04 | Unauthorised imminent activation leaves the call normal | 1 | Same report |
-| IP-05 | Wire: imminent requests carry `imminentperil-ind` and Resource-Priority `mcpttp.10`; the server propagates the state with Resource-Priority; floor E-bit on 4 messages | part of 10 | [Wire report](../../artifacts/emergency-lab/artifacts/integration/group-priority-sip-wire.json), [capture](../../artifacts/emergency-lab/artifacts/integration/group-priority.pcap) |
-| IP-06 | Imminent-peril chat (CH-14, 4) and imminent-peril ad hoc (AH-15, 2) in the combined run | 6 | [Chat](../../artifacts/fta-lab/artifacts/integration/chat-call-results.json), [ad hoc](../../artifacts/fta-lab/artifacts/integration/adhoc-call-results.json) |
+| IP-05 | Wire: imminent requests carry `imminentperil-ind` and Resource-Priority `mcpttp.10`; the server propagates the state with Resource-Priority; floor E-bit on 4 messages | part of 10 | Wire report (`artifacts/emergency-lab/artifacts/integration/group-priority-sip-wire.json`), capture (`artifacts/emergency-lab/artifacts/integration/group-priority.pcap`) |
+| IP-06 | Imminent-peril chat (CH-14, 4) and imminent-peril ad hoc (AH-15, 2) in the combined run | 6 | Chat (`artifacts/fta-lab/artifacts/integration/chat-call-results.json`), ad hoc (`artifacts/fta-lab/artifacts/integration/adhoc-call-results.json`) |
 
 ## High-level call flow
 

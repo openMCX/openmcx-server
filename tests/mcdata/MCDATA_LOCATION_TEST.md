@@ -58,16 +58,16 @@ Recorded on **2026-09-25** against image `openmcx:0.68-loc` (`088f3e9629d4`). Ev
 
 | ID | Checks | Evidence |
 |---|---|---|
-| MDL-01–MDL-03 | Configuration after MCData service authorisation (t1 to t7); log-on reports stored; a user denied reporting is refused 403 | [Clear](../../artifacts/mdl-lab-f2/artifacts/mcdata-location.json), [protected](../../artifacts/mdl-lab-fp2/artifacts/mcdata-location.json) |
+| MDL-01–MDL-03 | Configuration after MCData service authorisation (t1 to t7); log-on reports stored; a user denied reporting is refused 403 | Clear (`artifacts/mdl-lab-f2/artifacts/mcdata-location.json`), protected (`artifacts/mdl-lab-fp2/artifacts/mcdata-location.json`) |
 | MDL-04 | Travelled distance and zone entry | Same reports |
 | MDL-05–MDL-08 | A request answered with the RequestId and the reporting MCData ID; refresh; LocationFilter; a user who does not share is not reported | Same reports |
 | MDL-09 | Refusals 245, 244 and 246 | Same reports |
 | MDL-10 | An authorised Update adds a periodic trigger; the target reports on it | Same reports |
 | MDL-11 | Group geographic area: entry recorded, exit de-affiliates the client from its MCData group, entry affiliates it again | Same reports |
 | MDL-12 | Emergency alert area: entry starts an MCData emergency alert with the current coordinate; Emergency reports on t7; exit recorded after the alert is cancelled | Same reports |
-| MDL-13 | Protected only: the location XML encrypted and decrypted, none refused (the server encrypted 44 XML bodies and decrypted 48) | [Protected](../../artifacts/mdl-lab-fp2/artifacts/mcdata-location.json) |
+| MDL-13 | Protected only: the location XML encrypted and decrypted, none refused (the server encrypted 44 XML bodies and decrypted 48) | Protected (`artifacts/mdl-lab-fp2/artifacts/mcdata-location.json`) |
 
-The scenario passed 27 checks clear and 28 protected. `verify_location.py --mcdata` passed 14 wire checks clear ([result](../../artifacts/mdl-lab-f2/artifacts/integration/mcdata-location-wire.json)). With `--protected` it passed 16 ([result](../../artifacts/mdl-lab-fp2/artifacts/integration/mcdata-location-wire.json)): 29 location bodies crossed with their location as `type="Encrypted"` EncryptedData, and no coordinate crossed in clear.
+The scenario passed 27 checks clear and 28 protected. `verify_location.py --mcdata` passed 14 wire checks clear (result (`artifacts/mdl-lab-f2/artifacts/integration/mcdata-location-wire.json`)). With `--protected` it passed 16 (result (`artifacts/mdl-lab-fp2/artifacts/integration/mcdata-location-wire.json`)): 29 location bodies crossed with their location as `type="Encrypted"` EncryptedData, and no coordinate crossed in clear.
 
 ## Coverage gaps
 

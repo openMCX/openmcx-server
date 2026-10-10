@@ -1,0 +1,22 @@
+# Tutorial 1 (MCX over WLAN with the Android app) on a one-node cluster on the computer the phones share a Wi-Fi with
+# (k3s, kind with extraPortMappings, MicroK8s, minikube --driver=none ...):
+#
+#   helm install openmcx helm/openmcx -n openmcx --create-namespace \
+#       -f helm/openmcx/examples/tutorial-1-wlan-android.yaml --set externalAddress=<HOST_IP>
+#
+# The ports on HOST_IP are the tutorial's (5061, 8443-8447, UDP 4000-4099, 5000-5099, 7000-7099, 7200-7299,
+# 7400-7499), so its README applies from step 4 on, with the password from the Secret (NOTES).
+
+externalAddress: ""   # HOST_IP: the computer's IPv4 address on the Wi-Fi
+
+expose:
+  type: hostPort
+
+images:
+  prefix: openmcx/
+  tag: 1.0.0
+
+mcdata:
+  enabled: true
+mcvideo:
+  enabled: true

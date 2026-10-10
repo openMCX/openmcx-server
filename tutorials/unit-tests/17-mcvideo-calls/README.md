@@ -50,7 +50,7 @@ the server) and `MCV2` (sent by either), on the UDP port of the SDP line `m=appl
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
 - No phones, no camera, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from
-  Docker Hub** (`openmcx/openmcx-*:v1`) and publishes no port; everything stays on the computer. The clients send a
+  Docker Hub** (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer. The clients send a
   generated H.264 test pattern (240p, 15 pictures per second).
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
 
@@ -233,12 +233,12 @@ The compose file names every image in full, all from Docker Hub:
 
 | Image | What it is |
 |---|---|
-| `docker.io/openmcx/openmcx-setup:v1` | The setup: the lab's generator |
-| `docker.io/openmcx/openmcx-mcvideo-server:v1` | The MCVideo server |
-| `docker.io/openmcx/openmcx-mcptt-server:v1`, `docker.io/openmcx/openmcx-mcdata-server:v1` | The MCPTT and MCData servers (running, not used here) |
-| `docker.io/openmcx/openmcx-common:v1`, `docker.io/openmcx/openmcx-http-proxy:v1`, `docker.io/openmcx/openmcx-user-db:v1` | The common services |
-| `docker.io/openmcx/openmcx-client:v1` | The headless client (`openMCX/openmcx-client` repository) |
-| `docker.io/openmcx/openmcx-kamailio:6.1.4-2` | The SIP core |
+| `docker.io/openmcx/openmcx-setup:1.0.0` | The setup: the lab's generator |
+| `docker.io/openmcx/openmcx-mcvideo-server:1.0.0` | The MCVideo server |
+| `docker.io/openmcx/openmcx-mcptt-server:1.0.0`, `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCPTT and MCData servers (running, not used here) |
+| `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The SIP core's database |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |
 

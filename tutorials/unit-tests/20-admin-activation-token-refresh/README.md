@@ -62,7 +62,7 @@ what the 3GPP servers read. Activation is its way to set up a device without typ
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
 - No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub**
-  (`openmcx/openmcx-*:v1`) and publishes no port; everything stays on the computer. The speech is a WAV file in
+  (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer. The speech is a WAV file in
   `speech/`.
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
 
@@ -74,7 +74,7 @@ docker compose run --rm setup
 ```
 
 The setup container runs the generator of the regression lab (`tools/prepare-prearranged-test.py --debug-sip --admin
---admin-image openmcx-admin:v1 --private-call --token-ttl 120`). It writes `./config` with these parts:
+--admin-image openmcx-admin:1.0.0 --private-call --token-ttl 120`). It writes `./config` with these parts:
 
 - a new certificate authority with the servers' and clients' certificates;
 - the users `alice` (client-a), `bob` (client-b), `client-c` and `client-d`, with their passwords in the clients'
@@ -249,13 +249,13 @@ The compose file names every image in full, all from Docker Hub:
 
 | Image | What it is |
 |---|---|
-| `docker.io/openmcx/openmcx-setup:v1` | The setup: the lab's generator |
-| `docker.io/openmcx/openmcx-mcptt-server:v1` | The MCPTT server |
-| `docker.io/openmcx/openmcx-mcdata-server:v1` | The MCData server |
-| `docker.io/openmcx/openmcx-common:v1`, `docker.io/openmcx/openmcx-http-proxy:v1`, `docker.io/openmcx/openmcx-user-db:v1` | The common services, among them the IdMS and the Credential Service |
-| `docker.io/openmcx/openmcx-admin:v1` | MCX Admin (`openMCX/openmcx-admin` repository) |
-| `docker.io/openmcx/openmcx-client:v1` | The headless client (`openMCX/openmcx-client` repository) |
-| `docker.io/openmcx/openmcx-kamailio:6.1.4-2` | The SIP core |
+| `docker.io/openmcx/openmcx-setup:1.0.0` | The setup: the lab's generator |
+| `docker.io/openmcx/openmcx-mcptt-server:1.0.0` | The MCPTT server |
+| `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCData server |
+| `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services, among them the IdMS and the Credential Service |
+| `docker.io/openmcx/openmcx-admin:1.0.0` | MCX Admin (`openMCX/openmcx-admin` repository) |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The database of the SIP core and MCX Admin |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |
 
@@ -281,7 +281,7 @@ To use images you built yourself, change the `image:` lines in `docker-compose.y
 ## How it is put together
 
 - `docker-compose.yaml`: the regression lab of `prepare-prearranged-test.py --debug-sip --admin --admin-image
-  openmcx-admin:v1 --private-call --token-ttl 120`, written for the published images by `tools/tutorial-compose.py`.
+  openmcx-admin:1.0.0 --private-call --token-ttl 120`, written for the published images by `tools/tutorial-compose.py`.
   Each container has a fixed address, so the capture reads by role. The status files are in a volume, and the
   capture runs on the lab's bridge. client-e is in the compose profile `activation`: its entrypoint passes
   `--activate` with the URL and the password file of `config/activate-e/`, which it reads only until it is activated.

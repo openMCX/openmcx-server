@@ -126,7 +126,7 @@ Every lab now runs a `message-store` and a `notification-server` container.
 
 ## Performed tests
 
-Recorded on **2026-09-25** against image `openmcx:0.69-msgstore` (`ebb21427490c`), built from branch `mcptt-mcdata`. The [scenario report](../../artifacts/ms-lab-3/artifacts/mcdata-msgstore.json) records **PASS** with 81 checks.
+Recorded on **2026-09-25** against image `openmcx:0.69-msgstore` (`ebb21427490c`), built from branch `mcptt-mcdata`. The scenario report (`artifacts/ms-lab-3/artifacts/mcdata-msgstore.json`) records **PASS** with 81 checks.
 
 | ID | Checks |
 |---|---|

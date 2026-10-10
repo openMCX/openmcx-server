@@ -25,7 +25,7 @@ server asks for QoS only for call legs of UEs in the 5G pool (12.1.1.0/24).
 
   The OAI 5G core is under the Collaborative Standards Software License v1.0: its patent license covers study,
   testing and research only ([`oai/cn5g/NOTICE`](oai/cn5g/NOTICE)).
-- Nothing to compile: the tutorial uses **prebuilt images from Docker Hub**, openMCX's (`openmcx/openmcx-*:v1`, as
+- Nothing to compile: the tutorial uses **prebuilt images from Docker Hub**, openMCX's (`openmcx/openmcx-*:1.0.0`, as
   in tutorial 1) and OAI's. To build the openMCX images yourself, see
   [tutorial 1's Images](../01-mcx-over-wlan-android/README.md#images) and [Building openMCX](../../../docs/BUILD.md);
   for the three OAI images, [`oai/cn5g/`](oai/cn5g/README.md).

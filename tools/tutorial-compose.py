@@ -19,11 +19,10 @@ from pathlib import Path
 
 import yaml
 
-# The published openMCX images on Docker Hub, written out in full in the tutorial (no variables): the tag of the
-# openMCX programs and the SIP core's own version.
+# The published openMCX images on Docker Hub, written out in full in the tutorial (no variables): one tag, the release,
+# for every image.
 HUB = 'docker.io/openmcx'
-OPENMCX_TAG = 'v1'
-KAMAILIO_TAG = '6.1.4-2'
+OPENMCX_TAG = '1.0.0'
 # The published image of each program of the lab's all-in-one image.
 PROGRAMS = {
     'mcx-common': 'openmcx-common',
@@ -93,7 +92,7 @@ def image(name, entrypoint):
         return 'docker.io/library/' + name
     program, tag = name.split(':', 1)
     if program == 'openmcx-kamailio':
-        return f'{HUB}/openmcx-kamailio:{KAMAILIO_TAG}'
+        return f'{HUB}/openmcx-kamailio:{OPENMCX_TAG}'
     if program == 'openmcx':
         program = PROGRAMS[Path(entrypoint[0]).name]
     return f'{HUB}/{program}:{OPENMCX_TAG}'

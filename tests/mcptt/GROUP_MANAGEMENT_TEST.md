@@ -114,7 +114,7 @@ Recorded on **2026-09-25** against image `openmcx:0.71-gms` (`02689fdd5960`), bu
 
 | ID | Checks | Evidence |
 |---|---|---|
-| GM-00 | Every client is authorised | [Scenario report](../../artifacts/gm-lab-f/artifacts/group-management.json) |
+| GM-00 | Every client is authorised | Scenario report (`artifacts/gm-lab-f/artifacts/group-management.json`) |
 | GM-01–GM-02 | Creation in the creator's own tree (201); a group ID in use refused 409 with a `<uniqueness-failure>` and an `<alt-value>`; a user without the right refused 403 | Same report |
 | GM-03 | A member subscribes to two groups (200); the first NOTIFY carries both documents and the member reads them | Same report |
 | GM-04 | The owner adds a member and a manager of the provisioned group removes one; each change is notified with a new entity tag | Same report |
@@ -144,7 +144,7 @@ The Go test `TestCMSProfileUpdateByAdministrator` covers the refusals (another u
 
 ### Schema validation — 2026-09-27
 
-Image `openmcx:t7-1` (`2c58005fec32`) and client image `openmcx-client:t7-1` (`c31a1e8c472a`), built from `test/xcap-schema` of mcxserver (on `3b89ab3`) and of mcxclient (on `mc-client-c++` `3667f3b`, with the `profile-revoke` change for the new profile). The new scenario `xcap_schema_scenario.py` runs in the `group-management` lab. A probe in client-a's container signs in as client-a and sends the XCAP requests itself, so that the documents can be malformed on purpose. [Scenario report](../../artifacts/t7/group-management/xcap-schema.json).
+Image `openmcx:t7-1` (`2c58005fec32`) and client image `openmcx-client:t7-1` (`c31a1e8c472a`), built from `test/xcap-schema` of mcxserver (on `3b89ab3`) and of mcxclient (on `mc-client-c++` `3667f3b`, with the `profile-revoke` change for the new profile). The new scenario `xcap_schema_scenario.py` runs in the `group-management` lab. A probe in client-a's container signs in as client-a and sends the XCAP requests itself, so that the documents can be malformed on purpose. Scenario report (`artifacts/t7/group-management/xcap-schema.json`).
 
 | ID | Checks |
 |---|---|

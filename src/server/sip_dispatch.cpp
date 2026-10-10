@@ -802,6 +802,10 @@ void McServer::invite_request(const SipMessage &message, User &user, SipResponse
     event("pre_established_session_refused", {{"user_id", user.id}, {"reason", "resource sharing not supported"}});
     return;
   }
+  if (auto answer = plain_reinvite(message, user)) {
+    response = std::move(*answer);
+    return;
+  }
   auto info = message_info(message, svc_);
   if (!legs_.contains(message.dialog_id) && user.peer.empty() && info.session_type == "chat" &&
       !user.groups.contains(info.request_uri) && !regroup_affiliated(user, info.request_uri) &&
@@ -834,6 +838,45 @@ void McServer::invite_request(const SipMessage &message, User &user, SipResponse
     return;
   }
   group_invite(message, user, info, response);
+}
+
+//------------------------------------------------------------------------------
+// A re-INVITE in the dialog of a call leg that carries no MC service information changes nothing the MC procedures
+// handle: a session refresh (RFC 4028 section 7.4), or a hold or resume of a private call (RFC 5359 section 2.1). The
+// same media, or no offer, is answered 200 (OK) with the current session description (RFC 3264 section 8); a hold or
+// resume goes to private_hold_resume; any other change of the media is refused with 488 (Not Acceptable Here).
+// Returns nothing for a request that is not such a re-INVITE.
+std::optional<SipResponse> McServer::plain_reinvite(const SipMessage &message, const User &user) {
+  const auto found = legs_.find(message.dialog_id);
+  if (found == legs_.end()) return std::nullopt;
+  const auto parts = parts_of(message);
+  if (std::any_of(parts.begin(), parts.end(), [&](const auto &part) { return part.content_type == svc_.info_mime; }))
+    return std::nullopt;
+  const auto leg = found->second;
+  SipResponse response;
+  if (leg->user != user.id || !leg->active || !leg->session) {
+    response.status_code = 481;
+    return response;
+  }
+  if (leg->session->private_call)
+    if (auto answer = private_hold_resume(message, user, McpttInfo{}, leg, *leg->session)) return answer;
+  const auto &old = leg->remote;
+  const auto &offer = message.remote_media;
+  const bool same = old && offer && old->address == offer->address && old->audio_port == offer->audio_port &&
+                    old->control == offer->control && old->floor_address == offer->floor_address &&
+                    old->floor_port == offer->floor_port && old->payload_type == offer->payload_type &&
+                    old->octet_aligned == offer->octet_aligned && old->direction == offer->direction &&
+                    old->protected_media == offer->protected_media &&
+                    (!old->video || (offer->video && old->video->port == offer->video->port));
+  if (offer && !same) {
+    response.status_code = 488;
+    event("reinvite_refused", {{"user_id", user.id}, {"reason", "media change without MC service information"}});
+    return response;
+  }
+  response.status_code = 200;
+  response.local_media = leg->local;
+  event("session_refreshed", {{"user_id", user.id}, {"offer", offer.has_value()}});
+  return response;
 }
 
 //------------------------------------------------------------------------------

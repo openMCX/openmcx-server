@@ -46,7 +46,7 @@ External Wireshark dissection (tshark 4.2.2) of the private, chat, broadcast and
 
 ## All-call-types run — 2026-09-22 (ambient and remote group added)
 
-Image `openmcx:0.21-fixes` (`a2ddb25a01bf`), built from the tree committed as `bec8c19`; fixture `--private-call --broadcast --chat --adhoc`, clear media, debug SIP. `tests/integration/run_all_call_types.sh` ran all eight scenarios against one server instance (`sRODZY123lLYpG1bjAoL-kqDrnNiRMFPyiJ4Dy-BBT0`), restarting only the clients between them. Every report records **PASS**: prearranged 21, failure/refresh 15, broadcast 56, private 96, chat 67, ad hoc 81, remote group 20, ambient listening 51 (407 assertions). Reports are under `artifacts/all-types-lab/artifacts/integration/`, and the run log is [`artifacts/all-types-lab/run.log`](../artifacts/all-types-lab/run.log).
+Image `openmcx:0.21-fixes` (`a2ddb25a01bf`), built from the tree committed as `bec8c19`; fixture `--private-call --broadcast --chat --adhoc`, clear media, debug SIP. `tests/integration/run_all_call_types.sh` ran all eight scenarios against one server instance (`sRODZY123lLYpG1bjAoL-kqDrnNiRMFPyiJ4Dy-BBT0`), restarting only the clients between them. Every report records **PASS**: prearranged 21, failure/refresh 15, broadcast 56, private 96, chat 67, ad hoc 81, remote group 20, ambient listening 51 (407 assertions). Reports are under `artifacts/all-types-lab/artifacts/integration/`, and the run log is `artifacts/all-types-lab/run.log`.
 
 ## Prearranged group call
 
@@ -66,45 +66,45 @@ All reports linked in this table record **PASS**. Historical baseline and clear-
 
 | ID | Test / coverage | Fixture and transport | Result evidence |
 |---|---|---|---|
-| PGC-01 | Two-way decoded speech, floor contention and teardown | 2 clients; clear media; debug SIP / TLS | [Debug](../artifacts/integration/speech-debug-results.json), [TLS](../artifacts/integration/speech-tls-results.json) |
-| PGC-02 | Client restart and reauthorization without server restart | 2 clients; debug SIP / TLS | [Debug](../artifacts/integration/restart-debug-results.json), [TLS](../artifacts/integration/restart-tls-results.json) |
-| PGC-03 | TLS reconnect | Baseline TLS lab | [Report](../artifacts/integration/tls-reconnect-results.json) |
-| PGC-04 | SIP signaling and floor dissection after malformed-field fixes | Baseline lab; debug SIP / TLS | [SIP](../artifacts/integration/sip-debug-results.json), [debug wire](../artifacts/integration/wire-debug-results.json), [TLS wire](../artifacts/integration/wire-results.json) |
-| PGC-05 | Authorization rejection probes | Baseline lab; debug SIP / TLS | [Debug: 11 checks](../artifacts/integration/security-debug-results.json), [TLS: 11 checks](../artifacts/integration/security-results.json) |
-| PGC-06 | Late entry, leave/rejoin, conference roster, concurrent groups and independent teardown | 4 clients; clear media / debug SIP | [21 checks](../artifacts/prearranged-lab/artifacts/integration/prearranged-results.json) |
-| PGC-07 | Manual rejection, caller CANCEL, setup timeout, session survival and cleanup | 4-client clear-media fixture; selected pair | [15 checks](../artifacts/prearranged-lab/artifacts/integration/prearranged-failure-results.json) |
-| PGC-08 | Floor queue query, cancellation, requeue, grant confirmation and abandoned-grant cleanup | Clear-media fixture; queued participants | [19 checks](../artifacts/prearranged-lab/artifacts/integration/prearranged-floor-results.json) |
-| PGC-09 | Accepted SIP refreshes, conference notifications and cross-group media isolation | Clear-media capture v6 | [Wire report](../artifacts/prearranged-lab/artifacts/integration/prearranged-v6-wire.json) |
-| PGC-10 | Floor fields, repeated-acquisition SSRCs and zero RTCP expert diagnostics | Clear-media capture v6 | [Floor report](../artifacts/prearranged-lab/artifacts/integration/prearranged-v6-floor-wire.json) |
-| PGC-11 | Authorized numeric/emergency preemption, imminent/emergency transitions, alerts, locations, cancellation and late entry | 4-client clear-media priority fixture; image6 | [43 checks](../artifacts/priority-lab/artifacts/integration/passed-image6-priority-results.json) |
-| PGC-12 | Emergency timeout downgrades priority while retaining the call | Priority fixture; short configured timer; image6 | [7 checks](../artifacts/priority-lab/artifacts/integration/passed-image6-priority-timer-results.json) |
-| PGC-13 | Protected lifecycle, concurrent groups and actual GKTP renewal preserving manual deaffiliation | 4 clients; protected media / debug SIP; image6 | [22 checks](../artifacts/protected-lab/artifacts/integration/prearranged-results.json) |
-| PGC-14 | Protected queued-floor procedures | Protected media / debug SIP; image6 | [19 checks](../artifacts/protected-lab/artifacts/integration/prearranged-floor-results.json) |
-| PGC-15 | Priority/emergency procedures with protected speech and floor | 4-client protected fixture / debug SIP; image7 | [43 checks](../artifacts/protected-lab/artifacts/integration/prearranged-priority-results.json) |
-| PGC-16 | Protected rejection, CANCEL, setup timeout and session survival | Protected fixture / debug SIP; image7 | [15 checks](../artifacts/protected-lab/artifacts/integration/prearranged-failure-results.json) |
-| PGC-17 | Live SRTP/SRTCP replay and tamper rejection; valid speech continues | Protected fixture / debug SIP | [Report](../artifacts/protected-lab/artifacts/integration/protected-negative-results.json) |
-| PGC-18 | SAVP negotiation, CSK/GKTP exchanges and byte-identical encrypted relay | Protected capture v6 | [Wire verification](../artifacts/protected-lab/artifacts/integration/protected-v6-wire-verification.json), [decoded-audio evidence](../artifacts/protected-lab/artifacts/integration/decoded-audio-evidence.json) |
-| PGC-19 | Accepted refresh transactions and conference notifications | Protected calls / debug SIP; image7 | [Wire report](../artifacts/protected-lab/artifacts/integration/protected-refresh-v7-wire.json) |
-| PGC-20 | Protected lifecycle, late entry, rejoin and concurrent groups | 4 clients / TLS; final image7 | [21 checks](../artifacts/protected-tls-lab/artifacts/integration/passed-image7-normal-results.json) |
-| PGC-21 | Protected priority/emergency, alert locations and cancellation | 4-client fixture / TLS; final image7 | [43 checks](../artifacts/protected-tls-lab/artifacts/integration/passed-image7-priority-results.json) |
-| PGC-22 | Protected queued-floor procedures | TLS; final image7 | [19 checks](../artifacts/protected-tls-lab/artifacts/integration/passed-image7-floor-results.json) |
-| PGC-23 | Protected rejection, CANCEL, timeout and session survival | TLS; final image7 | [15 checks](../artifacts/protected-tls-lab/artifacts/integration/passed-image7-failure-results.json) |
-| PGC-24 | SIP/HTTPS security, including rejection of another certificate's matching CANCEL | Protected TLS fixture | [14 checks](../artifacts/protected-tls-lab/security-peer-after.json) |
-| PGC-25 | Supporting native protocol, SIP, floor, crypto and Go service regressions | Native/service suite | [16 native tests and Go package results](../artifacts/protected-lab/artifacts/integration/native-go-tests.log), [final image build](../artifacts/protected-lab/artifacts/integration/image7-build.log) |
+| PGC-01 | Two-way decoded speech, floor contention and teardown | 2 clients; clear media; debug SIP / TLS | Debug (`artifacts/integration/speech-debug-results.json`), TLS (`artifacts/integration/speech-tls-results.json`) |
+| PGC-02 | Client restart and reauthorization without server restart | 2 clients; debug SIP / TLS | Debug (`artifacts/integration/restart-debug-results.json`), TLS (`artifacts/integration/restart-tls-results.json`) |
+| PGC-03 | TLS reconnect | Baseline TLS lab | Report (`artifacts/integration/tls-reconnect-results.json`) |
+| PGC-04 | SIP signaling and floor dissection after malformed-field fixes | Baseline lab; debug SIP / TLS | SIP (`artifacts/integration/sip-debug-results.json`), debug wire (`artifacts/integration/wire-debug-results.json`), TLS wire (`artifacts/integration/wire-results.json`) |
+| PGC-05 | Authorization rejection probes | Baseline lab; debug SIP / TLS | Debug: 11 checks (`artifacts/integration/security-debug-results.json`), TLS: 11 checks (`artifacts/integration/security-results.json`) |
+| PGC-06 | Late entry, leave/rejoin, conference roster, concurrent groups and independent teardown | 4 clients; clear media / debug SIP | 21 checks (`artifacts/prearranged-lab/artifacts/integration/prearranged-results.json`) |
+| PGC-07 | Manual rejection, caller CANCEL, setup timeout, session survival and cleanup | 4-client clear-media fixture; selected pair | 15 checks (`artifacts/prearranged-lab/artifacts/integration/prearranged-failure-results.json`) |
+| PGC-08 | Floor queue query, cancellation, requeue, grant confirmation and abandoned-grant cleanup | Clear-media fixture; queued participants | 19 checks (`artifacts/prearranged-lab/artifacts/integration/prearranged-floor-results.json`) |
+| PGC-09 | Accepted SIP refreshes, conference notifications and cross-group media isolation | Clear-media capture v6 | Wire report (`artifacts/prearranged-lab/artifacts/integration/prearranged-v6-wire.json`) |
+| PGC-10 | Floor fields, repeated-acquisition SSRCs and zero RTCP expert diagnostics | Clear-media capture v6 | Floor report (`artifacts/prearranged-lab/artifacts/integration/prearranged-v6-floor-wire.json`) |
+| PGC-11 | Authorized numeric/emergency preemption, imminent/emergency transitions, alerts, locations, cancellation and late entry | 4-client clear-media priority fixture; image6 | 43 checks (`artifacts/priority-lab/artifacts/integration/passed-image6-priority-results.json`) |
+| PGC-12 | Emergency timeout downgrades priority while retaining the call | Priority fixture; short configured timer; image6 | 7 checks (`artifacts/priority-lab/artifacts/integration/passed-image6-priority-timer-results.json`) |
+| PGC-13 | Protected lifecycle, concurrent groups and actual GKTP renewal preserving manual deaffiliation | 4 clients; protected media / debug SIP; image6 | 22 checks (`artifacts/protected-lab/artifacts/integration/prearranged-results.json`) |
+| PGC-14 | Protected queued-floor procedures | Protected media / debug SIP; image6 | 19 checks (`artifacts/protected-lab/artifacts/integration/prearranged-floor-results.json`) |
+| PGC-15 | Priority/emergency procedures with protected speech and floor | 4-client protected fixture / debug SIP; image7 | 43 checks (`artifacts/protected-lab/artifacts/integration/prearranged-priority-results.json`) |
+| PGC-16 | Protected rejection, CANCEL, setup timeout and session survival | Protected fixture / debug SIP; image7 | 15 checks (`artifacts/protected-lab/artifacts/integration/prearranged-failure-results.json`) |
+| PGC-17 | Live SRTP/SRTCP replay and tamper rejection; valid speech continues | Protected fixture / debug SIP | Report (`artifacts/protected-lab/artifacts/integration/protected-negative-results.json`) |
+| PGC-18 | SAVP negotiation, CSK/GKTP exchanges and byte-identical encrypted relay | Protected capture v6 | Wire verification (`artifacts/protected-lab/artifacts/integration/protected-v6-wire-verification.json`), decoded-audio evidence (`artifacts/protected-lab/artifacts/integration/decoded-audio-evidence.json`) |
+| PGC-19 | Accepted refresh transactions and conference notifications | Protected calls / debug SIP; image7 | Wire report (`artifacts/protected-lab/artifacts/integration/protected-refresh-v7-wire.json`) |
+| PGC-20 | Protected lifecycle, late entry, rejoin and concurrent groups | 4 clients / TLS; final image7 | 21 checks (`artifacts/protected-tls-lab/artifacts/integration/passed-image7-normal-results.json`) |
+| PGC-21 | Protected priority/emergency, alert locations and cancellation | 4-client fixture / TLS; final image7 | 43 checks (`artifacts/protected-tls-lab/artifacts/integration/passed-image7-priority-results.json`) |
+| PGC-22 | Protected queued-floor procedures | TLS; final image7 | 19 checks (`artifacts/protected-tls-lab/artifacts/integration/passed-image7-floor-results.json`) |
+| PGC-23 | Protected rejection, CANCEL, timeout and session survival | TLS; final image7 | 15 checks (`artifacts/protected-tls-lab/artifacts/integration/passed-image7-failure-results.json`) |
+| PGC-24 | SIP/HTTPS security, including rejection of another certificate's matching CANCEL | Protected TLS fixture | 14 checks (`artifacts/protected-tls-lab/security-peer-after.json`) |
+| PGC-25 | Supporting native protocol, SIP, floor, crypto and Go service regressions | Native/service suite | 16 native tests and Go package results (`artifacts/protected-lab/artifacts/integration/native-go-tests.log`), final image build (`artifacts/protected-lab/artifacts/integration/image7-build.log`) |
 
-Final image7 is `8d2c91f1439c`; [TLS container identities](../artifacts/protected-tls-lab/artifacts/integration/image7-containers.txt) record the deployment. Supporting native/service tests cover shared components and are not additional end-to-end call scenarios.
+Final image7 is `8d2c91f1439c`; TLS container identities (`artifacts/protected-tls-lab/artifacts/integration/image7-containers.txt`) record the deployment. Supporting native/service tests cover shared components and are not additional end-to-end call scenarios.
 
 ### Packet captures
 
 | Capture | Contents |
 |---|---|
-| [Baseline server](../artifacts/integration/mcptt-debug.pcap), [baseline SIP core](../artifacts/integration/sip-debug.pcap) | Clear SIP, RTP and floor; core capture includes registration |
-| [Clear-media four-client v6](../artifacts/prearranged-lab/artifacts/integration/prearranged-v6.pcap) | Lifecycle, concurrent groups, refresh and queued floor |
-| [Priority/emergency v6](../artifacts/priority-lab/artifacts/integration/priority-emergency-v6.pcap) | Clear-SIP priority and emergency procedures |
-| [Protected v6](../artifacts/protected-lab/artifacts/integration/protected-v6.pcap) | Readable debug SIP, key-distribution signaling and encrypted media/floor |
-| [Protected negative tests](../artifacts/protected-lab/artifacts/integration/protected-negative.pcap) | Injected replay/tamper packets |
-| [Protected refresh v7](../artifacts/protected-lab/artifacts/integration/protected-refresh-v7.pcap) | Readable SIP refresh and conference transactions |
-| [Protected TLS image7](../artifacts/protected-tls-lab/artifacts/integration/protected-tls-image7.pcap) | Encrypted SIP and protected media/floor |
+| Baseline server (`artifacts/integration/mcptt-debug.pcap`), baseline SIP core (`artifacts/integration/sip-debug.pcap`) | Clear SIP, RTP and floor; core capture includes registration |
+| Clear-media four-client v6 (`artifacts/prearranged-lab/artifacts/integration/prearranged-v6.pcap`) | Lifecycle, concurrent groups, refresh and queued floor |
+| Priority/emergency v6 (`artifacts/priority-lab/artifacts/integration/priority-emergency-v6.pcap`) | Clear-SIP priority and emergency procedures |
+| Protected v6 (`artifacts/protected-lab/artifacts/integration/protected-v6.pcap`) | Readable debug SIP, key-distribution signaling and encrypted media/floor |
+| Protected negative tests (`artifacts/protected-lab/artifacts/integration/protected-negative.pcap`) | Injected replay/tamper packets |
+| Protected refresh v7 (`artifacts/protected-lab/artifacts/integration/protected-refresh-v7.pcap`) | Readable SIP refresh and conference transactions |
+| Protected TLS image7 (`artifacts/protected-tls-lab/artifacts/integration/protected-tls-image7.pcap`) | Encrypted SIP and protected media/floor |
 
 TLS captures alone do not prove decrypted SIP contents. Debug SIP disables SIP TLS only; protected media/floor remain encrypted. The wire verifier checks encrypted relay bytes separately from the clients' decoded-audio evidence.
 
@@ -170,12 +170,12 @@ Recorded on 2026-09-21 against image `openmcx:0.8-fta` (`6e367912416c`), 4-clien
 
 | ID | Test / coverage | Result evidence |
 |---|---|---|
-| PC-01–PC-07 | Automatic, manual and forced commencement; two-way speech and contention; decline (480 + warning 110); CANCEL; 408 setup timeout | [Scenario report](../artifacts/private-lab/artifacts/integration/private-call-results.json) |
+| PC-01–PC-07 | Automatic, manual and forced commencement; two-way speech and contention; decline (480 + warning 110); CANCEL; 408 setup timeout | Scenario report (`artifacts/private-lab/artifacts/integration/private-call-results.json`) |
 | PC-08–PC-09 | Rejections 107/126/143/144, called-party 127/159, unregistered callee 480, busy 486 at `max_calls` | Same report |
 | PC-10–PC-12 | Alongside a group call, deaffiliated callee, 70 s private call timer spanning the session refresh | Same report |
-| PC-13–PC-14 | SIP wire (37 checks, including private-dialog refresh and first-to-answer) and floor/RTP decoding from the server capture | [SIP wire](../artifacts/private-lab/artifacts/integration/private-call-sip-wire.json), [floor wire](../artifacts/private-lab/artifacts/integration/private-call-floor-wire.json), [capture](../artifacts/private-lab/artifacts/integration/private-call.pcap) |
-| PC-15 | Regression on the same image: group lifecycle and failure in the private lab; every call type (266 checks in total) in a combined fixture on one server instance | [Lifecycle](../artifacts/private-lab/artifacts/integration/prearranged-results.json), [failure](../artifacts/private-lab/artifacts/integration/prearranged-failure-results.json), [combined lab](../artifacts/combined-lab/artifacts/integration/) |
-| PC-16 | First-to-answer: forced manual ringing, 183, first answer selected, others cancelled, concurrent answers, all declining → 480, filtering and 153/156 | [Scenario report](../artifacts/private-lab/artifacts/integration/private-call-results.json) |
+| PC-13–PC-14 | SIP wire (37 checks, including private-dialog refresh and first-to-answer) and floor/RTP decoding from the server capture | SIP wire (`artifacts/private-lab/artifacts/integration/private-call-sip-wire.json`), floor wire (`artifacts/private-lab/artifacts/integration/private-call-floor-wire.json`), capture (`artifacts/private-lab/artifacts/integration/private-call.pcap`) |
+| PC-15 | Regression on the same image: group lifecycle and failure in the private lab; every call type (266 checks in total) in a combined fixture on one server instance | Lifecycle (`artifacts/private-lab/artifacts/integration/prearranged-results.json`), failure (`artifacts/private-lab/artifacts/integration/prearranged-failure-results.json`), combined lab (`artifacts/combined-lab/artifacts/integration`) |
+| PC-16 | First-to-answer: forced manual ringing, 183, first answer selected, others cancelled, concurrent answers, all declining → 480, filtering and 153/156 | Scenario report (`artifacts/private-lab/artifacts/integration/private-call-results.json`) |
 | PC-17 | Unit tests for the codecs, caller/callee rulesets, first-to-answer authorization and CMS policy; native 17/17 and Go tests | `tools/mcx test` |
 
 ### Private-call coverage gaps
@@ -198,11 +198,11 @@ Recorded on 2026-09-21 against image `openmcx:0.3-broadcast` (`8041823d997c`) on
 
 | ID | Test / coverage | Result evidence |
 |---|---|---|
-| BC-01–BC-05 | Setup to all members, no conference subscription, cause-5 denial (idle floor and during transmission), speech to all receivers, release 0.15 s after the transmission ends | [Scenario report](../artifacts/broadcast-lab/artifacts/integration/broadcast-call-results.json) |
+| BC-01–BC-05 | Setup to all members, no conference subscription, cause-5 denial (idle floor and during transmission), speech to all receivers, release 0.15 s after the transmission ends | Scenario report (`artifacts/broadcast-lab/artifacts/integration/broadcast-call-results.json`) |
 | BC-06–BC-08 | Conference SUBSCRIBE 480/105, initiator hangup ends the call, 403 for an unauthorised initiator, 486 during an ongoing group call | Same report |
 | BC-09–BC-10 | A later normal call keeps normal floor rules; a late entrant joins a broadcast as a receiver | Same report |
-| BC-11–BC-12 | SIP and floor wire checks (15, zero violations) and independent floor/RTP decode | [SIP/floor wire](../artifacts/broadcast-lab/artifacts/integration/broadcast-call-sip-wire.json), [floor decode](../artifacts/broadcast-lab/artifacts/integration/broadcast-call-floor-wire.json), [capture](../artifacts/broadcast-lab/artifacts/integration/broadcast-call.pcap) |
-| BC-13 | Regression on the same image: prearranged lifecycle 21, failure 15, private call 53 checks | [Lifecycle](../artifacts/broadcast-lab/artifacts/integration/prearranged-results.json), [failure](../artifacts/broadcast-lab/artifacts/integration/prearranged-failure-results.json), [private](../artifacts/broadcast-lab/artifacts/integration/private-call-results.json) |
+| BC-11–BC-12 | SIP and floor wire checks (15, zero violations) and independent floor/RTP decode | SIP/floor wire (`artifacts/broadcast-lab/artifacts/integration/broadcast-call-sip-wire.json`), floor decode (`artifacts/broadcast-lab/artifacts/integration/broadcast-call-floor-wire.json`), capture (`artifacts/broadcast-lab/artifacts/integration/broadcast-call.pcap`) |
+| BC-13 | Regression on the same image: prearranged lifecycle 21, failure 15, private call 53 checks | Lifecycle (`artifacts/broadcast-lab/artifacts/integration/prearranged-results.json`), failure (`artifacts/broadcast-lab/artifacts/integration/prearranged-failure-results.json`), private (`artifacts/broadcast-lab/artifacts/integration/private-call-results.json`) |
 | BC-14 | Unit tests for B-bit floor coding, cause 5 and `broadcast-ind`; native 17/17 | `tools/mcx test` |
 
 ### Broadcast coverage gaps
@@ -225,11 +225,11 @@ Recorded on 2026-09-21 against image `openmcx:0.4-chat` (`8bbbd3fed314`) on a 4-
 
 | ID | Test / coverage | Result evidence |
 |---|---|---|
-| CH-01–CH-04 | The first joiner creates the session with no invites; joins share one session URI and rosters; contention and two-way speech; 486 warning 122 at capacity | [Scenario report](../artifacts/chat-lab/artifacts/integration/chat-call-results.json) |
+| CH-01–CH-04 | The first joiner creates the session with no invites; joins share one session URI and rosters; contention and two-way speech; 486 warning 122 at capacity | Scenario report (`artifacts/chat-lab/artifacts/integration/chat-call-results.json`) |
 | CH-05–CH-07 | The creator leaves and rejoins; release when one participant remains; lone joiner released after 20 s inactivity | Same report |
 | CH-08–CH-09 | Warnings 117/118 for mismatched call types; chat and prearranged sessions run concurrently | Same report |
-| CH-10–CH-11 | SIP and floor wire checks (11) and independent floor/RTP decode | [SIP/floor wire](../artifacts/chat-lab/artifacts/integration/chat-call-sip-wire.json), [floor decode](../artifacts/chat-lab/artifacts/integration/chat-call-floor-wire.json), [capture](../artifacts/chat-lab/artifacts/integration/chat-call.pcap) |
-| CH-12 | Regression on the same image: prearranged 21 + 15, broadcast 32, private 53 checks | [Lifecycle](../artifacts/chat-lab/artifacts/integration/prearranged-results.json), [failure](../artifacts/chat-lab/artifacts/integration/prearranged-failure-results.json), [broadcast](../artifacts/chat-lab/artifacts/integration/broadcast-call-results.json), [private](../artifacts/chat-lab/artifacts/integration/private-call-results.json) |
+| CH-10–CH-11 | SIP and floor wire checks (11) and independent floor/RTP decode | SIP/floor wire (`artifacts/chat-lab/artifacts/integration/chat-call-sip-wire.json`), floor decode (`artifacts/chat-lab/artifacts/integration/chat-call-floor-wire.json`), capture (`artifacts/chat-lab/artifacts/integration/chat-call.pcap`) |
+| CH-12 | Regression on the same image: prearranged 21 + 15, broadcast 32, private 53 checks | Lifecycle (`artifacts/chat-lab/artifacts/integration/prearranged-results.json`), failure (`artifacts/chat-lab/artifacts/integration/prearranged-failure-results.json`), broadcast (`artifacts/chat-lab/artifacts/integration/broadcast-call-results.json`), private (`artifacts/chat-lab/artifacts/integration/private-call-results.json`) |
 | CH-13 | Go group-type test; native 17/17 | `tools/mcx test` |
 
 ### Chat coverage gaps
@@ -252,12 +252,12 @@ Recorded on 2026-09-21 against image `openmcx:0.6-adhoc` (`e29489f3ef0b`) on a 4
 
 | ID | Test / coverage | Result evidence |
 |---|---|---|
-| AH-01–AH-03 | Listed users invited into a generated ad hoc group (an unaffiliated invitee joins, an unlisted user is not invited); rosters; contention and two-way speech | [Scenario report](../artifacts/adhoc-lab/artifacts/integration/adhoc-call-results.json) |
+| AH-01–AH-03 | Listed users invited into a generated ad hoc group (an unaffiliated invitee joins, an unlisted user is not invited); rosters; contention and two-way speech | Scenario report (`artifacts/adhoc-lab/artifacts/integration/adhoc-call-results.json`) |
 | AH-04–AH-06 | Leave and rejoin by session identity; a lone initiator keeps the call; the initiator leaving releases it; a new identity per call | Same report |
 | AH-07–AH-08 | Warnings 185/189/187 and 480; manual answer; a decline does not fail the call | Same report |
 | AH-09–AH-10 | Runs alongside a prearranged call; TNG3 timer release at 30.03 s | Same report |
-| AH-11–AH-12 | SIP and floor wire checks (15) and independent floor/RTP decode | [SIP/floor wire](../artifacts/adhoc-lab/artifacts/integration/adhoc-call-sip-wire.json), [floor decode](../artifacts/adhoc-lab/artifacts/integration/adhoc-call-floor-wire.json), [capture](../artifacts/adhoc-lab/artifacts/integration/adhoc-call.pcap) |
-| AH-13 | Regression on the same image: prearranged 21 + 15, broadcast 32, private 53, chat 35 checks | [Lifecycle](../artifacts/adhoc-lab/artifacts/integration/prearranged-results.json), [failure](../artifacts/adhoc-lab/artifacts/integration/prearranged-failure-results.json), [broadcast](../artifacts/adhoc-lab/artifacts/integration/broadcast-call-results.json), [private](../artifacts/adhoc-lab/artifacts/integration/private-call-results.json), [chat](../artifacts/adhoc-lab/artifacts/integration/chat-call-results.json) |
+| AH-11–AH-12 | SIP and floor wire checks (15) and independent floor/RTP decode | SIP/floor wire (`artifacts/adhoc-lab/artifacts/integration/adhoc-call-sip-wire.json`), floor decode (`artifacts/adhoc-lab/artifacts/integration/adhoc-call-floor-wire.json`), capture (`artifacts/adhoc-lab/artifacts/integration/adhoc-call.pcap`) |
+| AH-13 | Regression on the same image: prearranged 21 + 15, broadcast 32, private 53, chat 35 checks | Lifecycle (`artifacts/adhoc-lab/artifacts/integration/prearranged-results.json`), failure (`artifacts/adhoc-lab/artifacts/integration/prearranged-failure-results.json`), broadcast (`artifacts/adhoc-lab/artifacts/integration/broadcast-call-results.json`), private (`artifacts/adhoc-lab/artifacts/integration/private-call-results.json`), chat (`artifacts/adhoc-lab/artifacts/integration/chat-call-results.json`) |
 | AH-14 | `test_adhoc_call` and Go ad hoc policy test; native 18/18 | `tools/mcx test` |
 
 ### Ad hoc coverage gaps
@@ -272,9 +272,9 @@ Recorded on 2026-09-22 against image `openmcx:0.18-emergency` (`18502ee52297`). 
 
 | ID | Test / coverage | Result evidence |
 |---|---|---|
-| EM-01–EM-08 | Emergency initial call and upgrade, alerts with location, unauthorised requests, late entry, preemption, second emergency user, cancellation, independent alerts (43-check group priority run) | [Priority report](../artifacts/emergency-lab/artifacts/integration/prearranged-priority-results.json) |
-| EM-09 | TNG2 downgrades without releasing the call | [Timer report](../artifacts/emergency-lab/artifacts/integration/prearranged-priority-timer-results.json) |
-| EM-10 | SIP and floor wire checks (10) | [Wire report](../artifacts/emergency-lab/artifacts/integration/group-priority-sip-wire.json) |
+| EM-01–EM-08 | Emergency initial call and upgrade, alerts with location, unauthorised requests, late entry, preemption, second emergency user, cancellation, independent alerts (43-check group priority run) | Priority report (`artifacts/emergency-lab/artifacts/integration/prearranged-priority-results.json`) |
+| EM-09 | TNG2 downgrades without releasing the call | Timer report (`artifacts/emergency-lab/artifacts/integration/prearranged-priority-timer-results.json`) |
+| EM-10 | SIP and floor wire checks (10) | Wire report (`artifacts/emergency-lab/artifacts/integration/group-priority-sip-wire.json`) |
 | EM-11 | Emergency private, chat, ad hoc and first-to-answer variants (69 checks) | See the [emergency test document](mcptt/EMERGENCY_CALL_TEST.md#performed-tests) |
 
 ## Imminent-peril group calls
@@ -283,8 +283,8 @@ A group call raised to a priority below emergency (TS 24.379 §6.2.8.1.9–13); 
 
 | ID | Test / coverage | Result evidence |
 |---|---|---|
-| IP-01–IP-05 | Imminent initial call, upgrade from normal, upgrade to emergency, unauthorised activation, wire E-bit and Resource-Priority | [Priority report](../artifacts/emergency-lab/artifacts/integration/prearranged-priority-results.json), [wire report](../artifacts/emergency-lab/artifacts/integration/group-priority-sip-wire.json) |
-| IP-06 | Imminent-peril chat and ad hoc variants (6 checks) | [Chat](../artifacts/fta-lab/artifacts/integration/chat-call-results.json), [ad hoc](../artifacts/fta-lab/artifacts/integration/adhoc-call-results.json) |
+| IP-01–IP-05 | Imminent initial call, upgrade from normal, upgrade to emergency, unauthorised activation, wire E-bit and Resource-Priority | Priority report (`artifacts/emergency-lab/artifacts/integration/prearranged-priority-results.json`), wire report (`artifacts/emergency-lab/artifacts/integration/group-priority-sip-wire.json`) |
+| IP-06 | Imminent-peril chat and ad hoc variants (6 checks) | Chat (`artifacts/fta-lab/artifacts/integration/chat-call-results.json`), ad hoc (`artifacts/fta-lab/artifacts/integration/adhoc-call-results.json`) |
 
 ## First-to-answer calls
 
@@ -292,9 +292,9 @@ A call offered to several users at once that continues with whoever answers firs
 
 | ID | Test / coverage | Result evidence |
 |---|---|---|
-| FA-01–FA-05 | Ringing, 183, first-answer selection, cancellation of others, declines, CANCEL, concurrent answers, list filtering and 156/107/153 (27 checks) | [Private report](../artifacts/fta-lab/artifacts/integration/private-call-results.json) |
-| FE-01–FE-08 | Emergency first-to-answer: MEPP 2 while ringing, selection states, MEPP restore on cancel/decline, D-bit, in-dialog cancellation, recipient filtering, alert withdrawal (29 checks) | [Emergency report](../artifacts/fta-lab/artifacts/integration/first-to-answer-emergency-results.json) |
-| FE-09 | Emergency first-to-answer wire checks (10) | [Wire report](../artifacts/fta-lab/artifacts/integration/fta-emergency-sip-wire.json) |
+| FA-01–FA-05 | Ringing, 183, first-answer selection, cancellation of others, declines, CANCEL, concurrent answers, list filtering and 156/107/153 (27 checks) | Private report (`artifacts/fta-lab/artifacts/integration/private-call-results.json`) |
+| FE-01–FE-08 | Emergency first-to-answer: MEPP 2 while ringing, selection states, MEPP restore on cancel/decline, D-bit, in-dialog cancellation, recipient filtering, alert withdrawal (29 checks) | Emergency report (`artifacts/fta-lab/artifacts/integration/first-to-answer-emergency-results.json`) |
+| FE-09 | Emergency first-to-answer wire checks (10) | Wire report (`artifacts/fta-lab/artifacts/integration/fta-emergency-sip-wire.json`) |
 
 The combined run of all call types on the same image passed 336 assertions on one server (prearranged 21 + 15, broadcast 56, private 96, chat 67, ad hoc 81).
 
@@ -306,9 +306,9 @@ Recorded on 2026-09-22 against image `openmcx:0.21-fixes` (`a2ddb25a01bf`). All 
 
 | ID | Test / coverage | Result evidence |
 |---|---|---|
-| RG-01–RG-06 | Group variant: remote user places the group call, silent request, 157 (unauthorised) and 120 (remote user not affiliated), busy remote user reports failure (20 checks) | [Scenario report](../artifacts/fixes-lab/artifacts/integration/remote-group-call-results.json) |
-| RG-07 | Group-request SIP wire checks (10), including the called group in the response and its relay | [Wire report](../artifacts/fixes-lab/artifacts/integration/remote-group-call-sip-wire.json) |
-| RG-08 | Private variant and regression: the private-call scenario (96) exercises the remotely initiated private call, transfer, forwarding and call-back; private services 32 | [Private report](../artifacts/fixes-lab/artifacts/integration/private-call-results.json) |
+| RG-01–RG-06 | Group variant: remote user places the group call, silent request, 157 (unauthorised) and 120 (remote user not affiliated), busy remote user reports failure (20 checks) | Scenario report (`artifacts/fixes-lab/artifacts/integration/remote-group-call-results.json`) |
+| RG-07 | Group-request SIP wire checks (10), including the called group in the response and its relay | Wire report (`artifacts/fixes-lab/artifacts/integration/remote-group-call-sip-wire.json`) |
+| RG-08 | Private variant and regression: the private-call scenario (96) exercises the remotely initiated private call, transfer, forwarding and call-back; private services 32 | Private report (`artifacts/fixes-lab/artifacts/integration/private-call-results.json`) |
 
 ## Ambient listening calls
 
@@ -318,8 +318,8 @@ Recorded on 2026-09-22 against image `openmcx:0.21-fixes` (`a2ddb25a01bf`). All 
 
 | ID | Test / coverage | Result evidence |
 |---|---|---|
-| AL-01–AL-13 | Remote-init and local-init calls, one-way media, Floor Deny cause 5, release permissions, administrator release, a failed call command that keeps the call (AL-09a), release by a call from or to the listened-to user, private call timer, 154/144/127 rejections, busy 480 (51 checks) | [Scenario report](../artifacts/fixes-lab/artifacts/integration/ambient-listening-results.json) |
-| AL-14 | SIP wire checks (12) | [Wire report](../artifacts/fixes-lab/artifacts/integration/ambient-listening-sip-wire.json) |
+| AL-01–AL-13 | Remote-init and local-init calls, one-way media, Floor Deny cause 5, release permissions, administrator release, a failed call command that keeps the call (AL-09a), release by a call from or to the listened-to user, private call timer, 154/144/127 rejections, busy 480 (51 checks) | Scenario report (`artifacts/fixes-lab/artifacts/integration/ambient-listening-results.json`) |
+| AL-14 | SIP wire checks (12) | Wire report (`artifacts/fixes-lab/artifacts/integration/ambient-listening-sip-wire.json`) |
 
 ## Unimplemented features
 

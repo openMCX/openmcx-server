@@ -1,0 +1,58 @@
+{{- /* The HTTP proxy in front of CMS, GMS, LMS, the content server, the message store and the notification server. */ -}}
+{{- $edge := ne .Values.expose.type "none" -}}
+{{ include "openmcx.service" (dict "root" . "name" "http-proxy" "ports" (list (dict "name" "https" "port" 8443))) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: http-proxy
+  labels:
+    {{- include "openmcx.componentLabels" (dict "root" . "name" "http-proxy" "edge" $edge) | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "openmcx.selector" (dict "root" . "name" "http-proxy") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "openmcx.componentLabels" (dict "root" . "name" "http-proxy" "edge" $edge) | nindent 8 }}
+    spec:
+      {{- include "openmcx.podSpec" (dict "root" . "name" "http-proxy" "edge" $edge) | nindent 6 }}
+      shareProcessNamespace: true
+      initContainers:
+        {{- include "openmcx.waitFor" (dict "root" . "peers" (list "cms:8443" "content-server:8443" "gms:8443" "lms:8443" "message-store:8443" "notification-server:8443")) | nindent 8 }}
+      containers:
+        - name: http-proxy
+          image: {{ include "openmcx.image" (dict "root" . "program" "openmcx-http-proxy") }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: [/usr/local/bin/mcx-http-proxy]
+          args: [--config, /config/http-proxy.json, --tls-cert, /config/tls/http-proxy.crt, --tls-key, /config/tls/http-proxy.key, --ca-file, /config/tls/ca.crt]
+          ports:
+            {{- if $edge }}
+            {{- include "openmcx.edgePorts" (dict "root" . "ports" (list (dict "name" "ext-http-proxy" "containerPort" 8443 "external" .Values.expose.ports.httpProxy))) | nindent 12 }}
+            {{- else }}
+            - {name: https, containerPort: 8443, protocol: TCP}
+            {{- end }}
+          readinessProbe:
+            exec:
+              command: [curl, --fail, --silent, --cacert, /config/tls/ca.crt, --resolve, 'http-proxy:8443:127.0.0.1', 'https://http-proxy:8443/readyz']
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 8443
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: run, mountPath: /run/mcx}
+          {{- include "openmcx.containerExtras" (dict "root" . "name" "http-proxy") | nindent 10 }}
+      volumes:
+        {{- include "openmcx.configVolume" (dict "root" . "name" "config" "items" (dict "http-proxy.json" "http-proxy.json" "ca.crt" "tls/ca.crt" "http-proxy.crt" "tls/http-proxy.crt" "http-proxy.key" "tls/http-proxy.key")) | nindent 8 }}
+        - name: run
+          emptyDir: {medium: Memory}

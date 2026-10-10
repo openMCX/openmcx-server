@@ -1,0 +1,40 @@
+{{- /*
+OpenShift: the openMCX images and MySQL run as root (the Compose file's defaults), and expose.type hostPort binds
+host ports. This SecurityContextConstraints allows exactly that to the release's service account: any user ID, host
+ports, no privileged containers, no host network, no host paths. Creating it needs cluster-admin.
+*/ -}}
+{{- if and .Values.openshift.enabled .Values.openshift.scc.create }}
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: {{ printf "openmcx-%s-%s" .Release.Namespace .Release.Name | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "openmcx.labels" . | nindent 4 }}
+  annotations:
+    kubernetes.io/description: openMCX ({{ .Release.Namespace }}/{{ .Release.Name }}) runs as root and binds host ports.
+allowPrivilegedContainer: false
+allowPrivilegeEscalation: true
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: {{ eq .Values.expose.type "hostPort" }}
+readOnlyRootFilesystem: false
+allowedCapabilities: []
+defaultAddCapabilities: []
+requiredDropCapabilities: [MKNOD]
+fsGroup:
+  type: RunAsAny
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+supplementalGroups:
+  type: RunAsAny
+volumes: [configMap, downwardAPI, emptyDir, persistentVolumeClaim, projected, secret]
+# As anyuid: preferred over restricted-v2, so the images run as their own user (root).
+priority: 10
+users:
+  - system:serviceaccount:{{ .Release.Namespace }}:{{ include "openmcx.serviceAccountName" . }}
+groups: []
+{{- end }}

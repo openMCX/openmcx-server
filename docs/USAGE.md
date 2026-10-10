@@ -157,10 +157,10 @@ and the [MCData acceptance matrix](architecture/mcdata-standards-and-acceptance.
 
 ## MCVideo server
 
-MCVideo is in progress ([plan](superpowers/plans/2026-09-25-mcvideo.md)). `mcvideo-server`
-is the `openmcx-mcvideo-server` executable (with `"service": "mcvideo"` in its configuration); the SIP core routes
-its public service identity `sip:mcvideo@DOMAIN` to it, but it offers no MCVideo
-procedure yet. It is in the `mcvideo` Compose profile, and a lab adds it with `--mcvideo`:
+`mcvideo-server` is the `openmcx-mcvideo-server` executable (with `"service": "mcvideo"` in its configuration); the
+SIP core routes its public service identity `sip:mcvideo@DOMAIN` to it. It serves the MCVideo procedures of the
+[feature list](FEATURES.md#mcvideo) (TS 24.281, TS 24.581). It is in the `mcvideo` Compose profile, and a lab adds it
+with `--mcvideo`:
 
 ```bash
 python3 tools/prepare-prearranged-test.py --debug-sip --mcvideo
@@ -184,8 +184,7 @@ See the [test index by call type](../tests/MCPTT_TEST.md), the [two-client test 
 and [first-to-answer](../tests/mcptt/FIRST_TO_ANSWER_TEST.md) call tests, the
 [remotely initiated call tests](../tests/mcptt/REMOTE_INITIATED_TEST.md), and the
 [functional-alias scenarios](../tests/mcptt/FUNCTIONAL_ALIAS_TEST.md).
-The [conformance record](development/prearranged-validation-notes.md) distinguishes
-verified behavior from the remaining full-standard scope.
+The [feature list](FEATURES.md) distinguishes verified behavior from what is not supported.
 
 ```bash
 tools/mcx test
