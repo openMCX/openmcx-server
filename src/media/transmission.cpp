@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCVideo transmission control message coding: the RTCP APP packets MCV0, MCV1 and MCV2 of TS 24.581
 // clause 9.2 and their specific fields (clause 9.2.3).
 //

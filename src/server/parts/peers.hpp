@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The peers of an MC server: the other participating and controlling servers of its own MC system (TS 23.379 clause
 // 7.5.2.4 over MCPTT-3), from the configuration: their addresses, route, PSI and the Signalling Protection Key shared
 // with them (TS 33.180 clause 5.5). Used by the MCPTT and MCVideo servers (McServer), which can run as a split of a

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData application content: the mcdata-info XML body (TS 24.282 annex D.1), the control of communications storage
 // body (annex D.7) and the binary signalling and payload messages of clause 15, coded with the MONP rules of
 // TS 24.379 annex I.

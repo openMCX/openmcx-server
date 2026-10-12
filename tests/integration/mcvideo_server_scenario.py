@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """The MCVideo server container runs beside the MCPTT server (MCVideo plan V1a.5).
 
 Run against a fixture prepared with --mcvideo: mcvideo-server is the mcptt-server

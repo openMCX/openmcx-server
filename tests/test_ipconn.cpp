@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData IP connectivity media plane (TS 24.582 clause 13): SDP, GRE-in-UDP
 // encapsulation (IETF RFC 8086, RFC 2784) and the IPv4/ICMP endpoint.
 //

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MIKEY-SAKKE keying: the MC key periods and UIDs, KMS authority and user key issue, ECCSI signatures, SAKKE key
 // encapsulation, MIKEY-SAKKE I_MESSAGEs with the key parameters extension, and the MCData protected and
 // authenticated payloads.
@@ -237,6 +241,7 @@ Bytes encode_properties(const KeyProperties &properties, const KeyParameterWireP
           "unsupported key properties");
   require(properties.type == 0 || properties.groups.empty(), "CSK must not carry group IDs");
   require(properties.groups.size() <= 255, "too many group IDs");
+
   Bytes content{properties.type};
   integer(content, properties.status, 4);
   integer(content, properties.activation_unix_seconds, 5);
@@ -253,6 +258,7 @@ Bytes encode_properties(const KeyProperties &properties, const KeyParameterWireP
     integer(content, groups.size(), 2);
     content.insert(content.end(), groups.begin(), groups.end());
   }
+
   require(content.size() <= 65535, "oversized key properties");
   Bytes output{profile.key_parameters_iei};
   integer(output, content.size(), 2);
@@ -267,6 +273,7 @@ KeyProperties decode_properties(std::span<const byte> data, const KeyParameterWi
   require(reader.number(1) == profile.key_parameters_iei, "unexpected Key Parameters IEI");
   auto length = reader.number(2);
   require(length == data.size() - reader.position, "invalid Key Parameters length");
+
   KeyProperties properties;
   properties.type = reader.number(1);
   require(properties.type == 0 || properties.type == 2, "unsupported key type");
@@ -275,6 +282,7 @@ KeyProperties decode_properties(std::span<const byte> data, const KeyParameterWi
   properties.expiry_unix_seconds = reader.number(5);
   auto text = reader.take(reader.number(2));
   properties.text.assign(reinterpret_cast<const char *>(text.data()), text.size());
+
   if (properties.type == 0) {
     Reader groups{reader.take(reader.number(2))};
     const auto count = groups.number(1);
@@ -364,6 +372,7 @@ Bytes seal_payload(const ProtectedPayload &message, std::span<const byte, 16> dp
   // Not implemented: DP_AES_256_GCM (TS 33.180 table 8.5.4.2-2, 256-bit IV). Only DP_AES_128_GCM (algorithm 1,
   // table 8.5.4.2-1, 128-bit IV) is written and read; another algorithm is refused.
   require(profile.algorithm == 1, "only DP_AES_128_GCM is supported");
+
   auto dpck = payload_key(dppk, message.dppk_id);
   Bytes output{message.message_type};
   integer(output, message.unix_seconds, 5);
@@ -374,6 +383,7 @@ Bytes seal_payload(const ProtectedPayload &message, std::span<const byte, 16> dp
   require(RAND_bytes(iv.data(), iv.size()) == 1, "IV generation failed");
   output.insert(output.end(), iv.begin(), iv.end());
   integer(output, message.dppk_id, 4);
+
   std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)> ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
   require(bool(ctx), "allocate AES-GCM context");
   int length = 0;
@@ -382,6 +392,7 @@ Bytes seal_payload(const ProtectedPayload &message, std::span<const byte, 16> dp
               EVP_EncryptInit_ex(ctx.get(), nullptr, nullptr, dpck.data(), iv.data()) == 1 &&
               EVP_EncryptUpdate(ctx.get(), nullptr, &length, output.data(), output.size()) == 1,
           "initialize payload encryption");
+
   Bytes cipher(message.plain.size() + 16);
   int written = 0;
   require(EVP_EncryptUpdate(ctx.get(), cipher.data(), &written, message.plain.data(), message.plain.size()) == 1 &&
@@ -390,6 +401,7 @@ Bytes seal_payload(const ProtectedPayload &message, std::span<const byte, 16> dp
   written += length;
   require(static_cast<std::size_t>(written) == message.plain.size(), "invalid AES-GCM output");
   require(EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_GET_TAG, 16, cipher.data() + written) == 1, "get payload tag");
+
   OPENSSL_cleanse(dpck.data(), dpck.size());
   require(cipher.size() <= 65535, "oversized protected payload");
   output.push_back(profile.encrypted_payload_iei);
@@ -407,11 +419,13 @@ Bytes seal_series(std::span<const byte> plain, std::uint8_t type, std::span<cons
           "data too large for 256 protected payloads");
   std::array<byte, 4> id{};
   require(RAND_bytes(id.data(), id.size()) == 1, "payload ID generation failed");
+
   // The series starts with the length of the data, so that a series missing its
   // last messages is refused (the format has no last-message indication).
   Bytes framed;
   integer(framed, plain.size(), 8);
   framed.insert(framed.end(), plain.begin(), plain.end());
+
   Bytes out;
   std::size_t offset = 0;
   unsigned sequence = 0;
@@ -429,6 +443,7 @@ Bytes seal_series(std::span<const byte> plain, std::uint8_t type, std::span<cons
     out.insert(out.end(), sealed.begin(), sealed.end());
     offset += length;
   } while (offset < framed.size());
+
   OPENSSL_cleanse(framed.data(), framed.size());
   return out;
 }
@@ -444,6 +459,7 @@ Bytes open_series(std::span<const byte> data, std::uint8_t type, std::span<const
   unsigned sequence = 0;
   const auto dppk_id = payload_key_id(data);
   std::optional<std::uint32_t> payload_id;
+
   while (offset < data.size()) {
     require(data.size() - offset >= 35, "truncated protected series");
     const std::size_t length = 35 + ((std::size_t(data[offset + 33]) << 8) | data[offset + 34]);
@@ -459,6 +475,7 @@ Bytes open_series(std::span<const byte> data, std::uint8_t type, std::span<const
     OPENSSL_cleanse(opened.plain.data(), opened.plain.size());
     offset += length;
   }
+
   require(plain.size() >= 8, "protected series without its length");
   std::uint64_t declared = 0;
   for (int index = 0; index < 8; ++index) declared = (declared << 8) | plain[index];
@@ -494,6 +511,7 @@ ProtectedPayload open_payload(std::span<const byte> data, std::span<const byte, 
   require(reader.number(1) == profile.encrypted_payload_iei, "unexpected protected payload IEI");
   auto cipher = reader.take(reader.number(2));
   require(reader.position == data.size() && cipher.size() >= 16, "invalid protected payload");
+
   auto dpck = payload_key(dppk, message.dppk_id);
   std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)> ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
   require(bool(ctx), "allocate AES-GCM context");
@@ -503,12 +521,14 @@ ProtectedPayload open_payload(std::span<const byte> data, std::span<const byte, 
               EVP_DecryptInit_ex(ctx.get(), nullptr, nullptr, dpck.data(), iv.data()) == 1 &&
               EVP_DecryptUpdate(ctx.get(), nullptr, &length, associated.data(), associated.size()) == 1,
           "initialize payload decryption");
+
   message.plain.resize(cipher.size() - 16);
   int written = 0;
   require(EVP_DecryptUpdate(ctx.get(), message.plain.data(), &written, cipher.data(), message.plain.size()) == 1 &&
               EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_TAG, 16,
                                   const_cast<byte *>(cipher.data() + message.plain.size())) == 1,
           "decrypt payload");
+
   const int authenticated = EVP_DecryptFinal_ex(ctx.get(), message.plain.data() + written, &length);
   OPENSSL_cleanse(dpck.data(), dpck.size());
   if (authenticated != 1) {
@@ -575,6 +595,7 @@ IdentityKeys issue(const Authority &authority, std::string_view uri, std::uint64
   Scalar ssk;
   Point pvt;
   Point rsk;
+
   checked(
       wc_ImportEccsiKey(&auth.value, authority.authentication_secret.data(), authority.authentication_secret.size()),
       "import ECCSI authority");
@@ -584,6 +605,7 @@ IdentityKeys issue(const Authority &authority, std::string_view uri, std::uint64
                            pvt.value),
           "issue ECCSI identity");
   checked(wc_MakeSakkeRsk(&enc.value, bytes(identity), identity.size(), rsk.value), "issue SAKKE identity");
+
   IdentityKeys result;
   result.uri = uri;
   result.period_number = period_number(authority.public_parameters.period, time);
@@ -718,6 +740,7 @@ Bytes create_mikey(const PublicParameters &parameters, const PublicParameters &r
                    std::string_view recipient, const KeyMessage &key, const KeyParameterWireProfile *profile) {
   require(key.ntp_seconds <= 0xffffffffULL, "NTP era unsupported");
   auto encrypted = encapsulate(rp, recipient, key.ntp_seconds, key.key);
+
   Bytes out{1, 26, 5, 1};
   integer(out, key.csb_id, 4);
   out.insert(out.end(), {0, 1});
@@ -726,10 +749,12 @@ Bytes create_mikey(const PublicParameters &parameters, const PublicParameters &r
   integer(out, 0, 4);
   out.insert(out.end(), {14, 16});
   out.insert(out.end(), key.random.begin(), key.random.end());
+
   id_payload(out, 14, 1, sender.uri);
   id_payload(out, 14, 2, recipient);
   id_payload(out, 14, 6, parameters.period.kms_uri);
   id_payload(out, 26, 7, rp.period.kms_uri);
+
   require(!key.properties || profile != nullptr, "key properties require an explicit wire profile");
   out.insert(out.end(), {static_cast<byte>(key.properties ? 21 : 4), 1, 2});
   integer(out, encrypted.size(), 2);
@@ -741,6 +766,7 @@ Bytes create_mikey(const PublicParameters &parameters, const PublicParameters &r
     integer(out, parameters.size(), 2);
     out.insert(out.end(), parameters.begin(), parameters.end());
   }
+
   // Deviation from TS 33.180 annex E.1.2 ("Signature length ... 32"): S type 2 (ECCSI) with the length of RFC 6509
   // section 4.2, 129 octets (r32 || s32 || uncompressed PVT65). An RFC 6507 ECCSI signature cannot fit in 32 octets;
   // the annex is inconsistent with the RFCs it names, and implementations follow RFC 6509.
@@ -772,6 +798,7 @@ KeyMessage open_mikey(const PublicParameters &parameters, const KmsLookup &looku
   Reader reader{message};
   require(reader.number(1) == 1 && reader.number(1) == 26 && reader.number(1) == 5 && reader.number(1) == 1,
           "unsupported MIKEY header");
+
   KeyMessage key;
   key.csb_id = reader.number(4);
   require(reader.number(1) == 0 && reader.number(1) == 1, "unsupported MIKEY session map");
@@ -781,9 +808,11 @@ KeyMessage open_mikey(const PublicParameters &parameters, const KmsLookup &looku
   const auto delta = now >= key.ntp_seconds ? now - key.ntp_seconds : key.ntp_seconds - now;
   require(delta <= skew, "stale or future MIKEY timestamp");
   check_identity_period(parameters, recipient, key.ntp_seconds);
+
   require(reader.number(1) == 14 && reader.number(1) == 16, "unsupported MIKEY RAND");
   auto random = reader.take(16);
   std::copy(random.begin(), random.end(), key.random.begin());
+
   require(reader.identity(1, 14) == sender, "unexpected MIKEY sender");
   require(reader.identity(2, 14) == recipient.uri, "unexpected MIKEY recipient");
   const auto signing_kms = reader.identity(6, 14);
@@ -791,6 +820,7 @@ KeyMessage open_mikey(const PublicParameters &parameters, const KmsLookup &looku
       signing_kms == parameters.period.kms_uri ? &parameters : (lookup ? lookup(signing_kms) : nullptr);
   require(sp != nullptr, "unexpected signing KMS");
   require(reader.identity(7, 26) == parameters.period.kms_uri, "unexpected recipient KMS");
+
   auto next = reader.number(1);
   require((next == 4 || next == 21) && reader.number(1) == 1 && reader.number(1) == 2, "unsupported SAKKE profile");
   auto ciphertext = reader.take(reader.number(2));
@@ -800,11 +830,13 @@ KeyMessage open_mikey(const PublicParameters &parameters, const KmsLookup &looku
     require(reader.number(1) == 4 && reader.number(1) == 7, "unsupported MIKEY extension");
     properties = reader.take(reader.number(2));
   }
+
   require(reader.number(2) == 0x2081, "unsupported ECCSI SIGN");
   const auto signed_length = reader.position;
   auto signature = reader.take(129);
   require(reader.position == message.size(), "trailing MIKEY data");
   require(verify(*sp, sender, key.ntp_seconds, message.first(signed_length), signature), "MIKEY signature invalid");
+
   key.key = decapsulate(parameters, recipient, key.ntp_seconds, ciphertext);
   if (!properties.empty()) key.properties = decrypt_properties(key, properties, *profile);
   return key;
@@ -822,6 +854,7 @@ Bytes authenticate_payload(const PublicParameters &parameters, const IdentityKey
   integer(out, original.size(), 2);
   out.insert(out.end(), original.begin(), original.end());
   out.push_back(eccsi_algorithm);
+
   Bytes signing{signing_uid_iei, static_cast<byte>(signer_uid.size())};
   signing.insert(signing.end(), signer_uid.begin(), signer_uid.end());
   signing.push_back(signing_kms_iei);
@@ -830,6 +863,7 @@ Bytes authenticate_payload(const PublicParameters &parameters, const IdentityKey
   out.push_back(signing_data_iei);
   integer(out, signing.size(), 2);
   out.insert(out.end(), signing.begin(), signing.end());
+
   // TS 33.180 clause 8.5.5: the type and length of the Signature element are signed; its value is not.
   out.push_back(signature_iei);
   integer(out, 129, 2);
@@ -861,6 +895,7 @@ AuthenticatedPayload open_authenticated(const KmsLookup &lookup, std::string_vie
   result.original.assign(original.begin(), original.end());
   require(reader.number(1) == eccsi_algorithm, "unsupported payload signature algorithm");
   require(reader.number(1) == signing_data_iei, "unexpected Signing Data IEI");
+
   Reader signing{reader.take(reader.number(2))};
   require(signing.number(1) == signing_uid_iei, "unexpected Signing UID IEI");
   auto signer_uid = signing.take(signing.number(1));
@@ -869,13 +904,16 @@ AuthenticatedPayload open_authenticated(const KmsLookup &lookup, std::string_vie
   auto kms = signing.take(signing.number(1));
   result.signer_kms.assign(kms.begin(), kms.end());
   require(signing.position == signing.data.size(), "trailing signing data");
+
   const PublicParameters *found = lookup ? lookup(result.signer_kms) : nullptr;
   require(found != nullptr, "payload signed under another KMS");
   const PublicParameters &parameters = *found;
+
   require(reader.number(1) == signature_iei && reader.number(2) == 129, "unexpected Signature element");
   const auto signed_length = reader.position;
   auto signature = reader.take(129);
   require(reader.position == message.size(), "trailing authenticated payload data");
+
   // After verification the sender's URI must produce the Signing UID (TS 33.180 clause 8.5.5).
   std::optional<std::uint64_t> time;
   for (const auto candidate : {now, now >= parameters.period.seconds ? now - parameters.period.seconds : now})

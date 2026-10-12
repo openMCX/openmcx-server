@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData IP connectivity and its media plane: a GRE-in-UDP tunnel (RFC 8086 over RFC 2784) negotiated with an
 // "m=application <port> udp MCDATA" SDP section (TS 24.282 clause 20, TS 24.582 clause 13), and a minimal IPv4/ICMP
 // endpoint.

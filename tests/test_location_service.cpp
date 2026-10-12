@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The shared location procedures of the participating function (src/server/parts/location_service.hpp) against a
 // fake host, once as the MCPTT core and once as the MCData server: the requests sent, the event names and fields, the
 // Warning texts and the status, including where the two have always differed (LocationTraits).

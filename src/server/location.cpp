@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Location procedures of the participating function (TS 24.379 clause 13, for MCVideo TS 24.281 clause 18): the host
 // of the shared LocationService (parts/location_service.hpp) in the MCPTT and MCVideo core, and the removal of
 // location requests from a relayed request (member functions of McServer).

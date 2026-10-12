@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise priority, emergency, alert and floor procedures in a running isolated lab.
 
 Prepare with tools/prepare-prearranged-test.py --priority --floor-queue. The

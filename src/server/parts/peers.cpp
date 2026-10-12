@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The peers of an MC server from the configuration (peers.hpp).
 //
 // Specifications: TS 23.379 V19.11.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), RFC 3261.

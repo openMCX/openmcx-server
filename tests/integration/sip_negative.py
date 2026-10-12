@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Wire-level authorization probes; run inside the isolated MCPTT Docker network.
 
 SIP: REGISTER and PUBLISH must be challenged and a wrong digest password refused (RFC 3261 section 22), a PUBLISH whose

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # OpenMCX Unit Test Tutorial 1: the steps of README.md, one after the other, each checked before the next.
 # Usage: ./run.sh            (the system must be up: docker compose up -d --wait)
 # Writes captures/01-group-call-run.pcap.gz (captures/01-group-call-full.pcap.gz is the reference run of README.md).

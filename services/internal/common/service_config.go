@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The service configuration documents the CMS serves: MCPTT (TS 24.484 clause 8.4), MCVideo (clause 9.4) and MCData
 // (clause 10.4), one per mission critical organisation, from the site's service_config; and the same values on the
 // internal interface for the MC service servers.

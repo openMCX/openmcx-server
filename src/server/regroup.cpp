@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Group regroup and user regroup using a preconfigured group: the participating, controlling and non-controlling
 // function procedures (member functions of McServer).
 //
@@ -306,6 +310,7 @@ SipResponse McServer::regroup_user_create(const SipMessage &message, const User 
   }
   pending->accepted.insert(pending->local.begin(), pending->local.end());
   if (remote.empty()) return regroup_user_finish(*pending);
+
   // TS 24.379 clause 16.3.3.1 step 5: each participating function is sent its own members.
   creating_regroups_.insert(regroup.regroup_uri);
   pending->outstanding = remote.size();

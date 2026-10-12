@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The served users (src/server/parts/served_users.hpp): the lookup by MC service ID with each service's rule, the
 // affiliation documents in each service's namespace and the list membership.
 //

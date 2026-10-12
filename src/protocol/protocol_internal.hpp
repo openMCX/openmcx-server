@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The XML and SDP documents of the MC services (include/mcx/protocol.hpp): the internal helpers the
 // files of src/protocol/ share (XML parsing over libxml2, limits, namespaces, element names).
 //

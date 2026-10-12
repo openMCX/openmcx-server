@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """MCVideo regroups using a preconfigured group (TS 24.281 clause 21): a group regroup (TS 24.281
 clause 21.2) and a user regroup (TS 24.281 clause 21.3), their notifications, a group call on
 each regroup with H.264 video checked picture by picture, a call on a regrouped group, the

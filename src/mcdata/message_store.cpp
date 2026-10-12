@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MCData message store: control of the storage of communications and the deposit of stored communications.
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19), TS 23.282 V19.10.0 (Rel-19).
@@ -56,11 +60,13 @@ SipResponse DataServer::msgstore_control(const SipMessage &request, const User &
   static const std::string no_target = "235 unable to determine target user or group for enabling or disabling the "
                                        "storage of MCData communications into the MCData message store";
   const auto rights = storage_rights(user.id);
+
   // Step 4a.
   if (!rights.value("store_comms", false)) return msgstore_refusal(403, unauthorised, user.id);
   // Step 4b.
   if (info.store_all_private && !rights.value("store_private_comms", false))
     return msgstore_refusal(403, unauthorised, user.id);
+
   // Step 4c: at least one group must allow the storage of its communications.
   if (info.store_all_group && rights.value("store_group_comms", Json::array()).empty())
     return msgstore_refusal(403, unauthorised, user.id);
@@ -75,17 +81,20 @@ SipResponse DataServer::msgstore_control(const SipMessage &request, const User &
       return msgstore_refusal(403, no_target, user.id);
     }
   }
+
   // Step 4e: every group named must allow the storage of its communications.
   if (!info.store_all_group)
     for (const auto *groups : {&control.enable_groups, &control.disable_groups})
       for (const auto &group : *groups)
         if (!group_storage_allowed(rights, group)) return msgstore_refusal(403, unauthorised, user.id);
+
   // Step 4f names a resource-lists body, but the client procedure (TS 24.282 clause 21.3.2.2 step 6)
   // sends the users and groups in the annex D.7 body: either is accepted.
   if ((!info.store_specific_private.empty() || !info.store_specific_group.empty()) && !list_part &&
       !part(request, resource_lists_mime))
     return msgstore_refusal(403, no_target, user.id);
   auto &prefs = storage_[user.id];
+
   // Step 5.
   if (info.store_all_private) {
     prefs.all_private = *info.store_all_private;
@@ -125,6 +134,7 @@ SipResponse DataServer::msgstore_control(const SipMessage &request, const User &
                                     {"groups", prefs.group_on},
                                     {"private_off", prefs.private_off},
                                     {"groups_off", prefs.group_off}});
+
   // Step 6: 200, asserting the participating function's identity.
   SipResponse response;
   response.status_code = 200;

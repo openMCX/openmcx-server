@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Private call: the resource-lists body naming the called user and the authorisation checks of the participating
 // MCPTT function for private, first-to-answer and emergency private calls and alerts.
 //

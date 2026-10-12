@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """MCVideo XML confidentiality and integrity protection (protection of sensitive application
 data, TS 24.281 clause 4.8; confidentiality protection, TS 24.281 clause 6.6.2; integrity
 protection, TS 24.281 clause 6.6.3; application signalling security, TS 33.180 clause 9.3): the

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Release of MCData communications over the media plane, with or without prior indication, and their extension.
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19), TS 24.582 V19.0.0 (Rel-19).
@@ -197,6 +201,7 @@ SipResponse DataServer::com_release_info(const SipMessage &sip_request) {
     event("mcdata_com_release_rejected", {{"user_id", leg->owner}, {"reason", error.what()}});
     return reject(403, "", leg->owner, "com-release");
   }
+
   // <allow-release-any-user> is read only when a request needs it (TS 24.282 clause 13.2.5.2.4.1
   // step 2a, clause 13.2.6.2.4.1 step 2a: "based on configuration").
   const auto authorised_user = [&] {
@@ -234,6 +239,7 @@ SipResponse DataServer::com_release_info(const SipMessage &sip_request) {
     return response;
   }
   }
+
   return reject(403, "", leg->owner, "com-release");
 }
 
@@ -337,6 +343,7 @@ void DataServer::release_tick(std::uint64_t now) {
     event("mcdata_release_tdc3_expired", {{"key", key}});
     release_communication(key, reason.empty() ? "no extension was requested" : reason, "releases_server");
   }
+
   // The same limits for IP connectivity, which is released without prior indication.
   std::set<std::shared_ptr<IpconSession>> seen;
   std::vector<std::pair<std::shared_ptr<IpconSession>, std::string>> tunnels;
@@ -367,11 +374,13 @@ void DataServer::media_released(const std::string &dialog) {
   std::size_t remaining = 0;
   for (const auto &[other_dialog, other] : media_)
     if (other->key == leaving->key) ++remaining;
+
   // Step 3 of both policies: only one or no participants are left.
   bool release = remaining <= 1;
   // TS 24.282 clause 13.2.2.2.4.1 step 4, by local policy: the initiator of a group communication leaves.
   if (!leaving->group.empty() && leaving->originating && release_config().value("initiator_leave", true))
     release = true;
+
   // TS 24.282 clause 13.2.2.2.4.3 step 3A: an authorised user ends an ad hoc group communication for everyone.
   if (leaving->adhoc && bye_reason.find("User requested release") != std::string::npos &&
       profile(leaving->owner).value("mcdata", Json::object()).value("release_any_user", false))
@@ -380,6 +389,7 @@ void DataServer::media_released(const std::string &dialog) {
     event("mcdata_participant_left", {{"key", leaving->key}, {"owner", leaving->owner}, {"remaining", remaining}});
     return;
   }
+
   // TS 24.582 clause 7.1.2.1: the sender of a file leaves once it has sent it. A leg still
   // holding the file for a recipient whose connection is not up yet, or whose recipient has not yet answered the
   // SEND, delivers it first; its recipient releases it.

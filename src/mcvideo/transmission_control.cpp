@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCVideo transmission control server: the transmission control messages it sends and receives, and the check of
 // those the participating function relays (member functions of McvideoServer).
 //
@@ -160,6 +164,7 @@ void McvideoServer::transmission_packet(Leg &leg, const Datagram &datagram) {
   const auto packet = decode(floor_protected(leg) ? keys->unprotect_floor(datagram.bytes) : datagram.bytes);
   if (packet.ssrc != leg.local.floor_ssrc) return;
   if (!from_participant(packet.type)) throw std::runtime_error("transmission control message not sent by participants");
+
   // The User ID names the sender, except in a remote request (TS 24.581 clauses 9.2.22 and 9.2.24),
   // where it names the user whose transmission is asked for.
   const bool remote = packet.type == Type::RemoteRequest || packet.type == Type::RemoteCancelRequest;
@@ -263,6 +268,7 @@ void McvideoServer::remote_transmission(Leg &leg, const mcx::transmission::Packe
   for (auto &[dialog, other] : legs_)
     if (other->session == session && other->user == target && other.get() != &leg && eligible(*other))
       target_leg = other.get();
+
   // TS 24.484: <allow-revoke-transmit> authorises ending another user's transmission;
   // the MCVideo profile has no element for starting one, so the project profile's
   // "allow_remote_transmit" does (tests/mcvideo/MCVIDEO_PULL_PUSH_TEST.md).
@@ -295,6 +301,7 @@ void McvideoServer::remote_transmission(Leg &leg, const mcx::transmission::Packe
   send_transmission(
       {start ? Type::RemoteResponse : Type::RemoteCancelResponse, false, leg.remote->floor_ssrc, {result_field(done)}},
       leg);
+
   event(start ? "remote_transmission_requested" : "remote_transmission_cancelled",
         {{"user_id", leg.user}, {"target", target}, {"result", done}, {"reason", reason}});
 }
@@ -322,6 +329,7 @@ bool McvideoServer::refuse_remote_request(Relay &relay, UdpSocket &socket, std::
   } catch (const std::exception &) {
     // No user profile: not authorised.
   }
+
   // Without the client's media (relay_packets checks it too) there is nowhere to answer: the request is dropped.
   if (!relay.client_remote) return true;
   if (authorised) return false;
@@ -329,6 +337,7 @@ bool McvideoServer::refuse_remote_request(Relay &relay, UdpSocket &socket, std::
   const auto reply = encode(
       {start ? Type::RemoteResponse : Type::RemoteCancelResponse, false, client.floor_ssrc, {result_field(false)}});
   socket.send(csk ? csk->protect_floor(reply) : reply, client.floor_address, client.floor_port);
+
   event(start ? "remote_transmission_requested" : "remote_transmission_cancelled",
         {{"user_id", relay.user}, {"result", false}, {"reason", "not authorised"}, {"relayed", false}});
   return true;

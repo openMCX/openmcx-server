@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Relays of calls, messages, subscriptions and media between the participating and controlling functions of a system (TS 24.379 clause 6.3.2).
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19), TS 24.581 V19.2.0 (Rel-19),
@@ -94,6 +98,7 @@ SipResponse McServer::relay_outgoing(const SipMessage &message, User &user, cons
     return response;
   }
   const auto outgoing = message_info(message, svc_);
+
   // A call request initiated by a listened-to user releases its ambient call
   // relayed here (T12), unless this request is that ambient call.
   if (outgoing.session_type != svc_.ambient) release_relayed_ambient(user.id, ambient_reason("initiated-by"));
@@ -173,6 +178,7 @@ SipResponse McServer::relay_incoming(const SipMessage &message, const std::strin
     add_relay(relay);
   };
   relays_[relay->peer_dialog] = relay;
+
   // T12: a call request for a listened-to user, controlled elsewhere, releases its
   // ambient call relayed here first; the invitation waits for that release to reach
   // the client, which would otherwise refuse it as busy.
@@ -532,6 +538,7 @@ void McServer::relay_packets(Relay &relay, RelayStream stream) {
   const bool floor = stream == RelayStream::floor;
   auto &socket = floor ? relay.floor : stream == RelayStream::video ? relay.video : relay.audio;
   if (!socket) return;
+
   // A video burst is one picture in several packets (RFC 6184), as at a leg.
   const int burst = stream == RelayStream::video ? 128 : 32;
   for (int index = 0; index < burst; ++index) {

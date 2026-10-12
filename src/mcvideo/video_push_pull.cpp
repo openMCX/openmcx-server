@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // One-to-server video push and one-from-server video pull, with this server as the far end (member functions
 // of McvideoServer).
 //
@@ -53,6 +57,7 @@ std::optional<SipResponse> McvideoServer::open_server_video(Session &session, co
     if (session.playback.empty()) return reject(404, warn(Warning::function_not_allowed, "empty video"));
     session.recording_url = info.video_pull_url;
   }
+
   return std::nullopt;
 }
 
@@ -98,6 +103,7 @@ SipResponse McvideoServer::server_video_invite(const SipMessage &message, const 
   session->initiator = user.id;
   session->created = session->last_media = session->normal_since = monotonic_ms();
   session->members = {user.id};
+
   // No call policy of its own: the defaults of the private call timers apply.
   session->policy = Json::object();
   session->server_video = push ? "record" : "stream";
@@ -105,6 +111,7 @@ SipResponse McvideoServer::server_video_invite(const SipMessage &message, const 
   session->no_media_control = message.remote_media->control == MediaControl::none;
   auto leg = make_leg(user.id, session);
   if (!session->no_media_control && leg->local.floor_ssrc == message.remote_media->floor_ssrc) return reject(488);
+
   // The recording file is made last, so that no rejection above leaves an empty one behind.
   if (auto refused = open_server_video(*session, user, info, push, response)) return *refused;
   leg->dialog = message.dialog_id;
@@ -117,6 +124,7 @@ SipResponse McvideoServer::server_video_invite(const SipMessage &message, const 
   leg->local.floor_priority.reset();
   if (leg->local.video && message.remote_media->video)
     leg->local.video->payload_type = message.remote_media->video->payload_type;
+
   // The pushing client asks to transmit in its offer (TS 24.581 clause 6.2.1), granted once
   // the call is up; for a pull only the server sends video.
   leg->local.implicit_request = push && message.remote_media->implicit_request;

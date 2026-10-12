@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Rx client of the MC service server against a PCRF over a real Diameter peer (freeDiameter, TCP): the service
 // information of a leg, the initial AA-Request, a Re-Auth-Request, an update AA-Request, an Abort-Session-Request
 // and the Session-Termination-Request that follows it; and the pure helpers (flows, media components, Resource-Priority

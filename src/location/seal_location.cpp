@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // SEAL location management documents: the location-info XML (application/vnd.3gpp.seal-location-info+xml) that
 // a location management client and an MC service server exchange with the location management server over HTTP.
 //
@@ -241,11 +245,13 @@ Answer parse_answer(std::string_view xml) {
     out.trigger = attr(notification, "trigger-id");
     holder = notification;
   }
+
   if (auto *sub = one(holder, "subscription-identifier")) out.subscription = text(sub);
   if (auto *sub = one(top, "subscription"))
     if (auto *id = one(sub, "subscription-identifier")) out.subscription = text(id);
   if (auto *expiry = one(top, "expiry-time")) out.expiry = static_cast<int>(integer(expiry, -31536000, 31536000));
   if (auto *list = one(holder, "identities-list")) out.users = ids(list);
+
   for (auto *reports : all(holder, "reports"))
     for (auto *report : all(reports, "loc-info-report")) {
       UserFix entry;

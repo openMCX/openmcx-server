@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Create an isolated lab's credentials and configuration without overwriting it.
 
 From config/lab.json (or --input) it writes, into config/generated (or --output): the lab CA and a
@@ -221,7 +225,7 @@ def main():
         "-days",
         "30",
         "-subj",
-        "/CN=openMCX local lab CA",
+        "/CN=OpenMCX local lab CA",
         "-addext",
         "basicConstraints=critical,CA:TRUE",
         "-addext",
@@ -629,6 +633,10 @@ TLS_CA = "/config/tls/ca.crt";
         "@PARTICIPATING_ROUTES@": participating_routes(servers, users_by_role),
     }.items():
         template = template.replace(old, new)
+    # Troubleshooting only, off by default: "sip_core": {"tls_keylog": true} makes the SIP core write its TLS session
+    # secrets (docs/USAGE.md section 7). An explicit switch of its own: no log level turns it on.
+    if source.get("sip_core", {}).get("tls_keylog") is True:
+        template = "#!define TLS_KEYLOG\n" + template
     save("kamailio.cfg", template)
     save(
         "tls.cfg",

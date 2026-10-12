@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify private-call SIP signaling from a clear-SIP server-side capture.
 
 The private call of TS 24.379 clause 11.1.1: originating INVITEs naming one called party (clause 11.1.1.2.1.1), the

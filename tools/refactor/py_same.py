@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Prove that edits to Python files changed no code: compare the syntax tree of each file as
 committed (git HEAD) and as it is now, with the names of variables, parameters and loop targets
 normalised away and docstrings and comments ignored. Renamed local names and reformatting leave

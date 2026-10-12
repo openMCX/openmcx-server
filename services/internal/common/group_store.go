@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The group documents of the GMS: their store, their authorization, and the XCAP operations on them in the users
 // tree and addressed by group ID (create, retrieve, update, delete, and element and attribute operations).
 //

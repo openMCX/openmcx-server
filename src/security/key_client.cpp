@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Key management client: provisioning from the Home KMS over HTTPS, and the CSK, PCK and GMK MIKEY-SAKKE exchanges
 // with their replay and epoch checks.
 //
@@ -422,12 +426,14 @@ keying::KeyMessage KeyClient::open_group(std::string_view gms, std::string_view 
   auto now = now_ntp();
   impl_->ensure_provisioned(now);
   now = now_ntp();
+
   const auto message = keying::parse_gktp_document(xml, group, now);
   auto key =
       keying::open_mikey(impl_->parameters, impl_->lookup(), impl_->identity, gms, message, now, 300, &impl_->profile);
   require((key.csb_id >> 28) == 0 && key.properties && key.properties->type == 0, "received key is not a GMK");
   keying::require_active(key, group, now - ntp_epoch);
   key.csb_id ^= derive_guk_id(key.key, 0, impl_->user_uri);
+
   impl_->remove_expired(now - ntp_epoch);
   const auto id = cache_key(group, key.csb_id);
   const auto found = impl_->received_groups.find(id);
@@ -444,6 +450,7 @@ keying::KeyMessage KeyClient::open_group(std::string_view gms, std::string_view 
     // lifetime or install changed material under an existing key identifier.
     return previous;
   }
+
   const auto activation =
       key.properties->activation_unix_seconds ? key.properties->activation_unix_seconds : key.ntp_seconds - ntp_epoch;
   if (current != impl_->current_groups.end()) {
@@ -453,6 +460,7 @@ keying::KeyMessage KeyClient::open_group(std::string_view gms, std::string_view 
   } else {
     require(impl_->current_groups.size() < maximum_cache_entries, "group epoch cache capacity reached");
   }
+
   require(impl_->received_groups.size() < maximum_cache_entries, "GMK cache capacity reached");
   impl_->received_groups.emplace(id, key);
   if (current != impl_->current_groups.end()) {

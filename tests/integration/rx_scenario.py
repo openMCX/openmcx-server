@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Lab tooling: the Rx lab scenario. It implements no 3GPP procedure; its checks follow TS 29.214 V19.3.0 clauses
 # 4.4.1 to 4.4.6, 5.3, 5.4.1, 5.6 and annex A.13.2, TS 23.379 V19.11.0 clauses 5.7.3 and 7.5.2.6 and
 # TS 24.379 V19.7.0 clause 4.13.

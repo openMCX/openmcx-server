@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // What every service part needs from its server (McServer for MCPTT and MCVideo, DataServer for MCData): the protection
 // of the bodies it sends, the peers (the other participating and controlling functions of the system; MCData has none),
 // the common services and the SIP requests, called per request. Each part's own host interface derives from it.

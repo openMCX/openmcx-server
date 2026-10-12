@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Protected calls: the SRTP contexts of group media (GMK), private call media (PCK) and the SRTCP contexts of
 // floor control (CSK), with key activation, expiry, revocation, rotation, replay protection and bounded state.
 //

@@ -1,3 +1,7 @@
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """The per-program images of the lab (docker/Dockerfile targets, docs/IMAGES.md): which image runs which program.
 
 Used by the lab preparation tools for --images TAG: every service of the OpenMCX application image runs the image

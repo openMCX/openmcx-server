@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Check a capture of MCData communication release against TS 24.282 clause 13.
 
 Reads clear TCP/5060 SIP (debug SIP) and decodes, independently of the C++ implementation, the COMMUNICATION RELEASE (TS

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The Rx dictionary: the Rx application, its commands and the AVPs the MC service server sends or may receive as
 // AF, registered on the process's freeDiameter core when it serves Rx (src/common/diameter_core.hpp).
 //

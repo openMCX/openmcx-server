@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """MCVideo ad hoc group calls (TS 24.281 clause 22, on-demand sessions): with a list of MCVideo
 users (clause 22.2.2.1.1) and with participant criteria (clause 22.2.2.1.1 step 12, clause 22.4.6.1),
 the ad hoc group identity the controlling function assigns (clause 22.4.2), H.264 video checked

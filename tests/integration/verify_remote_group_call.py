@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify remotely initiated group-call signaling from a clear-SIP capture.
 
 The remotely initiated group call of TS 24.379 clause 10.1.5: the request to the service URI naming the remote user and

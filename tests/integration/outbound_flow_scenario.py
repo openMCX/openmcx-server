@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Reach an MC UE that has no SIP listener over the flow it registered on (RFC 5626).
 
 client-b's listening mcx-client is stopped, and outbound_flow_client.py takes its identity

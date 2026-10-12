@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise private call services: call-back, remotely initiated call, transfer and forwarding.
 
 The procedures under test, all of TS 24.379: private call call-back (clause 11.1.5, the client side of clause

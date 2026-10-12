@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """MCVideo video push and pull (TS 24.281 clauses 12.2 and 13.2, one-to-one and to or from the
 server) and remotely initiated and ended transmission (TS 23.281 clauses 7.7.1.3.7 and
 7.7.1.3.6.3, with the Remote Transmission messages of TS 24.581 clauses 9.2.22 to 9.2.25), with

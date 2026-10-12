@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData server service authorisation, log-off and affiliation: the participating MCData function side of
 // TS 24.282 clauses 7.3 and 8.3.2 (member functions of DataServer, declared in data_server.hpp).
 //
@@ -18,6 +22,7 @@ SipResponse DataServer::authorise(const SipMessage &request) {
   const auto *info_part = part(request, mcdata::info_mime);
   if (!info_part || !part(request, "application/poc-settings+xml"))
     return reject(403, "101 service authorisation failed", asserted, "authorisation");
+
   // TS 24.282 clause 7.2.2 steps 3 and 4 and clause 7.3.3 steps 2 and 3 (clause 7.3.1A), with TS 33.180
   // clause 9.2.1.3: the CSK upload, which also keys the encryption of the access token and client ID in the
   // same request.
@@ -36,6 +41,7 @@ SipResponse DataServer::authorise(const SipMessage &request) {
   for (const auto &[sip, other] : users_)
     if (other.id == id && sip != asserted)
       return reject(403, "101 service authorisation failed", asserted, "authorisation");
+
   // The CSK was signed by the MCData ID the access token names.
   if (csk && uploader != id) return reject(403, "101 service authorisation failed", asserted, "authorisation");
   // TS 24.282 clause 7.3.3 steps 5 and 7: the user is bound before the PUBLISH is processed by RFC 3903, so a
@@ -64,6 +70,7 @@ SipResponse DataServer::authorise(const SipMessage &request) {
   pending_.push_back([this, asserted] {
     if (auto found = users_.find(asserted); found != users_.end()) implicit_affiliations(found->second);
   });
+
   // TS 24.282 clause 17.2.2: location reporting is configured upon successful service authorisation.
   pending_.push_back([this, id] { location_.configure(id); });
   return response;
@@ -120,6 +127,7 @@ std::optional<SipResponse> DataServer::authorise_csk(const SipMessage &request, 
       return reject(403, "140 unable to decrypt XML content", asserted, "authorisation");
     }
   }
+
   return std::nullopt;
 }
 
@@ -131,6 +139,7 @@ SipResponse DataServer::affiliate(const SipMessage &request, User &user) {
   const auto *info_part = part(request, mcdata::info_mime);
   const auto *pidf = part(request, "application/pidf+xml");
   const bool removing = get_header(request.headers, "Expires") == "0";
+
   // TS 24.282 clause 8.2.2 NOTE 1: de-affiliation from every group needs no PIDF body.
   if (!info_part || (!pidf && !removing)) return reject(403, "", user.id, "affiliation");
   const auto info = mcdata::parse_info(info_part->body);
@@ -141,12 +150,14 @@ SipResponse DataServer::affiliate(const SipMessage &request, User &user) {
     if (!affiliation.mcdata || affiliation.user_id != user.id || affiliation.client_id != user.client)
       return reject(403, "", user.id, "affiliation");
   }
+
   // TS 24.282 clause 8.3.2.3 step 5: an affiliation lasts until changed, so Expires is 4294967295 (or 0 to end it).
   if (const auto expires = get_header(request.headers, "Expires"); expires != "0" && expires != "4294967295") {
     auto brief = reject(423, "", user.id, "affiliation");
     brief.headers = {{"Min-Expires", "4294967295"}};
     return brief;
   }
+
   // RFC 3903 section 6: a PUBLISH without SIP-If-Match is an initial publication,
   // which replaces the event state rather than being refused. A client that
   // restarted has no entity tag and must still be able to affiliate; only a
@@ -240,6 +251,7 @@ SipResponse DataServer::affiliation_subscribe(const SipMessage &request, User &s
   subscriber.subscription = request.dialog_id;
   response.status_code = 200;
   response.headers = {{"Expires", "4294967295"}};
+
   event("mcdata_affiliation_subscribed", {{"user_id", subscriber.id}});
   schedule_notify(subscriber);
   return response;

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // JSON storage of the MIKEY-SAKKE key material: hex encoding and the JSON conversions of the KMS key periods, public
 // parameters, authority secrets and user key sets.
 //

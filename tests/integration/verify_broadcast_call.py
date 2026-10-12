@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify broadcast group-call signaling and floor coding from a clear-SIP capture.
 
 Broadcast group calls (TS 24.379 clause 4.12): prearranged group calls whose INVITEs and fan-out INVITEs carry

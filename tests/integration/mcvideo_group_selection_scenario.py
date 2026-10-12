@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """MCVideo remote change of a user's selected group (TS 24.281 clause 9.2.4): a change to a
 group the target is not affiliated to (<affiliation-required>, the target affiliates first), a
 change to a group it is affiliated to, a call on the newly selected group, the refusals 155, 120

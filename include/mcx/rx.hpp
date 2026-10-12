@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MC service server in the AF role on Rx (TS 23.379 clause 7.5.2.6, MCPTT-5; TS 23.280 clause 10.11.2a): for
 // each active leg of a UE on an EPS access, an Rx session asks the PCRF for the QoS of the leg's media with the
 // AA-Request (TS 29.214 clauses 4.4.1 and 4.4.2), and ends with the Session-Termination-Request (clause 4.4.4). The

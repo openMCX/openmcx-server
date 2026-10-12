@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // SEAL location management server (SLM-S) in the LMS role: client reports and history, subscriptions,
 // notifications and on-demand requests of MC service servers.
 //

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Lab tooling: a recording mock PCRF for the Rx lab (tests/integration/rx_scenario.py). It is the Diameter peer of
 # the MCPTT server's Rx client over SCTP without TLS: it answers the capabilities exchange, watchdogs, AA-Requests
 # and Session-Termination-Requests, records each request decoded, and on request of the scenario sends

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // openmcx-mcdata-server: the entry point of the MCData server (class DataServer, data_server.hpp).
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19).

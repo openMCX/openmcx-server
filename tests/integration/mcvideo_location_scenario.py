@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise MCVideo location management: the location procedures of TS 24.281 clause 18
 (reporting configuration, clauses 18.2.2 and 18.3.2; location information request, clauses
 18.2.3 and 18.3.3; location information report, clauses 18.2.4 and 18.3.4, with the 403

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Video media of the MCVideo server: the H.264 video ports of a leg or relay, the video part of a group call's SDP
 // answer, and the relay of the transmitting participant's video to the other participants (TS 24.581 clause 6.3)
 // or to a recording (members of McvideoServer).
@@ -58,6 +62,7 @@ void McvideoServer::video_packet(Leg &leg, const Datagram &datagram) {
     status_["media_dropped"] = status_.value("media_dropped", 0u) + 1;
     return;
   }
+
   // TS 24.581 clauses 6.3.5.3.8 and 6.3.5.4.6: video from a participant without permission is not forwarded.
   if (!open && session->arbitrator->owner() != leg.user) {
     status_["media_dropped"] = status_.value("media_dropped", 0u) + 1;
@@ -65,6 +70,7 @@ void McvideoServer::video_packet(Leg &leg, const Datagram &datagram) {
     return;
   }
   auto packet = decode_rtp(datagram.bytes);
+
   // Under transmission control the granted SSRC; without it, the one the party offered.
   const auto expected = open ? leg.remote->video->ssrc : leg.video_ssrc;
   if (packet.ssrc != expected || packet.payload_type != leg.remote->video->payload_type)

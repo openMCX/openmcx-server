@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Media and RTCP protection: the MIKEY PRF, the SRTP/SRTCP master key and salt derivation for PCK, GMK and CSK, the
 // GUK-ID, and SRTP/SRTCP streams.
 //

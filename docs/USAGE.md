@@ -12,7 +12,7 @@ services and headless clients (`mcx-client`). To try OpenMCX with phones or a di
 | [4. MCData commands](#4-mcdata-commands) | SDS, file distribution, IP connectivity, release, enhanced status |
 | [5. MCVideo](#5-mcvideo) | The MCVideo server in the lab |
 | [6. Tests](#6-tests) | Unit tests, the lab test and the regression matrix |
-| [7. Readable SIP in Wireshark](#7-readable-sip-in-wireshark) | SIP without TLS, for an isolated lab |
+| [7. Troubleshooting: logs and readable SIP](#7-troubleshooting-logs-and-readable-sip) | The debug log, the TLS key file for Wireshark, SIP without TLS |
 
 ## 1. Build
 
@@ -43,6 +43,9 @@ tools/mcx down                  # stops the lab and deletes its volumes; config/
 | [`config/lab.json`](../config/lab.json) | Domain, users, groups and their rights; edit it before `provision` |
 | `config/generated/` | Generated credentials and certificates: private, ignored by git, never publish it |
 | `artifacts/client-a/`, `artifacts/client-b/` | Each client's `status.json` and the received speech (16 kHz mono WAV) |
+
+Each container's log is capped at 30 MB (three files of 10 MB, Docker's `json-file` rotation, set in the compose
+files): `docker logs` shows the latest part.
 
 A client signs in with the IdMS, reads its configuration and group documents, registers with the SIP core,
 authorises its services and affiliates to its groups. Every command below runs in a client:
@@ -123,7 +126,49 @@ tools/regress.py --images <tag> --client-image openmcx-client:<tag> --all --tran
 The tests are described in the [MCPTT](../tests/MCPTT_TEST.md), [MCData](../tests/MCDATA_TEST.md) and
 [MCVideo](../tests/MCVIDEO_TEST.md) test indexes.
 
-## 7. Readable SIP in Wireshark
+## 7. Troubleshooting: logs and readable SIP
+
+### Debug log
+
+Off by default. With it on, every OpenMCX program writes a human-readable line on stderr, after its startup banner,
+for each SIP message it receives (`SIP <-`) and sends (`SIP ->`) (servers and clients) and each HTTP request it
+answers (common services and HTTP proxy), named in brackets by program (`mcptt-server`, `client`, `cms`, ...). The JSON events on stdout are unchanged. Message bodies, query strings, headers and tokens are never
+written.
+
+```
+2026/10/13 09:14:02 OpenMCX DEBUG [mcptt-server] SIP <- INVITE sip:mcptt@mcx.test | from <sip:alice@mcx.test> | to <sip:mcptt@mcx.test> | call-id 5f1c0e2a-... | cseq 2 INVITE | 172.31.19.10:5061 TLS | 2310 bytes
+2026/10/13 09:14:02 OpenMCX DEBUG [mcptt-server] SIP -> 100 | from <sip:alice@mcx.test> | to <sip:mcptt@mcx.test> | call-id 5f1c0e2a-... | cseq 2 INVITE | 172.31.19.10:5061 TLS | 412 bytes
+2026/10/13 09:14:01 OpenMCX DEBUG [cms] HTTP GET /xcap-root/... | 200 | 3 ms | 172.31.19.30:51844
+```
+
+| Switch | Where |
+|---|---|
+| `"log_level": "debug"` | in a program's JSON configuration (`"info"` is the default) |
+| `MCX_LOG=debug` | environment variable of a container; overrides the configuration |
+| `--log-level debug` | `tools/prepare-prearranged-test.py`: sets `MCX_LOG=debug` on every OpenMCX service of the lab |
+
+The debug log never turns on the TLS key file below: that has a switch of its own.
+
+```bash
+docker logs <container> 2>&1 | grep 'OpenMCX DEBUG'
+```
+
+### TLS key file for Wireshark
+
+The SIP core terminates TLS on every SIP hop (client to core, core to server), so its TLS session secrets decrypt all
+the SIP of a capture taken anywhere in the system. The file decrypts everything, access tokens included:
+**troubleshooting only, never in production.**
+
+1. Turn it on with its own switch, off by default and independent of the debug log (`log_level` and `MCX_LOG` never
+   turn it on): `"sip_core": {"tls_keylog": true}` in `config/lab.json` before `tools/mcx provision`, or
+   `tools/prepare-prearranged-test.py --tls-keylog`, or `-A TLS_KEYLOG` in the `sip-core` command of a Compose file.
+   The SIP core then writes `/tmp/kamailio-tls-keylog.txt`.
+2. Capture (for example `tcpdump -i any -w sip.pcap port 5061` in the SIP core's network namespace).
+3. Copy the key file out: `docker cp <sip-core container>:/tmp/kamailio-tls-keylog.txt .`
+4. In Wireshark, **Edit → Preferences → Protocols → TLS → (Pre)-Master-Secret log filename**: the key file. The SIP
+   then shows decrypted (filter `sip`).
+
+### SIP without TLS
 
 `--disable-tls` switches SIP to TCP port 5060 for an isolated lab: the SIP bodies and access tokens are then readable
 on the network, so use it only there. HTTPS to the common services and SIP digest authentication stay on.

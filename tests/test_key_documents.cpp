@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Key management documents: the KMS XML responses (KMSInit, KMSKeyProv, KMSCertCache), the KMS Redirect Response,
 // and the MCS GKTP document with its selector, resource list and XCAP diff.
 //

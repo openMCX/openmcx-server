@@ -1,3 +1,7 @@
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """The wire checks' view of a scenario capture (tcpdump pcap of Ethernet, IPv4).
 
 TCP payloads are joined per connection (source and destination address and port),

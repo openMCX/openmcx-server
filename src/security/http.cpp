@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // HTTPS client and OpenID Connect user authentication of the IdM client: the authorization code grant with PKCE,
 // the refresh token grant and ID token validation of the MCX Connect profile.
 //
@@ -184,6 +188,7 @@ HttpResponse HttpClient::request(std::string_view method, const std::string &url
   auto *easy = handle.get();
   HttpResponse response;
   std::string verb(method);
+
   curl_easy_setopt(easy, CURLOPT_URL, url.c_str());
   curl_easy_setopt(easy, CURLOPT_CUSTOMREQUEST, verb.c_str());
   curl_easy_setopt(easy, CURLOPT_CAINFO, ca_.c_str());
@@ -198,6 +203,7 @@ HttpResponse HttpClient::request(std::string_view method, const std::string &url
   curl_easy_setopt(easy, CURLOPT_WRITEDATA, &response.body);
   curl_easy_setopt(easy, CURLOPT_HEADERFUNCTION, header);
   curl_easy_setopt(easy, CURLOPT_HEADERDATA, &response);
+
   if (method == "HEAD") {
     // A HEAD response carries no body; without this libcurl waits for one.
     curl_easy_setopt(easy, CURLOPT_NOBODY, 1L);
@@ -205,11 +211,13 @@ HttpResponse HttpClient::request(std::string_view method, const std::string &url
     curl_easy_setopt(easy, CURLOPT_POSTFIELDS, body.data());
     curl_easy_setopt(easy, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
   }
+
   if (!user.empty()) {
     curl_easy_setopt(easy, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
     curl_easy_setopt(easy, CURLOPT_USERNAME, user.c_str());
     curl_easy_setopt(easy, CURLOPT_PASSWORD, password.c_str());
   }
+
   curl_slist *list = nullptr;
   for (auto &[name, value] : headers) {
     if (name.find_first_of("\r\n:") != name.npos || value.find_first_of("\r\n") != value.npos) {
@@ -220,11 +228,13 @@ HttpResponse HttpClient::request(std::string_view method, const std::string &url
   }
   std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)> holder(list, curl_slist_free_all);
   curl_easy_setopt(easy, CURLOPT_HTTPHEADER, list);
+
   // The address map: connect to the mapped address; libcurl keeps the URL's host for SNI and the name check.
   curl_slist *connect_to = nullptr;
   for (const auto &[named, reached] : address_map_) connect_to = curl_slist_append(connect_to, (named + ":" + reached).c_str());
   std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)> connect_holder(connect_to, curl_slist_free_all);
   if (connect_to) curl_easy_setopt(easy, CURLOPT_CONNECT_TO, connect_to);
+
   auto result = curl_easy_perform(easy);
   if (result != CURLE_OK) throw std::runtime_error(std::string("HTTPS transport: ") + curl_easy_strerror(result));
   curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &response.status);
@@ -278,14 +288,17 @@ HttpResponse http_get_pinned(const std::string &url, std::string_view pin, HttpT
   if (!url.starts_with("https://")) throw std::invalid_argument("HTTPS required");
   static const int initialized = curl_global_init(CURL_GLOBAL_DEFAULT);
   if (initialized != CURLE_OK) throw std::runtime_error("curl init failed");
+
   const auto bytes = unb64(pin);
   Pin expected;
   if (bytes.size() != expected.digest.size()) throw std::invalid_argument("the pin is not a SHA-256");
   std::copy(bytes.begin(), bytes.end(), expected.digest.begin());
+
   std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> handle(curl_easy_init(), curl_easy_cleanup);
   if (!handle) throw std::runtime_error("curl allocation");
   auto *easy = handle.get();
   HttpResponse response;
+
   curl_easy_setopt(easy, CURLOPT_URL, url.c_str());
   curl_easy_setopt(easy, CURLOPT_SSL_VERIFYPEER, 1L);
   curl_easy_setopt(easy, CURLOPT_SSL_VERIFYHOST, 0L);
@@ -301,6 +314,7 @@ HttpResponse http_get_pinned(const std::string &url, std::string_view pin, HttpT
   curl_easy_setopt(easy, CURLOPT_WRITEDATA, &response.body);
   curl_easy_setopt(easy, CURLOPT_HEADERFUNCTION, header);
   curl_easy_setopt(easy, CURLOPT_HEADERDATA, &response);
+
   auto result = curl_easy_perform(easy);
   if (result != CURLE_OK) throw std::runtime_error(std::string("HTTPS transport: ") + curl_easy_strerror(result));
   curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &response.status);
@@ -346,6 +360,7 @@ json verify_id_token(std::string_view token, const json &jwks, std::string_view 
     throw std::runtime_error("invalid JWT");
   auto head = json::parse(unb64(token.substr(0, first)));
   if (head.value("alg", "") != "RS256") throw std::runtime_error("JWT algorithm refused");
+
   json key;
   for (const auto &candidate : jwks.at("keys"))
     if (candidate.value("kid", "") == head.value("kid", "") && candidate.value("kty", "") == "RSA" &&
@@ -355,6 +370,7 @@ json verify_id_token(std::string_view token, const json &jwks, std::string_view 
       key = candidate;
     }
   if (key.is_null()) throw std::runtime_error("unknown signing key");
+
   auto nbytes = unb64(key.at("n").get<std::string>()), ebytes = unb64(key.at("e").get<std::string>());
   std::unique_ptr<BIGNUM, decltype(&BN_free)> modulus(
       BN_bin2bn(reinterpret_cast<const unsigned char *>(nbytes.data()), static_cast<int>(nbytes.size()), nullptr),
@@ -376,12 +392,14 @@ json verify_id_token(std::string_view token, const json &jwks, std::string_view 
       EVP_PKEY_fromdata(ctx.get(), &raw, EVP_PKEY_PUBLIC_KEY, params.get()) != 1)
     throw std::runtime_error("RSA public key import failed");
   std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pub(raw, EVP_PKEY_free);
+
   std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> md(EVP_MD_CTX_new(), EVP_MD_CTX_free);
   auto signature = unb64(token.substr(second + 1));
   if (!md || EVP_DigestVerifyInit(md.get(), nullptr, EVP_sha256(), nullptr, pub.get()) != 1 ||
       EVP_DigestVerify(md.get(), reinterpret_cast<const unsigned char *>(signature.data()), signature.size(),
                        reinterpret_cast<const unsigned char *>(token.data()), second) != 1)
     throw std::runtime_error("ID token signature rejected");
+
   auto claims = json::parse(unb64(token.substr(first + 1, second - first - 1)));
   auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
   auto identity = [&claims](const char *name) {
@@ -394,6 +412,7 @@ json verify_id_token(std::string_view token, const json &jwks, std::string_view 
   const auto mcptt_id = identity("mcptt_id");
   (void)identity("client_id");
   (void)identity("sip_uri");
+
   if (claims.value("iss", "") != issuer || claims.value("aud", "") != audience || claims.value("nonce", "") != nonce ||
       !claims.at("exp").is_number_integer() || !claims.at("iat").is_number_integer() ||
       claims.at("exp").get<long long>() <= now || claims.at("iat").get<long long>() > now + id_token_clock_skew_s ||
@@ -418,11 +437,13 @@ json oidc_login(const HttpClient &http, const json &cfg) {
   for (auto name : {"authorization_endpoint", "token_endpoint", "jwks_uri"})
     if (!discovery.at(name).get<std::string>().starts_with(issuer + "/"))
       throw std::runtime_error("OIDC endpoint outside issuer");
+
   auto verifier = random_id(), state = random_id(), nonce = random_id();
   unsigned char digest[32];
   unsigned int len = 0;
   if (EVP_Digest(verifier.data(), verifier.size(), digest, &len, EVP_sha256(), nullptr) != 1)
     throw std::runtime_error("PKCE digest failure");
+
   auto authorization =
       http.request("GET", discovery.at("authorization_endpoint").get<std::string>() + "?" +
                               form({{"response_type", "code"},
@@ -438,6 +459,7 @@ json oidc_login(const HttpClient &http, const json &cfg) {
                                     {"code_challenge", b64({reinterpret_cast<char *>(digest), len})},
                                     {"code_challenge_method", "S256"}}))
           .json();
+
   auto login = http.request("POST", issuer + "/login",
                             form({{"request_id", authorization.at("request_id")},
                                   {"username", cfg.at("username")},
@@ -449,6 +471,7 @@ json oidc_login(const HttpClient &http, const json &cfg) {
     throw std::runtime_error("OIDC redirect or state mismatch");
   auto code = query_value(location, "code");
   if (code.empty()) throw std::runtime_error("OIDC code absent");
+
   auto tokens = http.request("POST", discovery.at("token_endpoint"),
                              form({{"grant_type", "authorization_code"},
                                    {"client_id", client},
@@ -457,6 +480,7 @@ json oidc_login(const HttpClient &http, const json &cfg) {
                                    {"code_verifier", verifier}}),
                              {{"Content-Type", "application/x-www-form-urlencoded"}})
                     .json();
+
   auto keys = http.request("GET", discovery.at("jwks_uri")).json();
   tokens["claims"] = verify_id_token(tokens.at("id_token").get<std::string>(), keys, issuer, client, nonce);
   tokens["nonce"] = nonce;
@@ -491,12 +515,14 @@ json oidc_refresh(const HttpClient &http, const json &cfg, const std::string &re
       throw oidc_refresh_failed(std::string("token refresh failed: ") + error.what());
     }
   };
+
   const auto discovery =
       transient([&] { return http.request("GET", issuer + "/.well-known/openid-configuration").json(); });
   if (discovery.at("issuer") != issuer) throw std::runtime_error("OIDC issuer mismatch");
   for (const auto *name : {"token_endpoint", "jwks_uri"})
     if (!discovery.at(name).get<std::string>().starts_with(issuer + "/"))
       throw std::runtime_error("OIDC endpoint outside issuer");
+
   const auto response = transient([&] {
     return http.request(
         "POST", discovery.at("token_endpoint"),
@@ -505,6 +531,7 @@ json oidc_refresh(const HttpClient &http, const json &cfg, const std::string &re
   });
   if (oidc_refresh_refusal(response)) throw oidc_refresh_refused("IdMS refused the refresh token (invalid_grant)");
   if (response.status != ok) throw oidc_refresh_failed("token refresh failed: HTTP " + std::to_string(response.status));
+
   auto tokens = response.json();
   auto keys = http.request("GET", discovery.at("jwks_uri")).json();
   // OpenID Connect Core 1.0 section 12.2: the ID token of a refresh names the same user, with the nonce

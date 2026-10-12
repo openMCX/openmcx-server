@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify ambient listening call signaling from a clear-SIP capture.
 
 The ambient listening call of TS 24.379 clause 11.1.6: originating INVITEs carry the ambient listening type, one listed

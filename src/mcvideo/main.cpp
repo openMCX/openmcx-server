@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // openmcx-mcvideo-server: the entry point of the MCVideo server (class McvideoServer, mcvideo_server.hpp).
 //
 // Specifications: TS 24.281 V19.6.0 (Rel-19).

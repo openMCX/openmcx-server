@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify normal prearranged SIP call evidence from a server-side capture.
 
 The prearranged group call of TS 24.379 clause 10.1.1: originating INVITEs with mcptt-info, the controlling function's

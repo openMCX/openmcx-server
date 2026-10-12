@@ -30,6 +30,23 @@ echo 'owner @{HOME}/** r,' | sudo tee /etc/apparmor.d/local/tshark
 sudo apparmor_parser -r /etc/apparmor.d/tshark
 ```
 
+**Troubleshooting: the debug log.** Off by default. In an end-to-end tutorial, set `MCX_LOG=debug` in its `.env` (the
+`.env.example` has the line) and run `docker compose up -d` again; in a unit test tutorial, run `MCX_LOG=debug ./run.sh`.
+Each OpenMCX program then writes one line per SIP message and per HTTP request, `docker logs openmcx-mcptt-server`
+for example:
+
+```
+2026/10/13 09:14:02 OpenMCX DEBUG [mcptt-server] SIP <- INVITE sip:mcptt@mcx.test | from <sip:alice@mcx.test> | to <sip:mcptt@mcx.test> | call-id 5f1c0e2a-... | cseq 2 INVITE | 172.31.19.10:5061 TLS | 2310 bytes
+2026/10/13 09:14:01 OpenMCX DEBUG [cms] HTTP GET /xcap-root/... | 200 | 3 ms | 172.31.19.30:51844
+```
+
+The lines never carry message bodies or tokens. The SIP core's TLS key file, which decrypts SIP over TLS in Wireshark,
+is a separate switch of the lab tools ([docs/USAGE.md](../docs/USAGE.md) section 7), for troubleshooting only, never in
+production.
+
+Each container's log is capped at 30 MB (three files of 10 MB, set in the compose files): `docker logs` shows the
+latest part, so a tutorial left running does not fill the disk.
+
 ## Unit Test Tutorials
 
 One MC service feature each, on one computer with headless clients and no phones, numbered from 1 in `unit-tests/`.

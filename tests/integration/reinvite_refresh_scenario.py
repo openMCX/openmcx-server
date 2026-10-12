@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """A session refresh by re-INVITE without MC service information keeps the call.
 
 A third-party client may refresh its session with a re-INVITE carrying its current offer and no mcptt-info (RFC 4028

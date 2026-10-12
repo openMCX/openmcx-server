@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Users, groups and their policies as the server holds them (member functions of McServer).
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.481 V19.3.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19).

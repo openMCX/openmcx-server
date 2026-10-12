@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCPTT floor control: the RTCP APP packet coding shared with MCVideo transmission control (TS 24.380 clause 8.1,
 // TS 24.581 clause 9.1), the floor control messages and fields of TS 24.380 clause 8.2, the Floor Ack
 // retransmission, the on-network floor participant timers and states (TS 24.380 clause 6.2.4) and the floor control

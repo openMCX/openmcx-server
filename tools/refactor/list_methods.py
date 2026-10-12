@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """List the member functions of one class, with their lines, as Clang parses them.
 Usage: list_methods.py COMPILE_DB_DIR SOURCE CLASS"""
 

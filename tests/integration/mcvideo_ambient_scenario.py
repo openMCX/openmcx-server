@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """MCVideo ambient viewing calls on demand (TS 24.281 clause 15, without the pre-established
 session of clause 15.2.2), remotely and locally initiated (clause 15.2.1.1), with H.264 video
 checked picture by picture; the release capability (clause 15.2.1.3, annex D.3), the refusal of

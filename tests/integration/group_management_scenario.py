@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Group document writes (XCAP) and subscriptions (TS 24.481 V19.3.0 clauses 6.3.2 to 6.3.13).
 
 Run against a four-client fixture prepared with --group-management. Check IDs match

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # OpenMCX Unit Test Tutorial 12: the steps of README.md, one after the other, each checked before the next.
 # Usage: ./run.sh            (the system must be up: docker compose up -d --wait)
 # Writes captures/12-protected-media-run.pcap.gz (captures/12-protected-media-full.pcap.gz is the reference run of

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Standalone SDS over the signalling control plane (one-to-one, group, ad hoc group) and its disposition notifications.
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19), TS 23.282 V19.10.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
@@ -25,6 +29,7 @@ SipResponse DataServer::sds(const SipMessage &sip_request, const User &sender, m
     policy = Json::object();
   }
   const auto &service = cfg_.at("mcdata");
+
   // TS 24.282 clause 9.2.2.3.1 step 7a (clause 11.1 step 1).
   if (!policy.is_object() || !policy.value("transmit_data", false))
     return reject(403, "200 user not authorised to transmit data", sender.id, request.c_str());
@@ -34,6 +39,7 @@ SipResponse DataServer::sds(const SipMessage &sip_request, const User &sender, m
   std::map<std::string, std::string> called_aliases; // recipient -> alias it was reached through
   std::vector<BodyPart> binary{signalling, data};
   std::vector<const User *> targets;
+
   // TS 24.282 clause 9.2.2.2.1 step 2c: the PCK of a one-to-one SDS travels to the recipient unchanged.
   if (const auto *key = part(sip_request, "application/mikey"); key && request == "one-to-one-sds")
     binary.push_back(*key);
@@ -86,6 +92,7 @@ SipResponse DataServer::sds(const SipMessage &sip_request, const User &sender, m
     response.content_type = mcdata::info_mime;
     response.body = mcdata::info_xml(answer);
   }
+
   return response;
 }
 
@@ -118,6 +125,7 @@ std::optional<SipResponse> DataServer::sds_one_to_one(const SipMessage &sip_requ
   }
   if (target.empty() || target == sender.id)
     return reject(403, "204 unable to determine targeted user for one-to-one SDS", sender.id, request.c_str());
+
   // TS 24.282 clause 9.2.2.3.1 steps 7b and 7c (clause 11.1 steps 1A and 7).
   if (const auto max = limit(policy, "max_data_1to1"); max && size > max)
     return reject(403,
@@ -129,6 +137,7 @@ std::optional<SipResponse> DataServer::sds_one_to_one(const SipMessage &sip_requ
     return reject(403, "229 one-to-one MCData communication not authorised to the targeted user", sender.id,
                   request.c_str());
   if (auto rejected = sds_cplane_limit(service, sender, request, size)) return *rejected;
+
   // TS 24.282 clause 9.2.2.4.2 step 5a (clause 11.1 step 3).
   if (const auto max = limit(service, "max_data_size_sds_bytes"); max && size > max)
     return reject(403, "218 user not authorised for one-to-one SDS communications due to message size", sender.id,
@@ -148,6 +157,7 @@ std::optional<SipResponse> DataServer::sds_one_to_one(const SipMessage &sip_requ
     event("mcdata_functional_alias_resolved", {{"user_id", sender.id}, {"alias", target}, {"selected", users.front()}});
     return response;
   }
+
   // TS 24.282 clause 9.2.2.3.2 steps 2 to 3a: the terminating user's binding and incoming list.
   const auto *callee = by_id(target);
   if (!callee) return reject(404, "", sender.id, request.c_str());
@@ -164,6 +174,7 @@ std::optional<SipResponse> DataServer::sds_one_to_one(const SipMessage &sip_requ
                   request.c_str());
   targets.push_back(callee);
   count("sds_one_to_one");
+
   return std::nullopt;
 }
 
@@ -202,12 +213,14 @@ std::optional<SipResponse> DataServer::sds_group(const User &sender, mcdata::Inf
                   sender.id, request.c_str());
   if (!affiliated(sender.id, group))
     return reject(403, "120 user is not affiliated to this group", sender.id, request.c_str());
+
   // TS 24.282 clause 6.3.4: only affiliated members receive the message.
   for (const auto &member : settings.value("members", Json::array()))
     if (const auto *target = affiliated_member(member, group, sender.id)) targets.push_back(target);
   if (targets.empty()) return reject(403, "198 no users are affiliated to this group", sender.id, request.c_str());
   info.calling_group = group; // TS 24.282 clause 9.2.2.4.1.1 step 5b
   count("sds_group");
+
   return std::nullopt;
 }
 
@@ -264,6 +277,7 @@ std::optional<SipResponse> DataServer::adhoc_recipients(const SipMessage &sip_re
     add(id);
   }
   if (participants.empty()) return reject(403, "240 Can't determine the adhoc group participants", sender.id, request);
+
   // Participant limit; the MCData warning table code is 242 (the procedure text cites MCPTT's 189).
   if (const auto max = limit(service, "max_participants"); max && participants.size() > max)
     return reject(403, "242 maximum number of allowed adhoc group participants exceeded", sender.id, request);
@@ -287,6 +301,7 @@ std::optional<SipResponse> DataServer::adhoc_recipients(const SipMessage &sip_re
   adhoc_groups_[group].deadline = monotonic_ms() + service.value("lifetime_ms", 1800000u);
   info.calling_group = group; // TS 24.282 clause 9.2.2.4.1.1 step 5b
   info.participant_criteria.clear();
+
   return std::nullopt;
 }
 
@@ -360,6 +375,7 @@ SipResponse DataServer::notification(const SipMessage &request, const User &noti
     response.status_code = 200;
     return response;
   }
+
   // TS 24.282 clause 12.2.2.1 step 6: a positive notification ends any stored re-delivery.
   held_.erase({notifier.id, mcdata::uuid_text(notice.message)});
   if (const auto adhoc = adhoc_groups_.find(info.calling_group); adhoc != adhoc_groups_.end()) {
@@ -374,11 +390,13 @@ SipResponse DataServer::notification(const SipMessage &request, const User &noti
     if (!listed(document->value("mcdata", Json::object()).value("members", Json::array()), notifier.id))
       return reject(403, "116 user is not part of the MCData group", notifier.id, "notification");
   }
+
   // Correlate with the relayed message when it was recorded (TS 24.282 clause 9.2.2.4.2 step 4).
   const auto found = dispatched_.find(mcdata::uuid_text(notice.message));
   if (found != dispatched_.end() &&
       (found->second.originator != target || !found->second.recipients.contains(notifier.id)))
     return reject(403, "", notifier.id, "notification");
+
   // The optional Sender MCData user ID IE must name the notifier.
   if (notice.sender && *notice.sender != notifier.id) return reject(403, "", notifier.id, "notification");
   const auto *originator = by_id(target);
@@ -416,6 +434,7 @@ SipResponse DataServer::notification(const SipMessage &request, const User &noti
   SipResponse response;
   response.status_code = 202;
   response.reason = "Accepted";
+
   return response;
 }
 

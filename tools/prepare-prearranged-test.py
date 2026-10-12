@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Prepares the single-system lab: runs tools/provision.py on a copy of the lab description
 # with four clients (client-a to client-d), then adds what the flags ask for to the generated
 # configuration (the user profiles, group documents and service configuration the MCPTT,
@@ -1578,6 +1582,12 @@ def main():
     parser.add_argument('--input', type=Path, default=ROOT / 'config/lab.json')
     parser.add_argument('--project', default='openmcx-prearranged')
     parser.add_argument('--debug-sip', action='store_true')
+    parser.add_argument('--log-level', choices=['info', 'debug'], default='info',
+                        help='debug: the servers and clients log every SIP message, the common services every HTTP '
+                        'request (log_level in their configurations)')
+    parser.add_argument('--tls-keylog', action='store_true',
+                        help='troubleshooting only: the SIP core writes its TLS session secrets to '
+                        '/tmp/kamailio-tls-keylog.txt, so a capture can be decrypted')
     parser.add_argument('--floor-queue', action='store_true')
     parser.add_argument('--priority', action='store_true')
     parser.add_argument('--protected', action='store_true')
@@ -2069,6 +2079,20 @@ def main():
         for name in video_servers:
             compose['services'][name].setdefault('depends_on', {})['kms'] = {'condition': 'service_healthy'}
         compose['services']['gms']['depends_on'] = {'kms': {'condition': 'service_healthy'}}
+    if args.log_level == 'debug':
+        # MCX_LOG overrides the configured log_level of every OpenMCX program (C++ servers and clients, Go services).
+        for name, service in compose['services'].items():
+            if name in ('sip-core', 'sip-db') or str(service.get('image', '')).startswith(('mysql', 'mongo')):
+                continue
+            environment = service.setdefault('environment', {})
+            if isinstance(environment, list):
+                environment.append('MCX_LOG=debug')
+            else:
+                environment['MCX_LOG'] = 'debug'
+    if args.tls_keylog and not args.debug_sip:
+        core = compose['services']['sip-core']
+        command = core.get('command') or ['-DD', '-E', '-f', '/config/kamailio.cfg']
+        core['command'] = command[:2] + ['-A', 'TLS_KEYLOG'] + command[2:]
     if args.debug_sip:
         core = compose['services']['sip-core']
         core['command'] = ['-DD', '-E', '-A', 'SIP_DEBUG_NO_TLS', '-f', '/config/kamailio.cfg']
@@ -2083,6 +2107,10 @@ def main():
     service_configuration(fixture)
     if args.admin:
         add_admin(fixture, compose, args)
+    # Docker log rotation (docs/USAGE.md section 2): each container's log at most three files of 10 MB, for the services
+    # added above as for those of docker/compose/compose.yaml.
+    for service in compose['services'].values():
+        service.setdefault('logging', {'driver': 'json-file', 'options': {'max-size': '10m', 'max-file': '3'}})
     path = fixture / 'compose.json'
     path.write_text(json.dumps(compose, indent=2) + '\n')
     subprocess.run([str(compose_bin), '-p', args.project, '-f', str(path), 'config', '--quiet'], check=True)

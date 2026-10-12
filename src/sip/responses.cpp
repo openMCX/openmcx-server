@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // SIP responses of SipEngine::Impl: immediate and deferred responses, subscriptions, INVITE and re-INVITE answers.
 //
 // Specifications: RFC 3261, RFC 3264, RFC 4028, RFC 6665, RFC 2046.
@@ -18,6 +22,7 @@ void SipEngine::Impl::send_response(pjsip_rx_data *data, const SipResponse &resp
     pj_list_push_back(&header_list, create_header(data->tp_info.pool, header));
   }
   const pjsip_hdr *headers = response.headers.empty() ? nullptr : &header_list;
+
   if (dialog != nullptr) {
     auto *transaction = pjsip_rdata_get_tsx(data);
     if (transaction != nullptr && transaction->state == PJSIP_TSX_STATE_NULL) {
@@ -61,6 +66,7 @@ void SipEngine::Impl::answer_reinvite(pjsip_inv_session *invite, pjsip_rx_data *
                         ? (response.local_sdp ? parse_sdp_text(invite->pool_prov, *response.local_sdp)
                                               : parse_local_sdp(invite->pool_prov, *response.local_media))
                         : nullptr;
+
   pjsip_tx_data *created = nullptr;
   pj_str_t reason = pj_view(response.reason);
   if (data != nullptr)
@@ -70,6 +76,7 @@ void SipEngine::Impl::answer_reinvite(pjsip_inv_session *invite, pjsip_rx_data *
     require_success(
         pjsip_inv_answer(invite, response.status_code, response.reason.empty() ? nullptr : &reason, sdp, &created),
         "answer deferred re-INVITE");
+
   // Released when building the body or the headers throws; handed to pjsip_inv_send_msg otherwise.
   TxData answer(created);
   if (response.status_code < 300)
@@ -90,6 +97,7 @@ void SipEngine::Impl::answer_reinvite(pjsip_inv_session *invite, pjsip_rx_data *
     }
     add_answer_headers(answer.get(), config.reinvite_success_headers);
   }
+
   if (response.status_code < 300) {
     auto found = dialogs.find(dialog_id);
     if (found != dialogs.end()) found->second->pending_ack_cseq = cseq;
@@ -104,6 +112,7 @@ void SipEngine::Impl::defer_response(pjsip_rx_data *data, const SipMessage &requ
   if (ascii_equal(request.method, "INVITE") || ascii_equal(request.method, "SUBSCRIBE") ||
       ascii_equal(request.method, "ACK"))
     throw std::invalid_argument("an INVITE or in-dialog SUBSCRIBE cannot be deferred");
+
   DeferredResponse deferred;
   deferred.dialog = pjsip_rdata_get_dlg(data);
   deferred.transaction = pjsip_rdata_get_tsx(data);
@@ -124,6 +133,7 @@ void SipEngine::Impl::defer_response(pjsip_rx_data *data, const SipMessage &requ
       require_success(prepared, "prepare deferred response");
     }
   }
+
   // Keep the transaction alive until the application responds.
   pj_grp_lock_add_ref(deferred.transaction->grp_lock);
   try {
@@ -156,6 +166,7 @@ void SipEngine::Impl::respond_deferred(const std::string &id, const SipResponse 
       send_response(deferred.subscribe, response, nullptr);
     return;
   }
+
   if (deferred.reinvite) {
     const auto found = dialogs.find(deferred.dialog_id);
     if (found == dialogs.end() || found->second->invite == nullptr) return;
@@ -181,10 +192,12 @@ void SipEngine::Impl::respond_deferred(const std::string &id, const SipResponse 
       return;
     }
   }
+
   if (response.status_code < 200 || response.status_code > 699) {
     pjsip_tx_data_dec_ref(data);
     throw std::invalid_argument("invalid deferred response status");
   }
+
   data->msg->line.status.code = response.status_code;
   const pj_str_t reason =
       response.reason.empty() ? *pjsip_get_status_text(response.status_code) : pj_view(response.reason);
@@ -199,6 +212,7 @@ void SipEngine::Impl::respond_deferred(const std::string &id, const SipResponse 
     pjsip_tx_data_dec_ref(data);
     throw;
   }
+
   if (deferred.dialog != nullptr)
     require_success(pjsip_dlg_send_response(deferred.dialog, deferred.transaction, data),
                     "send deferred in-dialog response");
@@ -240,11 +254,13 @@ void SipEngine::Impl::accept_subscription(pjsip_rx_data *data, const SipMessage 
   if (dialogs.contains(request.dialog_id)) {
     throw std::invalid_argument("SIP Call-ID collision");
   }
+
   const auto contact_text = contact_uri();
   auto contact = pj_view(contact_text);
   pjsip_dialog *sip_dialog = nullptr;
   require_success(pjsip_dlg_create_uas_and_inc_lock(pjsip_ua_instance(), data, &contact, &sip_dialog),
                   "create inbound SUBSCRIBE dialog");
+
   bool session = false;
   try {
     auto entry = std::make_unique<Dialog>();
@@ -287,6 +303,7 @@ void SipEngine::Impl::take_session_refresh(pjsip_rx_data *data) {
   if (dialogs.contains(request.dialog_id)) {
     throw std::invalid_argument("SIP Call-ID collision");
   }
+
   auto contact_text = response_contact(response);
   auto contact = pj_view(contact_text);
   pjsip_dialog *sip_dialog = nullptr;
@@ -307,11 +324,13 @@ void SipEngine::Impl::take_session_refresh(pjsip_rx_data *data) {
       require_success(pjsip_auth_clt_set_credentials(&sip_dialog->auth_sess, 1, &credential),
                       "set incoming INVITE dialog credentials");
     }
+
     if (!response.local_media && !response.local_sdp && response.status_code >= 200)
       throw std::invalid_argument("a final INVITE answer needs local media");
     auto *local_sdp = response.local_sdp     ? parse_sdp_text(sip_dialog->pool, *response.local_sdp)
                       : response.local_media ? parse_local_sdp(sip_dialog->pool, *response.local_media)
                                              : nullptr;
+
     if (config.uas_refresher) take_session_refresh(data);
     unsigned options = PJSIP_INV_SUPPORT_TIMER;
     pjsip_tx_data *verification_response = nullptr;
@@ -327,6 +346,7 @@ void SipEngine::Impl::take_session_refresh(pjsip_rx_data *data) {
       pjsip_dlg_dec_lock(sip_dialog);
       return failure_code;
     }
+
     require_success(pjsip_inv_create_uas(sip_dialog, data, local_sdp, options, &invite),
                     "create inbound INVITE session");
     require_success(pjsip_dlg_add_usage(sip_dialog, &ack_module, nullptr), "observe dialog ACK");
@@ -335,6 +355,7 @@ void SipEngine::Impl::take_session_refresh(pjsip_rx_data *data) {
     pjsip_timer_setting_default(&timer);
     timer.sess_expires = config.session_expires;
     require_success(pjsip_timer_init_session(invite, &timer), "configure inbound session timer");
+
     auto entry = std::make_unique<Dialog>();
     entry->id = request.dialog_id;
     entry->dialog = sip_dialog;
@@ -345,6 +366,7 @@ void SipEngine::Impl::take_session_refresh(pjsip_rx_data *data) {
     if (response.status_code >= 200 && response.status_code < 300) entry->pending_ack_cseq = data->msg_info.cseq->cseq;
     invite->mod_data[module.id] = entry.get();
     dialogs[entry->id] = std::move(entry);
+
     pjsip_tx_data *created = nullptr;
     pj_str_t reason = pj_view(response.reason);
     require_success(pjsip_inv_initial_answer(invite, data, response.status_code,

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Lab tooling, no 3GPP behaviour: compares the resource use of two regression runs.
 """Compare the resource use of two regression runs (tools/regress.py --output DIR).
 

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The runtime helpers of the MC servers (src/server/parts/counters.hpp, task_queue.hpp): the named counts of the
 // status report and the queue of tasks run after a request is answered.
 //

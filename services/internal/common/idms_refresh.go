@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // IdMS refresh tokens: the refresh token grant of TS 33.180 annex B.5 with rotation and replay detection, and the
 // token response it shares with the authorization code grant.
 //

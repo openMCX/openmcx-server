@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The media plane control server interface of a call: MCPTT floor control or MCVideo transmission control, with the
 // notices it returns.
 //

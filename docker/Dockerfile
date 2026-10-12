@@ -1,3 +1,7 @@
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # OpenMCX server images: one build stage, then one slim image per program (docs/BUILD.md, docs/IMAGES.md).
 #
 #   tools/build-images [TAG]                                   all targets, tagged openmcx-<target>:TAG

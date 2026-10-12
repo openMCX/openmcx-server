@@ -18,8 +18,15 @@
 name: openmcx-5g
 include:
 - docker-compose-5g-core.yaml
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   oai-gnb:
+    logging: *logging
     container_name: openmcx-oai-gnb
     image: oaisoftwarealliance/oai-gnb:${RAN_TAG:-2026.w39}
     cap_add:
@@ -43,6 +50,7 @@ services:
       timeout: 5s
       retries: 5
   oai-nr-ue:
+    logging: *logging
     container_name: openmcx-oai-nr-ue
     image: oaisoftwarealliance/oai-nr-ue:${RAN_TAG:-2026.w39}
     cap_drop:
@@ -74,6 +82,7 @@ services:
       timeout: 5s
       retries: 5
   ue-route:
+    logging: *logging
     container_name: openmcx-ue-route
     image: oaisoftwarealliance/oai-nr-ue:${RAN_TAG:-2026.w39}
     network_mode: service:oai-nr-ue
@@ -103,6 +112,7 @@ services:
       timeout: 2s
       retries: 100
   dispatcher:
+    logging: *logging
     container_name: openmcx-dispatcher
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-1.0.0}
     network_mode: service:oai-nr-ue
@@ -111,6 +121,7 @@ services:
         condition: service_healthy
     environment:
       HOST_IP: ${HOST_IP:?set HOST_IP in .env}
+      MCX_LOG: ${MCX_LOG:-info}
     entrypoint:
     - sh
     - -c

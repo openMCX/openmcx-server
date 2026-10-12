@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData codecs: the binary messages and information elements of TS 24.282 clause 15, UUIDs, the
 // mcdata-info, affiliation, functional alias, location and storage control XML documents, and the
 // multipart bodies that carry them.

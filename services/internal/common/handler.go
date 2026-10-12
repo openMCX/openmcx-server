@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The common services' HTTP handler: one role per process (IdMS, GMS, CMS, LMS, KMS, the MCData content server,
 // message store and notification server, the IS proxy or the Credential Service), its state and its routes.
 //

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // mcx-http-proxy exposes only the public common-service reference points: the HTTP proxy of TS 24.482 clause 5.4
 // and annex A.2.2 in front of the GMS, CMS, LMS, KMS and the MCData content server, message store and notification
 // server.
@@ -66,6 +70,7 @@ func run() error {
 	}
 	var cfg struct {
 		Endpoints map[string]string `json:"endpoints"`
+		LogLevel  string            `json:"log_level"`
 	}
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return err
@@ -92,6 +97,11 @@ func run() error {
 		contentOptions{limit: contentRequestLimit, timeout: time.Duration(transferTimeoutMs) * time.Millisecond})
 	if err != nil {
 		return err
+	}
+	if debug, err := common.DebugLogging(cfg.LogLevel); err != nil {
+		return err
+	} else if debug {
+		handler = common.WithRequestLog(handler, "http-proxy")
 	}
 	serverTLS := &tls.Config{MinVersion: tls.VersionTLS12}
 	server := &http.Server{Addr: listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second,

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 #include "mcx/af.hpp"
 #include "mcx/h2.hpp"
 #include <algorithm>
@@ -88,6 +92,7 @@ PcfConfig PcfConfig::parse(const Json &j) {
   c.enabled = j.value("enabled", false);
   c.pcf_uri = trim_slash(j.value("pcf_uri", std::string{}));
   c.nrf_uri = trim_slash(j.value("nrf_uri", std::string{}));
+
   // N5 is HTTP/2 only (TS 29.500 5.2.2.1); an old "http2": true is accepted.
   if (j.contains("http2") && !j.at("http2").get<bool>())
     throw std::runtime_error("pcf.http2: N5 uses HTTP/2 only (TS 29.500 5.2.2.1); remove \"http2\": false");
@@ -126,6 +131,7 @@ PcfConfig PcfConfig::parse(const Json &j) {
   if (c.enabled && c.pcf_uri.empty() && c.nrf_uri.empty())
     throw std::runtime_error("pcf.enabled needs pcf_uri or nrf_uri");
   if (c.notif_bind.find(':') == std::string::npos) throw std::runtime_error("pcf.notif_bind is host:port");
+
   return c;
 }
 
@@ -468,6 +474,7 @@ std::vector<Event> PolicyAuthorizationClient::poll() {
       events.push_back({Event::Kind::notified, key, e.life.id(), what, 0, n.body});
     }
   }
+
   return events;
 }
 std::vector<std::string> PolicyAuthorizationClient::keys() const {
@@ -544,6 +551,7 @@ PolicyAuthorizationClient::Result PolicyAuthorizationClient::perform(const Job &
   headers = curl_slist_append(headers, "Accept: application/json, application/problem+json");
   if (method != "GET") headers = curl_slist_append(headers, ("Content-Type: " + type).c_str());
   curl_easy_setopt(c, CURLOPT_URL, url.c_str());
+
   // HTTP/2 only (TS 29.500 5.2.2.1): prior knowledge over cleartext; over TLS
   // negotiated with ALPN, and an HTTP/1.1 answer is refused below.
   curl_easy_setopt(c, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE);
@@ -585,6 +593,7 @@ PolicyAuthorizationClient::Result PolicyAuthorizationClient::perform(const Job &
     if (result.body.is_object() && result.body.contains("detail"))
       result.error += " " + result.body.at("detail").dump();
   }
+
   return result;
 }
 void PolicyAuthorizationClient::work() {
@@ -638,6 +647,7 @@ void PolicyAuthorizationClient::listen() {
   const h2::Handler handler = [this](const h2::Request &r) {
     return h2::Response{receive(r.method, r.path, r.body), {}, {}};
   };
+
   // Each connection is served on its own thread: a PCF may keep a connection open and open others (an HTTP/2 client
   // reuses or pools connections, TS 29.500 clause 5.2.2), so one idle connection must not hold the next notification
   // back. At most max_connections are served at once; a further one waits in the accept queue.

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Check a capture of MCData IP connectivity against TS 24.282 clause 20 and TS 24.582 clause 13.
 
 Signalling: the INVITE to the MCData PSI with the IP connectivity feature tag and ICSI (TS 24.282 clause 20.2.1), the

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Application signalling security (XML protection): the XPK-derived keys, XML content and URI attribute encryption,
 // re-encryption by a server, and XML signatures over MIME bodies, for MCPTT, MCVideo and MCData.
 //
@@ -272,11 +276,13 @@ std::string encrypt(std::string_view xml, const Key &key, const Profile &profile
       if (value.empty() || is_encrypted_uri(value)) continue;
       xmlSetProp(element, attribute->name, reinterpret_cast<const xmlChar *>(encrypt_uri(value, key).c_str()));
     }
+
     if (!profile.elements.contains(name_of(element))) return false;
     xmlChar *type = xmlGetProp(element, reinterpret_cast<const xmlChar *>("type"));
     const bool normal = type && std::strcmp(reinterpret_cast<char *>(type), "Normal") == 0;
     if (type) xmlFree(type);
     if (!normal) return false;
+
     // The content: every child serialised, then replaced by <EncryptedData>.
     std::string plain;
     for (auto *node = element->children; node; node = node->next) {
@@ -285,6 +291,7 @@ std::string encrypt(std::string_view xml, const Key &key, const Profile &profile
         throw std::runtime_error("XML encryption: cannot serialise the content");
       plain.append(reinterpret_cast<const char *>(xmlBufferContent(buffer.get())), xmlBufferLength(buffer.get()));
     }
+
     const auto sealed = seal(content_key, plain);
     OPENSSL_cleanse(plain.data(), plain.size());
     while (element->children) {
@@ -292,6 +299,7 @@ std::string encrypt(std::string_view xml, const Key &key, const Profile &profile
       xmlUnlinkNode(node);
       xmlFreeNode(node);
     }
+
     auto *encrypted = xmlNewChild(element, nullptr, reinterpret_cast<const xmlChar *>("EncryptedData"), nullptr);
     auto *ns = xmlNewNs(encrypted, reinterpret_cast<const xmlChar *>(xenc), nullptr);
     xmlSetNs(encrypted, ns);
@@ -310,6 +318,7 @@ std::string encrypt(std::string_view xml, const Key &key, const Profile &profile
     xmlSetProp(element, reinterpret_cast<const xmlChar *>("type"), reinterpret_cast<const xmlChar *>("Encrypted"));
     return true;
   });
+
   OPENSSL_cleanse(content_key.data(), content_key.size());
   return doc.text();
 }
@@ -333,6 +342,7 @@ std::string decrypt(std::string_view xml, const Key &key) {
         return true;
       }
     }
+
     auto *encrypted = child(element, "EncryptedData", xenc);
     if (!encrypted) return false;
     try {
@@ -346,6 +356,7 @@ std::string decrypt(std::string_view xml, const Key &key) {
         if (algorithm) xmlFree(algorithm);
         require(known, "unsupported XML encryption algorithm");
       }
+
       auto *cipher = child(encrypted, "CipherData", xenc);
       auto *value = cipher ? child(cipher, "CipherValue", xenc) : nullptr;
       require(value != nullptr, "EncryptedData without CipherValue");
@@ -371,6 +382,7 @@ std::string decrypt(std::string_view xml, const Key &key) {
     }
     return true;
   });
+
   OPENSSL_cleanse(content_key.data(), content_key.size());
   if (!failure.empty()) throw std::runtime_error(failure);
   return doc.text();
@@ -392,6 +404,7 @@ std::string reencrypt(std::string_view xml, const Key &from, const Key &to) {
           xmlSetProp(element, attribute->name,
                      reinterpret_cast<const xmlChar *>(encrypt_uri(decrypt_uri(value, from), to).c_str()));
       }
+
       auto *encrypted = child(element, "EncryptedData", xenc);
       if (!encrypted) return false;
       auto *info = child(encrypted, "KeyInfo", dsig);
@@ -400,6 +413,7 @@ std::string reencrypt(std::string_view xml, const Key &from, const Key &to) {
       auto *cipher = child(encrypted, "CipherData", xenc);
       auto *value = cipher ? child(cipher, "CipherValue", xenc) : nullptr;
       require(value != nullptr, "EncryptedData without CipherValue");
+
       auto plain = open(in, unbase64(content_of(value)));
       const auto sealed = seal(out, plain);
       OPENSSL_cleanse(plain.data(), plain.size());
@@ -410,6 +424,7 @@ std::string reencrypt(std::string_view xml, const Key &from, const Key &to) {
     }
     return true;
   });
+
   OPENSSL_cleanse(in.data(), in.size());
   OPENSSL_cleanse(out.data(), out.size());
   if (!failure.empty()) throw std::runtime_error(failure);
@@ -441,6 +456,7 @@ std::optional<std::uint32_t> key_id(std::string_view xml) {
     }
     return false;
   });
+
   if (name.empty()) return std::nullopt;
   const auto bytes = unbase64(name);
   require(bytes.size() == 4, "invalid XPK-ID");
@@ -568,6 +584,7 @@ std::set<std::string> verify(std::string_view signatures, const std::vector<Sign
   Doc doc(signatures);
   std::map<std::string, std::string_view> by_id;
   for (const auto &body : bodies) by_id[body.content_id] = body.body;
+
   std::set<std::string> verified;
   for (auto *signature = xmlDocGetRootElement(doc.doc)->children; signature; signature = signature->next) {
     if (signature->type != XML_ELEMENT_NODE) continue;
@@ -578,6 +595,7 @@ std::set<std::string> verify(std::string_view signatures, const std::vector<Sign
     auto *keyinfo = child(signature, "KeyInfo", dsig);
     if (auto *name = keyinfo ? child(keyinfo, "KeyName", dsig) : nullptr)
       require(content_of(name) == key_name(key.id), "signed under another XPK");
+
     auto *method = child(info, "SignatureMethod", dsig);
     require(!method || attribute(method, "Algorithm") == hmac_sha256, "unsupported signature method");
     auto *reference = child(info, "Reference", dsig);
@@ -589,6 +607,7 @@ std::set<std::string> verify(std::string_view signatures, const std::vector<Sign
     auto *digest_method = child(reference, "DigestMethod", dsig);
     require(!digest_method || attribute(digest_method, "Algorithm") == sha256_digest, "unsupported digest method");
     auto *digest = child(reference, "DigestValue", dsig);
+
     // Reference validation (xmldsig clause 3.2.1), then signature validation (clause 3.2.2).
     require(digest && content_of(digest) == sha256_base64(target->second), "reference digest mismatch");
     const auto expected = hmac_base64(key, canonical(info));

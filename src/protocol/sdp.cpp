@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // SDP offers and answers: the MCPTT and MCVideo media (AMR-WB speech, H.264 video) with their floor or transmission
 // control channel, and the MCData MSRP media.
 //
@@ -55,6 +59,7 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
       (controlled && (!media.floor_port || media.audio_port == media.floor_port ||
                       media.floor_port == media.rtcp_port || !media.floor_ssrc)))
     invalid("invalid SDP media configuration");
+
   // TS 24.281 clause 6.2.1: an MCVideo offer has an audio and a video section; MCPTT has no video.
   if (video != media.video.has_value()) invalid("video media belongs to MCVideo transmission control");
   if (video) {
@@ -111,6 +116,7 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
   out << "m=application " << media.floor_port << " udp " << control << "\r\n";
   if (!media.floor_address.empty() && media.floor_address != media.address)
     out << "c=IN IP4 " << media.floor_address << "\r\n";
+
   // TS 24.380 clause 14.2.7 (mc_floor_ssrc) or TS 24.581 clause 14.2.7 (mc_transmission_ssrc); the
   // parameters are ';'-separated as for MCPTT.
   out << "a=fmtp:" << control << (video ? " mc_transmission_ssrc=" : " mc_floor_ssrc=") << media.floor_ssrc;
@@ -124,6 +130,7 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
   if (media.granted_audio_ssrc) out << ";mc_audio_ssrc=" << media.granted_audio_ssrc;
   if (media.granted_video_ssrc) out << ";mc_video_ssrc=" << media.granted_video_ssrc;
   out << "\r\n";
+
   return out.str();
 }
 
@@ -464,6 +471,7 @@ void finish_sdp(MediaDescription &out, const SdpState &state) {
     out.floor_address = state.session_address.empty() ? out.address : state.session_address;
   address(out.address);
   address(out.floor_address);
+
   // An SDP without "m=application" has no media plane control: an MCVideo private
   // call without transmission control (TS 24.281 clause 10.2.3) or an MCPTT private call
   // without floor control (TS 24.379 clause 11.1.2). Whether the call allows it is the
@@ -471,6 +479,7 @@ void finish_sdp(MediaDescription &out, const SdpState &state) {
   if (!state.floor) out.control = MediaControl::none;
   if (!state.version || !state.audio || !state.matched_codec || (state.floor && !out.floor_ssrc))
     invalid("incomplete MCPTT SDP");
+
   // MCPTT floor control has no video section, and MCVideo transmission control needs
   // one (TS 24.281 clause 6.2.1 step 3).
   if (out.video && out.control == MediaControl::floor) invalid("unsupported SDP media");
@@ -484,6 +493,7 @@ void finish_sdp(MediaDescription &out, const SdpState &state) {
   out.rtcp_port = state.rtcp ? state.rtcp : (out.audio_port < 65535 ? out.audio_port + 1 : 0);
   if (!out.rtcp_port || out.floor_port == out.rtcp_port || out.floor_port == out.audio_port)
     invalid("overlapping SDP ports");
+
   // The same overlaps make_sdp refuses: the video RTP port against the audio RTP and RTCP ports and the control port,
   // the video RTCP port (RFC 3605) against the audio RTP port and the control port.
   if (out.video) {

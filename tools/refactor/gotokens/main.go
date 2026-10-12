@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Command gotokens proves that edits to Go files changed no code: it compares the token
 // streams of two versions of a file, ignoring comments, and allows identifiers (renamed
 // variables, parameters, receivers) to differ; every keyword, operator and literal must match.

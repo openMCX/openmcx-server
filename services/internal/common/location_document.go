@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The location user configuration data document the CMS serves: rendering a user's "location" record as the
 // document of TS 24.484 clause 7.4.
 //

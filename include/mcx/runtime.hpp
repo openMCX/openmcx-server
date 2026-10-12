@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Process runtime of the clients and servers: the configuration, UDP sockets, the control FIFO, the status file and
 // JSON events, command-line arguments, and the MCPTT information and asserted identity of SIP messages.
 //
@@ -88,6 +92,21 @@ void write_status(const Json &cfg, const Json &status);
 //------------------------------------------------------------------------------
 // Helper: writes one JSON event line to stdout with its kind and monotonic time.
 void event(std::string_view kind, const Json &detail = Json::object());
+
+//------------------------------------------------------------------------------
+// The log level of the process (OpenMCX, no 3GPP specification): "info" (the default) writes the events only;
+// "debug" adds a text line on stderr per SIP message sent and received (debug_line), without its body. Set from the configuration's
+// "log_level" by load_config(); the environment variable MCX_LOG overrides it.
+enum class LogLevel { info, debug };
+void set_log_level(LogLevel level);
+LogLevel log_level();
+// Helper: the level a name stands for ("info" or "debug"); throws for any other name.
+LogLevel parse_log_level(std::string_view name);
+
+//------------------------------------------------------------------------------
+// Helper: one human-readable debug log line on stderr, "YYYY/MM/DD HH:MM:SS OpenMCX DEBUG [<program>] <text>" in
+// local time; stdout stays the JSON event stream.
+void debug_line(std::string_view text);
 
 //------------------------------------------------------------------------------
 // Helper: the command-line arguments of a process.

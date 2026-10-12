@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Resource lists: the private call target, participant lists and XCAP references in application/resource-lists+xml.
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), RFC 4826, RFC 5366, RFC 5875.

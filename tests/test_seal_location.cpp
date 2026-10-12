@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // SEAL location management documents: the client's configuration, location and history reports,
 // subscriptions, requests and notifications (urn:3gpp:ns:sealLocationInfo:1.0).
 //

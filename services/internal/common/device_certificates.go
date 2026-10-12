@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Device certificates: the TLS client certificates the SIP core requires, issued for a PKCS#10 request of a
 // signed-in client and revoked with a CRL (OpenMCX's own MCX Admin integration, not a 3GPP procedure).
 //

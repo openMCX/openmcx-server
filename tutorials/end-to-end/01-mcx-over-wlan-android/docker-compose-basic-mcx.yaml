@@ -24,9 +24,16 @@
 
 name: openmcx-basic
 
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # One-off: writes ./config (a new CA, the users, the servers and MCX Admin) for HOST_IP. Not started by `up`.
   setup:
+    logging: *logging
     container_name: openmcx-setup
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-setup:${OPENMCX_TAG:-1.0.0}
     profiles: [setup]
@@ -36,6 +43,7 @@ services:
 
   # SIP core: Kamailio, with its MySQL (also MCX Admin's and the Credential Service's database).
   sip-db:
+    logging: *logging
     container_name: openmcx-sip-db
     image: mysql@sha256:a08db11d440f1426eb47fbdf7cf2e458aa11bc79341bd2a5461f0296f1272f88
     environment:
@@ -55,6 +63,7 @@ services:
       interval: 3s
       retries: 40
   sip-core:
+    logging: *logging
     container_name: openmcx-sip-core
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-kamailio:${OPENMCX_TAG:-1.0.0}
     command: [-DD, -E, -A, CLIENT_SDP_CHECK, -A, CORE_RPC, -f, /config/kamailio.cfg]
@@ -79,6 +88,7 @@ services:
   # Common services (one image, one role each): IdMS, GMS, CMS, KMS, LMS, Credential Service, content server,
   # message store, notification server; the HTTP proxy in front of them for the phones; the MCPTT user database.
   idms:
+    logging: *logging
     container_name: openmcx-idms
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
@@ -97,6 +107,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx]
     ports: ['8443:8443']
@@ -114,6 +126,7 @@ services:
       retries: 30
       start_period: 10s
   gms:
+    logging: *logging
     container_name: openmcx-gms
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
@@ -132,6 +145,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx]
     volumes:
@@ -148,6 +163,7 @@ services:
       retries: 30
       start_period: 10s
   cms:
+    logging: *logging
     container_name: openmcx-cms
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
@@ -166,6 +182,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx]
     volumes:
@@ -182,6 +200,7 @@ services:
       retries: 30
       start_period: 10s
   kms:
+    logging: *logging
     container_name: openmcx-kms
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
@@ -200,6 +219,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx]
     ports: ['8445:8443']
@@ -217,6 +238,7 @@ services:
       retries: 30
       start_period: 10s
   lms:
+    logging: *logging
     container_name: openmcx-lms
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
@@ -235,6 +257,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx]
     volumes:
@@ -251,6 +275,7 @@ services:
       retries: 30
       start_period: 10s
   credentials:
+    logging: *logging
     container_name: openmcx-credentials
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
@@ -269,6 +294,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx, /data]
     ports: ['8447:8443']
@@ -291,6 +318,7 @@ services:
       retries: 30
       start_period: 10s
   content-server:
+    logging: *logging
     container_name: openmcx-content-server
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
@@ -309,6 +337,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx]
     volumes:
@@ -325,6 +355,7 @@ services:
       retries: 30
       start_period: 10s
   message-store:
+    logging: *logging
     container_name: openmcx-message-store
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
@@ -343,6 +374,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx]
     volumes:
@@ -359,6 +392,7 @@ services:
       retries: 30
       start_period: 10s
   notification-server:
+    logging: *logging
     container_name: openmcx-notification-server
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-common]
@@ -375,6 +409,8 @@ services:
     - /config/oidc-public.pem
     - --data-dir
     - /data
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx]
     volumes:
@@ -391,10 +427,13 @@ services:
       retries: 30
       start_period: 10s
   http-proxy:
+    logging: *logging
     container_name: openmcx-http-proxy
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-http-proxy:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-http-proxy]
     command: [--config, /config/http-proxy.json, --tls-cert, /config/tls/http-proxy.crt, --tls-key, /config/tls/http-proxy.key, --ca-file, /config/tls/ca.crt]
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx]
     ports: ['8444:8443']
@@ -423,10 +462,13 @@ services:
       retries: 30
       start_period: 10s
   mcx-user-db:
+    logging: *logging
     container_name: openmcx-mcx-user-db
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-user-db:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/mcx-user-db]
     command: [--config, /shared/userdb.json, --diameter-config, /config/diameter-user-db.conf, --watch]
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx]
     volumes:
@@ -450,10 +492,13 @@ services:
 
   # The three MC servers.
   mcptt-server:
+    logging: *logging
     container_name: openmcx-mcptt-server
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcptt-server:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/openmcx-mcptt-server]
     command: [--config, /config/mcptt-server.json]
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx]
     ports: ['4000-4199:4000-4199/udp', '5000-5199:5000-5199/udp']
@@ -482,10 +527,13 @@ services:
       retries: 30
       start_period: 10s
   mcdata-server:
+    logging: *logging
     container_name: openmcx-mcdata-server
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcdata-server:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/openmcx-mcdata-server]
     command: [--config, /config/mcdata-server.json]
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx]
     volumes:
@@ -512,10 +560,13 @@ services:
       retries: 30
       start_period: 10s
   mcvideo-server:
+    logging: *logging
     container_name: openmcx-mcvideo-server
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcvideo-server:${OPENMCX_TAG:-1.0.0}
     entrypoint: [/usr/local/bin/openmcx-mcvideo-server]
     command: [--config, /config/mcvideo-server.json]
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs: [/run/mcx]
     ports: ['7000-7199:7000-7199/udp', '7200-7399:7200-7399/udp', '7400-7599:7400-7599/udp']
@@ -543,6 +594,7 @@ services:
 
   # MCX Admin: web console and API for users and groups; activation codes for the phones.
   mcxadmin:
+    logging: *logging
     container_name: openmcx-mcxadmin
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-admin:${OPENMCX_TAG:-1.0.0}
     command: [--config, /config/mcxadmin.json, --seed, /config/site.json]

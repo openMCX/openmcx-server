@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """N5 AF role: mcptt-server requests MCPTT QoS from a PCF (TS 29.514 Npcf_PolicyAuthorization).
 
 Run against a fixture prepared with --pcf --priority --floor-queue --private-call:

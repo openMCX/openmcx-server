@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Temporary MCS groups: formation by a GMOP group regroup creation request, the group regroup check and
 // notification of each constituent group, and tear down.
 //

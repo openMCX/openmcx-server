@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Peer registration, both sides (peer_registration.hpp). The clauses are those of TS 24.379 clause 9.2.2.
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), RFC 3261, RFC 3903.

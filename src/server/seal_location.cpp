@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Location information from the SEAL location management server: the server as location management client
 // subscribes to, requests and receives location reports (member functions of McServer).
 //

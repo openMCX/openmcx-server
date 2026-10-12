@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """The OpenMCX chart's configuration Secret.
 
 In the cluster (the chart's setup Job, in the openmcx-setup image): when the Secret does not exist, write a new

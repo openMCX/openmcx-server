@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify chat group-call signaling and floor coding from a clear-SIP capture.
 
 The chat group call of TS 24.379 clause 10.1.2: clients join with INVITEs to the service URI naming the chat group

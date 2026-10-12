@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """MCVideo emergency and imminent peril calls and emergency alerts (TS 24.281 clause 4.6): an
 emergency group call (clause 6.2.8.1.1, clause 9.2.1.2.1.1) and its cancellation (clause 6.2.8.1.3,
 clause 9.2.1.2.1.4), an unauthorised upgrade (clause 6.3.2.1.6.1), imminent peril (clause 6.2.8.1.9,

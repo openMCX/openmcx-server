@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The split of an MC server into participating and controlling functions within one MC system, over MCPTT-3
 // (TS 23.379 clause 7.5.2.4): routes, peer registration, relays.
 //

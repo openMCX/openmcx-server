@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify MCData standalone SDS signalling from a clear-SIP capture of the MCData server.
 
 The procedures under test, all of TS 24.282: service authorisation (clause 7.2.2), affiliation and its notification

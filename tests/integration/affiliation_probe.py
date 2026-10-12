@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Affiliation PUBLISH probes on the wire, as the lab client of --config; run inside its container.
 
 Each probe is a raw SIP PUBLISH (Event: presence) of the client's own affiliation, digest-authenticated as the client,

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """What alice, the administrator, does in MCX Admin, and what erin does with the link alice gives her.
 
 run.sh runs it with python3 in client-a's container (alice's own computer), on the lab network:

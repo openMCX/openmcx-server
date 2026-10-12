@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // RSA keys of the IdMS tokens (TS 33.180 annex B.2): the signing key and the verification keys, read from PEM files
 // or from PEM text in the configuration.
 //

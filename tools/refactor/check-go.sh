@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # gofmt the given Go files, then vet and build the services module (and optionally run its tests),
 # in the openmcx-lint image: the check after editing Go files of a large refactoring.
 #   tools/refactor/check-go.sh [--test] FILE...     (paths relative to the repository root)

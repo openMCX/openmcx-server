@@ -1,3 +1,7 @@
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # The tutorial's setup image: it writes a new system's configuration (CA and certificates, users, servers, MCX Admin)
 # with the lab's own generator, then sets it up for phones on the same network as this computer (configure.py).
 #

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Location information of MC service users: the location-info XML body (configuration, request, report) of
 // TS 24.379 annex F.3, TS 24.282 annex D.4 and TS 24.281 annex F.3, the TS 23.032 coordinate coding, the
 // client's reporting triggers (TS 24.379 clause 13.3, TS 24.282 clause 17.3, TS 24.281 clause 18.3) and the
@@ -233,6 +237,7 @@ std::string criteria_xml(const std::vector<Trigger> &triggers, Service service) 
   std::set<std::string> ids;
   for (const auto &entry : triggers)
     if (!ids.insert(entry.id).second) invalid("TriggerId '" + entry.id + "' is used twice");
+
   const auto of = [&](Trigger::Kind kind) {
     std::vector<const Trigger *> out;
     for (const auto &entry : triggers)
@@ -244,6 +249,7 @@ std::string criteria_xml(const std::vector<Trigger> &triggers, Service service) 
     if (found.size() > 1) invalid(std::string("at most one ") + what + " trigger");
     return found.empty() ? nullptr : found.front();
   };
+
   // The radio changes: an Any element at most once per change element; the
   // enter/exit values that the schema allows only once in the element itself go
   // to its <anyExt> (MBMS SA, MBSFN area and 5G MBSFSA).
@@ -269,6 +275,7 @@ std::string criteria_xml(const std::vector<Trigger> &triggers, Service service) 
     if (any.empty() && specific.empty() && ext.empty()) return std::string{};
     return element(radio_names(*dims.begin()).change, any + specific + (ext.empty() ? "" : element("anyExt", ext)));
   };
+
   std::string body = radio({Dimension::Cell, Dimension::NrCell}, false, false) +
                      radio({Dimension::TrackingArea}, false, false) + radio({Dimension::Plmn}, false, false) +
                      radio({Dimension::MbmsSa}, false, true) + radio({Dimension::Mbsfn}, true, true);
@@ -280,6 +287,7 @@ std::string criteria_xml(const std::vector<Trigger> &triggers, Service service) 
     if (!entry->amount) invalid("a travelled distance needs a distance");
     body += element("TravelledDistance", std::to_string(entry->amount), id_attribute(entry->id));
   }
+
   std::string events, alias_events;
   std::set<Event> seen;
   for (const auto *entry : of(Trigger::Kind::Signalling)) {
@@ -298,6 +306,7 @@ std::string criteria_xml(const std::vector<Trigger> &triggers, Service service) 
     body += element(std::string(capitalised(service)) + "SignallingEvent",
                     ordered + (alias_events.empty() ? "" : element("anyExt", alias_events)));
   }
+
   std::string areas;
   if (const auto *entry = single(Trigger::Kind::AnyArea, "any area change"))
     areas += element("AnyAreaChange", "", id_attribute(entry->id));
@@ -306,6 +315,7 @@ std::string criteria_xml(const std::vector<Trigger> &triggers, Service service) 
   if (const auto *entry = single(Trigger::Kind::ExitArea, "area exit"))
     areas += element("ExitSpecificAreaType", area_xml(entry->area), id_attribute(entry->id));
   if (!areas.empty()) body += element("GeographicalAreaChange", areas);
+
   std::string ext = radio({Dimension::Rat}, false, false) + radio({Dimension::Mbsfsa5G}, true, true) +
                     radio({Dimension::TrackingArea5G}, false, false);
   if (const auto *entry = single(Trigger::Kind::Adaptive, "adaptive")) {
@@ -509,6 +519,7 @@ struct Reader {
           }
       }
     };
+
     radio(one(criteria_node, "CellChange"), {Dimension::Cell, Dimension::NrCell});
     radio(one(criteria_node, "TrackingAreaChange"), {Dimension::TrackingArea});
     radio(one(criteria_node, "PlmnChange"), {Dimension::Plmn});
@@ -517,6 +528,7 @@ struct Reader {
     radio(one_ext(criteria_node, "RatTypeChange"), {Dimension::Rat});
     radio(one_ext(criteria_node, "NR5GMbsfsaAreaChange"), {Dimension::Mbsfsa5G});
     radio(one_ext(criteria_node, "NR5GTrackingAreaChange"), {Dimension::TrackingArea5G});
+
     if (auto *node = one(criteria_node, "PeriodicReport")) {
       auto entry = trigger(Trigger::Kind::Periodic, id(node));
       entry.amount = static_cast<std::uint64_t>(integer(node, 1, 86400 * 366));
@@ -527,6 +539,7 @@ struct Reader {
       entry.amount = static_cast<std::uint64_t>(integer(node, 1, 40000000));
       out.push_back(entry);
     }
+
     auto *events = one(criteria_node, "McpttSignallingEvent");
     if (!events) events = one(criteria_node, "McdataSignallingEvent");
     if (!events) events = one(criteria_node, "McvideoSignallingEvent");
@@ -539,6 +552,7 @@ struct Reader {
           entry.event = event;
           out.push_back(entry);
         }
+
     if (auto *area_change = one(criteria_node, "GeographicalAreaChange")) {
       if (auto *node = one(area_change, "AnyAreaChange")) out.push_back(trigger(Trigger::Kind::AnyArea, id(node)));
       for (auto kind : {Trigger::Kind::EnterArea, Trigger::Kind::ExitArea})
@@ -549,6 +563,7 @@ struct Reader {
           out.push_back(entry);
         }
     }
+
     // The schema names it AddaptiveTrigger, the semantics AdaptiveTrigger.
     auto *adaptive = one_ext(criteria_node, "AddaptiveTrigger");
     if (!adaptive) adaptive = one_ext(criteria_node, "AdaptiveTrigger");
@@ -564,6 +579,7 @@ struct Reader {
         entry.adaptive.additional = static_cast<std::uint64_t>(integer(node, 1, 86400 * 366));
       out.push_back(entry);
     }
+
     std::set<std::string> ids;
     for (const auto &entry : out)
       if (!entry.id.empty() && !ids.insert(entry.id).second) invalid("TriggerId '" + entry.id + "' is used twice");
@@ -606,6 +622,7 @@ struct Reader {
     if (auto *child = one(node, "MbmsSaId")) parsed.mbms_sa = located(child, "SaId", Dimension::MbmsSa);
     if (auto *child = one(node, "MbsfnArea")) parsed.mbsfn = located(child, "MbsfnAreaId", Dimension::Mbsfn);
     if (auto *child = one(node, "CurrentCoordinate")) parsed.coordinate = point(child);
+
     if (auto *child = one_ext(node, "CurrentServingNcgi"))
       parsed.serving_ncgi = located(child, "Ncgi", Dimension::NrCell);
     for (auto *child : with_ext(node, "CL_NeighbouringNcgi"))
@@ -619,6 +636,7 @@ struct Reader {
       if (!std::regex_match(value, hex14)) invalid("BearingAndSpeed is 14 hexadecimal digits");
       parsed.bearing_speed = value;
     }
+
     if (auto *child = one_ext(node, "locTimestamp")) parsed.timestamp = text(child);
     if (auto *child = one_ext(node, "FunctionalAlias")) parsed.functional_alias = text(child);
     if (auto *child = one_ext(node, "InterRatType")) {
@@ -742,6 +760,7 @@ std::vector<Trigger> json_triggers(const nlohmann::json &list, const std::functi
       entry.adaptive.additional = whole(adaptive.value("additional", nlohmann::json(1)), "additional", 1, 86400 * 366);
     } else
       throw std::runtime_error("location configuration: unknown trigger " + item.dump());
+
     entry.id = item.contains("id") ? item.at("id").get<std::string>() : next_id();
     out.push_back(entry);
   }
@@ -871,11 +890,13 @@ double depth(const Area &area, double lat, double lon) {
     }
     return in ? nearest : -nearest;
   }
+
   if (!area.center) return -INFINITY;
   const double clat = area.center->lat(), clon = area.center->lon(), radius = area.radius;
   const double range = distance(clat, clon, lat, lon);
   const double start = 2.0 * area.offset_angle, span = 2.0 * (area.included_angle + 1);
   if (span >= 360) return radius - range;
+
   const double heading = bearing(clat, clon, lat, lon);
   const bool in_sector = std::fmod(heading - start + 360, 360) <= span;
   const auto end1 = destination(clat, clon, start, radius), end2 = destination(clat, clon, start + span, radius);
@@ -925,6 +946,7 @@ std::string to_xml(const Content &content, Service service) {
     for (const auto &trigger_id : report.triggers) inner += element("TriggerId", xml_escape(trigger_id));
     if (!report.reporting_uri.empty())
       inner += element(std::string(lower(service)) + "-reporting-uri", xml_escape(report.reporting_uri));
+
     std::string current;
     if (known.serving_ecgi) {
       check_identity(Dimension::Cell, *known.serving_ecgi);
@@ -943,6 +965,7 @@ std::string to_xml(const Content &content, Service service) {
       current += located("MbsfnArea", "MbsfnAreaId", *known.mbsfn);
     }
     if (known.coordinate) current += element("CurrentCoordinate", point_xml(*known.coordinate));
+
     std::string ext;
     if (known.timestamp) ext += element("locTimestamp", xml_escape(*known.timestamp));
     if (known.functional_alias) ext += element("FunctionalAlias", xml_escape(*known.functional_alias));
@@ -965,6 +988,7 @@ std::string to_xml(const Content &content, Service service) {
       ext += element("CL_BearingAndSpeed", element("BearingAndSpeed", *known.bearing_speed), " type=\"Normal\"");
     }
     if (!ext.empty()) current += element("anyExt", ext);
+
     // <CurrentLocation> is mandatory, even when nothing is known.
     inner += "<CurrentLocation>" + current + "</CurrentLocation>";
     body = element("Report", inner,
@@ -990,11 +1014,13 @@ Content parse(std::string_view xml, Service *service, bool trigger_ids_optional)
   if (!found) invalid("root is not a location-info element");
   if (service) *service = *found;
   const Reader &reader = *found == Service::Mcdata ? mcdata : *found == Service::Mcvideo ? mcvideo : mcptt;
+
   auto *configuration = reader.one(root, "Configuration");
   auto *request = reader.one(root, "Request");
   auto *report = reader.one(root, "Report");
   if ((configuration != nullptr) + (request != nullptr) + (report != nullptr) != 1)
     invalid("exactly one of Configuration, Request or Report");
+
   if (configuration) {
     Configuration config;
     const auto scope = Reader::attr(configuration, "ConfigScope");
@@ -1009,6 +1035,7 @@ Content parse(std::string_view xml, Service *service, bool trigger_ids_optional)
       config.emergency_triggers = reader.criteria(node);
     return config;
   }
+
   if (request) {
     Request parsed_request;
     parsed_request.id = Reader::attr(request, "RequestId");
@@ -1028,6 +1055,7 @@ Content parse(std::string_view xml, Service *service, bool trigger_ids_optional)
     }
     return parsed_request;
   }
+
   Report parsed_report;
   parsed_report.id = Reader::attr(report, "ReportID");
   const auto type = Reader::attr(report, "ReportType");
@@ -1135,11 +1163,13 @@ void Reporter::configure(const Configuration &configuration, std::uint64_t now) 
     merge(configuration_.triggers, configuration.triggers);
     merge(configuration_.emergency_triggers, configuration.emergency_triggers);
   }
+
   configured_ = !configuration_.cancels();
   if (!configured_) {
     fired_.clear();
     return;
   }
+
   const auto *wanted = requested();
   timer_until_ = now + (wanted ? wanted->minimum_interval : 0) * 1000ull;
   origin_ = now;
@@ -1307,6 +1337,7 @@ std::optional<Report> Reporter::poll(std::uint64_t now) {
       if (since >= (adaptive.min_period + adaptive.persistence + adaptive.additional) * 1000) fire(entry.id);
     }
   }
+
   if (fired_.empty() || now < timer_until_) return std::nullopt;
   return build(now);
 }

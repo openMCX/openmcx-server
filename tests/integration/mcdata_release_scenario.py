@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise MCData communication release (TS 24.282 clause 13): the release policies of the controlling
 MCData function (TS 24.282 clauses 13.2.2.2.4.1 to 13.2.2.2.4.3), release by the server without and with
 prior indication (TS 24.282 clauses 13.2.3 and 13.2.4, timer TDC3), and release by an authorised user

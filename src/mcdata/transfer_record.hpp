@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 #pragma once
 // The lifetime of the MCData server's record of a file distribution over the media plane (TS 24.282 clause 10.2.5),
 // header only so that it is unit tested without the server.

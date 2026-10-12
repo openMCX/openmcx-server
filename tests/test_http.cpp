@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // HTTP client boundary and OIDC ID token validation: URI escaping, refusal of clear HTTP, and the RS256-signed ID
 // token checked for signature, key use and algorithm, issuer, audience, nonce, lifetime and the MCX identity claims
 // (TS 33.180 annexes B.2.1 and B.11.1).

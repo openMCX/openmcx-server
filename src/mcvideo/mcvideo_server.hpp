@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MCVideo server of OpenMCX: the controlling and participating MCVideo functions (TS 24.281) on the shared MC
 // server core (McServer, src/server/server.hpp), with the transmission control server of TS 24.581 as its media
 // plane control, the H.264 video relay, video push to and pull from this server with its recordings, and the

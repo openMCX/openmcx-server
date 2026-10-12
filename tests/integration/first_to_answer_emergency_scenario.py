@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise emergency first-to-answer calls (TS 24.379 clauses 11.1.1 and 6.2.8.3).
 
 Run against a fixture prepared with --private-call (client-a may originate

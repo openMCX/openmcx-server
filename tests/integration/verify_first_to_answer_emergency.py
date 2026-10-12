@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify emergency first-to-answer signaling from a clear-SIP capture.
 
 The emergency first-to-answer call of TS 24.379 clause 11.1.1: the originating INVITE carries emergency-ind, the

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The private implementation of mcx::SipEngine (include/mcx/sip.hpp): the SIP user agent and
 // application server core of OpenMCX over pjsip (RFC 3261, as TS 24.229 profiles it for the MC
 // services), with its registrations (RFC 3261 section 10), subscriptions (RFC 6665), session
@@ -264,6 +268,14 @@ struct SipEngine::Impl {
   pjsip_module ack_module{};
 
   static pj_bool_t observe_ack(pjsip_rx_data *data);
+
+  // The SIP message log (log level debug): one event per message received or sent, from a module next to
+  // the transport layer; registered only at those levels, so it costs nothing otherwise.
+  pjsip_module trace_module{};
+
+  static pj_bool_t trace_received(pjsip_rx_data *data);
+
+  static pj_status_t trace_sent(pjsip_tx_data *data);
 
   void release_bye_references();
 

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise temporary groups formed by the GMS and the group and chat calls on them.
 
 Formation: the GMS refuses a user not authorised to form temporary groups (TS 24.481 clause 6.3.14.3.1 step b)), asks

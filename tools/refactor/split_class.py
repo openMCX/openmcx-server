@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Split one C++ class, written with its member functions defined inside the class body, into
 a header with the class declaration and source files with the member function definitions,
 grouped by topic.

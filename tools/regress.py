@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Lab tooling: runs the integration scenarios of the lab matrix below. It implements no 3GPP
 # procedure; the comments of the matrix name the clauses each lab exercises.
 #

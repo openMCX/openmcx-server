@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The key management client: KMS provisioning of user key material, CSK creation and acceptance, GMK reception
 // from GKTP documents.
 //

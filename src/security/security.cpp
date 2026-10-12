@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Media and RTCP protection: the MIKEY PRF, the SRTP/SRTCP master key and salt derivation for PCK, GMK and CSK/SPK,
 // the GUK-ID, and SRTP/SRTCP with AEAD_AES_128_GCM, MKI and the RCCm3 ROC.
 //
@@ -226,12 +230,14 @@ struct SecureStream::Impl {
         get32(packet.subspan(rtcp ? 4 : 8, 4)) != ssrc)
       throw std::invalid_argument("invalid RTP/RTCP header or SSRC");
     if (rtcp && protect) validate_rtcp(packet);
+
     const auto sequence = std::uint16_t((std::uint16_t(packet[2]) << 8) | packet[3]);
     if (!rtcp && protect && sent_rtp) {
       const auto distance = std::uint16_t(sequence - last_sequence);
       if (distance == 0 || distance >= 32768)
         throw std::invalid_argument("outbound RTP sequences must advance monotonically");
     }
+
     Bytes bytes(packet.begin(), packet.end());
     std::uint32_t roc = 0;
     if (!protect && !rtcp && !material.transmit_roc && bytes.size() < minimum + 16 + material.mki.size())
@@ -251,6 +257,7 @@ struct SecureStream::Impl {
       require(result);
       require(srtp_set_stream_roc(inbound, ssrc, roc));
     }
+
     int length = bytes.size();
     if (protect) bytes.resize(bytes.size() + SRTP_MAX_TRAILER_LEN + material.mki.size() + 4);
     srtp_err_status_t result;
@@ -262,6 +269,7 @@ struct SecureStream::Impl {
                        : srtp_unprotect_mki(inbound, bytes.data(), &length, 1);
     require(result);
     bytes.resize(length);
+
     if (rtcp && !protect) validate_rtcp(bytes);
     if (protect && !rtcp) {
       if (material.transmit_roc) {

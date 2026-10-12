@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The request values of the MCPTT, MCVideo and MCData servers (src/server/request_values.hpp): the Expires header
 // field, percent-decoding of URI components and the outcome rule of an implicit affiliation.
 //

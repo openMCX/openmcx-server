@@ -1,3 +1,7 @@
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Tutorial 5's addition to tutorial 1's configuration: the MCPTT server's "rx" block (Rx, TS 29.214, MCPTT-5) and the
 EPC's Diameter certificates.
 

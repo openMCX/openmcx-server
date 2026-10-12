@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MCPTT and MCVideo servers in the AF role towards policy control, for the QoS of each active leg's media
 // (member functions of McServer): N5 for a UE on 5G access (TS 23.289 clauses 5.4 to 5.6, TS 29.514
 // Npcf_PolicyAuthorization, "pcf" block) and Rx for a UE on EPS access (TS 23.379 clause 7.5.2.6 MCPTT-5,
@@ -114,6 +118,7 @@ std::optional<af::SessionRequest> McServer::policy_request(const Leg &leg) const
     request.priority = priority_name(session.priority);
   else if (const auto found = priorities_.find(session.group); found != priorities_.end())
     request.priority = priority_name(found->second);
+
   // TS 24.379 clause 6.3.3.1.19: the Resource-Priority provisioned for that priority (TS 29.214 annex A.13.2).
   request.resource_priority = service_resource_priority().value(request.priority, std::string{});
   return request;

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MCData server: construction, the run loop with its operator commands and the periodic tick that runs
 // the timers (TDC1, TDC2, TDC3) and writes the status (member functions of DataServer, declared in data_server.hpp).
 //
@@ -158,6 +162,7 @@ void DataServer::status_communications() {
                                          {"relayed_bytes", session->relayed_bytes},
                                          {"dialog", dialog},
                                          {"connected", session->endpoint && session->endpoint->connected()}});
+
   // The in-progress priority states of the groups (TS 24.282 clause 6.3.7.1), which persist until
   // an authorised user cancels them.
   status_["group_priority"] = Json::object();

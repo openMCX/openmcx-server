@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Group provisioning by MCX Admin through the GMS: an internal interface that stores a group as an XCAP write of
 // the whole group document would.
 //

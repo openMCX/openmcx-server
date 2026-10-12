@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """MCPTT private calls without floor control (TS 24.379 clause 11.1.2).
 
 Run against a fixture prepared with --private-call: client-a may call client-b in every commencement mode, and the

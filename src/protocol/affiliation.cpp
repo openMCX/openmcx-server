@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Affiliation documents (application/pidf+xml with the MC service affiliation extension) and the PoC settings document.
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), RFC 3863,
@@ -43,6 +47,7 @@ Affiliation parse_affiliation(std::string_view xml) {
   auto tuple = unique_child(root, "tuple", pidf_ns);
   affiliation.client_id = attr(tuple, "id");
   auto status = unique_child(tuple, "status", pidf_ns);
+
   // TS 24.282 clause 8.4.1 and TS 24.281 clause 8.3.1: MCData and MCVideo use the same
   // structure in their own namespaces.
   bool mcptt = false;
@@ -52,6 +57,7 @@ Affiliation parse_affiliation(std::string_view xml) {
     if (is(node, "affiliation", mcvideo_affiliation_ns)) affiliation.mcvideo = true;
   }
   if (int(mcptt) + int(affiliation.mcdata) + int(affiliation.mcvideo) > 1) invalid("mixed MC service affiliation");
+
   // A PIDF with no affiliation (a de-affiliation from every group, or a peer
   // registration without groups) names its service by the namespace of its p-id.
   if (!mcptt && !affiliation.mcdata && !affiliation.mcvideo) {
@@ -73,6 +79,7 @@ Affiliation parse_affiliation(std::string_view xml) {
       affiliation.statuses.push_back(attr(node, "status"));
     }
   if (affiliation.user_id.empty() || affiliation.client_id.empty()) invalid("missing PIDF identity");
+
   return affiliation;
 }
 

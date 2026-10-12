@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Counters of an MC server's procedures, as the status report shows them: one JSON object of named counts per area
 // (location, document subscriptions, MCData communications, ...). Shared by the MCPTT and MCVideo servers
 // (McServer) and the MCData server (DataServer).

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Regression of every call-type scenario against one server instance.
 #
 # Usage: tests/integration/run_all_call_types.sh LAB_DIRECTORY PROJECT [LAB_FLAGS]

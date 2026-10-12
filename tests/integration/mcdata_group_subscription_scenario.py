@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """The MCData server as an MCS server subscribing to group documents
 (TS 24.481 V19.3.0 clause 6.3.13.2.2).
 

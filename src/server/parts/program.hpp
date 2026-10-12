@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The entry point shared by the MC server programs (openmcx-mcptt-server, openmcx-mcvideo-server and
 // openmcx-mcdata-server): arguments, configuration, control commands, the banner and the stop signals.
 //

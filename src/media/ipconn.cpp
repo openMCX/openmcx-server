@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData IP connectivity: the SDP of the GRE-in-UDP tunnel, GRE encapsulation and a minimal IPv4/ICMP endpoint.
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19), TS 24.582 V19.0.0 (Rel-19), RFC 8086, RFC 2784, RFC 1071, RFC 791,
@@ -148,6 +152,7 @@ TunnelMedia parse_tunnel_sdp(std::string_view sdp) {
   if (!found) invalid("no IP connectivity media section");
   if (out.address.empty()) out.address = session_address;
   if (out.address.empty()) invalid("no connection address for the tunnel");
+
   return out;
 }
 

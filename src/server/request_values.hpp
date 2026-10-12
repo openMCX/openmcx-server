@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Values the server procedures read from a SIP request, parsed without throwing: the Expires header field
 // (RFC 3261 section 20.19) and percent-encoded URI components (RFC 3986 section 2.1). A malformed value gives
 // std::nullopt, so that the procedure answers 400 instead of failing with an exception. Also the outcome rule of

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify group and user regroups using a preconfigured group from a clear-SIP capture.
 
 The regroup procedures of TS 24.379 clause 16: group regroup requests and notifications (clauses 16.2.1.1 to 16.2.1.4,

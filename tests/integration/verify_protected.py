@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Independently inspect protected-call PCAP wire structure without session keys.
 
 Keying: each client's CSK in an accepted SIP PUBLISH (TS 33.180 clause 9.2.1, MIKEY-SAKKE purpose tag 2) and the GMK in

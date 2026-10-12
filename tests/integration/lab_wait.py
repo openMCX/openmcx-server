@@ -1,3 +1,7 @@
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Waiting helpers shared by the lab scenarios.
 
 A negative check ("nothing is invited", "the call stays up") cannot wait for an event. Sleeping a fixed time and

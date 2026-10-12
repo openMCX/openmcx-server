@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // File distribution over HTTP at the combined participating and controlling MCData function: media storage
 // discovery, the FD request, its disposition and network-triggered notifications and its release (TS 24.282
 // clauses 10.2.1.3, 10.2.4, 12.2, 12.4 and 13.2; member functions of DataServer, declared in data_server.hpp).
@@ -84,6 +88,7 @@ SipResponse DataServer::media_storage_discovery(const User &user, const mcdata::
     if (!affiliated(user.id, info.calling_group))
       return reject(403, "120 user is not affiliated to this group", user.id, "msf-discovery");
   }
+
   // TS 24.282 clause 10.2.1.3.4 step 7: the answer is a new SIP MESSAGE, not the 200 (OK).
   mcdata::Info answer;
   answer.request_type = "msf-disc-res";
@@ -103,6 +108,7 @@ SipResponse DataServer::media_storage_discovery(const User &user, const mcdata::
                                             {"uri", file_distribution().value("content_server", std::string{})}});
   SipResponse response;
   response.status_code = 200;
+
   return response;
 }
 
@@ -125,6 +131,7 @@ SipResponse DataServer::fd(const SipMessage &received, const User &sender, mcdat
   const auto policy = profile(sender.id).value("mcdata", Json::object());
   const bool group_request = info.request_type == "group-fd";
   const auto size = mcdata::metadata_size(request.metadata.value_or(std::string{})).value_or(0);
+
   // TS 24.282 clause 10.2.4.3.1 step 7a: <allow-transmit-data> (clause 11.1 step 1).
   if (!policy.value("transmit_data", false))
     return reject(403, "200 user not authorised to transmit data", sender.id, "fd");
@@ -135,6 +142,7 @@ SipResponse DataServer::fd(const SipMessage &received, const User &sender, mcdat
   } else {
     if (auto refused = fd_group(sender, info, size, targets)) return *refused;
   }
+
   // TS 24.282 clause 10.2.4.4.2 step 7b with clause 6.7.3.
   if (!file_available(request.file_url))
     return reject(403, "212 file referenced by file URL does not exist", sender.id, "fd");
@@ -158,6 +166,7 @@ SipResponse DataServer::fd(const SipMessage &received, const User &sender, mcdat
   transfer.application_id = request.application_id;
   info.calling_user = sender.id;
   std::vector<BodyPart> binary{{mcdata::signalling_mime, mcdata::encode(request)}};
+
   // TS 33.180 clause 8.3: the PCK of a one-to-one FD request travels to the recipient unchanged.
   if (const auto *key = part(received, "application/mikey"); key && info.request_type == "one-to-one-fd")
     binary.push_back(*key);
@@ -183,6 +192,7 @@ SipResponse DataServer::fd(const SipMessage &received, const User &sender, mcdat
   SipResponse response;
   response.status_code = 202; // TS 24.282 clause 10.2.4.4.2 steps 15 and 16
   response.reason = "Accepted";
+
   return response;
 }
 
@@ -199,6 +209,7 @@ std::optional<SipResponse> DataServer::fd_one_to_one(const SipMessage &received,
   } catch (const std::exception &) {
     target.clear();
   }
+
   // TS 24.282 clause 10.2.4.4.2 step 10a.
   if (target.empty()) return reject(403, "205 unable to determine targeted user for one-to-one FD", sender.id, "fd");
   if (const auto max = limit(policy, "max_data_1to1"); max && size > max)
@@ -224,6 +235,7 @@ std::optional<SipResponse> DataServer::fd_one_to_one(const SipMessage &received,
   }
   const auto *user = by_id(target);
   if (!user) return reject(404, "", sender.id, "fd");
+
   // TS 24.282 clause 10.2.4.3.2 step 5A: the recipient's incoming communication list.
   const auto incoming = profile(user->id).value("mcdata", Json::object());
   // The list applies with one or more entries (TS 24.282 clause 10.2.4.3.2 step 5A).
@@ -233,6 +245,7 @@ std::optional<SipResponse> DataServer::fd_one_to_one(const SipMessage &received,
                   "fd");
   called_alias = info.called_functional_alias;
   targets.push_back(user);
+
   return std::nullopt;
 }
 
@@ -267,6 +280,7 @@ std::optional<SipResponse> DataServer::fd_group(const User &sender, mcdata::Info
     if (const auto *target = affiliated_member(member, group, sender.id)) targets.push_back(target);
   if (targets.empty()) return reject(403, "198 no users are affiliated to this group", sender.id, "fd");
   info.calling_group = group;
+
   return std::nullopt;
 }
 
@@ -297,6 +311,7 @@ SipResponse DataServer::fd_notification(const User &sender, mcdata::Info info, c
     break;
   default: break;
   }
+
   // TS 24.282 clause 12.2.3 step 15c: collect the group's notifications until TDC1 expires or every
   // recipient has reported a final disposition (completed or rejected).
   if (!transfer.group.empty() && notice.sender && aggregation().value("enabled", false) && !transfer.aggregate_sent) {
@@ -330,6 +345,7 @@ SipResponse DataServer::fd_notification(const User &sender, mcdata::Info info, c
   SipResponse response;
   response.status_code = 202;
   response.reason = "Accepted";
+
   return response;
 }
 
@@ -405,11 +421,13 @@ SipResponse DataServer::fd_termination(const User &sender, const BodyPart &signa
   if (request.message == empty || request.conversation == empty)
     return reject(403, "223 No Conversation ID or Message ID present", sender.id, "fd-termination");
   const auto found = transfers_.find(message_id);
+
   // TS 24.282 clause 10.2.4.4.2 step 11b: no transmission with this Conversation ID and Message ID.
   if (found == transfers_.end() || found->second.conversation != mcdata::uuid_text(request.conversation) ||
       (!request.file_url.empty() && request.file_url != found->second.file_url))
     return reject(404, "224 No transmission available", sender.id, "fd-termination");
   auto &transfer = found->second;
+
   // <allow-release-any-user> (TS 24.282 clause 13.2.5.3.4.1 step 2a, "based on configuration").
   const bool release_any = profile(sender.id).value("mcdata", Json::object()).value("release_any_user", false);
   SipResponse response;
@@ -441,6 +459,7 @@ SipResponse DataServer::fd_termination(const User &sender, const BodyPart &signa
   }
   const bool by_other = request.type == mcdata::TerminationType::AuthorisedUserRequest;
   const auto originator = transfer.originator;
+
   // TS 24.282 clause 10.2.4.4.2 step 17a (clause 12.4.2.1): the recipients are told the file was deleted, and it is removed.
   file_expired(message_id, transfer, mcdata::FdNetworkNotificationType::Deleted);
   mcdata::FdHttpTermination answer;
@@ -464,6 +483,7 @@ SipResponse DataServer::fd_termination(const User &sender, const BodyPart &signa
       {{"user_id", sender.id}, {"message_id", message_id}, {"originator", originator}, {"authorised_user", by_other}});
   response.status_code = 202;
   response.reason = "Accepted";
+
   return response;
 }
 
@@ -501,6 +521,7 @@ SipResponse DataServer::fd_extension_response(const User &sender, const mcdata::
   event("mcdata_file_extension",
         {{"user_id", sender.id}, {"message_id", message_id}, {"granted", accepted}, {"decided_by", "authorised user"}});
   response.status_code = 200;
+
   return response;
 }
 
@@ -537,6 +558,7 @@ SipResponse DataServer::fd_extension_request(const User &sender, const mcdata::F
   answer.extension = granted ? mcdata::ExtensionResponse::Accepted : mcdata::ExtensionResponse::Rejected;
   answer.file_url = transfer.file_url;
   send_termination(sender.id, answer);
+
   event("mcdata_file_extension", {{"user_id", sender.id}, {"message_id", message_id}, {"granted", granted}});
   response.status_code = 200;
   return response;

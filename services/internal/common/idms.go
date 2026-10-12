@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // IdMS: the IdM server of TS 24.482 clause 6.3.1, with the OpenID Connect authorization code flow and PKCE of
 // TS 33.180 annex B.4.2 (authorization endpoint, sign-in, token endpoint), its discovery document and keys, and
 // token introspection for the MC servers.
@@ -152,12 +156,12 @@ func setPageHeaders(writer http.ResponseWriter) {
 
 var signInPage = template.Must(template.New("signin").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>openMCX sign-in</title>
+<title>OpenMCX sign-in</title>
 <style>body{font-family:system-ui,sans-serif;max-width:24rem;margin:4rem auto;padding:0 1rem;color:#15171c}
 .logo{display:inline-block;background:#ffc58a;border-radius:8px;padding:.4rem .7rem;font-weight:700}
 input{display:block;width:100%;box-sizing:border-box;margin:.3rem 0 1rem;padding:.55rem;font:inherit}
 button{padding:.55rem 1.1rem;font:inherit;background:#c2530f;color:#fff;border:0;border-radius:6px}</style></head>
-<body><p><span class="logo">openMCX</span></p><h1>Sign in</h1>
+<body><p><span class="logo">OpenMCX</span></p><h1>Sign in</h1>
 <form method="post" action="login"><input type="hidden" name="request_id" value="{{.RequestID}}"><input type="hidden" name="html" value="1">
 <label>User name<input name="username" autocomplete="username" required autofocus></label>
 <label>Password<input type="password" name="password" autocomplete="current-password" required></label>

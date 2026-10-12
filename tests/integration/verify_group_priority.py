@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify emergency and imminent-peril group-call signaling from a clear-SIP capture.
 
 Emergency and imminent peril group calls of TS 24.379: requests at setup or by re-INVITE carry emergency-ind or

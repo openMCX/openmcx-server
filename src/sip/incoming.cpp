@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // SIP engine, incoming side: received requests, INVITE session state, re-INVITEs and negotiated media.
 //
 // Specifications: RFC 3261, RFC 4028, RFC 3262, RFC 3264, RFC 3311, RFC 6665, RFC 4566.
@@ -66,6 +70,7 @@ namespace mcx {
     send_response(data, response, nullptr);
     return false;
   }
+
   unsigned options = PJSIP_INV_SUPPORT_TIMER;
   pjsip_tx_data *failure = nullptr;
   const pj_status_t status = pjsip_inv_verify_request(data, &options, nullptr, nullptr, endpoint, &failure);
@@ -105,6 +110,7 @@ pj_bool_t SipEngine::Impl::receive_request(pjsip_rx_data *data) {
           pjsip_method_cmp(&method, &pjsip_prack_method) == 0)
         return PJ_FALSE;
     }
+
     const std::string incoming_id = call_id_from(data->msg_info.msg);
     const auto existing = owner->dialogs.find(incoming_id);
     if (existing != owner->dialogs.end() && (data->msg_info.to == nullptr || data->msg_info.to->tag.slen == 0 ||
@@ -115,14 +121,17 @@ pj_bool_t SipEngine::Impl::receive_request(pjsip_rx_data *data) {
       owner->send_response(data, collision, matched_dialog);
       return PJ_TRUE;
     }
+
     SipMessage request = owner->message_from(data);
     if (ascii_equal(request.method, "INVITE") && matched_dialog == nullptr && !owner->verify_initial_invite(data)) {
       return PJ_TRUE;
     }
+
     request.transaction_id = std::to_string(++owner->next_transaction);
     SipResponse response = safe_application_response(*owner, request);
     const std::string method = request.method;
     const bool invite = ascii_equal(method, "INVITE");
+
     if (response.deferred && ascii_equal(method, "SUBSCRIBE") && pjsip_rdata_get_dlg(data) == nullptr) {
       DeferredResponse deferred;
       require_success(pjsip_rx_data_clone(data, 0, &deferred.subscribe), "retain deferred SUBSCRIBE");
@@ -134,6 +143,7 @@ pj_bool_t SipEngine::Impl::receive_request(pjsip_rx_data *data) {
       owner->defer_response(data, request);
       return PJ_TRUE;
     }
+
     // A deferred provisional answer leaves the SDP answer to SipEngine::answer.
     if (invite && response.status_code >= 100 && response.status_code < 300 &&
         (response.local_media.has_value() || response.local_sdp.has_value() ||
@@ -149,6 +159,7 @@ pj_bool_t SipEngine::Impl::receive_request(pjsip_rx_data *data) {
       }
       return PJ_TRUE;
     }
+
     if (ascii_equal(method, "SUBSCRIBE") && response.status_code >= 200 && response.status_code < 300) {
       owner->accept_subscription(data, request, response);
       return PJ_TRUE;
@@ -195,6 +206,7 @@ void SipEngine::Impl::follow_invite_state(pjsip_inv_session *invite, pjsip_event
   if (dialog == nullptr) {
     return;
   }
+
   const std::string id = dialog->id;
   SipCallState state = SipCallState::early;
   bool notify = false;
@@ -234,6 +246,7 @@ void SipEngine::Impl::follow_invite_state(pjsip_inv_session *invite, pjsip_event
       }
     }
   }
+
   std::optional<SipResponse> initial_response;
   SipResponseHandler initial_handler;
   if (dialog->initial_handler && event != nullptr && event->type == PJSIP_EVENT_TSX_STATE &&
@@ -248,6 +261,7 @@ void SipEngine::Impl::follow_invite_state(pjsip_inv_session *invite, pjsip_event
       owner->report_error(error.what());
     }
   }
+
   if (state == SipCallState::disconnected) {
     invite->mod_data[owner->module.id] = nullptr;
     const auto found = owner->dialogs.find(id);
@@ -257,6 +271,7 @@ void SipEngine::Impl::follow_invite_state(pjsip_inv_session *invite, pjsip_event
       owner->dialogs.erase(found);
     }
   }
+
   if (notify) {
     owner->notify_call_state(id, state, invite->cause);
   }
@@ -276,6 +291,7 @@ pj_status_t SipEngine::Impl::receive_reinvite(pjsip_inv_session *invite, const p
     auto request = owner->message_from(data);
     request.transaction_id = std::to_string(++owner->next_transaction);
     auto response = safe_application_response(*owner, request);
+
     if (response.deferred) {
       pjsip_tx_data *trying = nullptr;
       require_success(pjsip_inv_initial_answer(invite, data, 100, nullptr, nullptr, &trying),
@@ -343,6 +359,7 @@ void SipEngine::Impl::invite_media_updated(pjsip_inv_session *invite, pj_status_
     owner->report_error("SDP negotiation failed: " + status_error(status));
     return;
   }
+
   auto *dialog = static_cast<Dialog *>(invite->mod_data[owner->module.id]);
   if (dialog == nullptr || invite->neg == nullptr) {
     return;
@@ -351,12 +368,14 @@ void SipEngine::Impl::invite_media_updated(pjsip_inv_session *invite, pj_status_
   if (pjmedia_sdp_neg_get_active_remote(invite->neg, &remote) != PJ_SUCCESS || remote == nullptr) {
     return;
   }
+
   std::array<char, 8192> buffer{};
   const int length = pjmedia_sdp_print(remote, buffer.data(), buffer.size());
   if (length <= 0) {
     owner->report_error("could not print negotiated remote SDP");
     return;
   }
+
   const std::string_view negotiated(buffer.data(), static_cast<std::size_t>(length));
   // Media that is not MCPTT or MCVideo audio and video, such as the MSRP stream
   // of the MCData media plane, has no MediaDescription; its application reads

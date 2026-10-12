@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Video recordings of the MCVideo server: the stream of a one-to-server video push saved to a file and played
 // back by a one-from-server video pull (member functions of McvideoServer).
 //
@@ -56,6 +60,7 @@ std::vector<std::pair<std::uint64_t, RtpPacket>> McvideoServer::read_recording(c
       throw std::runtime_error("truncated recording");
     out.emplace_back(offset, std::move(packet));
   }
+
   return out;
 }
 

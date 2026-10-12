@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise end-to-end protected MCData payloads (TS 33.180 clause 8, TS 24.282 clause 6.6): one-to-one
 payloads under a PCK (TS 33.180 clause 8.3) and group payloads under the GMK (TS 33.180 clause 8.4), sent
 as standalone SDS over signalling (TS 24.282 clauses 9.2.2.2.1 and 9.2.2.2.2) or the media plane

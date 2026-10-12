@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """List the function definitions longer than a limit (CODING_STYLE.md section 3.2: about 60 lines), longest first.
 Run in the openmcx-lint image (libclang):
 

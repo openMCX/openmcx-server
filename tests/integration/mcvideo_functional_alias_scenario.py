@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """MCVideo functional aliases (TS 24.281 clause 20): status determination subscriptions to a
 user's aliases and to an alias's users (clause 20.2.1.3), activation (clause 20.2.1.2) answered
 200 (clause 20.2.2.2.3 step 8) with the outcome in the status NOTIFY (clause 20.2.2.2.5), the

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // XML support for the MC service documents: parsing (libxml2), size limits, element and attribute access, and
 // value checks.
 //

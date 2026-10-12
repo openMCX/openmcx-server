@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Group call sessions: legs, invitations, the broadcast hierarchy, setup completion, conference and group key
 // notifications and protected floor control packets (members of McServer).
 //
@@ -28,6 +32,7 @@ void McServer::validate_remote(const std::string &user, const MediaDescription &
   check_service_media(media, implicit_allowed, uncontrolled_allowed);
   if ((media.protected_media && !keys_) || (media.queueing && !cfg_.at(svc_.name).value("floor_queue", false)))
     throw std::runtime_error("unsupported negotiated profile");
+
   // A peer's user is reached through its participating server's relay.
   const auto *served = by_id(user);
   if (served && !served->peer.empty()) {
@@ -37,6 +42,7 @@ void McServer::validate_remote(const std::string &user, const MediaDescription &
   }
   std::string expected;
   if (cfg_.at("peers").contains(user)) expected = address_of(cfg_.at("peers").at(user));
+
   // A user the configuration names no device host for (one created in MCX Admin):
   // with sip.core_checks_media_address, the SIP core has already refused any SDP
   // whose address is not the sender's (the P-CSCF's check, TS 24.229 clause 5.2.7.2), so
@@ -58,6 +64,7 @@ std::shared_ptr<McServer::Leg> McServer::make_leg(const std::string &id, const s
   leg->session = session;
   leg->local = local_media(cfg_, offset);
   leg->local.queueing = cfg_.at(svc_.name).value("floor_queue", false);
+
   // A private call is protected when its caller offers a PCK; an ad hoc call is clear.
   leg->local.protected_media = session->private_call
                                    ? session->protected_private

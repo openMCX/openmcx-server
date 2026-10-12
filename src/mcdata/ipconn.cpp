@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData IP connectivity: one-to-one IP connectivity sessions at the combined participating and controlling MCData
 // function (TS 24.282 clause 20) and the relay of their GRE-in-UDP tunnel (TS 24.582 clause 13.3) (member functions
 // of DataServer, declared in data_server.hpp).
@@ -21,6 +25,7 @@ SipResponse DataServer::ipcon_invite(const SipMessage &request, const User &user
   const auto policy = profile(user.id).value("mcdata", Json::object());
   if (!policy.value("transmit_data", false))
     return reject(403, "200 user not authorised to transmit data", user.id, what);
+
   // TS 24.282 clause 20.4.2 step 5a: exactly one target in resource-lists.
   std::string target;
   try {
@@ -31,11 +36,13 @@ SipResponse DataServer::ipcon_invite(const SipMessage &request, const User &user
   if (target.empty())
     return reject(403, "227 unable to determine targeted user for one-to-one IP Connectivity", user.id, what);
   if (auto redirect = ipcon_alias_redirect(user, info, target)) return *redirect;
+
   // The one-to-one lists of TS 24.282 clause 11.1, as for the other one-to-one communications.
   if (const auto list = policy.value("targets", Json::array()); !list.empty() && !listed(list, target))
     return reject(403, "229 one-to-one MCData communication not authorised to the targeted user", user.id, what);
   const auto *recipient = by_id(target);
   if (!recipient) return reject(404, "", user.id, what); // TS 24.282 clause 20.3.2 step 4
+
   // The called user's incoming list (TS 24.282 clause 20.3.2).
   const auto incoming_policy = profile(target).value("mcdata", Json::object());
   // The list applies with one or more entries (as TS 24.282 clause 9.2.3.3 step 4A).
@@ -61,17 +68,20 @@ SipResponse DataServer::ipcon_invite(const SipMessage &request, const User &user
   const auto address = tunnel_address();
   tunnel->origin_socket = std::make_unique<UdpSocket>(address, 0);
   tunnel->target_socket = std::make_unique<UdpSocket>(address, 0);
+
   // TS 24.282 clauses 20.3.0a, 20.4.0a and 20.4.0b: this server's address and ports replace the clients'.
   const auto origin_port = tunnel->origin_socket->port(), target_port = tunnel->target_socket->port();
   tunnel->origin_sdp = ipconn::tunnel_sdp({address, origin_port, origin_port}, 1);
   tunnel->target_sdp = ipconn::tunnel_sdp({address, target_port, target_port}, 1);
   tunnel->deadline = monotonic_ms() + ipconn_config().value("setup_ms", 30000u);
   ipcons_[request.dialog_id] = tunnel;
+
   // TS 24.282 clause 20.4.1: the called client is invited once this request has its dialog.
   mcdata::Info invited = info;
   invited.request_uri = target;   // TS 24.282 clause 20.4.1 step 8a
   invited.calling_user = user.id; // TS 24.282 clause 20.3.1 step 12
   invited.call_to_functional_alias.reset();
+
   // TS 24.282 clause 20.3.1 step 16: present an alias only while it is active for the user.
   if (!info.functional_alias.empty() && !alias_active(info.functional_alias, user.id)) invited.functional_alias.clear();
   pending_.push_back([this, tunnel, invited, sip = recipient->sip, originator_sip = user.sip] {
@@ -140,6 +150,7 @@ std::optional<SipResponse> DataServer::ipcon_alias_redirect(const User &user, co
     event("mcdata_functional_alias_resolved", {{"user_id", user.id}, {"alias", target}, {"selected", users.front()}});
     return response;
   }
+
   return std::nullopt;
 }
 
@@ -213,6 +224,7 @@ void DataServer::ipcon_target_answered(const std::shared_ptr<IpconSession> &tunn
   tunnel->deadline = monotonic_ms() + ipconn_config().value("idle_ms", 300000u);
   answer.status_code = 200;
   answer.local_sdp = tunnel->origin_sdp;
+
   // TS 24.282 clause 20.3.1: a <mcdata-info> body of the called client's answer (its
   // <application-data>) is copied to the originator.
   for (const auto &part : response.parts)

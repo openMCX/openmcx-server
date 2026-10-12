@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """An MC UE without a SIP listener (RFC 5626 SIP Outbound); runs inside a client container.
 
 It exercises the SIP core's flow routing (RFC 5626 section 4.2 registrations with

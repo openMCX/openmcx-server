@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MC service information documents (<mcpttinfo>, <mcvideoinfo>) with their private call service elements, and the
 // regroup documents.
 //
@@ -111,6 +115,7 @@ std::string service_info_xml(const McpttInfo &info, const ServiceProfile &servic
   flag("imminentperil-ind", info.imminent_peril);
   flag("broadcast-ind", info.broadcast);
   if (!info.organization.empty()) out += "<mc-org>" + xml_escape(info.organization) + "</mc-org>";
+
   // TS 24.379 annex F.1.2: <associated-group-id> is a contentType (wrapped in <mcpttURI>); TS 24.281 annex F.1.2 types
   // it xs:string, so the MCVideo element holds the group identity as its text.
   if (names.prefix == "mcvideo") {
@@ -140,6 +145,7 @@ std::string service_info_xml(const McpttInfo &info, const ServiceProfile &servic
   if (!info.video_push_url.empty()) ext += "<video-push-url>" + xml_escape(info.video_push_url) + "</video-push-url>";
   if (!info.participant_criteria.empty())
     ext += "<" + names.criteria + ">" + xml_escape(info.participant_criteria) + "</" + names.criteria + ">";
+
   // contentType in TS 24.379 annex F.1.2 and TS 24.281 annex F.1.2: the URI in <mcpttURI> or <mcvideoURI>.
   const auto uri = [&](const char *name, const std::string &value) {
     if (value.empty()) return;
@@ -155,6 +161,7 @@ std::string service_info_xml(const McpttInfo &info, const ServiceProfile &servic
     conference_uri(info.location_of_functional_alias);
     ext += wrapped("location-of-functional-alias-URI", names.uri, info.location_of_functional_alias); // contentType
   }
+
   // Every element is checked once, unknown ones refused; they are then written in schema order.
   for (const auto &[name, value] : info.service) check_service_value(name, value);
   for (const auto &element : service_elements()) {
@@ -181,6 +188,7 @@ std::string service_info_xml(const McpttInfo &info, const ServiceProfile &servic
   if (!ext.empty()) out += "<anyExt>" + ext + "</anyExt>";
   out += "</" + names.params + "></" + names.root + ">";
   bounded(out);
+
   return out;
 }
 
@@ -206,11 +214,13 @@ std::string regroup_xml(const Regroup &regroup, const ServiceProfile &service) {
   if (regroup.regroup_uri.empty() || (create && regroup.preconfigured_group.empty())) invalid("incomplete regroup");
   if (!regroup.groups.empty() && !regroup.users.empty()) invalid("a regroup names groups or users, not both");
   if (create && regroup.groups.empty() && regroup.users.empty()) invalid("a regroup names groups or users");
+
   // Every identity is a URI (TS 24.379 annex F.7.2: the group and user IDs and the regroup URI are anyURI).
   conference_uri(regroup.regroup_uri);
   if (!regroup.preconfigured_group.empty()) conference_uri(regroup.preconfigured_group);
   for (const auto &group : regroup.groups) conference_uri(group);
   for (const auto &user : regroup.users) conference_uri(user);
+
   // <preconfigured-group> is optional (TS 24.379 annex F.7.2); a removal may leave it out.
   std::string out = "<?xml version=\"1.0\"?><" + root + " xmlns=\"" + std::string(regroup_ns) + "\"><" + root +
                     "-Params><preconfig-group-id>";
@@ -230,6 +240,7 @@ std::string regroup_xml(const Regroup &regroup, const ServiceProfile &service) {
   }
   out += "<regroup-action>" + regroup.action + "</regroup-action></" + root + "-Params></" + root + ">";
   bounded(out);
+
   return out;
 }
 
@@ -265,6 +276,7 @@ Regroup parse_regroup(std::string_view xml, const ServiceProfile &service) {
   };
   list("groups-for-regroup", "group", out.groups);
   list("users-for-regroup", "user", out.users);
+
   // TS 24.379 annex F.7.3: groups or users, not both. A removal names neither (TS 24.379 clause 16.2.1.2 step 9,
   // clause 16.2.2.5 step 3 e, clause 16.2.3.3), or the users it concerns (clause 16.2.3.2 step 6 f).
   if (!out.groups.empty() && !out.users.empty()) invalid("a regroup names groups or users, not both");
@@ -431,6 +443,7 @@ McpttInfo parse_service_info(std::string_view xml, const ServiceProfile &service
     // <mcvideo-Params> (written there): read either.
     if (out.associated_group.empty()) out.associated_group = associated_group_id(ext, names);
   }
+
   return out;
 }
 

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """MCPTT XML confidentiality and integrity protection.
 
 Sensitive MCPTT XML (the access token of service authorisation, mcptt-info of group and private calls) is encrypted and

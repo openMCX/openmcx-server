@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 #include "mcx/h2.hpp"
 #include <algorithm>
 #include <cstdint>
@@ -147,6 +151,7 @@ bool serve(int fd, std::string_view received, const Handler &handle, const std::
          c.flush();
   }
   nghttp2_session_del(c.session);
+
   return true;
 }
 }  // namespace mcx::h2

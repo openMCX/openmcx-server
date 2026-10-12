@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Helpers of the GMS's configuration: SIP identities.
 //
 // Specifications: TS 24.481 V19.3.0 (Rel-19).

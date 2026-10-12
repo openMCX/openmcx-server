@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData message store: searching objects (TS 24.282 clauses 21.2.2 and 21.2.17; OMA NMS clause 6.8).
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19), OMA RESTful Network API for Network Message Storage

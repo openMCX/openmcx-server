@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Media handling: the AMR-WB RTP payload format, RTP packet coding, SRTP protection, the AMR-WB codec
 // and the PCM16 WAV adapter.
 //

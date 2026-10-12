@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MCData user profile document the CMS serves: rendering a user's "mcdata" record as the document, and the
 // validation constraints the schema does not express.
 //

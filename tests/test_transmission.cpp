@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCVideo transmission control: the MCV0, MCV1 and MCV2 message and field codec of TS 24.581 clause 9.2.
 //
 // Specifications: TS 24.581 V19.2.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19).

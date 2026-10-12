@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Requester authorisation and priority call conditions of the controlling function (TS 24.379 clause 6.3.3.1).
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19).
@@ -230,6 +234,7 @@ void McServer::priority_fanout(const std::string &group, const std::string &send
   change.calling_user = sender;
   change.broadcast.reset(); // state notifications describe priority, not the call type
   const auto &state = priorities_.at(group);
+
   // An emergency upgrade with alert=false requests no new alert; it does not cancel an existing alert.
   if (change.emergency == true) change.alert = state.alerts.contains(sender);
   auto found = sessions_.find(group);
@@ -326,6 +331,7 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
   const auto location = message_location(message);
   if (info.alert == true && !location)
     return reject(warn(Warning::function_not_allowed, "emergency alert requires CurrentCoordinate location"));
+
   // Broadcast is a call-setup indication; an alert MESSAGE never carries it. An
   // emergency or imminent-peril broadcast group call is allowed (local policy,
   // TS 24.380 clause 8.2.3.15: the Floor Indicator combines B with D or E).
@@ -337,6 +343,7 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
     return reject(warn(Warning::invalid_mime_combination));
   if (alert_only && ((!info.alert && info.emergency != false) || info.imminent_peril || info.emergency == true))
     return reject(warn(Warning::invalid_mime_combination));
+
   // TS 24.379 clause 6.3.3.1.13 and TS 24.281 clause 6.3.3.1.12: the rights of the caller's user profile, the profile's group entry
   // (a dedicated group, or the group the user has selected) and the group document's action for the caller.
   const auto rights = user_profile(user.id);
@@ -357,15 +364,18 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
   if (info.emergency == true && !(group_rights.value("emergency", false) && entry_allows("emergency_group") &&
                                   group_allows("allow_emergency_call", "emergency_users")))
     return reject(warn(Warning::function_not_allowed, "user authorisation: emergency call not authorized"));
+
   // Clause 6.3.3.1.13.4: local policy: the user's <allow-cancel-group-emergency>, or the group's list of those who
   // may cancel.
   if (info.emergency == false &&
       !(group_rights.value("emergency_cancel", false) || priority_allowed(policy, "emergency_cancel_users", user.id)))
     return reject(warn(Warning::function_not_allowed, "user authorisation: emergency cancellation not authorized"));
+
   // Clause 6.3.3.1.13.5.
   if (info.imminent_peril == true && !(group_rights.value("imminent", false) && entry_allows("imminent_group") &&
                                        group_allows("allow_imminent_peril", "imminent_users")))
     return reject(warn(Warning::function_not_allowed, "user authorisation: imminent peril not authorized"));
+
   // Clause 6.3.3.1.13.6: <allow-cancel-imminent-peril> of the user profile.
   if (info.imminent_peril == false && !group_rights.value("imminent_cancel", false))
     return reject(
@@ -421,6 +431,7 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
   if (info.imminent_peril && !next.emergency) next.imminent = *info.imminent_peril;
   if (info.emergency == true && !policy.value("emergency_timeout_ms", 300000u))
     return reject(warn(Warning::function_not_allowed, "invalid emergency timer configuration"));
+
   (void)priority_headers(policy, next); // Validate provisioning before publishing any state.
   return true;
 }

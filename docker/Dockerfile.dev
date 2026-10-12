@@ -1,3 +1,7 @@
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # The Ubuntu release (UBUNTU) and its pinned image (BASE_IMAGE) come from dependencies/lock.json; tools/build-images
 # --ubuntu passes both. The package names of each release are in docker/packages.
 ARG BASE_IMAGE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3

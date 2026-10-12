@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The lifetime of the MCData server's record of a file distribution over the media plane
 // (src/mcdata/transfer_record.hpp): it is finished when every recipient has reported a final disposition, or when
 // the time for the notifications has passed, and not before.

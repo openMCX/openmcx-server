@@ -10,8 +10,15 @@
 name: openmcx-5g
 include:
 - ../03-mcx-over-oai-5g/docker-compose-5g-core.yaml
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   srsran-gnb:
+    logging: *logging
     container_name: openmcx-srsran-gnb
     image: ${SRSRAN_IMAGE_PREFIX-openmcx/}openmcx-srsran-gnb:${SRSRAN_GNB_TAG:-25.10-mcx}
     command: ["-c", "/etc/srsran/gnb.yaml"]
@@ -34,6 +41,7 @@ services:
       timeout: 5s
       retries: 5
   srsue:
+    logging: *logging
     container_name: openmcx-srsue
     image: ${SRSRAN_IMAGE_PREFIX-openmcx/}openmcx-srsue:${SRSRAN_UE_TAG:-25.10}
     command: ["/etc/srsran/ue.conf"]
@@ -63,6 +71,7 @@ services:
       timeout: 5s
       retries: 5
   ue-route:
+    logging: *logging
     container_name: openmcx-ue-route
     image: ${SRSRAN_IMAGE_PREFIX-openmcx/}openmcx-srsue:${SRSRAN_UE_TAG:-25.10}
     network_mode: service:srsue
@@ -92,6 +101,7 @@ services:
       timeout: 2s
       retries: 100
   dispatcher:
+    logging: *logging
     container_name: openmcx-dispatcher
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-1.0.0}
     network_mode: service:srsue
@@ -100,6 +110,7 @@ services:
         condition: service_healthy
     environment:
       HOST_IP: ${HOST_IP:?set HOST_IP in .env}
+      MCX_LOG: ${MCX_LOG:-info}
     entrypoint:
     - sh
     - -c

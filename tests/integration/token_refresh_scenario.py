@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Clients renew their IdMS access token before it expires and stay service authorised.
 
 They renew it with the refresh token IdMS issued at sign-in (TS 33.180 annex B.5), not by signing in again with the

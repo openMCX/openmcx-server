@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Build every OpenMCX server image from docker/Dockerfile, tagged openmcx-<target>:TAG (docs/BUILD.md).
 #
 #   tools/build-images [--ubuntu RELEASE] [TAG] [docker build options...]     TAG defaults to 0.1

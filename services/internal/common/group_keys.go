@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Group keys: the GMK epochs the GMS generates, persists and rotates on a membership change, and the Group Key
 // Transport Payload it provides to the MC service servers for a member of a protected group.
 //

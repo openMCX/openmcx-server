@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MCPTT server: its construction and the MCPTT-only rules of the shared core's service hooks: the SDP of an
 // MCPTT call, the direction of an ambient listening call and the subject of an access token (members of McpttServer).
 //

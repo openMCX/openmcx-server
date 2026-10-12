@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData message store: subscriptions and notifications (TS 24.282 clauses 21.2.12A to 21.2.14A and 21.2.16;
 // OMA NMS).
 //

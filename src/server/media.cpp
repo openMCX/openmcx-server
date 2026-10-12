@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Media relay of audio (TS 24.380 clause 6.3, floor control; TS 24.581 clause 6.3, transmission control). The
 // MCVideo server relays the video (src/mcvideo/video_media.cpp).
 //
@@ -25,6 +29,7 @@ void McServer::audio_packet(Leg &leg, const Datagram &datagram) {
     return;
   }
   auto packet = decode_rtp(datagram.bytes);
+
   // Under floor control the SSRC of the Floor Granted; without it, the one the
   // party's SDP announced, if it announced one.
   const bool ssrc_ok =

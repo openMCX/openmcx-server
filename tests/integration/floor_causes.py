@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """The Reject Cause of every Floor Deny and Floor Revoke in a capture (TS 24.380 clauses 8.2.6 and 8.2.10).
 
 A wire verifier calls causes(capture) and checks:

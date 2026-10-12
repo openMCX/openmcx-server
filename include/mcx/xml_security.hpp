@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Application signalling security: confidentiality of sensitive XML content under an XML Protection Key (XPK), and
 // integrity of whole XML MIME bodies. Between a client and its server the XPK is the client's CSK, and the keys derive
 // from it and the client's MC service user ID (TS 33.180 annex F.1.4).

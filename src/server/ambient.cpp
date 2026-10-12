@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Ambient listening (MCPTT) and ambient viewing (MCVideo) calls: setup, the floor of the listened-to user and
 // release by the server, also for a relayed call controlled elsewhere (members of McServer).
 //
@@ -31,6 +35,7 @@ std::optional<SipResponse> McServer::ambient_caller_checks(const SipMessage &mes
   const auto caller_policy = user_profile(user.id).value("private_call", Json::object());
   if (!private_policy_flag(caller_policy, type == "remote-init" ? "ambient_remote" : "ambient_local"))
     return reject(403, warn(Warning::ambient_not_authorised));
+
   // TS 24.379 clause 11.1.6.3.1.1 step 6: exactly one listed user.
   const BodyPart *resources = nullptr;
   for (const auto &part : message.parts)
@@ -120,11 +125,13 @@ std::shared_ptr<McServer::Session> McServer::make_ambient_session(const SipMessa
   session->policy = policy;
   session->created = session->last_media = session->normal_since = monotonic_ms();
   session->members = {user.id, request.target};
+
   // TS 24.379 clause 11.1.6.3.1.1 step 13 and clause 11.1.6.4.1 steps 6 and 7: automatic commencement, a
   // listening invitee may release the call, a listened-to invitee gets a null alert.
   session->answer_headers = {{"Priv-Answer-Mode", "Auto"}};
   session->answer_headers.push_back(type == "local-init" ? SipHeader{"Feature-Caps", ambient_release_caps()}
                                                          : SipHeader{"Alert-Info", "<file:///dev/null>"});
+
   // The listened-to user keeps the floor for the whole call: no T1 or T2 revocation.
   auto options = floor_options();
   const auto duration = policy.value("maximum_duration_ms", 3600000u);
@@ -152,6 +159,7 @@ SipResponse McServer::ambient_invite(const SipMessage &message, const User &user
   const auto type = info.ambient_listening_type;
   if (type.empty() || info.emergency || info.imminent_peril || info.alert || info.broadcast.value_or(false))
     return reject(403, warn(Warning::invalid_mime_combination));
+
   PrivateCallRequest request;
   if (auto refused = ambient_caller_checks(message, user, type, response, request)) return *refused;
   if (auto refused = ambient_media_refusal(message, user, type, response)) return *refused;
@@ -159,6 +167,7 @@ SipResponse McServer::ambient_invite(const SipMessage &message, const User &user
   auto policy = private_call_policy();
   policy["protect_floor"] = message.remote_media->protected_media;
   if (private_calls(user.id) >= policy.value("max_calls", 1u)) return reject(486, warn(Warning::max_private_calls));
+
   // TS 23.379 clause 10.14.3.1 step 2 and clause 10.14.3.2 pre-conditions: neither party may
   // be engaged in another call. A failed invitation is answered 480 (TS 24.379 clause 11.1.6.4.2).
   // A user already being listened to is busy: a second ambient request does not
@@ -187,10 +196,12 @@ SipResponse McServer::ambient_invite(const SipMessage &message, const User &user
   answer.calling_user = user.id;
   answer.ambient_listening_type = type;
   response.parts = service_parts(answer);
+
   // TS 24.379 clause 11.1.6.4.2: the originator of either type may release the call.
   response.headers = {{"Feature-Caps", ambient_release_caps()}};
   leg->answer = response;
   leg->awaiting_answer = true;
+
   // Progress without ringing; a remotely initiated call carries a null alert
   // (TS 24.379 clause 6.3.2.2.5.1 step 1b, forwarded by the controlling function).
   response.status_code = 183;

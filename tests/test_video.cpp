@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCVideo media: the H.264 encoder and decoder, the RTP payload format (packetization mode 1) and the test pattern.
 //
 // Specifications: TS 26.281 V19.0.0 (Rel-19), RFC 6184.

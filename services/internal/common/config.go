@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The common services' configuration (site.json): the service roles, the users and groups with the subsets of their
 // user profile and group documents the servers use, the endpoints, and the validation of it all.
 //
@@ -40,17 +44,19 @@ type SecurityConfig struct {
 }
 
 type Config struct {
-	Security          SecurityConfig `json:"security,omitempty"`
-	Domain            string         `json:"domain"`
-	ServiceURI        string         `json:"service_uri"`
-	Issuer            string         `json:"issuer"`
-	OAuthClientID     string         `json:"oauth_client_id"`
-	OAuthRedirectURIs []string       `json:"oauth_redirect_uris"`
-	ServerClientID    string         `json:"server_client_id"`
-	ServerSecret      string         `json:"server_secret"`
-	GMSKeyClientID    string         `json:"gms_key_client_id"`
-	GMSKeySecret      string         `json:"gms_key_secret"`
-	TokenTTLSeconds   int            `json:"token_ttl_seconds"`
+	Security SecurityConfig `json:"security,omitempty"`
+	// LogLevel is "info" (the default) or "debug": the HTTP request log (request_log.go); MCX_LOG overrides it.
+	LogLevel          string   `json:"log_level,omitempty"`
+	Domain            string   `json:"domain"`
+	ServiceURI        string   `json:"service_uri"`
+	Issuer            string   `json:"issuer"`
+	OAuthClientID     string   `json:"oauth_client_id"`
+	OAuthRedirectURIs []string `json:"oauth_redirect_uris"`
+	ServerClientID    string   `json:"server_client_id"`
+	ServerSecret      string   `json:"server_secret"`
+	GMSKeyClientID    string   `json:"gms_key_client_id"`
+	GMSKeySecret      string   `json:"gms_key_secret"`
+	TokenTTLSeconds   int      `json:"token_ttl_seconds"`
 	// RefreshTokenTTLSeconds: a refresh token not used for this long lapses (default 7 days).
 	RefreshTokenTTLSeconds int     `json:"refresh_token_ttl_seconds,omitempty"`
 	Users                  []User  `json:"users"`

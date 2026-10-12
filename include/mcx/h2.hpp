@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // HTTP/2 over cleartext with prior knowledge (RFC 9113 3.3), the server side of one
 // connection: what the SBI uses (TS 29.500 5.2.2.1). nghttp2 does the framing.
 #pragma once

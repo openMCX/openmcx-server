@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The SIP user agent of the MC services: its configuration, the messages it hands to the application, the
 // signalling protection hooks of its bodies, and the SipEngine that registers, sends requests, answers and keeps
 // dialogs over the SIP core (TS 24.229) or directly to a peer server.

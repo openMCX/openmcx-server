@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise a group regroup and a user regroup using a preconfigured group.
 
 The procedures under test, all of TS 24.379: the group regroup of clause 16.2 (client requests of clauses 16.2.1.1 and

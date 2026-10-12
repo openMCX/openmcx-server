@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """MCVideo private calls with and without transmission control carrying H.264 video both ways:
 private call with transmission control (TS 24.281 clause 10.2.2), without it (clause 10.2.3),
 ending the call (clause 10.2.4), the commencement modes (clause 6.2.3) and the refusals of the

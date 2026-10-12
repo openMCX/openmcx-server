@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise late entry, participant leave, rejoin and initiator teardown.
 
 On an on-demand prearranged group call (TS 24.379 clause 10.1.1.2.1): late call entry by

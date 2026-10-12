@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Diameter data management client and server: the Data-Pull-Request and Data-Pull-Answer carrying the MCPTT user
 // profile; and the process's freeDiameter core, which this application shares with Rx (TS 29.214).
 //

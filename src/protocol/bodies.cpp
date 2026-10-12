@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Multipart SIP message bodies: writing and reading multipart/mixed and multipart/related, and the body of a
 // message/sip fragment.
 //
@@ -99,6 +103,7 @@ std::vector<BodyPart> parse_body_parts(std::string_view type, std::string_view b
   auto main = lower(fields[0]);
   if (main != "multipart/mixed" && main != "multipart/related") return {{main, std::string(body)}};
   const std::string marker = "--" + multipart_boundary(type);
+
   // RFC 2046 section 5.1.1: a preamble may precede the first delimiter; PJSIP writes a CRLF.
   std::size_t pos = body.starts_with("\r\n") ? 2 : 0;
   std::vector<BodyPart> out;

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise MCData location management: location reporting configuration (TS 24.282 clauses 17.2.2
 and 17.3.2), location information requests (TS 24.282 clauses 17.2.3.2 and 17.3.3.2, refused with
 the Warning codes 244, 245 and 246 of TS 24.282 table 4.9.2-2), location information reports and

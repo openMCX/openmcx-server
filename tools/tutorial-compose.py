@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Tutorial tooling: turns a lab that tools/prepare-prearranged-test.py generated into the Docker Compose file of a
 # unit test tutorial (tutorials/unit-tests/NN-*/). It implements no 3GPP procedure.
 """Write a unit test tutorial's compose file from a generated lab's compose.json.
@@ -99,6 +103,13 @@ def image(name, entrypoint):
 
 
 # ------------------------------------------------------------------------------
+def openmcx_program(published):
+    """Whether a published image runs an OpenMCX program (its debug log switch applies)."""
+    program = published.rsplit('/', 1)[-1].split(':', 1)[0]
+    return program in {*PROGRAMS.values(), 'openmcx-client', 'openmcx-dispatcher'}
+
+
+# ------------------------------------------------------------------------------
 def volume(entry, generated):
     """A lab volume as a short-syntax tutorial volume; status files go to the named volume 'status'."""
     if entry['type'] == 'volume':
@@ -111,6 +122,22 @@ def volume(entry, generated):
 
 
 # ------------------------------------------------------------------------------
+def with_log_rotation(text):
+    """Docker log rotation (docs/USAGE.md section 2): the x-logging extension before services: and every service using it,
+    each container's log at most three files of 10 MB (main does not copy the lab's logging key)."""
+    out, in_services = [], False
+    for line in text.split('\n'):
+        if line == 'services:':
+            out += ['x-logging: &logging', '  driver: json-file', '  options:', '    max-size: "10m"', '    max-file: "3"', '']
+            in_services = True
+        elif in_services and line[:1] not in ('', ' ', '#'):
+            in_services = False
+        out.append(line)
+        if in_services and line.startswith('  ') and not line.startswith('   ') and line.rstrip().endswith(':'):
+            out.append('    logging: *logging')
+    return '\n'.join(out)
+
+
 def main():
     """Read the lab, write the tutorial's compose file."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -172,8 +199,13 @@ def main():
     for name, lab_service in sorted(lab['services'].items(), key=lambda item: ADDRESSES[item[0]]):
         service = {'image': image(lab_service['image'], lab_service.get('entrypoint') or [''])}
         for key in ('profiles', 'entrypoint', 'command', 'environment', 'init', 'tmpfs', 'healthcheck'):
-            if lab_service.get(key) is not None:
-                service[key] = lab_service[key]
+            value = lab_service.get(key)
+            # The debug log switch of the OpenMCX programs (docs/USAGE.md section 7): off unless the reader sets
+            # MCX_LOG=debug when running the tutorial.
+            if key == 'environment' and openmcx_program(service['image']):
+                value = {**(value or {}), 'MCX_LOG': '${MCX_LOG:-info}'}
+            if value is not None:
+                service[key] = value
         service['networks'] = {'mcx': {'ipv4_address': f'{subnet}.{ADDRESSES[name]}'}}
         service['volumes'] = [volume(entry, generated) for entry in lab_service.get('volumes', [])]
         # The spoken test messages, for tutorials that send speech (without the folder, Docker would create an
@@ -209,7 +241,7 @@ def main():
              'client-a', 'client-b', 'client-c', 'client-d')
     first_line = len(roles) - 3
     header = [
-        f'# openMCX: {args.title} (tutorials/unit-tests/{args.tutorial.name}/README.md).',
+        f'# OpenMCX: {args.title} (tutorials/unit-tests/{args.tutorial.name}/README.md).',
         '#',
         '# The regression lab of this feature, from the published images: the '
         + ' and '.join([', '.join(servers[:-1]), servers[-1]] if len(servers) > 1 else servers)
@@ -227,7 +259,8 @@ def main():
         '',
     ]
     text = yaml.dump(compose, Dumper=Dumper, sort_keys=False, width=120, default_flow_style=False)
-    (args.tutorial / 'docker-compose.yaml').write_text('\n'.join(header) + text.replace(': null\n', ':\n'))
+    text = with_log_rotation(text.replace(': null\n', ':\n'))
+    (args.tutorial / 'docker-compose.yaml').write_text('\n'.join(header) + text)
 
 
 if __name__ == '__main__':

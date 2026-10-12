@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise reject, CANCEL, setup timeout and session-refresh survival.
 
 Run against the separate prearranged fixture. Capture SIP concurrently to prove

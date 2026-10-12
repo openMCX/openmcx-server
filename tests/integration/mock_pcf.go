@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // A mock PCF for the N5 lab: Npcf_PolicyAuthorization (TS 29.514) over HTTP/2
 // cleartext with prior knowledge only (TS 29.500 5.2.2.1), recording every request;
 // its notifications to the AF go the same way.

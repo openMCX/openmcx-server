@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // KMS: the key management server of TS 33.180 clause 5.3, answering the KMS requests of annex D.2 (Initialize,
 // KeyProvision and CertCache, over direct TLS) with the KMS responses of annex D.3, computed by the native
 // ECCSI/SAKKE key tool.

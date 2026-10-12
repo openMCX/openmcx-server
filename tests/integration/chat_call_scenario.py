@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise on-network, on-demand chat group calls.
 
 Run against a separate four-client fixture prepared with --chat. Check labels

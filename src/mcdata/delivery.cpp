@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Delivery of MCData messages to terminating clients, and the holding and re-delivery of undelivered SDS
 // messages (TS 24.282 clauses 9.2.2.4.1.1 and 12.2.2.1; member functions of DataServer, declared in data_server.hpp).
 //
@@ -69,6 +73,7 @@ void DataServer::deliver(const User &target, mcdata::Info info, const std::vecto
   parts.insert(parts.end(), binary.begin(), binary.end());
   parts = seal_for(target.sip, std::move(parts));
   const auto boundary = "mcdata-" + random_id();
+
   // TS 24.282 clause 9.2.2.4.1.1 steps 2 and 3 and clause 10.2.4.4.1 steps 2 and 3: the SDS or FD service
   // ICSI and feature tag.
   const bool file = what.starts_with("fd");
@@ -77,6 +82,7 @@ void DataServer::deliver(const User &target, mcdata::Info info, const std::vecto
       {"Accept-Contact", std::string("*;+g.3gpp.mcdata.") + (file ? "fd" : "sds") + ";require;explicit"},
       {"Accept-Contact", "*;+g.3gpp.icsi-ref=\"" + url_encode(service) + "\";require;explicit"},
       {"P-Asserted-Service", service}};
+
   // TS 24.282 clause 13.2.3.3.4 step 2a: the reason of a server-initiated release.
   if (!reason.empty()) headers.push_back({"Reason", "SIP ;cause=200 ;text=\"" + reason + "\""});
   const auto [type, body] = message_body(parts, boundary);

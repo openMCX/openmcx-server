@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // mcx-keytool: key operations on a JSON request from stdin for the KMS and the GMS: KMS authority and user keys, KMS
 // responses and GKTP documents.
 //
@@ -109,6 +113,7 @@ int main() {
     const auto request = json::parse(input);
     op = request.at("op").get<std::string>();
     json result;
+
     if (op == "authority-generate") {
       result = create_authority(
           {request.at("kms_uri"), request.value("key_period", 2592000u), request.value("key_offset", 0u)});
@@ -123,6 +128,7 @@ int main() {
                      request.at("ntp_seconds").get<std::uint64_t>());
     } else
       throw std::invalid_argument("unknown operation");
+
     std::cout << result.dump() << '\n';
     return 0;
   } catch (const std::exception &error) {

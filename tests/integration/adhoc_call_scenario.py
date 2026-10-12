@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise on-network, on-demand ad hoc group calls with a participant list.
 
 Covers the client and controlling MCPTT function procedures of TS 24.379 clause 17: setup

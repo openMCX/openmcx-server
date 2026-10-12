@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Check negotiated queueing, cancellation, grant confirmation and abandoned grants.
 
 Run against an already-started isolated four-client fixture with floor_queue=true

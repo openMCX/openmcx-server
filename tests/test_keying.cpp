@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MIKEY-SAKKE key distribution and MCData payload security: the ECCSI and SAKKE primitives, the MIKEY-SAKKE UID,
 // I_MESSAGE creation and opening for GMK and PCK, MCData protected and authenticated payloads, and keys across KMSs.
 //

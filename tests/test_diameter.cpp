@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Diameter user profile pull between the MCPTT server and the user database over a real SCTP peer (freeDiameter):
 // the profile answer, an unknown user, an unconfigured peer, and recovery after the user database is restarted.
 //

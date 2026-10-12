@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData media plane sessions over MSRP: SDS and FD INVITEs and priority re-INVITEs.
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19), TS 24.582 V19.0.0 (Rel-19), TS 23.282 V19.10.0 (Rel-19).
@@ -69,6 +73,7 @@ SipResponse DataServer::media_reinvite(const SipMessage &request, const std::sha
   const auto *info_part = part(request, mcdata::info_mime);
   if (!info_part) return reject(403, "199 expected MIME bodies not in the request", leg->owner, "media-sds-emergency");
   const auto info = mcdata::parse_info(info_part->body);
+
   // The ad hoc group emergency and imminent peril communications are not implemented.
   if (leg->adhoc) return reject(403, "", leg->owner, "media-adhoc-priority");
   if (!leg->group.empty()) return media_group_reinvite(leg, info);
@@ -89,6 +94,7 @@ SipResponse DataServer::media_reinvite(const SipMessage &request, const std::sha
   response.headers = {{"P-Asserted-Service", leg->file ? mcdata::fd_icsi : mcdata::sds_icsi}};
   if (emergency)
     for (const auto &header : media_priority_headers()) response.headers.push_back(header);
+
   // Tell the other legs of this session, so their clients follow the condition.
   for (auto &[dialog, other] : media_) {
     if (other->key != leg->key || dialog == leg->dialog || !other->session) continue;
@@ -113,6 +119,7 @@ SipResponse DataServer::media_reinvite(const SipMessage &request, const std::sha
     });
   }
   count(emergency ? "media_emergency" : "media_emergency_cancelled");
+
   event("mcdata_session_emergency", {{"user_id", leg->owner}, {"key", leg->key}, {"emergency", emergency}});
   return response;
 }
@@ -200,6 +207,7 @@ SipResponse DataServer::media_invite(const SipMessage &request) {
   }
   const auto asserted = asserted_identity(request);
   auto found = users_.find(asserted);
+
   // A client asserts itself through the SIP core.
   if (asserted.empty() || asserted != request.from_uri || found == users_.end() ||
       found->second.expires <= std::time(nullptr))
@@ -219,6 +227,7 @@ SipResponse DataServer::media_invite(const SipMessage &request) {
   if (info.request_type == "one-to-one-ipconn") return ipcon_invite(request, user, info, *sdp, resources);
   MediaInvite invite;
   if (auto refused = media_invite_kind(user, info, *sdp, invite)) return *refused;
+
   // TS 24.282 clause 9.2.4.4.4 step 3A with clause 6.3.7.1.9: the combination of priority indications.
   if (!valid_priority_combination(info))
     return reject(403, "150 invalid combinations of data received in MIME body", user.id, "media-sds-priority");
@@ -237,18 +246,21 @@ SipResponse DataServer::media_invite(const SipMessage &request) {
   if (invite.file_request)
     if (auto refused = media_invite_file(request, user, policy, offer, invite)) return *refused;
   if (auto refused = media_invite_priority(request, user, info, policy, invite)) return *refused;
+
   // TS 24.282 clause 6.3.7.1.11: a group communication is carried at the level of its group.
   const std::string level = invite.group_request && (invite.session || invite.file_request) ? group_level(invite.group)
                             : info.emergency == true                                        ? "emergency"
                                                                                             : "normal";
   MsrpMedia answer;
   const auto leg = media_invite_leg(request, user, invite, level, answer);
+
   // TS 24.282 clause 10.2.5.4.4: the inviting client of a one-to-one file over the media plane is answered upon
   // the invited client's 200 (OK) response (or given its refusal); until then it gets 100 (Trying).
   const bool await_recipient =
       invite.file_request && !invite.group_request && !invite.adhoc && invite.recipients.size() == 1;
   if (!await_recipient && (invite.session || invite.file_request)) media_invite_recipients(user, invite, *leg, level);
   media_invite_answer(request, user, info, invite, *leg, level, response);
+
   // TS 24.282 clause 6.3.7.1.23 steps 5 and 6: the session identity, as focus, with the subservice's tags (a
   // standalone SDS has no session id of its own and gets a fresh identity).
   session_contact(response, session_identity(leg->key), invite.file_request ? "fd" : "sds");
@@ -304,6 +316,7 @@ std::optional<SipResponse> DataServer::media_invite_kind(const User &user, const
   }
   invite.session =
       info.request_type == "one-to-one-sds-session" || info.request_type == "group-sds-session" || invite.adhoc_session;
+
   // TS 24.282 clause 10.2.5: file distribution over the media plane, one-to-one or to a group.
   invite.file_request = info.request_type == "one-to-one-fd" || info.request_type == "group-fd" ||
                         info.request_type == "adhoc-group-fd-session";
@@ -313,6 +326,7 @@ std::optional<SipResponse> DataServer::media_invite_kind(const User &user, const
       !invite.file_request && !invite.adhoc)
     return reject(403, "", user.id, "media-sds");
   invite.what = invite.file_request ? "media-fd" : "media-sds";
+
   return std::nullopt;
 }
 
@@ -348,6 +362,7 @@ std::optional<SipResponse> DataServer::media_invite_group_targets(const User &us
   const auto &group = invite.group;
   const bool file_request = invite.file_request;
   const char *what = invite.what;
+
   // The refusals before the service checks count under the request's own kind (media-sds or media-fd).
   if (info.client_id != user.client) return reject(403, "", user.id, what);
   const auto document = group_document(group);
@@ -361,11 +376,13 @@ std::optional<SipResponse> DataServer::media_invite_group_targets(const User &us
     return reject(403, "206 short data service not allowed for this group", user.id, "media-sds");
   if (!file_request && !settings.value("sds_supported", false))
     return reject(488, "207 SDS services not supported for this group", user.id, "media-sds");
+
   // TS 24.282 clause 10.2.5.4.3 with clause 10.2.4.4.2 step 12: the FD enabler of the group.
   if (file_request && !settings.value("allow_fd", false))
     return reject(403, "213 file distribution not allowed for this group", user.id, "media-fd");
   if (file_request && !settings.value("fd_supported", false))
     return reject(488, "214 FD services not supported for this group", user.id, "media-fd");
+
   // TS 24.282 clause 9.2.4.4.4 steps 3B and 3C: a priority group communication is authorised by
   // the user profile and the group document (clauses 6.3.7.2.4 and 6.3.7.2.6) before the
   // remaining group checks, and only a session carries one (clause 6.2.8.1.8).
@@ -384,6 +401,7 @@ std::optional<SipResponse> DataServer::media_invite_group_targets(const User &us
       invite.recipients.push_back(member.get<std::string>());
   if (invite.recipients.empty()) return reject(403, "198 no users are affiliated to this group", user.id, what);
   invite.group_limit = limit(settings, file_request ? "max_fd_bytes" : "max_sds_bytes");
+
   return std::nullopt;
 }
 
@@ -489,6 +507,7 @@ std::optional<SipResponse> DataServer::media_invite_file(const SipMessage &reque
                   user.id, "media-fd");
   }
   invite.file_offer = {offer.file_selector, offer.file_date, offer.file_description, signalling->body};
+
   return std::nullopt;
 }
 
@@ -533,6 +552,7 @@ std::optional<SipResponse> DataServer::media_invite_priority(const SipMessage &r
     }
     count(emergency_request ? "media_group_emergency" : "media_imminent_peril");
   }
+
   return std::nullopt;
 }
 
@@ -572,6 +592,7 @@ std::shared_ptr<DataServer::MediaSession> DataServer::media_invite_leg(const Sip
   if (invite.adhoc_session) answer.direction = "sendrecv"; // TS 24.282 clause 9.2.4.3.2
   leg->sdp = msrp_sdp(answer, 1);
   media_[request.dialog_id] = leg;
+
   return leg;
 }
 
@@ -666,6 +687,7 @@ void DataServer::media_invite_answer(const SipMessage &request, const User &user
     answered.alert = false;
   response.parts = {{mcdata::info_mime, mcdata::info_xml(answered)}};
   response.headers = {{"P-Asserted-Service", invite.file_request ? mcdata::fd_icsi : mcdata::sds_icsi}};
+
   // TS 24.282 clauses 6.2.8.3.3 and 6.3.7.1.4: the priority the communication is carried at. An
   // ordinary communication carries no Resource-Priority header field at all.
   if (level != "normal")
@@ -676,6 +698,7 @@ void DataServer::media_invite_answer(const SipMessage &request, const User &user
     send_priority_info(request.dialog_id, user.id, group, corrected ? std::optional<bool>(false) : std::nullopt, true,
                        alert_refused ? std::optional<bool>(false) : std::nullopt);
   }
+
   // TS 24.282 clause 6.3.7.1.2: the affiliated members that are not participating are told.
   if (invite.group_request && (leg.emergency || leg.imminent))
     notify_in_progress_state(group, user.id, invite.recipients, leg.emergency, leg.imminent, invite.alert_location);

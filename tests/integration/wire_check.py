@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Capture a scenario's traffic at its server and check it with the scenario's wire verifier.
 
 The scenarios check the state the clients and servers report; the wire verifiers (verify_*.py) check the messages

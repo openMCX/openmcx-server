@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Functional alias activations, shared by the MCPTT and MCVideo servers (TS 24.379 clause 9A, TS 24.281 clause 20)
 // and the MCData server (TS 24.282 clause 22.2.2): which users have activated each alias, the per-alias admission of
 // an activation (the user list of the alias definition, the maximum number of simultaneous activations and the

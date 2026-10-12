@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Media security: MIKEY key derivation of the SRTP and SRTCP master keys from the GMK, PCK and CSK, and SRTP and
 // SRTCP protection and replay protection with those keys (TS 33.180 clauses 7.4, 7.5, 9.4 and annexes E, F).
 //

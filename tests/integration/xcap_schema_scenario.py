@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Schema validation of group and user profile documents (RFC 4825 section 8.2.5).
 
 The GMS checks group documents against the OMA group schema with the TS 24.481 extensions (TS 24.481 clause 7.2.4), GMOP

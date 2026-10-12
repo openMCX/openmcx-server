@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Floor control server of the MCPTT server, the interface towards the floor participant: the floor control
 // messages from a client and the floor arbitration outcomes sent to it (members of McpttServer).
 //
@@ -79,6 +83,7 @@ void McpttServer::floor_request(Leg &leg, const std::shared_ptr<Session> &sessio
     disconnect_user(leg.user, session);
     return;
   }
+
   // TS 23.379 clause 10.14.1: only the listened-to user transmits in an ambient listening call.
   if (!session->ambient.empty() && leg.user != session->listened_to) {
     send_notice(leg, {FloorNoticeKind::Denied, leg.user, "", 5});
@@ -86,6 +91,7 @@ void McpttServer::floor_request(Leg &leg, const std::shared_ptr<Session> &sessio
     return;
   }
   const auto priority_policy = policy.value("priority_policy", Json::object());
+
   // TS 24.380 clause 6.3.5.3.4 steps 1 and 2: only the broadcast initiator reaches arbitration,
   // unless call_policy.broadcast_overriders authorises an override.
   const bool overrider = session->broadcast && leg.user != session->initiator &&
@@ -100,6 +106,7 @@ void McpttServer::floor_request(Leg &leg, const std::shared_ptr<Session> &sessio
     return;
   }
   const auto caps = priority_policy.value("floor_priority_caps", policy.value("floor_priority_caps", Json::object()));
+
   // TS 24.380 clause 4.1.1.4: the configured cap, or the member's <user-priority> of the group document.
   const unsigned cap = caps.contains(leg.user) ? caps.value(leg.user, 0u)
                                                : policy.value("user_priorities", Json::object()).value(leg.user, 0u);
@@ -131,6 +138,7 @@ void McpttServer::floor_request(Leg &leg, const std::shared_ptr<Session> &sessio
   } else
     notices(*session, arbitrator.request(leg.user, monotonic_ms(), priority, leg.local.queueing && leg.remote->queueing,
                                          preemptive));
+
   event("floor_request",
         {{"user_id", leg.user}, {"session_uri", session->uri}, {"owner", arbitrator.owner().value_or("")}});
 }

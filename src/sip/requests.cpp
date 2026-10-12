@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Outgoing SIP requests of SipEngine::Impl: route sets, out-of-dialog requests, SUBSCRIBE, in-dialog requests, INVITE.
 //
 // Specifications: RFC 3261, RFC 3608, RFC 6665, RFC 4028, RFC 3264, TS 24.379 V19.7.0 (Rel-19), TS 24.229.
@@ -62,6 +66,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
   if (method_text.empty() || request_uri.empty() || method_text.size() > 32U) {
     throw std::invalid_argument("invalid SIP request method or URI");
   }
+
   pj_str_t method_name = pj_view(method_text);
   pjsip_method method{};
   pjsip_method_init_np(&method, &method_name);
@@ -70,6 +75,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
   auto to = pj_view(request_uri);
   const auto contact_text = contact_uri();
   auto contact = pj_view(contact_text);
+
   pjsip_tx_data *created = nullptr;
   require_success(
       pjsip_endpt_create_request(endpoint, &method, &target, &from, &to, &contact, nullptr, -1, nullptr, &created),
@@ -78,8 +84,10 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
   if (!content_type.empty()) {
     data->msg->body = make_text_body(data->pool, content_type, body);
   }
+
   add_core_route(data.get(), headers);
   add_headers(data.get(), headers);
+
   auto token = make_token(std::move(handler));
   initialize_auth(*token);
   require_success(pjsip_auth_clt_init_req(&token->auth, data.get()), "initialize SIP request authentication");
@@ -98,6 +106,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
                                                             SipResponseHandler handler, std::string_view content_type,
                                                             std::string_view body) {
   ensure_started();
+
   auto local = pj_view(config.identity);
   const auto contact_text = contact_uri();
   auto contact = pj_view(contact_text);
@@ -105,6 +114,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
   pjsip_dialog *sip_dialog = nullptr;
   require_success(pjsip_dlg_create_uac(pjsip_ua_instance(), &local, &contact, &remote, &remote, &sip_dialog),
                   "create outgoing SUBSCRIBE dialog");
+
   const std::string id = string_from(sip_dialog->call_id->id);
   bool session = false;
   try {
@@ -116,6 +126,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
     require_success(pjsip_dlg_add_usage(sip_dialog, &module, entry.get()), "attach SUBSCRIBE dialog usage");
     if (const auto explicit_route = get_header(headers, "Route"); !explicit_route.empty())
       pin_dialog_route(sip_dialog, explicit_route);
+
     if (has_credentials(config)) {
       pjsip_cred_info credential{};
       credential.realm = pj_view("*");
@@ -126,6 +137,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
       require_success(pjsip_auth_clt_set_credentials(&sip_dialog->auth_sess, 1, &credential),
                       "set SUBSCRIBE credentials");
     }
+
     pjsip_tx_data *created = nullptr;
     require_success(pjsip_dlg_create_request(sip_dialog, &pjsip_subscribe_method, -1, &created),
                     "create SUBSCRIBE request");
@@ -135,6 +147,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
     add_header(data.get(), {"Expires", std::to_string(expires)});
     add_headers(data.get(), without_route(headers));
     if (!body.empty()) data->msg->body = make_text_body(data->pool, content_type, body);
+
     auto token = make_token(std::move(handler));
     token->dialog = sip_dialog;
     token->initial_subscription = true;
@@ -198,6 +211,7 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
   pjsip_dialog *sip_dialog = nullptr;
   require_success(pjsip_dlg_create_uac(pjsip_ua_instance(), &local, &contact, &remote, &remote, &sip_dialog),
                   "create outgoing INVITE dialog");
+
   const std::string id = string_from(sip_dialog->call_id->id);
   pjsip_inv_session *invite_session = nullptr;
   try {
@@ -210,6 +224,7 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
       credential.data = pj_view(config.password);
       require_success(pjsip_auth_clt_set_credentials(&sip_dialog->auth_sess, 1, &credential), "set INVITE credentials");
     }
+
     auto *local_sdp =
         sdp_text ? parse_sdp_text(sip_dialog->pool, *sdp_text) : parse_local_sdp(sip_dialog->pool, local_media);
     require_success(
@@ -217,12 +232,14 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
         "create outgoing INVITE session");
     require_success(pjsip_dlg_add_usage(sip_dialog, &ack_module, nullptr), "observe outgoing dialog ACK");
     require_success(pjsip_dlg_add_usage(sip_dialog, &module, nullptr), "handle outgoing call application requests");
+
     pjsip_timer_setting timer{};
     pjsip_timer_setting_default(&timer);
     timer.sess_expires = config.session_expires;
     require_success(pjsip_timer_init_session(invite_session, &timer), "configure outgoing session timer");
     const auto explicit_route = get_header(headers, "Route");
     if (!explicit_route.empty()) pin_dialog_route(sip_dialog, explicit_route);
+
     auto entry = std::make_unique<Dialog>();
     entry->id = id;
     entry->dialog = sip_dialog;
@@ -230,12 +247,14 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
     entry->initial_handler = std::move(handler);
     invite_session->mod_data[module.id] = entry.get();
     dialogs[id] = std::move(entry);
+
     pjsip_tx_data *created = nullptr;
     require_success(pjsip_inv_invite(invite_session, &created), "create INVITE request");
     TxData data(created);
     data->msg->body = sdp_text ? make_body_with_sdp(data->pool, *sdp_text, application_parts)
                                : make_invite_body(data->pool, local_media, application_parts);
     add_core_route(data.get(), headers);
+
     // An MCPTT call declares the MCPTT service; a caller that names its own
     // service, such as the MCData media plane, keeps its headers instead.
     if (get_header(headers, "P-Preferred-Service").empty() && get_header(headers, "P-Asserted-Service").empty()) {

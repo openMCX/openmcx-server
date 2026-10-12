@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Wire-level authorisation probes (sip_negative.py) in a running lab, from client-a's container.
 
 Once the clients are authorised, sip_negative.py runs in client-a's container, on the lab's network and with

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """A client must reauthorize and reaffiliate without restarting the server.
 
 After client-a's container restarts (a new client instance), it registers and is authorised again (TS 24.379 clause

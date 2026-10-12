@@ -1,7 +1,12 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // SIP engine lifecycle over pjsip: construction, start and stop, ACK and reference bookkeeping.
 //
 // Specifications: RFC 3261, RFC 3262, RFC 4028, RFC 6665, TS 33.180 V19.4.0 (Rel-19).
 
+#include "mcx/runtime.hpp"
 #include "sip_impl.hpp"
 
 namespace mcx {
@@ -145,7 +150,7 @@ void SipEngine::Impl::start() {
     module.priority = PJSIP_MOD_PRIORITY_APPLICATION;
     module.on_rx_request = &Impl::receive_request;
     module.on_tsx_state = &Impl::dialog_transaction_state;
-    require_success(pjsip_endpt_register_module(endpoint, &module), "register openMCX SIP module");
+    require_success(pjsip_endpt_register_module(endpoint, &module), "register OpenMCX SIP module");
     protection_module.name = pj_view("mod-openmcx-protection");
     protection_module.id = -1;
     protection_module.priority = PJSIP_MOD_PRIORITY_TRANSPORT_LAYER + 1;
@@ -157,6 +162,18 @@ void SipEngine::Impl::start() {
     ack_module.priority = PJSIP_MOD_PRIORITY_DIALOG_USAGE - 1;
     ack_module.on_rx_request = &Impl::observe_ack;
     require_success(pjsip_endpt_register_module(endpoint, &ack_module), "register ACK observer");
+    if (log_level() == LogLevel::debug) {
+      trace_module.name = pj_view("mod-openmcx-trace");
+      trace_module.id = -1;
+      // Below the transport layer: the first to see a received message and the last to see a sent one, after the
+      // body protection.
+      trace_module.priority = PJSIP_MOD_PRIORITY_TRANSPORT_LAYER - 1;
+      trace_module.on_rx_request = &Impl::trace_received;
+      trace_module.on_rx_response = &Impl::trace_received;
+      trace_module.on_tx_request = &Impl::trace_sent;
+      trace_module.on_tx_response = &Impl::trace_sent;
+      require_success(pjsip_endpt_register_module(endpoint, &trace_module), "register SIP message log");
+    }
 
     pjsip_tls_setting tls{};
     pjsip_tls_setting_default(&tls);
@@ -198,6 +215,7 @@ void SipEngine::Impl::stop() noexcept {
     }
   }
   pending_responses.clear();
+
   // Requests waiting for the application's answer: the SUBSCRIBE copies, the prepared responses and the references
   // that kept their transactions.
   for (auto &[id, deferred] : deferred_responses) {
@@ -208,12 +226,14 @@ void SipEngine::Impl::stop() noexcept {
       (void)pj_grp_lock_dec_ref(deferred.transaction->grp_lock);
   }
   deferred_responses.clear();
+
   // The tokens of digest retries the INVITE session layer sent and whose answers never came.
   for (auto &[dialog, retries] : auth_retries) {
     (void)dialog;
     for (const auto &retry : retries) destroy_token(retry.token);
   }
   auth_retries.clear();
+
   // The INVITE sessions kept while our BYEs ran.
   for (auto *invite : bye_references) (void)pjsip_inv_dec_ref(invite);
   bye_references.clear();
@@ -257,6 +277,70 @@ void SipEngine::Impl::ensure_started() const {
   if (!started || endpoint == nullptr) {
     throw std::logic_error("SIP engine is not started");
   }
+}
+
+namespace {
+//------------------------------------------------------------------------------
+// Helper: the text of a URI in a header, for the SIP message log.
+std::string trace_uri(pjsip_uri_context_e context, const pjsip_uri *uri) {
+  if (!uri) return {};
+  char text[512];
+  const int length = pjsip_uri_print(context, uri, text, sizeof(text));
+  return length > 0 ? std::string(text, static_cast<std::size_t>(length)) : std::string{};
+}
+
+//------------------------------------------------------------------------------
+// Helper: what a SIP message is, for the log: the method and Request-URI, or the status.
+std::string trace_what(const pjsip_msg *message) {
+  if (message->type == PJSIP_REQUEST_MSG)
+    return std::string(message->line.req.method.name.ptr, message->line.req.method.name.slen) + " " +
+           trace_uri(PJSIP_URI_IN_REQ_URI, message->line.req.uri);
+  return std::to_string(message->line.status.code);
+}
+
+//------------------------------------------------------------------------------
+// Helper: the dialog fields of a SIP message for the log, " | " separated: From, To, Call-ID and CSeq; never the body
+// (it may carry keys and access tokens).
+std::string trace_fields(const pjsip_msg *message) {
+  std::string out;
+  if (auto *from = static_cast<const pjsip_fromto_hdr *>(pjsip_msg_find_hdr(message, PJSIP_H_FROM, nullptr)))
+    out += " | from <" + trace_uri(PJSIP_URI_IN_FROMTO_HDR, from->uri) + ">";
+  if (auto *to = static_cast<const pjsip_fromto_hdr *>(pjsip_msg_find_hdr(message, PJSIP_H_TO, nullptr)))
+    out += " | to <" + trace_uri(PJSIP_URI_IN_FROMTO_HDR, to->uri) + ">";
+  if (auto *cid = static_cast<const pjsip_cid_hdr *>(pjsip_msg_find_hdr(message, PJSIP_H_CALL_ID, nullptr)))
+    out += " | call-id " + std::string(cid->id.ptr, cid->id.slen);
+  if (auto *cseq = static_cast<const pjsip_cseq_hdr *>(pjsip_msg_find_hdr(message, PJSIP_H_CSEQ, nullptr)))
+    out += " | cseq " + std::to_string(cseq->cseq) + " " + std::string(cseq->method.name.ptr, cseq->method.name.slen);
+  return out;
+}
+} // namespace
+
+//------------------------------------------------------------------------------
+// The SIP message log (log level debug): a received message, before any module handles it, as a line on stderr:
+// "SIP <- INVITE sip:... | from <...> | to <...> | call-id ... | cseq 2 INVITE | 172.31.19.10:5061 TLS | 2310 bytes".
+pj_bool_t SipEngine::Impl::trace_received(pjsip_rx_data *data) {
+  try {
+    const auto *message = data->msg_info.msg;
+    debug_line("SIP <- " + trace_what(message) + trace_fields(message) + " | " + std::string(data->pkt_info.src_name) +
+               ":" + std::to_string(data->pkt_info.src_port) + " " +
+               (data->tp_info.transport ? data->tp_info.transport->type_name : "") + " | " +
+               std::to_string(data->msg_info.len) + " bytes");
+  } catch (const std::exception &) {}
+  return PJ_FALSE;
+}
+
+//------------------------------------------------------------------------------
+// The SIP message log: a message about to be sent, after the body protection:
+// "SIP -> 100 | from <...> | to <...> | call-id ... | cseq 2 INVITE | 172.31.19.10:5061 TLS | 412 bytes".
+pj_status_t SipEngine::Impl::trace_sent(pjsip_tx_data *data) {
+  try {
+    std::string size;
+    if (data->buf.cur > data->buf.start) size = " | " + std::to_string(data->buf.cur - data->buf.start) + " bytes";
+    debug_line("SIP -> " + trace_what(data->msg) + trace_fields(data->msg) + " | " +
+               std::string(data->tp_info.dst_name) + ":" + std::to_string(data->tp_info.dst_port) + " " +
+               (data->tp_info.transport ? data->tp_info.transport->type_name : "") + size);
+  } catch (const std::exception &) {}
+  return PJ_SUCCESS;
 }
 
 } // namespace mcx

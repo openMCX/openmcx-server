@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Provision ephemeral trust and run native self-loop and two-process SIP tests.
 
 Usage: run_sip_tls.py SIP_TEST_BINARY [tcp]. Creates a one-day self-signed certificate for

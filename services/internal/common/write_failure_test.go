@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Test helper: storage failures that hold for root too (image builds run the tests as root, which ignores file
 // permissions).
 package common

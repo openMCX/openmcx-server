@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Functional aliases: activation, deactivation and resolution at the combined serving and owning MCData server
 // (TS 24.282 clause 22.2.2), and the MCData user profile and functional alias definitions read from the CMS
 // (member functions of DataServer, declared in data_server.hpp).
@@ -62,6 +66,7 @@ SipResponse DataServer::functional_alias_publish(const SipMessage &received, Use
   for (auto &[alias, users] : change.next)
     if (std::find(users.begin(), users.end(), user.id) != users.end()) before.insert(alias);
   for (auto &[alias, users] : change.next) std::erase(users, user.id);
+
   // TS 24.282 clause 22.2.2.3.3 steps 5 and 6: take-over needs <allow-takeover> and the user's
   // <allow-takeover-functional-alias-other-user>, read from the user's profile once the limit is reached.
   const AliasAdmissionRules rules{Service::mcdata, request.take_over, false, true, may_take_over};
@@ -103,6 +108,7 @@ SipResponse DataServer::functional_alias_publish(const SipMessage &received, Use
   });
   response.status_code = 200; // step 8
   response.headers = {{"Expires", expires}, {"SIP-ETag", random_id()}};
+
   return response;
 }
 

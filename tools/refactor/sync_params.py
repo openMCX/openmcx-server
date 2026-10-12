@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Give function declarations the parameter names of their definitions (the companion of the step 5
 renames, which changed names in the definitions only).
 

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCPTT floor control: the RTCP APP packet coding shared with MCVideo transmission control, the floor control
 // messages and fields of TS 24.380 clause 8.2, the Floor Ack retransmission, the on-network floor participant
 // timers and states (TS 24.380 clause 6.2.4) and the floor control server arbitration (TS 24.380 clause 6.3.4).
@@ -819,6 +823,7 @@ std::vector<FloorPacket> FloorParticipantTimers::tick(std::uint64_t now_ms) {
   }
   ++transmissions_;
   last_sent_ms_ = now_ms;
+
   return {*pending_};
 }
 
@@ -925,6 +930,7 @@ std::vector<FloorNotice> FloorArbitrator::request(std::string_view participant, 
   queued_grant_ = false;
   grant_transmissions_ = 1;
   last_grant_ms_ = now_ms;
+
   // TS 24.380 clause 6.3.4.4.2 step 1a: the Duration field carries T2 (Stop talking).
   std::vector<FloorNotice> notices{{FloorNoticeKind::Granted, id, id, 0, priority, 254, max_talk_ms_}};
   for (const auto &recipient : authorized_) {
@@ -932,6 +938,7 @@ std::vector<FloorNotice> FloorArbitrator::request(std::string_view participant, 
       notices.push_back({FloorNoticeKind::Taken, recipient, id, 0, priority});
     }
   }
+
   return notices;
 }
 
@@ -1088,6 +1095,7 @@ std::vector<FloorNotice> FloorArbitrator::tick(std::uint64_t now_ms) {
     last_grant_ms_ = now_ms;
     return {{FloorNoticeKind::Granted, *owner_, *owner_, 0, owner_priority_, 254, max_talk_ms_}};
   }
+
   // TS 24.380 clause 6.3.4.4.5: T2 runs from the first RTP packet of the permitted participant.
   if (!first_media_ms_ || !elapsed(*first_media_ms_, max_talk_ms_)) return {};
   media_supervised_ = false; // T2 expiry stops T1; subsequent RTP restarts T1.
@@ -1100,6 +1108,7 @@ std::vector<FloorNotice> FloorArbitrator::tick(std::uint64_t now_ms) {
     auto next = finish_owner(now_ms);
     notices.insert(notices.end(), next.begin(), next.end());
   }
+
   return notices;
 }
 

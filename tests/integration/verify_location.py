@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify location signalling from a clear-SIP server-side capture.
 
 MCPTT (TS 24.379 clause 13, the participating function's request of clause 6.3.2.4), or with --mcdata MCData (TS 24.282

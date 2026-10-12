@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # OpenMCX Unit Test Tutorial 7: the steps of README.md, one after the other, each checked before the next.
 # Usage: ./run.sh            (the system must be up: docker compose up -d --wait)
 # Writes captures/07-chat-group-calls-run.pcap.gz (captures/07-chat-group-calls-full.pcap.gz is the reference run of

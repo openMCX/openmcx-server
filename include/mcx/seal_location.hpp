@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The location-info documents of the SEAL location management protocol over HTTP (TS 24.545 clause 7,
 // application/vnd.3gpp.seal-location-info+xml), as the location management client (SLM-C) of a user and an MC service
 // server (the VAL server) exchange them with the location management server (SLM-S).

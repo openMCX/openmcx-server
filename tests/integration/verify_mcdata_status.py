@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Check a capture of MCData enhanced status against TS 24.282 clause 14.2.
 
 Reads clear TCP/5060 SIP (debug SIP) and decodes the DATA PAYLOAD of each group standalone SDS independently of the C++

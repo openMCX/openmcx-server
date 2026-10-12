@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Floor control: the MCPT message and field codec, the floor control server arbitration and the floor participant
 // timers of TS 24.380 (clauses 6.2.4, 6.3.4, 6.3.5, 8.1 and 8.2).
 //

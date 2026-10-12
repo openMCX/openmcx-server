@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // XML Schema validation (libxml2) of the group, GMOP and user profile documents the GMS and the CMS accept.
 //
 // Specifications: TS 24.481 V19.3.0 (Rel-19), TS 24.484 V19.6.0 (Rel-19), RFC 4825, OMA XDM (Group XDM),

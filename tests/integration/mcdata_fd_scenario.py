@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise MCData file distribution over HTTP (TS 24.282 clauses 10.2.2 to 10.2.4, 12.2 and 12.4).
 
 Run against a fixture prepared with --mcdata (see add_mcdata_policy in

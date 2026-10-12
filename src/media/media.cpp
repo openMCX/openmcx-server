@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Media plane: AMR-WB speech coding and its RTP payload format, RTP packets, SRTP protection with libsrtp2 and
 // 16 kHz mono PCM16 WAV files, as used by the MCPTT and MCVideo media distribution and the test clients.
 //
@@ -406,6 +410,7 @@ std::vector<std::uint8_t> unpack_amr_wb(std::span<const std::uint8_t> payload, b
   for (std::size_t bit = 0; bit < info.speech_bits; ++bit) {
     set_bit(std::span<std::uint8_t>(frame).subspan(1), bit, get_bit(payload, 10U + bit));
   }
+
   return frame;
 }
 

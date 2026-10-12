@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // SIP engine (PJSIP): configuration checks, header lookup, and the transaction, dialog, subscription and INVITE
 // session behaviour seen by the application, in one process and as separate server and client processes.
 //

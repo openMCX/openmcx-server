@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify functional alias signaling from a clear-SIP server-side capture.
 
 Functional alias status changes (TS 24.379 clause 9A.2.1.2): PUBLISH with the presence event and the functional alias

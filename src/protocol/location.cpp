@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Emergency location documents: the <location-info> Report of type Emergency with the current coordinate, for
 // MCPTT, MCData and MCVideo.
 //
@@ -94,6 +98,7 @@ EmergencyLocation parse_location_in(std::string_view xml, const char *expected_n
     auto bytes = unique_child(element, "threebytes", ns);
     return number(scalar(bytes), 0xffffff);
   };
+
   return {value("latitude"), value("longitude")};
 }
 } // namespace

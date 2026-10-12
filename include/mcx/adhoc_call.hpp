@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Ad hoc group call admission: the authorisation of the request, the participant criteria and the participant list
 // modification.
 //
@@ -118,11 +122,13 @@ inline ParticipantChanges split_participant_changes(const std::vector<std::strin
       }
       at = next;
     }
+
     auto &target = method == "INVITE" ? changes.invite
                    : method == "BYE"  ? changes.remove
                                       : throw std::invalid_argument("participant method must be INVITE or BYE");
     if (std::find(target.begin(), target.end(), uri) == target.end()) target.push_back(uri);
   }
+
   for (const auto &uri : changes.invite)
     if (std::find(changes.remove.begin(), changes.remove.end(), uri) != changes.remove.end())
       throw std::invalid_argument("participant both invited and removed");

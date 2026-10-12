@@ -623,7 +623,12 @@ MCVideo server sees the MCVideo parts.
 ### 8.1 Events
 
 Every C++ program logs one JSON object per line to stdout with `mcx::event(kind, detail)`
-(`src/common/runtime.cpp`): the detail fields plus `"event": kind` and `"monotonic_ms"`. For example:
+(`src/common/runtime.cpp`): the detail fields plus `"event": kind` and `"monotonic_ms"`. The log level
+(`"log_level"` in the configuration, overridden by `MCX_LOG`; `mcx::log_level()`) is `info` by default; `debug` adds
+a human-readable line on stderr per SIP message (`mcx::debug_line`, from a pjsip module registered only at that level,
+`src/sip/lifecycle.cpp`) and, in the Go services, per HTTP request (`services/internal/common/request_log.go`), each
+starting with the date, time and `OpenMCX DEBUG [<program>]`. stdout stays the JSON event stream. See
+[using the lab](USAGE.md#7-troubleshooting-logs-and-readable-sip). For example:
 
 ```json
 {"event":"call_created","group_id":"sip:operations@mcx.test","monotonic_ms":1234567,"session_uri":"sip:mcptt@mcx.test;mcptt-session=...","user_id":"sip:alice.mcptt@mcx.test"}

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Configuration management document subscriptions of users (CMS subscription function) and the document
 // subscription status (members of McServer).
 //

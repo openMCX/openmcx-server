@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Conference event package documents: conference-info with the MCPTT extension (functional alias).
 //
 // Specifications: RFC 4575, TS 24.379 V19.7.0 (Rel-19).
@@ -44,6 +48,7 @@ std::string conference_info_xml(const ConferenceInfo &info) {
   }
   out += "</conference-info>";
   bounded(out);
+
   return out;
 }
 

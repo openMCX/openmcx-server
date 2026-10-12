@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Protected MCVideo group calls (media security, TS 24.281 clause 4.7.1; TS 33.180 with the
 MCVideo CS-IDs of TS 33.180 table E.1.3-1): each client's CSK uploaded at MCVideo service authorisation,
 the group's GMK through the GKTP subscription to the MCVideo server, transmission

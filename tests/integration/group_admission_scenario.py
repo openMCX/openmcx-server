@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Group calls refused by the group document and its call policy.
 
 Run in a lab prepared with --admission-groups: four groups of the four clients, each refusing a group call for one

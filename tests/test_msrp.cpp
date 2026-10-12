@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MSRP framing (RFC 4975) as TS 24.582 uses it: URIs, SEND and responses, chunking, multipart MCData
 // bodies, endpoints over TCP and TLS, and the MSRP SDP of the MCData media plane.
 //

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The Credential Service of the accounts managed by MCX Admin: SIP digest credentials issued to signed-in clients,
 // and suspended, resumed or retired on MCX Admin's request (OpenMCX's own MCX Admin integration, not a 3GPP
 // procedure).

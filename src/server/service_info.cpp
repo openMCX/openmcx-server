@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Service information of the MCPTT and MCVideo servers: the program's service checked against the configuration,
 // its media feature tag, ICSI, Warning header field texts, media plane controller and affiliation namespace
 // (member functions of McServer).

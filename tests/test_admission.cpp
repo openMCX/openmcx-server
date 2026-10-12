@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Service admission by feature tag and ICSI: the Accept-Contact checks that select the MCPTT or the MCVideo
 // service for an incoming SIP request.
 //

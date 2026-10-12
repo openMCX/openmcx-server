@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Validation of a group document before it is stored: the schema, then the validation constraints of the OMA
 // Group XDM and of TS 24.481, and the check of the documents generated from the configuration at start-up.
 //

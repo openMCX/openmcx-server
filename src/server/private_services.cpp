@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Private call and group services relayed by SIP MESSAGE: private call call-back, remotely initiated private and
 // group calls, private call transfer and forwarding, and remote change of the selected group (member functions of
 // McServer).
@@ -42,18 +46,21 @@ SipResponse McServer::relay_remote_group_call(const User &user, McpttInfo &info,
     return private_service_rejected(response, user, status, warning);
   };
   const bool request = service_type == "remotely-initiated-group-call-request";
+
   // <mcptt-request-uri> names the targeted group (request) or the group that
   // was called (response, TS 24.379 clause 10.1.5.2.2 step 1e).
   const auto group = info.request_uri;
   if (group.empty()) return reject(403, warn(Warning::called_party_unknown));
   if (request && !private_policy_flag(requester_rules(user, "group_call"), "remote_init"))
     return reject(403, warn(Warning::remote_group_call_not_authorised));
+
   // TS 24.379 clause 10.1.5.4 step 2A: no remotely initiated call on a preconfigured-use-only group.
   bool preconfigured = false;
   try {
     preconfigured = internal("gms", "/internal/group?id=" + url_encode(group)).value("preconfigured_use_only", false);
   } catch (const std::exception &) {} // an unknown group fails the affiliation check below
   if (preconfigured) return reject(403, warn(Warning::preconfigured_use_only));
+
   // TS 24.379 clause 10.1.5.4 step 3: the remote user must be affiliated to the group.
   if (request && !affiliated(target, group)) return reject(403, warn(Warning::not_affiliated));
   // TS 24.379 clause 10.1.5.4 step 7: the group moves to <mcptt-calling-group-id>; relay_service_message
@@ -205,6 +212,7 @@ SipResponse McServer::private_service_message(const SipMessage &message, const U
   const auto service_type = info.service.contains("request-type")    ? info.service.at("request-type")
                             : info.service.contains("response-type") ? info.service.at("response-type")
                                                                      : std::string{};
+
   // A service MESSAGE names its service in <request-type> or <response-type>.
   if (service_type.empty() || info.client_id != user.client || !accepts_mcptt(message) ||
       message.request_uri != cfg_.at(svc_.name).at("service_uri").get<std::string>())
@@ -221,12 +229,14 @@ SipResponse McServer::private_service_message(const SipMessage &message, const U
   if (target.empty() || target == user.id) return reject(403, warn(Warning::called_party_unknown));
   const auto *recipient = by_id(target);
   if (!recipient || recipient->expires <= std::time(nullptr)) return reject(480, "");
+
   // Remotely initiated group call (TS 24.379 clause 10.1.5): the resource list names
   // the remote user (request) or the requesting user (response); the group is
   // in mcptt-request-uri. Combined participating and controlling function.
   if (service_type == "remotely-initiated-group-call-request" ||
       service_type == "remotely-initiated-group-call-response")
     return relay_remote_group_call(user, info, target, *recipient, service_type);
+
   // Remote change of the selected group (TS 24.379 clause 10.1.4, TS 24.281 clause 9.2.4): the group
   // is in <request-uri>, the targeted user (request) or the requester (response) in
   // the resource list. Combined participating and controlling function.

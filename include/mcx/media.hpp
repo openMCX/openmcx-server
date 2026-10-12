@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Media plane: AMR-WB speech coding and its RTP payload format, RTP packets, SRTP protection and 16 kHz mono PCM16 WAV
 // files, as used by the MCPTT and MCVideo media distribution and the test clients.
 //

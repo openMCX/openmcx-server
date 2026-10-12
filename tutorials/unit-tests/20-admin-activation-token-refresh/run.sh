@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # OpenMCX Unit Test Tutorial 20: the steps of README.md, one after the other, each checked before the next.
 # Usage: ./run.sh            (the system must be up: docker compose up -d --wait)
 # Writes captures/20-admin-activation-token-refresh-run.pcap.gz (captures/20-admin-activation-token-refresh-full.pcap.gz

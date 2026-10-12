@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The freeDiameter core of a process, shared by its Diameter applications (MCPTT-2's Diameter Data Management and
 // Rx), and the helpers that build and read their messages. libfdcore keeps its state in globals, so a process has
 // one core: the applications it advertises in its Capabilities-Exchange-Request are chosen before it starts.

@@ -1,4 +1,8 @@
 #!/bin/sh
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Tutorial 5: this computer's part of the path between the OpenMCX system and the LTE UEs (run with sudo).
 #
 #   sudo ./host-network.sh add       before `up`

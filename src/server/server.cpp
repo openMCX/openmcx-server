@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The shared core of the MCPTT and MCVideo servers: construction, the run loop, the SIP dialog state callback, the
 // periodic tick with its call supervision, and the status (member functions of McServer).
 //
@@ -262,6 +266,7 @@ void McServer::supervise_session(const std::string &group, const std::shared_ptr
   notices(*session, session->arbitrator->tick(now));
   unpermitted_media_tick(*session, now);
   service_session_tick(session, now);
+
   // TS 23.379 clause 10.6.2.5.2 step 3: the broadcast ends when the initiator's
   // transmission completes (release, revoke or media timeout).
   // After an override, the call ends when the overriding transmission does.
@@ -431,6 +436,7 @@ void McServer::save_status(std::uint64_t now) {
   status_["ready"] = true;
   status_["authorized_users"] = 0;
   status_["affiliated_users"] = 0;
+
   // The groups each authorised user is affiliated with here, local or served
   // by a peer, so that a test can wait for an affiliation to reach this server.
   status_["affiliations"] = Json::object();
@@ -454,6 +460,7 @@ void McServer::save_status(std::uint64_t now) {
   status_["server_role"] = role_;
   status_["seal"] = seal_status_;
   status_["relayed_calls"] = relays_.size() / 2;
+
   // The media port pairs in use and available.
   status_["media_ports"] = {{"total", media_slots}, {"used", legs_.size() + relays_.size()}};
   status_["adhoc_alerts"] = Json::object();

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Location procedures of the participating function, shared by the MCPTT, MCVideo and MCData servers
 // (location_service.hpp). The clauses are those of TS 24.379 clause 13; TS 24.281 clause 18 follows them, and
 // TS 24.282 clause 17.2 has the same steps under its own numbers (17.2.2 for 13.2.2, and so on).
@@ -392,6 +396,7 @@ std::optional<SipResponse> LocationService::from_client(const SipMessage &messag
   }
   // A report inside another request (an emergency alert, TS 24.379 clause 6.2.9.1) is that request's.
   if (std::holds_alternative<location::Report>(content) && part_of(parts, service_.info_mime)) return std::nullopt;
+
   // Steps 2 and 3: the requesting user.
   const auto asserted = asserted_identity(message);
   const auto user = host_.location_user_by_sip(asserted);
@@ -399,6 +404,7 @@ std::optional<SipResponse> LocationService::from_client(const SipMessage &messag
     return refusal(404, warning_text(service_, Warning::unknown_user));
   if (const auto *received = std::get_if<location::Report>(&content)) return report(*user, *received);
   const bool is_request = std::holds_alternative<location::Request>(content);
+
   // The service information is optional here: it only names a functional alias (clause 13.3.3.2 step 5 ii).
   const auto *info_part = part_of(parts, service_.info_mime);
   const auto info = info_part ? host_.location_info(message, *info_part) : LocationInfo{};
@@ -429,6 +435,7 @@ void LocationService::serve_client_targets(const location::Content &content, con
   if (!requesting_user) return;
   auto configuration = std::get_if<location::Configuration>(&content) ? std::get<location::Configuration>(content)
                                                                       : location::Configuration{};
+
   // TS 24.379 clause 13.2.2A step 7a: one TriggerId per criterion, the same for every client.
   for (auto *list : {&configuration.triggers, &configuration.emergency_triggers})
     for (auto &trigger : *list)
@@ -493,6 +500,7 @@ std::optional<SipResponse> LocationService::from_peer(const SipMessage &message,
   }
   if (const auto *received = std::get_if<location::Report>(&content)) return relay(*received, loc->body, peer);
   if (message.request_uri != host_.service_uri()) return std::nullopt;
+
   // A resource list that cannot be read names no target (parse_resource_list_targets refuses an empty one).
   const auto *lists = part_of(parts, resource_lists_mime);
   std::vector<std::string> targets;
@@ -502,6 +510,7 @@ std::optional<SipResponse> LocationService::from_peer(const SipMessage &message,
     targets.clear();
   }
   if (targets.empty()) return refusal(403, warning_text(service_, Warning::location_target_invalid));
+
   // TS 24.379 clause 13.2.2B step 2 and clause 13.2.3.3 step 2: the requesting user.
   const auto *info_part = part_of(parts, service_.info_mime);
   auto requester = info_part ? host_.location_info(message, *info_part).calling_user : std::string{};

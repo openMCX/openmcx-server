@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise end-to-end protected private calls.
 
 The caller generates a PCK, encapsulates it in a MIKEY-SAKKE I_MESSAGE to the callee and both protect the call with it

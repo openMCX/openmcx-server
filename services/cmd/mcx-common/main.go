@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // mcx-common runs one common service role (IdMS, GMS, CMS, LMS, KMS, MCData content server, message store or
 // notification server or Credential Service): its keys, its TLS client towards the services of this system, and its
 // HTTPS server.
@@ -105,6 +109,11 @@ func run() error {
 	}
 	if role == common.RoleContent && transferTimeoutMs > 0 {
 		handler = common.WithTransferDeadline(handler, time.Duration(transferTimeoutMs)*time.Millisecond)
+	}
+	if debug, err := common.DebugLogging(cfg.LogLevel); err != nil {
+		return err
+	} else if debug {
+		handler = common.WithRequestLog(handler, roleValue)
 	}
 	server := &http.Server{
 		Addr: listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,

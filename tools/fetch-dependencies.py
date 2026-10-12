@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Fetch the pinned host tools; never silently accept a mismatching cache entry.
 
 Downloads the files of dependencies/lock.json marked "use": "host" (the docker-compose binary the lab tools run,

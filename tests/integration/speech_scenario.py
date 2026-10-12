@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise the running standalone lab and retain quantitative speech evidence.
 
 A prearranged group call between client-a and client-b (TS 24.379 clause 10.1.1) with clear media and floor control:

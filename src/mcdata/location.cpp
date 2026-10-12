@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Location procedures of the participating MCData function (TS 24.282 clause 17.2): the host of the shared
 // LocationService (parts/location_service.hpp) in the MCData server (member functions of DataServer, declared in
 // data_server.hpp).

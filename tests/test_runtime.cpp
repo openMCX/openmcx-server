@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Runtime boundaries: the --disable-tls debug flag, the SIP transport it selects, and the P-Asserted-Identity check.
 //
 // Specifications: RFC 3325 section 9.1 (P-Asserted-Identity), TS 24.229.

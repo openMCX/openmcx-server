@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """The MCPTT server restarts: its clients learn it and are authorised and affiliated again.
 
 The MCPTT server keeps its bindings in memory, so a restarted server knows nobody. The scenario checks that

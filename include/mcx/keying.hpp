@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MIKEY-SAKKE keying: the MC key periods and UIDs, KMS authority and user key issue, ECCSI signatures, SAKKE key
 // encapsulation, MIKEY-SAKKE I_MESSAGEs with the key parameters extension, and the MCData protected and authenticated
 // payloads.

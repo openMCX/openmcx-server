@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Report single-letter names in Python code (docs/CODING_STYLE.md 1.1): variables,
 parameters, loop targets, comprehension targets and lambda arguments. ruff has no
 rule for this. Usage: tools/check-names.py FILE... ; prints one line per name and

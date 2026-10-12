@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // IdMS tokens: the claims of the ID and access tokens of TS 33.180 annex B.2, their RS256 signature and
 // verification, and the JWK of the verification key.
 //

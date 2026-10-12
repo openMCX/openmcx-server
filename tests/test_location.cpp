@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Location information of the MC services: the coordinate coding, the areas, the location reporting
 // configuration, request and report documents, the client's report triggering and the participating
 // function's registry.

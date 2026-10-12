@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCVideo media (TS 26.281 clause 4.1.1): H.264 video, carried in RTP with the payload format of RFC 6184 in
 // packetization mode 1.
 //

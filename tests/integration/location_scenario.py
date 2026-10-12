@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise MCPTT location management (TS 24.379 clauses 13, 6.3.2.4, 12.1.1.4 and 12.1.1.6).
 
 Run against a four-client fixture prepared with --priority --location. Check IDs

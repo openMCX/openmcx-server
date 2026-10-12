@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Write the configuration of the tutorial's MCX system into ./config.
 
 It runs the lab's own generator (tools/prepare-prearranged-test.py: a new CA and certificates, the users, the

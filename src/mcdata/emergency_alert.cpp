@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData emergency alerts at the combined participating and controlling MCData function (TS 24.282 clauses
 // 16.2.2 and 16.2.3) and the in-progress priority state notifications (clause 6.3.7.1.2) (member functions of
 // DataServer, declared in data_server.hpp).
@@ -84,6 +88,7 @@ SipResponse DataServer::emergency_alert(const SipMessage &request, User &user, m
     return rejected;
   };
   if (info.client_id != user.client || group.empty()) return reject(403, "", user.id, "emergency-alert");
+
   // TS 24.282 clause 16.2.3.1 step 2: the MCData ICSI (or an MCData sub-service ICSI) in Accept-Contact.
   if (!accepts(request, mcdata::icsi)) return reject(403, "", user.id, "emergency-alert");
   Json policy;
@@ -103,6 +108,7 @@ SipResponse DataServer::emergency_alert(const SipMessage &request, User &user, m
     response.status_code = 200;
     return response;
   }
+
   // TS 24.282 clause 6.3.7.2.1: preconfigured-use-only groups, then the user and group authorisation.
   if (document->value("preconfigured_use_only", false))
     return reject(403, "168 alert is not allowed on the preconfigured group", user.id, "emergency-alert");
@@ -110,6 +116,7 @@ SipResponse DataServer::emergency_alert(const SipMessage &request, User &user, m
   const auto dedicated = policy.value("alert_groups", Json::array());
   const bool permitted = policy.value("emergency_alert", false) && (dedicated.empty() || listed(dedicated, group));
   if (!permitted || !group_allows) return answer(403, "", false);
+
   // TS 24.282 clause 16.2.3.1 step 4b-i: implicit affiliation of an eligible (member) user (clauses 8.3.3.6
   // and 8.3.3.7).
   if (!affiliated(user.id, group)) {
@@ -128,6 +135,7 @@ SipResponse DataServer::emergency_alert(const SipMessage &request, User &user, m
     alert.location = location->body;
   }
   emergency_alerts_[group][user.id] = alert;
+
   // TS 24.282 clause 16.2.3.1 step 4b-ii: every other affiliated member is notified (clauses 6.3.7.1.2 and
   // 6.3.7.1.3).
   unsigned notified = 0;
@@ -148,6 +156,7 @@ SipResponse DataServer::emergency_alert(const SipMessage &request, User &user, m
   receipt.alert_received = true;
   receipt.client_id = user.client;
   schedule_receipt(user, receipt);
+
   event("mcdata_emergency_alert", {{"user_id", user.id}, {"group_id", group}, {"notified", notified}});
   response.status_code = 200;
   return response;

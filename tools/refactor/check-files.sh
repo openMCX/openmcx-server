@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Format the given C++ files (clang-format 23) and compile each alone with the build's flags
 # (syntax only), in the openmcx-lint image: the check after editing a few files of a large
 # refactoring, without building everything.

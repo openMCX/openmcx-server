@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCVideo media: H.264 (AVC) encoding and decoding with OpenH264 (TS 26.281 clause 4.1.1) and its RTP payload
 // format in packetization mode 1 (RFC 6184).
 //
@@ -140,6 +144,7 @@ AccessUnit Encoder::encode(const Frame &frame, std::uint64_t timestamp_ms) {
   picture.iPicHeight = static_cast<int>(frame.height);
   picture.iStride[0] = static_cast<int>(frame.width);
   picture.iStride[1] = picture.iStride[2] = static_cast<int>(frame.width / 2);
+
   // OpenH264 reads the planes only.
   picture.pData[0] = const_cast<unsigned char *>(frame.y.data());
   picture.pData[1] = const_cast<unsigned char *>(frame.u.data());
@@ -161,6 +166,7 @@ AccessUnit Encoder::encode(const Frame &frame, std::uint64_t timestamp_ms) {
       cursor += length;
     }
   }
+
   return unit;
 }
 
@@ -247,6 +253,7 @@ std::vector<Payload> packetize(const AccessUnit &unit, std::size_t max_payload) 
     }
   }
   if (!out.empty()) out.back().marker = true;
+
   return out;
 }
 
@@ -321,6 +328,7 @@ std::vector<AccessUnit> Depacketizer::push(std::uint16_t sequence, std::uint32_t
     started_ = true;
     timestamp_ = timestamp + 1; // the next packet, whatever its timestamp, starts afresh
   }
+
   return done;
 }
 

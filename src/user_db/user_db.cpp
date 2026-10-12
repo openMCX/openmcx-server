@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // mcx-user-db: the Diameter user database that serves the MCPTT user profile of each configured user by Data-Pull,
 // following the site configuration that MCX Admin rewrites.
 //
@@ -69,12 +73,14 @@ std::string generated_profile(const nlohmann::json &user) {
                     "</uri-entry></MCPTTUserID>"
                     "<MissionCriticalOrganization>open-mcx</MissionCriticalOrganization>"
                     "</Common>";
+
   if (user.contains("groups")) {
     xml += "<OnNetwork index=\"0\"><MCPTTGroupInfo>";
     for (const auto &group : user.at("groups"))
       xml += "<entry><uri-entry>" + xml_escape(group.get<std::string>()) + "</uri-entry></entry>";
     xml += "</MCPTTGroupInfo></OnNetwork>";
   }
+
   // The SIP URI and client ID have no element in the TS 24.484 schema: they are
   // in this implementation's namespace, as in the profiles the CMS serves.
   return xml + "<profile-extension xmlns=\"urn:openmcx:ns:userProfile:1.0\"><sip-uri>" + xml_escape(sip_uri) +
@@ -120,8 +126,10 @@ int main(int argc, char **argv) {
         throw std::runtime_error("usage: mcx-user-db --config site.json --diameter-config path [--watch]");
       }
     }
+
     if (config_path.empty() || diameter_config_path.empty())
       throw std::runtime_error("usage: mcx-user-db --config site.json --diameter-config path [--watch]");
+
     mcx::print_banner("mcx-user-db");
     auto profiles = load_profiles(config_path);
     std::signal(SIGINT, stop_handler);
@@ -129,8 +137,10 @@ int main(int argc, char **argv) {
     // A Diameter peer that closes its TLS connection (a server restarting) must
     // surface as a write error, not stop this process with SIGPIPE.
     std::signal(SIGPIPE, SIG_IGN);
+
     mcx::DiameterProfileServer server(diameter_config_path, std::move(profiles));
     std::cout << "mcx-user-db ready on TS 29.283 Diameter Data Management" << std::endl;
+
     // --watch: the profiles follow the configuration file, which MCX Admin rewrites
     // (a whole new file renamed in place) when an account or a right changes. A file
     // that cannot be read or is invalid leaves the profiles as they were.

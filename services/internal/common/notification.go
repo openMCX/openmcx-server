@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MCData notification server: LongPolling notification channels on MCData-10 and the callback of MCData-11.
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19), TS 23.282 V19.10.0 (Rel-19), TS 24.482 V19.1.0 (Rel-19),

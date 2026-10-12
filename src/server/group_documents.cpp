@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Group document subscriptions: the GMS subscription proxy function and the xcap-diff NOTIFYs (members of McServer).
 //
 // Specifications: TS 24.481 V19.3.0 (Rel-19), RFC 5875, RFC 6665.

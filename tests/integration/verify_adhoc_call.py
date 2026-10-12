@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify ad hoc group-call signaling and floor coding from a clear-SIP capture.
 
 The ad hoc group call of TS 24.379 clause 17: originating INVITEs carry a participant list or criteria and no group

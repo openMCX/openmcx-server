@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The media protection state of one MC client call: the SRTCP contexts of floor or transmission control under the
 // CSK, the SRTP contexts of group media under each GMK epoch (with GUK-ID diversity) and of private calls under their
 // PCK, as TS 33.180 clauses 7.4, 7.5 and 9.4 derive and use them.
@@ -143,6 +147,7 @@ class ProtectedCall {
     auto &retired_audio_ = epoch.retired;
     auto &media_use_ = epoch.uses;
     valid(*group_key_);
+
     const auto ssrc = wire_ssrc(packet, false);
     const StreamId id{ssrc, sender};
     if (retired_audio_.contains(id)) throw std::runtime_error("retired media SSRC cannot be reused in this GMK epoch");
@@ -152,6 +157,7 @@ class ProtectedCall {
       it->second.last_used = ++media_use_;
       return output;
     }
+
     auto victim = audio_.end();
     std::size_t sender_streams = 0;
     for (auto current = audio_.begin(); current != audio_.end(); ++current) {
@@ -168,6 +174,7 @@ class ProtectedCall {
     }
     if (victim != audio_.end() && retired_audio_.size() >= retirement_capacity)
       throw std::runtime_error("media retirement capacity; GMK rotation required");
+
     const auto guk = derive_guk_id(group_key_->key, group_key_->csb_id, sender);
     auto stream = std::make_unique<SecureStream>(
         derive_group_security(group_key_->key, group_key_->random, group_key_->csb_id, guk, mcvideo_), ssrc);
@@ -221,6 +228,7 @@ public:
       active_group_ = key.csb_id;
       return;
     }
+
     const auto now = std::uint64_t(std::time(nullptr));
     for (auto it = group_epochs_.begin(); it != group_epochs_.end();) {
       if (!it->second.key.properties || expiry_of(*it->second.key.properties) <= now) {
@@ -229,6 +237,7 @@ public:
       } else
         ++it;
     }
+
     // Never evict an unexpired epoch to make room: doing so would permit
     // ciphertext replay or outbound nonce reuse when that group is selected.
     if (group_epochs_.size() >= group_epoch_capacity) throw std::runtime_error("unexpired GMK epoch capacity reached");

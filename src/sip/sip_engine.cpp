@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The public interface of the SIP engine (include/mcx/sip.hpp): registration, requests, subscriptions, INVITE sessions.
 //
 // Specifications: RFC 3261, RFC 3264, RFC 4028, RFC 6665, RFC 3903, TS 24.379 V19.7.0 (Rel-19), TS 24.229.
@@ -90,6 +94,7 @@ void SipEngine::register_account(unsigned expires, SipResponseHandler handler) {
   if (expires == 0) {
     throw std::invalid_argument("SIP registration expiry must be nonzero");
   }
+
   if (impl_->registration == nullptr) {
     require_success(pjsip_regc_create(impl_->endpoint, impl_.get(), &Impl::registration_complete, &impl_->registration),
                     "create SIP registration client");
@@ -109,6 +114,7 @@ void SipEngine::register_account(unsigned expires, SipResponseHandler handler) {
     auto contact = pj_view(contact_text);
     require_success(pjsip_regc_init(impl_->registration, &server, &identity, &identity, 1, &contact, expires),
                     "initialize SIP registration");
+
     pjsip_cred_info credential{};
     credential.realm = pj_view("*");
     credential.scheme = pj_view("digest");
@@ -117,6 +123,7 @@ void SipEngine::register_account(unsigned expires, SipResponseHandler handler) {
     credential.data = pj_view(impl_->config.password);
     require_success(pjsip_regc_set_credentials(impl_->registration, 1, &credential),
                     "set SIP registration credentials");
+
     auto *pool = pjsip_endpt_create_pool(impl_->endpoint, "register-route", 512, 512);
     if (pool == nullptr) throw std::bad_alloc();
     try {
@@ -134,6 +141,7 @@ void SipEngine::register_account(unsigned expires, SipResponseHandler handler) {
   } else {
     require_success(pjsip_regc_update_expires(impl_->registration, expires), "update SIP registration expiry");
   }
+
   impl_->registration_handler = std::move(handler);
   pjsip_tx_data *data = nullptr;
   require_success(pjsip_regc_register(impl_->registration, PJ_TRUE, &data), "create REGISTER request");
@@ -223,10 +231,12 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
   if (found == impl_->dialogs.end() || !found->second->invite || found->second->terminating ||
       found->second->final_answer)
     return;
+
   auto &entry = *found->second;
   auto *invite = entry.invite;
   if (invite->role != PJSIP_ROLE_UAS) throw std::invalid_argument("only an incoming INVITE can be answered");
   if (!response.contact_uri.empty() || response.focus) entry.response_contact = impl_->response_contact(response);
+
   const pjmedia_sdp_session *sdp = nullptr;
   if (entry.answer_sdp_pending && response.status_code >= 200 && response.status_code < 300) {
     if (!response.local_media && !response.local_sdp)
@@ -235,6 +245,7 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
                              : parse_local_sdp(entry.dialog->pool, *response.local_media);
     entry.answer_sdp_pending = false;
   }
+
   pjsip_tx_data *created = nullptr;
   auto reason = pj_view(response.reason);
   require_success(
@@ -248,6 +259,7 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
     while (auto *header = pjsip_msg_find_hdr_by_name(data->msg, &alert_info, nullptr))
       pj_list_erase(static_cast<pjsip_hdr *>(header));
   }
+
   if (response.status_code >= 200 && response.status_code < 300 && response.local_sdp)
     data->msg->body = make_body_with_sdp(data->pool, *response.local_sdp, impl_->answer_parts(response, entry.dialog));
   else if (response.status_code >= 200 && response.status_code < 300 && response.local_media)
@@ -258,6 +270,7 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
     data->msg->body = make_parts_body(data->pool, response.parts, "mcx-answer");
   if (response.status_code > 100 && response.status_code < 300)
     add_headers(data.get(), {{"Contact", entry.response_contact}});
+
   // A header field this answer sets replaces the copy pjsip kept from the last provisional answer, so that it is
   // not sent twice (a Resource-Priority of RFC 4412 section 3.1, for example).
   for (const auto &header : response.headers) {
@@ -270,6 +283,7 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
     add_answer_headers(data.get(), impl_->config.invite_provisional_headers);
   else if (response.status_code >= 200 && response.status_code < 300)
     add_answer_headers(data.get(), impl_->config.invite_success_headers);
+
   entry.final_answer = response.status_code >= 200;
   if (response.status_code >= 200 && response.status_code < 300) {
     const auto *cseq = static_cast<const pjsip_cseq_hdr *>(pjsip_msg_find_hdr(data->msg, PJSIP_H_CSEQ, nullptr));
@@ -351,9 +365,11 @@ void SipEngine::bye(std::string_view dialog_id, SipResponseHandler handler, cons
   // Called while PJSIP reports the session's end (e.g. from a request handler
   // observing a received BYE): there is nothing left to end.
   if (found->second->invite->state == PJSIP_INV_STATE_DISCONNECTED) return;
+
   found->second->terminating = true;
   found->second->bye_parts = parts;
   if (handler) found->second->initial_handler = std::move(handler);
+
   auto *invite = found->second->invite;
   require_success(pjsip_inv_add_ref(invite), "retain ending INVITE session");
   try {

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Private call admission of the participating function: the on-demand, first-to-answer and emergency private call
 // authorisation checks against the user profile <ruleset>.
 //
@@ -53,6 +57,7 @@ inline PrivateCallDecision authorize_private_call(const nlohmann::json &policy, 
   const auto flag = [&](const char *key) {
     return policy.is_object() && policy.contains(key) && policy.at(key).is_boolean() && policy.at(key).get<bool>();
   };
+
   if (request.target.empty() || request.target == request.caller)
     return deny(403, warning_text(service, Warning::called_party_unknown));
   if (!flag("allow")) return deny(403, warning_text(service, Warning::private_call_not_authorised));
@@ -69,6 +74,7 @@ inline PrivateCallDecision authorize_private_call(const nlohmann::json &policy, 
   } else if (!request.answer_mode.empty()) {
     return deny(400, warning_text(service, Warning::function_not_allowed, "invalid Answer-Mode"));
   }
+
   std::vector<std::string> targets;
   if (policy.is_object() && policy.contains("targets")) targets = policy.at("targets").get<std::vector<std::string>>();
   if (!targets.empty() && !flag("any_target") &&
@@ -100,6 +106,7 @@ inline FirstToAnswerDecision authorize_first_to_answer(const nlohmann::json &pol
   const auto flag = [&](const char *key) {
     return policy.is_object() && policy.contains(key) && policy.at(key).is_boolean() && policy.at(key).get<bool>();
   };
+
   std::vector<std::string> targets;
   for (const auto &target : requested)
     if (!target.empty() && target != caller && std::find(targets.begin(), targets.end(), target) == targets.end())
@@ -108,6 +115,7 @@ inline FirstToAnswerDecision authorize_first_to_answer(const nlohmann::json &pol
     return deny(403, warning_text(service, Warning::called_party_unknown));
   if (!flag("allow")) return deny(403, warning_text(service, Warning::private_call_not_authorised));
   if (!flag("first_to_answer")) return deny(403, warning_text(service, Warning::first_to_answer_not_authorised));
+
   std::vector<std::string> listed;
   if (policy.is_object() && policy.contains("targets")) listed = policy.at("targets").get<std::vector<std::string>>();
   if (!listed.empty() && !flag("any_target")) {
@@ -115,6 +123,7 @@ inline FirstToAnswerDecision authorize_first_to_answer(const nlohmann::json &pol
                   [&](const auto &target) { return std::find(listed.begin(), listed.end(), target) == listed.end(); });
     if (targets.empty()) return deny(403, warning_text(service, Warning::first_to_answer_none_callable));
   }
+
   FirstToAnswerDecision decision;
   decision.targets = std::move(targets);
   return decision;

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Private calls: on-demand private and first-to-answer calls at the combined participating and controlling
 // function, their authorisation, forwarding, transfer, emergency upgrade and cancellation, and end-to-end media
 // protection (member functions of McServer).
@@ -209,6 +213,7 @@ std::optional<SipResponse> McServer::private_call_target(const SipMessage &messa
   list_exempt = info.call_to_functional_alias == true || info.service.contains("call-transfer-ind") ||
                 info.service.contains("call-forwarding-ind");
   if (auto refused = private_call_mapping_refusal(user, info, request, response, caller_policy)) return refused;
+
   // TS 24.379 clause 11.1.1.3.1.1 step 11e iii: the <PrivateCall> list does not restrict a call to a functional alias.
   if (info.call_to_functional_alias == true && caller_policy.is_object()) caller_policy["any_target"] = true;
   const auto decision = authorize_private_call(caller_policy, request, svc_);
@@ -296,6 +301,7 @@ std::optional<SipResponse> McServer::private_call_emergency(const SipMessage &me
     return private_call_rejected(response, user, status, warning);
   };
   const auto policy = user_profile(user.id).value("private_call", Json::object());
+
   // An emergency first-to-answer call is an emergency private call to each
   // invitee (definition in TS 24.379 clause 3.1): keep only the authorised recipients.
   if (first_to_answer)
@@ -354,6 +360,7 @@ std::optional<SipResponse> McServer::private_call_media_refusal(const SipMessage
   if (!message.remote_media) return reject(488);
   if (const auto refusal = protected_private_refusal(user, *message.remote_media, first_to_answer))
     return reject(488, *refusal);
+
   // TS 33.180 clause 5.2.8.2.3 and annex D.4: a PCK keyed to a KMS that does not key the callee
   // is answered 488 with a KMS Redirect Response naming the one that does.
   if (message.remote_media->protected_media && !first_to_answer && keys_)
@@ -387,6 +394,7 @@ std::optional<SipResponse> McServer::private_invitee_check(const SipMessage &mes
     return private_call_rejected(response, user, status, warning);
   };
   const auto *callee = by_id(target);
+
   // Forwarding applies to a private call not already forwarded (one forwarding per call).
   const bool may_forward = !first_to_answer && !info.service.contains("call-forwarding-ind");
   const auto forwarding = [&](const Json &policy, const char *key) {
@@ -483,6 +491,7 @@ McServer::make_private_session(const SipMessage &message, const User &user, cons
   session->created = session->last_media = session->normal_since = monotonic_ms();
   session->members = {user.id};
   session->members.insert(session->members.end(), reachable.begin(), reachable.end());
+
   // Controlling function forwards the requested commencement mode (RFC 5373);
   // a first-to-answer call always rings (TS 24.379 clause 11.1.1.4.1 step 3).
   if (first_to_answer)
@@ -492,6 +501,7 @@ McServer::make_private_session(const SipMessage &message, const User &user, cons
   else if (!request.answer_mode.empty())
     session->answer_headers.push_back({"Answer-Mode", request.answer_mode});
   session->arbitrator = make_media_control(session->members, floor_options());
+
   // TS 24.379 clause 11.1.2.4.2 and TS 24.281 clause 10.2.3: an offer without a media plane control
   // channel asks for a private call without floor (or transmission) control.
   session->no_media_control = message.remote_media->control == MediaControl::none;
@@ -511,6 +521,7 @@ McServer::private_caller_answer(const SipMessage &message, const User &user, con
   auto leg = make_leg(user.id, session);
   if (!session->no_media_control && leg->local.floor_ssrc == message.remote_media->floor_ssrc)
     return private_call_rejected(response, user, 488);
+
   leg->dialog = message.dialog_id;
   leg->origin = true;
   leg->incoming_offer = true;
@@ -538,6 +549,7 @@ McServer::private_caller_answer(const SipMessage &message, const User &user, con
   leg->pending_priority_info = correction;
   leg->answer = response;
   leg->awaiting_answer = true;
+
   // The caller sees 180 (183 for first-to-answer) once an invitee rings (TS 24.379 clause 11.1.1.4.2).
   response.status_code = 100;
   // A protected first-to-answer call has no SDP answer before the 200: its answer
@@ -589,6 +601,7 @@ SipResponse McServer::private_invite(const SipMessage &message, const User &user
   };
   if (const auto existing = legs_.find(message.dialog_id); existing != legs_.end())
     return private_reinvite(message, user, info, existing->second);
+
   const BodyPart *resources = nullptr;
   if (auto refused = private_invite_admission(message, user, info, response, resources)) return *refused;
   PrivateCallRequest request;
@@ -598,6 +611,7 @@ SipResponse McServer::private_invite(const SipMessage &message, const User &user
                                      : private_call_target(message, user, info, *resources, response, request, invitees,
                                                            list_exempt))
     return *refused;
+
   // TS 24.379 clause 11.1.8.2.2: the transferred user's call replaces the requester's call with
   // the target (RFC 3891), so the target is not busy with the call replaced.
   const auto replaces = std::string(get_header(message.headers, "Replaces"));
@@ -605,6 +619,7 @@ SipResponse McServer::private_invite(const SipMessage &message, const User &user
   if (!replaces.empty())
     if (auto refused = private_call_replaced(replaces, user, info, first_to_answer, request, response, replaced))
       return *refused;
+
   // Emergency private call and alert authorisation (TS 24.379 clauses 6.3.3.1.13.1 and 6.3.3.1.13.2).
   PriorityState priority;
   std::optional<McpttInfo> correction;
@@ -614,10 +629,12 @@ SipResponse McServer::private_invite(const SipMessage &message, const User &user
       return *refused;
   if (auto refused = private_call_media_refusal(message, user, info, first_to_answer, request, priority, response))
     return *refused;
+
   auto policy = private_call_policy();
   policy["protect_floor"] = message.remote_media->protected_media;
   const auto limit = policy.value("max_calls", 1u);
   if (private_calls(user.id) >= limit) return reject(486, warn(Warning::max_private_calls));
+
   // Terminating participating function per invitee (TS 24.379 clause 11.1.1.3.2 steps 7 to 9),
   // then the busy check. A first-to-answer call keeps the invitees that pass;
   // a private call relays the single callee's rejection.
@@ -628,6 +645,7 @@ SipResponse McServer::private_invite(const SipMessage &message, const User &user
       return *refused;
   if (callees.reachable.empty())
     return first_to_answer ? reject(480) : reject(callees.last_rejection.status, callees.last_rejection.warning);
+
   auto session = make_private_session(message, user, info, first_to_answer, list_exempt, *resources, request, priority,
                                       replaced, replaces, callees, policy);
   if (auto refused =

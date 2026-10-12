@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The entry point shared by the MC server programs (program.hpp).
 //
 // Specifications: none (the server programs).

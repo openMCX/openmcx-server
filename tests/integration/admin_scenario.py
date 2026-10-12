@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """MCX Admin manages the accounts of a lab.
 
 ADM-01 the store is seeded from the lab and the user database's file is written.

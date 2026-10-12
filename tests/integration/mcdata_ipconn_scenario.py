@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise MCData IP connectivity: session setup and release (TS 24.282 clauses 20.2.1, 20.2.2,
 20.3.1, 20.3.2, 20.4.1 and 20.4.2), the transmission control and one-to-one list checks of
 TS 24.282 clause 11.1, the functional alias redirection of TS 24.282 clause 20.4.2 step 5a1,

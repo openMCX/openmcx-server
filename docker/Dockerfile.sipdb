@@ -1,3 +1,7 @@
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # The SIP core's subscriber database for regression labs: the lab's MySQL with its
 # data directory initialised at build time. The official image initialises it at
 # every start (about 20 s per lab); this one starts in about 2 s and then runs the

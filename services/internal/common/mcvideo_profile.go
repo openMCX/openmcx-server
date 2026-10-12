@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MCVideo user profile document the CMS serves: rendering a user's "mcvideo" record as the document, reading
 // it back, and the validation constraints the schema does not express.
 //

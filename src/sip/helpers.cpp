@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // SIP engine helpers over pjsip: text, URI, header and body conversions, configuration checks, get_header.
 //
 // Specifications: RFC 3261, RFC 4028, RFC 2046, RFC 5621, RFC 4566.
@@ -206,6 +210,7 @@ void validate_config(const SipConfig &config) {
       config.core_uri.empty() || config.identity.empty() || config.username.empty() != config.password.empty()) {
     throw std::invalid_argument("SIP runtime identity and transport configuration is incomplete");
   }
+
   const auto core_uri = ascii_lower(config.core_uri);
   if (config.tls.enabled && !core_uri.starts_with("sips:") &&
       !(core_uri.starts_with("sip:") && core_uri.find(";transport=tls") != std::string::npos)) {
@@ -214,11 +219,13 @@ void validate_config(const SipConfig &config) {
   if (!config.tls.enabled && (!core_uri.starts_with("sip:") || !core_uri.ends_with(";transport=tcp"))) {
     throw std::invalid_argument("Debug SIP core URI must explicitly select TCP");
   }
+
   const auto identity = ascii_lower(config.identity);
   if (!identity.starts_with("sip:") && !identity.starts_with("sips:")) {
     throw std::invalid_argument("SIP identity must be a SIP URI");
   }
   (void)identity_user(config.identity);
+
   if (config.tls.enabled &&
       (config.tls.ca_file.empty() || config.tls.cert_file.empty() || config.tls.key_file.empty())) {
     throw std::invalid_argument("SIP TLS CA, certificate, and private key are required");
@@ -238,6 +245,7 @@ void validate_config(const SipConfig &config) {
   if (content_type.find_first_of("\r\n") != std::string_view::npos) {
     throw std::invalid_argument("invalid SIP content type");
   }
+
   auto header_name = pj_view("Content-Type");
   char *header_value = static_cast<char *>(pj_pool_alloc(pool, content_type.size() + 1U));
   std::memcpy(header_value, content_type.data(), content_type.size());
@@ -247,6 +255,7 @@ void validate_config(const SipConfig &config) {
   if (parsed == nullptr || parsed->type != PJSIP_H_CONTENT_TYPE) {
     throw std::invalid_argument("invalid SIP content type");
   }
+
   auto type = parsed->media.type;
   auto subtype = parsed->media.subtype;
   auto text = pj_view(body);

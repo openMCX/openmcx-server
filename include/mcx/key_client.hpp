@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Key management client: provisioning from the Home KMS over HTTPS, and the CSK, PCK and GMK MIKEY-SAKKE exchanges.
 //
 // Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.481 V19.3.0 (Rel-19).

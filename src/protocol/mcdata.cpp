@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData coding: the application/vnd.3gpp.mcdata-info+xml body (TS 24.282 annex D.1), the communication storage
 // control body (annex D.7), the binary MCData signalling and payload messages of TS 24.282 clause 15 with the MONP
 // coding rules of TS 24.379 annex I, UUIDs, and the file Metadata attributes (RFC 5547, RFC 5322).
@@ -272,6 +276,7 @@ std::string info_xml(const Info &info) {
   if (!ext.empty()) out += "<anyExt>" + ext + "</anyExt>";
   out += "</mcdata-Params></mcdatainfo>";
   if (out.size() > max_xml) invalid("mcdata-info body too large");
+
   return out;
 }
 
@@ -373,6 +378,7 @@ Info parse_info(std::string_view xml) {
       }
     info.service_auth_result = boolean(child(ext, "mc-service-auth-result"));
   }
+
   return info;
 }
 
@@ -505,6 +511,7 @@ SdsSignalling decode_sds_signalling(std::string_view bytes) {
     default: invalid("unknown SDS SIGNALLING PAYLOAD information element");
     }
   }
+
   return sds;
 }
 
@@ -612,6 +619,7 @@ std::string encode(const FdSignalling &fd) {
     out += static_cast<char>(iei_application_id);
     out += static_cast<char>(*fd.application_id);
   }
+
   // TS 24.282 clauses 15.2.4 and 15.2.16: half-octet IEIs with the single defined value 1.
   if (fd.completion_requested) out += static_cast<char>(iei_completion_request << 4 | 1);
   if (fd.mandatory_download) out += static_cast<char>(iei_mandatory_download << 4 | 1);
@@ -624,6 +632,7 @@ std::string encode(const FdSignalling &fd) {
   if (fd.user_location) put_tlv_e(out, iei_user_location, *fd.user_location);
   if (fd.sender) put_tlv_e(out, iei_sender, *fd.sender);
   if (fd.application_metadata) put_tlv_e(out, iei_application_metadata, *fd.application_metadata);
+
   return out;
 }
 
@@ -669,6 +678,7 @@ FdSignalling decode_fd_signalling(std::string_view bytes) {
     }
   }
   if (payload && fd.file_url.empty()) invalid("an FD SIGNALLING PAYLOAD carries one FILEURL payload");
+
   return fd;
 }
 
@@ -780,6 +790,7 @@ std::string encode(const FdHttpTermination &termination) {
     if (value < 1 || value > 2) invalid("reserved release response type");
     out += static_cast<char>(iei_release_response << 4 | value);
   }
+
   // The Payload IE is optional: FD using the media plane carries the file itself
   // over MSRP instead of a URL (TS 24.282 clause 15.1.3.1 with clause 6.2.2.3).
   if (!termination.file_url.empty())
@@ -871,6 +882,7 @@ FdHttpTermination decode_fd_http_termination(std::string_view bytes) {
     default: invalid("unknown FD HTTP TERMINATION information element");
     }
   }
+
   return termination;
 }
 

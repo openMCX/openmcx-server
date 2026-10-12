@@ -112,6 +112,12 @@ The function's reference comment follows the separator directly (2.2).
 - One topic per file (a procedure family, a state machine, a codec, a service role), at most about 1,500 lines.
 - Functions of at most about 60 lines and bounded complexity (checked); a long procedure is split along the
   specification's steps.
+- Inside a long function (about 25 lines or more), one empty line between its main steps (after the set-up, after the
+  request checks, before building the answer, before storing or sending), above the step's comment; not after every
+  statement, never between a comment and its code, and short functions without. clang-format keeps these lines but
+  does not add them.
+- Every source file starts with the licence lines, then an empty line: `//`, `// OpenMCX Licence Information :
+  AGPL-3.0-or-later`, `//` (`#` in Python, shell and Dockerfiles, after a `#!` line or a Dockerfile directive).
 - C++ headers: `#pragma once`; includes grouped as own header, project (`mcx/...`), third party, standard library
   (clang-format sorts them); one namespace per module.
 

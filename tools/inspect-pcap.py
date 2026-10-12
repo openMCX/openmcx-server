@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Reads a classic PCAP file of an Ethernet capture and, without relying on the server's own
 # code, checks the clear (unprotected) floor control and media of a lab call: every floor
 # control message (RTCP APP with name "MCPT", TS 24.380 clause 8.2) with its fields in bounds

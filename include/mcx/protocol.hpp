@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The SIP bodies of the MC services: the MCPTT and MCVideo service information (mcptt-info, mcvideo-info), location,
 // functional alias and affiliation PIDF, conference event, regroup, resource-lists and multipart bodies, the user
 // profile and group document fields the clients read, and the SDP of the audio, video, floor or transmission

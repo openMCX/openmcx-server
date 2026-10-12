@@ -120,12 +120,12 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 | 6 | `client-a: ipcon close` | client-a's BYE; the server ends client-b's leg with BYE. |
 | 7 | `client-a: ipcon <client-c>`, `client-b: ipcon <client-c>`, `client-c: ipcon close` | client-c already has a session, so it answers bob's invitation 486 Busy Here, which the server passes back (clause 20.3.2). The called party may release a session too. |
 | 8 | `client-d: ipcon <alice>`, `client-a: ipcon <client-d>`, `client-c: ipcon <bob>`, `client-a: ipcon fa=<nobody.fa>` | The server refuses before inviting anyone: 403 with warning 200 (no right to transmit), 229 (target outside the caller's one-to-one list), 230 (caller outside the target's incoming list), 145 (an alias nobody holds) (clauses 20.3.1, 11.1, 20.4.2 step 5a). |
-| 9 | `client-b: mcdata-fa activate <desk.fa>`, `client-a: ipcon fa=<desk.fa>` | A session to a functional alias: the server answers 300 (Multiple Choices) naming the user holding it, and client-a invites that user with the alias in `<called-functional-alias-URI>` (clause 20.4.2 step 5a1, clause 20.2.1). |
+| 9 | `client-b: mcdata-fa activate <desk.fa>`, `client-a: ipcon fa=<desk.fa>` | client-b takes the alias: it subscribes to its functional alias status (clause 22.2.1.3), its activation is answered 200 and the outcome comes by NOTIFY (clauses 22.2.2.2.3 and 22.2.2.2.5). A session to a functional alias: the server answers 300 (Multiple Choices) naming the user holding it, and client-a invites that user with the alias in `<called-functional-alias-URI>` (clause 20.4.2 step 5a1, clause 20.2.1). |
 
 ## 4. Look at the capture
 
 The script `run.sh` copies the capture of your run to `captures/15-mcdata-ip-connectivity-run.pcap.gz`. The folder also holds a reference
-run, [`captures/15-mcdata-ip-connectivity-full.pcap.gz`](captures/15-mcdata-ip-connectivity-full.pcap.gz) (73 KB, 774 frames): the frame numbers below and in the call
+run, [`captures/15-mcdata-ip-connectivity-full.pcap.gz`](captures/15-mcdata-ip-connectivity-full.pcap.gz) (74 KB, 815 frames): the frame numbers below and in the call
 flow are those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.15.1 and (tcp port 5060 or (udp and not port 53) or icmp)`: SIP on
@@ -134,9 +134,9 @@ tunnel is UDP on ports taken from the SDP, so the default filter already holds a
 the host's own traffic on the bridge (172.31.15.1) are left out.
 
 **To look inside the tunnel**, tell Wireshark that the tunnel ports carry GRE: **Analyze → Decode As…**, field
-`UDP port`, value the server's port (in the reference `43930`, then `40600`, `58118` and `58026`), current `GRE`.
+`UDP port`, value the server's port (in the reference `46050`, then `55373`, `34577` and `33118`), current `GRE`.
 Each datagram then shows GRE, IPv4 from 10.77.0.1 to 10.77.0.2 and the ICMP echo inside. From the command line:
-`tshark -r 15-mcdata-ip-connectivity-full.pcap.gz -d udp.port==43930,gre -d udp.port==40600,gre`.
+`tshark -r 15-mcdata-ip-connectivity-full.pcap.gz -d udp.port==46050,gre -d udp.port==55373,gre`.
 
 Useful display filters:
 
@@ -159,35 +159,40 @@ Three things Wireshark 4.2 shows in a confusing way:
 
 What to look for, in the reference run:
 
-- **Setup** (frames 417 to 445): client-a's INVITE (424, after the 407 to 417) with `one-to-one-ipconn` and
-  `m=application 57003 udp MCDATA`. The server invites bob (430, at bob 434) with `Referred-By: <sip:alice@mcx.test>`
-  and its own end `172.31.15.21:40600`. bob answers 200 OK (436, at the server 438) with its port 34396; only then does
-  the server answer client-a (441, at client-a 445) with its other end `172.31.15.21:43930`.
-- **Pings** (frames 453 to 484): five 104-byte datagrams from client-a to the server (453 to 457), the same five from
-  the server to bob (458 to 462), bob's five replies (463 to 467) relayed to client-a (468 to 472); then bob's three
-  1200-byte echoes (473 to 475, relayed 476 to 478) and client-a's replies (479 to 481, relayed 482 to 484). Every
+- **Setup** (frames 431 to 459): client-a's INVITE (438, after the 407 to 431) with `one-to-one-ipconn` and
+  `m=application 48358 udp MCDATA`. The server invites bob (444, at bob 448) with `Referred-By: <sip:alice@mcx.test>`
+  and its own end `172.31.15.21:55373`. bob answers 200 OK (450, at the server 452) with its port 33873; only then does
+  the server answer client-a (455, at client-a 459) with its other end `172.31.15.21:46050`.
+- **Pings** (frames 467 to 498): five 104-byte datagrams from client-a to the server (467 to 471), the same five from
+  the server to bob (472 to 476), bob's five replies (477 to 481) relayed to client-a (482 to 486); then bob's three
+  1200-byte echoes (487 to 489, relayed 490 to 492) and client-a's replies (493 to 495, relayed 496 to 498). Every
   datagram goes between the ports of the SDP.
-- **A packet for nobody** (frames 485 to 488): two echoes to 10.77.0.99 from client-a (485, 486), relayed to bob (487,
-  488), and no reply.
-- **The stranger** (frames 489 to 491): three datagrams from client-c (172.31.15.103) to the server's port 43930. The
+- **A packet for nobody** (frames 499 to 502): two echoes to 10.77.0.99 from client-a (499, 500), relayed to bob (501,
+  502), and no reply.
+- **The stranger** (frames 503 to 505): three datagrams from client-c (172.31.15.103) to the server's port 46050. The
   server sends nothing on to bob.
-- **Release** (frames 492 to 505): client-a's BYE (495, after the 407 to 492), the server's 200 OK to it (498), then
-  the server's BYE to bob (499, at bob 502) and bob's 200 OK (504). No datagram after it.
-- **Busy** (frames 510 to 591): client-a's session with client-c (517, invited 523, 200 OK 529, at client-a 538).
-  bob's INVITE (553) makes the server invite client-c (558), which answers 486 Busy Here (563); the server passes 486
-  back to bob (571, at bob 574). Then client-c's BYE (584) and the server's BYE to client-a (588, at client-a 591).
-- **Refusals** (frames 598 to 668): 403 with warning 200 to client-d (609, at client-d 613), 229 to client-a (628,
-  631), 230 to client-c (647, 650), 145 to client-a (665, 668). No invitation goes out for any of them.
-- **The functional alias** (frames 684 to 756): client-a's INVITE to `desk.fa` (690) is answered 300 (694, at
-  client-a 698) with `<mcdata-request-uri>` naming bob; client-a invites bob through the server (708), with
-  `<called-functional-alias-URI>sip:desk.fa@mcx.test`; bob is invited (714, at bob 718), answers (720), and client-a
-  gets its 200 OK (728, at client-a 730). Two pings cross the tunnel (738 to 745), then bob's BYE (749) ends it.
+- **Release** (frames 506 to 519): client-a's BYE (509, after the 407 to 506), the server's 200 OK to it (512), then
+  the server's BYE to bob (513, at bob 516) and bob's 200 OK (518). No datagram after it.
+- **Busy** (frames 524 to 605): client-a's session with client-c (531, invited 537, 200 OK 543, at client-a 552).
+  bob's INVITE (567) makes the server invite client-c (572), which answers 486 Busy Here (577); the server passes 486
+  back to bob (585, at bob 588). Then client-c's BYE (598) and the server's BYE to client-a (602, at client-a 605).
+- **Refusals** (frames 612 to 682): 403 with warning 200 to client-d (623, at client-d 627), 229 to client-a (642,
+  645), 230 to client-c (661, 664), 145 to client-a (679, 682). No invitation goes out for any of them.
+- **bob takes the alias** (frames 687 to 713): client-b subscribes to its functional alias status (690, after the 407
+  to 687; TS 24.282 clause 22.2.1.3); the MCData server accepts (693, at client-b 695) and its first NOTIFY lists no
+  activated alias (694, at client-b 696). client-b's PUBLISH activating `desk.fa` (702, after the 407 to 697) is
+  answered 200 (708, at client-b 709; clause 22.2.2.2.3 step 8), and the outcome comes by NOTIFY (710, at client-b
+  711): `<functionalAlias functionalAliasID="sip:desk.fa@mcx.test" status="activated"/>` (clause 22.2.2.2.5).
+- **The functional alias** (frames 718 to 790): client-a's INVITE to `desk.fa` (724) is answered 300 (728, at
+  client-a 732) with `<mcdata-request-uri>` naming bob; client-a invites bob through the server (743), with
+  `<called-functional-alias-URI>sip:desk.fa@mcx.test`; bob is invited (748, at bob 752), answers (754), and client-a
+  gets its 200 OK (762, at client-a 764). Two pings cross the tunnel (772 to 779), then bob's BYE (783) ends it.
 
   > **The Contact of the controlling MCData function.** In its INVITE to the called client (TS 24.282 clause 20.4.1
   > step 7) and in its 200 OK to the caller (clause 6.3.7.1.23 steps 5 and 6 c)), the MCData server's Contact is an
   > MCData session identity, the MCData service URI with the session's `mcdata-session` parameter, with the media
   > feature tags `g.3gpp.mcdata.ipconn` and `isfocus` and the ICSI `urn:urn-7:3gpp-service.ims.icsi.mcdata.ipconn`
-  > (434, 445, 730). The 300 for the functional alias carries a session identity as well (698, clause 20.4.2 step
+  > (448, 459, 764). The 300 for the functional alias carries a session identity as well (732, clause 20.4.2 step
   > 5a1 B)). The clients send their ACK and BYE to that identity, and the SIP core routes them to the MCData server.
 
 ## 5. Stop or start over
@@ -265,13 +270,13 @@ sequenceDiagram
     S->>B: BYE
 ```
 
-In the reference run Pa is 57003, Sa 43930, Sb 40600 and Pb 34396.
+In the reference run Pa is 48358, Sa 46050, Sb 55373 and Pb 33873.
 
 | Message | Frames |
 |---|---|
-| A → S INVITE (after the 407 to the first one); the server's 100 Trying | 424, 426; 428 |
-| S → B INVITE with Referred-By; B → S 200 OK | 430, 434; 436, 438 |
-| S → A 200 OK (only after B's 200 OK) | 441, 445 |
-| Echo requests A → S, S → B | 453 to 457; 458 to 462 |
-| Echo replies B → S, S → A | 463 to 467; 468 to 472 |
-| A → S BYE (after the 407 to the first one); S → A 200 OK; S → B BYE | 495, 496; 498, 501; 499, 502 |
+| A → S INVITE (after the 407 to the first one); the server's 100 Trying | 438, 440; 442 |
+| S → B INVITE with Referred-By; B → S 200 OK | 444, 448; 450, 452 |
+| S → A 200 OK (only after B's 200 OK) | 455, 459 |
+| Echo requests A → S, S → B | 467 to 471; 472 to 476 |
+| Echo replies B → S, S → A | 477 to 481; 482 to 486 |
+| A → S BYE (after the 407 to the first one); S → A 200 OK; S → B BYE | 509, 510; 512, 515; 513, 516 |

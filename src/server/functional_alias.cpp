@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Functional aliases: activation and deactivation, status subscriptions and notifications, and the binding of
 // a functional alias to groups (members of McServer).
 //
@@ -48,6 +52,7 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
     return reject(400, "functional alias of another service");
   if (request.user_id != user.id || request.client_id != user.client || request.aliases.empty())
     return reject(403, "identity mismatch");
+
   std::map<std::string, Json> definitions;
   for (const auto &alias : request.aliases) {
     try {
@@ -134,6 +139,7 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
     if (outcome == "activated" || outcome == "deactivated") changed.push_back(alias);
   event(deactivate ? "functional_alias_deactivated" : "functional_alias_activated",
         {{"user_id", user.id}, {"aliases", changed}, {"take_over", request.take_over}, {"outcomes", outcomes}});
+
   // TS 24.379 clause 9A.2.2.2.3 step 8 and clause 9A.2.2.3.3 step 7.
   response.status_code = 200;
   response.headers = {{"Expires", deactivate ? "0" : "4294967295"}, {"SIP-ETag", random_id()}};
@@ -172,6 +178,7 @@ SipResponse McServer::alias_subscribe(const SipMessage &message, const User &use
   const auto expires_text = get_header(message.headers, "Expires");
   const auto requested = parse_expires(expires_text);
   if (!expires_text.empty() && !requested) return refuse(400, "invalid Expires");
+
   // TS 24.379 clause 9A.2.2.3.4 step 3 (TS 24.281 clause 20.2.2.3.4 step 3): the server owning the alias accepts a
   // subscription to its users only for the state once (Expires 0) or for good (Expires 4294967295).
   if (req_type == "fa-user-status-determination" && !alias_subscriptions_.contains(message.dialog_id) &&

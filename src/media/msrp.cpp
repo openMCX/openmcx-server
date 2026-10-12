@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MSRP endpoint for the MCData media plane: message framing and chunking, MSRP URIs, multipart bodies, and
 // one TCP or TLS connection bound with an empty SEND.
 //
@@ -171,6 +175,7 @@ Uri parse_uri(std::string_view text) {
   }
   uri.host = std::string(text);
   if (uri.host.empty()) invalid("MSRP URI without a host");
+
   return uri;
 }
 
@@ -206,6 +211,7 @@ std::map<std::string, std::string> Message::parts() const {
     if (!type.empty()) out[type] = body.substr(head + 4, end - head - 4);
     position = next;
   }
+
   return out;
 }
 
@@ -259,6 +265,7 @@ std::size_t decode(std::string_view buffer, Message &out) {
     message.method = std::string(rest);
     if (message.method != "SEND" && message.method != "REPORT") invalid("unsupported MSRP method");
   }
+
   // The end-line closes the message; its position also bounds the body.
   const std::string end_line = "\r\n-------" + message.transaction;
   const auto end = buffer.find(end_line, start);
@@ -304,6 +311,7 @@ std::size_t decode(std::string_view buffer, Message &out) {
   }
   if (message.to_path.empty() || message.from_path.empty()) invalid("a message needs To-Path and From-Path");
   out = std::move(message);
+
   // The end-line is followed by CRLF when more data may follow on the connection.
   auto used = flag + 1;
   if (buffer.size() >= used + 2 && buffer.compare(used, 2, "\r\n") == 0) used += 2;
@@ -616,6 +624,7 @@ void Endpoint::connect(const Uri &peer, const Uri &local, Callbacks callbacks, c
     state_->local.secure = true;
     state_->start_tls(false);
   }
+
   // RFC 6135: the active endpoint binds the connection with an empty SEND.
   Message bind;
   bind.transaction = random_ident();

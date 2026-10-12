@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Bounded replay and tamper tests of protected media and floor control, confined to the openmcx-protected fixture.
 
 During a protected group call it captures live ciphertext in the server's network namespace and injects four invalid

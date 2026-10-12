@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Split a C++ source file of free functions into topic files, the companion of split_class.py for files without one big class.
 
 The file's anonymous-namespace helpers become an internal module: their constants, types and

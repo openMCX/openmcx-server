@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """An MCVideo prearranged group call carrying video end to end (TS 24.281 clause 9.2.1), with
 transmission control (TS 24.581 clause 6.2 and clause 6.3) and H.264 video (TS 26.281 clause 4).
 

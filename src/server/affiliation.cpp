@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Affiliation: the N2 limit, implicit affiliation, affiliation status and its notification (members of McServer).
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19).

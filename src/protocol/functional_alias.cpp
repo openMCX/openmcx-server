@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Functional alias documents: the application/pidf+xml functional alias extension for the status change request,
 // the status notification and the status determination, for MCPTT, MCData and MCVideo.
 //
@@ -129,6 +133,7 @@ FunctionalAliasRequest parse_functional_alias(std::string_view xml) {
       out.take_over = value == "true" || value == "1";
     }
   }
+
   return out;
 }
 
@@ -144,6 +149,7 @@ std::string functional_alias_status_xml(const FunctionalAliasStatus &status) {
   std::string out = "<?xml version=\"1.0\"?><presence xmlns=\"" + std::string(pidf_ns) + "\" xmlns:fa=\"" +
                     functional_alias_ns + "\" entity=\"" + xml_escape(status.entity) + "\">";
   if (!status.publish_id.empty()) out += "<fa:p-id-fa>" + xml_escape(status.publish_id) + "</fa:p-id-fa>";
+
   // RFC 3863 section 4.1.2: a <presence> may hold no <tuple>; between MCPTT servers it says the user is not active.
   if (status.tuple_id.empty()) {
     out += "</presence>";
@@ -170,6 +176,7 @@ std::string functional_alias_status_xml(const FunctionalAliasStatus &status) {
   if (status.take_over) out += "<fa:take-over>true</fa:take-over>";
   out += "</status></tuple></presence>";
   bounded(out);
+
   return out;
 }
 
@@ -185,6 +192,7 @@ FunctionalAliasStatus parse_functional_alias_status(std::string_view xml) {
   out.entity = attr(root, "entity");
   conference_uri(out.entity);
   if (auto id = unique_child(root, "p-id-fa", functional_alias_ns, false)) out.publish_id = scalar(id);
+
   // RFC 3863 section 4.1.2: no <tuple> (between MCPTT servers: the user is not active).
   auto tuple = unique_child(root, "tuple", pidf_ns, false);
   if (!tuple) return out;
@@ -212,6 +220,7 @@ FunctionalAliasStatus parse_functional_alias_status(std::string_view xml) {
     if (out.entries.size() > 64) invalid("too many functional alias entries");
   }
   if (out.per_alias && per_user) invalid("mixed functional alias status entries");
+
   return out;
 }
 

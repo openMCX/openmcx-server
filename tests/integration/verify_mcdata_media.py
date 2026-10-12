@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Check a capture of the MCData media plane against TS 24.282 and TS 24.582.
 
 Signalling (TS 24.282): SDS over the media plane (clause 9.2.3: the client offer of clauses 9.2.3.2.1 and 9.2.3.2.3, the

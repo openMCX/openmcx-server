@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise remotely initiated group calls (TS 24.379 clause 10.1.5).
 
 A requesting user asks a remote user, by SIP MESSAGE, to place a group call to a targeted group (TS 24.379 clause

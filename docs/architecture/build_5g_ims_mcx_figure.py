@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Build the MCX over IMS and 5G functional architecture figure.
 
 Writes 5g-ims-mcx-functional-entities.svg (editable) beside this script and renders it to

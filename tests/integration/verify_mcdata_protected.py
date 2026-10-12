@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify end-to-end protected MCData SDS from a clear-SIP capture at the MCData server.
 
 Decodes independently the application/mikey I_MESSAGE (TS 24.282 clause 9.2.2.2.1 step 2 c), TS 33.180 annex E.3) and

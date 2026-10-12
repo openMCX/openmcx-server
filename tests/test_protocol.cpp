@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCPTT and MCVideo protocol bodies: mcpttinfo, mcvideoinfo, location, conference-info, PIDF, regroup, profiles, SDP.
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19),

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Format the code the way docs/CODING_STYLE.md says, in the openmcx-lint image (nothing on the host):
 # clang-format (C++), gofmt (Go), ruff format (Python).
 #   tools/format           rewrite the files

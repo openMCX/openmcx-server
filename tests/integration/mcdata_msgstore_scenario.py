@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise the MCData message store (TS 24.282 clause 21): the control of communications storage
 (TS 24.282 clauses 21.3.2.2, 21.3.2.3 and 21.3.3.2, refused with the Warning codes 234 and 235 of
 TS 24.282 table 4.9.2-2), the deposit of one-to-one, group and file distribution communications

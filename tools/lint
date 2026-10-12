@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Check the code against docs/CODING_STYLE.md in the openmcx-lint image (nothing on the host):
 # clang-tidy (C++, with the build's compile commands), golangci-lint (Go), ruff and
 # tools/check-names.py (Python). Prints the findings and a count per check.

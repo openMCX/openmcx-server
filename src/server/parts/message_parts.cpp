@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Helpers on received SIP requests shared by the MC servers (message_parts.hpp).
 //
 // Specifications: RFC 2046, RFC 3261.

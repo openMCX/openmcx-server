@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Incoming SIP requests: dispatch of every request to the MCPTT and MCVideo procedures (member functions of McServer).
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 24.581 V19.2.0 (Rel-19),
@@ -116,6 +120,7 @@ bool McServer::peer_request(const SipMessage &message, const std::string &peer, 
     }
   if (message.method == "PUBLISH" && event_name == "presence" && peer_presence_publish(message, peer, response))
     return true;
+
   // TS 24.379 clauses 9A.2.2.3.4 and 9A.2.2.2.7: a serving server's subscription to a user's status for an alias,
   // and the owning server's NOTIFY to this serving server.
   if (message.method == "SUBSCRIBE" && event_name == "presence" &&
@@ -232,6 +237,7 @@ void McServer::service_authorization(const SipMessage &message, SipResponse &res
     return;
   }
   const auto &claims = *checked;
+
   // The token's subject is the MCPTT ID (TS 33.180 clause 5.1.2); an MCVideo server
   // binds the token's MCVideo ID instead (token_subject_valid).
   if (!token_subject_valid(claims)) throw std::runtime_error("introspection subject mismatch");
@@ -242,6 +248,7 @@ void McServer::service_authorization(const SipMessage &message, SipResponse &res
   if (auto *existing = by_id(claims.at(svc_.id_claim)); existing && existing->sip != asserted)
     throw std::runtime_error("MCPTT identity already bound to another SIP identity");
   auto match = get_header(request.headers, "SIP-If-Match");
+
   // TS 24.379 clause 7.3.3 steps 5 and 7: the user is bound before the PUBLISH is processed by RFC 3903, so a
   // SIP-If-Match that names no publication of this server (RFC 3903 section 6 step 3) is answered 412 after the
   // binding.
@@ -340,6 +347,7 @@ void McServer::bind_authorized_user(const Json &claims, const McpttInfo &info, c
   }
   response.headers = {{"SIP-ETag", user.auth_etag}, {"Expires", "4294967295"}};
   event("service_authorized", {{"user_id", user.id}, {"profile_bytes", profile.size()}});
+
   // TS 24.379 clause 13.2.2: location reporting is configured upon successful service authorisation.
   schedule([this, id = user.id] { location_.configure(id); });
 }
@@ -482,6 +490,7 @@ void McServer::key_subscribe(const SipMessage &message, const User &user, SipRes
     }
   if (!resources) throw std::runtime_error("missing key resource selector");
   keying::validate_gktp_resource_list(resources->body, info.request_uri);
+
   // RFC 3261 section 20.19: a missing or malformed Expires is a bad request (400), as is one above the
   // subscription limit of this server.
   const auto expiry = parse_expires(get_header(message.headers, "Expires"));
@@ -726,6 +735,7 @@ bool McServer::message_to_controller(const SipMessage &message, User &user, cons
   const bool call_service =
       info.adhoc_alert || info.service.contains("request-type") || info.service.contains("response-type");
   auto controller = call_service ? call_controller() : group_controller(info.request_uri);
+
   // A transfer or forwarding request concerns the user's current call
   // and goes to the function controlling it (TS 24.379 clauses 11.1.8.3 and 11.1.9.3).
   const auto type = info.service.contains("request-type") ? info.service.at("request-type") : std::string{};
@@ -826,6 +836,7 @@ void McServer::invite_request(const SipMessage &message, User &user, SipResponse
   if (!legs_.contains(message.dialog_id) && user.peer.empty() && invite_to_controller(message, user, info, response))
     return;
   if (!legs_.contains(message.dialog_id)) release_listened_to(user.id, ambient_reason("initiated-by"));
+
   // TS 24.379 clause 11.1.6: ambient listening call.
   if (info.session_type == svc_.ambient) {
     response = ambient_invite(message, user, info);
@@ -862,6 +873,7 @@ std::optional<SipResponse> McServer::plain_reinvite(const SipMessage &message, c
   const auto parts = parts_of(message);
   if (std::any_of(parts.begin(), parts.end(), [&](const auto &part) { return part.content_type == svc_.info_mime; }))
     return std::nullopt;
+
   const auto leg = found->second;
   SipResponse response;
   if (leg->user != user.id || !leg->active || !leg->session) {
@@ -938,6 +950,7 @@ void McServer::group_invite(const SipMessage &message, User &user, McpttInfo &in
     return;
   }
   const bool chat_request = info.session_type == "chat";
+
   // TS 24.379 clause 10.1.1.4.2 (prearranged) and clause 10.1.2.4.1 (chat): the controlling function
   // receives a group call request.
   std::string calling_constituent;
@@ -972,10 +985,12 @@ void McServer::group_invite(const SipMessage &message, User &user, McpttInfo &in
   admission_policy["protect_floor"] = profile.value("protect_floor", false);
   if (!group_call_admitted(message, user, info, session, profile, admission_policy, response)) return;
   std::optional<McpttInfo> correction;
+
   // TS 24.379 clause 10.1.1.4.7: a re-INVITE of a joined participant changing the call's priority.
   const auto updating = legs_.find(message.dialog_id);
   if (updating != legs_.end())
     return priority_reinvite(message, user, info, session, profile, updating->second, correction, response);
+
   // Receivers of a broadcast group call cannot change its priority.
   if (session && session->broadcast && user.id != session->initiator && (info.emergency || info.imminent_peril)) {
     broadcast_priority_refused(response);
@@ -1202,6 +1217,7 @@ void McServer::priority_reinvite(const SipMessage &message, const User &user, Mc
     return;
   }
   if (!validate_priority(message, user, profile, info, response, correction)) return;
+
   // Priority updates preserve established media identities and floor ownership.
   if (!leg->remote || !message.remote_media) {
     response.status_code = 488;
@@ -1228,6 +1244,7 @@ void McServer::priority_reinvite(const SipMessage &message, const User &user, Mc
   current.calling_group = session->group;
   if (session->broadcast) current.broadcast = true; // the answer keeps describing the call type
   populate_priority(current, priorities_.at(session->group));
+
   // A downgrade must be explicitly signalled, not represented by absent flags.
   if (info.emergency == false) current.emergency = false;
   if (info.imminent_peril == false) current.imminent_peril = false;
@@ -1336,6 +1353,7 @@ std::shared_ptr<McServer::Leg> McServer::group_call_leg(const SipMessage &messag
   leg->local.payload_type = message.remote_media->payload_type;
   leg->local.octet_aligned = message.remote_media->octet_aligned;
   leg->local.queueing = leg->local.queueing && message.remote_media->queueing;
+
   // The service's part of the answer: MCVideo implicit Transmission Request and video payload type.
   answer_service_media(*leg, *message.remote_media, creating);
   negotiate_priority(*leg, profile, message.remote_media->floor_priority);
@@ -1359,6 +1377,7 @@ void McServer::answer_group_invite(const SipMessage &message, const User &user, 
   const bool was_emergency = priorities_.contains(session->group) && priorities_.at(session->group).emergency;
   apply_priority(session->group, user.id, info, profile, message_location(message));
   const auto change = emergency_change(requested_priority, was_emergency, priorities_.at(session->group).emergency);
+
   // TS 24.379 clause 10.1.2.4.1 steps 14c-iv and 15c-iii: entering emergency or imminent peril
   // invites the affiliated members that have not joined the chat session.
   if (session->chat && !was_priority && in_priority(session->group))

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Blank what assert() stores in a preprocessed C++ file: the expression text, the file name, the
 line and the function name passed to __assert_fail. Comments and renames inside an assert change
 these and nothing else; same-code.sh compares the files again after this.

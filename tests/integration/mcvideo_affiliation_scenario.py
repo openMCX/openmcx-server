@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """MCVideo service authorisation and affiliation (TS 24.281 clauses 7 and 8): service authorisation by SIP
 PUBLISH (TS 24.281 clauses 7.2.2 and 7.3.3), the affiliation status determination and change procedures
 (TS 24.281 clauses 8.2.1.3 and 8.2.1.2) and a group the user is not a member of left out (TS 24.281 clause 8.2.2.2.3).

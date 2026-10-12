@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Location procedures of the participating function, shared by the MCPTT and MCVideo servers (TS 24.379 clause 13,
 // TS 24.281 clause 18) and the MCData server (TS 24.282 clause 17.2): location reporting configuration, location
 // information requests and reports, from clients served here and from other participating functions, and the

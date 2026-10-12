@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Ad hoc group call: the resource list of invited users, the controlling function's admission checks with their
 // warnings, participant criteria and participant list modification entries.
 //

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Incoming MCData SIP MESSAGE requests: the participating function's checks and the dispatch to the procedures.
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19).
@@ -19,6 +23,7 @@ SipResponse DataServer::message(const SipMessage &sip_request) {
   auto &user = found->second;
   if (sip_request.request_uri != service_uri_)
     return reject(404, "142 unable to determine the controlling function", user.id, "message");
+
   // The mcdata-info body, parsed once.
   std::optional<mcdata::Info> parsed_info;
   if (const auto *info_part = part(sip_request, mcdata::info_mime)) parsed_info = mcdata::parse_info(info_part->body);
@@ -48,6 +53,7 @@ SipResponse DataServer::message(const SipMessage &sip_request) {
   auto info = *parsed_info;
   if (!info.calling_user.empty() && info.calling_user != user.id) return reject(403, "", user.id, "message");
   const auto type = mcdata::message_type(signalling->body);
+
   // TS 24.282 clause 10.2.4.4.2 steps 3 to 5 and clause 12.2 for file distribution over HTTP.
   if (file || type == mcdata::MessageType::FdSignalling || type == mcdata::MessageType::FdNotification) {
     return message_fd(sip_request, user, info, *signalling, type);

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MC services of OpenMCX, and what tells one MC service apart on the wire and in configuration.
 //
 // Specifications: TS 23.280 V19.10.1 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 24.282

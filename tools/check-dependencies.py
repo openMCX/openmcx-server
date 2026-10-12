@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Check that the pinned archives the Dockerfiles fetch are those of dependencies/lock.json.
 
 Each Dockerfile names an archive with three build arguments, <NAME>_FILE, <NAME>_URL and <NAME>_SHA256 (fetched by

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Location information of MC service users (TS 23.280 clause 10.9): the location-info
 // body of TS 24.379 annex F.3 (MCPTT), TS 24.282 annex D.4 (MCData) and TS 24.281 annex F.3 (MCVideo), the
 // coordinate coding of TS 23.032, the client's reporting triggers of

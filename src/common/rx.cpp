@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Rx client of the MC service server in the AF role (TS 23.379 clause 7.5.2.6, MCPTT-5): the service information of a
 // call leg (media components, flows, MC service priority) and the Rx session of each leg: AA-Request and AA-Answer
 // (TS 29.214 clauses 4.4.1 and 4.4.2), Session-Termination-Request (clause 4.4.4), Re-Auth-Request from the PCRF
@@ -670,6 +674,7 @@ std::vector<Event> RxClient::poll() {
       events.push_back({Event::Kind::notified, key, entry.session_id, notice.detail, 0, nullptr});
     }
   }
+
   return events;
 }
 

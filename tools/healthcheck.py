@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Reject persisted status from a previous container run.
 
 Container health check: healthcheck.py STATUS_FILE KEY exits 0 only when the status file was

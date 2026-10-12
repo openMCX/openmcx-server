@@ -1,3 +1,7 @@
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Basic executable contract; the speech scenario supplies behavioral coverage.
 
 No 3GPP procedure is under test: the built server binary must refuse to start without --config.

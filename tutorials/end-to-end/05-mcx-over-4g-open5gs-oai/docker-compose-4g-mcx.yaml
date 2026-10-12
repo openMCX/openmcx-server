@@ -18,8 +18,15 @@
 name: openmcx-4g
 include:
 - docker-compose-4g-core.yaml
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   oai-enb:
+    logging: *logging
     container_name: openmcx-oai-enb
     image: ${ENB_IMG:-openmcx/oai-enb:2026.w39-mcx}
     privileged: true
@@ -41,6 +48,7 @@ services:
       timeout: 5s
       retries: 5
   oai-lte-ue:
+    logging: *logging
     container_name: openmcx-oai-lte-ue
     image: ${UE_IMG:-openmcx/oai-lte-ue:2026.w39-mcx}
     privileged: true
@@ -67,6 +75,7 @@ services:
       timeout: 5s
       retries: 5
   ue-route:
+    logging: *logging
     container_name: openmcx-ue-route
     image: ${UE_IMG:-openmcx/oai-lte-ue:2026.w39-mcx}
     network_mode: service:oai-lte-ue
@@ -96,6 +105,7 @@ services:
       timeout: 2s
       retries: 100
   dispatcher:
+    logging: *logging
     container_name: openmcx-dispatcher
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-1.0.0}
     network_mode: service:oai-lte-ue
@@ -104,6 +114,7 @@ services:
         condition: service_healthy
     environment:
       HOST_IP: ${HOST_IP:?set HOST_IP in .env}
+      MCX_LOG: ${MCX_LOG:-info}
     entrypoint:
     - sh
     - -c

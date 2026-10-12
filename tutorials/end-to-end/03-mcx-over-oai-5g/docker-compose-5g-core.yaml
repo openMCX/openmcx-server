@@ -5,8 +5,15 @@
 # Networks: openmcx-5g-core 192.168.71.128/26 (N2, N3, N4, SBI, N5), openmcx-5g-n6 192.168.72.128/26 (N6 and the
 # OpenMCX system); the UE pool 12.1.1.0/24 (DNN mcptt).
 
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   setup:
+    logging: *logging
     container_name: openmcx-setup
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-setup:${OPENMCX_TAG:-1.0.0}
     profiles:
@@ -22,6 +29,7 @@ services:
     - -c
     - python3 /opt/tutorials/configure.py && python3 /tutorial3/pcf.py
   sip-db:
+    logging: *logging
     container_name: openmcx-sip-db
     image: mysql@sha256:a08db11d440f1426eb47fbdf7cf2e458aa11bc79341bd2a5461f0296f1272f88
     environment:
@@ -44,6 +52,7 @@ services:
       interval: 3s
       retries: 40
   sip-core:
+    logging: *logging
     container_name: openmcx-sip-core
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-kamailio:${OPENMCX_TAG:-1.0.0}
     command:
@@ -76,6 +85,7 @@ services:
       retries: 30
       start_period: 10s
   idms:
+    logging: *logging
     container_name: openmcx-idms
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -95,6 +105,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -121,6 +133,7 @@ services:
       retries: 30
       start_period: 10s
   gms:
+    logging: *logging
     container_name: openmcx-gms
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -140,6 +153,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -164,6 +179,7 @@ services:
       retries: 30
       start_period: 10s
   cms:
+    logging: *logging
     container_name: openmcx-cms
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -183,6 +199,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -207,6 +225,7 @@ services:
       retries: 30
       start_period: 10s
   kms:
+    logging: *logging
     container_name: openmcx-kms
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -226,6 +245,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -252,6 +273,7 @@ services:
       retries: 30
       start_period: 10s
   lms:
+    logging: *logging
     container_name: openmcx-lms
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -271,6 +293,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -295,6 +319,7 @@ services:
       retries: 30
       start_period: 10s
   credentials:
+    logging: *logging
     container_name: openmcx-credentials
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -314,6 +339,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -346,6 +373,7 @@ services:
       retries: 30
       start_period: 10s
   content-server:
+    logging: *logging
     container_name: openmcx-content-server
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -365,6 +393,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -389,6 +419,7 @@ services:
       retries: 30
       start_period: 10s
   message-store:
+    logging: *logging
     container_name: openmcx-message-store
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -408,6 +439,8 @@ services:
     - /data
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -432,6 +465,7 @@ services:
       retries: 30
       start_period: 10s
   notification-server:
+    logging: *logging
     container_name: openmcx-notification-server
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -449,6 +483,8 @@ services:
     - /config/oidc-public.pem
     - --data-dir
     - /data
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -473,6 +509,7 @@ services:
       retries: 30
       start_period: 10s
   http-proxy:
+    logging: *logging
     container_name: openmcx-http-proxy
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-http-proxy:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -486,6 +523,8 @@ services:
     - /config/tls/http-proxy.key
     - --ca-file
     - /config/tls/ca.crt
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -523,6 +562,7 @@ services:
       retries: 30
       start_period: 10s
   mcx-user-db:
+    logging: *logging
     container_name: openmcx-mcx-user-db
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-user-db:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -533,6 +573,8 @@ services:
     - --diameter-config
     - /config/diameter-user-db.conf
     - --watch
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -555,6 +597,7 @@ services:
       retries: 30
       start_period: 10s
   mcptt-server:
+    logging: *logging
     container_name: openmcx-mcptt-server
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcptt-server:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -562,6 +605,8 @@ services:
     command:
     - --config
     - /config/mcptt-server.json
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -603,6 +648,7 @@ services:
       public:
         ipv4_address: 192.168.71.141
   mcdata-server:
+    logging: *logging
     container_name: openmcx-mcdata-server
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcdata-server:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -610,6 +656,8 @@ services:
     command:
     - --config
     - /config/mcdata-server.json
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -642,6 +690,7 @@ services:
       retries: 30
       start_period: 10s
   mcvideo-server:
+    logging: *logging
     container_name: openmcx-mcvideo-server
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcvideo-server:${OPENMCX_TAG:-1.0.0}
     entrypoint:
@@ -649,6 +698,8 @@ services:
     command:
     - --config
     - /config/mcvideo-server.json
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
     init: true
     tmpfs:
     - /run/mcx
@@ -683,6 +734,7 @@ services:
       retries: 30
       start_period: 10s
   mcxadmin:
+    logging: *logging
     container_name: openmcx-mcxadmin
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-admin:${OPENMCX_TAG:-1.0.0}
     command:
@@ -721,6 +773,7 @@ services:
       timeout: 3s
       retries: 60
   oai-mysql:
+    logging: *logging
     container_name: openmcx-oai-mysql
     image: mysql:9.6
     init: true
@@ -745,6 +798,7 @@ services:
         aliases:
         - mysql
   oai-nrf:
+    logging: *logging
     container_name: openmcx-oai-nrf
     image: oaisoftwarealliance/oai-nrf:${CN_TAG:-v2.2.1}
     environment:
@@ -755,6 +809,7 @@ services:
       public:
         ipv4_address: 192.168.71.130
   oai-udr:
+    logging: *logging
     container_name: openmcx-oai-udr
     image: oaisoftwarealliance/oai-udr:${CN_TAG:-v2.2.1}
     environment:
@@ -770,6 +825,7 @@ services:
       oai-nrf:
         condition: service_started
   oai-udm:
+    logging: *logging
     container_name: openmcx-oai-udm
     image: oaisoftwarealliance/oai-udm:${CN_TAG:-v2.2.1}
     environment:
@@ -782,6 +838,7 @@ services:
     depends_on:
     - oai-udr
   oai-ausf:
+    logging: *logging
     container_name: openmcx-oai-ausf
     image: oaisoftwarealliance/oai-ausf:${CN_TAG:-v2.2.1}
     environment:
@@ -794,6 +851,7 @@ services:
     depends_on:
     - oai-udm
   oai-pcf:
+    logging: *logging
     container_name: openmcx-oai-pcf
     image: ${PCF_IMG:-openmcx/oai-pcf:mcx-n5}
     environment:
@@ -808,6 +866,7 @@ services:
     depends_on:
     - oai-nrf
   oai-amf:
+    logging: *logging
     container_name: openmcx-oai-amf
     image: ${AMF_IMG:-openmcx/oai-amf:mcx-n5}
     environment:
@@ -821,6 +880,7 @@ services:
     - oai-ausf
     - oai-pcf
   oai-smf:
+    logging: *logging
     container_name: openmcx-oai-smf
     image: ${SMF_IMG:-openmcx/oai-smf:mcx-n5}
     environment:
@@ -834,6 +894,7 @@ services:
     - oai-amf
     - oai-pcf
   oai-upf:
+    logging: *logging
     container_name: openmcx-oai-upf
     image: ${UPF_IMG:-openmcx/oai-upf:mcx-n5}
     environment:

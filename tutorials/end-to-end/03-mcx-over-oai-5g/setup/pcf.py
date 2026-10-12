@@ -1,3 +1,7 @@
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Tutorial 3's addition to tutorial 1's configuration: the MCPTT server's "pcf" block (N5, TS 29.514).
 
 The MCPTT server then acts as an AF: for each call leg of a UE in the 5G pool (12.1.1.0/24) it asks the OAI PCF for

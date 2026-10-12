@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // User profile and group document fields the MC clients and servers read: the profile index, the granted actions, the
 // MCVideo profile, and group flags and enhanced status values.
 //
@@ -85,6 +89,7 @@ std::set<std::string> parse_profile_actions(std::string_view xml) {
         if (is(list, "actions", common_policy_ns)) collect(list);
     }
   }
+
   return actions;
 }
 
@@ -134,6 +139,7 @@ McvideoProfile parse_mcvideo_profile(std::string_view xml) {
       }
   }
   out.actions = parse_profile_actions(xml);
+
   return out;
 }
 
@@ -149,6 +155,7 @@ std::map<std::string, std::string> parse_service_resource_priorities(std::string
     if (is(root, "service-configuration-info", candidate)) ns = candidate;
   if (!ns) invalid("not a service configuration document");
   auto on = unique_child(unique_child(root, "service-configuration-params", ns), "on-network", ns);
+
   // The MCData document carries them in the <anyExt> of <on-network> (clause 10.4.2.1 item 4).
   auto holder = ns == namespaces[2] ? unique_child(on, "anyExt", ns) : on;
   std::map<std::string, std::string> out;
@@ -165,6 +172,7 @@ std::map<std::string, std::string> parse_service_resource_priorities(std::string
     if ((space != "mcpttp" && space != "mcpttq") || !level_ok) invalid("resource priority not of RFC 8101");
     out[level] = space + "." + priority;
   }
+
   return out;
 }
 

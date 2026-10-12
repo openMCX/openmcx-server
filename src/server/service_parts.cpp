@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The host of the shared service parts (src/server/parts) in the MCPTT and MCVideo core: what every part needs
 // (ServiceHost); the location hooks are in location.cpp and the peer registration hooks in split.cpp (member functions
 // of McServer::PartsGlue).

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Dependency smoke test: PJSIP, libxml2, the AMR-WB encoder and decoder (one frame each way) and libsrtp2 initialise,
 // work and shut down.
 //

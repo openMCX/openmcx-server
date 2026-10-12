@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Functional aliases on split servers: the MCPTT server serving the user passes each status change on to the MCPTT
 // server owning the alias and follows its outcome (TS 24.379 clauses 9A.2.2.2.6 and 9A.2.2.2.7), and the owning
 // server decides and notifies (clauses 9A.2.2.3.3 to 9A.2.2.3.5) (members of McServer). MCVideo follows the same
@@ -66,6 +70,7 @@ SipResponse McServer::served_alias_publish(const SipMessage &message, const User
     return reject(400, "functional alias of another service");
   if (request.user_id != user.id || request.client_id != user.client || request.aliases.empty())
     return reject(403, "identity mismatch");
+
   // Steps 4A and 4B (MCPTT only): the aliases the user may change, those whose <mcptt-user-list> names it.
   if (svc_.service == Service::mcptt)
     for (const auto &alias : request.aliases) {
@@ -118,6 +123,7 @@ SipResponse McServer::served_alias_publish(const SipMessage &message, const User
   });
   event(deactivate ? "functional_alias_deactivation_passed_on" : "functional_alias_activation_passed_on",
         {{"user_id", user.id}, {"aliases", request.aliases}, {"take_over", request.take_over}});
+
   // Step 8.
   response.status_code = 200;
   response.headers = {{"Expires", deactivate ? "0" : "4294967295"}, {"SIP-ETag", random_id()}};
@@ -151,6 +157,7 @@ void McServer::send_alias_onward(const std::string &id, const std::string &alias
     status.take_over = entry.take_over; // NOTE 8
   }
   const auto boundary = "mcx-" + random_id();
+
   // Steps 1, 3 to 6: the owning server's PSI, the ICSI, Expires and this server's identity.
   auto headers = route_to(owner, {{"Event", "presence"},
                                   {"P-Asserted-Identity", "<" + own_service_uri() + ">"},

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The peers of an MC server and their registration (src/server/parts/peers.hpp, peer_registration.hpp): the peer
 // configuration, the SPK, the source address match, the routes, and peer registration both ways against a fake host.
 //

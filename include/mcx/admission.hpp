@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Admission checks of the controlling function: the Accept-Contact feature selection of an MC service request.
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), RFC 3841.
@@ -32,6 +36,7 @@ inline bool has_service_accept_contact(const std::vector<std::string> &headers, 
     if (digit >= 'A' && digit <= 'F') return digit - 'A' + 10;
     return -1;
   };
+
   bool feature = false, icsi = false;
   for (const auto &header : headers) {
     std::vector<std::string> parameters;
@@ -55,6 +60,7 @@ inline bool has_service_accept_contact(const std::vector<std::string> &headers, 
     }
     if (quoted || escaped) return false;
     parameters.push_back(trim(std::string_view(header).substr(start)));
+
     for (const auto &parameter : parameters) {
       const auto equals = parameter.find('=');
       auto name = lower(trim(std::string_view(parameter).substr(0, equals)));
@@ -66,6 +72,7 @@ inline bool has_service_accept_contact(const std::vector<std::string> &headers, 
         if (equals == std::string::npos || lower(value) == "true") feature = true;
         continue;
       }
+
       std::string decoded;
       for (std::size_t index = 0; index < value.size(); ++index) {
         if (value[index] == '%' && index + 2 < value.size() && hex(value[index + 1]) >= 0 &&

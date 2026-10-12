@@ -1,4 +1,8 @@
 #!/bin/bash
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Starts the pre-initialised MySQL of Dockerfile.sipdb and applies what the official
 # image's entrypoint would: the root and MYSQL_USER passwords from their files, the
 # MYSQL_DATABASE, and the scripts in /docker-entrypoint-initdb.d. The server runs once;

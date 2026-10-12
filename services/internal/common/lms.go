@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The LMS's simple location store: each user reads and writes only its own last location over HTTP.
 //
 // Specifications: TS 24.482 V19.1.0 (Rel-19) (the access token only); the location API itself is this

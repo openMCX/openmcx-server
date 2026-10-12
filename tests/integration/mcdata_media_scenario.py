@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise MCData over the media plane: standalone SDS (TS 24.282 clause 9.2.3, TS 24.582
 clause 6.1.1), the SDS session (TS 24.282 clause 9.2.4, TS 24.582 clause 6.1.2) with emergency
 one-to-one and emergency or imminent peril group communications (TS 24.282 clauses 6.2.8 and

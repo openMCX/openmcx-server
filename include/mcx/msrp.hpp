@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MSRP (RFC 4975) as the MCData media plane uses it (TS 24.582): SEND requests carrying the MCData bodies of TS 24.282
 // clause 15, their responses, chunking and the connection binding of RFC 6135. Only the subset TS 24.582 needs is
 // here: SEND and REPORT, no relays (RFC 4976) and no CEMA (RFC 6714). The MCData client and the controlling function

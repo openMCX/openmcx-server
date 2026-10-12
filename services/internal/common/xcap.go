@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // XCAP on a small namespace-aware XML tree: node selectors, namespace bindings, the fetch, create or replace and
 // delete of elements and attributes, and the XCAP error body.
 //

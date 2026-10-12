@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 #pragma once
 // The MC service server in the 5GC AF role on N5 (TS 23.379 / TS 23.280 MC service
 // over 5GS, TS 23.289 5.4-5.6): it asks the PCF to authorise QoS for the media of a

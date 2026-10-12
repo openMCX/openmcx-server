@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Client transactions of SipEngine::Impl: request tokens, response dispatch, digest authentication, registration.
 //
 // Specifications: RFC 3261, RFC 6665.
@@ -96,6 +100,7 @@ void SipEngine::Impl::send_complete(void *opaque, pjsip_event *event) {
     destroy_token(token); // no engine to report to; the token is still this transaction's to release
     return;
   }
+
   auto *owner = token->owner;
   pjsip_rx_data *received = nullptr;
   pjsip_transaction *transaction = nullptr;
@@ -105,6 +110,7 @@ void SipEngine::Impl::send_complete(void *opaque, pjsip_event *event) {
       received = event->body.tsx_state.src.rdata;
     }
   }
+
   if (received != nullptr && transaction != nullptr && !token->retried &&
       (transaction->status_code == 401 || transaction->status_code == 407)) {
     if (!has_credentials(owner->config)) {
@@ -128,6 +134,7 @@ void SipEngine::Impl::send_complete(void *opaque, pjsip_event *event) {
       }
     }
   }
+
   guarded(owner, [&] {
     SipResponse response = owner->response_from(received);
     if (received == nullptr && transaction != nullptr) {
@@ -150,6 +157,7 @@ void SipEngine::Impl::dialog_transaction_state(pjsip_transaction *transaction, p
       (transaction->state != PJSIP_TSX_STATE_COMPLETED && transaction->state != PJSIP_TSX_STATE_TERMINATED)) {
     return;
   }
+
   auto *token = static_cast<RequestToken *>(transaction->mod_data[owner->module.id]);
   if (token == nullptr) {
     token = owner->adopt_auth_retry(transaction);
@@ -157,10 +165,12 @@ void SipEngine::Impl::dialog_transaction_state(pjsip_transaction *transaction, p
       return;
     }
   }
+
   pjsip_rx_data *received = nullptr;
   if (event != nullptr && event->type == PJSIP_EVENT_TSX_STATE && event->body.tsx_state.type == PJSIP_EVENT_RX_MSG) {
     received = event->body.tsx_state.src.rdata;
   }
+
   if (received != nullptr && !token->retried && (transaction->status_code == 401 || transaction->status_code == 407) &&
       token->dialog != nullptr && pjsip_dlg_get_inv_session(token->dialog) != nullptr &&
       has_credentials(owner->config)) {
@@ -177,6 +187,7 @@ void SipEngine::Impl::dialog_transaction_state(pjsip_transaction *transaction, p
     }
     return;
   }
+
   if (received != nullptr && !token->retried && (transaction->status_code == 401 || transaction->status_code == 407)) {
     if (!has_credentials(owner->config)) {
       owner->report_error("SIP authentication challenge received without configured digest credentials");
@@ -200,6 +211,7 @@ void SipEngine::Impl::dialog_transaction_state(pjsip_transaction *transaction, p
       }
     }
   }
+
   transaction->mod_data[owner->module.id] = nullptr;
   guarded(owner, [&] {
     if (token->dialog != nullptr &&

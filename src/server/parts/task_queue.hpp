@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The tasks an MC server runs after the request it is handling has been answered (a NOTIFY after the 200 to a
 // PUBLISH, a registration after a service authorisation, ...), on its run loop. Shared by the MCPTT and MCVideo
 // servers (McServer) and the MCData server (DataServer).

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Functional alias activations (src/server/parts/alias_registry.hpp): the per-alias admission by the alias
 // definition for each service, the take-over, the refresh, the deactivation and the queries.
 //

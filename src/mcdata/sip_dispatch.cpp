@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Incoming SIP requests: the signalling and XML protection is removed and the request dispatched to its procedure.
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19), TS 23.282 V19.10.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
@@ -44,6 +48,7 @@ SipResponse DataServer::incoming(const SipMessage &request) {
     return response;
   }
   auto response = dispatch(opened);
+
   // The XML of the answer is protected like any other sent to this client.
   if (xml && !response.parts.empty())
     response.parts = encrypt_xml(xml, std::move(response.parts));

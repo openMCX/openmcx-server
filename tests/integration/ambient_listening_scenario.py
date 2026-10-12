@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise ambient listening calls (TS 24.379 clause 11.1.6, TS 23.379 clause 10.14).
 
 Run against a fixture prepared with --private-call: client-a may make both

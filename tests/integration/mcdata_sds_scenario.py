@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise standalone MCData SDS over the signalling control plane (TS 24.282 clause 9.2.2) and
 the on-network disposition notifications (TS 24.282 clause 12.2), with the affiliation status
 procedures (TS 24.282 clauses 8.2.3, 8.3.2.4, 8.3.2.5, 8.3.2.15), the transmission control of

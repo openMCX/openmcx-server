@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MCPTT user profile document an authorised CMC has uploaded (TS 24.484 clause 6.3.4.3) is the user's profile:
 // the CMS serves it, and the MC service servers apply the rights it grants. This file reads such a document back
 // into the user record the servers enforce.

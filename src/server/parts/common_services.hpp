@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The internal interfaces of the OpenMCX common services that the MC servers read: a document of the GMS or CMS, and
 // the IdMS token introspection. Shared by the MCPTT and MCVideo servers (McServer) and the MCData server
 // (DataServer).

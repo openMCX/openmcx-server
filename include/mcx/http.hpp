@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // HTTPS client and OpenID Connect user authentication of the IdM client: the authorization code grant, the refresh
 // token grant and ID token validation.
 //

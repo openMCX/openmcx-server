@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Group documents: their retrieval from the GMS (TS 24.282 clause 6.3.3) and the subscription to their changes as
 // an MCS server (TS 24.481 clause 6.3.13.2.2) (member functions of DataServer, declared in data_server.hpp).
 //
@@ -36,6 +40,7 @@ std::optional<Json> DataServer::group_document(const std::string &group) {
       pending_.push_back([this, group] { subscribe_group_document(group); });
     }
   }
+
   return document;
 }
 
@@ -98,6 +103,7 @@ std::optional<SipResponse> DataServer::group_documents_notified(const SipMessage
     found->second.active = false;
     group_cache_.erase(found->first);
   }
+
   return response;
 }
 

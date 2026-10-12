@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MCVideo server: its construction and the MCVideo-only rules of the shared core's service hooks: the SDP of
 // an MCVideo call, the start of a newly active leg, and the MCVideo parts of the user profile and group documents
 // (members of McvideoServer).

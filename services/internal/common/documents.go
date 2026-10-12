@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // HTTP routes of the GMS and the CMS: group documents addressed by group ID, user profile documents, the bearer
 // access token check and the internal interface the MCPTT, MCData and MCVideo servers read.
 //

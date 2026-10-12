@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MCPTT user profile document the CMS serves and accepts: rendering a user's configuration as the document,
 // its ruleset of granted rights, and the validation constraints the schema does not express.
 //

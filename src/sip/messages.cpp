@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // SIP messages: contacts, bodies and their protection hooks, conversion of pjsip messages to the engine's types.
 //
 // Specifications: RFC 3261, RFC 3840, RFC 4579, RFC 5621, RFC 2046, RFC 2392, TS 24.379 V19.7.0 (Rel-19),
@@ -83,6 +87,7 @@ pj_status_t SipEngine::Impl::protect_outgoing(pjsip_tx_data *data) {
     transmission.from_uri = bare_header_uri(message, PJSIP_H_FROM);
     transmission.to_uri = bare_header_uri(message, PJSIP_H_TO);
     transmission.headers = collect_headers(message);
+
     const auto type = content_type_from(message);
     auto text = print_body(message->body);
     // A multipart body is printed with a leading line break before its first delimiter.
@@ -94,6 +99,7 @@ pj_status_t SipEngine::Impl::protect_outgoing(pjsip_tx_data *data) {
     } catch (const std::exception &) {
       return PJ_SUCCESS; // not a body the filter protects
     }
+
     auto filtered = owner->outgoing_filter(transmission, parts);
     if (same_parts(parts, filtered)) return PJ_SUCCESS;
     if (filtered.size() == 1 && !type.starts_with("multipart/"))
@@ -156,6 +162,7 @@ pj_status_t SipEngine::Impl::protect_outgoing(pjsip_tx_data *data) {
   result.call_id = call_id_from(message);
   result.dialog_id = result.call_id;
   result.source_address = data->pkt_info.src_name;
+
   result.content_type = content_type_from(message);
   if (result.content_type.starts_with("multipart/") && message->body != nullptr) {
     pj_str_t raw_body{};
@@ -171,6 +178,7 @@ pj_status_t SipEngine::Impl::protect_outgoing(pjsip_tx_data *data) {
   } else {
     result.body = print_body(message->body);
   }
+
   result.headers = collect_headers(message);
   if (!result.body.empty()) {
     try {
@@ -193,6 +201,7 @@ pj_status_t SipEngine::Impl::protect_outgoing(pjsip_tx_data *data) {
                                   "': " + error.what());
     }
   }
+
   protect_incoming(message, result.source_address, result);
   return result;
 }

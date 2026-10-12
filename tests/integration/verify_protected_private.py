@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Verify end-to-end protected private calls from a clear-SIP server-side capture.
 
 Decodes, independently of the implementation, the MIKEY-SAKKE I_MESSAGE that TS 24.379 clause 11.1.1.2.1.1 step 11 puts

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData media plane delivery over MSRP to the recipients' legs, and the priority conditions of a communication.
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19), TS 24.582 V19.0.0 (Rel-19), TS 23.282 V19.10.0 (Rel-19).
@@ -104,6 +108,7 @@ void DataServer::media_received(const std::shared_ptr<MediaSession> &session, co
     return;
   }
   if (!session->originating) return;
+
   // TS 24.582 clause 6.3.1.3 steps 2 and 3: the group's SDS size limit is applied here: the INVITE carried no
   // payload.
   const auto payload = bodies.find(std::string(mcdata::payload_mime));
@@ -120,6 +125,7 @@ void DataServer::media_received(const std::shared_ptr<MediaSession> &session, co
                                      {"group_id", session->group},
                                      {"recipients", session->recipients},
                                      {"message_id", session->message_id}});
+
   // The sender releases its own session once its SEND is answered (TS 24.582
   // clause 6.1.1.2.1), so this leg is left to that or to its deadline.
   std::vector<std::pair<std::string, std::string>> forward;
@@ -287,6 +293,7 @@ bool DataServer::group_alert(const SipMessage &request, User &user, const std::s
   receipt.client_id = user.client;
   schedule_receipt(user, receipt);
   count("media_alerts");
+
   event("mcdata_emergency_alert", {{"user_id", user.id}, {"group_id", group}, {"with", "priority communication"}});
   return true;
 }
@@ -373,6 +380,7 @@ std::string DataServer::media_deliver(const std::string &originator, const std::
   info.request_uri = target;
   info.calling_user = originator;
   info.calling_group = group; // TS 24.282 clause 9.2.3.4.3: the recipient learns the group
+
   // TS 24.282 clause 6.3.7.1.11 steps 6 and 7: the recipient learns the in-progress state, and
   // step 6c the emergency alert that came with the request (clause 6.3.7.1.3).
   if (emergency) info.emergency = true;
@@ -414,6 +422,7 @@ std::string DataServer::media_deliver(const std::string &originator, const std::
       }());
   leg->dialog = dialog;
   media_[dialog] = leg;
+
   return dialog;
 }
 

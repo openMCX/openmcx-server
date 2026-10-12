@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // XML signalling protection: the XPK-derived keys, XML content and URI attribute encryption, re-encryption by an
 // IS proxy, and the XML signature of whole bodies (TS 33.180 clause 9.3, TS 24.379 clause 6.6, TS 24.282 clause 4.6,
 // TS 24.281 clause 4.8).

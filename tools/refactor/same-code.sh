@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 # Prove that edits to C++ files changed no code: compile each file as committed (HEAD) and as
 # it is now, with the build's flags at -O2 and no debug information, and compare the object
 # files. Renamed local variables and parameters, comments and formatting leave them identical;

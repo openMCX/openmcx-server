@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Peer registration: a participating function reports each served user's service authorization and group
 // affiliations to the controlling servers of its system, and a controlling function takes the users served by its
 // peers (TS 24.379 clauses 9.2.2.2.6 and 9.2.2.3.3, TS 24.281 likewise, over MCPTT-3 of TS 23.379 clause 7.5.2.4).

@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Affiliation PUBLISH refusals and per-group outcomes, checked on the wire.
 
 Once the clients are authorised and affiliated, affiliation_probe.py, run in client-a's container, sends raw

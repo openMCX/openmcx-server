@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // IdMS accounts managed by MCX Admin: the account lookup, the password verifiers and the one-time links on which a
 // user sets a password (OpenMCX's own MCX Admin integration, not a 3GPP procedure; the OIDC flow of TS 24.482 is
 // unchanged).
@@ -303,10 +307,10 @@ func (svc *service) passwordLink(writer http.ResponseWriter, request *http.Reque
 
 var setPasswordPage = template.Must(template.New("p").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>openMCX: set your password</title>
+<title>OpenMCX: set your password</title>
 <style>body{font-family:system-ui,sans-serif;max-width:28rem;margin:3rem auto;padding:0 1rem}
 input{display:block;width:100%;margin:.4rem 0 1rem;padding:.5rem}button{padding:.5rem 1rem}</style></head>
-<body><h1>openMCX</h1>{{if .Message}}<p>{{.Message}}</p>{{end}}{{if .Token}}
+<body><h1>OpenMCX</h1>{{if .Message}}<p>{{.Message}}</p>{{end}}{{if .Token}}
 <form method="post" action="set-password"><input type="hidden" name="token" value="{{.Token}}">
 <p>Account <strong>{{.Login}}</strong>. At least 12 characters.</p>
 <label>New password<input type="password" name="password" autocomplete="new-password" minlength="12" required></label>

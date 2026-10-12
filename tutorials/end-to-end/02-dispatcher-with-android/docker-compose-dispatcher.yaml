@@ -14,8 +14,15 @@
 
 name: openmcx-dispatcher
 
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   dispatcher:
+    logging: *logging
     container_name: openmcx-dispatcher
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-1.0.0}
     network_mode: host
@@ -26,6 +33,7 @@ services:
     environment:
       HOST_IP: ${HOST_IP:?set HOST_IP in .env}
       DISPATCHER_IP: ${DISPATCHER_IP:-${HOST_IP}}
+      MCX_LOG: ${MCX_LOG:-info}
     # The position's device settings with the two addresses; accounts are activated in the browser.
     entrypoint:
       - sh

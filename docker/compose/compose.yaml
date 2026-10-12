@@ -15,8 +15,15 @@ x-health: &health
   timeout: 3s
   start_period: 10s
   retries: 30
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   http-proxy:
+    logging: *logging
     <<: *app
     entrypoint: [/usr/local/bin/mcx-http-proxy]
     command: [--config, /config/http-proxy.json, --tls-cert, /config/tls/http-proxy.crt, --tls-key, /config/tls/http-proxy.key, --ca-file, /config/tls/ca.crt]
@@ -36,6 +43,7 @@ services:
       <<: *health
       test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://http-proxy:8443/readyz']
   sip-db:
+    logging: *logging
     image: mysql@sha256:a08db11d440f1426eb47fbdf7cf2e458aa11bc79341bd2a5461f0296f1272f88
     environment:
       MYSQL_DATABASE: mcx
@@ -54,6 +62,7 @@ services:
       retries: 40
     networks: [mcx]
   sip-core:
+    logging: *logging
     image: openmcx-kamailio:6.1.4-2
     depends_on:
       sip-db: {condition: service_healthy}
@@ -68,6 +77,7 @@ services:
       <<: *health
       test: [CMD-SHELL, 'test -r /proc/1/comm && nc -z 127.0.0.1 5061']
   idms:
+    logging: *logging
     <<: *common
     command: [--role, idms, --config, /config/site.json, --tls-cert, /config/tls/idms.crt, --tls-key, /config/tls/idms.key, --signing-key, /config/oidc-private.pem, --data-dir, /data]
     volumes:
@@ -81,6 +91,7 @@ services:
       <<: *health
       test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://idms:8443/readyz']
   gms:
+    logging: *logging
     <<: *common
     command: [--role, gms, --config, /config/site.json, --tls-cert, /config/tls/gms.crt, --tls-key, /config/tls/gms.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
     volumes:
@@ -94,6 +105,7 @@ services:
       <<: *health
       test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://gms:8443/readyz']
   cms:
+    logging: *logging
     <<: *common
     command: [--role, cms, --config, /config/site.json, --tls-cert, /config/tls/cms.crt, --tls-key, /config/tls/cms.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
     volumes:
@@ -107,6 +119,7 @@ services:
       <<: *health
       test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://cms:8443/readyz']
   lms:
+    logging: *logging
     <<: *common
     command: [--role, lms, --config, /config/site.json, --tls-cert, /config/tls/lms.crt, --tls-key, /config/tls/lms.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
     volumes:
@@ -120,6 +133,7 @@ services:
       <<: *health
       test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://lms:8443/readyz']
   content-server:
+    logging: *logging
     <<: *common
     command: [--role, content, --config, /config/site.json, --tls-cert, /config/tls/content-server.crt, --tls-key, /config/tls/content-server.key, --verification-key, /config/oidc-public.pem, --data-dir, /data, --ca-file, /config/tls/ca.crt]
     volumes:
@@ -134,6 +148,7 @@ services:
       test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://content-server:8443/readyz']
   # The MCData message store function and notification server (TS 24.282 clause 21).
   message-store:
+    logging: *logging
     <<: *common
     command: [--role, msgstore, --config, /config/site.json, --tls-cert, /config/tls/message-store.crt, --tls-key, /config/tls/message-store.key, --verification-key, /config/oidc-public.pem, --data-dir, /data, --ca-file, /config/tls/ca.crt]
     volumes:
@@ -147,6 +162,7 @@ services:
       <<: *health
       test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://message-store:8443/readyz']
   notification-server:
+    logging: *logging
     <<: *common
     command: [--role, notification, --config, /config/site.json, --tls-cert, /config/tls/notification-server.crt, --tls-key, /config/tls/notification-server.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
     volumes:
@@ -160,6 +176,7 @@ services:
       <<: *health
       test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://notification-server:8443/readyz']
   kms:
+    logging: *logging
     <<: *common
     command: [--role, kms, --config, /config/site.json, --tls-cert, /config/tls/kms.crt, --tls-key, /config/tls/kms.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
     volumes:
@@ -173,6 +190,7 @@ services:
       <<: *health
       test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://kms:8443/readyz']
   mcx-user-db:
+    logging: *logging
     <<: *app
     entrypoint: [/usr/local/bin/mcx-user-db]
     command: [--config, /config/site.json, --diameter-config, /config/diameter-user-db.conf]
@@ -186,6 +204,7 @@ services:
       <<: *health
       test: [CMD-SHELL, 'test -r /proc/net/sctp/eps && python3 -c "import pathlib; assert any(int(row.split()[5]) == 3868 for row in pathlib.Path(\"/proc/net/sctp/eps\").read_text().splitlines()[1:])"']
   mcptt-server:
+    logging: *logging
     <<: *app
     entrypoint: [/usr/local/bin/openmcx-mcptt-server]
     command: [--config, /config/mcptt-server.json]
@@ -208,6 +227,7 @@ services:
   # The MCVideo server (TS 24.281): the openmcx-mcvideo-server executable.
   # Opt-in until MCVideo is routed: `--profile mcvideo`.
   mcvideo-server:
+    logging: *logging
     <<: *app
     profiles: [mcvideo]
     entrypoint: [/usr/local/bin/openmcx-mcvideo-server]
@@ -227,6 +247,7 @@ services:
       <<: *health
       test: [CMD, python3, /healthcheck.py, /artifacts/mcvideo-server/status.json, ready]
   mcdata-server:
+    logging: *logging
     <<: *app
     entrypoint: [/usr/local/bin/openmcx-mcdata-server]
     command: [--config, /config/mcdata-server.json]
@@ -246,6 +267,7 @@ services:
       <<: *health
       test: [CMD, python3, /healthcheck.py, /artifacts/mcdata-server/status.json, ready]
   client-a:
+    logging: *logging
     <<: *app
     image: openmcx-client:0.1
     entrypoint: [/usr/local/bin/mcx-client]
@@ -265,6 +287,7 @@ services:
       <<: *health
       test: [CMD, python3, /healthcheck.py, /artifacts/client-a/status.json, authorized]
   client-b:
+    logging: *logging
     <<: *app
     image: openmcx-client:0.1
     entrypoint: [/usr/local/bin/mcx-client]

@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The warning codes and texts of the MC services: the Warning header field texts of TS 24.379 clause 4.4.2
 // (MCPTT) and TS 24.281 clause 4.4.2 (MCVideo), carried with warn-code 399.
 //

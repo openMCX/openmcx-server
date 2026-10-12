@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """A refresh of the affiliation status subscription keeps the affiliation and the call.
 
 The client asks for Expires 4294967295 (TS 24.379 clause 9.2.1.3 step 4) and re-subscribes in the dialog before the

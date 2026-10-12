@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Exercise MCData enhanced status on-network (TS 24.282 clause 14.2): the client takes the
 operational values from the group document (TS 24.282 clause 14.2.1.1), sends the "id" of one
 as a group standalone SDS that the controlling function treats like any group SDS (TS 24.282

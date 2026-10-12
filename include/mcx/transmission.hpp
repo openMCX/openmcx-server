@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCVideo transmission control messages (TS 24.581 clause 9.2): RTCP APP packets named MCV0 (sent by the transmission
 // participant), MCV1 (sent by the transmission control server) and MCV2 (sent by either), with the fields of clause
 // 9.2.3 in the TS 24.380 field syntax. MCV3 to MCV5 (MBMS, MBS) are out of scope.

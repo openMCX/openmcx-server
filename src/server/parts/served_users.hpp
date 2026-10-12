@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The users an MC server serves, shared by the MCPTT and MCVideo servers (McServer, whose user adds the call keys and
 // the affiliation subscription's expiry) and the MCData server (DataServer): the binding of MC service ID, client ID
 // and public user identity made by service authorisation (TS 24.379 clause 7.3.3 step 5a, TS 24.282 clause 7.3.3

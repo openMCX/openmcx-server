@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Ad hoc group calls and ad hoc group emergency alerts: setup, rejoin, participant list or criteria and their
 // modification (members of McServer).
 //
@@ -68,6 +72,7 @@ SipResponse McServer::adhoc_rejoin(const SipMessage &message, const User &user, 
   for (const auto &[key, candidate] : sessions_)
     if (candidate->adhoc && candidate->uri == message.request_uri) session = candidate;
   if (!session || (!info.request_uri.empty() && info.request_uri != session->group)) return reject(404);
+
   // Invited members are implicitly affiliated to the ad hoc group (TS 24.379 clause 17.4.2.2 step 16).
   if (std::find(session->members.begin(), session->members.end(), user.id) == session->members.end())
     return reject(403, warn(Warning::adhoc_participation_not_allowed));
@@ -309,6 +314,7 @@ SipResponse McServer::adhoc_invite(const SipMessage &message, const User &user, 
   if (info.client_id != user.client || (!info.calling_user.empty() && info.calling_user != user.id) ||
       !accepts_mcptt(message))
     return reject(403);
+
   // A broadcast ad hoc call reuses the broadcast floor and release rules, and
   // may be an emergency or imminent-peril call like a broadcast group call.
   // TS 24.379 clause 6.3.3.1.25: an ad hoc call signals emergency with <adhoc-emergency-ind>;
@@ -319,6 +325,7 @@ SipResponse McServer::adhoc_invite(const SipMessage &message, const User &user, 
   if (!message.remote_media) return reject(488);
   if (message.remote_media->protected_media)
     return reject(488, warn(Warning::function_not_allowed, "end-to-end security for adhoc group call not implemented"));
+
   try {
     validate_remote(user.id, *message.remote_media);
   } catch (const std::exception &error) {
@@ -331,6 +338,7 @@ SipResponse McServer::adhoc_invite(const SipMessage &message, const User &user, 
   if (message.request_uri.starts_with(session_service_ + ";mcptt-session="))
     return adhoc_rejoin(message, user, info, response, answer);
   if (message.request_uri != cfg_.at(svc_.name).at("service_uri").get<std::string>()) return reject(404);
+
   // TS 24.379 clause 17.4.2.2 steps 7A, 7B and 12d: a call on the ad hoc group of an emergency alert.
   const bool alert_group = info.adhoc_emergency_alert_group == true;
   if (alert_group)
@@ -344,11 +352,13 @@ SipResponse McServer::adhoc_invite(const SipMessage &message, const User &user, 
   const auto service_policy = cfg_.at(svc_.name).value("adhoc_call", Json::object());
   const auto decision = authorize_adhoc_call(service_policy, adhoc_policy, user.id, invitees, has_criteria, svc_);
   if (!decision) return reject(decision.status, decision.warning);
+
   // TS 24.379 clause 17.4.2.2 step 12b: list entries that are functional aliases stand for the
   // users that activated them (145 when none has).
   std::map<std::string, std::string> via_alias;
   if (auto refused = adhoc_resolve_invitees(user, info, has_criteria, service_policy, response, invitees, via_alias))
     return *refused;
+
   auto session = make_adhoc_session(user, info, alert_group, has_criteria, priority, invitees, via_alias);
   auto leg = incoming_leg(message, user, session);
   if (!leg) return reject(488);
@@ -367,6 +377,7 @@ SipResponse McServer::adhoc_invite(const SipMessage &message, const User &user, 
   response.headers = priority_headers(cfg_.at(svc_.name), priority);
   leg->answer = response;
   leg->awaiting_answer = true;
+
   // TS 24.379 clause 17.4.2.2: the controlling function answers the caller with the 200 (OK) that an invited member's
   // 200 (OK) or 183 (Session Progress) brings, and sends no other provisional response.
   response.status_code = 100;
@@ -387,6 +398,7 @@ void McServer::invite_adhoc_member(const std::shared_ptr<Session> &session, cons
   const auto *user = by_id(id);
   if (user && user->expires <= std::time(nullptr)) user = nullptr;
   if (!user || has_leg(*session, id)) return;
+
   // TS 24.379 clause 17.4.2.2.1 step 6 (the terminating participating function): an invitee whose user profile has no
   // <allow-adhoc-group-call-participation> is not invited (403, warning 188).
   if (!user_profile(id).value("adhoc_call", Json::object()).value("participation", false)) {
@@ -404,6 +416,7 @@ void McServer::invite_adhoc_member(const std::shared_ptr<Session> &session, cons
   info.request_uri = id;
   info.calling_group = session->group;
   info.calling_user = session->initiator;
+
   // TS 24.379 clause 17.4.2.1.1 steps 4c, 4e, 6 and 7.
   info.participant_criteria = session->criteria;
   info.functional_alias = session->initiator_alias;
@@ -502,6 +515,7 @@ SipResponse McServer::adhoc_modify(const SipMessage &message, const User &user, 
   const auto policy = user_profile(user.id).value("adhoc_call", Json::object());
   if (!policy.is_object() || !policy.value("modify", false))
     return reject(403, warn(Warning::adhoc_modify_not_authorised));
+
   std::vector<std::string> entries;
   for (const auto &part : message.parts)
     if (part.content_type == resource_lists_mime) {
@@ -514,6 +528,7 @@ SipResponse McServer::adhoc_modify(const SipMessage &message, const User &user, 
   const bool criteria = !info.participant_criteria.empty();
   if (entries.empty() == !criteria || (criteria && session->criteria.empty()))
     return reject(403, warn(Warning::adhoc_participants_unknown));
+
   const auto limit = cfg_.at(svc_.name).value("adhoc_call", Json::object()).value("max_participants", 0u);
   if (criteria) {
     try {
@@ -656,6 +671,7 @@ SipResponse McServer::adhoc_alert_message(const SipMessage &message, const User 
   if (found == adhoc_alerts_.end() || found->second.initiator != user.id) return reject(404, "");
   for (const auto &id : found->second.recipients) send_adhoc_alert(found->second, found->first, id, false);
   event("adhoc_alert_cancelled", {{"user_id", user.id}, {"group_id", found->first}});
+
   // TS 24.379 clause 12.1A.3.2 step 4 g) (TS 24.281 clause 12.1A.3.2 step 4 g)): after the 200 (OK), confirm
   // receipt of the cancellation to the originator, with the client ID of the request.
   schedule([this, group = found->first, id = user.id, client = info.client_id] {

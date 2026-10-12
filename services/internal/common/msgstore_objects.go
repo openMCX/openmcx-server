@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // MCData message store: stored objects, their flags and payloads (TS 24.282 clauses 21.2.1, 21.2.3, 21.2.4,
 // 21.2.5A, 21.2.15 and 21.2.24; OMA NMS).
 //

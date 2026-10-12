@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Upload by reference of the MCData content server: a file of the uploader's MCData message store account,
 // fetched from the message store and stored by the media storage function.
 //

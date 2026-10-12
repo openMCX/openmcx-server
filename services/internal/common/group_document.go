@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MCS group document: rendering a group as the document, reading a document back, the part of it an
 // authenticated identity may read, and the GMOP request for the document without its members.
 //

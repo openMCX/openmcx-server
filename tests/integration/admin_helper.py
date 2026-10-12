@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Inside an admin lab's network: sign in at IdMS as a user and call MCX Admin.
 
 Run in a container on the lab network with the lab's CA (admin_scenario.py does):

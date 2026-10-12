@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The media storage function of the MCData content server: file upload and download over HTTP, transmission
 // and reception control, and the stored-file operations the MCData server and message store use.
 //

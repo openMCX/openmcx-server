@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Disconnection of users and the media plane control server's notices to participants (TS 24.380 clause 6.3,
 // TS 24.581 clause 6.3).
 //

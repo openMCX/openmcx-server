@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Diameter data management client and server: the Data-Pull-Request and Data-Pull-Answer carrying the MCPTT user
 // profile, over freeDiameter with the ConnectTo peer names resolved at start; and the process's freeDiameter core,
 // shared with Rx (src/common/rx.cpp).
@@ -608,6 +612,7 @@ public:
     auto state = std::make_shared<PullState>();
     state->dictionary = &dictionary;
     auto future = state->promise.get_future();
+
     // freeDiameter calls exactly one of answer_callback and timeout_callback (libfdcore.h, fd_msg_send_timeout: an
     // answer after the timeout is discarded); that callback takes the holder back.
     auto holder = std::make_unique<std::shared_ptr<PullState>>(state);

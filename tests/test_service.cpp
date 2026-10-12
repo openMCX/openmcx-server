@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // The MC service profiles (include/mcx/service.hpp) and the places that tell the services apart: MCData has its own
 // profile and never falls into the MCPTT branch; the shared request helpers (src/server/parts/message_parts.hpp).
 //

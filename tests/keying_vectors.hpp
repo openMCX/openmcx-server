@@ -1,3 +1,7 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // ECCSI and SAKKE known-answer data: the published test vectors of RFC 6507 appendix A and RFC 6508 appendix A.
 //
 // Specifications: RFC 6507 appendix A, RFC 6508 appendix A (the MIKEY-SAKKE primitives of TS 33.180 V19.4.0 (Rel-19)).

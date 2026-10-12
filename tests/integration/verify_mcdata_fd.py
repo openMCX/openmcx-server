@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
 """Check a capture of MCData file distribution over HTTP against TS 24.282.
 
 Decodes the clause 15 binary bodies independently of the C++ codec: FD SIGNALLING PAYLOAD (TS 24.282 clause 15.1.3), FD

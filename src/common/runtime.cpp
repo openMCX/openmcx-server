@@ -1,8 +1,14 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
 // Process runtime of the clients and servers: the configuration, UDP sockets, the control FIFO, the status file
 // and JSON events, command-line arguments, and the MCPTT information and asserted identity of SIP messages.
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.229, RFC 3325, RFC 3550.
 #include "mcx/runtime.hpp"
+
+#include "mcx/banner.hpp"
 
 #include <fcntl.h>
 #include <netdb.h>
@@ -10,8 +16,11 @@
 #include <unistd.h>
 
 #include <arpa/inet.h>
+#include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -36,6 +45,8 @@ Json load_config(const std::string &path, bool disable_tls) {
   std::ifstream file(path);
   Json cfg;
   file >> cfg;
+  const char *environment = std::getenv("MCX_LOG");
+  set_log_level(parse_log_level(environment && *environment ? environment : cfg.value("log_level", "info")));
   for (auto field : {"control_fifo", "status_file"}) required(cfg, field);
   auto &sip = cfg.at("sip");
   for (auto field : {"listen", "advertise", "core_uri", "identity"}) required(sip, field);
@@ -50,6 +61,7 @@ Json load_config(const std::string &path, bool disable_tls) {
     throw std::runtime_error("TLS SIP core URI required");
   unsigned sipport = sip.at("port");
   if (!sipport || sipport > 65535) throw std::runtime_error("invalid SIP port");
+
   // The MCData server has no RTP media plane in its signalling-plane profile.
   if (!cfg.contains("media")) return cfg;
   auto &media = cfg.at("media");
@@ -57,6 +69,7 @@ Json load_config(const std::string &path, bool disable_tls) {
   if (!audio || audio >= 65400 || !floor || floor >= 65400 || floor == audio || floor == audio + 1)
     throw std::runtime_error("invalid media port allocation");
   if (media.value("mode", 0) < 0 || media.value("mode", 0) > 8) throw std::runtime_error("unsupported AMR-WB mode");
+
   return cfg;
 }
 
@@ -87,6 +100,7 @@ SipConfig sip_config(const Json &cfg, bool disable_tls) {
     config.tls.cert_file = tls.at("cert_file");
     config.tls.key_file = tls.at("key_file");
   }
+
   return config;
 }
 
@@ -271,6 +285,30 @@ void write_status(const Json &cfg, const Json &status) {
 
 //------------------------------------------------------------------------------
 // Helper: writes one JSON event line to stdout with its kind and monotonic time.
+namespace {
+std::atomic<LogLevel> process_log_level{LogLevel::info};
+} // namespace
+
+void set_log_level(LogLevel level) { process_log_level = level; }
+
+LogLevel log_level() { return process_log_level; }
+
+LogLevel parse_log_level(std::string_view name) {
+  if (name == "info") return LogLevel::info;
+  if (name == "debug") return LogLevel::debug;
+  throw std::runtime_error("invalid log level: " + std::string(name) + " (info or debug)");
+}
+
+void debug_line(std::string_view text) {
+  const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+  std::tm local{};
+  localtime_r(&now, &local);
+  char stamp[32];
+  std::strftime(stamp, sizeof(stamp), "%Y/%m/%d %H:%M:%S", &local);
+  std::string line = std::string(stamp) + " OpenMCX DEBUG [" + log_program() + "] " + std::string(text) + "\n";
+  std::cerr << line << std::flush;
+}
+
 void event(std::string_view kind, const Json &detail) {
   Json out = detail;
   out["event"] = kind;
