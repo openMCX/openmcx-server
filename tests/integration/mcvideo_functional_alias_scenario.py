@@ -14,8 +14,8 @@ step 17a), the binding of an alias to a group (clause 20.4) with refusals
 300 (clause 10.2.2.2.1), deactivation, and the wire format (clause 20.3.1, annex F.1).
 
 Run against a fixture prepared with --mcvideo (add_mcvideo_policy in
-tools/prepare-prearranged-test.py): video-dispatcher for client-a and client-b with one
-activation and take-over allowed, of which only client-b has the right; video-medic for
+tools/prepare-prearranged-test.py): control-room for client-a and client-b with one
+activation and take-over allowed, of which only client-b has the right; patrol-car-12-camera for
 client-b and client-c with two activations; only client-b may bind. Check IDs match
 tests/mcvideo/MCVIDEO_FUNCTIONAL_ALIAS_TEST.md.
 
@@ -174,7 +174,7 @@ def main():
         return capture.sip_text(capture_file)
 
     domain = ids['client-a'].split('@', 1)[1]
-    dispatcher, medic = f'sip:video-dispatcher.alias@{domain}', f'sip:video-medic.alias@{domain}'
+    control_room, patrol_camera = f'sip:control-room.alias@{domain}', f'sip:patrol-car-12-camera.alias@{domain}'
 
     # ------------------------------------------------------------------------------
     def holders(alias):
@@ -226,7 +226,7 @@ def main():
         start_capture()
 
         # MV-FA-01 TS 24.281 clause 20.2.1.3 and clause 20.2.2.2.4: client-c follows its own aliases
-        # before changing them (clause 20.2.1.1); client-b follows the users of video-dispatcher
+        # before changing them (clause 20.2.1.1); client-b follows the users of control-room
         # (clause 20.2.1.3 step 2A), which it may activate; client-d, outside its user list, is
         # refused (clause 20.2.2.3.4 step 5).
         command('client-c', 'mcvideo-fa-subscribe')
@@ -237,44 +237,44 @@ def main():
                 and status('client-c').get('mcvideo_functional_aliases') == []
             ),
         )
-        command('client-b', f'mcvideo-fa-subscribe {dispatcher}')
+        command('client-b', f'mcvideo-fa-subscribe {control_room}')
         wait(
-            'MV-FA-01 client-b\'s subscription to video-dispatcher gets the per-alias status, with no user',
-            lambda: (status('client-b').get('mcvideo_alias_users') or {}).get(dispatcher) == [],
+            'MV-FA-01 client-b\'s subscription to control-room gets the per-alias status, with no user',
+            lambda: (status('client-b').get('mcvideo_alias_users') or {}).get(control_room) == [],
         )
         command('client-b', 'mcvideo-fa-subscribe')
         wait(
             'MV-FA-01 client-b follows its own aliases too (clause 20.2.1.1)',
             lambda: status('client-b').get('mcvideo_functional_alias_status_known') is True,
         )
-        command('client-d', f'mcvideo-fa-subscribe {dispatcher}')
+        command('client-d', f'mcvideo-fa-subscribe {control_room}')
         wait(
-            'MV-FA-01 client-d\'s subscription to video-dispatcher is refused with 403',
+            'MV-FA-01 client-d\'s subscription to control-room is refused with 403',
             lambda: (
                 status('client-d').get('mcvideo_functional_alias_subscription_result')
-                == {'alias': dispatcher, 'status': 403}
+                == {'alias': control_room, 'status': 403}
             ),
         )
 
         # MV-FA-02 TS 24.281 clause 20.2.1.2 and clause 20.2.2.2.3: client-a activates
-        # video-dispatcher, and client-b is notified of its user (clause 20.2.2.3.5).
+        # control-room, and client-b is notified of its user (clause 20.2.2.3.5).
         fa(
             'client-a',
             'activate',
-            dispatcher,
+            control_room,
             200,
-            'MV-FA-02 client-a\'s activation of video-dispatcher is accepted with 200',
+            'MV-FA-02 client-a\'s activation of control-room is accepted with 200',
         )
         wait(
-            'MV-FA-02 mcvideo-server holds client-a as its only user', lambda: holders(dispatcher) == [ids['client-a']]
+            'MV-FA-02 mcvideo-server holds client-a as its only user', lambda: holders(control_room) == [ids['client-a']]
         )
         check(
             'MV-FA-02 client-a counts it active',
-            dispatcher in (status('client-a').get('mcvideo_functional_aliases') or []),
+            control_room in (status('client-a').get('mcvideo_functional_aliases') or []),
         )
         wait(
-            'MV-FA-02 client-b is notified that client-a holds video-dispatcher',
-            lambda: (status('client-b').get('mcvideo_alias_users') or {}).get(dispatcher) == [ids['client-a']],
+            'MV-FA-02 client-b is notified that client-a holds control-room',
+            lambda: (status('client-b').get('mcvideo_alias_users') or {}).get(control_room) == [ids['client-a']],
         )
 
         # MV-FA-03 TS 24.281 clause 20.2.2.3.3: client-c is not in the alias's <mcvideo-user-list>, and one
@@ -284,7 +284,7 @@ def main():
         fa(
             'client-c',
             'activate',
-            dispatcher,
+            control_room,
             200,
             'MV-FA-03 client-c, not in the user list: 200, then refused in the NOTIFY',
             'refused',
@@ -292,15 +292,15 @@ def main():
         fa(
             'client-b',
             'activate',
-            dispatcher,
+            control_room,
             200,
             'MV-FA-03 client-b\'s activation beyond the limit: 200, then NOTIFY "take-over-possible"',
             'take-over-possible',
         )
         check(
-            'MV-FA-03 client-a still holds video-dispatcher',
-            holders(dispatcher) == [ids['client-a']],
-            holders(dispatcher),
+            'MV-FA-03 client-a still holds control-room',
+            holders(control_room) == [ids['client-a']],
+            holders(control_room),
         )
 
         # MV-FA-04 TS 24.281 clause 20.2.1.2 step 6d: client-b takes it over (<take-over>), which the alias
@@ -308,7 +308,7 @@ def main():
         fa(
             'client-b',
             'takeover',
-            dispatcher,
+            control_room,
             200,
             'MV-FA-04 client-b\'s take-over after the offer: 200, then NOTIFY "activated"',
             'activated',
@@ -319,29 +319,29 @@ def main():
         )
         wait(
             'MV-FA-04 mcvideo-server holds client-b in place of client-a',
-            lambda: holders(dispatcher) == [ids['client-b']],
+            lambda: holders(control_room) == [ids['client-b']],
         )
         wait(
-            'MV-FA-04 client-b is notified that it now holds video-dispatcher',
-            lambda: (status('client-b').get('mcvideo_alias_users') or {}).get(dispatcher) == [ids['client-b']],
+            'MV-FA-04 client-b is notified that it now holds control-room',
+            lambda: (status('client-b').get('mcvideo_alias_users') or {}).get(control_room) == [ids['client-b']],
         )
         fa(
             'client-a',
             'takeover',
-            dispatcher,
+            control_room,
             200,
             'MV-FA-04 client-a, offered no take-over, asks for an activation (200) and does not get the alias',
         )
         check(
-            'MV-FA-04 client-a\'s request carries no <take-over> and client-b keeps video-dispatcher',
+            'MV-FA-04 client-a\'s request carries no <take-over> and client-b keeps control-room',
             (status('client-a').get('mcvideo_functional_alias_result') or {}).get('take_over') is False
-            and holders(dispatcher) == [ids['client-b']],
+            and holders(control_room) == [ids['client-b']],
         )
 
         # MV-FA-05 TS 24.281 clause 10.2.2.3.1.1 step 17a: client-a, which does not follow its status, still
-        # presents video-dispatcher; the participating function leaves out an alias it no
+        # presents control-room; the participating function leaves out an alias it no
         # longer holds.
-        command('client-a', f'mcvideo-fa use {dispatcher}')
+        command('client-a', f'mcvideo-fa use {control_room}')
         command('client-a', f'mcvideo-private {ids["client-b"]}')
         wait(
             'MV-FA-05 client-a and client-b are in a private call',
@@ -355,23 +355,23 @@ def main():
         hang_up('client-a')
         wait('MV-FA-05 the private call ended', lambda: idle('client-a', 'client-b'), 30)
 
-        # MV-FA-06 TS 24.281 clause 9.2.1.2.1.1: client-b presents video-dispatcher in a group call; the
+        # MV-FA-06 TS 24.281 clause 9.2.1.2.1.1: client-b presents control-room in a group call; the
         # invited members are told of it, and the conference lists it for client-b.
-        command('client-b', f'mcvideo-fa use {dispatcher}')
+        command('client-b', f'mcvideo-fa use {control_room}')
         command('client-b', 'mcvideo-call')
         wait(
             'MV-FA-06 all four in client-b\'s group call',
             lambda: all(status(role).get('mcvideo_call_state') == 'active' for role in ROLES),
         )
         wait(
-            'MV-FA-06 client-a and client-c are called by video-dispatcher',
+            'MV-FA-06 client-a and client-c are called by control-room',
             lambda: all(
-                status(role).get('mcvideo_calling_functional_alias') == dispatcher for role in ('client-a', 'client-c')
+                status(role).get('mcvideo_calling_functional_alias') == control_room for role in ('client-a', 'client-c')
             ),
         )
         wait(
-            'MV-FA-06 the conference event lists client-b with video-dispatcher (6.3.3.4 step 2b-iii)',
-            lambda: (status('client-a').get('mcvideo_participant_aliases') or {}).get(ids['client-b']) == dispatcher,
+            'MV-FA-06 the conference event lists client-b with control-room (6.3.3.4 step 2b-iii)',
+            lambda: (status('client-a').get('mcvideo_participant_aliases') or {}).get(ids['client-b']) == control_room,
         )
         hang_up('client-b')
         wait('MV-FA-06 client-b left the call', lambda: idle('client-b'), 30)
@@ -379,7 +379,7 @@ def main():
         wait('MV-FA-06 the call ended for all', lambda: idle(*ROLES), 30)
 
         # MV-FA-07 TS 24.281 clause 20.4.2.1.2 and clause 20.4.2.1.3: client-b binds
-        # video-dispatcher to the MCVideo group, and the conference event lists it for client-b
+        # control-room to the MCVideo group, and the conference event lists it for client-b
         # in a group call where client-b presents no alias (clause 6.3.3.4 step 2b-iii). A second
         # alias cannot be bound to the same group (178, clause 20.4.2.3.2), and client-c, without
         # <allow-functional-alias-binding-with-group>, may not bind or unbind (176, clause
@@ -406,24 +406,24 @@ def main():
 
         binding(
             'client-b',
-            f'bind {dispatcher} {group}',
+            f'bind {control_room} {group}',
             200,
             '',
-            'MV-FA-07 client-b binds video-dispatcher to the group with 200',
+            'MV-FA-07 client-b binds control-room to the group with 200',
         )
-        binding('client-b', f'bind {dispatcher} {group}', 200, '', 'MV-FA-07 binding it again is accepted with 200')
-        fa('client-b', 'activate', medic, 200, 'MV-FA-07 client-b activates video-medic with 200')
+        binding('client-b', f'bind {control_room} {group}', 200, '', 'MV-FA-07 binding it again is accepted with 200')
+        fa('client-b', 'activate', patrol_camera, 200, 'MV-FA-07 client-b activates patrol-car-12-camera with 200')
         binding(
             'client-b',
-            f'bind {medic} {group}',
+            f'bind {patrol_camera} {group}',
             403,
             '178',
-            'MV-FA-07 binding video-medic to the same group is refused with 403 and warning 178',
+            'MV-FA-07 binding patrol-car-12-camera to the same group is refused with 403 and warning 178',
         )
-        fa('client-b', 'deactivate', medic, 200, 'MV-FA-07 client-b deactivates video-medic with 200')
+        fa('client-b', 'deactivate', patrol_camera, 200, 'MV-FA-07 client-b deactivates patrol-car-12-camera with 200')
         binding(
             'client-c',
-            f'unbind {medic} {group}',
+            f'unbind {patrol_camera} {group}',
             403,
             '176',
             'MV-FA-07 client-c, without the binding right, is refused with 403 and warning 176',
@@ -440,45 +440,45 @@ def main():
             status('client-a').get('mcvideo_calling_functional_alias'),
         )
         wait(
-            'MV-FA-07 the conference event lists client-b with its bound video-dispatcher',
-            lambda: (status('client-a').get('mcvideo_participant_aliases') or {}).get(ids['client-b']) == dispatcher,
+            'MV-FA-07 the conference event lists client-b with its bound control-room',
+            lambda: (status('client-a').get('mcvideo_participant_aliases') or {}).get(ids['client-b']) == control_room,
         )
         hang_up('client-b')
         wait('MV-FA-07 client-b left the call', lambda: idle('client-b'), 30)
         hang_up('client-a', 'client-c', 'client-d')
         wait('MV-FA-07 the call ended for all', lambda: idle(*ROLES), 30)
         binding(
-            'client-b', f'unbind {dispatcher} {group}', 200, '', 'MV-FA-07 client-b unbinds video-dispatcher with 200'
+            'client-b', f'unbind {control_room} {group}', 200, '', 'MV-FA-07 client-b unbinds control-room with 200'
         )
 
         # MV-FA-08 TS 24.281 clause 20.2.1.3: once client-a follows its own status, the NOTIFY shows it no
-        # longer holds video-dispatcher, and it stops presenting it.
+        # longer holds control-room, and it stops presenting it.
         command('client-a', 'mcvideo-fa-subscribe')
         wait(
-            'MV-FA-08 client-a learns from the per-user status that it lost video-dispatcher',
+            'MV-FA-08 client-a learns from the per-user status that it lost control-room',
             lambda: (
                 status('client-a').get('mcvideo_functional_alias_status_known') is True
-                and dispatcher not in status('client-a').get('mcvideo_functional_aliases', [dispatcher])
+                and control_room not in status('client-a').get('mcvideo_functional_aliases', [control_room])
             ),
         )
 
-        # MV-FA-09 TS 24.281 clause 10.2.2.2.1: client-c activates video-medic, and its own
+        # MV-FA-09 TS 24.281 clause 10.2.2.2.1: client-c activates patrol-car-12-camera, and its own
         # subscription is notified with the p-id-fa of that PUBLISH (clause 20.2.2.2.5 step 2c);
         # client-a calls the alias (step 11c), the controlling function answers 300 naming
         # client-c, and client-a calls client-c with <called-functional-alias-URI> (steps 1 to 3
         # on receiving the SIP 300 (Multiple Choices) response).
-        fa('client-c', 'activate', medic, 200, 'MV-FA-09 client-c\'s activation of video-medic is accepted with 200')
+        fa('client-c', 'activate', patrol_camera, 200, 'MV-FA-09 client-c\'s activation of patrol-car-12-camera is accepted with 200')
         pid = (status('client-c').get('mcvideo_functional_alias_result') or {}).get('p_id_fa')
         wait(
-            'MV-FA-09 client-c\'s status NOTIFY lists video-medic with the p-id-fa of its PUBLISH',
+            'MV-FA-09 client-c\'s status NOTIFY lists patrol-car-12-camera with the p-id-fa of its PUBLISH',
             lambda: (
-                status('client-c').get('mcvideo_functional_aliases') == [medic]
+                status('client-c').get('mcvideo_functional_aliases') == [patrol_camera]
                 and (status('client-c').get('mcvideo_functional_alias_notified') or {}).get('p_id_fa') == pid
             ),
         )
-        command('client-a', f'mcvideo-private-fa {medic}')
+        command('client-a', f'mcvideo-private-fa {patrol_camera}')
         wait(
-            'MV-FA-09 client-a\'s call to video-medic is redirected to client-c',
+            'MV-FA-09 client-a\'s call to patrol-car-12-camera is redirected to client-c',
             lambda: (
                 (status('client-a').get('mcvideo_functional_alias_redirect') or {}).get('selected') == ids['client-c']
             ),
@@ -492,8 +492,8 @@ def main():
             ),
         )
         check(
-            'MV-FA-09 client-c is told it was called by video-medic',
-            status('client-c').get('mcvideo_called_functional_alias') == medic,
+            'MV-FA-09 client-c is told it was called by patrol-car-12-camera',
+            status('client-c').get('mcvideo_called_functional_alias') == patrol_camera,
             status('client-c').get('mcvideo_called_functional_alias'),
         )
         check(
@@ -504,23 +504,23 @@ def main():
         hang_up('client-a')
         wait('MV-FA-09 the private call ended', lambda: idle('client-a', 'client-c'), 30)
 
-        # MV-FA-10 TS 24.281 clause 20.2.2.3.3 with Expires 0: client-c deactivates video-medic; a
+        # MV-FA-10 TS 24.281 clause 20.2.2.3.3 with Expires 0: client-c deactivates patrol-car-12-camera; a
         # call to it then finds no user and is refused with 403 and warning 145 (clause
         # 10.2.2.3.1.1).
         fa(
             'client-c',
             'deactivate',
-            medic,
+            patrol_camera,
             200,
-            'MV-FA-10 client-c\'s deactivation of video-medic is accepted with 200',
+            'MV-FA-10 client-c\'s deactivation of patrol-car-12-camera is accepted with 200',
         )
-        wait('MV-FA-10 mcvideo-server holds no user of video-medic', lambda: holders(medic) == [])
+        wait('MV-FA-10 mcvideo-server holds no user of patrol-car-12-camera', lambda: holders(patrol_camera) == [])
         wait(
             'MV-FA-10 client-c\'s status NOTIFY lists no alias',
             lambda: status('client-c').get('mcvideo_functional_aliases') == [],
         )
         before = json.dumps(status('client-a').get('mcvideo_last_call'))
-        command('client-a', f'mcvideo-private-fa {medic}')
+        command('client-a', f'mcvideo-private-fa {patrol_camera}')
         wait(
             'MV-FA-10 client-a\'s call to the inactive alias answered',
             lambda: json.dumps(status('client-a').get('mcvideo_last_call')) != before and idle('client-a'),
@@ -534,18 +534,18 @@ def main():
         )
 
         # MV-FA-11 TS 24.281 clause 20.2.1.3 step 5 and de-subscription: client-b fetches the users of
-        # video-dispatcher once (Expires 0), and client-c ends its subscription.
-        command('client-b', f'mcvideo-fa-unsubscribe {dispatcher}')
+        # control-room once (Expires 0), and client-c ends its subscription.
+        command('client-b', f'mcvideo-fa-unsubscribe {control_room}')
         wait(
-            'MV-FA-11 client-b\'s subscription to video-dispatcher ends',
-            lambda: dispatcher not in status('client-b').get('mcvideo_functional_alias_subscriptions', [dispatcher]),
+            'MV-FA-11 client-b\'s subscription to control-room ends',
+            lambda: control_room not in status('client-b').get('mcvideo_functional_alias_subscriptions', [control_room]),
         )
-        command('client-b', f'mcvideo-fa-fetch {dispatcher}')
+        command('client-b', f'mcvideo-fa-fetch {control_room}')
         wait(
             'MV-FA-11 client-b\'s fetch returns client-b and leaves no subscription',
             lambda: (
-                (status('client-b').get('mcvideo_alias_users') or {}).get(dispatcher) == [ids['client-b']]
-                and dispatcher not in status('client-b').get('mcvideo_functional_alias_subscriptions', [dispatcher])
+                (status('client-b').get('mcvideo_alias_users') or {}).get(control_room) == [ids['client-b']]
+                and control_room not in status('client-b').get('mcvideo_functional_alias_subscriptions', [control_room])
             ),
         )
         observations['server_events'] = server_status().get('functional_aliases')
@@ -582,7 +582,7 @@ def main():
             check(
                 'MV-FA-12 a per-user NOTIFY lists an alias with status="activated"',
                 any(
-                    re.search(r'functionalAliasID="' + re.escape(medic) + r'" status="activated"', message)
+                    re.search(r'functionalAliasID="' + re.escape(patrol_camera) + r'" status="activated"', message)
                     for message in notifies
                 ),
             )
@@ -590,7 +590,7 @@ def main():
                 'MV-FA-12 a per-user NOTIFY offers an alias with status="take-over-possible"',
                 any(
                     re.search(
-                        r'functionalAliasID="' + re.escape(dispatcher) + r'" status="take-over-possible"', message
+                        r'functionalAliasID="' + re.escape(control_room) + r'" status="take-over-possible"', message
                     )
                     for message in notifies
                 ),
@@ -598,7 +598,7 @@ def main():
             check(
                 'MV-FA-12 a per-alias NOTIFY names the alias as entity and its user in "user"',
                 any(
-                    f'entity="{dispatcher}"' in message and f'user="{ids["client-b"]}"' in message
+                    f'entity="{control_room}"' in message and f'user="{ids["client-b"]}"' in message
                     for message in notifies
                 ),
             )
@@ -608,7 +608,7 @@ def main():
                 any(
                     '<request-type>fa-group-binding-req</request-type>' in message
                     and '<binding-ind>true</binding-ind>' in message
-                    and f'<binding-fa-uri>{dispatcher}</binding-fa-uri>' in message
+                    and f'<binding-fa-uri>{control_room}</binding-fa-uri>' in message
                     and f'uri="{group}"' in message
                     for message in messages
                 ),
@@ -617,13 +617,13 @@ def main():
                 'MV-FA-12 the unbinding MESSAGE carries <binding-ind>false and <unbinding-fa-uri>',
                 any(
                     '<binding-ind>false</binding-ind>' in message
-                    and f'<unbinding-fa-uri>{dispatcher}</unbinding-fa-uri>' in message
+                    and f'<unbinding-fa-uri>{control_room}</unbinding-fa-uri>' in message
                     for message in messages
                 ),
             )
             check(
                 'MV-FA-12 the conference NOTIFY carries <functional-alias> for client-b',
-                any('application/conference-info+xml' in message and dispatcher in message for message in notifies),
+                any('application/conference-info+xml' in message and control_room in message for message in notifies),
             )
             invites = [message for message in capture.split(sip) if message.startswith('INVITE sip:')]
             check(
@@ -636,7 +636,7 @@ def main():
             check(
                 'MV-FA-12 the call after the 300 carries <called-functional-alias-URI> without the indication',
                 any(
-                    re.search(r'<called-functional-alias-URI[^>]*><mcvideoURI>' + re.escape(medic), message)
+                    re.search(r'<called-functional-alias-URI[^>]*><mcvideoURI>' + re.escape(patrol_camera), message)
                     and 'call-to-functional-alias-ind' not in message
                     for message in invites
                 ),

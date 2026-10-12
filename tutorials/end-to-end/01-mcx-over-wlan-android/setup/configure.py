@@ -68,6 +68,9 @@ PHONE_USER = {
     },
     'group_call': dict(GROUP_CALL_RIGHTS),
     'adhoc_call': {'allow': True, 'participation': True},
+    # <allow-takeover-functional-alias-other-user> (TS 24.484 clause 8.3.2.1, TS 24.379 clause 9A.2.2.3.3): a user
+    # may take over a role another user holds, where the role allows it.
+    'functional_alias_takeover': True,
     'mcdata': {'transmit_data': True, 'incoming_any': True, 'adhoc': True, 'adhoc_participation': True,
                'emergency_alert': True, 'alert_cancel': True},
     'mcvideo': {
@@ -80,6 +83,14 @@ PHONE_USER = {
 }
 # The dispatcher's template: the same rights (tutorials 2 and 3 create the user 'dispatcher' from it).
 DISPATCHER = PHONE_USER
+
+# The roles of the phones' users (functional aliases, TS 23.280 clause 8.1.5, TS 24.379 clause 9A): police roles for
+# the users the README creates in MCX Admin, alice and bob (MCX Admin gives a login the MCPTT ID sip:<login>.mcptt@).
+# duty-officer is one person at a time and may be taken over; incident-commander is alice's alone.
+ROLES = [
+    {'id': 'duty-officer', 'users': ['alice', 'bob'], 'max_simultaneous_activations': 1, 'allow_takeover': True},
+    {'id': 'incident-commander', 'users': ['alice'], 'max_simultaneous_activations': 1},
+]
 
 
 def clean_groups(cfg):
@@ -210,6 +221,12 @@ def main():
         # each other only). MCX Admin imports it on its first start; the servers do not read it.
         cfg['templates'] = {'phone-user': PHONE_USER, 'dispatcher': DISPATCHER}
         clean_groups(cfg)
+        domain = cfg['domain']
+        cfg['functional_aliases'] = [
+            dict(role, id=f"sip:{role['id']}.alias@{domain}",
+                 users=[f'sip:{login}.mcptt@{domain}' for login in role['users']])
+            for role in ROLES
+        ]
 
     edit(OUT / 'mcptt-server.json', mcptt)
     edit(OUT / 'mcvideo-server.json', mcvideo)

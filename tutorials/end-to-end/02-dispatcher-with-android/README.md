@@ -46,7 +46,8 @@ service. The position has no user yet; it gets one in step 4.
 
 ## 3. Create the dispatcher user
 
-In MCX Admin (`https://HOST_IP:8446/`, as in tutorial 1), open **Users** → **New user**:
+In MCX Admin (`https://HOST_IP:8446/`, as in tutorial 1; sign in as `admin` with the password from tutorial 1's
+`config/ADMIN.txt`), open **Users** → **New user**:
 
 - **Login**: `dispatcher`
 - **Template**: `phone-user`

@@ -25,13 +25,13 @@ One MCPTT server serves the users and owns the aliases. The CMS holds the alias 
 ### Client commands
 
 ```bash
-mcx-client --config FILE --command 'fa activate sip:medic.alias@mcx.test'
-mcx-client --config FILE --command 'fa takeover sip:dispatcher.alias@mcx.test'
-mcx-client --config FILE --command 'fa deactivate sip:medic.alias@mcx.test'
-mcx-client --config FILE --command 'fa use sip:dispatcher.alias@mcx.test'      # or: fa use none
-mcx-client --config FILE --command 'private-fa sip:medic.alias@mcx.test auto'
-mcx-client --config FILE --command 'first-to-answer-fa sip:medic.alias@mcx.test'
-mcx-client --config FILE --command 'adhoc sip:medic.alias@mcx.test'
+mcx-client --config FILE --command 'fa activate sip:patrol-car-12.alias@mcx.test'
+mcx-client --config FILE --command 'fa takeover sip:duty-officer.alias@mcx.test'
+mcx-client --config FILE --command 'fa deactivate sip:patrol-car-12.alias@mcx.test'
+mcx-client --config FILE --command 'fa use sip:duty-officer.alias@mcx.test'      # or: fa use none
+mcx-client --config FILE --command 'private-fa sip:patrol-car-12.alias@mcx.test auto'
+mcx-client --config FILE --command 'first-to-answer-fa sip:patrol-car-12.alias@mcx.test'
+mcx-client --config FILE --command 'adhoc sip:patrol-car-12.alias@mcx.test'
 mcx-client --config FILE --command 'adhoc broadcast sip:bob.mcptt@mcx.test sip:client-c.mcptt@mcx.test'
 ```
 
@@ -50,24 +50,24 @@ and checks the capture with `tests/integration/verify_functional_alias.py`.
 
 | Alias | Users | Limit | Take-over |
 |---|---|---|---|
-| `dispatcher.alias` | client-a, client-b | 1 | allowed; only client-b has the user permission |
-| `medic.alias` | client-c, client-d | 2 | no |
-| `reserve.alias` | client-a | 1 | never activated |
+| `duty-officer.alias` | client-a, client-b | 1 | allowed; only client-b has the user permission |
+| `patrol-car-12.alias` | client-c, client-d | 2 | no |
+| `incident-commander.alias` | client-a | 1 | never activated |
 
-In this fixture client-d is callable (unlike the plain `--private-call` fixture), so both medic users can be reached.
+In this fixture client-d is callable (unlike the plain `--private-call` fixture), so both patrol-car-12 users can be reached.
 
 ## Checks
 
 | ID | What is checked |
 |---|---|
-| FA-01 | The client subscribes to its own status first; two permitted users activate `medic` within its limit of 2 (200, then NOTIFY `activated`) |
+| FA-01 | The client subscribes to its own status first; two permitted users activate `patrol-car-12` within its limit of 2 (200, then NOTIFY `activated`) |
 | FA-02 | Activation by a user outside the alias user list → 403 with warning 201 |
-| FA-03 | `dispatcher` activated by a; b's activation beyond the limit → 200, then NOTIFY `take-over-possible` |
+| FA-03 | `duty-officer` activated by a; b's activation beyond the limit → 200, then NOTIFY `take-over-possible` |
 | FA-04 | b's take-over after the offer replaces a (NOTIFY `activated`), and a is notified it lost the alias; a, offered nothing, sends an activation without `<take-over>` → 200, refused in the NOTIFY, nothing changes |
-| FA-05 | `private-fa medic` → 300 naming the first activated user; the caller re-invites that user, who is told the called alias |
+| FA-05 | `private-fa patrol-car-12` → 300 naming the first activated user; the caller re-invites that user, who is told the called alias |
 | FA-06 | An activated caller alias is presented on a private call and on a group call to every member; a requested alias that is not activated is not presented |
-| FA-07 | `first-to-answer-fa medic` rings both activated users; the first answer wins and the other is cancelled |
-| FA-08 | An ad hoc list entry naming `medic` invites both activated users, each told the called alias |
+| FA-07 | `first-to-answer-fa patrol-car-12` rings both activated users; the first answer wins and the other is cancelled |
+| FA-08 | An ad hoc list entry naming `patrol-car-12` invites both activated users, each told the called alias |
 | FA-09 | Broadcast ad hoc call: receiver request denied with cause 5; receivers get the speech; release at transmission end |
 | FA-10 | Deactivation (200, then NOTIFY without the alias) removes the user; the alias then resolves to the remaining user |
 | FA-11 | An alias with no activated user → 403/145 |

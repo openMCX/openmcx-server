@@ -47,7 +47,7 @@ def main():
     ids = {client: configs[client]['mcptt']['user_id'] for client in roles}
     site = json.loads((generated / 'site.json').read_text())
     aliases = {alias['id'].split(':', 1)[1].split('.', 1)[0]: alias['id'] for alias in site['functional_aliases']}
-    dispatcher, medic, reserve = aliases['dispatcher'], aliases['medic'], aliases['reserve']
+    duty_officer, patrol_car, incident_commander = aliases['duty-officer'], aliases['patrol-car-12'], aliases['incident-commander']
     checks, observations = [], {}
     result = dict(scenario='functional-alias', passed=False, checks=checks, observations=observations)
 
@@ -163,25 +163,25 @@ def main():
         # FA-01 activation by permitted users (TS 24.379 clause 9A.2.2.3.3 steps 4a, 5 and 12): the client
         # subscribes to its own status first (clause 9A.2.1.1), the PUBLISH is answered 200 (clause
         # 9A.2.2.2.3 step 8) and the NOTIFY with its p-id-fa lists the alias "activated" (clause 9A.2.2.2.5).
-        command('client-c', f'fa activate {medic}')
+        command('client-c', f'fa activate {patrol_car}')
         wait(
             'FA-01 the client subscribes to its functional alias status before the change (200)',
             lambda: status('client-c').get('functional_alias_subscription_result') == 200,
         )
         wait(
             'FA-01 first user activates the alias: 200, then NOTIFY "activated"',
-            fa_result('client-c', 'activate', 200, medic, 'activated'),
+            fa_result('client-c', 'activate', 200, patrol_car, 'activated'),
         )
-        command('client-d', f'fa activate {medic}')
+        command('client-d', f'fa activate {patrol_car}')
         wait(
             'FA-01 second user activates the same alias within its limit',
-            lambda: active_aliases().get(medic) == [ids['client-c'], ids['client-d']],
+            lambda: active_aliases().get(patrol_car) == [ids['client-c'], ids['client-d']],
         )
 
         # FA-02 an alias the user may not change (TS 24.379 clause 9A.2.2.2.3 steps 4A and 4B; OpenMCX's
         # <FunctionalAliasList> is the aliases whose <mcptt-user-list> names the user) is refused by the
         # participating function.
-        command('client-c', f'fa activate {dispatcher}')
+        command('client-c', f'fa activate {duty_officer}')
         wait(
             'FA-02 activation by a user not in the alias user list rejected with 403 warning 201',
             fa_result(
@@ -190,73 +190,73 @@ def main():
         )
 
         # FA-03 <max-simultaneous-activations> and FA-04 take-over.
-        command('client-a', f'fa activate {dispatcher}')
-        wait('FA-03 dispatcher activated by client a', lambda: active_aliases().get(dispatcher) == [ids['client-a']])
+        command('client-a', f'fa activate {duty_officer}')
+        wait('FA-03 duty-officer activated by client a', lambda: active_aliases().get(duty_officer) == [ids['client-a']])
         # Beyond the limit the owning check refuses (clause 9A.2.2.3.3 step 5); client-b, which may take the alias
         # over, is told "take-over-possible" (clause 3.1, clause 9A.2.1.3).
-        command('client-b', f'fa activate {dispatcher}')
+        command('client-b', f'fa activate {duty_officer}')
         wait(
             'FA-03 activation beyond the limit: 200, then NOTIFY "take-over-possible"',
             lambda: (
-                fa_result('client-b', 'activate', 200, dispatcher, 'take-over-possible')()
-                and active_aliases().get(dispatcher) == [ids['client-a']]
+                fa_result('client-b', 'activate', 200, duty_officer, 'take-over-possible')()
+                and active_aliases().get(duty_officer) == [ids['client-a']]
             ),
         )
         # FA-04 the take-over request carries <take-over> after the offer (clause 9A.2.1.2 step 6 d)); client-a
         # learns from its NOTIFY that it lost the alias.
-        command('client-b', f'fa takeover {dispatcher}')
+        command('client-b', f'fa takeover {duty_officer}')
         wait(
             'FA-04 permitted take-over replaces the current holder: NOTIFY "activated"',
             lambda: (
-                fa_result('client-b', 'takeover', 200, dispatcher, 'activated')()
-                and active_aliases().get(dispatcher) == [ids['client-b']]
+                fa_result('client-b', 'takeover', 200, duty_officer, 'activated')()
+                and active_aliases().get(duty_officer) == [ids['client-b']]
             ),
         )
         wait(
             'FA-04 the previous holder is notified that it no longer holds the alias',
-            lambda: dispatcher not in status('client-a').get('active_functional_aliases', [dispatcher]),
+            lambda: duty_officer not in status('client-a').get('active_functional_aliases', [duty_officer]),
         )
         # client-a, without <allow-takeover-functional-alias-other-user>, is offered no take-over, so its
         # take-over goes as an activation without <take-over> and is refused in the NOTIFY.
-        command('client-a', f'fa takeover {dispatcher}')
+        command('client-a', f'fa takeover {duty_officer}')
         wait(
             'FA-04 take-over without <allow-takeover-functional-alias-other-user>: 200, then refused in the NOTIFY',
             lambda: (
-                fa_result('client-a', 'takeover', 200, dispatcher, 'refused')()
+                fa_result('client-a', 'takeover', 200, duty_officer, 'refused')()
                 and (status('client-a').get('last_fa_result') or {}).get('take_over') is False
-                and active_aliases().get(dispatcher) == [ids['client-b']]
+                and active_aliases().get(duty_officer) == [ids['client-b']]
             ),
         )
 
         # FA-05 private call to a functional alias: 300 redirect to an activated user.
-        command('client-a', f'private-fa {medic} auto')
+        command('client-a', f'private-fa {patrol_car} auto')
         wait(
             'FA-05 private call to the alias reaches its first activated user',
             lambda: private_active('client-a', 'client-c'),
             20,
         )
         redirect = status('client-a').get('functional_alias_redirect') or {}
-        assert redirect.get('alias') == medic and redirect.get('selected') == ids['client-c'], 'redirect not recorded'
+        assert redirect.get('alias') == patrol_car and redirect.get('selected') == ids['client-c'], 'redirect not recorded'
         checks.append('FA-05 caller followed a 300 Multiple Choices naming the selected MCPTT ID')
-        assert status('client-c').get('called_functional_alias') == medic, 'callee not told the called alias'
+        assert status('client-c').get('called_functional_alias') == patrol_car, 'callee not told the called alias'
         checks.append('FA-05 callee is told which alias was called')
         command('client-a', 'hangup')
         wait('FA-05 released', idle)
 
         # FA-06 presentation of the caller's alias only while activated (TS 24.379 clause
         # 10.1.1.3.1.1 step 6a).
-        command('client-b', f'fa use {dispatcher}')
+        command('client-b', f'fa use {duty_officer}')
         command('client-b', f"private {ids['client-a']} auto")
         wait(
             'FA-06 private call presents the activated alias',
             lambda: (
                 private_active('client-b', 'client-a')
-                and status('client-a').get('calling_functional_alias') == dispatcher
+                and status('client-a').get('calling_functional_alias') == duty_officer
             ),
         )
         command('client-b', 'hangup')
         wait('FA-06 released', idle)
-        command('client-a', f'fa use {dispatcher}')
+        command('client-a', f'fa use {duty_officer}')
         command('client-a', f"private {ids['client-c']} auto")
         wait(
             'FA-06 an alias that is not activated for the caller is not presented',
@@ -270,7 +270,7 @@ def main():
             lambda: (
                 all(status(client).get('call_state') == 'active' for client in roles)
                 and all(
-                    status(client).get('calling_functional_alias') == dispatcher
+                    status(client).get('calling_functional_alias') == duty_officer
                     for client in ['client-a', 'client-c', 'client-d']
                 )
             ),
@@ -282,7 +282,7 @@ def main():
         command('client-b', 'fa use none')
 
         # FA-07 first-to-answer call to an alias invites every activated user.
-        command('client-a', f'first-to-answer-fa {medic}')
+        command('client-a', f'first-to-answer-fa {patrol_car}')
         wait(
             'FA-07 every user that activated the alias rings',
             lambda: all(status(client).get('call_state') == 'ringing' for client in ['client-c', 'client-d']),
@@ -296,7 +296,7 @@ def main():
         wait('FA-07 released', idle)
 
         # FA-08 ad hoc participant list naming an alias (TS 24.379 clause 17.4.2.2 step 12b).
-        command('client-a', f'adhoc {medic}')
+        command('client-a', f'adhoc {patrol_car}')
         wait(
             'FA-08 ad hoc call invites the users behind the alias',
             lambda: (
@@ -304,7 +304,7 @@ def main():
                     status(client).get('call_state') == 'active' and status(client).get('call_type') == 'adhoc'
                     for client in ['client-a', 'client-c', 'client-d']
                 )
-                and all(status(client).get('called_functional_alias') == medic for client in ['client-c', 'client-d'])
+                and all(status(client).get('called_functional_alias') == patrol_car for client in ['client-c', 'client-d'])
             ),
             20,
         )
@@ -343,21 +343,21 @@ def main():
         wait('FA-09 broadcast ad hoc call released at transmission end', idle, 25)
 
         # FA-10 deactivation and FA-11 an alias nobody has activated.
-        command('client-c', f'fa deactivate {medic}')
+        command('client-c', f'fa deactivate {patrol_car}')
         wait(
             'FA-10 deactivation removes the user from the alias: 200, then NOTIFY without it',
             lambda: (
-                fa_result('client-c', 'deactivate', 200, medic, 'deactivated')()
-                and active_aliases().get(medic) == [ids['client-d']]
+                fa_result('client-c', 'deactivate', 200, patrol_car, 'deactivated')()
+                and active_aliases().get(patrol_car) == [ids['client-d']]
             ),
         )
         # The redirected INVITE is an ordinary private call, so the caller's
         # <PrivateCall> list applies to the selected user: client-b may call anyone.
-        command('client-b', f'private-fa {medic} auto')
+        command('client-b', f'private-fa {patrol_car} auto')
         wait('FA-10 the alias now resolves to the remaining user', lambda: private_active('client-b', 'client-d'), 20)
         command('client-b', 'hangup')
         wait('FA-10 released', idle)
-        command('client-b', f'private-fa {reserve} auto')
+        command('client-b', f'private-fa {incident_commander} auto')
         wait(
             'FA-11 call to an alias with no activated user rejected with 403 warning 145',
             rejected('client-b', 403, '145 unable to determine called party'),

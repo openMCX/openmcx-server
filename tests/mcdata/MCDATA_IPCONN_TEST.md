@@ -37,7 +37,7 @@ mcx-client --config FILE --command 'ipcon close'
 
 ## Fixture and commands
 
-The fixture is the one of the [SDS tests](MCDATA_SDS_TEST.md#separate-four-client-fixture): client-a may send only to b and c; b accepts only a; c accepts anyone; d may not transmit; `desk.fa` may be activated by a and b. `tools/provision.py` gives each client its tunnel address, `mcdata.ipconn.address` = `10.77.0.1` to `10.77.0.4`. The capture covers SIP and every UDP port, because the tunnel ports are ephemeral.
+The fixture is the one of the [SDS tests](MCDATA_SDS_TEST.md#separate-four-client-fixture): client-a may send only to b and c; b accepts only a; c accepts anyone; d may not transmit; `front-desk.fa` may be activated by a and b. `tools/provision.py` gives each client its tunnel address, `mcdata.ipconn.address` = `10.77.0.1` to `10.77.0.4`. The capture covers SIP and every UDP port, because the tunnel ports are ephemeral.
 
 ```bash
 docker build -t openmcx:<tag> -f docker/Dockerfile .
@@ -71,7 +71,7 @@ The scenario (`mcdata_ipconn_scenario.py`) makes 31 assertions and its wire veri
 | IP-05 | Closing the session releases both clients and the tunnel | Same report |
 | IP-06 | A second session to a client that already has one is refused with 486, passed back to the caller, while the first continues; the called party may release the session too | Same report |
 | IP-07 | Rejections: `200` without `<allow-transmit-data>`, `229` outside the one-to-one list, `230` outside the target's incoming list, `145` for an alias nobody has activated; no tunnel is created | Same report |
-| IP-08 | Session to a functional alias: the 300 names the user who activated `desk.fa`, the caller invites that user with `<called-functional-alias-URI>`, the called client learns the alias, and IP traffic flows | Same report |
+| IP-08 | Session to a functional alias: the 300 names the user who activated `front-desk.fa`, the caller invites that user with `<called-functional-alias-URI>`, the called client learns the alias, and IP traffic flows | Same report |
 | IP-09 | SIP and tunnel wire checks (22), decoded independently of the C++ implementation: the request's feature tag, ICSI, Accept-Contact, resource-lists and SDP with `mcdata-ipconn-s-port`; the invitation with the ICSI, Referred-By and both users; the server's own address and ports on each leg; 100 and then 200 to the caller; the 300 and the follow-up with the called alias; the rejections 200, 229, 230, 145 and 486; BYE; every tunnel datagram between the SDP ends, sent from the named source port, with a UDP checksum, GRE version 0 without key or sequence, IPv4 and ICMP checksums that verify, each reply matching its request, each datagram relayed unchanged; and tshark decoding the same datagrams | Wire report (`artifacts/integration/mcdata-ipconn-sip-wire.json`), capture (`artifacts/integration/mcdata-ipconn.pcap`) |
 | IP-10 | Unit tests: the tunnel SDP with and without the source port, the session-level and media-level addresses and the 13.5.2.1 example; the RFC 1071 checksum on the well-known IPv4 header (`0xb861`); byte-exact IPv4 and ICMP echo; GRE for IPv4 and IPv6, with a verified checksum, and the rejection of a key, version 1, a non-IP protocol type, a mismatched protocol type and short headers | `test_ipconn` in the image build |
 

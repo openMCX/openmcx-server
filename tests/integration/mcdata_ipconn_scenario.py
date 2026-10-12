@@ -46,7 +46,7 @@ def main():
     ids = {role: configs[role]['mcdata']['user_id'] for role in roles}
     tunnel = {role: configs[role]['mcdata']['ipconn']['address'] for role in roles}
     domain = ids['client-a'].split('@', 1)[1]
-    desk = f'sip:desk.fa@{domain}'
+    front_desk = f'sip:front-desk.fa@{domain}'
     checks, observations = [], {}
     result = dict(scenario='mcdata-ip-connectivity', passed=False, checks=checks, observations=observations)
 
@@ -313,12 +313,12 @@ def main():
         # IP-08 a session to a functional alias (TS 24.282 clause 20.4.2 step 5a1 and clause 20.2.1): 300
         # (Multiple Choices) names the user, and the caller invites that user with
         # the alias in <called-functional-alias-URI>.
-        command('client-b', f'mcdata-fa activate {desk}')
+        command('client-b', f'mcdata-fa activate {front_desk}')
         wait(
             'IP-08 client-b activates the functional alias',
-            lambda: (server().get('functional_aliases') or {}).get(desk) == [ids['client-b']],
+            lambda: (server().get('functional_aliases') or {}).get(front_desk) == [ids['client-b']],
         )
-        command('client-a', f'ipcon fa={desk}')
+        command('client-a', f'ipcon fa={front_desk}')
         wait(
             'IP-08 the session reaches the user that activated the alias',
             lambda: (
@@ -329,7 +329,7 @@ def main():
         )
         check(
             'IP-08 the called client learns the alias it was reached through (20.2.2 step 3B)',
-            ipcon('client-b').get('called_alias') == desk and ipcon('client-a').get('called_alias') == desk,
+            ipcon('client-b').get('called_alias') == front_desk and ipcon('client-a').get('called_alias') == front_desk,
         )
         answered = counts('client-b').get('echo_answered', 0)
         command('client-a', f'ipcon-ping {tunnel["client-b"]} 2')
@@ -339,7 +339,7 @@ def main():
         )
         command('client-b', 'ipcon close')
         idle('IP-08 the session is released', ['client-a', 'client-b'])
-        command('client-b', f'mcdata-fa deactivate {desk}')
+        command('client-b', f'mcdata-fa deactivate {front_desk}')
 
         observations['server_counters'] = {key: value for key, value in counters().items() if key.startswith('ipconn')}
         observations['client_counters'] = {role: counts(role) for role in roles}

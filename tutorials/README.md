@@ -15,37 +15,7 @@ and RANs.
 | 4 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;srsRAN&nbsp;(ZeroMQ)](end-to-end/04-mcx-over-srsran-5g/README.md) | Tutorial 3 with the srsRAN gNB and srsUE (simulated radio); the call falls back to the default QoS flow. |
 | 5 | [MCX&nbsp;over&nbsp;a&nbsp;4G&nbsp;core&nbsp;(Open5GS)&nbsp;and&nbsp;the&nbsp;OAI&nbsp;LTE&nbsp;RAN&nbsp;(RFSIM)](end-to-end/05-mcx-over-4g-open5gs-oai/README.md) | Tutorial 3 on 4G: Open5GS EPC and OAI LTE RAN (simulated radio); MCPTT QoS over Rx, a QCI 65 bearer. |
 
-Each tutorial has its own folder in `end-to-end/` with its Docker Compose file, its `.env.example` and its setup. The
-reference captures of tutorials 3, 4 and 5 hold the 5G or 4G core's signalling (NGAP or S1AP, NAS, PFCP, N5 or Rx),
-the GTP-U user plane and the SIP, decrypted in Wireshark; each tutorial links its capture and explains it in its step "Look at the
-capture".
-
-**tshark on Ubuntu 26.04.** Ubuntu 26.04 confines `tshark` with AppArmor: it reads files under `/tmp`, not under
-your home directory, and answers `You don't have permission to read the file`. Wireshark is not affected, and `run.sh`
-runs tshark in its capture container. To run `tshark -r` on a capture in your home directory, copy the capture to
-`/tmp`, or allow your own files once:
-
-```bash
-echo 'owner @{HOME}/** r,' | sudo tee /etc/apparmor.d/local/tshark
-sudo apparmor_parser -r /etc/apparmor.d/tshark
-```
-
-**Troubleshooting: the debug log.** Off by default. In an end-to-end tutorial, set `MCX_LOG=debug` in its `.env` (the
-`.env.example` has the line) and run `docker compose up -d` again; in a unit test tutorial, run `MCX_LOG=debug ./run.sh`.
-Each OpenMCX program then writes one line per SIP message and per HTTP request, `docker logs openmcx-mcptt-server`
-for example:
-
-```
-2026/10/13 09:14:02 OpenMCX DEBUG [mcptt-server] SIP <- INVITE sip:mcptt@mcx.test | from <sip:alice@mcx.test> | to <sip:mcptt@mcx.test> | call-id 5f1c0e2a-... | cseq 2 INVITE | 172.31.19.10:5061 TLS | 2310 bytes
-2026/10/13 09:14:01 OpenMCX DEBUG [cms] HTTP GET /xcap-root/... | 200 | 3 ms | 172.31.19.30:51844
-```
-
-The lines never carry message bodies or tokens. The SIP core's TLS key file, which decrypts SIP over TLS in Wireshark,
-is a separate switch of the lab tools ([docs/USAGE.md](../docs/USAGE.md) section 7), for troubleshooting only, never in
-production.
-
-Each container's log is capped at 30 MB (three files of 10 MB, set in the compose files): `docker logs` shows the
-latest part, so a tutorial left running does not fill the disk.
+Each tutorial has its own folder in `end-to-end/` with its Docker Compose file and `.env.example`.
 
 ## Unit Test Tutorials
 
@@ -79,3 +49,19 @@ capture of every SIP, speech and floor control packet to follow in Wireshark, an
 
 Each has its own folder in `unit-tests/` with its Docker Compose file, `run.sh` and a reference capture. A title without a
 link is planned; it gets its link when the tutorial is published.
+
+## Good to know
+
+- **Captures**: tutorials 3, 4 and 5 link a reference capture (core signalling, GTP-U and SIP), explained in their step
+  "Look at the capture".
+- **Debug log**: set `MCX_LOG=debug` in the tutorial's `.env` (end to end) or run `MCX_LOG=debug ./run.sh` (unit
+  tests); each program then logs one line per SIP message and HTTP request (`docker logs <container>`), without bodies
+  or tokens.
+- **Log size**: each container's log is capped at 30 MB.
+- **tshark on Ubuntu 26.04** reads captures only under `/tmp` (AppArmor). Copy the capture there, or allow your home
+  directory once:
+
+  ```bash
+  echo 'owner @{HOME}/** r,' | sudo tee /etc/apparmor.d/local/tshark
+  sudo apparmor_parser -r /etc/apparmor.d/tshark
+  ```

@@ -20,7 +20,7 @@
     <text x="127" y="107" text-anchor="middle" font-size="12" fill="#4b5563">alice · 10.77.0.1 · caller</text>
     <rect x="32" y="130" width="190" height="56" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
     <text x="127" y="154" text-anchor="middle" font-weight="600">client-b · .102</text>
-    <text x="127" y="173" text-anchor="middle" font-size="12" fill="#4b5563">bob · 10.77.0.2 · holds desk.fa</text>
+    <text x="127" y="173" text-anchor="middle" font-size="12" fill="#4b5563">bob · 10.77.0.2 · holds front-desk.fa</text>
     <rect x="32" y="196" width="190" height="56" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
     <text x="127" y="220" text-anchor="middle" font-weight="600">client-c · .103</text>
     <text x="127" y="239" text-anchor="middle" font-size="12" fill="#4b5563">10.77.0.3 · busy, stranger</text>

@@ -43,25 +43,25 @@ Every OpenMCX image, `openmcx-kamailio` (Kamailio 6.1.4) and `openmcx-admin` inc
 | Repository | Release commit |
 |---|---|
 | openmcx-server | tag `v1.0.0` |
-| openmcx-client | `1a9d07a` |
-| openmcx-admin | `39e17e3` |
+| openmcx-client | tag `v1.0.0` (`9fcea43`) |
+| openmcx-admin | tag `v1.0.0` (`e8a3587`) |
 
 The digests of the published images; `docker pull openmcx/<image>@sha256:<digest>` gets exactly the release
 image, whatever happens to the tag later.
 
 | Image (tag `1.0.0`) | Digest |
 |---|---|
-| `openmcx-mcptt-server` | `sha256:f1fde750a16cf6c6409549f3d6bd3176cde74c514868c6c18e9848c7d18ab218` |
-| `openmcx-mcvideo-server` | `sha256:21312659550ee6baf811359282355b00fd9db71d2aea6e21f94d6001fc39cd39` |
-| `openmcx-mcdata-server` | `sha256:d44c0334fb6b9c09a9294dbd127cc52fa063386d2ea537466b4aff10ca0478cc` |
-| `openmcx-common` | `sha256:3a42589e05a5964f601160f7fe140362db89ad5b13100ab447deae41458ac35d` |
-| `openmcx-http-proxy` | `sha256:8d2af872f445daa82e36cb984f0c751712cddb77950b98f146849c2903dd4d78` |
-| `openmcx-user-db` | `sha256:93242dace1dda289a1323409fd4f29b1be7e2a85fb371c0678ce3bd708393875` |
-| `openmcx-setup` | `sha256:5a0c909720334d0e066207967148b977eff4e0c458e57de59ae8e69bcf585148` |
-| `openmcx-kamailio` | `sha256:41845afe7a900228f69f4372072796f1f9656e9fcfcdd1dc19a6fa9d64914b07` |
-| `openmcx-client` | `sha256:fa887a5729e79c9c6283036e2cd284de386ad23325c33ecbc7f41d420b0d6bdd` |
-| `openmcx-dispatcher` | `sha256:298b5f71549aeca94dd14691c19057bbb85e8b61140683e45f2c835a1871cefb` |
-| `openmcx-admin` | `sha256:2d6f1a0951a92af2c2e56bf51a088362d98e73f20a047728aa695693d564018f` |
+| `openmcx-mcptt-server` | `sha256:6befb2a07b940a8b62c4fc258f79f64c449c67ff83d643b4705291a4a1b2fcc9` |
+| `openmcx-mcvideo-server` | `sha256:abd46f73d437fb313d48ffebe5d4ca1528340c8d74d522eac3c22267df9ff0c6` |
+| `openmcx-mcdata-server` | `sha256:3fe6a11134072562d35e584af680b02131b2fb033f362361a0c4d862e1ddf51c` |
+| `openmcx-common` | `sha256:01741977c080a9708944f35ed315028deef09f84429143e4cd70bfe82055276c` |
+| `openmcx-http-proxy` | `sha256:4d66d3ff28fd119bc50977819362b5ee1d491c68c1fe4a5af55faa3e5c805840` |
+| `openmcx-user-db` | `sha256:086326ac7565c7bfcfc8f865eb37a024df2758a652964443787c1a3eb4d2e98b` |
+| `openmcx-setup` | `sha256:a63f4764bbb64c64bab735d3c261fcf1450425d285c9d005022061569e62f936` |
+| `openmcx-kamailio` | `sha256:f53a3e47bb5e52ffe208935fd96c9b0eb626ce5fc1a1713a84f01caf22091af0` |
+| `openmcx-client` | `sha256:a2a7518c8134ca1be46e2e584c363bd18a00f04c5e11433e73ce8bf12f57df61` |
+| `openmcx-dispatcher` | `sha256:9f25d7c3fd0df8aeac636e94d08fbf3545b8f70991da43986d0a9dc05d9fb87d` |
+| `openmcx-admin` | `sha256:4580fd66441814930e46288b27685e7cd9338f44f86add0caedf08a1f61989ac` |
 
 The third-party images of the 5G and 4G tutorials, built by OpenMCX, all modified except srsUE (their patches, notices
 and build scripts are in the tutorial folders):
@@ -100,15 +100,14 @@ tested against independent implementations.
 
 ## Verification of this release
 
-The release commits passed, on images built from them (lab runs that failed on an overloaded test host passed when
-run again one at a time):
+The release images and the commits they are built from passed:
 
 | Check | Result |
 |---|---|
-| Lab regression (`tools/regress.py --all`), debug TCP SIP | 123 of 123 scenarios and wire checks |
-| Lab regression, TLS SIP | 94 of 94 |
+| Lab regression (`tools/regress.py --all`), debug TCP SIP and TLS SIP | 123 of 123 and 94 of 94 on the candidate before the last functional changes; on the candidate with them (MCVideo reception control, functional aliases on split servers and in MCData), every failure was a client fault since fixed or a timing miss of an overloaded test host, and passed when run again alone |
+| On the release images | smoke and admin labs 4 of 4; the functional alias labs 16 of 16 (TCP) and 9 of 9 (TLS) |
 | Unit test tutorials, each new capture checked against its documented flow | 21 of 21 |
-| Tutorial 1 start-up | 17 of 17 services healthy |
+| Android app on two phones (Xiaomi, moto g67) | functional aliases and floor queueing 44 of 45, video 127 of 128 (the misses are speech and picture counts over Wi-Fi) |
 
 The Helm chart was checked with `helm lint`, `helm template` and kubeconform (Kubernetes 1.30, strict): 50 of 50
 manifests valid.

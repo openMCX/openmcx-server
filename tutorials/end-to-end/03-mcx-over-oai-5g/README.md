@@ -10,6 +10,10 @@ mission-critical voice: the core sets up a dedicated QoS flow (**5QI 65**) for t
 The phones reach the system on the Wi-Fi as in tutorial 1; their calls get no 5G QoS (they are not on 5G). The MCPTT
 server asks for QoS only for call legs of UEs in the 5G pool (12.1.1.0/24).
 
+The 5G addresses: the 5G core's functions (AMF, SMF, PCF, ...) and the gNB run on `192.168.71.128/26`; the data
+network (N6) is `192.168.72.128/26`, with the UPF's N6 address `192.168.72.134` and the OpenMCX servers; the UE gets
+its address from the pool `12.1.1.0/24` (the dispatcher's UE: `12.1.1.2`).
+
 ## What you need
 
 - **Tutorial 1 done once**: the phones have the app, and you know the steps in MCX Admin. Tutorial 1's system must be
@@ -55,8 +59,15 @@ sudo ./host-network.sh add
 ```
 
 The dispatcher reaches the system at `HOST_IP`, as the phones do. Two settings of this computer complete the path:
-replies to the UE pool go back through the UPF, and they leave from `HOST_IP`, so the UE sees one address both ways and
-the 5G core's packet filters match the speech. `sudo ./host-network.sh remove` undoes both (step 9).
+
+- **A route** to the UE pool `12.1.1.0/24` through the UPF's N6 address `192.168.72.134`: replies to the UE go back
+  through the UPF.
+- **SNAT** for packets from the N6 network `192.168.72.128/26` to the UE pool: they leave from `HOST_IP`, so the UE
+  sees one address both ways and the 5G core's packet filters (`permit out 17 from HOST_IP ...`) match the speech.
+
+The three addresses are fixed in `host-network.sh` and match the 5G core's configuration (`oai/mcx_core_config.yaml`,
+the networks in `docker-compose-5g-core.yaml`): change them only together. `sudo ./host-network.sh remove` undoes both
+(step 9).
 
 ## 4. Start the system
 
@@ -65,18 +76,24 @@ docker compose -f docker-compose-5g-mcx.yaml up -d
 docker compose -f docker-compose-5g-mcx.yaml ps --format 'table {{.Name}}\t{{.Status}}'
 ```
 
-After about two minutes every service is `(healthy)`: the 30 of the OpenMCX system, the 5G core, the gNB, the nr-UE,
+After about two minutes all 30 services are `(healthy)`: the OpenMCX system, the 5G core, the gNB, the nr-UE,
 `ue-route` and the dispatcher. `openmcx-ue-route` shows the UE's address:
 
 ```bash
-docker logs openmcx-ue-route        # UE address 12.1.1.2, 192.168.179.39 through oaitun_ue1
+docker logs openmcx-ue-route        # UE address 12.1.1.2, HOST_IP through oaitun_ue1
 ```
 
 ## 5. Users and phones
 
-As in tutorial 1, steps 4 to 6: in MCX Admin (`https://HOST_IP:8446/`) create `alice` and `bob` with the template
+As in tutorial 1, steps 4 to 6: in MCX Admin (`https://HOST_IP:8446/`; sign in as `admin` with the password from
+`config/ADMIN.txt`) create `alice` and `bob` with the template
 `phone-user` and the group `operations`, set their passwords and activate the phones. Also create `dispatcher` the same
 way, and set its password.
+
+- **Passwords**: use **Password link** on that user's own row; the box that opens says *Password link for alice*. The
+  page that sets the password does not name the user.
+- **Phones activated on another system** (tutorial 1, for example) keep that account: remove it in the app first, then
+  scan the new user's QR code, and check that the code is for that user.
 
 ## 6. Activate the dispatcher (over 5G)
 
@@ -100,16 +117,17 @@ and every call of the position go through the 5G user plane.
    docker logs openmcx-mcptt-server 2>&1 | grep pcf_app_session
    docker logs openmcx-oai-pcf 2>&1 | grep -o '"flowDescription":"[^"]*"' | sort -u
    docker logs openmcx-oai-pcf 2>&1 | grep -o '"5qi":65'
-   docker logs openmcx-oai-smf 2>&1 | grep -E 'PDU Session Modification|QoS Flow'
+   docker logs openmcx-oai-smf 2>&1 | grep -E 'PCF-initiated PDU|Add QoS flow|QoS Flow to Release'
    ```
 
    ```
    {"app_session_id":"1",...,"event":"pcf_app_session_created","status":201,"user_id":"sip:dispatcher.mcptt@mcx.test"}
-   "flowDescription":"permit out 17 from 192.168.179.39 4000 to 12.1.1.3 4400"      speech (RTP)
-   "flowDescription":"permit out 17 from 192.168.179.39 4001 to 12.1.1.3 4401"      RTCP
-   "flowDescription":"permit out 17 from 192.168.179.39 5000 to 12.1.1.3 5400"      floor control
+   "flowDescription":"permit out 17 from HOST_IP 4000 to 12.1.1.2 4400"              speech (RTP)
+   "flowDescription":"permit out 17 from HOST_IP 4001 to 12.1.1.2 4401"              RTCP
+   "flowDescription":"permit out 17 from HOST_IP 5000 to 12.1.1.2 5400"              floor control
    "5qi":65                                                                          GBR 41 kbit/s, may pre-empt
-   [smf_app] [info] PDU Session Modification PCF-initiated                          the new QoS flow (QFI 2)
+   [smf_app] [info] PCF-initiated PDU Session Modification: 1 QoS flow(s) to add     the new QoS flow
+   [smf_app] [info] Add QoS flow QFI 2 (PCC rule mcx-1-1, precedence 10): permit out 17 from HOST_IP 4000 to 12.1.1.2 4400 ...
    ```
 
    The QFI (QoS Flow Identifier) numbers a QoS flow within the UE's PDU session; the 5QI describes the flow's QoS
@@ -194,6 +212,9 @@ docker compose -f docker-compose-5g-mcx.yaml down -v     # stop and delete the d
 sudo ./host-network.sh remove
 rm -rf config                                            # with down -v: start over at step 2
 ```
+
+After `down`, `docker compose -f docker-compose-5g-mcx.yaml up -d` starts the same system again, users and phones
+included; then run `sudo ./host-network.sh add` again (step 3): its route goes with the network `down` removes.
 
 ## How it is put together
 

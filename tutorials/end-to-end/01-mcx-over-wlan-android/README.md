@@ -56,7 +56,7 @@ The setup container writes `./config`: a new certificate authority and the serve
 users and groups, the `phone-user` template, the configuration of every server and of MCX Admin, all set up for `HOST_IP`. It prints the console
 address and the administrator's password, which it also keeps in `config/ADMIN.txt`.
 
-It runs once. To start over with a new system, stop it with `down -v` and remove `./config` (step 8). The
+It runs once. To start over with a new system, stop it with `down -v` and remove `./config` (step 9). The
 certificates last 30 days.
 
 ## 3. Start the system
@@ -98,7 +98,8 @@ the image, command and ports of each container.
 Open `https://HOST_IP:8446/` in a browser on the computer (with your `HOST_IP`). The system has its own certificate
 authority, which the browser does not know: accept the warning, here and at `https://HOST_IP:8443` where you sign in.
 Sign in as `admin` with the password from `config/ADMIN.txt`. The console shows the system's users, groups and the
-live status of its services.
+live status of its services. The file keeps the first password: if you change the administrator's password (Password
+link on the `admin` row), note the new one yourself.
 
 The system starts with the administrator and three test users (operator, client-c, client-d) in the group `operations`.
 
@@ -174,7 +175,32 @@ ways (28 of 28 checks). Every video picture that arrives is identical to the one
 are lost on the air (in later runs that evening 20 to 50 % in one direction), since a picture spans several packets
 and the loss of one loses the picture.
 
-## 8. Stop or start over
+## 8. Take on a role (functional aliases)
+
+A functional alias is a role others can call instead of a person, such as the duty officer of a police station or the
+crew of a patrol car (TS 23.280 clause 8.1.5). A user activates the role when taking it on and deactivates it at the
+end; a call to the role reaches whoever holds it. A user may hold several roles at once, but a call presents one of
+them. The setup gives the phones' users two police roles:
+
+- `duty-officer`, for Alice and Bob, held by one of them at a time: the other can take it over;
+- `incident-commander`, for Alice only.
+
+1. On Alice's phone, open **Settings** (the gear). The section **Functional aliases** lists both roles: choose
+   **Activate** on each. **Show MCX profile** then lists them as active, next to Alice's MCPTT, MCData and MCVideo IDs.
+2. Choose **Present on calls** for **Duty officer**: Alice's calls now carry the role.
+3. Call Bob from Alice's phone. Bob's phone shows the role first, **Duty officer (Alice)**.
+4. On Bob's phone, open **Settings** and choose **Activate** for **Duty officer**. Alice holds it, so the role shows
+   **Held by another user**, with **Take over**. Bob takes it over: Alice's phone shows Duty officer as inactive, and
+   a call to the role now reaches Bob.
+
+| Alice: Settings, two active roles | Bob: a call from the duty officer |
+|---|---|
+| <img src="images/fa-profile-alice.png" width="270" alt="Alice's Settings: Show MCX profile lists her MCPTT, MCData and MCVideo IDs and the functional aliases Duty officer and Incident commander; the Functional aliases section shows both active, Duty officer presented on her calls"> | <img src="images/fa-call-bob.png" width="270" alt="Bob's phone in a private call: Duty officer (Alice), floor idle, PTT hold to talk"> |
+
+The roles are part of the system's configuration (`config/site.json`, `functional_aliases`); MCX Admin does not edit
+them. Unit Test Tutorial 11 shows the same procedures in a capture, against TS 24.379 clause 9A.
+
+## 9. Stop or start over
 
 ```bash
 docker compose -f docker-compose-basic-mcx.yaml stop          # stop, keep everything
@@ -197,7 +223,7 @@ built every image with:
 tools/build-images u2404                                                  # the server images (docs/BUILD.md)
 docker build -f tutorials/end-to-end/01-mcx-over-wlan-android/setup/Dockerfile -t openmcx-setup:u2404 .        # the setup image
 docker build -t openmcx-kamailio:u2404 -f docker/Dockerfile.kamailio .    # the SIP core
-docker build -t openmcx-admin:u2404 ../openmcx-admin                      # MCX Admin, from its repository
+docker build -t openmcx-admin:u2404 -f ../openmcx-admin/docker/Dockerfile ../openmcx-admin   # MCX Admin, from its repository
 ```
 
 ## When something does not work
@@ -207,7 +233,7 @@ docker build -t openmcx-admin:u2404 ../openmcx-admin                      # MCX 
   Wi-Fi address, and that the phones are on the same network without client isolation.
 - **Calls connect but there is no sound or video**: the UDP ports (4000-5199, 7000-7599) are blocked between the
   phones and the computer.
-- **Certificates expired** (after 30 days): start over (step 8), then activate the phones again.
+- **Certificates expired** (after 30 days): start over (step 9), then activate the phones again.
 
 ## How it is put together
 

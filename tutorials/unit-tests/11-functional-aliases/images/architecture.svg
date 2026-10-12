@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="380" viewBox="0 0 900 380" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
-  <title>Unit Test Tutorial 11: alice and bob share the dispatcher alias (one at a time), client-c and client-d the medic alias; calls to an alias, alias presentation and a broadcast ad hoc call; the OpenMCX system on one computer, on the lab network 172.31.11.0/24</title>
+  <title>Unit Test Tutorial 11: alice and bob share the duty-officer alias (one at a time), client-c and client-d the patrol-car-12 alias; calls to an alias, alias presentation and a broadcast ad hoc call; the OpenMCX system on one computer, on the lab network 172.31.11.0/24</title>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#5b6472"/>
@@ -17,16 +17,16 @@
   <g font-size="14" fill="#1f2937">
     <rect x="32" y="64" width="190" height="56" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
     <text x="127" y="88" text-anchor="middle" font-weight="600">client-a · .101</text>
-    <text x="127" y="107" text-anchor="middle" font-size="12" fill="#4b5563">alice · dispatcher, reserve</text>
+    <text x="127" y="107" text-anchor="middle" font-size="12" fill="#4b5563">alice · duty-officer, incident-commander</text>
     <rect x="32" y="130" width="190" height="56" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
     <text x="127" y="154" text-anchor="middle" font-weight="600">client-b · .102</text>
-    <text x="127" y="173" text-anchor="middle" font-size="12" fill="#4b5563">bob · dispatcher, may take over</text>
+    <text x="127" y="173" text-anchor="middle" font-size="12" fill="#4b5563">bob · duty-officer, may take over</text>
     <rect x="32" y="196" width="190" height="56" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
     <text x="127" y="220" text-anchor="middle" font-weight="600">client-c · .103</text>
-    <text x="127" y="239" text-anchor="middle" font-size="12" fill="#4b5563">client-c · medic</text>
+    <text x="127" y="239" text-anchor="middle" font-size="12" fill="#4b5563">client-c · patrol-car-12</text>
     <rect x="32" y="262" width="190" height="56" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
     <text x="127" y="286" text-anchor="middle" font-weight="600">client-d · .104</text>
-    <text x="127" y="305" text-anchor="middle" font-size="12" fill="#4b5563">client-d · medic</text>
+    <text x="127" y="305" text-anchor="middle" font-size="12" fill="#4b5563">client-d · patrol-car-12</text>
   </g>
   <text x="127" y="342" text-anchor="middle" font-size="12" fill="#4b5563">headless clients, run.sh</text>
 

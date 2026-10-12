@@ -578,6 +578,19 @@ func TestCMSServesFunctionalAliases(test *testing.T) {
 			test.Fatalf("%s accepted", name)
 		}
 	}
+	// In admin mode MCX Admin creates the users later: an alias may name an MCPTT ID the file does not hold yet, but
+	// still only an MC service ID.
+	admin := testConfig()
+	admin.AdminAccounts = &AdminAccountsConfig{URL: "https://mcxadmin:8443", LinkBaseURL: "https://idms:8443"}
+	admin.FunctionalAliases = []FunctionalAlias{{ID: "sip:duty-officer.alias@mcx.test",
+		Users: []string{"sip:later.mcptt@mcx.test"}, MaxSimultaneousActivations: 1}}
+	if err := admin.Validate(); err != nil {
+		test.Fatalf("admin mode refused an alias of a user MCX Admin creates later: %v", err)
+	}
+	admin.FunctionalAliases[0].Users = []string{"later"}
+	if err := admin.Validate(); err == nil {
+		test.Fatal("admin mode accepted an alias user that is not an MC service ID")
+	}
 }
 
 // ------------------------------------------------------------------------------

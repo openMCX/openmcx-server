@@ -474,9 +474,9 @@ def add_broadcast_hierarchy(fixture, source):
 
 # ------------------------------------------------------------------------------
 def add_functional_aliases(fixture, source):
-    """Functional aliases (TS 24.379 clause 9A) managed by the CMS: "dispatcher" for a
-    and b (one activation, take-over allowed, b may take over) and "medic" for
-    c and d (two activations); "reserve" has users but is never activated."""
+    """Functional aliases (TS 24.379 clause 9A) managed by the CMS: "duty-officer" for a
+    and b (one activation, take-over allowed, b may take over) and "patrol-car-12" for
+    c and d (two activations); "incident-commander" has users but is never activated."""
     site_file = fixture / 'generated/site.json'
     site = json.loads(site_file.read_text())
     ids = {
@@ -486,18 +486,18 @@ def add_functional_aliases(fixture, source):
     alias = lambda name: f"sip:{name}.alias@{source['domain']}"
     site['functional_aliases'] = [
         dict(
-            id=alias('dispatcher'),
+            id=alias('duty-officer'),
             users=[ids['client-a'], ids['client-b']],
             max_simultaneous_activations=1,
             allow_takeover=True,
         ),
-        dict(id=alias('medic'), users=[ids['client-c'], ids['client-d']], max_simultaneous_activations=2),
-        dict(id=alias('reserve'), users=[ids['client-a']], max_simultaneous_activations=1),
+        dict(id=alias('patrol-car-12'), users=[ids['client-c'], ids['client-d']], max_simultaneous_activations=2),
+        dict(id=alias('incident-commander'), users=[ids['client-a']], max_simultaneous_activations=1),
     ]
     for user in site['users']:
         if user['mcptt_id'] == ids['client-b']:
             user['functional_alias_takeover'] = True
-        # Both medic users must be reachable by private calls in this fixture.
+        # Both patrol-car-12 users must be reachable by private calls in this fixture.
         if user['mcptt_id'] == ids['client-d'] and 'private_call' in user:
             user['private_call']['callable'] = True
     site_file.write_text(json.dumps(site, indent=2) + '\n')
@@ -677,27 +677,27 @@ def add_mcvideo_policy(fixture):
     for user in site['users']:
         if 'mcvideo' in user:
             user['mcvideo']['regroup'] = user['mcptt_id'] == configs['client-a']['mcptt']['user_id']
-    # V8c (TS 24.281 clause 20; <mcvideo-user-list> of TS 24.484 clause 9.4.2): video-dispatcher
+    # V8c (TS 24.281 clause 20; <mcvideo-user-list> of TS 24.484 clause 9.4.2): control-room
     # for client-a and client-b, one activation, take-over allowed, and only client-b
-    # has <allow-takeover-functional-alias-other-user>; video-medic for client-b and
+    # has <allow-takeover-functional-alias-other-user>; patrol-car-12-camera for client-b and
     # client-c, two activations.
     # Only client-b has <allow-functional-alias-binding-with-group> (TS 24.281 clause 20.4.2.2.2 step 4a).
     alias = lambda name: f'sip:{name}.alias@{domain}'
     site['functional_aliases'] = [
         entry
         for entry in site.get('functional_aliases', [])
-        if entry['id'] not in (alias('video-dispatcher'), alias('video-medic'))
+        if entry['id'] not in (alias('control-room'), alias('patrol-car-12-camera'))
     ]
     site['functional_aliases'] += [
         dict(
-            id=alias('video-dispatcher'),
+            id=alias('control-room'),
             users=[],
             mcvideo_users=[video_ids['client-a'], video_ids['client-b']],
             max_simultaneous_activations=1,
             allow_takeover=True,
         ),
         dict(
-            id=alias('video-medic'),
+            id=alias('patrol-car-12-camera'),
             users=[],
             mcvideo_users=[video_ids['client-b'], video_ids['client-c']],
             max_simultaneous_activations=2,
@@ -775,9 +775,9 @@ def add_mcdata_policy(fixture, source):
     operations-preconf is preconfigured-use-only (168 for alerts, 167 for SDS);
     operations-regrouped is marked regrouped (148).
     Implicit affiliation (TS 24.282 clause 8.3.2.15): client-d to operations-alertonly.
-    Functional aliases (TS 24.282 clause 22): desk.fa (a, b; one activation; take-over allowed and
-    b holds the take-over permission), medic.fa (c, d; two activations) and
-    reserve.fa (a; never activated).
+    Functional aliases (TS 24.282 clause 22): front-desk.fa (a, b; one activation; take-over allowed and
+    b holds the take-over permission), patrol-car-12.fa (c, d; two activations) and
+    incident-commander.fa (a; never activated).
     Service limits: 1000 bytes over the signalling plane, 500 bytes per one-to-one SDS.
     Group operations: all four members, at most 400 bytes per SDS and 800 per request.
     Extra groups: operations-nosds (SDS and FD not allowed), operations-nosupport
@@ -911,9 +911,9 @@ def add_mcdata_policy(fixture, source):
     aliases = {
         f"sip:{name}.fa@{source['domain']}": dict(users, max_simultaneous_activations=limit, allow_takeover=takeover)
         for name, users, limit, takeover in [
-            ('desk', dict(mcdata_users=[ids['client-a'], ids['client-b']]), 1, True),
-            ('medic', dict(mcdata_users=[ids['client-c'], ids['client-d']]), 2, False),
-            ('reserve', dict(mcdata_users=[ids['client-a']]), 1, False),
+            ('front-desk', dict(mcdata_users=[ids['client-a'], ids['client-b']]), 1, True),
+            ('patrol-car-12', dict(mcdata_users=[ids['client-c'], ids['client-d']]), 2, False),
+            ('incident-commander', dict(mcdata_users=[ids['client-a']]), 1, False),
         ]
     }
     site['functional_aliases'] = [entry for entry in site.get('functional_aliases', []) if entry['id'] not in aliases]
@@ -1663,7 +1663,7 @@ def main():
     parser.add_argument(
         '--functional-alias',
         action='store_true',
-        help='Provision functional aliases dispatcher, medic and reserve (TS 24.379 9A)',
+        help='Provision functional aliases duty-officer, patrol-car-12 and incident-commander (TS 24.379 9A)',
     )
     parser.add_argument(
         '--group-management',

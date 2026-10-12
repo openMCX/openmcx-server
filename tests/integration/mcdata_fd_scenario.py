@@ -424,15 +424,15 @@ def main():
 
         # FD-05 FD to a functional alias: 300 Multiple Choices, then the selected user
         # (client-c has no one-to-one target list, so the alias is an allowed target).
-        medic = f'sip:medic.fa@{domain}'
-        command('client-d', f'mcdata-fa activate {medic}')
+        patrol_car = f'sip:patrol-car-12.fa@{domain}'
+        command('client-d', f'mcdata-fa activate {patrol_car}')
         wait(
             'FD-05 client-d holds the functional alias',
-            lambda: medic in (status('client-d').get('mcdata_functional_aliases') or []),
+            lambda: patrol_car in (status('client-d').get('mcdata_functional_aliases') or []),
         )
         alias_file = f'alias-{secrets.token_hex(3)}.txt'
         digest = make('client-c', alias_file, 40)
-        command('client-c', f'fd-send completed fa={medic} /tmp/{alias_file}')
+        command('client-c', f'fd-send completed fa={patrol_car} /tmp/{alias_file}')
         wait(
             'FD-05 the alias is resolved with 300 and the file reaches the selected user',
             lambda: (
@@ -447,7 +447,7 @@ def main():
             'FD-05 the file delivered through the alias is identical',
             shell('client-d', 'sha256sum /artifacts/client-d/downloads/' + alias_file).split()[0] == digest,
         )
-        command('client-d', f'mcdata-fa deactivate {medic}')
+        command('client-d', f'mcdata-fa deactivate {patrol_car}')
 
         # FD-06 release of a distribution (TS 24.282 clause 6.2.2.4, clause 10.2.4.4.2 step 17): the originator
         # cancels, the file is deleted and the recipients are told.

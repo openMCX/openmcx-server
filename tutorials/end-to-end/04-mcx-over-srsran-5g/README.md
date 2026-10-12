@@ -66,7 +66,8 @@ docker logs openmcx-ue-route        # UE address 12.1.1.2, 192.168.179.39 throug
 
 ## 4. Users and phones
 
-As in tutorial 3, step 5: in MCX Admin (`https://HOST_IP:8446/`) create `alice` and `bob` with the template
+As in tutorial 3, step 5: in MCX Admin (`https://HOST_IP:8446/`; sign in as `admin` with the password from tutorial
+3's `config/ADMIN.txt`) create `alice` and `bob` with the template
 `phone-user` and the group `operations`, set their passwords and activate the phones. Also create `dispatcher` the same
 way, and set its password. (With tutorial 3's configuration and data kept, they are already there.)
 

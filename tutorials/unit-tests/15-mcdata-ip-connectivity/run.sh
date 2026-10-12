@@ -17,7 +17,7 @@ ALICE=sip:alice.mcdata@mcx.test
 BOB=sip:bob.mcdata@mcx.test
 CLIENT_C=sip:client-c.mcdata@mcx.test
 CLIENT_D=sip:client-d.mcdata@mcx.test
-DESK=sip:desk.fa@mcx.test
+FRONT_DESK=sip:front-desk.fa@mcx.test
 
 # Send a command to a client's running mcx-client (it is the same program with --command).
 mcx() {
@@ -143,17 +143,17 @@ mcx client-a ipcon fa=sip:nobody.fa@mcx.test
 wait_for 'an alias nobody has activated: 403, warning 145' "ipcon('client-a').get('status') == 403 and '\"145 ' in ipcon('client-a').get('warning', '')"
 wait_for 'no tunnel for a refused request' "not tunnels()"
 
-step '9. A session to a functional alias: client-b takes desk.fa, client-a calls the alias'
-mcx client-b mcdata-fa activate "$DESK"
-wait_for 'client-b holds desk.fa' "(st('mcdata-server').get('functional_aliases') or {}).get('$DESK') == ['$BOB']"
-mcx client-a ipcon fa="$DESK"
-wait_for 'the session reaches client-b, which learns the alias' "ipcon('client-a').get('state') == 'open' and ipcon('client-a').get('selected') == '$BOB' and ipcon('client-b').get('state') == 'open' and ipcon('client-b').get('called_alias') == '$DESK'"
+step '9. A session to a functional alias: client-b takes front-desk.fa, client-a calls the alias'
+mcx client-b mcdata-fa activate "$FRONT_DESK"
+wait_for 'client-b holds front-desk.fa' "(st('mcdata-server').get('functional_aliases') or {}).get('$FRONT_DESK') == ['$BOB']"
+mcx client-a ipcon fa="$FRONT_DESK"
+wait_for 'the session reaches client-b, which learns the alias' "ipcon('client-a').get('state') == 'open' and ipcon('client-a').get('selected') == '$BOB' and ipcon('client-b').get('state') == 'open' and ipcon('client-b').get('called_alias') == '$FRONT_DESK'"
 remember answered "counts('client-b').get('echo_answered', 0)"
 mcx client-a ipcon-ping 10.77.0.2 2
 wait_for 'IP traffic flows on it' "counts('client-b').get('echo_answered', 0) >= saved['answered'] + 2"
 mcx client-b ipcon close
 wait_for 'released' "ipcon('client-a').get('state') == 'released' and not tunnels()"
-mcx client-b mcdata-fa deactivate "$DESK"
+mcx client-b mcdata-fa deactivate "$FRONT_DESK"
 
 step "10. The capture: $OUT"
 sleep 1

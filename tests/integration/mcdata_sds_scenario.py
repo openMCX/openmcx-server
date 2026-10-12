@@ -670,7 +670,7 @@ def main():
         # 22.2.2.3.3): the PUBLISH is answered 200 past the participating checks (clause 22.2.2.2.3 step 8), and the
         # status NOTIFY with its p-id-fa gives each alias's outcome (clause 22.2.2.2.5): activated, take-over-possible
         # (clause 3.1) or left out (refused).
-        desk, medic, reserve = (f'sip:{name}.fa@{domain}' for name in ('desk', 'medic', 'reserve'))
+        front_desk, patrol_car, incident_commander = (f'sip:{name}.fa@{domain}' for name in ('front-desk', 'patrol-car-12', 'incident-commander'))
 
         # ------------------------------------------------------------------------------
         # The functional aliases the server holds, with the users that activated them.
@@ -691,40 +691,40 @@ def main():
                 ),
             )
 
-        fa('client-a', f'mcdata-fa activate {desk}', 200, 'activated')
+        fa('client-a', f'mcdata-fa activate {front_desk}', 200, 'activated')
         check(
             'FA-01 the client subscribed to its functional alias status first (200)',
             status('client-a').get('mcdata_functional_alias_subscription_result') == 200,
         )
-        wait('FA-01 client-a holds desk', lambda: aliases().get(desk) == [ids['client-a']])
-        fa('client-b', f'mcdata-fa activate {desk}', 200, 'take-over-possible')
+        wait('FA-01 client-a holds front-desk', lambda: aliases().get(front_desk) == [ids['client-a']])
+        fa('client-b', f'mcdata-fa activate {front_desk}', 200, 'take-over-possible')
         check(
             'FA-01 beyond the activation limit a user allowed to take over is offered it',
-            aliases().get(desk) == [ids['client-a']],
+            aliases().get(front_desk) == [ids['client-a']],
         )
-        fa('client-b', f'mcdata-fa takeover {desk}', 200, 'activated')
+        fa('client-b', f'mcdata-fa takeover {front_desk}', 200, 'activated')
         wait(
             'FA-01 take-over by an authorised user replaces the holder',
-            lambda: aliases().get(desk) == [ids['client-b']],
+            lambda: aliases().get(front_desk) == [ids['client-b']],
         )
         wait(
-            'FA-01 the previous holder is notified that it no longer holds desk',
-            lambda: desk not in status('client-a').get('mcdata_functional_aliases', [desk]),
+            'FA-01 the previous holder is notified that it no longer holds front-desk',
+            lambda: front_desk not in status('client-a').get('mcdata_functional_aliases', [front_desk]),
         )
-        fa('client-c', f'mcdata-fa activate {desk}', 200, 'refused')
-        check('FA-01 a user outside <mcdata-user-list> cannot activate', aliases().get(desk) == [ids['client-b']])
+        fa('client-c', f'mcdata-fa activate {front_desk}', 200, 'refused')
+        check('FA-01 a user outside <mcdata-user-list> cannot activate', aliases().get(front_desk) == [ids['client-b']])
         fa('client-c', f'mcdata-fa activate sip:nobody.fa@{domain}', 200, 'refused')
-        fa('client-c', f'mcdata-fa activate {medic}', 200, 'activated')
-        fa('client-d', f'mcdata-fa activate {medic}', 200, 'activated')
+        fa('client-c', f'mcdata-fa activate {patrol_car}', 200, 'activated')
+        fa('client-d', f'mcdata-fa activate {patrol_car}', 200, 'activated')
         wait(
-            'FA-01 two users hold medic within its limit of two',
-            lambda: set(aliases().get(medic, [])) == {ids['client-c'], ids['client-d']},
+            'FA-01 two users hold patrol-car-12 within its limit of two',
+            lambda: set(aliases().get(patrol_car, [])) == {ids['client-c'], ids['client-d']},
         )
 
         # FA-02 SDS to a functional alias: 300 Multiple Choices, then a new request to the selected user.
         text = unique('to-medic')
         before = [record['message_id'] for record in status('client-c').get('mcdata_sent') or []]
-        command('client-c', f'sds-fa {medic} {text}')
+        command('client-c', f'sds-fa {patrol_car} {text}')
         wait(
             'FA-02 the SDS to the alias is redirected with 300',
             lambda: any(
@@ -736,14 +736,14 @@ def main():
             'FA-02 client-d receives it with <called-functional-alias-URI>',
             lambda: (
                 inbox('client-d', text)
-                and inbox('client-d', text)[0]['called_functional_alias'] == medic
+                and inbox('client-d', text)[0]['called_functional_alias'] == patrol_car
                 and inbox('client-d', text)[0]['from'] == ids['client-c']
             ),
         )
         wait(
             'FA-02 the follow-up request was accepted with 202',
             lambda: any(
-                record['status'] == 202 and record['called_alias'] == medic
+                record['status'] == 202 and record['called_alias'] == patrol_car
                 for record in status('client-c').get('mcdata_sent') or []
             ),
         )
@@ -751,28 +751,28 @@ def main():
         # (TS 24.282 clause 11.1 step 1A).
         send(
             'client-c',
-            f'sds-fa {reserve} {unique("r")}',
+            f'sds-fa {incident_commander} {unique("r")}',
             403,
             '145',
             'FA-03 alias with no activated user rejected with 145',
         )
         send(
             'client-a',
-            f'sds-fa {desk} {unique("a")}',
+            f'sds-fa {front_desk} {unique("a")}',
             403,
             '229',
             'FA-03 alias outside the sender one-to-one list rejected with 229',
         )
 
         # FA-04 presentation of the sender's alias only while it is active (TS 24.282 clause 9.2.2.3.1 step 12A).
-        command('client-b', f'mcdata-fa use {desk}')
+        command('client-b', f'mcdata-fa use {front_desk}')
         text = unique('from-desk')
-        send('client-b', f'sds {ids["client-a"]} {text}', label='FA-04 SDS from the desk holder accepted')
+        send('client-b', f'sds {ids["client-a"]} {text}', label='FA-04 SDS from the front-desk holder accepted')
         wait(
             'FA-04 the recipient sees the active functional alias',
-            lambda: inbox('client-a', text) and inbox('client-a', text)[0]['functional_alias'] == desk,
+            lambda: inbox('client-a', text) and inbox('client-a', text)[0]['functional_alias'] == front_desk,
         )
-        command('client-a', f'mcdata-fa use {desk}')  # client-a lost desk to client-b (status NOTIFY)
+        command('client-a', f'mcdata-fa use {front_desk}')  # client-a lost front-desk to client-b (status NOTIFY)
         text = unique('stale-desk')
         send('client-a', f'sds {ids["client-b"]} {text}', label='FA-04 SDS from the former holder accepted')
         wait(
@@ -782,10 +782,10 @@ def main():
 
         # FA-05 an ad hoc participant list naming an alias (TS 24.282 clause 9.2.2.4.2 step 6A b-ii).
         text = unique('adhoc-medic')
-        send('client-a', f'sds-adhoc {medic} {text}', label='FA-05 ad hoc group SDS to an alias accepted')
+        send('client-a', f'sds-adhoc {patrol_car} {text}', label='FA-05 ad hoc group SDS to an alias accepted')
         wait(
             'FA-05 an activated user receives it naming the alias',
-            lambda: inbox('client-c', text) and inbox('client-c', text)[0]['called_functional_alias'] == medic,
+            lambda: inbox('client-c', text) and inbox('client-c', text)[0]['called_functional_alias'] == patrol_car,
         )
         check(
             'FA-05 an activated user without ad hoc participation permission is skipped',
@@ -793,15 +793,15 @@ def main():
         )
         send(
             'client-a',
-            f'sds-adhoc {reserve} {unique("r")}',
+            f'sds-adhoc {incident_commander} {unique("r")}',
             403,
             '145',
             'FA-05 ad hoc alias with no activated user rejected with 145',
         )
 
         # FA-06 deactivation: an empty set is Expires 0.
-        fa('client-c', f'mcdata-fa deactivate {medic}', 200, 'deactivated')
-        wait('FA-06 client-c no longer holds medic', lambda: aliases().get(medic) == [ids['client-d']])
+        fa('client-c', f'mcdata-fa deactivate {patrol_car}', 200, 'deactivated')
+        wait('FA-06 client-c no longer holds patrol-car-12', lambda: aliases().get(patrol_car) == [ids['client-d']])
 
         # ------------------------------------------------------------------------------
         # One of the MCData server's counters.

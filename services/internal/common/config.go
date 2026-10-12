@@ -669,18 +669,23 @@ func (cfg Config) Validate() error {
 			return fmt.Errorf("invalid functional alias %q", fa.ID)
 		}
 		aliases[fa.ID] = true
+		// In admin mode MCX Admin creates the users after this file is written, so an alias may name users this file
+		// does not hold yet (an MC service ID all the same); in file mode every alias user is one of its users.
+		known := func(ids map[string]bool, id string) bool {
+			return ids[id] || (cfg.AdminAccounts != nil && strings.HasPrefix(id, "sip:"))
+		}
 		for _, id := range fa.Users {
-			if !mcpttIDs[id] {
+			if !known(mcpttIDs, id) {
 				return fmt.Errorf("functional alias %q has unknown user %q", fa.ID, id)
 			}
 		}
 		for _, id := range fa.MCDataUsers {
-			if !mcdataIDs[id] {
+			if !known(mcdataIDs, id) {
 				return fmt.Errorf("functional alias %q has unknown MCData user %q", fa.ID, id)
 			}
 		}
 		for _, id := range fa.MCVideoUsers {
-			if !mcvideoIDs[id] {
+			if !known(mcvideoIDs, id) {
 				return fmt.Errorf("functional alias %q has unknown MCVideo user %q", fa.ID, id)
 			}
 		}

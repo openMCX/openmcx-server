@@ -84,7 +84,8 @@ ue-route dispatcher`.
 
 ## 5. Users and phones, 6. Activate the dispatcher (over 4G)
 
-As in tutorial 3, steps 5 and 6: in MCX Admin (`https://HOST_IP:8446/`) create `alice`, `bob` and `dispatcher`,
+As in tutorial 3, steps 5 and 6: in MCX Admin (`https://HOST_IP:8446/`; sign in as `admin` with the password from
+`config/ADMIN.txt`) create `alice`, `bob` and `dispatcher`,
 activate the phones, and activate the dispatcher position at **http://localhost:8080/**. The position's activation,
 sign-in, SIP registration and calls go through the LTE user plane.
 

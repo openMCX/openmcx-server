@@ -63,8 +63,8 @@ tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =mc
 ```
 
 The lab (`--mcvideo`) defines:
-- `video-dispatcher` for client-a and client-b: one activation, take-over allowed; only client-b has the take-over right.
-- `video-medic` for client-b and client-c: two activations.
+- `control-room` for client-a and client-b: one activation, take-over allowed; only client-b has the take-over right.
+- `patrol-car-12-camera` for client-b and client-c: two activations.
 - Only client-b may bind aliases to groups.
 
 The scenario makes 80 checks over debug TCP; over TLS the wire checks (MV-FA-12) are skipped. The MCPTT `functional-alias` lab runs on the same shared core and codec. The native unit tests and the Go CMS tests cover the MCVideo PIDF namespace and the refused mixed namespace, the per-user and per-alias status bodies, the `contentType` alias URIs with a bare URI still accepted, warnings 176 to 178, `mcvideo_users`, and an alias equal to an MCVideo ID refused.
@@ -73,17 +73,17 @@ The scenario makes 80 checks over debug TCP; over TLS the wire checks (MV-FA-12)
 
 | ID | What is checked |
 |---|---|
-| MV-FA-01 | client-c's status subscription gets the per-user status, with no alias. client-b's subscription to video-dispatcher gets the per-alias status, with no user. client-d, outside its user list, is refused with 403 |
-| MV-FA-02 | client-a activates video-dispatcher with 200. The server holds it for client-a, and client-b is notified that client-a holds it |
-| MV-FA-03 | client-c, not in the user list, asks for video-dispatcher: 200, and its status NOTIFY leaves the alias out. client-b's plain activation beyond the limit: 200, and its NOTIFY offers the alias as `take-over-possible`. client-a keeps the alias |
-| MV-FA-04 | client-b takes video-dispatcher over with `<take-over>`, the alias is `activated` for it, and its subscription shows it as the user. client-a, without the take-over right, sends no `<take-over>` (200) and does not get the alias back |
-| MV-FA-05 | client-a, not following its status, still presents video-dispatcher in a private call to client-b. The server leaves the alias out, and client-b is shown none |
-| MV-FA-06 | client-b presents video-dispatcher in a group call. client-a and client-c are called by it, and the conference event lists it for client-b |
-| MV-FA-07 | client-b binds video-dispatcher to the group with 200, and again with 200. Binding video-medic to the same group is refused with 403 `178`, and client-c's unbinding with 403 `176`. In a group call where client-b presents no alias, the members are shown no calling alias, and the conference event lists client-b with its bound alias. The unbinding is accepted with 200 |
-| MV-FA-08 | client-a subscribes to its own status and learns it no longer holds video-dispatcher |
-| MV-FA-09 | client-c activates video-medic, and its NOTIFY lists it with the `<p-id-fa>` of its PUBLISH. client-a's call to video-medic is answered with 300 naming client-c. client-a then calls client-c, which is told it was called by video-medic |
-| MV-FA-10 | client-c deactivates video-medic with 200, and its NOTIFY lists no alias. A call to the alias is then refused with 403 `145` |
-| MV-FA-11 | client-b ends its subscription to video-dispatcher. A fetch (Expires 0) then returns client-b and leaves no subscription |
+| MV-FA-01 | client-c's status subscription gets the per-user status, with no alias. client-b's subscription to control-room gets the per-alias status, with no user. client-d, outside its user list, is refused with 403 |
+| MV-FA-02 | client-a activates control-room with 200. The server holds it for client-a, and client-b is notified that client-a holds it |
+| MV-FA-03 | client-c, not in the user list, asks for control-room: 200, and its status NOTIFY leaves the alias out. client-b's plain activation beyond the limit: 200, and its NOTIFY offers the alias as `take-over-possible`. client-a keeps the alias |
+| MV-FA-04 | client-b takes control-room over with `<take-over>`, the alias is `activated` for it, and its subscription shows it as the user. client-a, without the take-over right, sends no `<take-over>` (200) and does not get the alias back |
+| MV-FA-05 | client-a, not following its status, still presents control-room in a private call to client-b. The server leaves the alias out, and client-b is shown none |
+| MV-FA-06 | client-b presents control-room in a group call. client-a and client-c are called by it, and the conference event lists it for client-b |
+| MV-FA-07 | client-b binds control-room to the group with 200, and again with 200. Binding patrol-car-12-camera to the same group is refused with 403 `178`, and client-c's unbinding with 403 `176`. In a group call where client-b presents no alias, the members are shown no calling alias, and the conference event lists client-b with its bound alias. The unbinding is accepted with 200 |
+| MV-FA-08 | client-a subscribes to its own status and learns it no longer holds control-room |
+| MV-FA-09 | client-c activates patrol-car-12-camera, and its NOTIFY lists it with the `<p-id-fa>` of its PUBLISH. client-a's call to patrol-car-12-camera is answered with 300 naming client-c. client-a then calls client-c, which is told it was called by patrol-car-12-camera |
+| MV-FA-10 | client-c deactivates patrol-car-12-camera with 200, and its NOTIFY lists no alias. A call to the alias is then refused with 403 `145` |
+| MV-FA-11 | client-b ends its subscription to control-room. A fetch (Expires 0) then returns client-b and leaves no subscription |
 | MV-FA-12 | Captured at `mcvideo-server` over debug TCP. The alias PUBLISHes use `mcvideoPresInfoFA`, and no MCPTT alias namespace; an activation has Expires 4294967295 and a deactivation Expires 0, and the take-over carries `<take-over>`. The SUBSCRIBEs carry both `<req-type>` values, and the NOTIFYs have `status="activated"` and the `user` attribute. The binding MESSAGEs carry `fa-group-binding-req`, `<binding-ind>`, `<binding-fa-uri>` or `<unbinding-fa-uri>`, and the group. The call to the alias has `<call-to-functional-alias-ind>`; the call after the 300 has `<called-functional-alias-URI>` in `<mcvideoURI>` without the indication; and the 300 names client-c |
 
 ## Coverage gaps
