@@ -1,6 +1,6 @@
 # Unit Test Tutorial 6: MCPTT broadcast group calls: receive only, late entry and override
 
-One computer runs the openMCX system from the published images, with four headless clients in place of phones.
+One computer runs the OpenMCX system from the published images, with four headless clients in place of phones.
 A script takes them through on-network broadcast group calls (TS 24.379 clause 4.12): group calls in which only the
 initiator talks, the others only listen, and the call ends with the initiator's transmission.
 
@@ -14,7 +14,7 @@ initiator talks, the others only listen, and the call ends with the initiator's 
 A capture of the lab network records every SIP message and every speech and floor control packet, so you can follow
 each step in Wireshark.
 
-The tutorial is built on a scenario of the openMCX regression tests, `tests/integration/broadcast_call_scenario.py`,
+The tutorial is built on a scenario of the OpenMCX regression tests, `tests/integration/broadcast_call_scenario.py`,
 and uses the same images. [Unit Test Tutorial 1](../01-group-call-basics/README.md) explains the normal group call
 it differs from.
 
@@ -23,7 +23,7 @@ it differs from.
 > floor control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common services
 > (sign-in, configuration, keys) stays encrypted and is not captured.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 6: client-a broadcasts to client-b, client-c and client-d, who only receive; client-d may override; the openMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.6.0/24"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 6: client-a broadcasts to client-b, client-c and client-d, who only receive; client-d may override; the OpenMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.6.0/24"></p>
 
 ## Broadcast and normal group call
 
@@ -39,7 +39,7 @@ it differs from.
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
-- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub**
+- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt OpenMCX images from Docker Hub**
   (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer.
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
 
@@ -120,8 +120,8 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 
 ## 4. Look at the capture
 
-`run.sh` copies the capture to `captures/06-broadcast-group-call-run.pcap.gz`. The folder also holds a reference
-run, `captures/06-broadcast-group-call-full.pcap.gz` (209 KB, 6 523 frames, most of them speech): the frame numbers
+The script `run.sh` copies the capture of your run to `captures/06-broadcast-group-call-run.pcap.gz`. The folder also holds a reference
+run, [`captures/06-broadcast-group-call-full.pcap.gz`](captures/06-broadcast-group-call-full.pcap.gz) (209 KB, 6 523 frames, most of them speech): the frame numbers
 below and in the call flow are those of the reference. Wireshark opens the compressed file directly (or `gunzip` it
 first).
 
@@ -197,7 +197,7 @@ The compose file names every image in full, all from Docker Hub:
 | `docker.io/openmcx/openmcx-setup:1.0.0` | The setup: the lab's generator |
 | `docker.io/openmcx/openmcx-mcptt-server:1.0.0`, `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCPTT and MCData servers |
 | `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services |
-| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`OpenMCX/openmcx-client` repository) |
 | `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The SIP core's database |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |

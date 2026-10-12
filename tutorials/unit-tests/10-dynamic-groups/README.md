@@ -1,6 +1,6 @@
 # Unit Test Tutorial 10: MCPTT regroups: group, user and GMS-formed temporary groups
 
-One computer runs the openMCX system from the published images, with four headless clients in place of phones.
+One computer runs the OpenMCX system from the published images, with four headless clients in place of phones.
 client-a and client-b are in the group `operations-north`, client-c and client-d in `operations-south`. A script
 combines them for a while in three ways, and makes a call each time:
 
@@ -13,7 +13,7 @@ While a group is combined, a call on it is refused; once the combination is remo
 again. A capture of the lab network records every SIP message and every speech and floor control packet, so you can
 follow each step in Wireshark.
 
-The tutorial is built on two scenarios of the openMCX regression tests, `tests/integration/regroup_scenario.py` and
+The tutorial is built on two scenarios of the OpenMCX regression tests, `tests/integration/regroup_scenario.py` and
 `tests/integration/temporary_group_scenario.py`, and uses the same images. [Unit Test Tutorial 1](../01-group-call-basics/README.md)
 explains a prearranged group call, which is what a call on a regroup is.
 
@@ -23,7 +23,7 @@ explains a prearranged group call, which is what a call on a regroup is.
 > (sign-in, configuration, keys, and here the XCAP requests to the GMS that form a temporary group) stays encrypted and
 > is not captured.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 10: client-a and client-b in operations-north, client-c and client-d in operations-south, combined by a group regroup, a user regroup and a temporary group; the openMCX system (SIP core, MCPTT server, MCData server, common services with the GMS) on one computer, on the lab network 172.31.10.0/24"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 10: client-a and client-b in operations-north, client-c and client-d in operations-south, combined by a group regroup, a user regroup and a temporary group; the OpenMCX system (SIP core, MCPTT server, MCData server, common services with the GMS) on one computer, on the lab network 172.31.10.0/24"></p>
 
 ## Three ways to combine
 
@@ -32,7 +32,7 @@ explains a prearranged group call, which is what a call on a regroup is.
 | Asked for with | a SIP MESSAGE to the MCPTT service, `<regroup-action>create</regroup-action>` and `<groups-for-regroup>` (TS 24.379 clause 16.2.1.1) | the same with `<users-for-regroup>` (clause 16.3.1.1) | an XCAP `POST` to the GMS (TS 24.481 clause 6.3.14), over HTTPS |
 | Configuration | the preconfigured group named in the request | the preconfigured group named in the request | the temporary group's own document |
 | Members | everyone in the constituent groups | the named users only | everyone in the constituent groups |
-| Told by | a SIP MESSAGE from the server to each affiliated member | a SIP MESSAGE to each named user | the same regroup MESSAGE (an openMCX choice, see step 7) |
+| Told by | a SIP MESSAGE from the server to each affiliated member | a SIP MESSAGE to each named user | the same regroup MESSAGE (an OpenMCX choice, see step 7) |
 | The constituent groups | regrouped: no call of their own | not regrouped | regrouped: no call of their own |
 | Removed by | a SIP MESSAGE, `<regroup-action>remove</regroup-action>` (clause 16.2.1.2) | the same | an XCAP `DELETE` (TS 24.481 clause 6.3.15) |
 
@@ -40,7 +40,7 @@ explains a prearranged group call, which is what a call on a regroup is.
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
-- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub**
+- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt OpenMCX images from Docker Hub**
   (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer.
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
 
@@ -118,8 +118,8 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 
 ## 4. Look at the capture
 
-`run.sh` copies the capture to `captures/10-dynamic-groups-run.pcap.gz`. The folder also holds a reference run,
-`captures/10-dynamic-groups-full.pcap.gz` (172 KB, 2 922 frames): the frame numbers below and in the call flow are
+The script `run.sh` copies the capture of your run to `captures/10-dynamic-groups-run.pcap.gz`. The folder also holds a reference run,
+[`captures/10-dynamic-groups-full.pcap.gz`](captures/10-dynamic-groups-full.pcap.gz) (172 KB, 2 922 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.10.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -180,7 +180,7 @@ What to look for, in the reference run:
   client-c (2662) and client-d (2668). After alice's teardown the server releases the call (BYE 2819) and sends the
   removal notices (2844 to 2859).
 
-  > **Note.** Telling the members of a temporary group with the regroup notice is an openMCX choice: TS 24.481 lets a
+  > **Note.** Telling the members of a temporary group with the regroup notice is an OpenMCX choice: TS 24.481 lets a
   > client learn of it from its group documents, and does not define a SIP notice. Following that choice, the server
   > also sends the copy of the notice after a refused call (2553), which TS 24.379 clause 10.1.1.4.1 step 5 b) iii)
   > asks for only when the group is regrouped "based on a preconfigured group". No SIP request formed the temporary
@@ -206,7 +206,7 @@ The compose file names every image in full, all from Docker Hub:
 | `docker.io/openmcx/openmcx-setup:1.0.0` | The setup: the lab's generator |
 | `docker.io/openmcx/openmcx-mcptt-server:1.0.0`, `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCPTT and MCData servers |
 | `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services, among them the GMS |
-| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`OpenMCX/openmcx-client` repository) |
 | `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The SIP core's database |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |

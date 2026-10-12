@@ -65,7 +65,7 @@ func TestGroupDocumentRules(test *testing.T) {
 			test.Errorf("%s missing in %s", want, doc)
 		}
 	}
-	// A third-party document: the rules alone (no openMCX configuration) give the same rights.
+	// A third-party document: the rules alone (no OpenMCX configuration) give the same rights.
 	third := strings.Split(doc, "<configuration")[0] + "</list-service></group>"
 	if !strings.Contains(doc, "<configuration") {
 		third = doc

@@ -1,17 +1,17 @@
-openMCX modifications of the OpenAirInterface eNB and LTE UE
+OpenMCX modifications of the OpenAirInterface eNB and LTE UE
 ============================================================
 
 The images openmcx/oai-enb:2026.w39-mcx and openmcx/oai-lte-ue:2026.w39-mcx built from this directory contain the
 OpenAirInterface eNB (lte-softmodem) and LTE UE (lte-uesoftmodem; OpenAirInterface Software Alliance,
-https://gitlab.eurecom.fr/oai/openairinterface5g), tag 2026.w39, commit 29d5fa7d38bb1ee8935ef7ae30a396d53772ea4f,
-modified by openMCX for tutorial 5 (MCX over LTE).
+https://github.com/OPENAIRINTERFACE/openairinterface5g), tag 2026.w39, commit 29d5fa7d38bb1ee8935ef7ae30a396d53772ea4f,
+modified by OpenMCX for tutorial 5 (MCX over LTE).
 
 License
 -------
 OpenAirInterface is distributed under the Collaborative Standards Software License v1.0 (CSSL), included as LICENSE
 in this directory and in the images (/usr/share/doc/openmcx-oai/LICENSE), and at https://openairinterface.org/oai-cssl/.
-The modifications (the patches in this directory) are distributed under the same license. The rest of the
-openmcx-server repository is under its own license (the repository's LICENSE); this directory is not.
+The modifications (the patches in this directory) are distributed under the same license. OpenMCX itself is
+under its own license; these modifications are not.
 
 Patents (CSSL section 3): the patent license granted with the software covers study, testing and research purposes
 only (section 3.1). Any other use, for example commercial deployment, requires a license of the Essential Patents on
@@ -19,7 +19,7 @@ FRAND terms from the Contributors and/or the Licensor (section 3.2).
 
 Modifications (CSSL section 5.2)
 --------------------------------
-Each modified file carries the notice "Modified by openMCX, 2026 (MCX over LTE)". The changes, as patches against
+Each modified file carries the notice "Modified by OpenMCX, <date of the change> (MCX over LTE)". The changes, as patches against
 commit 29d5fa7:
 
   patches/openairinterface5g/0001   The UE accepts every type of tracking area identity list (TS 24.301 clause

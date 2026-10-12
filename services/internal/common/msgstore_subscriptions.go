@@ -177,7 +177,7 @@ func (svc *service) notifyLocked(box *storeBox) {
 	go svc.deliverEvents(box)
 }
 
-// openMCX: a notification is tried deliveryAttempts times, waiting one, two, ... deliveryRetryDelay in between.
+// OpenMCX: a notification is tried deliveryAttempts times, waiting one, two, ... deliveryRetryDelay in between.
 const (
 	deliveryAttempts   = 5
 	deliveryRetryDelay = 500 * time.Millisecond

@@ -1,4 +1,4 @@
-# openMCX C++ formatting (docs/CODING_STYLE.md), clang-format 23 (the openmcx-lint image).
+# OpenMCX C++ formatting (docs/CODING_STYLE.md), clang-format 23 (the openmcx-lint image).
 # LLVM style with the project's width and compact one-line guards.
 BasedOnStyle: LLVM
 IndentWidth: 2

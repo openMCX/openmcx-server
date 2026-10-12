@@ -1,4 +1,4 @@
-# openMCX: Identity and tokens: MCX Admin activation and token refresh (tutorials/unit-tests/20-admin-activation-token-refresh/README.md).
+# OpenMCX: Identity and tokens: MCX Admin activation and token refresh (tutorials/unit-tests/20-admin-activation-token-refresh/README.md).
 #
 # The regression lab of this feature, from the published images: the MCPTT and MCData servers, the common
 # services, the SIP core and four headless clients (client-a to client-d), with SIP in clear (5060/tcp, no

@@ -1,5 +1,5 @@
 // IdMS accounts managed by MCX Admin: the account lookup, the password verifiers and the one-time links on which a
-// user sets a password (openMCX's own MCX Admin integration, not a 3GPP procedure; the OIDC flow of TS 24.482 is
+// user sets a password (OpenMCX's own MCX Admin integration, not a 3GPP procedure; the OIDC flow of TS 24.482 is
 // unchanged).
 //
 // Specifications: TS 24.482 V19.1.0 (Rel-19), RFC 8018, NIST SP 800-63B.

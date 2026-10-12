@@ -1,4 +1,4 @@
-// The openMCX startup banner, printed by every long-running openMCX program (openMCX, no 3GPP specification).
+// The OpenMCX startup banner, printed by every long-running OpenMCX program (OpenMCX, no 3GPP specification).
 package common
 
 import (
@@ -7,7 +7,7 @@ import (
 )
 
 // ------------------------------------------------------------------------------
-// PrintBanner writes the openMCX banner naming the program on stderr, as the C++ programs do
+// PrintBanner writes the OpenMCX banner naming the program on stderr, as the C++ programs do
 // (include/mcx/banner.hpp); stdout stays free for the program's output.
 func PrintBanner(program string) {
 	fmt.Fprint(os.Stderr, `

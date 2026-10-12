@@ -1,5 +1,5 @@
 #!/bin/sh
-# Download one pinned archive during an image build and verify its SHA-256 (openMCX build tooling, no 3GPP behaviour).
+# Download one pinned archive during an image build and verify its SHA-256 (OpenMCX build tooling, no 3GPP behaviour).
 #
 #   fetch FILE URL SHA256 OUTPUT
 #

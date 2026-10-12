@@ -1,4 +1,4 @@
-# openMCX server images: one build stage, then one slim image per program (docs/BUILD.md, docs/IMAGES.md).
+# OpenMCX server images: one build stage, then one slim image per program (docs/BUILD.md, docs/IMAGES.md).
 #
 #   tools/build-images [TAG]                                   all targets, tagged openmcx-<target>:TAG
 #   docker build --target openmcx-mcptt-server -t openmcx-mcptt-server:TAG -f docker/Dockerfile .
@@ -41,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UB
     && rm -rf /var/lib/apt/lists/*
 COPY tools/healthcheck.py /healthcheck.py
 WORKDIR /workspace
-# The licence of openMCX and the third-party notices, in every image (NOTICE lists the sources).
+# The licence of OpenMCX and the third-party notices, in every image (NOTICE lists the sources).
 COPY LICENSE NOTICE /usr/share/doc/openmcx/
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.source="https://github.com/openMCX/openmcx-server"

@@ -1,12 +1,12 @@
 #!/bin/sh
-# Tutorial 5: this computer's part of the path between the openMCX system and the LTE UEs (run with sudo).
+# Tutorial 5: this computer's part of the path between the OpenMCX system and the LTE UEs (run with sudo).
 #
 #   sudo ./host-network.sh add       before `up`
 #   sudo ./host-network.sh remove    after `down`
 #
 # - The UE pool 10.45.0.0/16 is reached through the UPF, the P-GW's user plane (its SGi address): replies of the
-#   openMCX system to a UE go back through the LTE user plane.
-# - Packets of the openMCX containers to the UE pool leave from HOST_IP, the address the UE reaches the system at:
+#   OpenMCX system to a UE go back through the LTE user plane.
+# - Packets of the OpenMCX containers to the UE pool leave from HOST_IP, the address the UE reaches the system at:
 #   the UE sees the same address both ways, and the PCRF's packet filters (the server's address in the SDP, HOST_IP)
 #   match the speech the P-GW carries.
 set -eu

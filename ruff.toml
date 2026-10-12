@@ -1,4 +1,4 @@
-# openMCX Python checks and formatting (docs/CODING_STYLE.md), ruff 0.16 (the openmcx-lint image).
+# OpenMCX Python checks and formatting (docs/CODING_STYLE.md), ruff 0.16 (the openmcx-lint image).
 line-length = 120
 target-version = "py312"
 

@@ -14,7 +14,6 @@ if [ "${1:-}" = --push ]; then PUSH=1; shift; fi
 NFS=("$@")
 [ ${#NFS[@]} -gt 0 ] || NFS=(amf pcf smf upf)
 CN5G=${CN5G:-$HERE/src}
-SOURCE=https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/03-mcx-over-oai-5g/oai/cn5g
 for nf in "${NFS[@]}"; do
   repo="$CN5G/oai-cn5g-$nf"
   [ -f "$repo/LICENSE" ] || { echo "no $repo (build-images.sh)" >&2; exit 1; }
@@ -37,25 +36,24 @@ for nf in "${NFS[@]}"; do
   cp "$HERE/NOTICE" "$tmp/doc/NOTICE"
   cp -r "$HERE/patches/oai-cn5g-$nf" "$tmp/doc/patches"
   {
-    echo "upstream:   https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-$nf"
+    echo "upstream:   https://github.com/OPENAIRINTERFACE/oai-cn5g-$nf"
     echo "tag:        v2.2.1"
     echo "commit:     $revision"
     echo "submodules, at the commits the release records (patched ones: patches/<path>/ below):"
     git -C "$repo" ls-tree -r HEAD | awk '$2 == "commit" {print "  " $3 "  " $4}'
     echo "patches (applied in this order with git am; sha256):"
     for patch in "${all_patches[@]}"; do echo "  $(sha256sum "$patch" | cut -d' ' -f1)  ${patch#"$dir"/}"; done
-    echo "modifications: $SOURCE"
   } > "$tmp/doc/SOURCE"
   cat > "$tmp/Dockerfile" <<EOF
 FROM oai-$nf:mcx-n5
 COPY doc /usr/share/doc/openmcx-oai
-LABEL org.opencontainers.image.title="oai-$nf (openMCX MCX N5 QoS)" \\
+LABEL org.opencontainers.image.title="oai-$nf (OpenMCX MCX N5 QoS)" \\
       org.opencontainers.image.version="v2.2.1" \\
       org.opencontainers.image.revision="$revision" \\
       org.openmcx.patches.sha256="$patches_sha" \\
-      org.opencontainers.image.source="$SOURCE" \\
+      org.opencontainers.image.source="https://github.com/OPENAIRINTERFACE/oai-cn5g-$nf" \\
       org.opencontainers.image.licenses="LicenseRef-CSSL-1.0" \\
-      org.opencontainers.image.description="OAI CN5G $nf v2.2.1 modified by openMCX; see /usr/share/doc/openmcx-oai/NOTICE and SOURCE"
+      org.opencontainers.image.description="OAI CN5G $nf v2.2.1 modified by OpenMCX; see /usr/share/doc/openmcx-oai/NOTICE and SOURCE"
 EOF
   docker build -q -t "openmcx/oai-$nf:mcx-n5" "$tmp" >/dev/null
   rm -rf "$tmp"

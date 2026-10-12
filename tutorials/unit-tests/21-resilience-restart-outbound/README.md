@@ -1,6 +1,6 @@
 # Unit Test Tutorial 21: Resilience: server restart and SIP outbound flows
 
-One computer runs the openMCX system from the published images, with headless clients in place of phones. A script
+One computer runs the OpenMCX system from the published images, with headless clients in place of phones. A script
 restarts parts of the system while the clients are signed in, and replaces a client by one that cannot be reached
 except over the connection it opened itself:
 
@@ -16,7 +16,7 @@ except over the connection it opened itself:
 A capture of the lab network records every SIP message, the floor control and the speech, so you can follow in
 Wireshark what each side sees of the restarts and of the flow.
 
-The tutorial is built on three scenarios of the openMCX regression tests, `tests/integration/restart_scenario.py`
+The tutorial is built on three scenarios of the OpenMCX regression tests, `tests/integration/restart_scenario.py`
 (the client restart), `tests/integration/server_restart_scenario.py` (the server restart) and
 `tests/integration/outbound_flow_scenario.py` (the client without a listener), and uses the same images.
 
@@ -24,7 +24,7 @@ The tutorial is built on three scenarios of the openMCX regression tests, `tests
 > Wireshark shows every message and its XML. A real system uses TLS (tutorials 1 to 5). The HTTPS traffic to the
 > common services (sign-in, token renewal, configuration, keys) stays encrypted and is not captured.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 21: four headless clients and the openMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.21.0/24; client-a and the MCPTT server restart, and the clients sign in again by themselves; bob's device is replaced by a client without a SIP listener that the SIP core reaches over one TCP flow"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 21: four headless clients and the OpenMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.21.0/24; client-a and the MCPTT server restart, and the clients sign in again by themselves; bob's device is replaced by a client without a SIP listener that the SIP core reaches over one TCP flow"></p>
 
 ## What survives a restart, in a few words
 
@@ -40,7 +40,7 @@ Signing in to MCPTT leaves state in three places:
 When a **client** restarts, its state is gone; it signs in from the start, and the SIP core and the server simply
 take the new registration and publications. When the **MCPTT server** restarts, its state is gone, but the clients
 do not know: nothing tells them. The specification lets the server keep its bindings in an external database
-(TS 24.379 clause 7.3.3, NOTE 2); the openMCX MCPTT server keeps them in memory, so a restart loses them. A client
+(TS 24.379 clause 7.3.3, NOTE 2); the OpenMCX MCPTT server keeps them in memory, so a restart loses them. A client
 learns it from the next response of the server:
 
 - a call is refused with `404 (Not Found)` and the warning `141 user unknown to the participating function`
@@ -51,7 +51,7 @@ learns it from the next response of the server:
   request but publishes anew, without `SIP-If-Match`. That new publication authorises it again, and it affiliates
   again as after its first sign-in.
 
-The openMCX client refreshes its service authorisation each time it renews its access token, so it is back within
+The OpenMCX client refreshes its service authorisation each time it renews its access token, so it is back within
 one token renewal; with the two-minute tokens of this tutorial, within a minute.
 
 ## SIP Outbound in a few words
@@ -63,7 +63,7 @@ the TCP connection it registered on open: that connection is the **flow**. The S
 binding and sends every request for the client over it, an initial request to the user (an INVITE) as well as a
 request in a dialog (a NOTIFY).
 
-In step 7 the client names itself with an unresolvable host (`….invalid`) in Via and Contact, as the openMCX Android
+In step 7 the client names itself with an unresolvable host (`….invalid`) in Via and Contact, as the OpenMCX Android
 client does, and never listens on a port: a request reaches it over the flow or not at all. A client may not choose
 the flow itself: the SIP core refuses a Contact that already carries Kamailio's `alias` parameter.
 
@@ -76,7 +76,7 @@ Contact's address.
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
-- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub**
+- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt OpenMCX images from Docker Hub**
   (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer. The speech is a WAV file in
   `speech/`.
 - This tutorial's folder: step 7 runs `outbound_flow_client.py`, a small SIP client in Python (a copy of
@@ -172,8 +172,8 @@ about a minute and a half, most of it in step 6, which waits for the next token 
 
 ## 4. Look at the capture
 
-`run.sh` copies the capture to `captures/21-resilience-run.pcap.gz`. The folder also holds a reference run,
-`captures/21-resilience-full.pcap.gz` (202 KB, 4 295 frames, 77 s): the frame numbers below and in the call flow are
+The script `run.sh` copies the capture of your run to `captures/21-resilience-run.pcap.gz`. The folder also holds a reference run,
+[`captures/21-resilience-full.pcap.gz`](captures/21-resilience-full.pcap.gz) (202 KB, 4 295 frames, 77 s): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.21.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -261,7 +261,7 @@ The compose file names every image in full, all from Docker Hub:
 | `docker.io/openmcx/openmcx-setup:1.0.0` | The setup: the lab's generator |
 | `docker.io/openmcx/openmcx-mcptt-server:1.0.0`, `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCPTT and MCData servers |
 | `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services |
-| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository); step 7 runs the flow client in it too |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`OpenMCX/openmcx-client` repository); step 7 runs the flow client in it too |
 | `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The SIP core's database |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |

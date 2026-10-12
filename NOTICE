@@ -41,7 +41,7 @@ Separate programs run alongside openMCX, not linked with it:
   MySQL (SIP core database, the official mysql image)
                            GPL-2.0 with the Universal FOSS Exception   https://hub.docker.com/_/mysql
   OpenAirInterface CN5G v2.2.1 and RAN (tutorial 3 only: the 5G core, gNB and nr-UE)
-                           Collaborative Standards Software License v1.0   https://gitlab.eurecom.fr/oai
+                           Collaborative Standards Software License v1.0   https://github.com/OPENAIRINTERFACE
                            The AMF, PCF, SMF and UPF are modified for N5: the patches, their license and notices are
                            in tutorials/end-to-end/03-mcx-over-oai-5g/oai/cn5g/ (LICENSE, NOTICE), which is under that license,
                            not this repository's. Its patent license covers study, testing and research only.

@@ -1,6 +1,6 @@
-# The openMCX Tutorials
+# The OpenMCX Tutorials
 
-Step-by-step guides that run a complete openMCX system from the published Docker images.
+Step-by-step guides that run a complete OpenMCX system from the published Docker images.
 
 ## End to End Tutorials
 
@@ -9,13 +9,16 @@ and RANs.
 
 | # | Tutorial | What you build |
 |---|---|---|
-| 1 | [MCX&nbsp;over&nbsp;WLAN&nbsp;with&nbsp;the&nbsp;Android&nbsp;App](end-to-end/01-mcx-over-wlan-android/README.md) | The openMCX servers on one computer; two Android phones on its Wi-Fi make calls, messages and video calls. |
+| 1 | [MCX&nbsp;over&nbsp;WLAN&nbsp;with&nbsp;the&nbsp;Android&nbsp;App](end-to-end/01-mcx-over-wlan-android/README.md) | The OpenMCX servers on one computer; two Android phones on its Wi-Fi make calls, messages and video calls. |
 | 2 | [MCX&nbsp;over&nbsp;WLAN&nbsp;with&nbsp;the&nbsp;Android&nbsp;Phones&nbsp;and&nbsp;Dispatcher&nbsp;client](end-to-end/02-dispatcher-with-android/README.md) | Tutorial 1 plus a dispatcher position in the browser, in group calls with the phones. |
 | 3 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;RAN&nbsp;(RFSIM)](end-to-end/03-mcx-over-oai-5g/README.md) | Tutorial 1 plus the OAI 5G core and RAN (simulated radio); the dispatcher over 5G, with MCPTT QoS over N5. |
 | 4 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;srsRAN&nbsp;(ZeroMQ)](end-to-end/04-mcx-over-srsran-5g/README.md) | Tutorial 3 with the srsRAN gNB and srsUE (simulated radio); the call falls back to the default QoS flow. |
 | 5 | [MCX&nbsp;over&nbsp;a&nbsp;4G&nbsp;core&nbsp;(Open5GS)&nbsp;and&nbsp;the&nbsp;OAI&nbsp;LTE&nbsp;RAN&nbsp;(RFSIM)](end-to-end/05-mcx-over-4g-open5gs-oai/README.md) | Tutorial 3 on 4G: Open5GS EPC and OAI LTE RAN (simulated radio); MCPTT QoS over Rx, a QCI 65 bearer. |
 
-Each tutorial has its own folder in `end-to-end/` with its Docker Compose file, its `.env.example` and its setup.
+Each tutorial has its own folder in `end-to-end/` with its Docker Compose file, its `.env.example` and its setup. The
+reference captures of tutorials 3, 4 and 5 hold the 5G or 4G core's signalling (NGAP or S1AP, NAS, PFCP, N5 or Rx),
+the GTP-U user plane and the SIP, decrypted in Wireshark; each tutorial links its capture and explains it in its step "Look at the
+capture".
 
 ## Unit Test Tutorials
 

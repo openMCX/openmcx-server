@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="380" viewBox="0 0 900 380" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
-  <title>Unit Test Tutorial 17: four clients in MCVideo group calls with transmission control, and client-a and client-b in private calls with and without transmission control; client-d accepts video by hand and may make no private calls; the openMCX system (SIP core, MCVideo server, MCPTT and MCData servers, common services) on one computer, on the lab network 172.31.17.0/24</title>
+  <title>Unit Test Tutorial 17: four clients in MCVideo group calls with transmission control, and client-a and client-b in private calls with and without transmission control; client-d accepts video by hand and may make no private calls; the OpenMCX system (SIP core, MCVideo server, MCPTT and MCData servers, common services) on one computer, on the lab network 172.31.17.0/24</title>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#5b6472"/>
@@ -30,9 +30,9 @@
   </g>
   <text x="127" y="342" text-anchor="middle" font-size="12" fill="#4b5563">headless clients, run.sh</text>
 
-  <!-- openMCX system -->
+  <!-- OpenMCX system -->
   <rect x="380" y="56" width="488" height="292" rx="16" fill="#fff7ed" stroke="#ea8a1a" stroke-width="2"/>
-  <text x="400" y="82" font-size="15" font-weight="700" fill="#9a4b05">openMCX system</text>
+  <text x="400" y="82" font-size="15" font-weight="700" fill="#9a4b05">OpenMCX system</text>
   <g font-size="13" fill="#1f2937">
     <rect x="400" y="98" width="200" height="56" rx="10" fill="#ffffff" stroke="#f0b46b" stroke-width="1.5"/>
     <text x="500" y="122" text-anchor="middle" font-weight="600">SIP core · .10</text>

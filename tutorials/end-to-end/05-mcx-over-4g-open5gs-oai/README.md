@@ -7,7 +7,7 @@ MCPTT server asks the EPC's PCRF, over **Rx** (TS 29.214, the MCPTT-5 reference 
 mission-critical voice: the EPC sets up a **dedicated bearer with QCI 65** for the dispatcher's speech, down to the
 radio.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 5: the phones reach the openMCX system over the Wi-Fi; the dispatcher runs inside the OAI LTE UE and reaches it over the rfsim radio, the OAI eNB, the S-GW and P-GW (S1-U, SGi) of the Open5GS EPC; the MCPTT server asks the PCRF for MCPTT QoS over Rx, and the PCRF installs a QCI 65 rule over Gx"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 5: the phones reach the OpenMCX system over the Wi-Fi; the dispatcher runs inside the OAI LTE UE and reaches it over the rfsim radio, the OAI eNB, the S-GW and P-GW (S1-U, SGi) of the Open5GS EPC; the MCPTT server asks the PCRF for MCPTT QoS over Rx, and the PCRF installs a QCI 65 rule over Gx"></p>
 
 The phones reach the system on the Wi-Fi as in tutorial 1; their calls get no 4G QoS (they are not on 4G). The MCPTT
 server asks for QoS only for call legs of UEs in the LTE pool (10.45.0.0/16): a UE on another access, such as the
@@ -19,7 +19,7 @@ phones on WLAN, gets no request and its calls work as before (TS 24.379 clause 4
   tutorials 3 and 4) must be **stopped**: tutorial 5 runs its own system with the same ports.
 - **A Linux computer** with Docker and Docker Compose v2, about 8 CPU cores free (the rfsimulator's eNB and UE keep
   several cores busy) and **sudo** (step 3).
-- **The images**, from Docker Hub: openMCX's (`openmcx/openmcx-*:1.0.0`, as in tutorial 1, with Rx) and three patched
+- **The images**, from Docker Hub: OpenMCX's (`openmcx/openmcx-*:1.0.0`, as in tutorial 1, with Rx) and three patched
   images:
   - `openmcx/open5gs:2.8.0-mcx`: Open5GS v2.8.0 for every EPC function, with a PCRF change: an MCPTT AF session's
     audio gets QCI 65 (and an MCVideo session's video QCI 67), as TS 23.379 clause 5.7.3 asks, instead of the QCI 1
@@ -61,7 +61,7 @@ sudo ./host-network.sh add
 
 As in tutorial 3: replies to the UE pool go back through the P-GW's user plane (the UPF, at its SGi address), and
 they leave from `HOST_IP`, so the UE sees one address both ways and the EPC's packet filters match the speech.
-`sudo ./host-network.sh remove` undoes both (step 8).
+`sudo ./host-network.sh remove` undoes both (step 9).
 
 ## 4. Start the system
 
@@ -70,7 +70,7 @@ docker compose -f docker-compose-4g-mcx.yaml up -d
 docker compose -f docker-compose-4g-mcx.yaml ps --format 'table {{.Name}}\t{{.Status}}'
 ```
 
-After about two minutes every service is `(healthy)`: the openMCX system, the EPC (`epc-mme`, `epc-hss`,
+After about two minutes every service is `(healthy)`: the OpenMCX system, the EPC (`epc-mme`, `epc-hss`,
 `epc-sgwc`, `epc-sgwu`, `epc-smf`, `epc-upf`, `epc-pcrf`, `epc-mongo`; `epc-subscriber` loads the UE's subscription
 and exits), the eNB, the LTE UE, `ue-route` and the dispatcher. `openmcx-ue-route` shows the UE's address:
 
@@ -123,7 +123,75 @@ sign-in, SIP registration and calls go through the LTE user plane.
    docker logs openmcx-oai-lte-ue 2>&1 | grep 'DRB 2 released'            # [RRC] I [UE 0] DRB 2 released
    ```
 
-## 8. Stop or start over
+## 8. Look at the capture
+
+The reference capture [`captures/05-mcx-over-4g-open5gs-oai-full.pcapng.gz`](captures/05-mcx-over-4g-open5gs-oai-full.pcapng.gz) (0.7 MB, 5 749
+frames) records a run of steps 4 to 7: the
+EPC and the eNB starting, the UE attaching, the phones and the dispatcher signing in, a group call from the
+dispatcher with PTT, Bob talking back, and the hang-up. Wireshark opens the compressed file directly. The frame
+numbers below are those of the reference.
+
+It was captured on the two Docker networks, the EPC's (`192.168.73.128/26`: S1, S11, S5, Gx, Rx and S6a) and SGi
+with the OpenMCX system (`192.168.74.128/26`), and reduced by port so that every TCP segment of a kept stream stays:
+
+- S1AP and NAS-EPS (SCTP), GTPv2-C, PFCP (Open5GS splits the SGW and the PGW into control and user plane), GTP-U
+  (with IP fragments) and Diameter (Rx, Gx and S6a);
+- SIP over TLS on 5061, **decrypted**: the file carries the TLS secrets of the SIP core (a pcapng decryption secrets
+  block), so Wireshark shows the SIP messages without further setup;
+- every UDP flow (speech and floor control) and ICMP.
+
+The databases, DNS, the encrypted HTTPS between the OpenMCX services and the simulated radio between the eNB and the
+UE (rfsimulator, TCP 4043) are left out.
+
+The dispatcher's packets appear more than once: inside GTP-U between the eNB (`192.168.73.140`), the SGW-U
+(`192.168.73.132`) and the UPF (`192.168.73.134`), and on SGi after the UPF, once with `HOST_IP` (`192.168.90.88` in
+the reference) and once with the address of the SIP core or the MCPTT server behind it. The UE's address is
+`10.45.0.2`; the phones are on the Wi-Fi (`192.168.91.76` Alice, `192.168.88.177` Bob).
+
+Useful display filters:
+
+| Filter | Shows |
+|---|---|
+| `s1ap` | S1 between the eNB and the MME: S1 Setup, the attach, and the E-RAB Setup and Release of the call's dedicated bearer. |
+| `nas-eps` | The UE's NAS: attach, authentication, security mode, and the dedicated EPS bearer context activation and deactivation. |
+| `diameter.applicationId == 16777236` | Rx: the MCPTT server's AA-Request and Session-Termination-Request at the PCRF (TS 29.214). |
+| `diameter.applicationId == 16777238` | Gx: the PCRF's Credit-Control and Re-Auth exchanges with the SMF (the PGW-C). |
+| `gtpv2` | S11 and S5-C: Create Session, Modify Bearer, Create Bearer and Delete Bearer. |
+| `sip && !gtp` | Every SIP message (once; without the GTP-U copies). **Telephony → SIP Flows** draws them. |
+| `rtcp.app.name == "MCPT" && !gtp` | Floor control (TS 24.380 clause 8.2). |
+| `rtp && !gtp` | Speech: AMR-WB. |
+
+What to look for, in the reference run:
+
+- **The EPC and the UE** (frames 11 to 201): PFCP Associations (11, 22), the Diameter Capabilities-Exchange with the
+  PCRF (from the SMF, 23, and the MCPTT server, 94) and the HSS (from the MME, 73), S1 Setup (142), the UE's Attach
+  request with its PDN connectivity request (167), authentication through the HSS (168), Security mode command (173),
+  the default bearer for the subscription's APN `oai.ipv4`: Create Session through the SGW-C and the SMF (177, 180),
+  the PCRF's Gx Credit-Control (181), and the Initial Context Setup with Attach accept (190).
+- **Sign-in and registration** (frames 257 to 1797): Alice's and Bob's phones (257, 755) and the dispatcher over 4G
+  (1797) register with the SIP core.
+- **The group call** (frames 2427 to 2472): the dispatcher's INVITE (2427; after the `407` challenge 2455), forwarded
+  to the MCPTT server (2460), which invites Alice (2468) and Bob (2472).
+- **QoS over Rx** (frames 2521 to 2549): the MCPTT server, as application function, sends the dispatcher's media to
+  the PCRF (2521: AA-Request with the media components and their flow descriptions, for example `permit out 17 from
+  192.168.90.88 4000 to 10.45.0.2 4400`, TS 29.214). The PCRF installs a rule at the SMF over Gx (2526: Re-Auth
+  Request), which creates a dedicated bearer: Create Bearer Request (2532, 2535), E-RAB Setup Request with Activate
+  dedicated EPS bearer context request (2536: E-RAB 6, QCI 65, guaranteed bit rate 84 kbit/s each way), and the UE's
+  accept (2540).
+- **Floor control and speech** (frames 2664 to 5565): the dispatcher's Floor Request (2664) and Floor Granted (2665),
+  Floor Taken to the phones (2667, 2669), the dispatcher's speech, Floor Release (4321); then Bob's turn (4365 to
+  5565). Downlink, the speech and floor control for the dispatcher reach the eNB in the dedicated bearer's GTP-U
+  tunnel (filter `gtp.teid == 0xa3ca1406`); the UE's uplink packets stay on the default bearer in the reference run.
+- **Hang-up** (from frame 5628): the dispatcher's BYE (5628, again after the challenge 5640), the server's BYEs to
+  Alice and Bob (5648, 5661). The MCPTT server ends the Rx session (5644: Session-Termination-Request), the PCRF removes
+  the rule over Gx (5645), and the bearer goes: Delete Bearer Request (5657, 5658), E-RAB Release Command with
+  Deactivate EPS bearer context request (5660), and its responses (5673, 5677).
+
+The access tokens of the IdMS travel in SIP for service authorisation, and the file holds the SIP core's TLS secrets.
+They belong to a throwaway system: its signing key and users no longer exist and the tokens expired after an hour.
+Treat a capture of your own system, and its TLS secrets, as secret.
+
+## 9. Stop or start over
 
 ```bash
 docker compose -f docker-compose-4g-mcx.yaml down        # stop; ./config is kept
@@ -134,7 +202,7 @@ rm -rf config                                            # with down -v: start o
 
 ## How it is put together
 
-- **Two compose files**: `docker-compose-4g-core.yaml` has tutorial 1's openMCX services, unchanged, on the EPC's
+- **Two compose files**: `docker-compose-4g-core.yaml` has tutorial 1's OpenMCX services, unchanged, on the EPC's
   **SGi network** (`openmcx-4g-sgi`, 192.168.74.128/26) and the Open5GS EPC on the **EPC network** (`openmcx-4g-core`,
   192.168.73.128/26). `docker-compose-4g-mcx.yaml` includes it and adds the eNB and the LTE UE (OAI's CI USIM:
   IMSI 208960100000001, APN `oai.ipv4`), the dispatcher in the UE's network namespace and `ue-route`, which routes

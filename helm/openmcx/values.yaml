@@ -1,4 +1,4 @@
-# openMCX: a complete MCX system (MCPTT, MCData, MCVideo servers, common services, SIP core, MCX Admin) on Kubernetes
+# OpenMCX: a complete MCX system (MCPTT, MCData, MCVideo servers, common services, SIP core, MCX Admin) on Kubernetes
 # or OpenShift. See README.md in this directory.
 #
 # The chart deploys what tutorials/end-to-end/01-mcx-over-wlan-android/docker-compose-basic-mcx.yaml runs, one pod
@@ -11,7 +11,7 @@
 externalAddress: ""
 
 images:
-  # The openMCX images: <prefix>openmcx-<program>:<tag>, as OPENMCX_IMAGE_PREFIX and OPENMCX_TAG of the tutorial.
+  # The OpenMCX images: <prefix>openmcx-<program>:<tag>, as OPENMCX_IMAGE_PREFIX and OPENMCX_TAG of the tutorial.
   # Images in a private registry: "registry.example.com/openmcx/".
   prefix: openmcx/
   tag: 1.0.0
@@ -113,7 +113,7 @@ serviceAccount:
   name: ""
   annotations: {}
 
-# OpenShift. The openMCX images and MySQL run as root, and hostPort needs host ports: with create true the chart makes
+# OpenShift. The OpenMCX images and MySQL run as root, and hostPort needs host ports: with create true the chart makes
 # a SecurityContextConstraints for the release's service account (installing it needs cluster-admin). Otherwise bind
 # the service account to an SCC yourself (README.md, "OpenShift").
 openshift:

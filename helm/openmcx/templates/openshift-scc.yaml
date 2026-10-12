@@ -1,5 +1,5 @@
 {{- /*
-OpenShift: the openMCX images and MySQL run as root (the Compose file's defaults), and expose.type hostPort binds
+OpenShift: the OpenMCX images and MySQL run as root (the Compose file's defaults), and expose.type hostPort binds
 host ports. This SecurityContextConstraints allows exactly that to the release's service account: any user ID, host
 ports, no privileged containers, no host network, no host paths. Creating it needs cluster-admin.
 */ -}}
@@ -11,7 +11,7 @@ metadata:
   labels:
     {{- include "openmcx.labels" . | nindent 4 }}
   annotations:
-    kubernetes.io/description: openMCX ({{ .Release.Namespace }}/{{ .Release.Name }}) runs as root and binds host ports.
+    kubernetes.io/description: OpenMCX ({{ .Release.Namespace }}/{{ .Release.Name }}) runs as root and binds host ports.
 allowPrivilegedContainer: false
 allowPrivilegeEscalation: true
 allowHostDirVolumePlugin: false

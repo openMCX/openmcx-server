@@ -1,6 +1,6 @@
 # Unit Test Tutorial 17: MCVideo group and private calls with transmission control
 
-One computer runs the openMCX system from the published images, with four headless clients in place of phones.
+One computer runs the OpenMCX system from the published images, with four headless clients in place of phones.
 A script takes them through on-network MCVideo calls (TS 24.281) and their transmission control (TS 24.581):
 
 - a prearranged group call: every member joins, one member at a time transmits video, the others receive it;
@@ -13,7 +13,7 @@ A script takes them through on-network MCVideo calls (TS 24.281) and their trans
 A capture of the lab network records every SIP message, every transmission control message and the H.264 video, so
 you can follow each call in Wireshark.
 
-The tutorial is built on two scenarios of the openMCX regression tests,
+The tutorial is built on two scenarios of the OpenMCX regression tests,
 `tests/integration/mcvideo_group_call_scenario.py` and `tests/integration/mcvideo_private_call_scenario.py`, and uses
 the same images.
 
@@ -22,7 +22,7 @@ the same images.
 > transmission control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common services
 > (sign-in, configuration, keys) stays encrypted and is not captured.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 17: four clients in MCVideo group calls with transmission control, and client-a and client-b in private calls with and without transmission control; client-d accepts video by hand and may make no private calls; the openMCX system (SIP core, MCVideo server, MCPTT and MCData servers, common services) on one computer, on the lab network 172.31.17.0/24"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 17: four clients in MCVideo group calls with transmission control, and client-a and client-b in private calls with and without transmission control; client-d accepts video by hand and may make no private calls; the OpenMCX system (SIP core, MCVideo server, MCPTT and MCData servers, common services) on one computer, on the lab network 172.31.17.0/24"></p>
 
 ## Transmission control in a few words
 
@@ -49,7 +49,7 @@ the server) and `MCV2` (sent by either), on the UDP port of the SDP line `m=appl
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
-- No phones, no camera, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from
+- No phones, no camera, no network set-up, nothing to compile: the tutorial uses the **prebuilt OpenMCX images from
   Docker Hub** (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer. The clients send a
   generated H.264 test pattern (240p, 15 pictures per second).
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
@@ -142,8 +142,8 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 
 ## 4. Look at the capture
 
-`run.sh` copies the capture to `captures/17-mcvideo-calls-run.pcap.gz`. The folder also holds a reference run,
-`captures/17-mcvideo-calls-full.pcap.gz` (238 KB, 2 667 frames): the frame numbers below and in the call flow are
+The script `run.sh` copies the capture of your run to `captures/17-mcvideo-calls-run.pcap.gz`. The folder also holds a reference run,
+[`captures/17-mcvideo-calls-full.pcap.gz`](captures/17-mcvideo-calls-full.pcap.gz) (238 KB, 2 667 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.17.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -237,7 +237,7 @@ The compose file names every image in full, all from Docker Hub:
 | `docker.io/openmcx/openmcx-mcvideo-server:1.0.0` | The MCVideo server |
 | `docker.io/openmcx/openmcx-mcptt-server:1.0.0`, `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCPTT and MCData servers (running, not used here) |
 | `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services |
-| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`OpenMCX/openmcx-client` repository) |
 | `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The SIP core's database |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |

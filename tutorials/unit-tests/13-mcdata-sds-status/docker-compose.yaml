@@ -1,4 +1,4 @@
-# openMCX: Unit Test Tutorial 13, MCData short data service, delivery reports and status messages (tutorials/unit-tests/13-mcdata-sds-status/README.md).
+# OpenMCX: Unit Test Tutorial 13, MCData short data service, delivery reports and status messages (tutorials/unit-tests/13-mcdata-sds-status/README.md).
 #
 # The regression lab of this feature, from the published images: the MCPTT and MCData servers, the common
 # services, the SIP core and four headless clients (client-a to client-d), with SIP in clear (5060/tcp, no

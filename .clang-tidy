@@ -1,4 +1,4 @@
-# openMCX C++ checks (docs/CODING_STYLE.md), clang-tidy 23 (the openmcx-lint image), run by tools/lint.
+# OpenMCX C++ checks (docs/CODING_STYLE.md), clang-tidy 23 (the openmcx-lint image), run by tools/lint.
 Checks: >
   -*,
   readability-identifier-length,

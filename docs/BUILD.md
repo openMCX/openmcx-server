@@ -1,4 +1,4 @@
-# Building openMCX
+# Building OpenMCX
 
 Everything builds in Docker; nothing is installed on the host. The images and what runs in which container are
 listed in `docs/IMAGES.md`.

@@ -1,4 +1,4 @@
-# openMCX Go checks (docs/CODING_STYLE.md), golangci-lint 2.14 (the openmcx-lint image), run by tools/lint.
+# OpenMCX Go checks (docs/CODING_STYLE.md), golangci-lint 2.14 (the openmcx-lint image), run by tools/lint.
 version: "2"
 run:
   modules-download-mode: vendor

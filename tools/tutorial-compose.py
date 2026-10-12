@@ -19,7 +19,7 @@ from pathlib import Path
 
 import yaml
 
-# The published openMCX images on Docker Hub, written out in full in the tutorial (no variables): one tag, the release,
+# The published OpenMCX images on Docker Hub, written out in full in the tutorial (no variables): one tag, the release,
 # for every image.
 HUB = 'docker.io/openmcx'
 OPENMCX_TAG = '1.0.0'

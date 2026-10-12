@@ -1,6 +1,6 @@
 # Unit Test Tutorial 15: MCData IP connectivity: a GRE-in-UDP tunnel between two users
 
-One computer runs the openMCX system from the published images, with four headless clients in place of phones. This
+One computer runs the OpenMCX system from the published images, with four headless clients in place of phones. This
 time two users connect **IP applications** through MCData (TS 24.282 clause 20): a session set up with SIP carries
 real IPv4 packets between the two clients in a GRE-in-UDP tunnel (TS 24.582 clause 13), relayed by the MCData server.
 A script takes them through:
@@ -15,7 +15,7 @@ A script takes them through:
 A capture of the lab network records the SIP and every tunnel datagram, so you can follow each session in Wireshark
 and look inside the tunnel.
 
-The tutorial is built on a scenario of the openMCX regression tests, `tests/integration/mcdata_ipconn_scenario.py`,
+The tutorial is built on a scenario of the OpenMCX regression tests, `tests/integration/mcdata_ipconn_scenario.py`,
 and uses the same images. [Unit Test Tutorial 13](../13-mcdata-sds-status/README.md) introduces MCData itself.
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
@@ -23,7 +23,7 @@ and uses the same images. [Unit Test Tutorial 13](../13-mcdata-sds-status/README
 > tunnel is not encrypted either. The HTTPS traffic to the common services (sign-in, the MCData rules) stays encrypted
 > and is not captured.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 15: client-a opens MCData IP connectivity sessions; SIP goes through the SIP core to the MCData server, IP packets travel in a GRE-in-UDP tunnel through the MCData server; the openMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.15.0/24"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 15: client-a opens MCData IP connectivity sessions; SIP goes through the SIP core to the MCData server, IP packets travel in a GRE-in-UDP tunnel through the MCData server; the OpenMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.15.0/24"></p>
 
 ## How an IP connectivity session works
 
@@ -39,7 +39,7 @@ and uses the same images. [Unit Test Tutorial 13](../13-mcdata-sds-status/README
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
-- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub**
+- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt OpenMCX images from Docker Hub**
   (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer. No TUN device or extra privilege
   is needed: the tunnel is ordinary UDP.
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
@@ -124,8 +124,8 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 
 ## 4. Look at the capture
 
-`run.sh` copies the capture to `captures/15-mcdata-ip-connectivity-run.pcap.gz`. The folder also holds a reference
-run, `captures/15-mcdata-ip-connectivity-full.pcap.gz` (73 KB, 774 frames): the frame numbers below and in the call
+The script `run.sh` copies the capture of your run to `captures/15-mcdata-ip-connectivity-run.pcap.gz`. The folder also holds a reference
+run, [`captures/15-mcdata-ip-connectivity-full.pcap.gz`](captures/15-mcdata-ip-connectivity-full.pcap.gz) (73 KB, 774 frames): the frame numbers below and in the call
 flow are those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.15.1 and (tcp port 5060 or (udp and not port 53) or icmp)`: SIP on
@@ -209,7 +209,7 @@ The compose file names every image in full, all from Docker Hub:
 | `docker.io/openmcx/openmcx-setup:1.0.0` | The setup: the lab's generator |
 | `docker.io/openmcx/openmcx-mcptt-server:1.0.0`, `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCPTT and MCData servers |
 | `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services, among them the CMS |
-| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`OpenMCX/openmcx-client` repository) |
 | `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The SIP core's database |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |

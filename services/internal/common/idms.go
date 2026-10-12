@@ -66,7 +66,7 @@ func (svc *service) jwks(writer http.ResponseWriter, _ *http.Request) {
 
 const (
 	maxAuthorizationState = 1024
-	// The longest state, nonce and acr_values accepted (openMCX limits).
+	// The longest state, nonce and acr_values accepted (OpenMCX limits).
 	maxAuthorizationParameter = 1024
 	// TS 33.180 table B.4.2.2-1 (acr_values): the password-based ACR value every IdM server supports; the only
 	// one this IdMS authenticates with.
@@ -100,7 +100,7 @@ func (svc *service) sweepAuthorizationState() {
 // token repeats it. acr_values is a voluntary claim request (OpenID Connect Core 1.0 section 3.1.2.1): the
 // user is authenticated by password whatever it names, and the ID token's acr says so (acrPassword).
 // Deviation from TS 33.180 table B.4.2.2-1 (acr_values REQUIRED): a request without acr_values is accepted, as
-// from the openMCX clients, which do not send it yet.
+// from the OpenMCX clients, which do not send it yet.
 func (svc *service) authorize(writer http.ResponseWriter, request *http.Request) {
 	query := request.URL.Query()
 	if len(request.URL.RawQuery) > 8192 || len(query.Get("state")) > maxAuthorizationParameter ||

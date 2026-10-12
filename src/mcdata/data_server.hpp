@@ -1,4 +1,4 @@
-// The MCData server of openMCX: the controlling and participating MCData functions (TS 24.282) for
+// The MCData server of OpenMCX: the controlling and participating MCData functions (TS 24.282) for
 // short data service, file distribution, IP connectivity, message store and emergency alerts, their
 // media plane (TS 24.582) and their security (TS 33.180).
 //

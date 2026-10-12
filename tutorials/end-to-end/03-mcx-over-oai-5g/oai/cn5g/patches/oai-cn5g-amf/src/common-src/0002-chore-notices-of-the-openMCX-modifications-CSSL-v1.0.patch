@@ -19,7 +19,7 @@ index c3bffd5e..ac6ac9ea 100644
 --- a/ngap/ngap_msgs/PduSessionResourceModifyResponse.cpp
 +++ b/ngap/ngap_msgs/PduSessionResourceModifyResponse.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-05 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * Licensed to the OpenAirInterface (OAI) Software Alliance under one or more
   * contributor license agreements.  See the NOTICE file distributed with
@@ -28,7 +28,7 @@ index b86f70dc..443378ba 100644
 --- a/ngap/ngap_msgs/PduSessionResourceModifyResponse.hpp
 +++ b/ngap/ngap_msgs/PduSessionResourceModifyResponse.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-05 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * Licensed to the OpenAirInterface (OAI) Software Alliance under one or more
   * contributor license agreements.  See the NOTICE file distributed with

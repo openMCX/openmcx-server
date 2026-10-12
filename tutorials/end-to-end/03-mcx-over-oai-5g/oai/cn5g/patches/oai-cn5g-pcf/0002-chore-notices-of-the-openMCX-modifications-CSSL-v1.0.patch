@@ -40,7 +40,7 @@ index 9204f06..8bacfae 100644
 --- a/docker/Dockerfile.pcf.ubuntu
 +++ b/docker/Dockerfile.pcf.ubuntu
 @@ -1,3 +1,4 @@
-+# Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++# Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  #/*
  # * SPDX-License-Identifier: LicenseRef-CSSL-1.0
  # */
@@ -50,7 +50,7 @@ index b0d9b96..d817a2c 100755
 +++ b/docker/install_odb_2.5.sh
 @@ -1,4 +1,5 @@
  #!/bin/bash
-+# Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++# Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  # SPDX-License-Identifier: LicenseRef-CSSL-1.0
  #
  # Workaround for the PCF image build: the build2 0.17.0 toolchain used by
@@ -59,7 +59,7 @@ index 66ce67e..0302c24 100644
 --- a/etc/config.yaml
 +++ b/etc/config.yaml
 @@ -1,3 +1,4 @@
-+# Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++# Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  # SPDX-License-Identifier: LicenseRef-CSSL-1.0
  
  # OAI CN Configuration File
@@ -68,7 +68,7 @@ index e7c1883..34fe8c4 100644
 --- a/src/api-server/handler/application_sessions_collection_api_handler.cpp
 +++ b/src/api-server/handler/application_sessions_collection_api_handler.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -77,7 +77,7 @@ index 2eb3b4d..0f05b2f 100644
 --- a/src/api-server/handler/application_sessions_collection_api_handler.h
 +++ b/src/api-server/handler/application_sessions_collection_api_handler.h
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -86,7 +86,7 @@ index 57af44a..9fc2876 100644
 --- a/src/api-server/handler/individual_application_session_context_document_api_handler.cpp
 +++ b/src/api-server/handler/individual_application_session_context_document_api_handler.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -95,7 +95,7 @@ index 44d00f9..ba2a659 100644
 --- a/src/api-server/handler/individual_application_session_context_document_api_handler.h
 +++ b/src/api-server/handler/individual_application_session_context_document_api_handler.h
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
@@ -104,7 +104,7 @@ index 68e93da..9b0c1ac 100644
 --- a/src/api-server/pcf-http2-server.cpp
 +++ b/src/api-server/pcf-http2-server.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -113,7 +113,7 @@ index 8541fc7..c2a52f6 100644
 --- a/src/pcf_app/CMakeLists.txt
 +++ b/src/pcf_app/CMakeLists.txt
 @@ -1,3 +1,4 @@
-+# Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++# Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  ################################################################################
  # SPDX-License-Identifier: LicenseRef-CSSL-1.0
  ################################################################################
@@ -122,7 +122,7 @@ index de88928..68f724e 100644
 --- a/src/pcf_app/pcf_config.cpp
 +++ b/src/pcf_app/pcf_config.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -131,7 +131,7 @@ index 5ee11ee..817d14c 100644
 --- a/src/pcf_app/pcf_config.hpp
 +++ b/src/pcf_app/pcf_config.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -140,7 +140,7 @@ index 22de3be..d375866 100644
 --- a/src/pcf_app/pcf_config_types.cpp
 +++ b/src/pcf_app/pcf_config_types.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -149,7 +149,7 @@ index bd6a4a1..ac350fb 100644
 --- a/src/pcf_app/pcf_config_types.hpp
 +++ b/src/pcf_app/pcf_config_types.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -158,7 +158,7 @@ index 15d94c8..be11bd8 100644
 --- a/src/pcf_app/pcf_event_sig.hpp
 +++ b/src/pcf_app/pcf_event_sig.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-05 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -167,7 +167,7 @@ index ad2ed45..a94895a 100644
 --- a/src/pcf_app/pcf_policy_authorization.cpp
 +++ b/src/pcf_app/pcf_policy_authorization.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-05 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -176,7 +176,7 @@ index 27028b3..99df115 100644
 --- a/src/pcf_app/pcf_policy_authorization.hpp
 +++ b/src/pcf_app/pcf_policy_authorization.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-05 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -185,7 +185,7 @@ index ffa185a..8a7dda8 100644
 --- a/src/pcf_app/pcf_sm_policy_control.cpp
 +++ b/src/pcf_app/pcf_sm_policy_control.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-05 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -194,7 +194,7 @@ index 3a89646..a73a07e 100644
 --- a/src/pcf_app/pcf_sm_policy_control.hpp
 +++ b/src/pcf_app/pcf_sm_policy_control.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -203,7 +203,7 @@ index 9fc9442..2814f7b 100644
 --- a/src/pcf_app/policy_auth/app_session.hpp
 +++ b/src/pcf_app/policy_auth/app_session.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -212,7 +212,7 @@ index 6be3951..e69a979 100644
 --- a/src/pcf_app/policy_auth/mcx_qos.cpp
 +++ b/src/pcf_app/policy_auth/mcx_qos.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -221,7 +221,7 @@ index b837ebc..7d3616a 100644
 --- a/src/pcf_app/policy_auth/mcx_qos.hpp
 +++ b/src/pcf_app/policy_auth/mcx_qos.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -230,7 +230,7 @@ index cb70b89..d25abbe 100644
 --- a/src/pcf_app/policy_auth/pcf_policy_authorization_status_code.hpp
 +++ b/src/pcf_app/policy_auth/pcf_policy_authorization_status_code.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -239,7 +239,7 @@ index 095c984..bc892dc 100644
 --- a/src/pcf_app/sm_policy/policy_storage_yaml.cpp
 +++ b/src/pcf_app/sm_policy/policy_storage_yaml.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */

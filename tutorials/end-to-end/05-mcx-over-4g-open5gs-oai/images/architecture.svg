@@ -14,10 +14,10 @@
   <g font-size="14" fill="#1f2937">
     <rect x="30" y="30" width="180" height="62" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
     <text x="120" y="57" text-anchor="middle" font-weight="600">Phone A</text>
-    <text x="120" y="77" text-anchor="middle" font-size="12" fill="#4b5563">Alice · openMCX app</text>
+    <text x="120" y="77" text-anchor="middle" font-size="12" fill="#4b5563">Alice · OpenMCX app</text>
     <rect x="30" y="108" width="180" height="62" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
     <text x="120" y="135" text-anchor="middle" font-weight="600">Phone B</text>
-    <text x="120" y="155" text-anchor="middle" font-size="12" fill="#4b5563">Bob · openMCX app</text>
+    <text x="120" y="155" text-anchor="middle" font-size="12" fill="#4b5563">Bob · OpenMCX app</text>
   </g>
   <g stroke="#5b6472" stroke-width="1.6" fill="none">
     <path d="M210,61 C260,61 260,105 305,105" marker-end="url(#arrow)"/>
@@ -26,9 +26,9 @@
   <rect x="226" y="150" width="58" height="22" rx="11" fill="#ffffff" stroke="#9ca3af"/>
   <text x="255" y="166" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">Wi-Fi</text>
 
-  <!-- openMCX system -->
+  <!-- OpenMCX system -->
   <rect x="310" y="20" width="565" height="190" rx="16" fill="#fff7ed" stroke="#ea8a1a" stroke-width="2"/>
-  <text x="330" y="48" font-size="15" font-weight="700" fill="#9a4b05">Computer · HOST_IP · openMCX system</text>
+  <text x="330" y="48" font-size="15" font-weight="700" fill="#9a4b05">Computer · HOST_IP · OpenMCX system</text>
   <text x="855" y="48" text-anchor="end" font-size="12" fill="#9a4b05">on the EPC's SGi network</text>
   <g font-size="13" fill="#1f2937">
     <rect x="330" y="62" width="525" height="38" rx="9" fill="#ffffff" stroke="#f0b46b"/>
@@ -90,7 +90,7 @@
   <path d="M358,385 C380,410 390,430 413,430" stroke="#5b6472" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
   <text x="366" y="440" font-size="11" font-weight="600" fill="#374151">S1-U</text>
   <path d="M855,428 L886,428 L886,226 L820,226 L820,212" stroke="#5b6472" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
-  <text x="810" y="229" text-anchor="end" font-size="11" font-weight="600" fill="#374151">SGi · the Dispatcher's SIP and media to the openMCX system</text>
+  <text x="810" y="229" text-anchor="end" font-size="11" font-weight="600" fill="#374151">SGi · the Dispatcher's SIP and media to the OpenMCX system</text>
   <path d="M330,136 L300,136 L300,306 L413,306" stroke="#c0392b" stroke-width="2" stroke-dasharray="7 4" fill="none" marker-end="url(#arrow-red)"/>
   <rect x="205" y="224" width="190" height="22" rx="11" fill="#ffffff" stroke="#c0392b"/>
   <text x="300" y="240" text-anchor="middle" font-size="12" font-weight="600" fill="#a12d22">Rx · TS 29.214 · MCPTT QoS</text>

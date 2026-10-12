@@ -1,5 +1,5 @@
 // Device certificates: the TLS client certificates the SIP core requires, issued for a PKCS#10 request of a
-// signed-in client and revoked with a CRL (openMCX's own MCX Admin integration, not a 3GPP procedure).
+// signed-in client and revoked with a CRL (OpenMCX's own MCX Admin integration, not a 3GPP procedure).
 //
 // Specifications: RFC 5280, RFC 2986, RFC 6750.
 package common
@@ -256,7 +256,7 @@ func rpcClient(cfg *CredentialsConfig) (*http.Client, error) {
 	return &http.Client{Timeout: 10 * time.Second, Transport: transport}, nil
 }
 
-// openMCX: the revocation list is valid for crlValidity (RFC 5280 section 5.1.2.5 nextUpdate), refreshed every
+// OpenMCX: the revocation list is valid for crlValidity (RFC 5280 section 5.1.2.5 nextUpdate), refreshed every
 // crlRefresh, and dated crlClockSkew back for verifiers whose clock is behind.
 const (
 	crlValidity  = 30 * 24 * time.Hour

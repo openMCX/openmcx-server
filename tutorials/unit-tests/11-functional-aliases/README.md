@@ -1,6 +1,6 @@
 # Unit Test Tutorial 11: MCPTT functional aliases: activation, take-over, calls, presentation
 
-One computer runs the openMCX system from the published images, with four headless clients in place of phones. A
+One computer runs the OpenMCX system from the published images, with four headless clients in place of phones. A
 functional alias is a name for a role, such as `dispatcher` or `medic`, that users take on and give up; a call to the
 alias reaches whoever holds it (TS 24.379 clause 9A). A script takes the clients through:
 
@@ -26,7 +26,7 @@ End Tutorials 1 to 5.
 > and floor control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common services
 > (sign-in, configuration, keys) stays encrypted and is not captured.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 11: alice and bob share the dispatcher alias (one at a time), client-c and client-d the medic alias; calls to an alias, alias presentation and a broadcast ad hoc call; the openMCX system (SIP core, MCPTT server owning the aliases, MCData server, common services) on one computer, on the lab network 172.31.11.0/24"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 11: alice and bob share the dispatcher alias (one at a time), client-c and client-d the medic alias; calls to an alias, alias presentation and a broadcast ad hoc call; the OpenMCX system (SIP core, MCPTT server owning the aliases, MCData server, common services) on one computer, on the lab network 172.31.11.0/24"></p>
 
 ## The aliases of this lab
 
@@ -52,7 +52,7 @@ or deactivated alias left out. The aliases themselves are defined in the CMS (TS
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
-- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub**
+- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt OpenMCX images from Docker Hub**
   (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer.
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
 
@@ -137,8 +137,8 @@ docker compose exec client-c mcx-client --config /config/client-c.json --command
 
 ## 4. Look at the capture
 
-`run.sh` copies the capture to `captures/11-functional-aliases-run.pcap.gz`. The folder also holds a reference run,
-`captures/11-functional-aliases-full.pcap.gz` (149 KB, 2 555 frames): the frame numbers below and in the call flow are
+The script `run.sh` copies the capture of your run to `captures/11-functional-aliases-run.pcap.gz`. The folder also holds a reference run,
+[`captures/11-functional-aliases-full.pcap.gz`](captures/11-functional-aliases-full.pcap.gz) (149 KB, 2 555 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.11.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -224,7 +224,7 @@ The compose file names every image in full, all from Docker Hub:
 | `docker.io/openmcx/openmcx-setup:1.0.0` | The setup: the lab's generator |
 | `docker.io/openmcx/openmcx-mcptt-server:1.0.0`, `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCPTT and MCData servers |
 | `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services, among them the CMS with the alias definitions |
-| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`OpenMCX/openmcx-client` repository) |
 | `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The SIP core's database |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |

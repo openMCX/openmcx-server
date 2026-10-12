@@ -20,7 +20,7 @@ index 436d334..ef65760 100644
 --- a/src/upf_app/simpleswitch/pfcp_session.cpp
 +++ b/src/upf_app/simpleswitch/pfcp_session.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -29,7 +29,7 @@ index 389d4b0..d907931 100644
 --- a/src/upf_app/simpleswitch/pfcp_switch.cpp
 +++ b/src/upf_app/simpleswitch/pfcp_switch.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -38,7 +38,7 @@ index dea8053..0e139fb 100644
 --- a/src/upf_app/simpleswitch/pfcp_switch.hpp
 +++ b/src/upf_app/simpleswitch/pfcp_switch.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */

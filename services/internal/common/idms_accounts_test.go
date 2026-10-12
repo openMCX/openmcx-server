@@ -122,7 +122,7 @@ func TestVerifier(test *testing.T) {
 }
 
 // ------------------------------------------------------------------------------
-// MCX Admin accounts (slice B2; openMCX's own MCX Admin integration, not a 3GPP procedure): a link from MCX Admin,
+// MCX Admin accounts (slice B2; OpenMCX's own MCX Admin integration, not a 3GPP procedure): a link from MCX Admin,
 // stored only as a hash, the password set on it once, sign-in, and suspension refusing sign-in and making existing
 // tokens inactive at introspection (RFC 7662 section 2).
 func TestAdminAccounts(test *testing.T) {

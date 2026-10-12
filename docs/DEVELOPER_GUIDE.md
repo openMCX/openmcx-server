@@ -539,7 +539,7 @@ TS 24.379 describes call setup and release as procedures. OpenMCX keeps their st
   dropped and counted in `media_dropped` (`McServer::audio_packet`), but no Floor Revoke with cause 3 is sent and no
   such state is entered.
 - 'G: Floor Initialising', the non-controlling function's floor control (clause 6.5), multi-talker and dual floor
-  control are not implemented ([feature list](FEATURES.md#what-is-not-supported)).
+  control are not implemented ([limitations](LIMITATIONS.md)).
 
 ## 6. Security and protection layers
 
@@ -564,7 +564,7 @@ OpenMCX applies TS 33.180 in four layers. Where each applies in the request pipe
   to end by the clients, which the server never opens (the protected bit of the DATA PAYLOAD). XML integrity is not
   implemented for MCData.
 - **Wire profile.** TS 33.180 annex E.6 leaves the Key Parameters IEI unassigned; the protected labs use an explicitly
-  configured value (`--key-parameters-iei 0x79` in `tools/regress.py`). See the [current limits](FEATURES.md#current-limits).
+  configured value (`--key-parameters-iei 0x79` in `tools/regress.py`). See the [limitations](LIMITATIONS.md).
 
 ## 7. Configuration
 

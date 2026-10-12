@@ -1,6 +1,6 @@
-# openMCX: MCX over the OAI 5G core and the srsRAN gNB and srsUE (ZeroMQ virtual radio) (tutorials/end-to-end/04-mcx-over-srsran-5g/README.md).
+# OpenMCX: MCX over the OAI 5G core and the srsRAN gNB and srsUE (ZeroMQ virtual radio) (tutorials/end-to-end/04-mcx-over-srsran-5g/README.md).
 #
-# Tutorial 3 with another RAN: tutorial 3's openMCX system and OAI 5G core (with N5, ../03-mcx-over-oai-5g/
+# Tutorial 3 with another RAN: tutorial 3's OpenMCX system and OAI 5G core (with N5, ../03-mcx-over-oai-5g/
 # docker-compose-5g-core.yaml), its .env and ./config; here the srsRAN Project gNB and srsUE replace the OAI gNB and
 # nr-UE, and the dispatcher position runs inside srsUE. Tutorial 3's steps 1 to 3 come first (README).
 #

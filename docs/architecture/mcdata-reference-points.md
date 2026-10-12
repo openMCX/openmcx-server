@@ -1,7 +1,7 @@
 # MCData reference points
 
 Inventory of the MCData application-plane reference points of TS 23.282 V19.10.0
-§6.4.4 to §6.8.4 and their openMCX Phase 1 status. Common reference points
+§6.4.4 to §6.8.4 and their OpenMCX Phase 1 status. Common reference points
 (SIP-1/2, HTTP-1/2, CSC-n) are in the [MCPTT inventory](mcptt-reference-points.md)
 and apply unchanged to MCData.
 

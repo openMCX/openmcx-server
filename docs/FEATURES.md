@@ -1,19 +1,19 @@
-# The openMCX features
+# The OpenMCX features
 
-Project openMCX is a working implementation of **3GPP Release 19 mission-critical services (MCX)** for an IP network: the
+Project OpenMCX is a working implementation of **3GPP Release 19 mission-critical services (MCX)** for an IP network: the
 common service core, **MCPTT** (mission-critical push to talk), **MCData** (mission-critical data) and **MCVideo**
 (mission-critical video), within one MC system. It runs as a set
 of containers — a SIP core, application servers, common services and clients — and every feature listed here is
 exercised by an automated scenario in a fresh lab, with the SIP and media captured and checked against the
 specifications by decoders written independently of the implementation.
 
-This page is the map of what the implementation supports. It is not a conformance claim: see
-[what is not supported](#what-is-not-supported) and the per-feature coverage gaps linked from each test document.
+This page is the map of what the implementation supports. It is not a conformance claim: see the
+[limitations](LIMITATIONS.md) and the per-feature coverage gaps linked from each test document.
 
 - **Acceptance matrices** (clause-by-clause, with evidence): [MCPTT](architecture/mcptt-standards-and-acceptance.md),
   [MCData](architecture/mcdata-standards-and-acceptance.md), [MCVideo](architecture/mcvideo-standards-and-acceptance.md).
 - **Test index**: [MCPTT](../tests/README.md), [MCData](../tests/MCDATA_TEST.md), [MCVideo](../tests/MCVIDEO_TEST.md).
-- **Unimplemented items and why**: [what is not supported](#what-is-not-supported) and the [current limits](#current-limits).
+- **What is not supported, and the limits of what is**: [limitations](LIMITATIONS.md).
 
 ## Mission-critical services in Release 19
 
@@ -30,7 +30,7 @@ group, floor and priority state.
 | MCData | Short data (SDS), file distribution (FD), communication release, enhanced status, IP connectivity | TS 23.282, TS 24.282, TS 24.582 |
 | Security | Identity binding, key distribution, protected media, end-to-end protected MCData payloads, and for MCData, CSK-protected signalling and encrypted sensitive XML content | TS 33.180 |
 
-The two services share one architecture: the same clients, the same SIP core, the same identity and group management,
+The three services share one architecture: the same clients, the same SIP core, the same identity and group management,
 the same affiliation model, and the same split of **participating** (serving a user) and **controlling** (owning a
 call or a group) functions.
 
@@ -70,7 +70,7 @@ participating and controlling servers.
 | Affiliation | Explicit affiliation and de-affiliation, implicit affiliation for chat and ad hoc calls, `<MaxAffiliationsN2>` limits; the server side of the remote change of a user's selected group (TS 24.379 10.1.4), shared with MCVideo and exercised with the MCVideo client ([MCVideo tests](../tests/mcvideo/MCVIDEO_GROUP_SELECTION_TEST.md)) |
 | Regroup | A regroup using a preconfigured group. In a group regroup an authorised user combines groups into a temporary group that takes its configuration from a preconfigured group and its members from the constituents, which are refused calls of their own (148) until it is removed. In a user regroup the members are named users, whose participating functions notify them and consider them affiliated, so they take its calls without selecting it |
 | Functional aliases | Activation, activation limits, take-over and deactivation; aliases used in private, first-to-answer and ad hoc calls; the server side of status subscriptions (a user's aliases and an alias's users, TS 24.379 9A.2.2.2.4) and of binding an alias to groups (9A.4), shared with MCVideo and exercised with the MCVideo client ([MCVideo tests](../tests/mcvideo/MCVIDEO_FUNCTIONAL_ALIAS_TEST.md)) |
-| Location | The participating function configures each client's reporting at log-on, receives its reports, and answers authorised users' requests (refresh, area filters, sharing rights), also for users of another participating function or system. Authorised users can change others' reporting. Emergency alert areas raise an alert, and group geographic areas drive affiliation. The clients evaluate every Annex F.3 trigger against a simulated position and radio (TS 24.379 clause 13, §6.3.2.4; [tests](../tests/mcptt/LOCATION_TEST.md)) |
+| Location | The participating function configures each client's reporting at log-on, receives its reports, and answers authorised users' requests (refresh, area filters, sharing rights), also for users of another participating function. Authorised users can change others' reporting. Emergency alert areas raise an alert, and group geographic areas drive affiliation. The clients evaluate every Annex F.3 trigger against a simulated position and radio (TS 24.379 clause 13, §6.3.2.4; [tests](../tests/mcptt/LOCATION_TEST.md)) |
 | Protected media | Group key distribution (GMK) and end-to-end private call keys (PCK) for private, first-to-answer, ambient listening and emergency private calls, on one server, and across separate participating and controlling servers (SPK); encrypted speech and floor control; replay and tamper rejection, including 488 with warning 136 for an I_MESSAGE that fails authentication |
 | XML protection | The sensitive XML content of MCPTT signalling (identities, access token, client ID, indicators, location) encrypted hop by hop under each client's CSK or the SPK between servers, including at service authorisation, and every XML body signed (xmldsig, HMAC-SHA256); 403 with warning 140 or 139 for content that cannot be decrypted or verified (TS 24.379 §6.6.2, §6.6.3; [tests](../tests/mcptt/XML_PROTECTION_TEST.md)) |
 | Split servers | Server roles `both`, `participating` and `controlling` within one system; participating servers register their users and affiliations with the controlling peers, relay calls, messages and conference subscriptions, and pass speech and floor packets unchanged |
@@ -100,7 +100,7 @@ Data services over the signalling control plane and over an MSRP media plane.
 
 ## MCVideo
 
-Video services of TS 24.281 and TS 24.581 within one MC system and between two, on the same core as MCPTT
+Video services of TS 24.281 and TS 24.581 within one MC system, on the same core as MCPTT
 (`mcvideo-server` runs it with the MCVideo service profile). H.264 video is checked picture by picture at every receiver.
 
 | Feature | Supported | Reference |
@@ -121,9 +121,8 @@ Video services of TS 24.281 and TS 24.581 within one MC system and between two, 
 
 The CMS serves the MCVideo user profile document (TS 24.484 §9.3), which the MCVideo client reads.
 
-The tests are indexed in the [MCVideo test index](../tests/MCVIDEO_TEST.md). Not supported: several devices of one
-user (deferred), multiplexing (optional in §6.2.10), MBMS/MBS, off-network and the non-controlling function's own
-session (open task T10).
+The tests are indexed in the [MCVideo test index](../tests/MCVIDEO_TEST.md); what MCVideo does not support is in the
+[limitations](LIMITATIONS.md).
 
 ## Verification
 
@@ -138,60 +137,7 @@ Every feature is backed by evidence that is regenerated on each build:
   the MCData suites clear and protected) in parallel on one
   image before each increment is accepted; see [using the lab](USAGE.md).
 
-## What is not supported
+## Limitations
 
-| Area | Status |
-|---|---|
-| Off-network (ProSe/PC5) | Not implemented: the procedures need direct radio, which an IP lab does not have (MCPTT §10.2, §10.3, §11.2; MCData §9.3) |
-| MBS and eMBMS delivery | Not implemented: group media is unicast; broadcast bearers would change how it is delivered. Unicast over 5G SA (with QoS over N5) and 4G (with QoS over Rx) is in tutorials 3 to 5 |
-| Pre-established sessions | Kept unsupported: TS 24.379 §8.1 requires resource sharing through the SIP core or PCC (Rx, N5), and the PCRF and PCF of the tutorials (Open5GS, OAI) do not support it; setup requests are refused with 403 and warning 100 |
-| Interconnection, MC gateways and migration | Not in this edition: two MC systems interconnected over MCPTT-3, MCData-3 and MCVideo-3 or through MC gateway servers, group documents, files, location and key management across systems (CSC-16, CSC-22, External KMS), and migration of users to a partner system (CSC-17) |
-| MCData protection | Ad hoc group communications stay clear; XML integrity protection (xmlsig) is not implemented for MCData; MCPTT XML confidentiality and integrity are implemented ([tests](../tests/mcptt/XML_PROTECTION_TEST.md)) |
-| MCData message store | Implemented from TS 24.282 clause 21 without the OMA NMS and NotificationChannel specifications; LongPolling notification channels only; answers in JSON only, and the `listFilter` query is not supported; SDS and FD over HTTP are deposited, not media plane communications ([tests](../tests/mcdata/MCDATA_MESSAGE_STORE_TEST.md)) |
-| QoS interfaces | The MCPTT server is the application function over Rx (4G) and N5 (5G); N33 through the NEF and the SIP core as application function are not implemented |
-| Interworking, relays and isolated operation | Interworking with LMR and other non-3GPP systems, ProSe relays and isolated operation (IOPS) are not in this edition |
-| Several devices per user | A user is logged in on one device at a time |
-| Group call options | Audio cut-in, multi-talker groups, override with simultaneous talkers, and the acknowledged group call options (TNG1: proceed or convert on timeout, the list of members who did not acknowledge) are not implemented |
-| MCVideo | One transmitter at a time; video conferencing, video modes (urgent, non-urgent, non real time) and remote camera control are not implemented |
-| MCData data streaming | Not implemented; TS 24.282 has no procedure for it |
-| Discreet listening, logging and recording, lawful interception, charging | Not implemented |
-| Performance | Access time, mouth-to-ear latency and MOS have not been measured |
-| Physical devices | The Android app runs on real phones over Wi-Fi (tutorials 1 and 2); not yet over a 4G or 5G radio or in a deployed network |
-
-## Current limits
-
-Within what is implemented:
-
-- **Security profile.** The default lab keeps media and floor protection off; the protected fixtures use an explicitly
-  configured E.6 numeric wire profile that has not been qualified against an independent peer. SIP uses mutually
-  authenticated TLS, not a qualified TS 33.203 Gm profile, and the servers' Diameter uses TLS rather than NDS/IP. MCData
-  XML integrity (xmlsig) is not implemented.
-- **Documents.** The IdMS, group and configuration documents and the management APIs implement a documented subset:
-  user profiles carry the `<ruleset>` actions and lists that are enforced, group documents the group elements that are
-  enforced, and neither follows the complete TS 24.484 and OMA XCAP schemas yet. Temporary groups formed by the GMS
-  (TS 24.481 6.3.14) are applied as group regroups; merging ongoing calls of the constituent groups is not implemented.
-- **Registration.** The service authorisation by third-party REGISTER (TS 24.379 clause 7.3.2) is not supported; the
-  clients authorise by PUBLISH (clause 7.3.3).
-- **Keys.** The servers and the GMS fetch keys from the KMS over an internal interface, not with the access-token
-  request of TS 33.180 annex D.2.
-- **Media addresses.** The servers accept media only from the address and port in a client's SDP and send to them; they
-  do not learn the address from the received media, so a client behind NAT is reachable only if the address it
-  advertises is.
-- **Group calls.** Pre-established sessions are not supported, and there is no production RTP jitter, loss and
-  reordering scheduler.
-- **Private calls.** The forwarding settings MESSAGE and warning 174 are not implemented. Private calls without floor control are on-demand only (no `mc_no_floor_ctrl` pre-established variant).
-- **Broadcast group calls.** Group-broadcast and user-broadcast hierarchies are a project profile, because TS 24.379
-  §4.12 defines no procedure for them.
-- **Ad hoc group calls.** End-to-end security is not implemented; the calls are clear.
-- **Functional aliases.** The MCPTT lab client activates, deactivates and takes over functional aliases (`fa`) and
-  learns each outcome from its status subscription (TS 24.379 clause 9A.2.1); the MCData server handles activation and
-  deactivation (TS 24.282 clause 22.2.2.2.3). Activations do not expire, the status lists the activated aliases and
-  those the user may take over, leaving out deactivated and refused ones, and the alias-to-alias call policy (warnings
-  171 and 172) is not implemented.
-- **Location.** Positions and radio measurements are simulated. The SEAL location management server (TS 24.545) has
-  no CoAP, SIP-based subscription, location-based query or trigger other than the periodic one.
-- **Interfaces and deployment.** The Linux lab client reads and writes speech as WAV files, with no microphone or
-  speaker interface (the Android app and the dispatcher position have one). MCX runs over 5G SA cores with QoS over N5
-  and over a 4G core with QoS over Rx in tutorials 3 to 5, with a simulated RAN; it has not been run on a production
-  network. The lab's common-service configuration shares credentials between services and needs further secret isolation
-  for production.
+What is not in this edition and the known limits of what is implemented are listed, checked against the code, in
+[LIMITATIONS.md](LIMITATIONS.md).

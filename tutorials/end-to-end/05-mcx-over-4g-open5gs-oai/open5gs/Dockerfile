@@ -30,7 +30,7 @@ RUN set -e; cd /src; \
       git -c user.name=openMCX -c user.email=noreply@openmcx.invalid am --3way -q "$p" \
         || { echo "patch $(basename "$p") does not apply to open5gs ${OPEN5GS_COMMIT}" >&2; exit 1; }; \
     done; \
-    { echo "Open5GS built by openMCX (tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/open5gs)"; \
+    { echo "Open5GS built by OpenMCX"; \
       echo "upstream: https://github.com/open5gs/open5gs.git"; \
       echo "tag: ${OPEN5GS_TAG}"; echo "commit: ${OPEN5GS_COMMIT}"; \
       echo "patches (sha256 of all: $sum):"; \

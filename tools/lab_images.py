@@ -1,7 +1,7 @@
 """The per-program images of the lab (docker/Dockerfile targets, docs/IMAGES.md): which image runs which program.
 
-Used by the lab preparation tools for --images TAG: every service of the openMCX application image runs the image
-of the program its entrypoint starts. openMCX lab tooling, no 3GPP behaviour.
+Used by the lab preparation tools for --images TAG: every service of the OpenMCX application image runs the image
+of the program its entrypoint starts. OpenMCX lab tooling, no 3GPP behaviour.
 """
 
 from pathlib import PurePosixPath

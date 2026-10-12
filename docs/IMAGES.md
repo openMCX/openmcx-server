@@ -1,4 +1,4 @@
-# The openMCX images and containers
+# The OpenMCX images and containers
 
 Which image runs which program, and which lab container runs it. How to build them: `docs/BUILD.md`.
 
@@ -22,7 +22,7 @@ Which image runs which program, and which lab container runs it. How to build th
 
 Before the split every container ran the 1.6 GB `openmcx` image with all programs and their debug information.
 
-Every long-running openMCX program prints the openMCX banner naming itself when it starts.
+Every long-running OpenMCX program prints the OpenMCX banner naming itself when it starts.
 
 ## Lab containers
 

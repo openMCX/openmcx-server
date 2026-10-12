@@ -1,6 +1,6 @@
-# The openMCX coding style
+# The OpenMCX coding style
 
-The rules for all openMCX code (openmcx-server, openmcx-client, openmcx-admin). The tools in section 7 check them; code that is refactored follows them at once, other
+The rules for all OpenMCX code (openmcx-server, openmcx-client, openmcx-admin). The tools in section 7 check them; code that is refactored follows them at once, other
 code as it is touched.
 
 ## 1. Names

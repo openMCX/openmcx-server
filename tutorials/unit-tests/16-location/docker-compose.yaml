@@ -1,4 +1,4 @@
-# openMCX: Unit Test Tutorial 16, MCPTT and MCData location: reports, triggers, requests and areas (tutorials/unit-tests/16-location/README.md).
+# OpenMCX: Unit Test Tutorial 16, MCPTT and MCData location: reports, triggers, requests and areas (tutorials/unit-tests/16-location/README.md).
 #
 # The regression lab of this feature, from the published images: the MCPTT and MCData servers, the common
 # services, the SIP core and four headless clients (client-a to client-d), with SIP in clear (5060/tcp, no

@@ -1,5 +1,5 @@
 {{/*
-openMCX chart helpers.
+OpenMCX chart helpers.
 
 The Services keep the names of the Docker Compose services (sip-core, idms, mcptt-server, ...): the generated
 configuration (certificates, server and Kamailio configuration) names its peers by them. One release per namespace.
@@ -43,7 +43,7 @@ openmcx.org/edge: "true"
 {{- end }}
 
 {{/*
-Image of an openMCX program: (dict "root" $ "program" "openmcx-common" "tag" "1.0.0").
+Image of an OpenMCX program: (dict "root" $ "program" "openmcx-common" "tag" "1.0.0").
 images.overrides.<program> replaces the whole reference.
 */}}
 {{- define "openmcx.image" -}}

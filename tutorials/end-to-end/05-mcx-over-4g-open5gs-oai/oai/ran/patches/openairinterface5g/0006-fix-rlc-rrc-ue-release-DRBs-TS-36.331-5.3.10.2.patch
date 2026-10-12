@@ -20,7 +20,7 @@ index 8f2ec5f..5889f44 100644
 @@ -1,5 +1,6 @@
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
-+ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/oai/ran
++ * Modified by OpenMCX, 2026-10-05 (MCX over LTE); see the NOTICE file distributed with this software.
   */
  
  /* from openair */

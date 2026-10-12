@@ -12,7 +12,7 @@ ENB_TAG=${OAI_ENB_TAG:-2026.w39-mcx}
 SRC="$HERE/src"
 
 rm -rf "$SRC"
-git clone --depth 1 --branch "$OAI_TAG" https://gitlab.eurecom.fr/oai/openairinterface5g.git "$SRC"
+git clone --depth 1 --branch "$OAI_TAG" https://github.com/OPENAIRINTERFACE/openairinterface5g.git "$SRC"
 test "$(git -C "$SRC" rev-parse HEAD)" = "$OAI_COMMIT" \
   || { echo "openairinterface5g $OAI_TAG is not $OAI_COMMIT" >&2; exit 1; }
 sum=$(cat "$HERE"/patches/openairinterface5g/*.patch | sha256sum | cut -d' ' -f1)
@@ -21,8 +21,8 @@ for patch in "$HERE"/patches/openairinterface5g/*.patch; do
     || { echo "patch $(basename "$patch") does not apply to openairinterface5g $OAI_COMMIT" >&2; exit 1; }
 done
 {
-  echo "OpenAirInterface eNB and LTE UE built by openMCX (tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/oai/ran)"
-  echo "upstream: https://gitlab.eurecom.fr/oai/openairinterface5g.git"
+  echo "OpenAirInterface eNB and LTE UE built by OpenMCX"
+  echo "upstream: https://github.com/OPENAIRINTERFACE/openairinterface5g.git"
   echo "tag: $OAI_TAG"; echo "commit: $OAI_COMMIT"
   echo "patches (sha256 of all: $sum):"
   for patch in "$HERE"/patches/openairinterface5g/*.patch; do
@@ -44,7 +44,7 @@ for image in "oai-enb:$ENB_TAG" "oai-lte-ue:$UE_TAG"; do
 FROM $image-build
 COPY LICENSE NOTICE SOURCE /usr/share/doc/openmcx-oai/
 COPY patches/openairinterface5g/ /usr/share/doc/openmcx-oai/patches/
-LABEL org.opencontainers.image.source="https://gitlab.eurecom.fr/oai/openairinterface5g" \\
+LABEL org.opencontainers.image.source="https://github.com/OPENAIRINTERFACE/openairinterface5g" \\
       org.opencontainers.image.version="$OAI_TAG" org.opencontainers.image.revision="$OAI_COMMIT" \\
       org.opencontainers.image.licenses="LicenseRef-CSSL-1.0" org.openmcx.patches.sha256="$sum"
 EOF

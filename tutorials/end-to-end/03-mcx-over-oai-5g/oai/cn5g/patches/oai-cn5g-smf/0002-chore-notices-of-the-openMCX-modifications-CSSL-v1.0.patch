@@ -31,7 +31,7 @@ index ff2375ad..532d4c55 100644
 --- a/src/api-server/smf-http2-server.cpp
 +++ b/src/api-server/smf-http2-server.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -40,7 +40,7 @@ index 4f0b422f..9712f9d0 100644
 --- a/src/api-server/smf-http2-server.h
 +++ b/src/api-server/smf-http2-server.h
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -49,7 +49,7 @@ index 06c105a3..a0d43e5f 100644
 --- a/src/smf_app/session_handler.cpp
 +++ b/src/smf_app/session_handler.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-05 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -58,7 +58,7 @@ index 140a062e..854fcaca 100644
 --- a/src/smf_app/session_handler.hpp
 +++ b/src/smf_app/session_handler.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-05 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -67,7 +67,7 @@ index 3f9b1cca..f59a6424 100644
 --- a/src/smf_app/smf_context.cpp
 +++ b/src/smf_app/smf_context.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-05 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -76,7 +76,7 @@ index e06bf399..87ec8d59 100644
 --- a/src/smf_app/smf_context.hpp
 +++ b/src/smf_app/smf_context.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-05 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -85,7 +85,7 @@ index 59af6d23..debb90db 100644
 --- a/src/smf_app/smf_msg.cpp
 +++ b/src/smf_app/smf_msg.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -94,7 +94,7 @@ index 83e3e74f..e1a10cbf 100644
 --- a/src/smf_app/smf_msg.hpp
 +++ b/src/smf_app/smf_msg.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -103,7 +103,7 @@ index 7edb683f..2aa26539 100644
 --- a/src/smf_app/smf_n1.cpp
 +++ b/src/smf_app/smf_n1.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -112,7 +112,7 @@ index d37f35a3..f5d34c99 100644
 --- a/src/smf_app/smf_n2.cpp
 +++ b/src/smf_app/smf_n2.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -121,7 +121,7 @@ index 9b67e1dd..b3244186 100644
 --- a/src/smf_app/smf_pfcp_association.cpp
 +++ b/src/smf_app/smf_pfcp_association.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -130,7 +130,7 @@ index 1332740f..88aec5d3 100644
 --- a/src/smf_app/smf_pfcp_association.hpp
 +++ b/src/smf_app/smf_pfcp_association.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-01 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -139,7 +139,7 @@ index 83165726..554cd436 100644
 --- a/src/smf_app/smf_procedure.cpp
 +++ b/src/smf_app/smf_procedure.cpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-05 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */
@@ -148,7 +148,7 @@ index 6c82c04c..bd2df0fd 100644
 --- a/src/smf_app/smf_procedure.hpp
 +++ b/src/smf_app/smf_procedure.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-05 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */

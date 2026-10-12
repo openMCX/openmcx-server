@@ -1,9 +1,9 @@
-# openMCX: tutorial 1's openMCX system on the EPC's SGi network, and the Open5GS 4G core (EPC) with openMCX's PCRF
+# OpenMCX: tutorial 1's OpenMCX system on the EPC's SGi network, and the Open5GS 4G core (EPC) with OpenMCX's PCRF
 # patch (open5gs/). Tutorial 5 includes this file and adds the RAN, the UE and the dispatcher; start it through
 # docker-compose-4g-mcx.yaml, not alone.
 #
 # Networks: openmcx-4g-core 192.168.73.128/26 (S1-MME, S1-U, S11, S5/S8, S6a, Gx, Rx), openmcx-4g-sgi
-# 192.168.74.128/26 (SGi and the openMCX system); the UE pool 10.45.0.0/16 (APN oai.ipv4).
+# 192.168.74.128/26 (SGi and the OpenMCX system); the UE pool 10.45.0.0/16 (APN oai.ipv4).
 
 services:
   setup:

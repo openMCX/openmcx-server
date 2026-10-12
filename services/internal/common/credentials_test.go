@@ -25,7 +25,7 @@ import (
 )
 
 // ------------------------------------------------------------------------------
-// The Credential Service (openMCX's own MCX Admin integration, not a 3GPP procedure) against a MySQL
+// The Credential Service (OpenMCX's own MCX Admin integration, not a 3GPP procedure) against a MySQL
 // (MCX_TEST_MYSQL: a DSN without a database, e.g. root:pw@tcp(mysql:3306)/), with the SIP core's subscriber table:
 // SIP digest credentials issued to a signed-in client (RFC 6750) and stored as their digest hash only (RFC 2617
 // section 3.2.2.2), replaced, suspended, resumed and retired on MCX Admin's request; then device certificates

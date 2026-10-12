@@ -253,7 +253,7 @@ func (svc *service) refreshGrant(writer http.ResponseWriter, request *http.Reque
 	}
 	// Deviation from OpenID Connect Core 1.0 (errata set 2) section 12.2, a SHOULD NOT: the refreshed ID token
 	// carries the nonce of the original authentication (the section allows it, the value then MUST be the
-	// original one) because the openMCX clients check the nonce of every ID token they receive, refreshed ones
+	// original one) because the OpenMCX clients check the nonce of every ID token they receive, refreshed ones
 	// included (src/security/http.cpp oidc_refresh).
 	svc.issueTokens(writer, user, scope, record.Nonce, refreshRecord{Chain: record.Chain, Login: record.Login, User: record.User,
 		ClientID: record.ClientID, Scope: record.Scope, Nonce: record.Nonce})

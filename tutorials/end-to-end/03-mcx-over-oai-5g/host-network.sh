@@ -1,12 +1,12 @@
 #!/bin/sh
-# Tutorial 3: this computer's part of the path between the openMCX system and the 5G UEs (run with sudo).
+# Tutorial 3: this computer's part of the path between the OpenMCX system and the 5G UEs (run with sudo).
 #
 #   sudo ./host-network.sh add       before `up`
 #   sudo ./host-network.sh remove    after `down`
 #
-# - The UE pool 12.1.1.0/24 is reached through the UPF (its N6 address): replies of the openMCX system to a UE go back
+# - The UE pool 12.1.1.0/24 is reached through the UPF (its N6 address): replies of the OpenMCX system to a UE go back
 #   through the 5G user plane.
-# - Packets of the openMCX containers to the UE pool leave from HOST_IP, the address the UE reaches the system at:
+# - Packets of the OpenMCX containers to the UE pool leave from HOST_IP, the address the UE reaches the system at:
 #   the UE sees the same address both ways, and the PCF's packet filters (the server's address in the SDP, HOST_IP)
 #   match the speech the UPF carries.
 set -eu

@@ -1,6 +1,6 @@
 # Unit Test Tutorial 5: MCPTT emergency and imminent peril group calls and their alerts
 
-One computer runs the openMCX system from the published images, with four headless clients in place of phones.
+One computer runs the OpenMCX system from the published images, with four headless clients in place of phones.
 A script takes them through the priority group calls of TS 24.379:
 
 - a normal group call raised to imminent peril, then to emergency, and back to normal;
@@ -23,13 +23,13 @@ The tutorial is built on the emergency, imminent peril and alert parts of the re
 > floor control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common services
 > (sign-in, configuration, keys) stays encrypted and is not captured.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 5: client-a and client-b may raise imminent peril, emergency and alerts, client-c may not, client-d joins the emergency call late; the openMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.5.0/24"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 5: client-a and client-b may raise imminent peril, emergency and alerts, client-c may not, client-d joins the emergency call late; the OpenMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.5.0/24"></p>
 
 ## What you need
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
-- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub**
+- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt OpenMCX images from Docker Hub**
   (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer.
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
 
@@ -116,8 +116,8 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 
 ## 4. Look at the capture
 
-`run.sh` copies the capture to `captures/05-emergency-imminent-peril-run.pcap.gz`. The folder also holds a reference
-run, `captures/05-emergency-imminent-peril-full.pcap.gz` (149 KB, 1 839 frames): the frame numbers below and in the
+The script `run.sh` copies the capture of your run to `captures/05-emergency-imminent-peril-run.pcap.gz`. The folder also holds a reference
+run, [`captures/05-emergency-imminent-peril-full.pcap.gz`](captures/05-emergency-imminent-peril-full.pcap.gz) (149 KB, 1 839 frames): the frame numbers below and in the
 call flow are those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.5.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -216,7 +216,7 @@ The compose file names every image in full, all from Docker Hub:
 | `docker.io/openmcx/openmcx-setup:1.0.0` | The setup: the lab's generator |
 | `docker.io/openmcx/openmcx-mcptt-server:1.0.0`, `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCPTT and MCData servers |
 | `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services |
-| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`OpenMCX/openmcx-client` repository) |
 | `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The SIP core's database |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |

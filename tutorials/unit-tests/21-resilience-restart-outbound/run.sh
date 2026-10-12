@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# openMCX Unit Test Tutorial 21: the steps of README.md, one after the other, each checked before the next.
+# OpenMCX Unit Test Tutorial 21: the steps of README.md, one after the other, each checked before the next.
 # Usage: ./run.sh            (the system must be up: docker compose up -d --wait)
 # Writes captures/21-resilience-run.pcap.gz (captures/21-resilience-full.pcap.gz is the reference run of README.md).
 # Set COMPOSE to another command than "docker compose" if needed, and OVERRIDE to a second compose file (other
@@ -13,7 +13,7 @@ if [ -n "${OVERRIDE:-}" ]; then DC+=(-f "$OVERRIDE"); fi
 CAPTURE=21-resilience-full.pcap   # in the capture container
 OUT=captures/21-resilience-run.pcap.gz
 BOB=sip:bob.mcptt@mcx.test
-# The MC UE without a SIP listener of step 7: a small SIP client in Python, a copy of the one of the openMCX regression
+# The MC UE without a SIP listener of step 7: a small SIP client in Python, a copy of the one of the OpenMCX regression
 # tests (tests/integration/outbound_flow_client.py).
 FLOW_CLIENT=$PWD/outbound_flow_client.py
 

@@ -16,7 +16,7 @@ distributed under the same license.
 
 Modifications (AGPL-3.0 section 5(a))
 -------------------------------------
-Each modified file carries the notice "Modified by openMCX, 2026 (MCX N5 QoS)". The changes, as patches against
+Each modified file carries the notice "Modified by OpenMCX, 2026-10-05 (MCX N5 QoS)". The changes, as patches against
 commit d2f4b70:
 
   patches/srsran-project/0001   A PDU Session Resource Modify Request whose QoS flows cannot be added (for example

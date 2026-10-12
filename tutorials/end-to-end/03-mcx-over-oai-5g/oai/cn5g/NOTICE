@@ -1,16 +1,16 @@
-openMCX modifications of OpenAirInterface CN5G
+OpenMCX modifications of OpenAirInterface CN5G
 ==============================================
 
 This directory and the images openmcx/oai-amf:mcx-n5, openmcx/oai-pcf:mcx-n5, openmcx/oai-smf:mcx-n5 and
-openmcx/oai-upf:mcx-n5 contain OAI CN5G network functions (OpenAirInterface Software Alliance, https://gitlab.eurecom.fr/oai/cn5g), version v2.2.1,
-modified by openMCX for tutorial 3 (TS 29.514 Npcf_PolicyAuthorization from the MCPTT server as AF).
+openmcx/oai-upf:mcx-n5 contain OAI CN5G network functions (OpenAirInterface Software Alliance, https://github.com/OPENAIRINTERFACE: oai-cn5g-amf, oai-cn5g-pcf, oai-cn5g-smf, oai-cn5g-upf), version v2.2.1,
+modified by OpenMCX for tutorial 3 (TS 29.514 Npcf_PolicyAuthorization from the MCPTT server as AF).
 
 License
 -------
 OAI CN5G is distributed under the Collaborative Standards Software License v1.0 (CSSL), included as LICENSE in this
 directory and in each image (/usr/share/doc/openmcx-oai/LICENSE), and at https://openairinterface.org/oai-cssl/. The
-modifications (the patches in this directory) are distributed under the same license. The rest of the
-openmcx-server repository is under its own license (the repository's LICENSE); this directory is not.
+modifications (the patches in this directory) are distributed under the same license. OpenMCX itself is
+under its own license; these modifications are not.
 
 Patents (CSSL section 3): the patent license granted with the software covers study, testing and research purposes
 only (section 3.1). Any other use, for example commercial deployment, requires a license of the Essential Patents on
@@ -18,7 +18,7 @@ FRAND terms from the Contributors and/or the Licensor (section 3.2).
 
 Modifications (CSSL section 5.2)
 --------------------------------
-Each modified file carries the notice "Modified by openMCX, 2026 (MCX N5 QoS)". The changes, as patches against
+Each modified file carries the notice "Modified by OpenMCX, <date of the change> (MCX N5 QoS)". The changes, as patches against
 v2.2.1:
 
   patches/oai-cn5g-amf/   PDU Session Resource Modify Response: the failed PDU sessions (TS 38.413 9.2.1.6) go to
@@ -33,7 +33,7 @@ v2.2.1:
 Corresponding source
 --------------------
 The complete source of each image is the upstream repository at tag v2.2.1
-(https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-<nf>, with its submodules) with the patches above applied:
+(https://github.com/OPENAIRINTERFACE/oai-cn5g-<nf>, with its submodules) with the patches above applied:
 build-images.sh recreates it and builds the images from it. The tag's commit of each network function is pinned
 (README.md); each image names it, the submodule commits and the patches' SHA-256 in
 /usr/share/doc/openmcx-oai/SOURCE. This also provides the source of the third-party

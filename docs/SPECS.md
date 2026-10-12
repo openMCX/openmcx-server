@@ -1,6 +1,6 @@
 # Specifications followed
 
-The versions the openMCX code follows (docs/CODING_STYLE.md section 2.2). A file header names the specifications of
+The versions the OpenMCX code follows (docs/CODING_STYLE.md section 2.2). A file header names the specifications of
 that file; the versions are these unless the header says otherwise. The texts are kept outside the repositories
 (ETSI copyright), as `~/openMCX/specs/ts_<number>.txt`, converted from the ETSI PDFs, to check the clauses the code
 cites against the text.

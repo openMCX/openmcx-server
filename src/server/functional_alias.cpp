@@ -58,7 +58,7 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
     }
   }
   // TS 24.379 clause 9A.2.2.2.3 steps 4A and 4B (MCPTT only): each alias must be one the user may change, in the
-  // <FunctionalAliasList> of its user profile; openMCX's user profile has none, so the aliases whose
+  // <FunctionalAliasList> of its user profile; OpenMCX's user profile has none, so the aliases whose
   // <mcptt-user-list> names the user stand for it.
   if (!relayed && svc_.service == Service::mcptt)
     for (const auto &alias : request.aliases) {

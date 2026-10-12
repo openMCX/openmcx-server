@@ -122,7 +122,7 @@ private:
 
 //------------------------------------------------------------------------------
 // TS 33.180 tables B.2.1.2-1 and B.2.1.3-1: the ID token standard claims and the mcptt_id claim, with the nonce.
-// The client_id and sip_uri claims are an openMCX extension (not in those tables): the identity binding the openMCX
+// The client_id and sip_uri claims are an OpenMCX extension (not in those tables): the identity binding the OpenMCX
 // IdMS adds and verify_id_token requires.
 json valid_claims() {
   const auto now = std::time(nullptr);

@@ -4,7 +4,7 @@ Tutorial 1's system and phones, plus a **dispatcher position**: an MC user who w
 activates from MCX Admin like a phone, then calls the group `operations`, where Alice and Bob join on their phones,
 and talks to them with the browser's microphone.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 2: the phones and a dispatcher position (on this computer or another one) reach tutorial 1's openMCX system over the Wi-Fi"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 2: the phones and a dispatcher position (on this computer or another one) reach tutorial 1's OpenMCX system over the Wi-Fi"></p>
 
 The position reaches the system the way the phones do: through `HOST_IP` and the ports tutorial 1 publishes. So it
 runs on tutorial 1's computer or on another computer on the same network, unchanged.
@@ -41,7 +41,7 @@ NAME                 STATUS
 openmcx-dispatcher   Up 10 seconds (healthy)
 ```
 
-The image is `openmcx/openmcx-dispatcher:1.0.0` from Docker Hub: the openMCX client engine and the dispatcher's web
+The image is `openmcx/openmcx-dispatcher:1.0.0` from Docker Hub: the OpenMCX client engine and the dispatcher's web
 service. The position has no user yet; it gets one in step 4.
 
 ## 3. Create the dispatcher user

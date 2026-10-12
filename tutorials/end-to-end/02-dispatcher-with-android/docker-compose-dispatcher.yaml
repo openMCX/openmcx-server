@@ -1,4 +1,4 @@
-# openMCX: a dispatcher position for the system of tutorial 1 (tutorials/end-to-end/02-dispatcher-with-android/README.md).
+# OpenMCX: a dispatcher position for the system of tutorial 1 (tutorials/end-to-end/02-dispatcher-with-android/README.md).
 #
 # The position reaches the system as the phones do: through HOST_IP and the ports tutorial 1 publishes, from the
 # network of the computer it runs on: tutorial 1's computer, or another one on the same network (DISPATCHER_IP).

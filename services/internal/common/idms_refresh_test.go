@@ -74,7 +74,7 @@ func TestRefreshTokenGrant(test *testing.T) {
 		test.Fatalf("refreshed access token: %+v %v", access, err)
 	}
 	// OpenID Connect Core 1.0 section 12.2: the refreshed ID token names the same user and keeps the acr; it repeats
-	// the nonce (a SHOULD NOT there, kept for the openMCX clients, see refreshGrant).
+	// the nonce (a SHOULD NOT there, kept for the OpenMCX clients, see refreshGrant).
 	id, err := VerifyToken(second.IDToken, &key.PublicKey, "https://idms.mcx.test", "mcx-client", testNow)
 	if err != nil || id.MCPTTID != "sip:alice@mcx.test" || id.Nonce != "nonce-1" || id.ClientID != "alice-device" ||
 		id.ACR != acrPassword {
@@ -180,7 +180,7 @@ func TestRefreshTokensFailedSaveIsRetried(test *testing.T) {
 }
 
 // ------------------------------------------------------------------------------
-// In admin mode (openMCX's own MCX Admin integration, not a 3GPP procedure) a refresh is refused for a suspended
+// In admin mode (OpenMCX's own MCX Admin integration, not a 3GPP procedure) a refresh is refused for a suspended
 // account, after Revoke devices from MCX Admin with the server client credentials, and after a new password.
 func TestRefreshTokensInAdminMode(test *testing.T) {
 	handler, admin, _ := adminModeHandler(test)

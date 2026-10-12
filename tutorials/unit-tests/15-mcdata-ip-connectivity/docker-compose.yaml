@@ -1,4 +1,4 @@
-# openMCX: Unit Test Tutorial 15, MCData IP connectivity sessions between two users (tutorials/unit-tests/15-mcdata-ip-connectivity/README.md).
+# OpenMCX: Unit Test Tutorial 15, MCData IP connectivity sessions between two users (tutorials/unit-tests/15-mcdata-ip-connectivity/README.md).
 #
 # The regression lab of this feature, from the published images: the MCPTT and MCData servers, the common
 # services, the SIP core and four headless clients (client-a to client-d), with SIP in clear (5060/tcp, no

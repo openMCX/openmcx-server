@@ -1,5 +1,5 @@
 // CMS user records: the user record the CMS serves its profile documents from, taken from site.json or, in admin
-// mode, from MCX Admin (openMCX's own MCX Admin integration, not a 3GPP procedure).
+// mode, from MCX Admin (OpenMCX's own MCX Admin integration, not a 3GPP procedure).
 //
 // Specifications: TS 24.484 V19.6.0 (Rel-19).
 package common

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The openMCX chart's configuration Secret.
+"""The OpenMCX chart's configuration Secret.
 
 In the cluster (the chart's setup Job, in the openmcx-setup image): when the Secret does not exist, write a new
 system's configuration with the tutorial's setup (/opt/tutorials/configure.py, for HOST_IP), set the external ports

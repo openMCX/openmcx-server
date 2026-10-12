@@ -37,14 +37,16 @@ for nf in "${nfs[@]}"; do
   all_patches=("${patches[@]}")
   for sub in "${submodule_dirs[@]}"; do all_patches+=("$dir/$sub"/*.patch); done
   if [ ! -e "$repo" ]; then
-    git clone -q "https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-$nf.git" "$repo"
+    git clone -q "https://github.com/OPENAIRINTERFACE/oai-cn5g-$nf.git" "$repo"
     tagged=$(git -C "$repo" rev-parse "$TAG^{commit}")
     if [ "$tagged" != "$pin" ]; then
       echo "oai-cn5g-$nf: $TAG is now $tagged, not the pinned $pin: the patches are for $pin" >&2
       exit 1
     fi
     git -C "$repo" switch -q -c "$BRANCH" "$pin"
-    git -C "$repo" submodule update -q --init --recursive
+    # The submodules name gitlab.eurecom.fr; OAI publishes the same repositories and commits on GitHub.
+    git -C "$repo" -c url."https://github.com/OPENAIRINTERFACE/".insteadOf="https://gitlab.eurecom.fr/oai/cn5g/" \
+      submodule update -q --init --recursive
     apply() {  # <git work tree> <patch>...
       local tree=$1; shift
       for patch in "$@"; do

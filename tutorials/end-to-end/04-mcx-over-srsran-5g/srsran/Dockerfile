@@ -28,7 +28,7 @@ RUN set -e; cd /src; \
       git -c user.name=openMCX -c user.email=noreply@openmcx.invalid am --3way -q "$p" \
         || { echo "patch $(basename "$p") does not apply to srsRAN_Project ${SRSRAN_PROJECT_COMMIT}" >&2; exit 1; }; \
     done; \
-    { echo "srsRAN Project gNB built by openMCX (tutorials/end-to-end/04-mcx-over-srsran-5g/srsran)"; \
+    { echo "srsRAN Project gNB built by OpenMCX"; \
       echo "upstream: https://github.com/srsran/srsRAN_Project.git"; \
       echo "tag: ${SRSRAN_PROJECT_TAG}"; echo "commit: ${SRSRAN_PROJECT_COMMIT}"; \
       echo "patches (sha256 of all: $sum):"; \

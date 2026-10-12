@@ -1,5 +1,5 @@
 // The private implementation of mcx::SipEngine (include/mcx/sip.hpp): the SIP user agent and
-// application server core of openMCX over pjsip (RFC 3261, as TS 24.229 profiles it for the MC
+// application server core of OpenMCX over pjsip (RFC 3261, as TS 24.229 profiles it for the MC
 // services), with its registrations (RFC 3261 section 10), subscriptions (RFC 6665), session
 // timers (RFC 4028) and the MC services' body protection hooks (TS 33.180 clause 9).
 //

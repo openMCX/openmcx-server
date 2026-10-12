@@ -1,4 +1,4 @@
-# openMCX server images for Red Hat Enterprise Linux family clusters (docs/BUILD.md), valid for CentOS Stream 10:
+# OpenMCX server images for Red Hat Enterprise Linux family clusters (docs/BUILD.md), valid for CentOS Stream 10:
 # the same programs and targets as docker/Dockerfile, built on CentOS Stream 10 (GCC 14) and run on CentOS Stream 10
 # minimal, in the manner of OpenAirInterface's Dockerfile.<nf>.centos.
 #
@@ -73,7 +73,7 @@ RUN mkdir -p /tmp/openmcx-wolfssl-build \
     && bash /tmp/build-wolfssl.sh /opt/wolfssl /tmp/openmcx-wolfssl-build \
     && rm -rf /tmp/openmcx-wolfssl-build /tmp/build-wolfssl.sh
 # freeDiameter 1.5.0 (the version Ubuntu 24.04 packages): libfdcore and libfdproto for the Diameter client of the
-# servers and the user database (TS 29.283); openMCX loads no extension.
+# servers and the user database (TS 29.283); OpenMCX loads no extension.
 RUN fetch "$FREEDIAMETER_FILE" "$FREEDIAMETER_URL" "$FREEDIAMETER_SHA256" /tmp/freediameter.tar.gz \
     && mkdir /tmp/freediameter && tar -xzf /tmp/freediameter.tar.gz -C /tmp/freediameter --strip-components=1 \
     && cmake -S /tmp/freediameter -B /tmp/freediameter/build -DCMAKE_INSTALL_PREFIX=/usr/local \

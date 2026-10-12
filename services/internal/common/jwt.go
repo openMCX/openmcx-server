@@ -138,13 +138,13 @@ func signClaims(claims any, key *rsa.PrivateKey) (string, error) {
 	return unsigned + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
-// openMCX: how far in the future a token's iat may lie (the issuer's clock ahead of this server's), RFC 7519
+// OpenMCX: how far in the future a token's iat may lie (the issuer's clock ahead of this server's), RFC 7519
 // section 4.1.6.
 const issuedAtLeeway = time.Minute
 
 // ------------------------------------------------------------------------------
 // TS 33.180 annex B.11.2: validates an access token (RFC 7519): its RS256 signature, issuer and audience, "exp"
-// (annex B.12) and "iat" (at most one minute ahead), and the identity binding claims (annex B.2.2.3, with openMCX's
+// (annex B.12) and "iat" (at most one minute ahead), and the identity binding claims (annex B.2.2.3, with OpenMCX's
 // mc_id, sip_uri and client_id).
 func VerifyToken(token string, key *rsa.PublicKey, issuer, audience string, now time.Time) (TokenClaims, error) {
 	payload, err := verifiedPayload(token, key)

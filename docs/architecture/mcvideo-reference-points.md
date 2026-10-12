@@ -1,7 +1,7 @@
 # MCVideo reference points
 
 Inventory of the MCVideo application-plane reference points of TS 23.281 V19.10.0
-§6.3 and their openMCX status. Common reference points (SIP-1/2/3, HTTP-1/2/3,
+§6.3 and their OpenMCX status. Common reference points (SIP-1/2/3, HTTP-1/2/3,
 CSC-n) are in the [MCPTT inventory](mcptt-reference-points.md) and apply
 unchanged to MCVideo. The increments (V0 to V14) are those of the
 MCVideo plan.

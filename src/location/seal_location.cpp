@@ -165,7 +165,7 @@ std::vector<std::string> ids(xmlNode *list) {
 
 //------------------------------------------------------------------------------
 // TS 24.545 clause 6.2.2.3.1: reads the location reporting configuration a client receives (<periodic-report>,
-// <minimum-interval-length>) and, in the openMCX <anyExt> extension, where it reports.
+// <minimum-interval-length>) and, in the OpenMCX <anyExt> extension, where it reports.
 Configuration parse_configuration(std::string_view xml) {
   const auto doc = document(xml);
   auto *top = xmlDocGetRootElement(doc.get());

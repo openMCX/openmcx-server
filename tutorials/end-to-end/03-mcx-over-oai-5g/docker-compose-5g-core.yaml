@@ -1,9 +1,9 @@
-# openMCX: tutorial 1's openMCX system on the N6 network, and the OAI 5G core with the AMF, PCF, SMF and UPF patched
+# OpenMCX: tutorial 1's OpenMCX system on the N6 network, and the OAI 5G core with the AMF, PCF, SMF and UPF patched
 # for N5 (oai/cn5g/). Tutorials 3 (OAI RAN) and 4 (srsRAN) include this file and add the RAN, the UE and the dispatcher;
 # start it through their compose files, not alone.
 #
 # Networks: openmcx-5g-core 192.168.71.128/26 (N2, N3, N4, SBI, N5), openmcx-5g-n6 192.168.72.128/26 (N6 and the
-# openMCX system); the UE pool 12.1.1.0/24 (DNN mcptt).
+# OpenMCX system); the UE pool 12.1.1.0/24 (DNN mcptt).
 
 services:
   setup:

@@ -1,6 +1,6 @@
 # Unit Test Tutorial 13: MCData short data service, delivery reports and status messages
 
-One computer runs the openMCX system from the published images, with four headless clients in place of phones. This
+One computer runs the OpenMCX system from the published images, with four headless clients in place of phones. This
 time they use **MCData** (TS 24.282) instead of speech. A script takes them through the short data service (SDS):
 
 - a one-to-one SDS and a reply in the same conversation;
@@ -13,7 +13,7 @@ time they use **MCData** (TS 24.282) instead of speech. A script takes them thro
 A capture of the lab network records it all, so you can follow each SDS, each notification and each status in
 Wireshark.
 
-The tutorial is built on two scenarios of the openMCX regression tests, `tests/integration/mcdata_sds_scenario.py` and
+The tutorial is built on two scenarios of the OpenMCX regression tests, `tests/integration/mcdata_sds_scenario.py` and
 `tests/integration/mcdata_status_scenario.py`, and uses the same images.
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
@@ -22,7 +22,7 @@ The tutorial is built on two scenarios of the openMCX regression tests, `tests/i
 > 9.2.2), so the capture holds all of MCData. The HTTPS traffic to the common services (sign-in, the group documents
 > and the MCData rules) stays encrypted and is not captured.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 13: four clients exchange MCData short data, disposition notifications and enhanced status in SIP MESSAGE through the SIP core and the MCData server; the openMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.13.0/24"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 13: four clients exchange MCData short data, disposition notifications and enhanced status in SIP MESSAGE through the SIP core and the MCData server; the OpenMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.13.0/24"></p>
 
 ## How MCData short data travels
 
@@ -48,7 +48,7 @@ MESSAGE (clause 12.2.3); a notification that comes later goes on its own.
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
-- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub**
+- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt OpenMCX images from Docker Hub**
   (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer.
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
 
@@ -134,8 +134,8 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 
 ## 4. Look at the capture
 
-`run.sh` copies the capture to `captures/13-mcdata-sds-status-run.pcap.gz`. The folder also holds a reference run,
-`captures/13-mcdata-sds-status-full.pcap.gz` (86 KB, 959 frames): the frame numbers below and in the call flow are
+The script `run.sh` copies the capture of your run to `captures/13-mcdata-sds-status-run.pcap.gz`. The folder also holds a reference run,
+[`captures/13-mcdata-sds-status-full.pcap.gz`](captures/13-mcdata-sds-status-full.pcap.gz) (86 KB, 959 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.13.1 and (tcp port 5060 or (udp and not port 53) or icmp)`: SIP on
@@ -225,7 +225,7 @@ The compose file names every image in full, all from Docker Hub:
 | `docker.io/openmcx/openmcx-setup:1.0.0` | The setup: the lab's generator |
 | `docker.io/openmcx/openmcx-mcptt-server:1.0.0`, `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCPTT and MCData servers |
 | `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services, among them the GMS and the CMS |
-| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`OpenMCX/openmcx-client` repository) |
 | `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The SIP core's database |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |

@@ -1,7 +1,7 @@
 apiVersion: v2
 name: openmcx
 description: >-
-  openMCX, 3GPP Release 19 mission-critical services: MCPTT, MCData and MCVideo servers, the common services
+  OpenMCX, 3GPP Release 19 mission-critical services: MCPTT, MCData and MCVideo servers, the common services
   (IdMS, GMS, CMS, KMS, LMS, Credential Service, content server, message store, notification server), the SIP core
   and MCX Admin. Experimental: validated with helm lint, helm template and kubeconform, not yet installed on a
   cluster.

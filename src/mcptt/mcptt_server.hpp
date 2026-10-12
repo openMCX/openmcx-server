@@ -1,4 +1,4 @@
-// The MCPTT server of openMCX: the controlling and participating MCPTT functions (TS 24.379) on the shared MC
+// The MCPTT server of OpenMCX: the controlling and participating MCPTT functions (TS 24.379) on the shared MC
 // server core (McServer, src/server/server.hpp), with the floor control server of TS 24.380 as its media plane
 // control and the MCPTT-only rules of the core's service hooks.
 //

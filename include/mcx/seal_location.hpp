@@ -33,7 +33,7 @@ struct Configuration {
 };
 
 //------------------------------------------------------------------------------
-// TS 24.545 clause 6.2.2.3.1: reads the location reporting configuration a client receives and, in the openMCX
+// TS 24.545 clause 6.2.2.3.1: reads the location reporting configuration a client receives and, in the OpenMCX
 // <anyExt> extension, where it reports.
 Configuration parse_configuration(std::string_view xml);
 

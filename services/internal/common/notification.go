@@ -53,7 +53,7 @@ const (
 	defaultChannelLifetime = 3600
 	maxChannelLifetime     = 86400
 	maxQueuedNotifications = 200
-	// openMCX limits (OMA-TS-REST_NetAPI_NotificationChannel-V1_0 leaves them to the server): channels per user,
+	// OpenMCX limits (OMA-TS-REST_NetAPI_NotificationChannel-V1_0 leaves them to the server): channels per user,
 	// and the default and largest maxNotifications per poll.
 	maxChannelsPerUser      = 8
 	defaultMaxNotifications = 20

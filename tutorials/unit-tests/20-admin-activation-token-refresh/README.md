@@ -1,6 +1,6 @@
 # Unit Test Tutorial 20: Identity and tokens: MCX Admin activation and token refresh
 
-One computer runs the openMCX system from the published images, with headless clients in place of phones. A script
+One computer runs the OpenMCX system from the published images, with headless clients in place of phones. A script
 takes them through how a user gets onto the system and how a client stays signed in:
 
 - an administrator creates a new user, `erin`, in MCX Admin; erin sets her own password from a one-time link;
@@ -15,7 +15,7 @@ takes them through how a user gets onto the system and how a client stays signed
 A capture of the lab network records every SIP message, the floor control and the speech, so you can follow in
 Wireshark what the servers see of the activation and of each token renewal.
 
-The tutorial is built on two scenarios of the openMCX regression tests, `tests/integration/admin_scenario.py`
+The tutorial is built on two scenarios of the OpenMCX regression tests, `tests/integration/admin_scenario.py`
 (creation, set-password link, activation) and `tests/integration/token_refresh_scenario.py`, and uses the same images.
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
@@ -24,7 +24,7 @@ The tutorial is built on two scenarios of the openMCX regression tests, `tests/i
 > and can also encrypt the token in the body (XML protection, Unit Test Tutorial 12). The HTTPS traffic to MCX Admin,
 > IdMS, the Credential Service and the other common services stays encrypted and is not captured.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 20: alice creates erin in MCX Admin and issues her an activation URL; erin's device (client-e) activates over HTTPS with MCX Admin, IdMS and the Credential Service, then registers and publishes its access token over SIP; every client renews its access token at IdMS with its refresh token and publishes the new one; the openMCX system (SIP core, MCPTT and MCData servers, common services, MCX Admin) on one computer, on the lab network 172.31.20.0/24"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 20: alice creates erin in MCX Admin and issues her an activation URL; erin's device (client-e) activates over HTTPS with MCX Admin, IdMS and the Credential Service, then registers and publishes its access token over SIP; every client renews its access token at IdMS with its refresh token and publishes the new one; the OpenMCX system (SIP core, MCPTT and MCData servers, common services, MCX Admin) on one computer, on the lab network 172.31.20.0/24"></p>
 
 ## Tokens in a few words
 
@@ -46,7 +46,7 @@ authorisation, the affiliations and any call; nothing else changes.
 
 ## MCX Admin activation in a few words
 
-MCX Admin is openMCX's administration service: users, groups and their profiles. It is not a 3GPP function; it writes
+MCX Admin is OpenMCX's administration service: users, groups and their profiles. It is not a 3GPP function; it writes
 what the 3GPP servers read. Activation is its way to set up a device without typing settings into it:
 
 1. the administrator creates the user and gets a **one-time set-password link** to the IdMS, so the user chooses a
@@ -61,7 +61,7 @@ what the 3GPP servers read. Activation is its way to set up a device without typ
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
-- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub**
+- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt OpenMCX images from Docker Hub**
   (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer. The speech is a WAV file in
   `speech/`.
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
@@ -159,8 +159,8 @@ docker compose exec -T client-a python3 - activation < admin.py
 
 ## 4. Look at the capture
 
-`run.sh` copies the capture to `captures/20-admin-activation-token-refresh-run.pcap.gz`. The folder also holds a
-reference run, `captures/20-admin-activation-token-refresh-full.pcap.gz` (112 KB, 1 682 frames, 157 s): the frame
+The script `run.sh` copies the capture of your run to `captures/20-admin-activation-token-refresh-run.pcap.gz`. The folder also holds a
+reference run, [`captures/20-admin-activation-token-refresh-full.pcap.gz`](captures/20-admin-activation-token-refresh-full.pcap.gz) (112 KB, 1 682 frames, 157 s): the frame
 numbers below and in the call flow are those of the reference. Wireshark opens the compressed file directly (or
 `gunzip` it first).
 
@@ -253,8 +253,8 @@ The compose file names every image in full, all from Docker Hub:
 | `docker.io/openmcx/openmcx-mcptt-server:1.0.0` | The MCPTT server |
 | `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCData server |
 | `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services, among them the IdMS and the Credential Service |
-| `docker.io/openmcx/openmcx-admin:1.0.0` | MCX Admin (`openMCX/openmcx-admin` repository) |
-| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-admin:1.0.0` | MCX Admin (`OpenMCX/openmcx-admin` repository) |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`OpenMCX/openmcx-client` repository) |
 | `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The database of the SIP core and MCX Admin |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |

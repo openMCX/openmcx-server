@@ -19,7 +19,7 @@ index 63135eb..edacc13 100644
 @@ -1,5 +1,6 @@
  /*
   * Copyright (C) 2019 by Sukchan Lee <acetcom@gmail.com>
-+ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/open5gs
++ * Modified by OpenMCX, 2026-10-05 (MCX over LTE); see the NOTICE file distributed with this software.
   *
   * This file is part of Open5GS.
   *
@@ -30,7 +30,7 @@ index 25dc047..1001e16 100644
 @@ -1,5 +1,6 @@
  /*
   * Copyright (C) 2019-2024 by Sukchan Lee <acetcom@gmail.com>
-+ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/open5gs
++ * Modified by OpenMCX, 2026-10-05 (MCX over LTE); see the NOTICE file distributed with this software.
   *
   * This file is part of Open5GS.
   *
@@ -41,7 +41,7 @@ index c07b94a..72b9388 100644
 @@ -1,5 +1,6 @@
  /*
   * Copyright (C) 2019-2024 by Sukchan Lee <acetcom@gmail.com>
-+ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/open5gs
++ * Modified by OpenMCX, 2026-10-05 (MCX over LTE); see the NOTICE file distributed with this software.
   *
   * This file is part of Open5GS.
   *
@@ -52,7 +52,7 @@ index bfe386f..f8e73b6 100644
 @@ -1,5 +1,6 @@
  /* Gx Interface, 3GPP TS 29.212 section 4
   * Copyright (C) 2019-2025 by Sukchan Lee <acetcom@gmail.com>
-+ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/open5gs
++ * Modified by OpenMCX, 2026-10-05 (MCX over LTE); see the NOTICE file distributed with this software.
   *
   * This file is part of Open5GS.
   *
@@ -63,7 +63,7 @@ index 2d71966..9f18db7 100644
 @@ -1,5 +1,6 @@
  /*
   * Copyright (C) 2019-2025 by Sukchan Lee <acetcom@gmail.com>
-+ * Modified by openMCX, 2026 (MCX over LTE): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/open5gs
++ * Modified by OpenMCX, 2026-10-05 (MCX over LTE); see the NOTICE file distributed with this software.
   *
   * This file is part of Open5GS.
   *

@@ -1,4 +1,4 @@
-# Using the openMCX lab
+# Using the OpenMCX lab
 
 How to build and run the lab, drive the clients, verify the services and read the SIP in Wireshark. What the implementation supports is in the [feature list](FEATURES.md).
 

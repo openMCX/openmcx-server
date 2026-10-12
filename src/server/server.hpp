@@ -1,4 +1,4 @@
-// The shared core of the MCPTT and MCVideo servers of openMCX: the controlling and participating functions
+// The shared core of the MCPTT and MCVideo servers of OpenMCX: the controlling and participating functions
 // common to MCPTT (TS 24.379) and MCVideo (TS 24.281) on TS 23.280, driving the media plane control of a call
 // through MediaPlaneController, and the security of both (TS 33.180). The MCPTT server (src/mcptt, floor
 // control of TS 24.380) and the MCVideo server (src/mcvideo, transmission control of TS 24.581, video push and

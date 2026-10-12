@@ -38,7 +38,7 @@ const (
 	sealLocationNS   = "urn:3gpp:ns:sealLocationInfo:1.0"
 	sealExtensionNS  = "urn:openmcx:ns:sealLocation:1.0"
 	sealBase         = "/seal-lm/v1"
-	// openMCX: how often the subscriptions' timers (TLM-1, TLM-2) are checked.
+	// OpenMCX: how often the subscriptions' timers (TLM-1, TLM-2) are checked.
 	sealTickInterval = 500 * time.Millisecond
 )
 

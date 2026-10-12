@@ -406,7 +406,7 @@ void parse_format(const std::string &value, MediaDescription &out, const SdpStat
   if (section == "application" && format != state.control_name) invalid("conflicting floor format");
   const bool transmission = section == "application" && out.control == MediaControl::transmission;
   // TS 24.581 clause 12.1.2.3 lists the MCVideo parameters with COLON between them;
-  // ';' as in TS 24.380 clause 12.1.2.3 is accepted as well, and is what openMCX sends.
+  // ';' as in TS 24.380 clause 12.1.2.3 is accepted as well, and is what OpenMCX sends.
   auto parameters = tokens(value.substr(space + 1), ';');
   if (transmission) {
     std::vector<std::string> split;

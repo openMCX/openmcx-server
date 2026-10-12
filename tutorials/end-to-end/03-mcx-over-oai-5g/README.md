@@ -5,7 +5,7 @@ rfsimulator (a simulated radio, no radio hardware). The dispatcher position runs
 crosses the 5G radio and core. When it calls, the MCPTT server asks the 5G core, over **N5**, for the QoS of
 mission-critical voice: the core sets up a dedicated QoS flow (**5QI 65**) for the dispatcher's speech.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 3: the phones reach the openMCX system over the Wi-Fi; the dispatcher runs inside the nr-UE and reaches it over the rfsim radio, the gNB, the UPF (N3, N6) of the OAI 5G core; the MCPTT server asks the PCF for MCPTT QoS over N5"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 3: the phones reach the OpenMCX system over the Wi-Fi; the dispatcher runs inside the nr-UE and reaches it over the rfsim radio, the gNB, the UPF (N3, N6) of the OAI 5G core; the MCPTT server asks the PCF for MCPTT QoS over N5"></p>
 
 The phones reach the system on the Wi-Fi as in tutorial 1; their calls get no 5G QoS (they are not on 5G). The MCPTT
 server asks for QoS only for call legs of UEs in the 5G pool (12.1.1.0/24).
@@ -25,9 +25,9 @@ server asks for QoS only for call legs of UEs in the 5G pool (12.1.1.0/24).
 
   The OAI 5G core is under the Collaborative Standards Software License v1.0: its patent license covers study,
   testing and research only ([`oai/cn5g/NOTICE`](oai/cn5g/NOTICE)).
-- Nothing to compile: the tutorial uses **prebuilt images from Docker Hub**, openMCX's (`openmcx/openmcx-*:1.0.0`, as
-  in tutorial 1) and OAI's. To build the openMCX images yourself, see
-  [tutorial 1's Images](../01-mcx-over-wlan-android/README.md#images) and [Building openMCX](../../../docs/BUILD.md);
+- Nothing to compile: the tutorial uses **prebuilt images from Docker Hub**, OpenMCX's (`openmcx/openmcx-*:1.0.0`, as
+  in tutorial 1) and OAI's. To build the OpenMCX images yourself, see
+  [tutorial 1's Images](../01-mcx-over-wlan-android/README.md#images) and [Building OpenMCX](../../../docs/BUILD.md);
   for the three OAI images, [`oai/cn5g/`](oai/cn5g/README.md).
 
 ## 1. Set the computer's address
@@ -56,7 +56,7 @@ sudo ./host-network.sh add
 
 The dispatcher reaches the system at `HOST_IP`, as the phones do. Two settings of this computer complete the path:
 replies to the UE pool go back through the UPF, and they leave from `HOST_IP`, so the UE sees one address both ways and
-the 5G core's packet filters match the speech. `sudo ./host-network.sh remove` undoes both (step 8).
+the 5G core's packet filters match the speech. `sudo ./host-network.sh remove` undoes both (step 9).
 
 ## 4. Start the system
 
@@ -65,7 +65,7 @@ docker compose -f docker-compose-5g-mcx.yaml up -d
 docker compose -f docker-compose-5g-mcx.yaml ps --format 'table {{.Name}}\t{{.Status}}'
 ```
 
-After about two minutes every service is `(healthy)`: the 30 of the openMCX system, the 5G core, the gNB, the nr-UE,
+After about two minutes every service is `(healthy)`: the 30 of the OpenMCX system, the 5G core, the gNB, the nr-UE,
 `ue-route` and the dispatcher. `openmcx-ue-route` shows the UE's address:
 
 ```bash
@@ -118,7 +118,75 @@ and every call of the position go through the 5G user plane.
    ends, the MCPTT server deletes the app session (`pcf_app_session_deleted`, 204) and the SMF releases the flow; the
    next call's flow may get another free QFI (3, ...).
 
-## 8. Stop or start over
+## 8. Look at the capture
+
+The reference capture [`captures/03-mcx-over-oai-5g-full.pcapng.gz`](captures/03-mcx-over-oai-5g-full.pcapng.gz) (0.7 MB, 4 833
+frames) records a run of steps 4 to 7: the system
+starting, the UE registering over the 5G core, the phones and the dispatcher signing in, a group call from the
+dispatcher with PTT, Bob talking back, and the hang-up. Wireshark opens the compressed file directly. The frame
+numbers below are those of the reference.
+
+It was captured on the two Docker networks, the 5G core's (`192.168.71.128/26`: N2, N3, N4, SBI and N5) and N6 with
+the OpenMCX system (`192.168.72.128/26`), and reduced by port so that every TCP segment of a kept stream stays:
+
+- NGAP and NAS-5GS (SCTP), PFCP, GTP-U (with IP fragments), the SBI of the core functions and N5 (HTTP/2 on 8080; the
+  NRF's registrations and heartbeats are left out);
+- SIP over TLS on 5061, **decrypted**: the file carries the TLS secrets of the SIP core (a pcapng decryption secrets
+  block), so Wireshark shows the SIP messages without further setup;
+- every UDP flow (speech and floor control) and ICMP.
+
+The databases, DNS, the encrypted HTTPS between the OpenMCX services and the simulated radio between the gNB and the
+UE (rfsimulator, TCP 4043) are left out.
+
+The dispatcher's packets appear more than once: inside GTP-U on N3 between the gNB (`192.168.71.140`) and the UPF
+(`192.168.71.134`), and on N6 after the UPF, once with `HOST_IP` (`192.168.90.88` in the reference) and once with
+the address of the SIP core or the MCPTT server behind it. The UE's address is `12.1.1.2`; the phones are on the
+Wi-Fi (`192.168.91.76` Alice, `192.168.88.177` Bob).
+
+Useful display filters:
+
+| Filter | Shows |
+|---|---|
+| `ngap` | N2 between the gNB and the AMF: NG Setup, the UE's registration and PDU session, and the PDU Session Resource Modify for the call's QoS flow. |
+| `nas-5gs` | The UE's NAS: registration, authentication, security mode, PDU session establishment and modification. |
+| `pfcp && !(pfcp.msg_type == 1 \|\| pfcp.msg_type == 2)` | N4 between the SMF and the UPF, without the heartbeats. |
+| `http2.headers.path contains "policyauthorization"` | N5: the MCPTT server's app session at the PCF (TS 29.514), and its deletion. |
+| `http2.headers.path contains "sm-policy" \|\| http2.headers.path contains "smpolicycontrol"` | N7: the PCF's policy for the PDU session and its update for the call. |
+| `sip && !gtp` | Every SIP message (once; without the GTP-U copies). **Telephony → SIP Flows** draws them. |
+| `rtcp.app.name == "MCPT" && !gtp` | Floor control (TS 24.380 clause 8.2). |
+| `rtp && !gtp` | Speech: AMR-WB. |
+
+What to look for, in the reference run:
+
+- **The 5G core and the UE** (frames 12 to 378): PFCP Association between the SMF and the UPF (12), NG Setup (18), the
+  UE's Registration request (22) with 5G-AKA through the AUSF, UDM and UDR, Security mode command (181), and the PDU
+  session for the DNN `mcptt`: the AMF asks the SMF (238), the SMF asks the PCF for the session's policy (286), sets
+  up the UPF (315) and sends the PDU session establishment accept through the AMF (342). The session's default QoS
+  flow is QFI 1, 5QI 69 (MC signalling).
+- **Sign-in and registration** (frames 545 to 1530): Alice's and Bob's phones (545, 827) and the dispatcher over 5G
+  (1516) register with the SIP core: REGISTER, the challenge, REGISTER again.
+- **The group call** (frames 1931 to 2005): the dispatcher's INVITE leaves the UE inside GTP-U (1931) and reaches the
+  SIP core on N6 (1933); after the `407` challenge it is sent again (1950, 1952) and forwarded to the MCPTT server
+  (1956), which invites Alice (1967) and Bob (1973). The server's `200` reaches the dispatcher (1985).
+- **QoS over N5** (frames 2015 to 2085): the MCPTT server, as application function, asks the PCF for the dispatcher's
+  media (2015: `POST /npcf-policyauthorization/v1/app-sessions` with the media components, speech, RTCP and floor
+  control, TS 29.514). The PCF turns them into a PCC rule with 5QI 65 and updates the SMF (2031). The SMF changes the
+  UPF's rules (2037) and adds a QoS flow to the PDU session (2062, 2067: PDU Session Resource Modify Request with
+  QFI 2, 5QI 65, ARP 3 and a guaranteed bit rate of 41 kbit/s each way), which the gNB accepts (2072).
+- **Floor control and speech** (frames 2179 to 4640): the dispatcher's Floor Request (2179) and Floor Granted (2180),
+  Floor Taken to the phones (2183, 2184), the dispatcher's speech, Floor Release (3595); then Bob's turn (3633 to
+  4640). Downlink, the speech and floor control the UPF sends the gNB for the dispatcher carry QFI 2 in their GTP-U
+  header (filter `gtp.ext_hdr.pdu_ses_con.qos_flow_id == 2`); the UE's uplink packets stay on QFI 1 in the reference
+  run.
+- **Hang-up** (from frame 4690): the dispatcher's BYE (4690, 4692, again after the challenge 4699, 4701) and the
+  server's BYEs to Alice and Bob (4706, 4710). The MCPTT server deletes the app session (4705), and the SMF releases
+  the QoS flow (4749, 4763: PDU Session Resource Modify Request, cause normal release).
+
+The access tokens of the IdMS travel in SIP for service authorisation, and the file holds the SIP core's TLS secrets.
+They belong to a throwaway system: its signing key and users no longer exist and the tokens expired after an hour.
+Treat a capture of your own system, and its TLS secrets, as secret.
+
+## 9. Stop or start over
 
 ```bash
 docker compose -f docker-compose-5g-mcx.yaml down        # stop; ./config is kept
@@ -129,7 +197,7 @@ rm -rf config                                            # with down -v: start o
 
 ## How it is put together
 
-- **Two compose files**: `docker-compose-5g-core.yaml` has tutorial 1's openMCX services, unchanged, on the 5G core's
+- **Two compose files**: `docker-compose-5g-core.yaml` has tutorial 1's OpenMCX services, unchanged, on the 5G core's
   **N6 network** (`openmcx-5g-n6`, 192.168.72.128/26) and the OAI 5G core on the **core network** (`openmcx-5g-core`,
   192.168.71.128/26); [tutorial 4](../04-mcx-over-srsran-5g/README.md) uses it too. `docker-compose-5g-mcx.yaml`
   includes it and adds the gNB and the nr-UE (IMSI 208990100001100, DNN `mcptt`), the dispatcher in the nr-UE's
@@ -143,7 +211,7 @@ rm -rf config                                            # with down -v: start o
 - **The dispatcher** is the image and settings of tutorial 2, with its address the UE's. The UE's address can change
   when the UE or the core restarts; the dispatcher then updates its activated accounts at start.
 - **Routing**: the UPF sends a UE's packets for `HOST_IP` out of the core network (its default route), so they reach
-  this computer from another Docker network than the openMCX system's and Docker's NAT keeps the UE's address (the
+  this computer from another Docker network than the OpenMCX system's and Docker's NAT keeps the UE's address (the
   SIP core checks that the SDP address is the sender's). The replies come back through `host-network.sh`'s route and
   leave from `HOST_IP`.
 - **The phones** are not on 5G: their legs are outside the UE pool and get no app session.

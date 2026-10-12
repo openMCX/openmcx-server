@@ -174,7 +174,7 @@ def main():
             lambda: active_aliases().get(medic) == [ids['client-c'], ids['client-d']],
         )
 
-        # FA-02 an alias the user may not change (TS 24.379 clause 9A.2.2.2.3 steps 4A and 4B; openMCX's
+        # FA-02 an alias the user may not change (TS 24.379 clause 9A.2.2.2.3 steps 4A and 4B; OpenMCX's
         # <FunctionalAliasList> is the aliases whose <mcptt-user-list> names the user) is refused by the
         # participating function.
         command('client-c', f'fa activate {dispatcher}')

@@ -1,4 +1,4 @@
-# openMCX: Unit Test Tutorial 18, MCVideo pull and push of video, and ambient viewing calls (tutorials/unit-tests/18-mcvideo-pull-push-ambient/README.md).
+# OpenMCX: Unit Test Tutorial 18, MCVideo pull and push of video, and ambient viewing calls (tutorials/unit-tests/18-mcvideo-pull-push-ambient/README.md).
 #
 # The regression lab of this feature, from the published images: the MCPTT, MCData and MCVideo servers, the common
 # services, the SIP core and four headless clients (client-a to client-d), with SIP in clear (5060/tcp, no

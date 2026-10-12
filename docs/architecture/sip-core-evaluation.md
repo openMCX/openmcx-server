@@ -1,9 +1,9 @@
-# Choosing the SIP core for openMCX: Kamailio, OpenSIPS, Asterisk and FreeSWITCH
+# Choosing the SIP core for OpenMCX: Kamailio, OpenSIPS, Asterisk and FreeSWITCH
 
 Research date: 2026-09-20 (Kamailio and OpenSIPS); comparison with Asterisk and
 FreeSWITCH added 2026-10-09. Status: source-based architecture recommendation;
 none of the candidates has been benchmarked in this repository. Kamailio 6.1.4 has
-since been built and is the SIP core of every openMCX lab and tutorial.
+since been built and is the SIP core of every OpenMCX lab and tutorial.
 
 ## Recommendation
 
@@ -73,7 +73,7 @@ SIP core in front of the MC servers is a proxy role: it routes and forwards
 requests and leaves the dialog and the media between the MC client and the MC
 server.
 
-| What openMCX needs from the SIP core | Kamailio | OpenSIPS | Asterisk | FreeSWITCH |
+| What OpenMCX needs from the SIP core | Kamailio | OpenSIPS | Asterisk | FreeSWITCH |
 |---|---|---|---|---|
 | Licence | GPL-2.0 (some modules BSD) | GPL-2.0 | GPL-2.0; commercial licences from Sangoma | MPL 1.1 |
 | Kind of server | SIP proxy and registrar | SIP proxy and registrar (B2BUA module optional) | PBX, B2BUA | Softswitch, B2BUA, media server |
@@ -95,10 +95,10 @@ Using Asterisk or FreeSWITCH as the MC server itself was not chosen either. They
 supply SIP call legs, conferencing and media, but none of the MC service: floor
 control (TS 24.380), affiliation, group and private call procedures, priority and
 emergency handling, MCX service authorisation, MIKEY-SAKKE key distribution and
-XML protection would all remain to be written on top of a PBX call model. openMCX
+XML protection would all remain to be written on top of a PBX call model. OpenMCX
 implements these in its own MCPTT, MCVideo and MCData servers.
 
-## How Kamailio fits openMCX as built
+## How Kamailio fits OpenMCX as built
 
 - **Proxy role.** The client's request reaches the participating function as the
   client sent it, so the MC server, not the SIP core, applies TS 24.379 / 24.281 /
@@ -115,7 +115,7 @@ implements these in its own MCPTT, MCVideo and MCData servers.
   6.1.4 source (SHA-256 checked) with only `tls auth_db db_mysql http_client`
   added to the default module set, and ships its source and notices.
 - **Clean licence boundary.** GPL-2.0 Kamailio runs as its own program in its own
-  container and talks to the AGPL openMCX servers only over SIP and its RPC.
+  container and talks to the AGPL OpenMCX servers only over SIP and its RPC.
 - **Growth path to IMS.** The IMS modules (CSCFs, ISC/iFC, Diameter Cx/Rx) remain
   available for a full IMS core. They are not loaded today: the current
   configuration routes to the MC servers with project script routes generated per

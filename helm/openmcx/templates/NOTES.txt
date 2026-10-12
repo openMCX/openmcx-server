@@ -1,4 +1,4 @@
-openMCX {{ .Chart.AppVersion }} in namespace {{ .Release.Namespace }}, for phones and browsers reaching {{ include "openmcx.externalAddress" . }} ({{ .Values.expose.type }}).
+OpenMCX {{ .Chart.AppVersion }} in namespace {{ .Release.Namespace }}, for phones and browsers reaching {{ include "openmcx.externalAddress" . }} ({{ .Values.expose.type }}).
 
 1. Wait until every pod is ready (mcptt-server starts last):
 

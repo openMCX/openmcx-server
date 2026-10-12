@@ -1,6 +1,6 @@
 # Tutorial 1: MCX over WLAN with the Android app
 
-One computer runs a complete openMCX system from the published images: the MCPTT, MCData and MCVideo servers, the
+One computer runs a complete OpenMCX system from the published images: the MCPTT, MCData and MCVideo servers, the
 common services, the SIP core and MCX Admin. In MCX Admin's web console you create two users, and two Android phones
 on the same Wi-Fi as the computer activate with them. Then they call, chat and make video calls.
 
@@ -8,16 +8,16 @@ on the same Wi-Fi as the computer activate with them. Then they call, chat and m
 > (QCI/5QI 65 and 69, priority, pre-emption), no network location (location reporting is off), no broadcast
 > (MBMS/MBS). Signalling, floor control and media are the same as over 4G/5G.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 1: phones A (Alice) and B (Bob) and a browser reach the openMCX system on the computer (HOST_IP) over the Wi-Fi: SIP core, MCPTT, MCData and MCVideo servers, common services and MCX Admin"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 1: phones A (Alice) and B (Bob) and a browser reach the OpenMCX system on the computer (HOST_IP) over the Wi-Fi: SIP core, MCPTT, MCData and MCVideo servers, common services and MCX Admin"></p>
 
 ## What you need
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows), on the same Wi-Fi as
   the phones. Its firewall must let the phones reach the ports below.
-- Two Android phones (Android 11 or later) with the openMCX app. Phones and computer on the same network, with no
+- Two Android phones (Android 11 or later) with the OpenMCX app. Phones and computer on the same network, with no
   client isolation between devices (guest networks often have it).
-- Nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub** (`openmcx/openmcx-*:1.0.0`).
-  To build the images yourself, see [Images](#images) and [Building openMCX](../../../docs/BUILD.md).
+- Nothing to compile: the tutorial uses the **prebuilt OpenMCX images from Docker Hub** (`openmcx/openmcx-*:1.0.0`).
+  To build the images yourself, see [Images](#images) and [Building OpenMCX](../../../docs/BUILD.md).
 
 | Port on the computer | Service |
 |---|---|
@@ -123,12 +123,12 @@ Here Alice and Bob are already activated on their phones (step 6), so their **De
 
 ## 6. Activate the phones
 
-Install the openMCX app on both phones: download
+Install the OpenMCX app on both phones: download
 [`openmcx-client-v1.apk`](https://github.com/openMCX/openmcx-client/raw/main/android/apk/openmcx-client-v1.apk) from
 the [openmcx-client](https://github.com/openMCX/openmcx-client) repository (`android/apk/`) on the phone, or install it
 from the computer with `adb install openmcx-client-v1.apk`.
 
-> **Test use only.** The APK is a debug build of the openMCX app, installed from outside the Play Store
+> **Test use only.** The APK is a debug build of the OpenMCX app, installed from outside the Play Store
 > ("sideloaded") and not reviewed by Google. Install it only on phones kept for testing, not on a phone with personal
 > or work data. Android asks to allow installing apps from the browser or file manager you used: allow it for this
 > installation, and turn the permission off again afterwards (Settings → Apps → Special app access → Install unknown
@@ -139,7 +139,7 @@ from the computer with `adb install openmcx-client-v1.apk`.
 For each phone:
 
 1. In the console, open **Activation**, choose the user and **Issue link**. A QR code appears; it works once.
-2. On the phone, open openMCX and choose **Scan QR code**, then scan it.
+2. On the phone, open OpenMCX and choose **Scan QR code**, then scan it.
 3. Sign in with the user's password. The phone registers through `HOST_IP` and shows the user and the group
    `operations`.
 4. Allow the microphone, the camera and notifications. On the **Logs** tab choose **Keep running in the background**,
@@ -188,7 +188,7 @@ rm -rf config                                                 # with down -v: st
 The compose file takes the images from `${OPENMCX_IMAGE_PREFIX}openmcx-<program>:${OPENMCX_TAG}` (`.env`):
 `openmcx-setup`, `openmcx-mcptt-server`, `openmcx-mcvideo-server`, `openmcx-mcdata-server`, `openmcx-common`,
 `openmcx-http-proxy`, `openmcx-user-db`, `openmcx-kamailio` (the SIP core) and MCX Admin's `openmcx-admin` (from the
-`openMCX/openmcx-admin` repository), all with the same tag, the release. MySQL comes from Docker Hub.
+`OpenMCX/openmcx-admin` repository), all with the same tag, the release. MySQL comes from Docker Hub.
 
 To use images built on this computer instead, set `OPENMCX_IMAGE_PREFIX=` (empty) and `OPENMCX_TAG` to the tag you
 built every image with:

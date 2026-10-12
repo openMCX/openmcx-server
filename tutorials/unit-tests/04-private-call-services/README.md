@@ -1,6 +1,6 @@
 # Unit Test Tutorial 4: MCPTT call-back, transfer, forwarding and first-to-answer calls
 
-One computer runs the openMCX system from the published images, with four headless clients in place of phones.
+One computer runs the OpenMCX system from the published images, with four headless clients in place of phones.
 A script takes them through the services built on MCPTT private calls (TS 24.379 clause 11.1):
 
 - a call-back request, its fulfilment, and a call-back request the user may not make;
@@ -12,7 +12,7 @@ A script takes them through the services built on MCPTT private calls (TS 24.379
 A capture of the lab network records every SIP message and every speech and floor control packet, so you can follow
 each service in Wireshark.
 
-The tutorial is built on two scenarios of the openMCX regression tests, `tests/integration/private_services_scenario.py`
+The tutorial is built on two scenarios of the OpenMCX regression tests, `tests/integration/private_services_scenario.py`
 and the first-to-answer part of `tests/integration/private_call_scenario.py`, and uses the same images. The emergency
 first-to-answer call of `tests/integration/first_to_answer_emergency_scenario.py` is left to the emergency tutorial.
 
@@ -21,13 +21,13 @@ first-to-answer call of `tests/integration/first_to_answer_emergency_scenario.py
 > floor control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common services
 > (sign-in, configuration, keys) stays encrypted and is not captured.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 4: four headless clients use the private call services (call-back, remotely initiated call, transfer, forwarding, first-to-answer) of the openMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.4.0/24"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 4: four headless clients use the private call services (call-back, remotely initiated call, transfer, forwarding, first-to-answer) of the OpenMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.4.0/24"></p>
 
 ## What you need
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
-- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub**
+- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt OpenMCX images from Docker Hub**
   (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer.
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
 
@@ -121,8 +121,8 @@ user.
 
 ## 4. Look at the capture
 
-`run.sh` copies the capture to `captures/04-private-call-services-run.pcap.gz`. The folder also holds a reference
-run, `captures/04-private-call-services-full.pcap.gz` (121 KB, 1 551 frames): the frame numbers below and in the call
+The script `run.sh` copies the capture of your run to `captures/04-private-call-services-run.pcap.gz`. The folder also holds a reference
+run, [`captures/04-private-call-services-full.pcap.gz`](captures/04-private-call-services-full.pcap.gz) (121 KB, 1 551 frames): the frame numbers below and in the call
 flows are those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.4.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -201,7 +201,7 @@ The compose file names every image in full, all from Docker Hub:
 | `docker.io/openmcx/openmcx-setup:1.0.0` | The setup: the lab's generator |
 | `docker.io/openmcx/openmcx-mcptt-server:1.0.0`, `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCPTT and MCData servers |
 | `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services |
-| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`OpenMCX/openmcx-client` repository) |
 | `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The SIP core's database |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |

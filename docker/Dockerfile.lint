@@ -1,4 +1,4 @@
-# The openMCX formatting and lint tools (docs/CODING_STYLE.md), on the development image,
+# The OpenMCX formatting and lint tools (docs/CODING_STYLE.md), on the development image,
 # so that clang-tidy sees the same compiler, headers and libraries as the build.
 #   tools/lint-image              builds it as openmcx-lint:<version below>
 # Pinned: LLVM 23 (clang-format, clang-tidy), golangci-lint 2.14.0, ruff 0.16.9; the archives are

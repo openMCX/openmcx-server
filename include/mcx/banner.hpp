@@ -1,4 +1,4 @@
-// The openMCX startup banner, printed by every long-running openMCX program (openMCX, no 3GPP specification).
+// The OpenMCX startup banner, printed by every long-running OpenMCX program (OpenMCX, no 3GPP specification).
 #pragma once
 
 #include <iostream>

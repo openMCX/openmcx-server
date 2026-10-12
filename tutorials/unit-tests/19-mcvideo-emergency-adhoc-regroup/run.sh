@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# openMCX Unit Test Tutorial 19: the steps of README.md, one after the other, each checked before the next.
+# OpenMCX Unit Test Tutorial 19: the steps of README.md, one after the other, each checked before the next.
 # Usage: ./run.sh            (the system must be up: docker compose up -d --wait)
 # Writes captures/19-mcvideo-emergency-adhoc-regroup-run.pcap.gz (captures/19-mcvideo-emergency-adhoc-regroup-full.pcap.gz
 # is the reference run of README.md). Set COMPOSE to another command than "docker compose" if needed.

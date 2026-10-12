@@ -29,10 +29,10 @@ published images list both, with the submodule commits, in `/usr/share/doc/openm
 
 | Network function | Tag | Commit |
 |---|---|---|
-| [oai-cn5g-amf](https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-amf) | v2.2.1 | `513c0f2dc4175e7d8f099a41d4a797913d3cf40e` |
-| [oai-cn5g-pcf](https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-pcf) | v2.2.1 | `e4780235d0115e58b18b33cef17903f224b69a2c` |
-| [oai-cn5g-smf](https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-smf) | v2.2.1 | `53af440450d2ece3a3908ba9f87febc4187d232c` |
-| [oai-cn5g-upf](https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-upf) | v2.2.1 | `451c27daa4b38bd03a5cb5b92412743364ff8ae0` |
+| [oai-cn5g-amf](https://github.com/OPENAIRINTERFACE/oai-cn5g-amf) | v2.2.1 | `513c0f2dc4175e7d8f099a41d4a797913d3cf40e` |
+| [oai-cn5g-pcf](https://github.com/OPENAIRINTERFACE/oai-cn5g-pcf) | v2.2.1 | `e4780235d0115e58b18b33cef17903f224b69a2c` |
+| [oai-cn5g-smf](https://github.com/OPENAIRINTERFACE/oai-cn5g-smf) | v2.2.1 | `53af440450d2ece3a3908ba9f87febc4187d232c` |
+| [oai-cn5g-upf](https://github.com/OPENAIRINTERFACE/oai-cn5g-upf) | v2.2.1 | `451c27daa4b38bd03a5cb5b92412743364ff8ae0` |
 
 **License:** this directory is under the Collaborative Standards Software License v1.0 (CSSL), not the license of the
 rest of openmcx-server. The patent license granted with OAI covers study, testing and research only; see `NOTICE`.

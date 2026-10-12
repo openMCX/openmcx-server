@@ -1,4 +1,4 @@
-// The MC services of openMCX, and what tells one MC service apart on the wire and in configuration.
+// The MC services of OpenMCX, and what tells one MC service apart on the wire and in configuration.
 //
 // Specifications: TS 23.280 V19.10.1 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 24.282
 // V19.7.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).

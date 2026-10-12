@@ -1,8 +1,8 @@
-openMCX modifications of Open5GS
+OpenMCX modifications of Open5GS
 ================================
 
 The image open5gs:2.8.0-mcx built from this directory contains Open5GS (Sukchan Lee and contributors,
-https://github.com/open5gs/open5gs), tag v2.8.0, commit 157f611a530e292e40ec50f9d23f0ef5d4fcd6a6, modified by openMCX
+https://github.com/open5gs/open5gs), tag v2.8.0, commit 157f611a530e292e40ec50f9d23f0ef5d4fcd6a6, modified by OpenMCX
 for tutorial 5 (MCX over LTE), built over gradiant/open5gs:2.8.0 (https://github.com/Gradiant/5g-images), whose
 binaries and libraries it replaces.
 
@@ -14,7 +14,7 @@ directory) are distributed under the same license.
 
 Modifications (AGPL-3.0 section 5(a))
 -------------------------------------
-Each modified file carries the notice "Modified by openMCX, 2026 (MCX over LTE)". The changes, as patches against
+Each modified file carries the notice "Modified by OpenMCX, <date of the change> (MCX over LTE)". The changes, as patches against
 commit 157f611:
 
   patches/open5gs/0001   PCRF: the AF-Application-Identifier of an AA-Request (TS 29.214 5.3.5) is kept; an AUDIO

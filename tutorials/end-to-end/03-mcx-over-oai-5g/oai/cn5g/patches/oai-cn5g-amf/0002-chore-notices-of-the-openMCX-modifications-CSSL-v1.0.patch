@@ -18,7 +18,7 @@ index 1d66953a..dd8f40a4 100644
 --- a/src/ngap/ngap_message_callback.hpp
 +++ b/src/ngap/ngap_message_callback.hpp
 @@ -1,3 +1,4 @@
-+// Modified by openMCX, 2026 (MCX N5 QoS): see NOTICE in https://github.com/openMCX/openmcx-server/tree/main/tutorial/03-mcx-over-oai-5g/oai/cn5g
++// Modified by OpenMCX, 2026-10-05 (MCX N5 QoS); see the NOTICE file distributed with this software.
  /*
   * SPDX-License-Identifier: LicenseRef-CSSL-1.0
   */

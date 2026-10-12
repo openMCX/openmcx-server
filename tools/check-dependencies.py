@@ -6,7 +6,7 @@ docker/fetch). Every such triple must equal an entry of the lock file marked "us
 must be used by a Dockerfile, so that the lock file stays the one list of what the builds download. Exits 1 on any
 difference. The Ubuntu base images are pinned the same way: "base_images" lists each supported release, "base_image"
 is the default, which every Dockerfile's BASE_IMAGE/RUNTIME_BASE default must equal, and docker/packages must have a
-package list for every release. openMCX build tooling, no 3GPP behaviour.
+package list for every release. OpenMCX build tooling, no 3GPP behaviour.
 
   tools/check-dependencies.py
 """

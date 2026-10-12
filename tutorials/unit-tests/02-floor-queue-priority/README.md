@@ -1,6 +1,6 @@
 # Unit Test Tutorial 2: MCPTT floor control with queue, confirmation and pre-emption
 
-One computer runs the openMCX system from the published images, with four headless clients in place of phones.
+One computer runs the OpenMCX system from the published images, with four headless clients in place of phones.
 In a group call, a script takes them through MCPTT floor control (TS 24.380) beyond a plain request and grant:
 
 - a request queued while someone else talks, and a question about its place in the queue;
@@ -11,7 +11,7 @@ In a group call, a script takes them through MCPTT floor control (TS 24.380) bey
 A capture of the lab network records every SIP message and every speech and floor control packet, so you can follow
 each step in Wireshark.
 
-The tutorial is built on two scenarios of the openMCX regression tests, `tests/integration/prearranged_floor_scenario.py`
+The tutorial is built on two scenarios of the OpenMCX regression tests, `tests/integration/prearranged_floor_scenario.py`
 and the floor part of `tests/integration/prearranged_priority_scenario.py`, and uses the same images.
 [Unit Test Tutorial 1](../01-group-call-basics/README.md) explains the group call itself.
 
@@ -20,13 +20,13 @@ and the floor part of `tests/integration/prearranged_priority_scenario.py`, and 
 > floor control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common services
 > (sign-in, configuration, keys) stays encrypted and is not captured.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 2: client-a talks, client-b queues and may pre-empt with priority 90, client-c listens, client-d is not in the group; the openMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.2.0/24"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 2: client-a talks, client-b queues and may pre-empt with priority 90, client-c listens, client-d is not in the group; the OpenMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.2.0/24"></p>
 
 ## What you need
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
-- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub**
+- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt OpenMCX images from Docker Hub**
   (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer.
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
 
@@ -112,8 +112,8 @@ docker compose exec client-b mcx-client --config /config/client-b.json --command
 
 ## 4. Look at the capture
 
-`run.sh` copies the capture to `captures/02-floor-queue-priority-run.pcap.gz`. The folder also holds a reference run,
-`captures/02-floor-queue-priority-full.pcap.gz` (75 KB, 1 103 frames): the frame numbers below and in the call flow
+The script `run.sh` copies the capture of your run to `captures/02-floor-queue-priority-run.pcap.gz`. The folder also holds a reference run,
+[`captures/02-floor-queue-priority-full.pcap.gz`](captures/02-floor-queue-priority-full.pcap.gz) (75 KB, 1 103 frames): the frame numbers below and in the call flow
 are those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.2.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -182,7 +182,7 @@ The compose file names every image in full, all from Docker Hub:
 | `docker.io/openmcx/openmcx-setup:1.0.0` | The setup: the lab's generator |
 | `docker.io/openmcx/openmcx-mcptt-server:1.0.0`, `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCPTT and MCData servers |
 | `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services |
-| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`OpenMCX/openmcx-client` repository) |
 | `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The SIP core's database |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |

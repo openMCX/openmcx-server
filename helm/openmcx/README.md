@@ -1,9 +1,9 @@
-# Helm chart: openMCX on Kubernetes and OpenShift
+# Helm chart: OpenMCX on Kubernetes and OpenShift
 
-The chart deploys a complete openMCX system: the MCPTT, MCData and MCVideo servers, the common services, the SIP
+The chart deploys a complete OpenMCX system: the MCPTT, MCData and MCVideo servers, the common services, the SIP
 core and MCX Admin. It runs what
 [tutorial 1](../../tutorials/end-to-end/01-mcx-over-wlan-android/README.md)'s Compose file runs, one pod per
-Compose service, from the same images and with the same configuration. Android phones (the openMCX app) and a browser
+Compose service, from the same images and with the same configuration. Android phones (the OpenMCX app) and a browser
 reach it on one address, `externalAddress`, the tutorial's `HOST_IP`.
 
 > **Status: experimental** (in release 1.0.0 as such). The chart renders with `helm lint` and `helm template` and validates against the Kubernetes 1.30
@@ -124,7 +124,7 @@ CRL (`<release>-crl`: the Credential Service writes it, the SIP core reads it) a
 
 ## OpenShift
 
-1. **Security context constraints.** The openMCX images and MySQL run as root (as with Docker), and `hostPort` binds
+1. **Security context constraints.** The OpenMCX images and MySQL run as root (as with Docker), and `hostPort` binds
    host ports. With `openshift.enabled: true` the chart creates a SecurityContextConstraints for the release's service
    account that allows any user ID and, for `hostPort`, host ports, and nothing else (no privileged containers, no host
    network or paths). Installing it needs cluster-admin. Without it (`openshift.scc.create: false`), bind the service

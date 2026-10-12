@@ -30,7 +30,7 @@ const (
 	// The largest request body read: anything at all is refused (no TrK/InK, annex D.2.2), one byte more than
 	// 64 KiB tells a large body from a small one.
 	kmsMaxRequestBody = 64<<10 + 1
-	// openMCX: key tool runs at a time (each one a process); further requests wait for a slot.
+	// OpenMCX: key tool runs at a time (each one a process); further requests wait for a slot.
 	maxConcurrentKeyTool = 4
 )
 

@@ -1,13 +1,34 @@
-# openMCX 1.0.0 — release notes
+# OpenMCX 1.0.0 — release notes
 
-Release 1.0.0, 2026-10-15: the first release of the **standalone edition** of openMCX, 3GPP Release 19 mission-critical
-services (MCX) for an IP network. It covers one MC system, on-network, with the three services MCPTT, MCVideo and
-MCData, their common services, a SIP core, the clients and MCX Admin.
+Release 1.0.0, 2026-10-15: the first release of the **standalone edition** of OpenMCX, 3GPP Release 19 mission-critical
+services (MCX) for an IP network. One MC system, on-network, with the three services MCPTT, MCData and MCVideo, their
+common services, a SIP core, the clients and MCX Admin, as containers that start on one computer.
 
-It is not an interoperability-certified implementation: it has not yet been tested against independent
-implementations, and the scope and known limitations below say what it does not do.
+## What 1.0.0 provides
 
-## What is in the release
+- **MCPTT**: prearranged, chat, broadcast and ad hoc group calls with floor control and queueing; private calls in every
+  commencement mode, with or without floor control; first-to-answer, remotely initiated and ambient listening calls;
+  emergency and imminent peril with pre-emption and alerts; call-back, transfer and forwarding; functional aliases,
+  regroups and location.
+- **MCData**: short data over the signalling and media planes, one-to-one, group and ad hoc; file distribution over HTTP
+  and over the media plane; emergency and imminent-peril communications and alerts; IP connectivity, enhanced status,
+  communication release, functional aliases, the message store and location.
+- **MCVideo**: group, chat and ad hoc calls with transmission and reception control; private calls; emergency and
+  imminent peril; video pull and push, ambient viewing, regroups, functional aliases, remote group selection and
+  location.
+- **Security** (TS 33.180): OIDC identity, KMS key distribution, end-to-end protected media (GMK, PCK), protected floor
+  and transmission control, and protected and signed XML signalling.
+- **Common services**: identity, group, configuration, location and key management, the message store and the content
+  server; separate participating and controlling servers within one system.
+- **QoS on 4G and 5G**: the MCPTT and MCVideo servers request MCPTT QoS from the core as application function, over Rx
+  (4G) and N5 (5G), shown in tutorials 3 to 5.
+- **Clients and administration**: the Android app, the dispatcher position in the browser, the headless Linux client,
+  and MCX Admin for users, groups, rights and device activation.
+
+The full list, per service and with the clauses, is the [feature list](docs/FEATURES.md); the specifications and
+versions the code follows are in [docs/SPECS.md](docs/SPECS.md).
+
+## Components and images
 
 | Part | Repository | What it is | Images (Docker Hub `openmcx/`) |
 |---|---|---|---|
@@ -16,19 +37,46 @@ implementations, and the scope and known limitations below say what it does not 
 | MCX Admin | [openmcx-admin](https://github.com/openMCX/openmcx-admin) | MC user profiles, groups and rights, client activation | `openmcx-admin` |
 | Helm chart (experimental) | [openmcx-server `helm/openmcx`](helm/openmcx/README.md) | The tutorial 1 system on Kubernetes or OpenShift; validated with `helm lint`, `helm template` and kubeconform, **not yet installed on a cluster** | (the images above) |
 
-Every openMCX image, `openmcx-kamailio` (Kamailio 6.1.4) and `openmcx-admin` included, is published with the one tag
+Every OpenMCX image, `openmcx-kamailio` (Kamailio 6.1.4) and `openmcx-admin` included, is published with the one tag
 `1.0.0`, the tag the tutorials and the Helm chart use.
 
 | Repository | Release commit |
 |---|---|
 | openmcx-server | tag `v1.0.0` |
-| openmcx-client | `314298c` |
+| openmcx-client | `1a9d07a` |
 | openmcx-admin | `39e17e3` |
 
-<!-- TO FILL AT PUBLISHING: the digest of each image. -->
+The digests of the published images; `docker pull openmcx/<image>@sha256:<digest>` gets exactly the release
+image, whatever happens to the tag later.
 
-The services and what each supports are listed in the [feature list](docs/FEATURES.md); the 3GPP specifications and
-versions the code follows are in [docs/SPECS.md](docs/SPECS.md).
+| Image (tag `1.0.0`) | Digest |
+|---|---|
+| `openmcx-mcptt-server` | `sha256:f1fde750a16cf6c6409549f3d6bd3176cde74c514868c6c18e9848c7d18ab218` |
+| `openmcx-mcvideo-server` | `sha256:21312659550ee6baf811359282355b00fd9db71d2aea6e21f94d6001fc39cd39` |
+| `openmcx-mcdata-server` | `sha256:d44c0334fb6b9c09a9294dbd127cc52fa063386d2ea537466b4aff10ca0478cc` |
+| `openmcx-common` | `sha256:3a42589e05a5964f601160f7fe140362db89ad5b13100ab447deae41458ac35d` |
+| `openmcx-http-proxy` | `sha256:8d2af872f445daa82e36cb984f0c751712cddb77950b98f146849c2903dd4d78` |
+| `openmcx-user-db` | `sha256:93242dace1dda289a1323409fd4f29b1be7e2a85fb371c0678ce3bd708393875` |
+| `openmcx-setup` | `sha256:5a0c909720334d0e066207967148b977eff4e0c458e57de59ae8e69bcf585148` |
+| `openmcx-kamailio` | `sha256:41845afe7a900228f69f4372072796f1f9656e9fcfcdd1dc19a6fa9d64914b07` |
+| `openmcx-client` | `sha256:fa887a5729e79c9c6283036e2cd284de386ad23325c33ecbc7f41d420b0d6bdd` |
+| `openmcx-dispatcher` | `sha256:298b5f71549aeca94dd14691c19057bbb85e8b61140683e45f2c835a1871cefb` |
+| `openmcx-admin` | `sha256:2d6f1a0951a92af2c2e56bf51a088362d98e73f20a047728aa695693d564018f` |
+
+The third-party images of the 5G and 4G tutorials, built by OpenMCX, all modified except srsUE (their patches, notices
+and build scripts are in the tutorial folders):
+
+| Image | Tutorials | Digest |
+|---|---|---|
+| `oai-amf:mcx-n5` | 3, 4 | `sha256:df1e48f8d0244f0e8912217e8cf3ef25308d5960e67d8a4014480a6bddf3f60d` |
+| `oai-pcf:mcx-n5` | 3, 4 | `sha256:08ebaccbdf355aaf880066950eeaf933ce0eb119853e12d2d97ee12c8cd199d3` |
+| `oai-smf:mcx-n5` | 3, 4 | `sha256:7f4007e1c5b18c3c8513959271aefdfe557dd5f3dbfdae724d927670bda7691b` |
+| `oai-upf:mcx-n5` | 3, 4 | `sha256:ff91b3a581e4f463e9c3a9272e52a9e919495f8487cb375d677a45c25509f5bf` |
+| `openmcx-srsran-gnb:25.10-mcx` | 4 | `sha256:51064b621c83c5ccbc391125b7c613f740e37a78f219d807ed3fe16e22ecd33f` |
+| `openmcx-srsue:25.10` | 4 | `sha256:ab4bae2520414fb3199ba26e393b3efc88109ad49a9c3a0750d929cb83aa0618` |
+| `open5gs:2.8.0-mcx` | 5 | `sha256:74fd9d3e6e56890e99ef3c9dbc5973506a6992916c1e7a2d70df08de8477afa4` |
+| `oai-enb:2026.w39-mcx` | 5 | `sha256:df44fbe08940eaa864d5e964a9ef55c5e5c3dcf12e8c3fa957f1e3960f9a2ee4` |
+| `oai-lte-ue:2026.w39-mcx` | 5 | `sha256:8f28d3e282d63c4cdf6ce819641e2f1da8bc08d1536c32d91ddc91f15ee8a231` |
 
 ## Try it
 
@@ -43,47 +91,22 @@ The [tutorials](tutorials/README.md) run the whole system on one computer from t
 - [Unit test tutorials](tutorials/unit-tests): one feature each, with its SIP and media flow captured and explained
   against the specification.
 
-## Scope: not in this release
+## Limitations
 
-| Area | Why |
-|---|---|
-| Off-network operation (ProSe), relays, isolated operation (IOPS) | No radio side in this edition |
-| Interconnection between MC systems, MC gateway servers, migration | The standalone edition is one MC system |
-| Interworking with LMR and other non-3GPP systems | Not part of the standalone edition |
-| MBMS/eMBMS broadcast bearers | Unicast bearers only |
-| Pre-established sessions (TS 24.379 clause 8) | They require resource sharing in the PCRF/PCF, which the cores of the tutorials do not support; a setup request is refused with 403 and warning 100 |
-| N33 through the NEF, and the SIP core as the QoS application function | The MCPTT server is the application function, over Rx (4G) and N5 (5G) |
-| Several devices of one user at the same time | Not implemented |
-| Audio cut-in, multi-talker groups, override with simultaneous talkers | Not implemented |
-| Acknowledged group call options (TNG1: proceed or convert on timeout, list of members who did not acknowledge) | Not implemented; a call missing required members is abandoned |
-| MCVideo: several transmitters at a time, video conferencing, video modes, remote camera control | Not implemented |
-| MCData data streaming | Not implemented (TS 24.282 has no procedure for it) |
-| Discreet listening, MC logging and recording, lawful interception, charging | Not implemented |
-| Measured performance (access time, mouth-to-ear latency, MOS) | Not measured yet |
-
-## Known limitations
-
-- **Registration.** The service authorisation by third-party REGISTER (TS 24.379 clause 7.3.2) is not supported; the
-  clients authorise by PUBLISH (clause 7.3.3).
-- **Keys.** The servers and the GMS fetch keys from the KMS over an internal interface, not with the access-token
-  request of TS 33.180 annex D.2; a KMS of another vendor would not serve them.
-- **Media.** The servers accept media only from the address and port in a client's SDP, and send to them; they do not
-  learn the address from the received media. A client behind NAT is reachable only if the address it advertises is.
-- **Message store.** Answers are JSON only, and the `listFilter` query is not supported.
-- **Android app.** It is a debug build. Not supported: MCPTT chat calls and the conference subscription, first-to-answer
-  calls, ambient listening, call-back, transfer and forwarding, functional aliases, floor queueing, MCPTT media and XML
-  protection, MCData over MSRP, IP connectivity, enhanced status and the message store, and the SIP subscriptions to
-  the CMS and GMS documents (it reads them with XCAP). It has not been run over a 4G or 5G bearer.
-- **Other limits** of each service are in the feature list, [current limits](docs/FEATURES.md#current-limits).
+What this edition does not include (off-network, interconnection, MBMS, pre-established sessions, several devices per
+user and others) and the known limits of what it implements are listed, checked against the code of this release, in
+[LIMITATIONS.md](docs/LIMITATIONS.md). OpenMCX is not an interoperability-certified implementation: it has not yet been
+tested against independent implementations.
 
 ## Verification of this release
 
-The release commits passed, on images built from them:
+The release commits passed, on images built from them (lab runs that failed on an overloaded test host passed when
+run again one at a time):
 
 | Check | Result |
 |---|---|
-| Lab regression (`tools/regress.py --all`), debug TCP SIP | 122 of 122 scenarios and wire checks |
-| Lab regression, TLS SIP | 93 of 93 |
+| Lab regression (`tools/regress.py --all`), debug TCP SIP | 123 of 123 scenarios and wire checks |
+| Lab regression, TLS SIP | 94 of 94 |
 | Unit test tutorials, each new capture checked against its documented flow | 21 of 21 |
 | Tutorial 1 start-up | 17 of 17 services healthy |
 
@@ -92,5 +115,5 @@ manifests valid.
 
 ## Licence
 
-openMCX is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
+OpenMCX is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
 Third-party software and its licences: [NOTICE](NOTICE).

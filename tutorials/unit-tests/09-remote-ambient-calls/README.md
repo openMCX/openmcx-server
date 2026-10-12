@@ -1,6 +1,6 @@
 # Unit Test Tutorial 9: MCPTT remotely initiated group calls and ambient listening calls
 
-One computer runs the openMCX system from the published images, with four headless clients in place of phones.
+One computer runs the OpenMCX system from the published images, with four headless clients in place of phones.
 A script takes them through two MCPTT services in which one user makes another user's device act:
 
 - a **remotely initiated group call** (TS 24.379 clause 10.1.5): client-a asks client-b's device, by SIP MESSAGE, to
@@ -15,7 +15,7 @@ A capture of the lab network records every SIP message and every speech and floo
 each request and call in Wireshark.
 
 The tutorial is built on the scenarios `tests/integration/remote_group_call_scenario.py` and
-`tests/integration/ambient_listening_scenario.py` of the openMCX regression tests and uses the same images.
+`tests/integration/ambient_listening_scenario.py` of the OpenMCX regression tests and uses the same images.
 [Unit Test Tutorial 4](../04-private-call-services/README.md) shows the remotely initiated *private* call.
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
@@ -23,7 +23,7 @@ The tutorial is built on the scenarios `tests/integration/remote_group_call_scen
 > floor control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common services
 > (sign-in, configuration, keys) stays encrypted and is not captured.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 9: client-a asks client-b to call the group operations and listens to client-b without client-b being told; client-c and client-d are group members and callers; the openMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.9.0/24"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 9: client-a asks client-b to call the group operations and listens to client-b without client-b being told; client-c and client-d are group members and callers; the OpenMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.9.0/24"></p>
 
 ## The two services
 
@@ -39,7 +39,7 @@ The tutorial is built on the scenarios `tests/integration/remote_group_call_scen
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
-- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from Docker Hub**
+- No phones, no network set-up, nothing to compile: the tutorial uses the **prebuilt OpenMCX images from Docker Hub**
   (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer.
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
 
@@ -129,8 +129,8 @@ docker compose exec mcptt-server openmcx-mcptt-server --config /config/mcptt-ser
 
 ## 4. Look at the capture
 
-`run.sh` copies the capture to `captures/09-remote-ambient-calls-run.pcap.gz`. The folder also holds a reference run,
-`captures/09-remote-ambient-calls-full.pcap.gz` (318 KB, 7 612 frames, most of it the speech of the 30 s ambient
+The script `run.sh` copies the capture of your run to `captures/09-remote-ambient-calls-run.pcap.gz`. The folder also holds a reference run,
+[`captures/09-remote-ambient-calls-full.pcap.gz`](captures/09-remote-ambient-calls-full.pcap.gz) (318 KB, 7 612 frames, most of it the speech of the 30 s ambient
 listening call): the frame numbers below and in the call flows are those of the reference. Wireshark opens the
 compressed file directly (or `gunzip` it first).
 
@@ -217,7 +217,7 @@ The compose file names every image in full, all from Docker Hub:
 | `docker.io/openmcx/openmcx-setup:1.0.0` | The setup: the lab's generator |
 | `docker.io/openmcx/openmcx-mcptt-server:1.0.0`, `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCPTT and MCData servers |
 | `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services |
-| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`OpenMCX/openmcx-client` repository) |
 | `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The SIP core's database |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |

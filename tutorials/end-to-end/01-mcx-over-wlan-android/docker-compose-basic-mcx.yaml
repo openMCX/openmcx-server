@@ -1,8 +1,8 @@
-# openMCX: a basic MCX system on one computer (tutorials/end-to-end/01-mcx-over-wlan-android/README.md).
+# OpenMCX: a basic MCX system on one computer (tutorials/end-to-end/01-mcx-over-wlan-android/README.md).
 #
 # The MCPTT, MCData and MCVideo servers, the common services (IdMS, GMS, CMS, KMS, LMS, Credential Service,
 # content server, message store, notification server, HTTP proxy, user database), the SIP core and MCX Admin,
-# from the published openMCX images. Two phones on the same Wi-Fi reach them through this computer (HOST_IP).
+# from the published OpenMCX images. Two phones on the same Wi-Fi reach them through this computer (HOST_IP).
 #
 #   cp .env.example .env                                              then set HOST_IP in .env
 #   docker compose -f docker-compose-basic-mcx.yaml run --rm setup    once: writes ./config

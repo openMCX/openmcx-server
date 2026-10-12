@@ -1,6 +1,6 @@
 # Unit Test Tutorial 19: MCVideo emergency, ad hoc and regrouped video calls
 
-One computer runs the openMCX system from the published images, with four headless clients in place of phones. Each
+One computer runs the OpenMCX system from the published images, with four headless clients in place of phones. Each
 client sends a synthetic H.264 picture sequence as its camera. A script takes them through the MCVideo services that
 change who is called, or how urgently:
 
@@ -16,7 +16,7 @@ A capture of the lab network records every SIP message, every video packet and e
 so you can follow each call in Wireshark.
 
 The tutorial is built on the scenarios `tests/integration/mcvideo_emergency_scenario.py`,
-`tests/integration/mcvideo_adhoc_scenario.py` and `tests/integration/mcvideo_regroup_scenario.py` of the openMCX
+`tests/integration/mcvideo_adhoc_scenario.py` and `tests/integration/mcvideo_regroup_scenario.py` of the OpenMCX
 regression tests and uses the same images. The MCPTT counterparts are Unit Test Tutorials
 [5](../05-emergency-imminent-peril/README.md) (emergency and imminent peril), [8](../08-adhoc-group-calls/README.md)
 (ad hoc group calls) and [10](../10-dynamic-groups/README.md) (regroups): MCVideo follows the same procedures, with its
@@ -27,7 +27,7 @@ own MIME bodies and transmission control in place of floor control.
 > Video and transmission control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common
 > services (sign-in, configuration, keys) stays encrypted and is not captured.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 19: client-a makes emergency, ad hoc and regrouped MCVideo calls and raises emergency alerts; client-b raises imminent peril and calls a user regroup; client-c is pre-empted and refused; client-d is refused; the openMCX system (SIP core, MCVideo server, MCPTT and MCData servers, common services) on one computer, on the lab network 172.31.19.0/24"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 19: client-a makes emergency, ad hoc and regrouped MCVideo calls and raises emergency alerts; client-b raises imminent peril and calls a user regroup; client-c is pre-empted and refused; client-d is refused; the OpenMCX system (SIP core, MCVideo server, MCPTT and MCData servers, common services) on one computer, on the lab network 172.31.19.0/24"></p>
 
 ## The services
 
@@ -49,7 +49,7 @@ as well.
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows) and a bash shell for
   `run.sh` (on Windows: WSL or Git Bash).
-- No phones, no camera, no network set-up, nothing to compile: the tutorial uses the **prebuilt openMCX images from
+- No phones, no camera, no network set-up, nothing to compile: the tutorial uses the **prebuilt OpenMCX images from
   Docker Hub** (`openmcx/openmcx-*:1.0.0`) and publishes no port; everything stays on the computer.
 - [Wireshark](https://www.wireshark.org/) to look at the capture (optional: `run.sh` prints a summary).
 
@@ -143,8 +143,8 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 
 ## 4. Look at the capture
 
-`run.sh` copies the capture to `captures/19-mcvideo-emergency-adhoc-regroup-run.pcap.gz`. The folder also holds a
-reference run, `captures/19-mcvideo-emergency-adhoc-regroup-full.pcap.gz` (241 KB, 2 727 frames): the frame
+The script `run.sh` copies the capture of your run to `captures/19-mcvideo-emergency-adhoc-regroup-run.pcap.gz`. The folder also holds a
+reference run, [`captures/19-mcvideo-emergency-adhoc-regroup-full.pcap.gz`](captures/19-mcvideo-emergency-adhoc-regroup-full.pcap.gz) (241 KB, 2 727 frames): the frame
 numbers below and in the call flows are those of the reference. Wireshark opens the compressed file directly (or
 `gunzip` it first).
 
@@ -261,7 +261,7 @@ The compose file names every image in full, all from Docker Hub:
 | `docker.io/openmcx/openmcx-mcvideo-server:1.0.0` | The MCVideo server |
 | `docker.io/openmcx/openmcx-mcptt-server:1.0.0`, `docker.io/openmcx/openmcx-mcdata-server:1.0.0` | The MCPTT and MCData servers |
 | `docker.io/openmcx/openmcx-common:1.0.0`, `docker.io/openmcx/openmcx-http-proxy:1.0.0`, `docker.io/openmcx/openmcx-user-db:1.0.0` | The common services |
-| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`openMCX/openmcx-client` repository) |
+| `docker.io/openmcx/openmcx-client:1.0.0` | The headless client (`OpenMCX/openmcx-client` repository) |
 | `docker.io/openmcx/openmcx-kamailio:1.0.0` | The SIP core |
 | `docker.io/library/mysql@sha256:…` | The SIP core's database |
 | `docker.io/nicolaka/netshoot@sha256:…` | tcpdump, for the capture |
