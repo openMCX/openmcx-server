@@ -128,30 +128,6 @@ std::string McServer::alias_controller() const {
 }
 
 //------------------------------------------------------------------------------
-// Helper: a PUBLISH passed to its owning server; the final response is relayed back.
-SipResponse McServer::relay_publish(const SipMessage &message, const User &user, const std::string &owner) {
-  std::vector<SipHeader> headers =
-      route_to(owner, {{"Event", "presence"}, {"P-Asserted-Identity", "<" + user.sip + ">"}});
-  for (const auto *name : {"Expires", "SIP-If-Match"})
-    if (const auto value = get_header(message.headers, name); !value.empty())
-      headers.push_back({name, std::string(value)});
-  sip_.publish(peers_.at(owner).service_uri, message.content_type, message.body, headers,
-               [this, id = message.transaction_id](const SipResponse &answer) {
-                 if (answer.status_code < 200) return;
-                 SipResponse reply;
-                 reply.status_code = answer.status_code;
-                 reply.reason = answer.reason;
-                 for (const auto *name : {"Expires", "SIP-ETag", "Min-Expires"})
-                   if (const auto value = get_header(answer.headers, name); !value.empty())
-                     reply.headers.push_back({name, std::string(value)});
-                 schedule([this, id, reply] { sip_.respond(id, reply); });
-               });
-  SipResponse response;
-  response.deferred = true;
-  return response;
-}
-
-//------------------------------------------------------------------------------
 // Helper: the URI of a name-addr header value (inside '<' and '>'), else the value up to its first ';'.
 std::string McServer::header_uri(std::string_view value) {
   const auto start = value.find('<'), end = value.find('>');

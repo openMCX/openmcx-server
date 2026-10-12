@@ -144,7 +144,7 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 ## 4. Look at the capture
 
 The script `run.sh` copies the capture of your run to `captures/19-mcvideo-emergency-adhoc-regroup-run.pcap.gz`. The folder also holds a
-reference run, [`captures/19-mcvideo-emergency-adhoc-regroup-full.pcap.gz`](captures/19-mcvideo-emergency-adhoc-regroup-full.pcap.gz) (241 KB, 2 727 frames): the frame
+reference run, [`captures/19-mcvideo-emergency-adhoc-regroup-full.pcap.gz`](captures/19-mcvideo-emergency-adhoc-regroup-full.pcap.gz) (237 KB, 2 681 frames): the frame
 numbers below and in the call flows are those of the reference. Wireshark opens the compressed file directly (or
 `gunzip` it first).
 
@@ -180,66 +180,66 @@ Useful display filters:
 
 What to look for, in the reference run:
 
-- **Emergency group call** (frames 551 to 592): alice's INVITE (551) with `Resource-Priority: mcpttp.15`,
-  `<emergency-ind>` true and `<alert-ind>` false. The server's INVITEs to bob (557), client-c (568)
-  and client-d (575) carry the same priority and indication; alice's 200 OK (592) too.
-- **Cancellation** (frames 716 to 732): alice's re-INVITE (716) with `<emergency-ind>` false and
-  `mcpttp.0`, the 200 OK (721), and the server's re-INVITEs to bob (723), client-c (728) and
-  client-d (732).
-- **Refused upgrade** (frames 771 to 778): client-c's re-INVITE (771) at `mcpttp.15`; the 403 (775,
-  to client-c 778) with `<emergency-ind>` false and `<alert-ind>` false. No re-INVITE goes to the others.
-- **Imminent peril** (frames 790 to 858): bob's re-INVITE (790) with `<imminentperil-ind>` true and
-  `mcpttp.10`, the re-INVITEs to alice (796), client-c (801) and client-d (805); bob's
-  re-INVITE back to `mcpttp.0` (844) and its re-INVITEs (850 to 858).
-- **Pre-emption** (frames 900 to 1123): alice's emergency re-INVITE (900) and the server's re-INVITEs
-  (906 to 915); client-c's Transmission Request (`MCV0` 0, 946) and Granted (947).
-  alice's Transmission Request (982) makes the server revoke client-c (`MCV1` 4, 983); client-c ends its
-  transmission (`MCV2` 0, 985), and only then is alice granted (987). Her video reaches the server
-  (998) and bob (1001). alice's cancellation (1061) and her BYE (1114), then the server's BYEs to bob
-  (1118), client-d (1120) and client-c (1123).
-- **Emergency private call** (frames 1209 to 1243): alice's INVITE (1209) with `<session-type>private`,
-  `<emergency-ind>` true and `mcpttp.15`; the server's INVITE to bob (1215) keeps both.
-- **Emergency alert** (frames 1262 to 1334): alice's MESSAGE (1262) with `<alert-ind>` true and the
-  `mcvideo-location-info` body; the 200 OK (1266); the MESSAGEs to bob (1268), client-c (1271) and
-  client-d (1273) with alice in `<mcvideo-calling-user-id>` and her location; the receipt to alice
-  (1277) with `<alert-ind-rcvd>` true. The cancellation (1304, 200 OK 1307) goes to the same three
-  (1309 to 1314), and its receipt (1319) has `<alert-ind>` false and `<alert-ind-rcvd>`
+- **Emergency group call** (frames 572 to 615): alice's INVITE (572) with `Resource-Priority: mcpttp.15`,
+  `<emergency-ind>` true and `<alert-ind>` false. The server's INVITEs to bob (578), client-c (589)
+  and client-d (596) carry the same priority and indication; alice's 200 OK (615) too.
+- **Cancellation** (frames 750 to 766): alice's re-INVITE (750) with `<emergency-ind>` false and
+  `mcpttp.0`, the 200 OK (755), and the server's re-INVITEs to bob (757), client-c (759) and
+  client-d (766).
+- **Refused upgrade** (frames 805 to 812): client-c's re-INVITE (805) at `mcpttp.15`; the 403 (809,
+  to client-c 812) with `<emergency-ind>` false and `<alert-ind>` false. No re-INVITE goes to the others.
+- **Imminent peril** (frames 824 to 894): bob's re-INVITE (824) with `<imminentperil-ind>` true and
+  `mcpttp.10`, the re-INVITEs to alice (830), client-c (832) and client-d (837); bob's
+  re-INVITE back to `mcpttp.0` (881) and its re-INVITEs (887 to 894).
+- **Pre-emption** (frames 937 to 1176): alice's emergency re-INVITE (937) and the server's re-INVITEs
+  (943 to 951); client-c's Transmission Request (`MCV0` 0, 985) and Granted (986).
+  alice's Transmission Request (1030) makes the server revoke client-c (`MCV1` 4, 1031); client-c ends its
+  transmission (`MCV2` 0, 1033), and only then is alice granted (1035). Her video reaches the server
+  (1039) and bob (1044). alice's cancellation (1121) and her BYE (1170), then the server's BYEs to bob
+  (1179), client-d (1174) and client-c (1176).
+- **Emergency private call** (frames 1265 to 1299): alice's INVITE (1265) with `<session-type>private`,
+  `<emergency-ind>` true and `mcpttp.15`; the server's INVITE to bob (1271) keeps both.
+- **Emergency alert** (frames 1318 to 1390): alice's MESSAGE (1318) with `<alert-ind>` true and the
+  `mcvideo-location-info` body; the 200 OK (1322); the MESSAGEs to bob (1324), client-c (1326) and
+  client-d (1329) with alice in `<mcvideo-calling-user-id>` and her location; the receipt to alice
+  (1333) with `<alert-ind-rcvd>` true. The cancellation (1360, 200 OK 1363) goes to the same three
+  (1365 to 1370), and its receipt (1375) has `<alert-ind>` false and `<alert-ind-rcvd>`
   true.
-- **Ad hoc group call** (frames 1350 to 1584): alice's INVITE (1350) with `<session-type>adhoc` and bob and
-  client-c in `resource-lists`. The server's INVITEs to bob (1356) and client-c (1366) name the ad hoc
-  group `sip:adhoc-WJAvBGyxy8MzJ6Iv3pRBYd5ZFGhPrAZuDI3zxVU8dTw@mcx.test` in `<mcvideo-calling-group-id>`, as does alice's 200 OK (1378). alice is granted
-  (1467) and her video reaches client-c (1479); then bob is granted (1530). alice's BYE
-  (1578) and the server's BYEs to client-c (1582) and bob (1584). No INVITE goes to client-d.
-- **By criteria** (frames 1643 to 1903): alice's INVITE (1643) with
-  `<anyExt><call-participants-criteria>affiliated:sip:operations@mcx.test`; INVITEs to bob (1649), client-c
-  (1659) and client-d (1666). client-d's own ad hoc INVITE (1895) gets 403 with
-  `Warning: 399 mcvideo-server "185 user not authorised to initiate the adhoc group call"` (1903).
-- **Ad hoc group emergency alert** (frames 1912 to 1996): alice's MESSAGE (1912) with
-  `<adhoc-alert-ind>` true, the criteria and her location; the 200 OK (1920); the MESSAGEs to bob (1916),
-  client-c (1918) and client-d (1921) with the alert's ad hoc group `sip:adhoc-DTUAuDiB11Hwvz0bTIpdGYgomdry8no4rZWBLwFfKH4@mcx.test`; the receipt to
-  alice (1926) with `<adhoc-alert-ind-rcvd>` true. The cancellation (1954) and its MESSAGEs (1958 to
-  1961), then, after its 200 OK (1962), the receipt to alice (1972) with `<adhoc-alert-ind>` false,
+- **Ad hoc group call** (frames 1406 to 1626): alice's INVITE (1406) with `<session-type>adhoc` and bob and
+  client-c in `resource-lists`. The server's INVITEs to bob (1412) and client-c (1422) name the ad hoc
+  group `sip:adhoc-gZ14FaqNl0CDh81hk1jvCtOgbsiXrdhxUPS6okBgBig@mcx.test` in `<mcvideo-calling-group-id>`, as does alice's 200 OK (1432). alice is granted
+  (1521) and her video reaches client-c (1532); then bob is granted (1585). alice's BYE
+  (1622) and the server's BYEs to client-c (1629) and bob (1626). No INVITE goes to client-d.
+- **By criteria** (frames 1689 to 1953): alice's INVITE (1689) with
+  `<anyExt><call-participants-criteria>affiliated:sip:operations@mcx.test`; INVITEs to bob (1695), client-c
+  (1705) and client-d (1712). client-d's own ad hoc INVITE (1945) gets 403 with
+  `Warning: 399 mcvideo-server "185 user not authorised to initiate the adhoc group call"` (1953).
+- **Ad hoc group emergency alert** (frames 1962 to 2046): alice's MESSAGE (1962) with
+  `<adhoc-alert-ind>` true, the criteria and her location; the 200 OK (1970); the MESSAGEs to bob (1966),
+  client-c (1968) and client-d (1971) with the alert's ad hoc group `sip:adhoc-V56D654uY1v9TjOnkXtVFYwBe-6f3nxtX55zkgIT414@mcx.test`; the receipt to
+  alice (1975) with `<adhoc-alert-ind-rcvd>` true. The cancellation (2004) and its MESSAGEs (2008 to
+  2011), then, after its 200 OK (2012), the receipt to alice (2022) with `<adhoc-alert-ind>` false,
   `<adhoc-alert-ind-rcvd>` true, the alert's ad hoc group and her `<mcvideo-client-id>`.
-  bob's alert (1992) is refused with 403 and `<adhoc-alert-ind>` false (1996).
-- **Group regroup** (frames 2004 to 2047): bob's request (2004) refused with warning `160` (2008). alice's
-  MESSAGE (2016) with `application/vnd.3gpp.mcvideo-regroup+xml`: `<mcvideo-regroup-uri>` `video-rg1`,
-  `<preconfigured-group>` `video-regroup`, `<groups-for-regroup>` and `<regroup-action>create`; the 200 OK (2020);
-  the notices to alice (2023), bob (2025), client-c (2027) and client-d
-  (2031). Each notice is a multipart body, a copy of alice's mcvideo-info body (her `<mcvideo-client-id>`) first and
+  bob's alert (2042) is refused with 403 and `<adhoc-alert-ind>` false (2046).
+- **Group regroup** (frames 2054 to 2098): bob's request (2054) refused with warning `160` (2058). alice's
+  MESSAGE (2066) with `application/vnd.3gpp.mcvideo-regroup+xml`: `<mcvideo-regroup-uri>` `video-rg1`,
+  `<preconfigured-group>` `video-regroup`, `<groups-for-regroup>` and `<regroup-action>create`; the 200 OK (2070);
+  the notices to alice (2073), bob (2075), client-c (2077) and client-d
+  (2080). Each notice is a multipart body, a copy of alice's mcvideo-info body (her `<mcvideo-client-id>`) first and
   then the regroup body, with both Accept-Contact header fields of her request, `+g.3gpp.mcvideo` and the MCVideo ICSI.
   The copy after a refused call and the removal notices below are built the same way.
-- **The call on the regroup** (frames 2063 to 2385): no affiliation request precedes it. alice's INVITE (2063) with
+- **The call on the regroup** (frames 2112 to 2339): no affiliation request precedes it. alice's INVITE (2112) with
   `video-rg1` in `<mcvideo-request-uri>` and `operations` in `<associated-group-id>`; the server's INVITEs to bob
-  (2070), client-c (2080) and client-d (2087) with `video-rg1` in `<mcvideo-calling-group-id>` and `operations` in
-  `<associated-group-id>`; alice's video reaches client-c (2246).
-- **While regrouped** (frames 2476 to 2543): bob's call on `operations` (2476) gets 403 with warning `148`
-  (2480), then a copy of the regroup notice (2482). bob's removal (2500) gets 403 with warning `161`
-  (2504). alice's removal (2512, 200 OK 2516) and the notices (2519 to 2528) with
+  (2119), client-c (2129) and client-d (2136) with `video-rg1` in `<mcvideo-calling-group-id>` and `operations` in
+  `<associated-group-id>`; alice's video reaches client-c (2289).
+- **While regrouped** (frames 2430 to 2496): bob's call on `operations` (2430) gets 403 with warning `148`
+  (2434), then a copy of the regroup notice (2436). bob's removal (2454) gets 403 with warning `161`
+  (2458). alice's removal (2466, 200 OK 2470) and the notices (2473 to 2481) with
   `<regroup-action>remove` and no `<groups-for-regroup>`.
-- **User regroup** (frames 2556 to 2719): alice's request (2556) with `<users-for-regroup>`; notices to bob
-  (2562) and client-c (2564) only. bob's call (2587) reaches client-c (2593); bob's BYE
-  (2665) and the server's BYE to client-c (2669). The removal (2704) tells bob (2710) and client-c
-  (2713).
+- **User regroup** (frames 2509 to 2673): alice's request (2509) with `<users-for-regroup>`; notices to bob
+  (2515) and client-c (2518) only. bob's call (2540) reaches client-c (2546); bob's BYE
+  (2619) and the server's BYE to client-c (2623). The removal (2658) tells bob (2664) and client-c
+  (2667).
 
 ## 5. Stop or start over
 
@@ -399,19 +399,19 @@ sequenceDiagram
 
 | Message | Frames |
 |---|---|
-| Emergency group call: INVITE; to bob, client-c, client-d; 200 OK to alice | 551; 557, 568, 575; 592 |
-| Cancellation: re-INVITE; 200 OK; re-INVITEs to bob, client-c, client-d | 716; 721; 723, 728, 732 |
-| Refused upgrade: client-c's re-INVITE; 403 | 771; 775 |
-| Imminent peril: bob's re-INVITE; re-INVITEs to alice, client-c, client-d; bob's end | 790; 796, 801, 805; 844 |
-| Pre-emption: alice's emergency re-INVITE; client-c's request, Granted; alice's request; Revoked to client-c; client-c's end request; Granted to alice | 900; 946, 947; 982; 983; 985; 987 |
-| Call end: alice's BYE; BYEs to bob, client-c, client-d | 1114; 1118, 1123, 1120 |
-| Emergency private call: INVITE; to bob | 1209; 1215 |
-| Emergency alert: MESSAGE; 200 OK; to bob, client-c, client-d; receipt | 1262; 1266; 1268, 1271, 1273; 1277 |
-| Alert cancellation: MESSAGE; 200 OK; to bob, client-c, client-d; receipt | 1304; 1307; 1309, 1311, 1314; 1319 |
-| Ad hoc call: INVITE; to bob, client-c; 200 OK; Granted to alice; alice's BYE; BYEs to bob, client-c | 1350; 1356, 1366; 1378; 1467; 1578; 1584, 1582 |
-| By criteria: INVITE; to bob, client-c, client-d; client-d's INVITE; 403 (185) | 1643; 1649, 1659, 1666; 1895; 1899 |
-| Ad hoc alert: MESSAGE; 200 OK; to bob, client-c, client-d; receipt; cancellation; its 200 OK; its receipt; bob's 403 | 1912; 1920; 1916, 1918, 1921; 1926; 1954; 1962; 1972; 1996 |
-| Group regroup: bob's 403 (160); alice's MESSAGE; 200 OK; notices to alice, bob, client-c, client-d | 2008; 2016; 2020; 2023, 2025, 2027, 2031 |
-| Call on the regroup: INVITE; to bob, client-c, client-d; 200 OK to alice | 2063; 2070, 2080, 2087; 2106 |
-| While regrouped: bob's INVITE; 403 (148); notice copy; bob's removal 403 (161); alice's removal; notices | 2476; 2480; 2482; 2504; 2512; 2519, 2521, 2523, 2528 |
-| User regroup: MESSAGE; notices to bob, client-c; bob's INVITE; to client-c; removal; notices | 2556; 2562, 2564; 2587; 2593; 2704; 2710, 2713 |
+| Emergency group call: INVITE; to bob, client-c, client-d; 200 OK to alice | 572; 578, 589, 596; 615 |
+| Cancellation: re-INVITE; 200 OK; re-INVITEs to bob, client-c, client-d | 750; 755; 757, 759, 766 |
+| Refused upgrade: client-c's re-INVITE; 403 | 805; 809 |
+| Imminent peril: bob's re-INVITE; re-INVITEs to alice, client-c, client-d; bob's end | 824; 830, 832, 837; 881 |
+| Pre-emption: alice's emergency re-INVITE; client-c's request, Granted; alice's request; Revoked to client-c; client-c's end request; Granted to alice | 937; 985, 986; 1030; 1031; 1033; 1035 |
+| Call end: alice's BYE; BYEs to bob, client-c, client-d | 1170; 1179, 1176, 1174 |
+| Emergency private call: INVITE; to bob | 1265; 1271 |
+| Emergency alert: MESSAGE; 200 OK; to bob, client-c, client-d; receipt | 1318; 1322; 1324, 1326, 1329; 1333 |
+| Alert cancellation: MESSAGE; 200 OK; to bob, client-c, client-d; receipt | 1360; 1363; 1365, 1367, 1370; 1375 |
+| Ad hoc call: INVITE; to bob, client-c; 200 OK; Granted to alice; alice's BYE; BYEs to bob, client-c | 1406; 1412, 1422; 1432; 1521; 1622; 1626, 1629 |
+| By criteria: INVITE; to bob, client-c, client-d; client-d's INVITE; 403 (185) | 1689; 1695, 1705, 1712; 1945; 1949 |
+| Ad hoc alert: MESSAGE; 200 OK; to bob, client-c, client-d; receipt; cancellation; its 200 OK; its receipt; bob's 403 | 1962; 1970; 1966, 1968, 1971; 1975; 2004; 2012; 2022; 2046 |
+| Group regroup: bob's 403 (160); alice's MESSAGE; 200 OK; notices to alice, bob, client-c, client-d | 2058; 2066; 2070; 2073, 2075, 2077, 2080 |
+| Call on the regroup: INVITE; to bob, client-c, client-d; 200 OK to alice | 2112; 2119, 2129, 2136; 2153 |
+| While regrouped: bob's INVITE; 403 (148); notice copy; bob's removal 403 (161); alice's removal; notices | 2430; 2434; 2436; 2458; 2466; 2473, 2475, 2477, 2481 |
+| User regroup: MESSAGE; notices to bob, client-c; bob's INVITE; to client-c; removal; notices | 2509; 2515, 2518; 2540; 2546; 2658; 2664, 2667 |

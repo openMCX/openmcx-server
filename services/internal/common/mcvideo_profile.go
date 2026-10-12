@@ -124,6 +124,8 @@ type mcvideoGroupInfo struct {
 // TS 24.484 clause 9.3.2.1 item 9 h: the <anyExt> of <OnNetwork>.
 type mcvideoOnNetworkExtXML struct {
 	IncomingList *privateCallList `xml:"IncomingPrivateCallList,omitempty"`
+	// <FunctionalAliasList>: the functional aliases the user may activate (TS 24.484 clause 9.3.2.1).
+	FunctionalAliasList *profileEntryList `xml:"FunctionalAliasList,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -290,6 +292,13 @@ func (svc *service) mcvideoProfileXML(user User) (mcvideoProfileXML, error) {
 			ext.EmergencyRecipients = recipients(private.EmergencyAny, private.EmergencyRecipients)
 		}
 		ext.NotCallable = private.Callable != nil && !*private.Callable
+	}
+	// The functional aliases whose <mcvideo-user-list> names the user (TS 24.281 clause 20.2.2.2.3).
+	if aliases := svc.cfg.functionalAliasList(user.MCVideoID, func(alias FunctionalAlias) []string { return alias.MCVideoUsers }); aliases != nil {
+		if on.AnyExt == nil {
+			on.AnyExt = &mcvideoOnNetworkExtXML{}
+		}
+		on.AnyExt.FunctionalAliasList = aliases
 	}
 	if len(on.GroupInfo) > 0 || on.MaxAffiliationsN2 > 0 || on.RemoteSelection != nil || on.AnyExt != nil {
 		doc.OnNetwork = on

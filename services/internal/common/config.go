@@ -741,6 +741,25 @@ func (cfg Config) userByMCPTTID(id string) (User, bool) {
 }
 
 // ------------------------------------------------------------------------------
+// TS 24.484 clauses 8.3.2.1 item 10 g ii, 9.3.2.1 and 10.3.2.1: the <FunctionalAliasList> of a user's profile in one
+// service: the aliases whose user list for that service names the user's ID, or nil when none does.
+func (cfg Config) functionalAliasList(id string, users func(FunctionalAlias) []string) *profileEntryList {
+	if id == "" {
+		return nil
+	}
+	var list *profileEntryList
+	for _, alias := range cfg.FunctionalAliases {
+		if slices.Contains(users(alias), id) {
+			if list == nil {
+				list = &profileEntryList{}
+			}
+			list.Entries = append(list.Entries, profileEntry{URI: alias.ID})
+		}
+	}
+	return list
+}
+
+// ------------------------------------------------------------------------------
 // Helper: the functional alias of an ID.
 func (cfg Config) functionalAliasByID(id string) (FunctionalAlias, bool) {
 	for _, fa := range cfg.FunctionalAliases {

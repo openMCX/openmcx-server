@@ -25,10 +25,9 @@ bool McServer::is_functional_alias(const std::string &id) {
 // does (clause 9A.2.2.2.6: one status change per alias). The user learns the outcome from the NOTIFY of its status
 // subscription (clauses 9A.2.2.2.5 and 9A.2.1.3) carrying the handled p-id-fa: an activated alias is listed
 // "activated", one at its limit that the user may take over "take-over-possible", a refused one is left out.
-// From a participating server (`relayed`), this server only owns the aliases (TS 24.379 clause 9A.2.2.3.3): all
-// listed aliases are checked before any state changes, and the outcome is the response.
+// On split servers the serving and the owning server each have their own procedure (functional_alias_split.cpp).
 SipResponse McServer::functional_alias_publish(const SipMessage &message, const User &user, const McpttInfo &info,
-                                               const std::string &body, bool relayed) {
+                                               const std::string &body) {
   SipResponse response;
   const auto reject = [&](int status, const std::string &reason, const std::string &warning = {}) {
     response.status_code = status;
@@ -60,7 +59,7 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
   // TS 24.379 clause 9A.2.2.2.3 steps 4A and 4B (MCPTT only): each alias must be one the user may change, in the
   // <FunctionalAliasList> of its user profile; OpenMCX's user profile has none, so the aliases whose
   // <mcptt-user-list> names the user stand for it.
-  if (!relayed && svc_.service == Service::mcptt)
+  if (svc_.service == Service::mcptt)
     for (const auto &alias : request.aliases) {
       const auto users = definitions[alias].is_null()
                              ? std::vector<std::string>{}
@@ -86,7 +85,6 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
   for (const auto &alias : request.aliases) {
     const auto &definition = definitions[alias];
     if (definition.is_null()) {
-      if (relayed) return reject(403, "unknown functional alias " + alias);
       outcomes[alias] = "refused";
       continue;
     }
@@ -107,7 +105,6 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
     case AliasAdmission::LimitReached: reason = "maximum activations reached for " + alias; break;
     case AliasAdmission::Admitted: break;
     }
-    if (relayed) return reject(403, reason);
     // TS 24.379 clause 3.1: "take-over-possible", the alias is used by others up to its limit, but the user may
     // take it over.
     const bool possible = admission == AliasAdmission::LimitReached && !request.take_over &&
@@ -147,6 +144,7 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
 // TS 24.379 clause 9A.2.2.3.6: a user's activations end with its service authorization, and so do
 // its status subscriptions.
 void McServer::deactivate_functional_aliases(const std::string &id) {
+  deactivate_served_aliases(id); // split servers: at the owning server (TS 24.379 clause 9A.2.2.2.6)
   const auto aliases = functional_aliases_.deactivate(id);
   alias_takeover_possible_.erase(id);
   std::erase_if(alias_subscriptions_, [&](const auto &entry) { return entry.second.subscriber == id; });
@@ -160,8 +158,9 @@ void McServer::deactivate_functional_aliases(const std::string &id) {
 // "fa-user-status-determination" for the users of an alias. The local policy of TS 24.379 clause 9A.2.2.3.4
 // step 5 (TS 24.281 clause 20.2.2.3.4 step 5) lets the users that may activate an alias follow it. Expires 0
 // fetches the state once; an in-dialog SUBSCRIBE refreshes or ends the subscription.
-// The aliases are held by the server owning them, so a participating-only server
-// with an alias controller refuses (its users' activations are not known here).
+// On split servers the serving server answers a user's subscription to its own aliases from its functional alias
+// information entries (TS 24.379 clause 9A.2.2.2.4); the users of an alias are known only to the server owning it
+// (clause 9A.2.2.2.10, not supported), so a participating server with an alias controller refuses that one.
 SipResponse McServer::alias_subscribe(const SipMessage &message, const User &user, const McpttInfo &info,
                                       const std::string &req_type) {
   SipResponse response;
@@ -187,8 +186,8 @@ SipResponse McServer::alias_subscribe(const SipMessage &message, const User &use
     if (existing->second.subscriber != user.id) return refuse(403, "subscription of another user");
     subscription = existing->second;
   } else {
-    if (role_ == "participating" && !alias_controller().empty())
-      return refuse(403, "aliases held by the owning server");
+    if (req_type == "fa-user-status-determination" && aliases_owned_elsewhere())
+      return refuse(403, "users of the alias held by the owning server");
     if (req_type == "functional-alias-status-determination") {
       // TS 24.379 clause 9A.2.2.2.4 step 4: another user's aliases would need an authorisation this server has
       // no policy for.
@@ -310,17 +309,21 @@ void McServer::notify_alias_status(const std::string &dialog, const std::string 
     status.tuple_id = served && !served->client.empty() ? served->client : subscription.user;
     for (const auto &[alias, users] : functional_aliases_.activations())
       if (std::find(users.begin(), users.end(), subscription.user) != users.end())
-        status.entries.push_back({alias, {}, "activated"});
+        status.entries.push_back({alias, {}, "activated", {}});
+    // Split servers: the entries this server keeps for the user (TS 24.379 clause 9A.2.2.2.5 step 2: all but the
+    // deactivated and expired ones).
+    if (const auto entries = served_aliases_.find(subscription.user); entries != served_aliases_.end())
+      for (const auto &[alias, entry] : entries->second) status.entries.push_back({alias, {}, entry.status, {}});
     // TS 24.379 clause 9A.2.1.3: the aliases the user may take over.
     if (const auto possible = alias_takeover_possible_.find(subscription.user);
         possible != alias_takeover_possible_.end())
       for (const auto &alias : possible->second)
         if (!functional_aliases_.active(alias, subscription.user))
-          status.entries.push_back({alias, {}, "take-over-possible"});
+          status.entries.push_back({alias, {}, "take-over-possible", {}});
   } else {
     status.entity = status.tuple_id = subscription.alias;
     status.per_alias = true;
-    for (const auto &user : functional_alias_users(subscription.alias)) status.entries.push_back({{}, user, {}});
+    for (const auto &user : functional_alias_users(subscription.alias)) status.entries.push_back({{}, user, {}, {}});
   }
   const auto now = std::time(nullptr);
   const bool ended = subscription.expires <= now;
@@ -345,6 +348,13 @@ void McServer::alias_status_changed(const std::set<std::string> &users, const st
       due.emplace_back(dialog,
                        subscription.alias.empty() && subscription.user != publisher ? std::string{} : publish_id);
   for (const auto &[dialog, pid] : due) notify_alias_status(dialog, pid);
+  // Split servers: the serving servers following a changed user's status for an alias (TS 24.379 clause
+  // 9A.2.2.3.5), the publisher's with the handled p-id-fa.
+  std::vector<std::pair<std::string, std::string>> peers;
+  for (const auto &[dialog, subscription] : peer_alias_subscriptions_)
+    if (aliases.contains(subscription.alias) && users.contains(subscription.user))
+      peers.emplace_back(dialog, subscription.user == publisher ? publish_id : std::string{});
+  for (const auto &[dialog, pid] : peers) notify_peer_alias(dialog, pid);
 }
 
 } // namespace mcx

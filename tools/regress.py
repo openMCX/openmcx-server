@@ -230,6 +230,15 @@ LABS = [
         ['functional_alias_scenario'],
         ['mcptt'],
     ),
+    # TS 24.379 clauses 9A.2.2.2.6, 9A.2.2.2.7 and 9A.2.2.3.3: the serving servers pass each change on to the
+    # controlling server owning the aliases and follow its outcome.
+    lab(
+        'functional-alias-split',
+        'single',
+        ['--split', '--private-call', '--adhoc', '--functional-alias'],
+        ['functional_alias_scenario'],
+        ['mcptt', 'split'],
+    ),
     lab(
         'private-services', 'single', ['--private-call', '--private-services'], ['private_services_scenario'], ['mcptt']
     ),

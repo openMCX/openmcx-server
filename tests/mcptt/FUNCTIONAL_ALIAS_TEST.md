@@ -78,8 +78,8 @@ Independent SIP wire checks (`verify_functional_alias.py`): PUBLISH with the pre
 
 | Area | Gap |
 |---|---|
-| Status determination | The client follows its own status only (§9A.2.1.3 step 2). With separate participating and owning servers the participating server still relays the client's PUBLISH and its outcome (no per-alias onward PUBLISH, §9A.2.2.2.6, and no subscription to the owning server, §9A.2.2.2.7), and refuses the status subscription. The `activating`/`deactivating` states never show: the owning decision is immediate. A `take-over-possible` offer stays until the user's next request for that alias. |
+| Status determination | The client follows its own status only (§9A.2.1.3 step 2). With separate participating and owning servers, the participating server refuses a subscription to the users of an alias (§9A.2.2.2.10). On a single server the `activating`/`deactivating` states never show, because the owning decision is immediate. The server owning the alias offers no take-over between servers, so the participating server offers it when the owning server refuses an activation the user could take over. A `take-over-possible` offer stays until the user's next request for that alias. |
 | Location-based activation | §9A.2.1.4 and the manual-deactivation restriction are not implemented. |
 | Group binding | Functional alias to group binding (§9A.4, warning 176) is not implemented. |
 | Call-list restrictions | `<ListOfAllowedFAsToCall>` and `<ListOfAllowedFAsToBeCalledFrom>` (warnings 171/172) are not evaluated. |
-| Multiple servers | Covered: the functional-alias scenario also runs with separate participating and controlling servers; activation goes to the server owning the aliases. |
+| Multiple servers | Covered: the `functional-alias-split` lab runs the same scenario on separate participating and controlling servers. The participating server answers the client and passes each change on to the controlling server, which owns the aliases (per-alias PUBLISH, §9A.2.2.2.6). It follows the outcome by subscription (§9A.2.2.2.7, §9A.2.2.3.4), and the client sees `activating`, then the outcome. |

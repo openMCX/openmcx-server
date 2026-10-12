@@ -662,8 +662,10 @@ def main():
             'AD-07 unknown ad hoc group identity rejected with 240',
         )
 
-        # FA-01 functional alias activation, limit, take-over and ownership
-        # (TS 24.282 clauses 22.2.2.2.3, 22.2.2.3.3).
+        # FA-01 functional alias activation, limit, take-over and ownership (TS 24.282 clauses 22.2.2.2.3 and
+        # 22.2.2.3.3): the PUBLISH is answered 200 past the participating checks (clause 22.2.2.2.3 step 8), and the
+        # status NOTIFY with its p-id-fa gives each alias's outcome (clause 22.2.2.2.5): activated, take-over-possible
+        # (clause 3.1) or left out (refused).
         desk, medic, reserve = (f'sip:{name}.fa@{domain}' for name in ('desk', 'medic', 'reserve'))
 
         # ------------------------------------------------------------------------------
@@ -672,34 +674,44 @@ def main():
             return status('mcdata-server').get('functional_aliases') or {}
 
         # ------------------------------------------------------------------------------
-        # Run a functional alias command and wait for the expected answer to that action.
-        def fa(role, text, expect):
+        # Run a functional alias command and wait for its answer and the outcome of the alias in the NOTIFY.
+        def fa(role, text, expect, outcome):
             command(role, text)
+            alias = text.split()[2]
             wait(
-                f'FA {role}: {text} -> {expect}',
+                f'FA {role}: {text} -> {expect}, {outcome}',
                 lambda: (
                     (status(role).get('mcdata_fa_last_result') or {}).get('status') == expect
                     and (status(role).get('mcdata_fa_last_result') or {}).get('action') == text.split()[1]
+                    and ((status(role).get('mcdata_fa_last_result') or {}).get('outcomes') or {}).get(alias) == outcome
                 ),
             )
 
-        fa('client-a', f'mcdata-fa activate {desk}', 200)
-        wait('FA-01 client-a holds desk', lambda: aliases().get(desk) == [ids['client-a']])
-        fa('client-b', f'mcdata-fa activate {desk}', 403)
+        fa('client-a', f'mcdata-fa activate {desk}', 200, 'activated')
         check(
-            'FA-01 the activation limit rejects a second activation without take-over',
+            'FA-01 the client subscribed to its functional alias status first (200)',
+            status('client-a').get('mcdata_functional_alias_subscription_result') == 200,
+        )
+        wait('FA-01 client-a holds desk', lambda: aliases().get(desk) == [ids['client-a']])
+        fa('client-b', f'mcdata-fa activate {desk}', 200, 'take-over-possible')
+        check(
+            'FA-01 beyond the activation limit a user allowed to take over is offered it',
             aliases().get(desk) == [ids['client-a']],
         )
-        fa('client-b', f'mcdata-fa takeover {desk}', 200)
+        fa('client-b', f'mcdata-fa takeover {desk}', 200, 'activated')
         wait(
             'FA-01 take-over by an authorised user replaces the holder',
             lambda: aliases().get(desk) == [ids['client-b']],
         )
-        fa('client-c', f'mcdata-fa activate {desk}', 403)
+        wait(
+            'FA-01 the previous holder is notified that it no longer holds desk',
+            lambda: desk not in status('client-a').get('mcdata_functional_aliases', [desk]),
+        )
+        fa('client-c', f'mcdata-fa activate {desk}', 200, 'refused')
         check('FA-01 a user outside <mcdata-user-list> cannot activate', aliases().get(desk) == [ids['client-b']])
-        fa('client-c', f'mcdata-fa activate sip:nobody.fa@{domain}', 403)
-        fa('client-c', f'mcdata-fa activate {medic}', 200)
-        fa('client-d', f'mcdata-fa activate {medic}', 200)
+        fa('client-c', f'mcdata-fa activate sip:nobody.fa@{domain}', 200, 'refused')
+        fa('client-c', f'mcdata-fa activate {medic}', 200, 'activated')
+        fa('client-d', f'mcdata-fa activate {medic}', 200, 'activated')
         wait(
             'FA-01 two users hold medic within its limit of two',
             lambda: set(aliases().get(medic, [])) == {ids['client-c'], ids['client-d']},
@@ -756,11 +768,11 @@ def main():
             'FA-04 the recipient sees the active functional alias',
             lambda: inbox('client-a', text) and inbox('client-a', text)[0]['functional_alias'] == desk,
         )
-        command('client-a', f'mcdata-fa use {desk}')  # client-a still believes it holds desk (no status NOTIFY)
+        command('client-a', f'mcdata-fa use {desk}')  # client-a lost desk to client-b (status NOTIFY)
         text = unique('stale-desk')
-        send('client-a', f'sds {ids["client-b"]} {text}', label='FA-04 SDS presenting a taken-over alias accepted')
+        send('client-a', f'sds {ids["client-b"]} {text}', label='FA-04 SDS from the former holder accepted')
         wait(
-            'FA-04 the server removes an alias the sender no longer holds',
+            'FA-04 an alias the sender no longer holds is not presented',
             lambda: inbox('client-b', text) and inbox('client-b', text)[0]['functional_alias'] == '',
         )
 
@@ -784,7 +796,7 @@ def main():
         )
 
         # FA-06 deactivation: an empty set is Expires 0.
-        fa('client-c', f'mcdata-fa deactivate {medic}', 200)
+        fa('client-c', f'mcdata-fa deactivate {medic}', 200, 'deactivated')
         wait('FA-06 client-c no longer holds medic', lambda: aliases().get(medic) == [ids['client-d']])
 
         # ------------------------------------------------------------------------------

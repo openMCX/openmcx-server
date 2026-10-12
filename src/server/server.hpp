@@ -347,6 +347,31 @@ protected:
   };
 
   std::map<std::string, AliasSubscription> alias_subscriptions_;
+
+  // Split servers (TS 24.379 clause 9A.2.2.2.2): the functional alias information entries of each served user whose
+  // aliases another server owns: user -> alias -> status ("activating", "activated", "deactivating"), the client's
+  // p-id-fa, the take-over request and the current p-id-fa of the status change passed on (clause 9A.2.2.2.6 step 7).
+  struct ServedAlias {
+    std::string status, publish_id, onward_id;
+    bool take_over = false;
+  };
+
+  std::map<std::string, std::map<std::string, ServedAlias>> served_aliases_;
+
+  // This server's subscriptions to the owning server (TS 24.379 clause 9A.2.2.2.7): dialog -> user and alias.
+  struct AliasUpstream {
+    std::string user, alias;
+  };
+
+  std::map<std::string, AliasUpstream> alias_upstream_;
+
+  // The owning server's subscriptions from serving servers (TS 24.379 clause 9A.2.2.3.4): dialog -> alias and user.
+  struct PeerAliasSubscription {
+    std::string alias, user;
+    bool ended = false;
+  };
+
+  std::map<std::string, PeerAliasSubscription> peer_alias_subscriptions_;
   // Functional alias to group bindings (TS 24.379 clause 9A.4.2.3.2, TS 24.281 clause 20.4.2.3.2):
   // user -> group -> alias. One alias per group; an alias may be bound to several groups.
   std::map<std::string, std::map<std::string, std::string>> alias_bindings_;
@@ -468,8 +493,6 @@ protected:
   std::string call_controller() const { return role_ == "participating" ? controller_ : std::string{}; }
 
   std::string alias_controller() const;
-
-  SipResponse relay_publish(const SipMessage &message, const User &user, const std::string &owner);
 
   static std::string header_uri(std::string_view value);
 
@@ -707,9 +730,37 @@ protected:
   }
 
   SipResponse functional_alias_publish(const SipMessage &message, const User &user, const McpttInfo &info,
-                                       const std::string &body, bool relayed);
+                                       const std::string &body);
 
   void deactivate_functional_aliases(const std::string &id);
+
+  // ---- Functional aliases on split servers (functional_alias_split.cpp): TS 24.379 clauses 9A.2.2.2.6, 9A.2.2.2.7
+  // and 9A.2.2.3.3 to 9A.2.2.3.5 ----
+  bool aliases_owned_elsewhere() const;
+
+  SipResponse served_alias_publish(const SipMessage &message, const User &user, const McpttInfo &info,
+                                   const std::string &body);
+
+  void send_alias_onward(const std::string &id, const std::string &alias, bool activation);
+
+  void onward_alias_answered(const std::string &id, const std::string &alias, bool activation, const std::string &pid,
+                             int code);
+
+  bool alias_takeover_offered(const std::string &id, const std::string &alias);
+
+  void subscribe_alias_owner(const std::string &id, const std::string &alias);
+
+  void unsubscribe_alias_owner(const std::string &id, const std::string &alias);
+
+  SipResponse owner_alias_notify(const SipMessage &message);
+
+  void deactivate_served_aliases(const std::string &id);
+
+  SipResponse owned_alias_publish(const SipMessage &message, const std::string &peer);
+
+  SipResponse owned_alias_subscribe(const SipMessage &message, const std::string &peer);
+
+  void notify_peer_alias(const std::string &dialog, const std::string &publish_id = {});
 
   SipResponse alias_subscribe(const SipMessage &message, const User &user, const McpttInfo &info,
                               const std::string &req_type);

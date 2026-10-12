@@ -155,6 +155,10 @@ class DataServer {
   // Functional alias activations (TS 24.282 clause 22.2.2.3.2), as both the server serving the
   // user and the server owning the alias: alias -> MCData IDs in activation order.
   AliasRegistry functional_aliases_;
+  // TS 24.282 clause 22.2.2.2.4: the functional alias status subscriptions (dialog -> MCData ID), and the aliases
+  // each user was last offered for take-over (TS 24.282 clause 3.1).
+  std::map<std::string, std::string> alias_subscriptions_;
+  std::map<std::string, std::set<std::string>> alias_takeover_possible_;
 
   //------------------------------------------------------------------------------
   // Outstanding MCData emergency alerts (TS 24.282 clause 16.2.3.1 step 4b iii A): group -> originator ->
@@ -382,9 +386,15 @@ class DataServer {
 
   // TS 24.282 clause 22.2.2.3.6: the functional aliases of a user who logs off or whose authorisation expires are
   // deactivated.
-  void deactivate_aliases(const std::string &id) { functional_aliases_.deactivate(id); }
+  void deactivate_aliases(const std::string &id);
 
   SipResponse functional_alias_publish(const SipMessage &received, User &user, const BodyPart &pidf);
+
+  SipResponse alias_status_subscribe(const SipMessage &request, User &subscriber);
+
+  void notify_alias_status(const std::string &id, const std::string &publish_id);
+
+  void notify_alias_dialog(const std::string &dialog, const std::string &publish_id, bool ended);
 
   // ---- Users (data_server.hpp) ----
   // The service authorised user with the MCData ID (while its authorisation lasts), or nullptr.

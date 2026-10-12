@@ -985,7 +985,7 @@ int main() {
       "urn:uuid:1",
       "p1",
       false,
-      {{"sip:dispatcher@mcx.test", "", "activated"}, {"sip:medic@mcx.test", "", "take-over-possible"}}};
+      {{"sip:dispatcher@mcx.test", "", "activated", ""}, {"sip:medic@mcx.test", "", "take-over-possible", ""}}};
   per_user.mcvideo = true;
   const auto per_user_copy = parse_functional_alias_status(functional_alias_status_xml(per_user));
   check(per_user_copy.mcvideo && !per_user_copy.per_alias && per_user_copy.entity == per_user.entity &&
@@ -997,7 +997,7 @@ int main() {
                                   "sip:dispatcher@mcx.test",
                                   {},
                                   true,
-                                  {{"", "sip:alice@mcx.test", ""}, {"", "sip:bob@mcx.test", ""}}};
+                                  {{"", "sip:alice@mcx.test", "", ""}, {"", "sip:bob@mcx.test", "", ""}}};
   const auto per_alias_xml = functional_alias_status_xml(per_alias);
   const auto per_alias_copy = parse_functional_alias_status(per_alias_xml);
   check(!per_alias_copy.mcvideo && per_alias_copy.per_alias && per_alias_copy.entries.size() == 2 &&
@@ -1009,6 +1009,42 @@ int main() {
   auto mixed_status = per_alias_xml;
   mixed_status.replace(mixed_status.find("</status>"), 0, "<fa:functionalAlias functionalAliasID=\"sip:x@mcx.test\"/>");
   rejects([&] { (void)parse_functional_alias_status(mixed_status); });
+  // TS 24.379 clauses 9A.2.2.2.6 and 9A.2.2.3.5 between MCPTT servers: the user in the tuple id, the take-over
+  // request and the "expires" of an activation; a user no longer active is a document without a tuple.
+  FunctionalAliasStatus onward;
+  onward.entity = "sip:dispatcher@mcx.test";
+  onward.tuple_id = "sip:alice@mcx.test";
+  onward.per_alias = true;
+  onward.publish_id = "p9";
+  onward.take_over = true;
+  onward.entries.push_back({"", "sip:alice@mcx.test", "activating", "2106-02-07T06:28:15Z"});
+  const auto onward_copy = parse_functional_alias_status(functional_alias_status_xml(onward));
+  check(onward_copy.per_alias && onward_copy.take_over && onward_copy.tuple_id == "sip:alice@mcx.test" &&
+            onward_copy.entries.size() == 1 && onward_copy.entries[0].status == "activating" &&
+            onward_copy.entries[0].expires == "2106-02-07T06:28:15Z",
+        "functional alias status between servers lost");
+  FunctionalAliasStatus inactive;
+  inactive.entity = "sip:dispatcher@mcx.test";
+  inactive.publish_id = "p10";
+  const auto inactive_xml = functional_alias_status_xml(inactive);
+  const auto inactive_copy = parse_functional_alias_status(inactive_xml);
+  check(inactive_xml.find("<tuple") == std::string::npos && inactive_copy.tuple_id.empty() &&
+            inactive_copy.entries.empty() && inactive_copy.publish_id == "p10",
+        "functional alias status without a tuple lost");
+  auto stray = inactive;
+  stray.entries.push_back({"", "sip:alice@mcx.test", "", ""});
+  rejects([&] { (void)functional_alias_status_xml(stray); });
+  // TS 24.379 clause 9A.3.2.2: the per-user filter of a functional alias status subscription.
+  const auto filter = functional_alias_filter_xml("sip:alice@mcx.test");
+  check(parse_functional_alias_filter(filter) == "sip:alice@mcx.test" &&
+            filter.find("urn:3gpp:ns:mcpttPresInfoFA:1.0") != std::string::npos,
+        "functional alias filter lost");
+  check(parse_functional_alias_filter(functional_alias_filter_xml("sip:bob@mcx.test", false, true)) ==
+            "sip:bob@mcx.test",
+        "MCVideo functional alias filter lost");
+  rejects([&] { (void)functional_alias_filter_xml("sip:a\"@mcx.test"); });
+  check(parse_functional_alias_filter("<filter-set xmlns=\"urn:ietf:params:xml:ns:simple-filter\"/>").empty(),
+        "an empty filter names a user");
   // TS 24.379 clause 16 and annex F.7: group and user regroups, and a removal naming neither list.
   Regroup users_regroup{
       "create", "sip:regroup-1@mcx.test", "sip:preconf@mcx.test", {}, {"sip:alice@mcx.test", "sip:bob@mcx.test"}};

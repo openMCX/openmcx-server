@@ -181,6 +181,8 @@ type profileAlert struct {
 // TS 24.484 clause 8.3.2.1 item 10 g: the <anyExt> of <OnNetwork>.
 type profileOnNetworkExt struct {
 	IncomingList *privateCallList `xml:"IncomingPrivateCallList,omitempty"`
+	// Item 10 g ii: <FunctionalAliasList>, the functional aliases the user may activate.
+	FunctionalAliasList *profileEntryList `xml:"FunctionalAliasList,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -556,6 +558,17 @@ func octets(hexText string) int {
 // data document (clause 7.4.1.2).
 func (svc *service) servedProfileXML(user User) profileXML {
 	doc := userProfileXML(user)
+	// Item 10 g ii: the functional aliases whose <mcptt-user-list> names the user (TS 24.379 clause 9A.2.2.2.3 step
+	// 4A a).
+	if aliases := svc.cfg.functionalAliasList(user.MCPTTID, func(alias FunctionalAlias) []string { return alias.Users }); aliases != nil {
+		if doc.OnNetwork == nil {
+			doc.OnNetwork = &profileOnNetwork{Index: "0"}
+		}
+		if doc.OnNetwork.AnyExt == nil {
+			doc.OnNetwork.AnyExt = &profileOnNetworkExt{}
+		}
+		doc.OnNetwork.AnyExt.FunctionalAliasList = aliases
+	}
 	doc.Common.Organization = svc.cfg.organization()
 	doc.Common.AnyExt = &locationURIExt{LocationURI: svc.locationDocumentURI(user.MCPTTID, user.profileIndex())}
 	return doc

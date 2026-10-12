@@ -126,17 +126,22 @@ bool is_functional_alias_pidf(std::string_view xml);
 //------------------------------------------------------------------------------
 // TS 24.379 clause 9A.3.1.2, TS 24.281 clause 20.3.1.2: the functional alias status in a NOTIFY:
 // per-user information (entity the user, tuple id the client ID, one <functionalAlias
-// functionalAliasID status> per alias) or per-functional alias information (entity and
-// tuple id the alias, one <functionalAlias user> per user that activated it).
+// functionalAliasID status> per alias) or per-functional alias information (entity the alias, one <functionalAlias
+// user> per user that activated it). Between MCPTT servers (TS 24.379 clauses 9A.2.2.2.6, 9A.2.2.2.7 and
+// 9A.2.2.3.3) the per-functional alias tuple id is the MCPTT ID it is about, and a user no longer active is a document
+// without a tuple (an empty tuple id and no entries).
 struct FunctionalAliasStatus {
   struct Entry {
     std::string alias, user, status; // status: activating, activated, deactivating, take-over-possible
+    std::string expires;             // "expires" (xs:dateTime): the end of the activation (clause 9A.2.2.3.5 step 3a)
   };
 
   std::string entity, tuple_id, publish_id;
   bool per_alias = false;
   std::vector<Entry> entries;
   bool mcdata = false, mcvideo = false;
+  // <take-over> in the <status> element: a take-over request (TS 24.379 clause 9A.2.2.2.6 NOTE 8).
+  bool take_over = false;
 };
 
 //------------------------------------------------------------------------------
@@ -146,6 +151,12 @@ std::string functional_alias_status_xml(const FunctionalAliasStatus &status);
 //------------------------------------------------------------------------------
 // TS 24.379 clause 9A.3.1.2: reads a functional alias status notification or determination.
 FunctionalAliasStatus parse_functional_alias_status(std::string_view xml);
+//------------------------------------------------------------------------------
+// TS 24.379 clause 9A.3.2.2 (RFC 4661): the application/simple-filter+xml body restricting a functional alias status
+// subscription to one MCPTT ID (TS 24.379 clause 9A.2.2.2.7 step 8), and the MCPTT ID it names.
+inline constexpr std::string_view simple_filter_mime = "application/simple-filter+xml";
+std::string functional_alias_filter_xml(const std::string &user, bool mcdata = false, bool mcvideo = false);
+std::string parse_functional_alias_filter(std::string_view xml);
 //------------------------------------------------------------------------------
 // TS 24.484 clause 8.3.2.1 item 11: granted rights of an MCPTT user profile document (TS 24.484 clause 8.3), or of
 // an MCVideo or MCData one (TS 24.484 clauses 9.3 and 10.3): the names of the boolean elements set to true in

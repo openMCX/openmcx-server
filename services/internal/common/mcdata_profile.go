@@ -119,6 +119,9 @@ type mcdataOnNetworkExt struct {
 	ContentServer string          `xml:"MCDataContentServerURI"`
 	MessageStore  string          `xml:"MessageStoreHostname"`
 	IncomingList  *mcdataOneToOne `xml:"IncomingOne-to-OneCommunicationList,omitempty"`
+	// <FunctionalAliasList>: the functional aliases the user may activate (TS 24.484 clause 10.3.2.1, TS 24.282
+	// clause 22.2.1.2).
+	FunctionalAliasList *profileEntryList `xml:"FunctionalAliasList,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -193,6 +196,9 @@ func (svc *service) mcdataProfileXML(user User) mcdataProfileXML {
 			OneToOneAlert: profileAlert{Entry: profileEntry{EntryInfo: "LocallyDetermined"}},
 			AnyExt:        mcdataOnNetworkExt{ContentServer: svc.cfg.Endpoints.Content, MessageStore: hostOf(svc.cfg.Endpoints.MsgStore)}},
 		Ruleset: rulesetOf(mcdataProfileRights(user), mcdataProfileNS, mcdataDirectActions)}
+	// The functional aliases whose <mcdata-user-list> names the user (TS 24.282 clause 22.2.2.3.3 step 4a).
+	doc.OnNetwork.AnyExt.FunctionalAliasList = svc.cfg.functionalAliasList(user.MCDataID,
+		func(alias FunctionalAlias) []string { return alias.MCDataUsers })
 	if policy.MaxData1To1 > 0 {
 		doc.Common.TxRx.MaxData1To1 = int64(policy.MaxData1To1)
 	}

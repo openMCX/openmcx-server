@@ -28,22 +28,24 @@ the same images.
 
 MCVideo has no floor in the MCPTT sense. A member asks the **transmission control server** (in the MCVideo server)
 for permission to send video, and the server decides who transmits (TS 24.581 clause 6.3.4). Separately, each other
-member decides whether it **receives** the video (reception control, clause 4.1.1.2): the server offers the video
-with a Media reception notification, and the member accepts with a Receive media request. A member can stop and
-resume its reception while the transmission goes on.
+member decides whether it **receives** the video (reception control, clause 4.1.1.2): the server tells it who
+transmits with a Media Transmission Notification (clauses 6.3.4.4.2 and 6.3.6.3.3), and the member accepts with a
+Receive media request. In a broadcast, emergency or imminent peril call the notification says the reception is
+automatic, and the video comes without a request. A member can stop and resume its reception while the transmission
+goes on.
 
 The messages are RTCP APP packets (payload type 204) with the names `MCV0` (sent by the client), `MCV1` (sent by
 the server) and `MCV2` (sent by either), on the UDP port of the SDP line `m=application … udp MCVideo` (clause 9.2.2):
 
 | Name, subtype | Message | Name, subtype | Message |
 |---|---|---|---|
-| MCV0, 0 | Transmission Request | MCV1, 7 | Receive media response |
-| MCV0, 4 | Receive media request | MCV1, 8 | Media reception notification |
+| MCV0, 0 | Transmission Request | MCV1, 6 | Media Transmission Notification |
+| MCV0, 4 | Receive media request | MCV1, 7 | Receive media response |
 | MCV1, 0 | Transmission Granted | MCV1, 15 | Transmission idle |
 | MCV1, 1 | Transmission Rejected | MCV2, 0 | Transmission end request |
-| MCV1, 2 | Transmission Arbitration Taken | MCV2, 1 | Transmission end response |
-| MCV1, 4 | Transmission Revoked | MCV2, 2 | Media reception end request |
-| MCV1, 5 | Queue Position Info | MCV2, 3 | Media reception end response |
+| MCV1, 4 | Transmission Revoked | MCV2, 1 | Transmission end response |
+| MCV1, 5 | Queue Position Info | MCV2, 2 | Media reception end request |
+| | | MCV2, 3 | Media reception end response |
 
 ## What you need
 
@@ -130,7 +132,7 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 |---|---|---|
 | 1 | none | The four clients sign in, get MCVideo service authorisation and affiliate to the group. |
 | 2 | `client-a: mcvideo-call` | client-a's INVITE to the MCVideo service (TS 24.281 clause 9.2.1.2.1.1) offers audio, H.264 video and the transmission control entity. The server, as controlling function, invites the other affiliated members (clause 9.2.1.4.2) and answers client-a. Transmission idle goes to everyone. Each member subscribes to the session's conference events (clause 9.2.3) and sees the four participants. |
-| 3 | `client-a: mcvideo-transmit`, `client-d: mcvideo-receive`, `client-b: mcvideo-stop-receiving` and `mcvideo-receive` | client-a's Transmission Request is granted (TS 24.581 clause 6.3.4.4.2). The others get a Media reception notification and a Transmission Arbitration Taken. client-b and client-c accept at once with a Receive media request; client-d gets no video until its user accepts. client-b then ends its reception (Media reception end request) and resumes it. |
+| 3 | `client-a: mcvideo-transmit`, `client-d: mcvideo-receive`, `client-b: mcvideo-stop-receiving` and `mcvideo-receive` | client-a's Transmission Request is granted (TS 24.581 clause 6.3.4.4.2). The others get a Media Transmission Notification naming client-a, with manual reception (clause 6.3.6.3.3). client-b and client-c accept at once with a Receive media request; client-d gets no video until its user accepts. client-b then ends its reception (Media reception end request) and resumes it. |
 | 4 | `client-a: mcvideo-end`, then `client-b`, `client-c`, `client-d: mcvideo-transmit`, `client-b: mcvideo-end` | client-a ends its transmission with a Transmission end request (clause 6.2.4.5.3), and Transmission idle follows. client-b is granted. client-c's request is queued (Queue Position Info); client-d, which does not queue, is rejected (Transmission Rejected, cause #1). When client-b ends, the server grants client-c from the queue, without a new request. |
 | 5 | none | client-c transmits for longer than the 15 s its Transmission Granted allowed (Duration field). The server revokes the transmission (Transmission Revoked, cause #2 "Media burst too long"), and client-c ends it with a Transmission end request (clause 6.2.4.5.5). |
 | 6 | `client-a: mcvideo-hangup` | client-a started the call and leaves it: by the server's local policy, it releases the group call for everyone (TS 24.281 clause 6.3.8.1 item 3) and sends BYE to the other three. |
@@ -143,7 +145,7 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 ## 4. Look at the capture
 
 The script `run.sh` copies the capture of your run to `captures/17-mcvideo-calls-run.pcap.gz`. The folder also holds a reference run,
-[`captures/17-mcvideo-calls-full.pcap.gz`](captures/17-mcvideo-calls-full.pcap.gz) (238 KB, 2 667 frames): the frame numbers below and in the call flow are
+[`captures/17-mcvideo-calls-full.pcap.gz`](captures/17-mcvideo-calls-full.pcap.gz) (260 KB, 2 985 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.17.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -165,57 +167,57 @@ Useful display filters:
 | `sdp.media contains "MCVideo"` | The SDP with a transmission control entity; compare with the offer of step 11, which has none. |
 
 Wireshark 4.2 has no dissector for the fields of the MCVideo messages and shows them as application data. In the
-Transmission Granted of frame 695, `01 02 00 0f` is the Duration field (field ID 1, 15 s), `0e 06 …` the audio SSRC
-(field ID 14), `17 06 db 94 ab 1b …` the video SSRC (field ID 23) and `00 02 00 00` the priority (field ID 0) (TS
+Transmission Granted of frame 699, `01 02 00 0f` is the Duration field (field ID 1, 15 s), `0e 06 …` the audio SSRC
+(field ID 14), `17 06 a9 23 7f 62 …` the video SSRC (field ID 23) and `00 02 00 00` the priority (field ID 0) (TS
 24.581 clause 9.2.5).
 
 What to look for, in the reference run:
 
-- **Group call set-up** (frames 529 to 585): client-a's INVITE (536, after the SIP core's `407` challenge to 529) goes
+- **Group call set-up** (frames 533 to 590): client-a's INVITE (540, after the SIP core's `407` challenge to 533) goes
   to `sip:mcvideo@mcx.test` with `P-Preferred-Service: urn:urn-7:3gpp-service.ims.icsi.mcvideo`, the MCVideo XML with
   `<session-type>prearranged</session-type>` and the group, and an SDP with `m=audio` (AMR-WB), `m=video` (`H264/90000`,
-  `packetization-mode=1`) and `m=application 5200 udp MCVideo` with `mc_queueing`. The server invites client-b (546),
-  client-c (555) and client-d (562); each invitation names client-a in `<mcvideo-calling-user-id>` and the group in
-  `<mcvideo-calling-group-id>`. It answers client-a (572, 579) once client-b and client-c have accepted, with the
+  `packetization-mode=1`) and `m=application 5200 udp MCVideo` with `mc_queueing`. The server invites client-b (550),
+  client-c (560) and client-d (566); each invitation names client-a in `<mcvideo-calling-user-id>` and the group in
+  `<mcvideo-calling-group-id>`. It answers client-a (575, 581) once client-b and client-c have accepted, with the
   session URI and `isfocus` in the Contact, and with no 180 Ringing before it (TS 24.281 clause 9.2.1.4.2). The 200 OK
   carries `P-Asserted-Identity` (the MCVideo service) and the option tags `tdialog`, `norefersub`, `explicitsub` and
-  `nosub` in `Supported` (clause 6.3.3.2.3.2). Transmission idle goes to every member (574,
-  575, 585, 576).
-- **Conference events** (frames 652 to 676): client-a's SUBSCRIBE with `Event: conference` to the session (655) and
-  the server's NOTIFY with the participants (676); the other members do the same.
-- **Transmission and reception** (frames 694 to 902): client-a's Transmission Request (694), Transmission Granted
-  (695), and to each other member a Media reception notification and a Transmission Arbitration Taken (696 to 701).
-  client-b and client-c accept (702, 703) and get a Receive media response (705, 704); client-a's video starts at 706
-  and reaches client-b at 710. client-d gets no video until its Receive media request (802) and response (803); its
-  first picture is 807. client-b's Media reception end request (884) and response (885) stop its copy, which RTP
-  Streams shows as 5 "lost" packets, until its new Receive media request (901, 902).
-- **End, queue and reject** (frames 919 to 989): client-a's Transmission end request (919), response (920) and
-  Transmission idle to all (921 to 924). client-b's request (925) and grant (926). client-c's request (958) gets
-  Queue Position Info (959); client-d's (972) a Transmission Rejected (973). client-b's Transmission end request
-  (986) and response (987), and at once Transmission Granted to client-c (988), which asked only once.
-- **Revoke** (frames 988 to 1704): client-c's video from 999. Exactly 15 s after its grant comes the Transmission
-  Revoked (1698); client-c's Transmission end request (1699), the response (1700) and Transmission idle to all
-  (1701 to 1704).
-- **The initiator leaves** (frames 1705 to 1733): client-a's BYE (1708); the server's BYEs to client-d (1717),
-  client-c (1723) and client-b (1733), none of which asked to leave.
-- **Implicit request** (frames 1789 to 2169): client-d's offer has `mc_implicit_request` (1796), and so has the
-  server's answer (1831). Transmission Granted to client-d (1852) without a Transmission Request; its video from 1885.
-  client-a (2064), client-b (2110) and client-c (2149) leave; then the server's BYE to client-d (2169).
-- **Private call with transmission control** (frames 2184 to 2333): client-a's INVITE (2191) has `Answer-Mode: Auto`,
+  `nosub` in `Supported` (clause 6.3.3.2.3.2). Transmission idle goes to every member (578,
+  579, 590, 580).
+- **Conference events** (frames 656 to 680): client-a's SUBSCRIBE with `Event: conference` to the session (659) and
+  the server's NOTIFY with the participants (680); the other members do the same.
+- **Transmission and reception** (frames 698 to 1025): client-a's Transmission Request (698), Transmission Granted
+  (699), and to each other member a Media Transmission Notification naming client-a (700 to 702).
+  client-b and client-c accept (704, 703) and get a Receive media response (706, 705); client-a's video starts at 707
+  and reaches client-b at 711. client-d gets no video until its Receive media request (812) and response (813); its
+  first picture is 815. client-b's Media reception end request (1010) and response (1011) stop its copy, which RTP
+  Streams shows as 4 "lost" packets, until its new Receive media request (1024, 1025).
+- **End, queue and reject** (frames 1042 to 1115): client-a's Transmission end request (1042), response (1043) and
+  Transmission idle to all (1044 to 1047). client-b's request (1048) and grant (1049). client-c's request (1081) gets
+  Queue Position Info (1082); client-d's (1095) a Transmission Rejected (1096). client-b's Transmission end request
+  (1112) and response (1113), and at once Transmission Granted to client-c (1114), which asked only once.
+- **Revoke** (frames 1114 to 1836): client-c's video from 1122. Exactly 15 s after its grant comes the Transmission
+  Revoked (1830); client-c's Transmission end request (1831), the response (1832) and Transmission idle to all
+  (1833 to 1836).
+- **The initiator leaves** (frames 1837 to 1865): client-a's BYE (1840); the server's BYEs to client-d (1850),
+  client-c (1857) and client-b (1865), none of which asked to leave.
+- **Implicit request** (frames 1920 to 2302): client-d's offer has `mc_implicit_request` (1927), and so has the
+  server's answer (1963). Transmission Granted to client-d (1984) without a Transmission Request; its video from 2047.
+  client-a (2194), client-b (2241) and client-c (2282) leave; then the server's BYE to client-d (2302).
+- **Private call with transmission control** (frames 2317 to 2533): client-a's INVITE (2324) has `Answer-Mode: Auto`,
   `<session-type>private</session-type>` and an `application/resource-lists+xml` body naming `bob`. Then the
-  INVITE to client-b (2201), its 200 OK (2203) and the 200 OK to client-a (2214), with no 180 Ringing: client-b
+  INVITE to client-b (2334), its 200 OK (2336) and the 200 OK to client-a (2347), with no 180 Ringing: client-b
   answers automatically and never rings, and the server sends one only when the called client's arrives (TS 24.281
-  clause 10.2.2.4.2). client-a's request and grant (2222, 2223), its video at client-b (2231), its Transmission end
-  request (2270); client-b's request and grant (2274, 2275), its video at client-a (2283). client-b's BYE (2325) and
-  the server's BYE to client-a (2333).
-- **Manual commencement and decline** (frames 2340 to 2446): client-b's 180 Ringing (2358), passed on to client-a
-  (2364), and 200 OK (2367); in the second call its 480 with `Warning: 399 mcx "110 user declined the call invitation"` (2437), relayed to client-a
-  (2446).
-- **Refused** (frames 2453 to 2522): the 403 responses with Warning 107 (2464), 144 (2482), 127 (2501) and 159 (2519),
+  clause 10.2.2.4.2). client-a's request and grant (2355, 2356), its video at client-b (2363), its Transmission end
+  request (2406); client-b's request and grant (2410, 2411), its video at client-a (2419). client-b's BYE (2525) and
+  the server's BYE to client-a (2533).
+- **Manual commencement and decline** (frames 2540 to 2640): client-b's 180 Ringing (2558), passed on to client-a
+  (2564), and 200 OK (2567); in the second call its 480 with `Warning: 399 mcx "110 user declined the call invitation"` (2631), relayed to client-a
+  (2640).
+- **Refused** (frames 2647 to 2716): the 403 responses with Warning 107 (2658), 144 (2676), 127 (2695) and 159 (2713),
   each relayed to the caller. None of the called users gets an INVITE.
-- **Without transmission control** (frames 2527 to 2654): client-a's offer (2533) has `m=audio` and `m=video` but no
-  `m=application … udp MCVideo`. No transmission control message at all; client-b's video starts at 2558 and
-  client-a's at 2564, and the two run at the same time. client-a's BYE (2653).
+- **Without transmission control** (frames 2721 to 2972): client-a's offer (2727) has `m=audio` and `m=video` but no
+  `m=application … udp MCVideo`. No transmission control message at all; client-b's video starts at 2749 and
+  client-a's at 2754, and the two run at the same time. client-a's BYE (2971).
 
 ## 5. Stop or start over
 
@@ -293,7 +295,7 @@ sequenceDiagram
     S->>A: Transmission idle (also to B, C, D)
     A->>S: Transmission Request
     S->>A: Transmission Granted (Duration 15 s)
-    S->>B: Media reception notification, Transmission Arbitration Taken (also to C, D)
+    S->>B: Media Transmission Notification (A transmits, also to C, D)
     B->>S: Receive media request
     S->>B: Receive media response
     A->>S: H.264 RTP
@@ -369,24 +371,24 @@ legs, through the SIP core:
 
 | Message | Frames |
 |---|---|
-| Step 2: A INVITE (group); INVITE to B, C, D | 536, 538; 546, 555, 562 |
-| Step 2: B, C, D 200 OK; 200 OK to A; Transmission idle to B, C, A, D | 548, 558, 564; 572, 579; 574, 575, 585, 576 |
-| Step 2: A SUBSCRIBE (conference); NOTIFY to A | 655, 658; 676 |
-| Step 3: A Transmission Request; Granted; notification and Arbitration Taken to B, C, D | 694; 695; 696 to 701 |
-| Step 3: C, B Receive media request; responses; A's video; at B | 702, 703; 704, 705; 706; 710 |
-| Step 3: D Receive media request; response; first video to D | 802; 803; 807 |
-| Step 3: B Media reception end request; response; B Receive media request; response | 884; 885; 901; 902 |
-| Step 4: A Transmission end request; response; Transmission idle to all | 919; 920; 921 to 924 |
-| Step 4: B request; Granted; C request; Queue Position Info; D request; Rejected | 925; 926; 958; 959; 972; 973 |
-| Step 4: B Transmission end request; response; Granted to C; C's video | 986; 987; 988; 999 |
-| Step 5: Transmission Revoked to C; C end request; response; Transmission idle to all | 1698; 1699; 1700; 1701 to 1704 |
-| Step 6: A BYE; BYE to D, C, B | 1708, 1709; 1717, 1723, 1733 |
-| Step 7: D INVITE (implicit request); 200 OK (implicit request); to D; Granted to D; D's video | 1796, 1798; 1831; 1837; 1852; 1885 |
-| Step 7: A, B, C BYE; BYE to D | 2064, 2110, 2149; 2169 |
-| Step 8: A INVITE (private, auto); INVITE to B; B 200 OK; 200 OK to A | 2191, 2193; 2201; 2203; 2214 |
-| Step 8: A request; Granted; A's video at B; A end request; B request; Granted; B's video at A | 2222; 2223; 2231; 2270; 2274; 2275; 2283 |
-| Step 8: B BYE; BYE to A | 2325, 2326; 2333 |
-| Step 9: A INVITE (manual); to B; B 180 Ringing; 180 Ringing to A; B 200 OK; 200 OK to A | 2346; 2356; 2358; 2364; 2367; 2376 |
-| Step 9: A INVITE; to B; B 480 (Warning 110); 480 to A | 2416; 2426; 2437; 2446 |
-| Step 10: 403 (107) to D; 403 (144) to A; 403 (127) to B; 403 (159) to B | 2464, 2467; 2482, 2485; 2501, 2504; 2519, 2522 |
-| Step 11: A INVITE (no udp MCVideo); 200 OK to A; B's video; A's video; A BYE | 2533; 2554; 2558; 2564; 2653 |
+| Step 2: A INVITE (group); INVITE to B, C, D | 540, 542; 550, 560, 566 |
+| Step 2: B, C, D 200 OK; 200 OK to A; Transmission idle to B, C, A, D | 552, 562, 568; 575, 581; 578, 579, 590, 580 |
+| Step 2: A SUBSCRIBE (conference); NOTIFY to A | 659, 661; 680 |
+| Step 3: A Transmission Request; Granted; Media Transmission Notification to B, C, D | 698; 699; 700 to 702 |
+| Step 3: C, B Receive media request; responses; A's video; at B | 704, 703; 705, 706; 707; 711 |
+| Step 3: D Receive media request; response; first video to D | 812; 813; 815 |
+| Step 3: B Media reception end request; response; B Receive media request; response | 1010; 1011; 1024; 1025 |
+| Step 4: A Transmission end request; response; Transmission idle to all | 1042; 1043; 1044 to 1047 |
+| Step 4: B request; Granted; C request; Queue Position Info; D request; Rejected | 1048; 1049; 1081; 1082; 1095; 1096 |
+| Step 4: B Transmission end request; response; Granted to C; C's video | 1112; 1113; 1114; 1122 |
+| Step 5: Transmission Revoked to C; C end request; response; Transmission idle to all | 1830; 1831; 1832; 1833 to 1836 |
+| Step 6: A BYE; BYE to D, C, B | 1840, 1841; 1850, 1857, 1865 |
+| Step 7: D INVITE (implicit request); 200 OK (implicit request); to D; Granted to D; D's video | 1927, 1929; 1963; 1972; 1984; 2047 |
+| Step 7: A, B, C BYE; BYE to D | 2194, 2241, 2282; 2302 |
+| Step 8: A INVITE (private, auto); INVITE to B; B 200 OK; 200 OK to A | 2324, 2326; 2334; 2336; 2347 |
+| Step 8: A request; Granted; A's video at B; A end request; B request; Granted; B's video at A | 2355; 2356; 2363; 2406; 2410; 2411; 2419 |
+| Step 8: B BYE; BYE to A | 2525, 2526; 2533 |
+| Step 9: A INVITE (manual); to B; B 180 Ringing; 180 Ringing to A; B 200 OK; 200 OK to A | 2546; 2556; 2558; 2564; 2567; 2576 |
+| Step 9: A INVITE; to B; B 480 (Warning 110); 480 to A | 2610; 2620; 2631; 2640 |
+| Step 10: 403 (107) to D; 403 (144) to A; 403 (127) to B; 403 (159) to B | 2658, 2661; 2676, 2679; 2695, 2698; 2713, 2716 |
+| Step 11: A INVITE (no udp MCVideo); 200 OK to A; B's video; A's video; A BYE | 2727; 2747; 2749; 2754; 2971 |

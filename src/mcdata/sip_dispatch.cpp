@@ -97,6 +97,12 @@ SipResponse DataServer::dispatch(const SipMessage &request) {
         response.status_code = 489;
         return response;
       }
+      // TS 24.282 clause 22.2.2.2.4: a subscription to the user's functional alias status (<request-type>
+      // "functional-alias-status-determination"), initial or in its dialog.
+      if (alias_subscriptions_.contains(request.dialog_id)) return alias_status_subscribe(request, *user);
+      if (const auto *info_part = part(request, mcdata::info_mime); info_part && request.request_uri == service_uri_)
+        if (mcdata::parse_info(info_part->body).request_type == "functional-alias-status-determination")
+          return alias_status_subscribe(request, *user);
       // An initial SUBSCRIBE targets the PSI; an in-dialog one the server's contact.
       if (request.request_uri != service_uri_ && request.dialog_id != user->subscription)
         return reject(404, "", asserted, "affiliation-subscription");

@@ -48,9 +48,10 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 - **Broadcast group calls.** Group-broadcast and user-broadcast hierarchies are a project profile, because TS 24.379
   §4.12 defines no procedure for them.
 - **Ad hoc group calls.** End-to-end security is not implemented; the calls are clear (488).
-- **Functional aliases.** Activations do not expire, the status lists the activated aliases and those the user may take
-  over, leaving out deactivated and refused ones, and the alias-to-alias call policy (warnings 171 and 172) is not
-  implemented.
+- **Functional aliases.** Activations do not expire, and the alias-to-alias call policy (warnings 171 and 172) is not
+  implemented. On separate participating and controlling servers, a user can follow its own aliases but not the users
+  of an alias (TS 24.379 clause 9A.2.2.2.10). The status lists only the aliases being changed, activated or offered for
+  take-over: deactivated and refused ones are left out.
 - **Temporary groups** formed by the GMS (TS 24.481 6.3.14) are applied as group regroups; merging ongoing calls of the
   constituent groups is not implemented.
 
@@ -80,9 +81,9 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   the Android app and the dispatcher position have one.
 - **Android app.** A debug build, run on real phones over Wi-Fi (tutorials 1 and 2), not yet over a 4G or 5G radio.
   Not supported: MCPTT chat calls and the conference subscription, first-to-answer calls, ambient listening, call-back,
-  transfer and forwarding, functional aliases, floor queueing, MCPTT media and XML protection, MCData over MSRP, IP
-  connectivity, enhanced status and the message store, and the SIP subscriptions to the CMS and GMS documents (it reads
-  them with XCAP).
+  transfer and forwarding, location-based functional alias activation, MCPTT media and XML protection, MCData over
+  MSRP, IP connectivity, enhanced status and the message store, and the SIP subscriptions to the CMS and GMS documents
+  (it reads them with XCAP).
 
 ## Deployment
 

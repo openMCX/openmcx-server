@@ -116,6 +116,19 @@ bool McServer::peer_request(const SipMessage &message, const std::string &peer, 
     }
   if (message.method == "PUBLISH" && event_name == "presence" && peer_presence_publish(message, peer, response))
     return true;
+  // TS 24.379 clauses 9A.2.2.3.4 and 9A.2.2.2.7: a serving server's subscription to a user's status for an alias,
+  // and the owning server's NOTIFY to this serving server.
+  if (message.method == "SUBSCRIBE" && event_name == "presence" &&
+      (peer_alias_subscriptions_.contains(message.dialog_id) ||
+       std::any_of(message.parts.begin(), message.parts.end(),
+                   [](const BodyPart &part) { return part.content_type == simple_filter_mime; }))) {
+    response = owned_alias_subscribe(message, peer);
+    return true;
+  }
+  if (message.method == "NOTIFY" && alias_upstream_.contains(message.dialog_id)) {
+    response = owner_alias_notify(message);
+    return true;
+  }
   // TS 24.379 clause 16: a regroup request from another MCPTT function asserts that
   // function's identity; one relayed for a user asserts the user's. A
   // notice addressed to a user served here is passed on to that user below.
@@ -153,17 +166,13 @@ bool McServer::peer_presence_publish(const SipMessage &message, const std::strin
     response = peer_registration_.receive(message, peer);
     return true;
   }
+  // TS 24.379 clause 9A.2.2.3.3: a serving server's status change of one user for one alias.
   if (role_ == "participating") {
     response.status_code = 403;
     return true;
   }
-  auto &user = authenticated(message);
-  for (const auto &part : message.parts)
-    if (part.content_type == "application/pidf+xml") {
-      response = functional_alias_publish(message, user, message_info(message, svc_), part.body, true);
-      return true;
-    }
-  return false;
+  response = owned_alias_publish(message, peer);
+  return true;
 }
 
 //------------------------------------------------------------------------------
@@ -607,12 +616,13 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
   auto info = message_info(message, svc_);
   for (const auto &part : message.parts)
     if (part.content_type == "application/pidf+xml" && is_functional_alias_pidf(part.body)) {
-      // The server owning the functional aliases decides (TS 24.379 clause 9A.2.2.2.3).
-      if (const auto owner = alias_controller(); !owner.empty() && user.peer.empty()) {
-        response = relay_publish(message, user, owner);
+      // TS 24.379 clause 9A.2.2.2.3: on split servers this server answers and passes each change on to the server
+      // owning the aliases (clause 9A.2.2.2.6).
+      if (aliases_owned_elsewhere() && user.peer.empty()) {
+        response = served_alias_publish(message, user, info, part.body);
         return;
       }
-      response = functional_alias_publish(message, user, info, part.body, false);
+      response = functional_alias_publish(message, user, info, part.body);
       return;
     }
   if (info.client_id != user.client || info.request_uri != user.id) {

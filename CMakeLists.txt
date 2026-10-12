@@ -134,6 +134,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/server/ambient.cpp
         src/server/configuration.cpp
         src/server/functional_alias.cpp
+        src/server/functional_alias_split.cpp
         src/server/group_call.cpp
         src/server/group_documents.cpp
         src/server/split.cpp

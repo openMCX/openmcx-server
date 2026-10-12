@@ -315,13 +315,20 @@ def main():
         any(response['status'] == 200 for message in fetches for response in answers(message))
         and any(response['status'] == 403 for message in fetches for response in answers(message)),
     )
-    notifies = [
+    presence_notifies = [
         message
         for message in requests
         if message['method'] == 'NOTIFY'
         and header(message, 'event') == 'presence'
         and args.service in header(message, 'from')
     ]
+    # The functional alias status NOTIFYs (22.2.2.2.5) share the presence event with the affiliation ones (8.3.2.5).
+    alias_notifies = [
+        message
+        for message in presence_notifies
+        if b'urn:3gpp:ns:mcdataPresInfoFA:1.0' in message['parts'].get('application/pidf+xml', b'')
+    ]
+    notifies = [message for message in presence_notifies if message not in alias_notifies]
     notified = []
     for message in notifies:
         body = message['parts'].get('application/pidf+xml', b'')
@@ -595,8 +602,32 @@ def main():
             for message in fa_publish
         )
         and any(b'take-over' in message['parts']['application/pidf+xml'] for message in fa_publish)
-        and {response['status'] for message in fa_publish for response in answers(message)} >= {200, 403}
         and any(header(message, 'expires') == '0' for message in fa_publish),
+    )
+    check(
+        'a functional alias status change past the participating checks is answered 200, never with the owning '
+        'outcome (22.2.2.2.3 step 8)',
+        bool(fa_publish) and {response['status'] for message in fa_publish for response in answers(message)} == {200},
+    )
+    fa_pids = set()
+    for message in fa_publish:
+        found = re.search(rb'<[^>]*p-id-fa>([^<]+)<', message['parts']['application/pidf+xml'])
+        if found:
+            fa_pids.add(found.group(1))
+    alias_bodies = [message['parts'].get('application/pidf+xml', b'') for message in alias_notifies]
+    check(
+        'the functional alias status NOTIFY carries the per-user MCData FA PIDF and echoes the p-id-fa of the change '
+        '(22.2.2.2.5, 22.3.1.2)',
+        bool(alias_bodies)
+        and any(
+            (found := re.search(rb'<[^>]*p-id-fa>([^<]+)<', body)) and found.group(1) in fa_pids
+            for body in alias_bodies
+        ),
+    )
+    check(
+        'the status NOTIFY offers an alias at its limit as take-over-possible and lists activated ones (22.3.1.2, 3.1)',
+        any(b'status="take-over-possible"' in body for body in alias_bodies)
+        and any(b'status="activated"' in body for body in alias_bodies),
     )
     to_alias = [message for message in sds_up if message['info'].get('call-to-functional-alias-ind') == 'true']
     redirects = [response for message in to_alias for response in answers(message) if response['status'] == 300]

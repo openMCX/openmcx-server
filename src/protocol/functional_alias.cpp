@@ -139,10 +139,17 @@ std::string functional_alias_status_xml(const FunctionalAliasStatus &status) {
   if (status.mcdata && status.mcvideo) invalid("functional alias status for two services");
   const char *functional_alias_ns = functional_alias_namespace(status.mcdata, status.mcvideo);
   conference_uri(status.entity);
-  if (status.tuple_id.empty() || status.entries.size() > 64) invalid("invalid functional alias status");
+  if ((status.tuple_id.empty() && (!status.entries.empty() || status.take_over)) || status.entries.size() > 64)
+    invalid("invalid functional alias status");
   std::string out = "<?xml version=\"1.0\"?><presence xmlns=\"" + std::string(pidf_ns) + "\" xmlns:fa=\"" +
                     functional_alias_ns + "\" entity=\"" + xml_escape(status.entity) + "\">";
   if (!status.publish_id.empty()) out += "<fa:p-id-fa>" + xml_escape(status.publish_id) + "</fa:p-id-fa>";
+  // RFC 3863 section 4.1.2: a <presence> may hold no <tuple>; between MCPTT servers it says the user is not active.
+  if (status.tuple_id.empty()) {
+    out += "</presence>";
+    bounded(out);
+    return out;
+  }
   out += "<tuple id=\"" + xml_escape(status.tuple_id) + "\"><status>";
   for (const auto &entry : status.entries) {
     out += "<fa:functionalAlias";
@@ -157,8 +164,10 @@ std::string functional_alias_status_xml(const FunctionalAliasStatus &status) {
       if (!functional_alias_statuses.contains(entry.status)) invalid("invalid functional alias status value");
       out += " status=\"" + entry.status + "\"";
     }
+    if (!entry.expires.empty()) out += " expires=\"" + xml_escape(entry.expires) + "\"";
     out += "/>";
   }
+  if (status.take_over) out += "<fa:take-over>true</fa:take-over>";
   out += "</status></tuple></presence>";
   bounded(out);
   return out;
@@ -176,14 +185,24 @@ FunctionalAliasStatus parse_functional_alias_status(std::string_view xml) {
   out.entity = attr(root, "entity");
   conference_uri(out.entity);
   if (auto id = unique_child(root, "p-id-fa", functional_alias_ns, false)) out.publish_id = scalar(id);
-  auto tuple = unique_child(root, "tuple", pidf_ns);
+  // RFC 3863 section 4.1.2: no <tuple> (between MCPTT servers: the user is not active).
+  auto tuple = unique_child(root, "tuple", pidf_ns, false);
+  if (!tuple) return out;
   out.tuple_id = attr(tuple, "id");
   if (out.tuple_id.empty()) invalid("functional alias tuple lacks its id");
   auto status = unique_child(tuple, "status", pidf_ns);
   bool per_user = false;
   for (auto node = status->children; node; node = node->next) {
-    if (node->type != XML_ELEMENT_NODE || !is(node, "functionalAlias", functional_alias_ns)) continue;
-    FunctionalAliasStatus::Entry entry{attr(node, "functionalAliasID"), attr(node, "user"), attr(node, "status")};
+    if (node->type != XML_ELEMENT_NODE) continue;
+    if (is(node, "take-over", functional_alias_ns)) {
+      const auto value = scalar(node);
+      if (value != "true" && value != "false" && value != "1" && value != "0") invalid("invalid take-over value");
+      out.take_over = value == "true" || value == "1";
+      continue;
+    }
+    if (!is(node, "functionalAlias", functional_alias_ns)) continue;
+    FunctionalAliasStatus::Entry entry{attr(node, "functionalAliasID"), attr(node, "user"), attr(node, "status"),
+                                       attr(node, "expires")};
     if (entry.alias.empty() == entry.user.empty()) invalid("functional alias entry needs an alias or a user");
     (entry.alias.empty() ? out.per_alias : per_user) = true;
     conference_uri(entry.alias.empty() ? entry.user : entry.alias);
@@ -194,6 +213,50 @@ FunctionalAliasStatus parse_functional_alias_status(std::string_view xml) {
   }
   if (out.per_alias && per_user) invalid("mixed functional alias status entries");
   return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 9A.3.2.2 (TS 24.282 clause 22.3.2.2, TS 24.281 clause 20.3.2.2) with RFC 4661: the per-user
+// restriction of a functional alias status subscription: the presence document's tuple of one MCPTT ID.
+std::string functional_alias_filter_xml(const std::string &user, bool mcdata, bool mcvideo) {
+  if (mcdata && mcvideo) invalid("functional alias filter for two services");
+  conference_uri(user);
+  if (user.find('"') != std::string::npos) invalid("invalid functional alias filter user");
+  const std::string prefix = mcdata ? "mcdataPIFA10" : mcvideo ? "mcvideoPIFA10" : "mcpttPIFA10";
+  std::string out =
+      "<?xml version=\"1.0\"?><filter-set xmlns=\"urn:ietf:params:xml:ns:simple-filter\">"
+      "<ns-bindings><ns-binding prefix=\"pidf\" urn=\"" +
+      std::string(pidf_ns) + "\"/><ns-binding prefix=\"" + prefix + "\" urn=\"" +
+      functional_alias_namespace(mcdata, mcvideo) + "\"/></ns-bindings><filter id=\"fa-user\"><what><include>" +
+      xml_escape("//pidf:presence/pidf:tuple[@id=\"" + user + "\"]") + "</include></what></filter></filter-set>";
+  bounded(out);
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 9A.3.2.2: the MCPTT ID a per-user functional alias status filter names (TS 24.379 clause
+// 9A.2.2.3.4 step 5 of the conditions); empty when the filter names none.
+std::string parse_functional_alias_filter(std::string_view xml) {
+  auto doc = document(xml);
+  auto root = xmlDocGetRootElement(doc.get());
+  static constexpr const char *filter_ns = "urn:ietf:params:xml:ns:simple-filter";
+  if (!is(root, "filter-set", filter_ns)) invalid("wrong simple-filter namespace");
+  constexpr std::string_view head = "//pidf:presence/pidf:tuple[@id=\"", tail = "\"]";
+  for (auto filter = root->children; filter; filter = filter->next) {
+    if (filter->type != XML_ELEMENT_NODE || !is(filter, "filter", filter_ns)) continue;
+    auto what = unique_child(filter, "what", filter_ns, false);
+    if (!what) continue;
+    for (auto include = what->children; include; include = include->next) {
+      if (include->type != XML_ELEMENT_NODE || !is(include, "include", filter_ns)) continue;
+      const auto value = scalar(include);
+      if (value.starts_with(head) && value.ends_with(tail) && value.size() > head.size() + tail.size()) {
+        auto user = value.substr(head.size(), value.size() - head.size() - tail.size());
+        conference_uri(user);
+        return user;
+      }
+    }
+  }
+  return {};
 }
 
 } // namespace mcx
