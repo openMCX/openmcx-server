@@ -20,6 +20,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import struct
 import sys
 import xml.etree.ElementTree as ET
 
@@ -81,6 +82,25 @@ def info_of(message, ns):
 
 
 # ------------------------------------------------------------------------------
+def packet_clock(path):
+    """The capture's packets as (time, bytes), and the time of its last packet (classic pcap, any byte order)."""
+    raw = Path(path).read_bytes()
+    endian = '<' if raw[:4] in (b'\xd4\xc3\xb2\xa1', b'\x4d\x3c\xb2\xa1') else '>'
+    scale = 1e-9 if raw[:4] in (b'\x4d\x3c\xb2\xa1', b'\xa1\xb2\x3c\x4d') else 1e-6
+    packets, offset = [], 24
+    while offset + 16 <= len(raw):
+        sec, frac, size, _ = struct.unpack(endian + 'IIII', raw[offset : offset + 16])
+        packets.append((sec + frac * scale, raw[offset + 16 : offset + 16 + size]))
+        offset += 16 + size
+    return packets, max((t for t, _ in packets), default=0.0)
+
+
+def sent_at(message, packets):
+    """The time of the first packet that carries the request's start line and Call-ID; 0 if none does."""
+    line, call_id = message['line'].encode(), message['call_id'].encode()
+    return next((t for t, data in packets if line in data and call_id in data), 0.0)
+
+
 def main():
     """Decode the capture, run the checks of the chosen service and write the result; exit status 1 on any failure."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -102,6 +122,8 @@ def main():
                 seen.add(key)
                 message['info'] = info_of(message, profile['info_ns'])
                 messages.append(message)
+    # A request sent in the last second of the capture may be answered after the capture stops.
+    packet_times, capture_end = packet_clock(args.capture)
     checks, failures, observations = [], [], {}
     prefix = profile['prefix']
 
@@ -204,6 +226,11 @@ def main():
         ),
     )
     accepted = [answer(message) for message, _ in reports]
+    late = [message for (message, _), reply in zip(reports, accepted)
+            if reply is None and capture_end - sent_at(message, packet_times) < 1.0]
+    observations['reports_after_capture_end'] = len(late)
+    accepted = [reply for (message, _), reply in zip(reports, accepted) if not (reply is None and message in late)]
+    reports = [(message, report) for message, report in reports if message not in late]
     check(
         '02 reports are answered 200, except those of the user not allowed to report (403)',
         any(reply and reply['status'] == 403 for reply in accepted)

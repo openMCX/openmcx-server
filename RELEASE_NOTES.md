@@ -93,7 +93,7 @@ The [tutorials](tutorials/README.md) run the whole system on one computer from t
 
 ## Limitations
 
-What this edition does not include (off-network, interconnection, MBMS, pre-established sessions, several devices per
+What the present edition does not include (off-network, interconnection, MBMS, pre-established sessions, several devices per
 user and others) and the known limits of what it implements are listed, checked against the code of this release, in
 [LIMITATIONS.md](docs/LIMITATIONS.md). OpenMCX is not an interoperability-certified implementation: it has not yet been
 tested against independent implementations.

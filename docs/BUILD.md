@@ -12,7 +12,7 @@ docker build -t openmcx-dev:0.1 -f docker/Dockerfile.dev .
 Ubuntu 24.04 with the compilers and the libraries the programs link, plus pjsip, wolfSSL and Go built from pinned
 sources. The build downloads each source archive itself and checks its SHA-256 (`docker/fetch`); the versions,
 URLs and hashes are the build arguments at the top of `docker/Dockerfile.dev`, kept equal to
-`dependencies.lock.json` by `tools/check-dependencies.py`. For an offline build, put the archives on a web server
+`dependencies/lock.json` by `tools/check-dependencies.py`. For an offline build, put the archives on a web server
 under their lock-file names and add `--build-arg DEPS_MIRROR=https://mirror.example/deps`.
 
 ## 2. Server images
@@ -47,7 +47,7 @@ Ubuntu 24.04 is the default; 26.04 is supported too:
 tools/build-images --ubuntu 26.04 0.1-u2604   # builds openmcx-dev:0.1-ubuntu26.04 first when missing
 ```
 
-The pinned base image of each release is in `dependencies.lock.json` (`base_images`; `base_image` is the default,
+The pinned base image of each release is in `dependencies/lock.json` (`base_images`; `base_image` is the default,
 which the Dockerfiles' `BASE_IMAGE` and `RUNTIME_BASE` defaults must equal, checked by `tools/check-dependencies.py`).
 Package names differ between releases (for example `libxml2` / `libxml2-16`, freeDiameter 6 / 7, the OpenH264
 version); `docker/packages <release> <part>` lists them for both Dockerfiles. pjsip, wolfSSL and Go are built or
@@ -66,7 +66,7 @@ docker build --target openmcx-mcptt-server -t openmcx-mcptt-server:0.1-u2604 -f 
 `docker/Dockerfile.centos` builds the same targets for RHEL-family clusters, in the manner of OpenAirInterface's
 `Dockerfile.<nf>.centos`: CentOS Stream 10 builder (GCC 14; CRB and EPEL 10) and CentOS Stream 10 minimal runtime
 (`microdnf`, BaseOS and AppStream only). freeDiameter 1.5.0 and OpenH264 2.4.1 have no EL10 package and are built
-from pinned sources (`dependencies.lock.json`); the few libraries the minimal image lacks are copied from the builder,
+from pinned sources (`dependencies/lock.json`); the few libraries the minimal image lacks are copied from the builder,
 and each image checks with `ldd` that nothing is missing. Not yet built or run in the lab.
 
 ```sh

@@ -32,7 +32,7 @@ if [ "$only" = all ] || [ "$only" = go ]; then
 fi
 if [ "$only" = all ] || [ "$only" = py ]; then
   py=$(cat $out/py.list)
-  ruff check --quiet --output-format concise $py > $out/py.txt 2>&1
+  ruff check --config tools/ruff.toml --quiet --output-format concise $py > $out/py.txt 2>&1
   echo "Python (ruff): $(grep -c ":[0-9]*:[0-9]*:" $out/py.txt) findings"
   python3 tools/check-names.py $py > $out/py-names.txt; tail -1 $out/py-names.txt | sed "s/^/Python: /"
 fi

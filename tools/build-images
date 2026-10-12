@@ -4,7 +4,7 @@
 #   tools/build-images [--ubuntu RELEASE] [TAG] [docker build options...]     TAG defaults to 0.1
 #
 # --ubuntu picks the Ubuntu release of the images (24.04, the default, or 26.04; the pinned base images are in
-# dependencies.lock.json "base_images"). For another release than the default, the development image the build stage
+# dependencies/lock.json "base_images"). For another release than the default, the development image the build stage
 # runs on is openmcx-dev:0.1-ubuntu<RELEASE>, built first when it is missing. The build stage is shared, so the targets
 # after the first reuse its cached layers. The default development image (openmcx-dev:0.1, docker/Dockerfile.dev)
 # must exist; build it first with
@@ -23,9 +23,9 @@ TARGETS=(openmcx-mcptt-server openmcx-mcvideo-server openmcx-mcdata-server openm
 DEV_IMAGE=openmcx-dev:0.1
 release_args=()
 if [ -n "$UBUNTU" ]; then
-  base=$(python3 -c 'import json, sys; print(json.load(open("dependencies.lock.json"))["base_images"][sys.argv[1]])' \
-    "$UBUNTU" 2>/dev/null) || { echo "no pinned base image for Ubuntu $UBUNTU in dependencies.lock.json" >&2; exit 1; }
-  default=$(python3 -c 'import json; print(json.load(open("dependencies.lock.json"))["base_image"])')
+  base=$(python3 -c 'import json, sys; print(json.load(open("dependencies/lock.json"))["base_images"][sys.argv[1]])' \
+    "$UBUNTU" 2>/dev/null) || { echo "no pinned base image for Ubuntu $UBUNTU in dependencies/lock.json" >&2; exit 1; }
+  default=$(python3 -c 'import json; print(json.load(open("dependencies/lock.json"))["base_image"])')
   if [ "$base" != "$default" ]; then
     DEV_IMAGE=openmcx-dev:0.1-ubuntu$UBUNTU
     if ! docker image inspect "$DEV_IMAGE" >/dev/null 2>&1; then

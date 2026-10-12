@@ -24,6 +24,8 @@ class McvideoServer final : public McServer {
 
   void send_transmission(const mcx::transmission::Packet &packet, Leg &leg);
 
+  void transmission_notification(Leg &leg, const std::string &transmitter);
+
   Leg *transmitter_leg(const std::shared_ptr<Session> &session);
 
   std::vector<FloorField> transmitter_fields(const std::shared_ptr<Session> &session);

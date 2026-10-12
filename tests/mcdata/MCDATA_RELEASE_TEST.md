@@ -54,31 +54,31 @@ A communication released with a reason shows it as `release_reason` in `mcdata_m
 The fixture is the one of the [SDS tests](MCDATA_SDS_TEST.md#separate-four-client-fixture), with `--mcdata-release`. It sets a 20 s time limit and a 5000-byte data limit, releases without prior indication, runs TDC3 for 5 s and accepts extension requests. The media idle timer stays at 25 s, so the time limit is what ends an idle session. client-b holds `release_any_user`; client-c does not.
 
 ```bash
-docker build -t openmcx:0.46-mcdata -f docker/Dockerfile .
-python3 tools/prepare-prearranged-test.py --directory artifacts/release46-lab --project openmcx-release46 \
-  --debug-sip --private-call --mcdata --mcdata-release --image openmcx:0.46-mcdata
-C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-release46 -f artifacts/release46-lab/compose.json"
+docker build -t openmcx:<tag> -f docker/Dockerfile .
+python3 tools/prepare-prearranged-test.py --directory artifacts/mcdata-release-lab --project openmcx-mcdata-release \
+  --debug-sip --private-call --mcdata --mcdata-release --image openmcx:<tag>
+C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-mcdata-release -f artifacts/mcdata-release-lab/compose.json"
 $C up -d mcdata-server                      # start the capture before the clients authorise
-docker run -d --rm --name openmcx-release46-capture --network "container:$($C ps -q mcdata-server)" \
+docker run -d --rm --name openmcx-mcdata-release-capture --network "container:$($C ps -q mcdata-server)" \
   --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.1 \
   sh -c "tcpdump -Z root -i eth0 -U --immediate-mode -s 0 -w /tmp/c.pcap 'tcp port 5060'"
 $C up -d
 python3 tests/integration/mcdata_release_scenario.py \
-  --compose artifacts/release46-lab/compose.json --artifacts artifacts/release46-lab/artifacts --project openmcx-release46
-docker cp openmcx-release46-capture:/tmp/c.pcap artifacts/release46-lab/artifacts/integration/mcdata-release.pcap
-python3 tests/integration/verify_mcdata_release.py artifacts/release46-lab/artifacts/integration/mcdata-release.pcap \
-  --service sip:mcdata@mcx.test --output artifacts/release46-lab/artifacts/integration/mcdata-release-sip-wire.json
-docker rm -f openmcx-release46-capture        # the reports and the capture are kept; the lab is not
+  --compose artifacts/mcdata-release-lab/compose.json --artifacts artifacts/mcdata-release-lab/artifacts --project openmcx-mcdata-release
+docker cp openmcx-mcdata-release-capture:/tmp/c.pcap artifacts/mcdata-release-lab/artifacts/integration/mcdata-release.pcap
+python3 tests/integration/verify_mcdata_release.py artifacts/mcdata-release-lab/artifacts/integration/mcdata-release.pcap \
+  --service sip:mcdata@mcx.test --output artifacts/mcdata-release-lab/artifacts/integration/mcdata-release-sip-wire.json
+docker rm -f openmcx-mcdata-release-capture        # the reports and the capture are kept; the lab is not
 $C down -v
 ```
 
 ## Performed tests
 
-Recorded on **2026-09-23** against image `openmcx:0.46-mcdata` (`89f593704af5`), built from branch `mcdata-phase1` on top of `fd8b7e0`, TS 24.282 V19.7.0, clear SIP (debug mode), in a fresh lab captured from the first request. Every report records **PASS**: 57 scenario assertions and 26 wire checks on one MCData server instance. On the same image the media plane, SDS, FD over HTTP, IP connectivity and all MCPTT call-type regressions passed unchanged. On `openmcx:0.47-mcdata` (`72745e819dbc`), which adds enhanced status, each suite passed again in a fresh lab: the communication release (57, 26) and enhanced status (11, 6) scenarios, the media plane (128, 63), SDS (163, 64), FD over HTTP (64, 38), IP connectivity (31, 22) and every MCPTT call type on one server instance (prearranged 21, failure/refresh 15, broadcast 56, private 96, chat 67, ad hoc 81, remote group 20, ambient listening 51).
+The scenario (`mcdata_release_scenario.py`) makes 57 assertions and its wire verifier (`verify_mcdata_release.py`) 26 checks, clear SIP (debug mode), on one MCData server instance; the regression runs them in the `mcdata` lab (with `--mcdata-release`), and with protected signalling in `mcdata-xml`.
 
 | ID | Scenario | Result evidence |
 |---|---|---|
-| REL-01 | Group policy: a participant that leaves a group SDS session is released alone and the others continue; the initiator leaving releases every participant | Scenario report (`artifacts/release46-lab/artifacts/integration/mcdata-release-results.json`) |
+| REL-01 | Group policy: a participant that leaves a group SDS session is released alone and the others continue; the initiator leaving releases every participant | Scenario report (`artifacts/integration/mcdata-release-results.json`) |
 | REL-02 | One-to-one policy: the other party leaving releases the originator, with no reason | Same report |
 | REL-03 | Data limit: past 5000 bytes both parties are released with `data volume limit` | Same report |
 | REL-04 | Time limit: after 20 s both parties are released with `time limit expiry`, before the idle timer | Same report |
@@ -90,10 +90,10 @@ Recorded on **2026-09-23** against image `openmcx:0.46-mcdata` (`89f593704af5`),
 | REL-10 | Ad hoc group session: an ordinary participant leaves alone; the authorised user's BYE with `User requested release` ends it for everyone | Same report |
 | REL-11 | IP connectivity: an operator release and an authorised user's release both end the two legs with the reason | Same report |
 | REL-12 | FD over HTTP: an authorised user announces the release with its reason, receives the originator's extension request and refuses it; the originator learns the refusal and the transmission is stopped; the user receives `RELEASE SUCCESS` | Same report |
-| REL-13 | SIP wire checks (26), with the COMMUNICATION RELEASE, DATA PAYLOAD and FD HTTP TERMINATION bodies decoded independently of the C++ codec: the INFO package and Content-Disposition; intents with and without the data query and with a reason; the TEXT payload of the remaining data; extension requests and responses (ACCEPTED and REJECTED); `AUTH USER RELEASE REQ` with the client ID, answered 200 and 403; the authorised user's intent and the requests passed to it with `<mcdata-request-uri>`; BYEs carrying each of seven reasons in RFC 3326 form, and `User requested release`; and the five FD HTTP TERMINATION steps of §13.2.6.3 | Wire report (`artifacts/release46-lab/artifacts/integration/mcdata-release-sip-wire.json`), capture (`artifacts/release46-lab/artifacts/integration/mcdata-release.pcap`) |
+| REL-13 | SIP wire checks (26), with the COMMUNICATION RELEASE, DATA PAYLOAD and FD HTTP TERMINATION bodies decoded independently of the C++ codec: the INFO package and Content-Disposition; intents with and without the data query and with a reason; the TEXT payload of the remaining data; extension requests and responses (ACCEPTED and REJECTED); `AUTH USER RELEASE REQ` with the client ID, answered 200 and 403; the authorised user's intent and the requests passed to it with `<mcdata-request-uri>`; BYEs carrying each of seven reasons in RFC 3326 form, and `User requested release`; and the five FD HTTP TERMINATION steps of §13.2.6.3 | Wire report (`artifacts/integration/mcdata-release-sip-wire.json`), capture (`artifacts/integration/mcdata-release.pcap`) |
 | REL-14 | Unit tests of the COMMUNICATION RELEASE codec: byte-exact intent with data query (`0a 01 b1`), extension response (`0a 03 c2`) and `AUTH USER RELEASE REQ` (`0a 04`), and six rejections | `test_mcdata` in the image build |
 
-These tests exposed a fault in the SIP engine that affected every in-dialog request a client sends on an INVITE dialog. When the SIP core challenges such a request, pjsip's INVITE session layer sends it again with its own credentials. The engine had reported the 407 challenge as the final answer, and the real answer was lost, so a 403 never reached the client. The engine now hands the request's handler to the transaction that pjsip sends again, with the next CSeq.
+When the SIP core challenges an in-dialog request that a client sends on an INVITE dialog, pjsip's INVITE session layer sends it again with its own credentials. The SIP engine hands the request's handler to that resent transaction, with the next CSeq, so the real answer (for example a 403) reaches the client and not the 407 challenge.
 
 ## High-level call flow (authorised user with prior indication)
 

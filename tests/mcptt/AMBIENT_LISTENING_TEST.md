@@ -1,6 +1,6 @@
 # Ambient listening call tests
 
-These tests cover **ambient listening calls** (TS 24.379 §11.1.6, TS 23.379 §10.14): one user hears the surroundings of another user's device without that device's user being made aware of it. The recorded results cover the implemented on-demand subset below, not complete conformance. Pre-established sessions are not implemented; private call key (PCK) protection is covered elsewhere, see [coverage gaps](#coverage-gaps).
+These tests cover **ambient listening calls** (TS 24.379 §11.1.6, TS 23.379 §10.14): one user hears the surroundings of another user's device without that device's user being made aware of it. The tests cover the implemented on-demand subset below, not complete conformance. Pre-established sessions are not implemented; private call key (PCK) protection is covered elsewhere, see [coverage gaps](#coverage-gaps).
 
 Back to the [test index by call type](../MCPTT_TEST.md). Related: [private calls](PRIVATE_CALL_TEST.md), [remotely initiated calls](REMOTE_INITIATED_TEST.md).
 
@@ -52,60 +52,39 @@ openmcx-mcptt-server --config FILE --command 'ambient-release sip:bob.mcptt@mcx.
 
 A client's status shows `ambient` (type, role, peer, release permission, null alert, attached, transmitting) during the call and `last_ambient` (including `release_reason`) after it. The server status lists the session with `call_type` `ambient`, `ambient_listening_type`, `listening`, `listened_to` and `release_reason`.
 
-## Separate four-client fixture
+## Running the tests
+
+The ambient listening scenario runs in the `call-types` lab (one server) and the `call-types-split` lab (separate
+participating and controlling servers) of the regression:
 
 ```bash
-docker build -t openmcx:0.21-fixes -f docker/Dockerfile .
-python3 tools/prepare-prearranged-test.py --directory artifacts/fixes-lab --project openmcx-fixes \
-  --debug-sip --private-call --image openmcx:0.21-fixes
-mkdir -p artifacts/fixes-lab/artifacts/speech
-cp artifacts/speech/{alpha,bravo}.wav artifacts/fixes-lab/artifacts/speech/
-.cache/deps/docker-compose-linux-x86_64 -p openmcx-fixes -f artifacts/fixes-lab/compose.json up -d
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =call-types
 ```
 
-The `--private-call` fixture grants client-a both ambient listening types (targets limited to client-b and client-c by its `<PrivateCall>` list), client-b the locally initiated type only, client-c neither, and makes client-d uncallable. The private call timer is 30 s.
+The lab's `--private-call` option grants client-a both ambient listening types (targets limited to client-b and
+client-c by its `<PrivateCall>` list), client-b the locally initiated type only, client-c neither, and makes client-d
+uncallable. The private call timer is 30 s. Over debug TCP SIP the run also captures at the MCPTT server and checks the
+capture with `tests/integration/verify_ambient_listening.py`.
 
-Capture the server namespace, then run and verify:
+## Checks
 
-```bash
-SERVER=$(.cache/deps/docker-compose-linux-x86_64 -p openmcx-fixes -f artifacts/fixes-lab/compose.json ps -q mcptt-server)
-docker run --rm --name openmcx-fixes-capture --network "container:$SERVER" --cap-drop ALL --cap-add NET_RAW \
-  openmcx-dev:0.1 tcpdump -Z root -i eth0 -U -s 0 -w - '(udp and not port 53) or tcp port 5060' \
-  > artifacts/fixes-lab/artifacts/integration/ambient-listening.pcap &
-python3 tests/integration/ambient_listening_scenario.py \
-  --compose artifacts/fixes-lab/compose.json --artifacts artifacts/fixes-lab/artifacts --project openmcx-fixes
-sleep 5  # let the capture flush before stopping it
-docker stop openmcx-fixes-capture
-python3 tests/integration/verify_ambient_listening.py artifacts/fixes-lab/artifacts/integration/ambient-listening.pcap \
-  --service sip:mcptt@mcx.test --output artifacts/fixes-lab/artifacts/integration/ambient-listening-sip-wire.json
-```
-
-Stopping the capture container straight after the scenario can drop the last packets; wait a few seconds first.
-
-## Performed tests
-
-Recorded on **2026-09-22** against image `openmcx:0.21-fixes` (`a2ddb25a01bf`), built from branch `feat/mcptt-phase1` at the tree committed as `bec8c19`. The fixture ran clear media with debug SIP. Every report records **PASS**. The scenario made 51 assertions: 43 numbered, plus five "client-a listens to client-b" setup waits and the readiness, idle-start and unchanged-server checks. All ran on one server instance.
-
-| ID | Scenario | Checks | Result evidence |
-|---|---|---|---|
-| AL-01 | Remote-init: client-a listens to client-b. Server session records the type, the listening and listened-to users and the floor owner. Client-a caches its role, may release and saw a null alert in the 183. Client-b shows no call but is transmitting, with no release permission. Client-a gets Floor Taken naming client-b with no permission to request | 5 | Scenario report (`artifacts/fixes-lab/artifacts/integration/ambient-listening-results.json`) |
-| AL-02 | Client-b's speech reaches client-a (150+ packets); no other client receives it | 2 | Same report |
-| AL-03 | Client-a's floor request is denied with cause 5; the floor stays with client-b | 2 | Same report |
-| AL-04 | `hangup` by the listened-to user of a remote-init call changes nothing | 1 | Same report |
-| AL-05 | The listening user's release ends the call for both, with no release reason; both role caches are cleared | 2 | Same report |
-| AL-06 | Local-init: client-b asks client-a to listen. Client-a is told and may release (Feature-Caps in the INVITE); client-b gets no indication but may release (Feature-Caps in the 200 OK); speech reaches client-a | 4 | Same report |
-| AL-07 | The listened-to originator of a local-init call releases it | 1 | Same report |
-| AL-08 | `ambient-release` on the server ends the call; the listening user gets `administrator-action`, the listened-to user's BYE has no reason | 2 | Same report |
-| AL-09a | A call command by the listened-to user that fails before any INVITE (`private` to itself) is no call request: client-b stays attached and keeps transmitting, and the server and client-a keep the call | 3 | Same report |
-| AL-09 | A group call by the listened-to user releases the ambient call with `call-request-initiated-by-listened-to-client`, and the group call proceeds | 3 | Same report |
-| AL-10 | A private call to the listened-to user (from client-c) releases the ambient call with `call-request-for-listened-to-client`, and the private call is established | 3 | Same report |
-| AL-11 | Private call timer expiry releases the call with `private-call-expiry` after 30.1 s (not before 29 s) | 3 | Same report |
-| AL-12 | Rejections with no ambient session created: requester without the remote-init ruleset (154); a local-only user asking for remote-init (154); target outside `<PrivateCall>` (144); uncallable target (127) | 8 | Same report |
-| AL-13 | An ambient request to a user already in a private call gets 480 and does not disturb that call | 4 | Same report |
-| AL-14 | SIP wire checks (12): originating INVITE content; `recvonly`/`sendonly` by type; listened-to invitee headers and offer; listening invitee Feature-Caps and offer; 200 OK Feature-Caps and direction; 183 with null Alert-Info; 403/154, 403/144 and 403/127; 480 for a busy user; each release reason on the listening user's BYE; release reasons only in ambient dialogs. The capture held 11 originating INVITEs (9 remote-init, 2 local-init) and 6 terminating INVITEs | 12 | Wire report (`artifacts/fixes-lab/artifacts/integration/ambient-listening-sip-wire.json`), capture (`artifacts/fixes-lab/artifacts/integration/ambient-listening.pcap`) |
-| AL-15 | Regression on the same image: the all-call-types run on one server instance (see the [test index](../MCPTT_TEST.md#one-server-for-all-call-types)), private services 32 | — | All-types run (`artifacts/all-types-lab/run.log`) |
-
-An earlier run on `openmcx:0.20-ambient` (before AL-09a was added) passed 48 checks and the same 12 wire checks.
+| ID | What is checked |
+|---|---|
+| AL-01 | Remote-init: client-a listens to client-b. The server session records the type, the listening and listened-to users and the floor owner. Client-a caches its role, may release and saw a null alert in the 183. Client-b shows no call but is transmitting, with no release permission. Client-a gets Floor Taken naming client-b with no permission to request |
+| AL-02 | Client-b's speech reaches client-a; no other client receives it |
+| AL-03 | Client-a's floor request is denied with cause 5; the floor stays with client-b |
+| AL-04 | `hangup` by the listened-to user of a remote-init call changes nothing |
+| AL-05 | The listening user's release ends the call for both, with no release reason; both role caches are cleared |
+| AL-06 | Local-init: client-b asks client-a to listen. Client-a is told and may release (Feature-Caps in the INVITE); client-b gets no indication but may release (Feature-Caps in the 200 OK); speech reaches client-a |
+| AL-07 | The listened-to originator of a local-init call releases it |
+| AL-08 | `ambient-release` on the server ends the call; the listening user gets `administrator-action`, the listened-to user's BYE has no reason |
+| AL-09a | A call command by the listened-to user that fails before any INVITE (`private` to itself) is no call request: client-b stays attached and keeps transmitting, and the server and client-a keep the call |
+| AL-09 | A group call by the listened-to user releases the ambient call with `call-request-initiated-by-listened-to-client`, and the group call proceeds |
+| AL-10 | A private call to the listened-to user (from client-c) releases the ambient call with `call-request-for-listened-to-client`, and the private call is established |
+| AL-11 | Private call timer expiry releases the call with `private-call-expiry`, not before the timer |
+| AL-12 | Rejections with no ambient session created: requester without the remote-init ruleset (154); a local-only user asking for remote-init (154); target outside `<PrivateCall>` (144); uncallable target (127) |
+| AL-13 | An ambient request to a user already in a private call gets 480 and does not disturb that call |
+| AL-14 | SIP wire checks: originating INVITE content; `recvonly`/`sendonly` by type; listened-to invitee headers and offer; listening invitee Feature-Caps and offer; 200 OK Feature-Caps and direction; 183 with null Alert-Info; 403/154, 403/144 and 403/127; 480 for a busy user; each release reason on the listening user's BYE; release reasons only in ambient dialogs |
 
 ## High-level call flow (remote-init, then server release)
 
@@ -134,24 +113,14 @@ sequenceDiagram
     L-->>S: 200 OK
 ```
 
-## Physical-setup validation — not yet performed
-
-| ID | Physical test to perform | What to validate and retain |
-|---|---|---|
-| AL-P01 | Remote-init listening to a real device | No indication of any kind on the listened-to device (display, audio, haptic) during setup, the call and release |
-| AL-P02 | Local-init call from a real device | The originating user gets no progress or end indication; the listener hears the device microphone |
-| AL-P03 | Listened-to user starts a call | The new call proceeds normally and the ambient call ends without a trace on the device |
-
 ## Coverage gaps
-
-The blockers and implementation guide describes each item.
 
 | Area | Gap |
 |---|---|
-| Pre-established sessions | Ambient listening over a pre-established session (§11.1.6.2.2, §11.1.6.3.1.4), including the SIP INFO release reason, is not implemented (H8). |
+| Pre-established sessions | Ambient listening over a pre-established session (§11.1.6.2.2, §11.1.6.3.1.4), including the SIP INFO release reason: not in present edition. |
 | End-to-end protection | PCK protection (§11.1.6.2.1.1 step 10) is covered in the [protected private-call tests](PROTECTED_PRIVATE_CALL_TEST.md) (PP-06, and this scenario run on the protected fixture). |
 | Implicit request | The server grants the floor to the listened-to user whether or not the offer carries `mc_implicit_request` (§6.4 makes it the trigger). |
 | Location | The location-info bodies of §11.1.6.3.1.1 step 15 are not relayed. |
-| Multiple servers | The ambient listening scenario passes with separate participating and controlling servers (H2 split system). |
-| Microphone | The lab client transmits a looped WAV or silence; a real microphone is covered only by the physical tests above. |
+| Multiple servers | Covered: the ambient listening scenario also runs with separate participating and controlling servers. |
+| Microphone | The lab client transmits a looped WAV or silence; a real microphone is not covered by these tests. |
 | Wire qualification | In-repository decoders only; no independent-peer run. |

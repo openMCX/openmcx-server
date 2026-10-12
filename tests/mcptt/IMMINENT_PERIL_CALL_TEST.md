@@ -1,6 +1,6 @@
 # Imminent-peril group call tests
 
-These tests cover **MCPTT imminent-peril group calls**: a group call raised to a priority below emergency when a group member is in imminent danger (TS 23.379 §10.6.2.7, TS 24.379 §4.6, §6.2.8.1.9–13). Imminent peril applies to group calls only (prearranged, chat and ad hoc); a private call has no imminent-peril state. The recorded results cover the implemented subset below, not complete conformance. Persistence across a server restart is not implemented; see [coverage gaps](#coverage-gaps).
+These tests cover **MCPTT imminent-peril group calls**: a group call raised to a priority below emergency when a group member is in imminent danger (TS 23.379 §10.6.2.7, TS 24.379 §4.6, §6.2.8.1.9–13). Imminent peril applies to group calls only (prearranged, chat and ad hoc); a private call has no imminent-peril state. The tests cover the implemented subset below, not complete conformance. Persistence across a server restart is not implemented; see [coverage gaps](#coverage-gaps).
 
 Back to the [test index by call type](../MCPTT_TEST.md). Related: [emergency calls](EMERGENCY_CALL_TEST.md).
 
@@ -21,7 +21,7 @@ Back to the [test index by call type](../MCPTT_TEST.md). Related: [emergency cal
 | Chat group call | An imminent upgrade invites the next affiliated member; joined and invited members learn the state; cancellation (§10.1.2.4.1 step 15) | [CH-14](CHAT_CALL_TEST.md), 4 imminent checks in this run |
 | Ad hoc group call | Imminent-peril ad hoc call established and released (§6.2.8.1.25) | [AH-15](ADHOC_CALL_TEST.md), 2 imminent checks in this run |
 | Private and first-to-answer calls | Not applicable: TS 24.379 defines no imminent-peril private call; such requests get 403 | — |
-| Broadcast group call | `call broadcast imminent`, or an in-dialog upgrade by the broadcast initiator; Floor Indicator B+E (local policy) | [BC-19](BROADCAST_CALL_TEST.md#emergency-and-imminent-peril-broadcast-h7--2026-09-22) |
+| Broadcast group call | `call broadcast imminent`, or an in-dialog upgrade by the broadcast initiator; Floor Indicator B+E (local policy) | [BC-19](BROADCAST_CALL_TEST.md#checks) |
 
 ## Implemented profile
 
@@ -44,22 +44,22 @@ mcx-client --config FILE --command 'chat imminent'   # imminent-peril chat group
 
 Status reports `priority` = `imminent` while the state is in progress.
 
-## Fixture and commands
+## Running the tests
 
-Imminent peril runs in the same fixture and scenario as the [emergency group call](EMERGENCY_CALL_TEST.md#separate-four-client-fixture). `--priority` authorises client-a and client-b for imminent peril, with Resource-Priority `mcpttp.10`. The chat and ad hoc variants run in the combined run of all call types (`tests/integration/run_all_call_types.sh`).
+Imminent peril runs in the same lab and scenario as the [emergency group call](EMERGENCY_CALL_TEST.md#running-the-tests)
+(the `priority` lab). `--priority` authorises client-a and client-b for imminent peril, with Resource-Priority
+`mcpttp.10`. The chat and ad hoc variants run in the `call-types` lab (`tests/integration/run_all_call_types.sh`).
 
-## Performed tests
+## Checks
 
-Recorded on **2026-09-22** against image `openmcx:0.18-emergency` (`18502ee52297`), built from branch `feat/mcptt-phase1` (uncommitted changes on top of `4fdfc8c`). Every report records **PASS**. The IDs below select the imminent-peril checks from the 43-check group priority run and from the combined run.
-
-| ID | Scenario | Checks | Result evidence |
-|---|---|---|---|
-| IP-01 | An imminent-peril initial call reaches all participants with the imminent state; it is downgraded and closes | 3 | Priority report (`artifacts/emergency-lab/artifacts/integration/prearranged-priority-results.json`) |
-| IP-02 | A normal call is upgraded to imminent peril | 1 | Same report |
-| IP-03 | Emergency precedence: an imminent call is upgraded to emergency, and a post-ACK INFO confirms that the emergency takes precedence | 2 | Same report |
-| IP-04 | Unauthorised imminent activation leaves the call normal | 1 | Same report |
-| IP-05 | Wire: imminent requests carry `imminentperil-ind` and Resource-Priority `mcpttp.10`; the server propagates the state with Resource-Priority; floor E-bit on 4 messages | part of 10 | Wire report (`artifacts/emergency-lab/artifacts/integration/group-priority-sip-wire.json`), capture (`artifacts/emergency-lab/artifacts/integration/group-priority.pcap`) |
-| IP-06 | Imminent-peril chat (CH-14, 4) and imminent-peril ad hoc (AH-15, 2) in the combined run | 6 | Chat (`artifacts/fta-lab/artifacts/integration/chat-call-results.json`), ad hoc (`artifacts/fta-lab/artifacts/integration/adhoc-call-results.json`) |
+| ID | What is checked |
+|---|---|
+| IP-01 | An imminent-peril initial call reaches all participants with the imminent state; it is downgraded and closes |
+| IP-02 | A normal call is upgraded to imminent peril |
+| IP-03 | Emergency precedence: an imminent call is upgraded to emergency, and a post-ACK INFO confirms that the emergency takes precedence |
+| IP-04 | Unauthorised imminent activation leaves the call normal |
+| IP-05 | Wire: imminent requests carry `imminentperil-ind` and Resource-Priority `mcpttp.10`; the server propagates the state with Resource-Priority; floor E-bit |
+| IP-06 | Imminent-peril chat (CH-14) and imminent-peril ad hoc (AH-15) |
 
 ## High-level call flow
 
@@ -88,18 +88,11 @@ sequenceDiagram
     end
 ```
 
-## Physical-setup validation — not yet performed
-
-| ID | Physical test to perform | What to validate and retain |
-|---|---|---|
-| IP-P01 | Imminent-peril activation, escalation and cancellation on real devices | User indication, precedence below emergency, cancellation |
-| IP-P02 | Radio/core priority | Imminent Resource-Priority mapped to QoS under load |
-
 ## Coverage gaps
 
 | Area | Gap |
 |---|---|
 | Imminent-peril broadcast | Implemented as a local Floor Indicator policy (B+E); no stage-3 procedure exists, so interoperability cannot be claimed. |
 | Persistence | Held in memory; lost on server restart. |
-| Multiple servers | The imminent-peril chat, ad hoc and broadcast variants pass on the H2 split system. |
-| Radio priority | Signalled but not mapped to network QoS in this lab. |
+| Multiple servers | Covered: the imminent-peril chat, ad hoc and broadcast variants also run with separate participating and controlling servers. |
+| Radio priority | In this lab Resource-Priority is signalled only. The request for QoS over N5 and Rx is checked in the `pcf-n5` and `rx` labs and in end-to-end tutorials 3 to 5. |

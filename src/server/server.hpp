@@ -240,6 +240,12 @@ protected:
     bool receiving = true;
     std::uint16_t floor_sequence = 0;
     std::unique_ptr<FloorAckRetry> floor_retries;
+    // TS 24.380 clause 6.3.5.7 (TS 24.581 clause 6.3.5.7): 'U: not permitted but sends media', entered with a
+    // Floor Revoke cause #3 and left on Floor Release (Transmission End Request) or a grant; T8 (TS 24.581: T3)
+    // repeats the revoke. released_floor: the participant left 'U: permitted' with its own Floor Release, for
+    // clause 6.3.5.3.8.
+    bool sends_without_permission = false, released_floor = false;
+    std::uint64_t unpermitted_revoke_ms = 0, unpermitted_media_ms = 0;
   };
 
   //------------------------------------------------------------------------------
@@ -1225,6 +1231,10 @@ protected:
 
   // ---- Media relay (media.cpp): TS 24.380 clause 6.3, TS 24.581 clause 6.3 ----
   void audio_packet(Leg &leg, const Datagram &datagram);
+
+  void unpermitted_media(Leg &leg);
+
+  void unpermitted_media_tick(const Session &session, std::uint64_t now);
 
   // ---- XML integrity protection (xml_protection.cpp): TS 24.379 clause 6.6.3, TS 33.180 clause 9.3.5 ----
   // Each XML body of a message is signed with HMAC-SHA256 under the integrity key of

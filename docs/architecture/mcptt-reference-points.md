@@ -23,14 +23,14 @@ architecture.
 | CSC-13 | CMS ↔ MC service user database | Application profile configuration |
 | CSC-14 | Location client ↔ LMS | UE-supplied location; independent of 5G SA |
 | CSC-15 | LMS ↔ MC service server | Application use of location |
-| CSC-16 | GMS ↔ GMS in different MC systems | Not in this edition |
-| CSC-17 | CMS ↔ CMS in different MC systems | Not in this edition |
-| MCX-1 | MC service servers | Within one system, between the participating and controlling servers; gateway paths are not in this edition |
-| CSC-19 | GMS ↔ MC gateway | Not in this edition |
-| CSC-20 | CMS ↔ MC gateway | Not in this edition |
-| CSC-21 | MC gateways in different MC systems | Not in this edition |
-| CSC-22 | LMS ↔ LMS in different MC systems | Not in this edition |
-| CSC-23 | LMS ↔ MC gateway | Not in this edition |
+| CSC-16 | GMS ↔ GMS in different MC systems | Not in present edition |
+| CSC-17 | CMS ↔ CMS in different MC systems | Not in present edition |
+| MCX-1 | MC service servers | Within one system, between the participating and controlling servers; gateway paths are not in the present edition |
+| CSC-19 | GMS ↔ MC gateway | Not in present edition |
+| CSC-20 | CMS ↔ MC gateway | Not in present edition |
+| CSC-21 | MC gateways in different MC systems | Not in present edition |
+| CSC-22 | LMS ↔ LMS in different MC systems | Not in present edition |
+| CSC-23 | LMS ↔ MC gateway | Not in present edition |
 | CSC-24 | LMS ↔ CMS | Location-related configuration |
 | CSC-25 | GMS ↔ CMS | Explicitly out of scope of this specification version (§7.5.2.25a); no protocol is invented |
 | ACM-1 / ACM-2 / ACM-3 | ACM client/server, peer ACM server | Optional administrative configuration feature; not enabled |
@@ -46,10 +46,10 @@ and void clauses as published rather than filling gaps in numbering.
 |---|---|---|
 | SIP-1 | Signalling UA ↔ SIP core | Profiled Gm; registration, security, events, session/media negotiation |
 | SIP-2 | SIP core ↔ SIP AS | ISC/Ma; registration notification, application signalling and events |
-| SIP-3 | SIP core ↔ SIP core | Not in this edition (inter-system SIP signalling) |
+| SIP-3 | SIP core ↔ SIP core | Not in present edition (inter-system SIP signalling) |
 | HTTP-1 | HTTP client ↔ HTTP proxy | Client-facing TLS connection |
 | HTTP-2 | HTTP proxy ↔ HTTP server | Proxy-to-service path within its trust model |
-| HTTP-3 | HTTP proxy ↔ HTTP proxy | Not in this edition (inter-system HTTP) |
+| HTTP-3 | HTTP proxy ↔ HTTP proxy | Not in present edition (inter-system HTTP) |
 | AAA-1 | SIP database ↔ SIP core | Required compatibility if exposed; private DB access is not an AAA protocol implementation |
 | AAA-2 | SIP core ↔ Diameter proxy | Only when the deployment uses this Diameter relationship |
 
@@ -68,7 +68,7 @@ use SIP-2. See figure 7.3.1.2-3 and its notes.
 | MCPTT-5 / MCPTT-6 | MCPTT server ↔ EPS | Not deployed for the IP-only milestone |
 | MCPTT-7 | UE media mixer ↔ media distribution function | Unicast speech path |
 | MCPTT-8 / MCPTT-9 | Multicast media / floor endpoints | Not deployed for the unicast milestone |
-| MCPTT-10 | MC gateways in different MCPTT systems | Not in this edition |
+| MCPTT-10 | MC gateways in different MCPTT systems | Not in present edition |
 | IWF-1 | MCPTT server ↔ legacy interworking function | Legacy-system interworking outside first milestone |
 
 ## Split servers
@@ -76,4 +76,4 @@ use SIP-2. See figure 7.3.1.2-3 and its notes.
 The participating and controlling functions of one MC system can run on separate servers (roles `participating`,
 `controlling` and `both`). They exchange SIP directly over MCPTT-3 with configured, trusted peers; floor and media
 pass through each user's participating server. Interconnection of two MC systems, MC gateway servers and migration
-are not in this edition.
+are not in the present edition.

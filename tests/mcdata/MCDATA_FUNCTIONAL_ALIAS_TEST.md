@@ -2,7 +2,7 @@
 
 These tests cover **MCData functional aliases** (TS 24.282 V19.7.0 clause 22): activation and take-over by PUBLISH, SDS addressed to an alias with the 300 Multiple Choices redirect, aliases in ad hoc participant lists, and presentation of the sender's alias.
 
-Back to the [MCData test index](../MCDATA_TEST.md). The shared four-client fixture, the client status fields and the MCData deployment are described in the [standalone SDS tests](MCDATA_SDS_TEST.md), which also holds the shared coverage gaps. Architecture: MCData Phase 1 design, [standards and acceptance](../../docs/architecture/mcdata-standards-and-acceptance.md).
+Back to the [MCData test index](../MCDATA_TEST.md). The shared four-client fixture, the client status fields and the MCData deployment are described in the [standalone SDS tests](MCDATA_SDS_TEST.md), which also holds the shared coverage gaps. Acceptance: [MCData acceptance matrix](../../docs/architecture/mcdata-standards-and-acceptance.md).
 
 ## How it works
 
@@ -24,15 +24,15 @@ mcx-client --config FILE --command 'mcdata-fa activate|takeover|deactivate <alia
 
 ## Performed tests
 
-Recorded on **2026-09-22** against image `openmcx:0.29-mcdata` (`fb662f09297d`), TS 24.282 V19.7.0, clear SIP (debug mode), in a fresh lab captured from the first request: 163 scenario assertions and 64 wire checks on one MCData server instance. The scenario and the wire report cover every MCData SDS feature, so the evidence links below are shared with the other MCData SDS documents.
+The tests run in the SDS scenario (`mcdata_sds_scenario.py`, 163 assertions) and its wire verifier (`verify_mcdata_sds.py`, 64 checks), clear SIP (debug mode), on one MCData server instance; the regression runs them in the `mcdata` lab. The scenario and the wire report cover every MCData SDS feature, so the evidence below is shared with the other MCData SDS documents.
 
 | ID | Scenario | Result evidence |
 |---|---|---|
-| FA-01 | Alias activation (200), limit without take-over (403), take-over by an authorised user, user outside the alias list (403), unknown alias (403), two users within a limit of two | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| FA-02–FA-03 | SDS to an alias: 300 then a new request to the selected user, delivered with `<called-functional-alias-URI>`; 145 for an alias nobody holds; 229 when the alias is outside the sender's one-to-one list | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| FA-04 | The recipient sees the sender's active alias; an alias the sender no longer holds (taken over) is removed by the server | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| FA-05 | An ad hoc participant list naming an alias reaches its activated users with the alias; users without participation permission are skipped; 145 when nobody holds it | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| FA-06 | Deactivation of the last alias is Expires 0 | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
+| FA-01 | Alias activation (200), limit without take-over (403), take-over by an authorised user, user outside the alias list (403), unknown alias (403), two users within a limit of two | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| FA-02–FA-03 | SDS to an alias: 300 then a new request to the selected user, delivered with `<called-functional-alias-URI>`; 145 for an alias nobody holds; 229 when the alias is outside the sender's one-to-one list | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| FA-04 | The recipient sees the sender's active alias; an alias the sender no longer holds (taken over) is removed by the server | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| FA-05 | An ad hoc participant list naming an alias reaches its activated users with the alias; users without participation permission are skipped; 145 when nobody holds it | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| FA-06 | Deactivation of the last alias is Expires 0 | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
 
 ## Coverage gaps
 

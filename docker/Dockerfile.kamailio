@@ -4,7 +4,7 @@
 #   docker build -t openmcx-kamailio:6.1.4-2 -f docker/Dockerfile.kamailio .
 #
 # Kamailio is GPL-2.0 (its tls module ISC). The image carries the licence (/usr/share/doc/kamailio/COPYING) and the
-# exact source it was built from (/usr/src/kamailio-6.1.4.tar.gz, pinned in dependencies.lock.json).
+# exact source it was built from (/usr/src/kamailio-6.1.4.tar.gz, pinned in dependencies/lock.json).
 
 ARG DEV_IMAGE=openmcx-dev:0.1
 ARG RUNTIME_BASE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3

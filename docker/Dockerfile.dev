@@ -1,4 +1,4 @@
-# The Ubuntu release (UBUNTU) and its pinned image (BASE_IMAGE) come from dependencies.lock.json; tools/build-images
+# The Ubuntu release (UBUNTU) and its pinned image (BASE_IMAGE) come from dependencies/lock.json; tools/build-images
 # --ubuntu passes both. The package names of each release are in docker/packages.
 ARG BASE_IMAGE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
 FROM ${BASE_IMAGE}
@@ -8,7 +8,7 @@ COPY docker/packages /usr/local/bin/packages
 RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UBUNTU" dev) \
     && rm -rf /var/lib/apt/lists/*
 # Pinned sources and toolchains, fetched and verified by the build (docker/fetch; DEPS_MIRROR for offline builds).
-# tools/check-dependencies.py keeps these arguments equal to dependencies.lock.json.
+# tools/check-dependencies.py keeps these arguments equal to dependencies/lock.json.
 ARG DEPS_MIRROR=
 ARG GO_FILE=go1.27.1.linux-amd64.tar.gz
 ARG GO_URL=https://go.dev/dl/go1.27.1.linux-amd64.tar.gz

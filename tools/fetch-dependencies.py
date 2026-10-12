@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fetch the pinned host tools; never silently accept a mismatching cache entry.
 
-Downloads the files of dependencies.lock.json marked "use": "host" (the docker-compose binary the lab tools run,
+Downloads the files of dependencies/lock.json marked "use": "host" (the docker-compose binary the lab tools run,
 as nothing is installed on the host) into .cache/deps unless already there, and checks the SHA-256 of each against
 the lock file. The archives the images need ("use": "image") are fetched by the image builds themselves
 (docker/fetch). No 3GPP behaviour.
@@ -20,7 +20,7 @@ def main():
     """Download the missing pinned files and verify every cached file against its SHA-256."""
     cache = ROOT / ".cache/deps"
     cache.mkdir(parents=True, exist_ok=True)
-    for item in json.loads((ROOT / "dependencies.lock.json").read_text())["software"]:
+    for item in json.loads((ROOT / "dependencies/lock.json").read_text())["software"]:
         if item.get("use") != "host":
             continue
         target = cache / item["file"]

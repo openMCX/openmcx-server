@@ -96,6 +96,10 @@ void validate(const FloorField &field) {
     require_length(field, 2, "permission");
     if (field.value[0] || field.value[1] > 1) throw std::runtime_error("invalid permission field");
     break;
+  case Field::ReceptionMode:
+    require_length(field, 2, "reception mode");
+    if (field.value[0] || field.value[1] > 1) throw std::runtime_error("invalid reception mode field");
+    break;
   case Field::RejectCause:
     if (field.value.size() < 2) throw std::runtime_error("invalid reject cause field");
     break;
@@ -186,6 +190,44 @@ std::uint32_t read_video_ssrc(const FloorField &field) { return ssrc_value(field
 FloorField transmitting_user_field(std::string_view mcvideo_id) {
   if (mcvideo_id.empty()) throw std::runtime_error("empty identity field");
   return {static_cast<std::uint8_t>(Field::TransmittingUserId), {mcvideo_id.begin(), mcvideo_id.end()}};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.581 clause 9.2.3.22: builds the Reception Mode field, '0' (automatic) or '1' (not automatic).
+FloorField reception_mode_field(bool automatic) {
+  return {static_cast<std::uint8_t>(Field::ReceptionMode), {0, static_cast<std::uint8_t>(automatic ? 0 : 1)}};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.581 clause 9.2.3.22: reads the Reception Mode field.
+bool read_reception_mode(const FloorField &field) {
+  if (field.id != static_cast<std::uint8_t>(Field::ReceptionMode)) throw std::runtime_error("not a reception mode");
+  validate(field);
+  return field.value[1] == 0;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.581 clause 6.3.6.3.3 step 1: automatic reception in a broadcast group call, a system call, an emergency call
+// or an imminent peril call (step 1a), manual reception otherwise (step 1b). The server has no system call.
+bool automatic_reception(bool reception_control, bool broadcast, bool emergency, bool imminent) {
+  return !reception_control || broadcast || emergency || imminent;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.581 clause 9.2.13: the Media Transmission Notification, with the fields of table 9.2.13-1 that the
+// transmission control server fills in on-network (no Track Info: no non-controlling function; the Functional Alias
+// is not sent).
+Packet media_transmission_notification(std::uint32_t ssrc, std::string_view transmitter, std::uint32_t audio_ssrc,
+                                       std::uint32_t video_ssrc, bool permission_to_request,
+                                       std::optional<std::uint16_t> indicator, bool automatic) {
+  Packet packet{Type::MediaTransmissionNotification,
+                false,
+                ssrc,
+                {transmitting_user_field(transmitter), audio_ssrc_field(audio_ssrc), video_ssrc_field(video_ssrc),
+                 permission_to_request_field(permission_to_request)}};
+  if (indicator) packet.fields.push_back(floor_indicator_field(*indicator));
+  packet.fields.push_back(reception_mode_field(automatic));
+  return packet;
 }
 
 //------------------------------------------------------------------------------

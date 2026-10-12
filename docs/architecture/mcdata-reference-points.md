@@ -8,15 +8,15 @@ and apply unchanged to MCData.
 | Reference point | Between | Protocol | Phase 1 status |
 |---|---|---|---|
 | MCData-2 | MCData server – MCData user database | Diameter, TS 29.283 | Planned: `mcdata-server` to `mc-user-db`, as MCPTT-2 |
-| MCData-3 | MCData server – MCData server | SIP via SIP-3 | Not in this edition: the MCData server is one combined participating and controlling function |
+| MCData-3 | MCData server – MCData server | SIP via SIP-3 | Not in present edition: the MCData server is one combined participating and controlling function |
 | MCData-6 | MCData server – EPS | Rx / N5 | Not applicable to the IP lab |
 | IWF-2 | Interworking function – MCData server | TS 29.582 | Not in scope |
 | MCData-7 | Message store client – MCData message store | HTTP | **Implemented** (MD-MS-01), from TS 24.282 clause 21 without the OMA NMS specifications ([message store tests](../../tests/mcdata/MCDATA_MESSAGE_STORE_TEST.md)) |
 | MCData-8 | MCData message store – MCData server | HTTP | **Implemented**: deposit by the MCData server of the communications a user chose to store; SDS and FD over HTTP only (MD-MS-01) |
-| MCData-9 | MC gateway server – MC gateway server | SIP | Not in this edition |
+| MCData-9 | MC gateway server – MC gateway server | SIP | Not in present edition |
 | MCData-10 | Message notification client – notification server | HTTP | **Implemented**, LongPolling notification channels only (MD-MS-01) |
 | MCData-11 | MCData message store – notification server | HTTP | **Implemented** (MD-MS-01) |
-| **MCData-SDS-1** | SDS distribution function – SDS function (client) | SIP MESSAGE via SIP-1/SIP-2 | **Implemented** (Milestone M1) |
+| **MCData-SDS-1** | SDS distribution function – SDS function (client) | SIP MESSAGE via SIP-1/SIP-2 | **Implemented** |
 | MCData-SDS-2 | SDS distribution function – SDS function, unicast | MSRP over SGi (TS 24.582) | **Implemented** (MD-MP-01, MD-MP-02, MD-MP-06) |
 | MCData-SDS-3 | SDS distribution function – SDS function, multicast | MB2-U | Not applicable (H4) |
 | MCData-FD-1 | FD function (client) – MCData server | SIP via SIP-1/SIP-2 | **Implemented** (MD-FD-01 to MD-FD-06) |

@@ -1,39 +1,26 @@
-# Prearranged group-call regression
+# Prearranged group call tests
 
 These tests exercise **on-network, on-demand prearranged group calls**. A two-member group remains a group call, not a private call. They do not certify complete MCPTT or all prearranged-call variants; remaining scope is explicit.
 
-## Separate four-client lab
+## Running the tests
 
-For a fresh fixture (the preparation command refuses to overwrite an existing directory):
-
-```bash
-docker build -t openmcx:0.1 -f docker/Dockerfile .
-python3 tools/prepare-prearranged-test.py --debug-sip --floor-queue
-mkdir -p artifacts/prearranged-lab/artifacts/speech
-cp artifacts/speech/{alpha,bravo}.wav artifacts/prearranged-lab/artifacts/speech/
-.cache/deps/docker-compose-linux-x86_64 -p openmcx-prearranged \
-  -f artifacts/prearranged-lab/compose.json up -d
-```
-
-Run the scenarios in this order:
+The lifecycle scenario runs in the `smoke` lab, the failure and refresh scenario in the `call-types` lab, and the queued
+floor scenario in the `floor-queue` lab of the regression:
 
 ```bash
-python3 tests/integration/prearranged_scenario.py \
-  --compose artifacts/prearranged-lab/compose.json --artifacts artifacts/prearranged-lab/artifacts
-python3 tests/integration/prearranged_failure_scenario.py \
-  --compose artifacts/prearranged-lab/compose.json --artifacts artifacts/prearranged-lab/artifacts
-python3 tests/integration/prearranged_floor_scenario.py \
-  --compose artifacts/prearranged-lab/compose.json --artifacts artifacts/prearranged-lab/artifacts
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =smoke
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =call-types
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =floor-queue
 ```
 
-| Scenario | Assertions |
+| Scenario | What is checked |
 |---|---|
 | Lifecycle | Two-member setup, third-member late entry, participant leave, rejoin using the same session URI, exact conference rosters, initiator-policy teardown |
 | Concurrent groups | Separate session identities and member sets, simultaneous floor owners and speech delivery, independent teardown |
-| Failure and refresh | Manual rejection, caller CANCEL, unanswered setup timeout, cleanup, a pre-established session setup refused with 403 warning 100 (TS 24.379 §8.2.2 step 5; added 2026-09-22, image `openmcx:0.23-preest`), established call surviving its first 90-second SIP session timer refresh |
+| Failure and refresh | Manual rejection, caller CANCEL, unanswered setup timeout, cleanup, a pre-established session setup refused with 403 warning 100 (TS 24.379 §8.2.2 step 5), established call surviving its first 90-second SIP session timer refresh |
 | Queued floor | Queue-position query, cancellation before release timeout, requeue, explicit queued-grant confirmation, speech, abandoned grant without transmitted RTP |
 
-JSON results are under `artifacts/prearranged-lab/artifacts/integration/`. Speech packet counts alone do not exclude cross-group mixing; correlate captured RTP streams with source/destination endpoints for that assertion. A live call alone does not prove session refresh: the wire verifier checks the request and accepted response.
+Each lab writes its JSON results under its `artifacts/integration/`. Speech packet counts alone do not exclude cross-group mixing; correlate captured RTP streams with source/destination endpoints for that assertion. A live call alone does not prove session refresh: the wire verifier checks the request and accepted response.
 
 ## High-level call flow
 
@@ -87,14 +74,3 @@ sequenceDiagram
 ```
 
 Membership changes produce further conference notifications. The queue scenario adds Floor Queue Position Info, Floor Queue Position Request and queued Floor Granted; a client must confirm a queued grant before sending speech. The refresh scenario includes in-dialog UPDATE/200 transactions. Scheduling can interleave independent notifications and floor packets differently from this diagram.
-
-## Captured evidence
-
-- Lifecycle and simultaneous groups (`artifacts/prearranged-lab/artifacts/integration/prearranged-results.json`)
-- Reject, CANCEL, timeout and refresh (`artifacts/prearranged-lab/artifacts/integration/prearranged-failure-results.json`)
-- Queued-floor behavior (`artifacts/prearranged-lab/artifacts/integration/prearranged-floor-results.json`)
-- SIP and media-isolation verification (`artifacts/prearranged-lab/artifacts/integration/prearranged-v6-wire.json`)
-- Floor field and TShark checks (`artifacts/prearranged-lab/artifacts/integration/prearranged-v6-floor-wire.json`)
-- Clear SIP, RTP and RTCP capture (`artifacts/prearranged-lab/artifacts/integration/prearranged-v6.pcap`)
-
-The v6 capture contains 98 RTCP messages with zero TShark expert diagnostics, two accepted SIP refreshes and 46 conference notifications. Queue cancellation completed in 197 ms; an unconfirmed queued grant sent no RTP. These results establish the scenarios above, not complete standards coverage.

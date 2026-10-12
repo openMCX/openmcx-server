@@ -2,7 +2,7 @@
 
 These tests cover **MCData short data service (SDS) sent as standalone messages over the signalling control plane** (TS 24.282 V19.7.0 §9.2.2), with MCData service authorisation (§7), MCData affiliation (§8) and SDS disposition notifications (§12.2). The features built on top of standalone SDS have their own documents: [ad hoc group SDS](MCDATA_ADHOC_SDS_TEST.md), [functional aliases](MCDATA_FUNCTIONAL_ALIAS_TEST.md), [affiliation status](MCDATA_AFFILIATION_TEST.md), [disposition handling](MCDATA_DISPOSITION_TEST.md) and [group emergency alerts](MCDATA_EMERGENCY_ALERT_TEST.md). This document also holds the fixture and the coverage gaps they share. The recorded results cover the implemented subset below, not complete MCData conformance. SDS over the media plane, SDS sessions, file distribution, IP connectivity and payload protection are not implemented; see [coverage gaps](#coverage-gaps).
 
-Back to the [MCData test index](../MCDATA_TEST.md). File distribution is in the [FD tests](MCDATA_FD_TEST.md). Architecture: MCData Phase 1 design, [standards and acceptance](../../docs/architecture/mcdata-standards-and-acceptance.md).
+Back to the [MCData test index](../MCDATA_TEST.md). File distribution is in the [FD tests](MCDATA_FD_TEST.md). Acceptance: [MCData acceptance matrix](../../docs/architecture/mcdata-standards-and-acceptance.md).
 
 ## How it works
 
@@ -45,21 +45,21 @@ mcx-client --config FILE --command 'mcdata-affiliate'      # or mcdata-deaffilia
 ## Separate four-client fixture
 
 ```bash
-docker build -t openmcx:0.29-mcdata -f docker/Dockerfile .
-python3 tools/prepare-prearranged-test.py --directory artifacts/mcdata29-lab --project openmcx-mcdata29 \
-  --debug-sip --private-call --mcdata --image openmcx:0.29-mcdata
-C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-mcdata29 -f artifacts/mcdata29-lab/compose.json"
+docker build -t openmcx:<tag> -f docker/Dockerfile .
+python3 tools/prepare-prearranged-test.py --directory artifacts/mcdata-sds-lab --project openmcx-mcdata-sds \
+  --debug-sip --private-call --mcdata --image openmcx:<tag>
+C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-mcdata-sds -f artifacts/mcdata-sds-lab/compose.json"
 $C up -d mcdata-server                      # start the capture before the clients authorise
-docker run -d --rm --name openmcx-mcdata29-capture --network "container:$($C ps -q mcdata-server)" \
+docker run -d --rm --name openmcx-mcdata-sds-capture --network "container:$($C ps -q mcdata-server)" \
   --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.1 \
   sh -c "tcpdump -Z root -i eth0 -U --immediate-mode -s 0 -w /tmp/c.pcap 'tcp port 5060'"
 $C up -d
 python3 tests/integration/mcdata_sds_scenario.py \
-  --compose artifacts/mcdata29-lab/compose.json --artifacts artifacts/mcdata29-lab/artifacts --project openmcx-mcdata29
-docker cp openmcx-mcdata29-capture:/tmp/c.pcap artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap
-python3 tests/integration/verify_mcdata_sds.py artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap \
-  --service sip:mcdata@mcx.test --output artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json
-docker rm -f openmcx-mcdata29-capture        # the reports and the capture are kept; the lab is not
+  --compose artifacts/mcdata-sds-lab/compose.json --artifacts artifacts/mcdata-sds-lab/artifacts --project openmcx-mcdata-sds
+docker cp openmcx-mcdata-sds-capture:/tmp/c.pcap artifacts/mcdata-sds-lab/artifacts/integration/mcdata-sds.pcap
+python3 tests/integration/verify_mcdata_sds.py artifacts/mcdata-sds-lab/artifacts/integration/mcdata-sds.pcap \
+  --service sip:mcdata@mcx.test --output artifacts/mcdata-sds-lab/artifacts/integration/mcdata-sds-sip-wire.json
+docker rm -f openmcx-mcdata-sds-capture        # the reports and the capture are kept; the lab is not
 $C down -v
 ```
 
@@ -76,11 +76,11 @@ Service limits are 1000 bytes over the signalling plane and 500 bytes per one-to
 
 ## Performed tests
 
-Recorded on **2026-09-22** against image `openmcx:0.29-mcdata` (`fb662f09297d`), built from branch `mcdata-phase1` on top of `1e5c7ad` with the affiliation status changes, TS 24.282 V19.7.0, clear SIP (debug mode), in a fresh lab captured from the first request. Every report records **PASS**. The recorded run made 163 assertions and 64 wire checks on one MCData server instance, covering every MCData SDS feature: the assertions of the ad hoc, functional alias, affiliation, disposition and emergency alert documents come from this same run. On the same image the MCPTT prearranged (21) and emergency (43) scenarios passed, covering the shared SIP engine and affiliation paths. Earlier runs: `openmcx:0.28-mcdata` (`edf1f58f854e`, notification aggregation) 152 assertions and 58 wire checks; `openmcx:0.27-mcdata` (`c36935264646`, re-delivery) 146 assertions and 55 wire checks; `openmcx:0.26-mcdata` (`0e8fed6a5edb`, emergency alerts) 134 assertions and 51 wire checks; on that image the MCPTT emergency regression (`prearranged_priority_scenario.py`, fixture `--floor-queue --priority`) passed its 43 assertions, because the emergency location codec is shared; `openmcx:0.25-mcdata` (`cc88524522ed`, functional aliases) 108 assertions and 45 wire checks; `openmcx:0.24-mcdata` (`623c54c5ce4d`) 81 assertions and 40 wire checks; `openmcx:0.23-mcdata` (`bacdc6eeb84b`) 58 and 33; against V18.10.0, `openmcx:0.22-mcdata` (`b23eb21b98a1`) 53 and 31, and `openmcx:0.21-mcdata` (`301de09f285b`) 52 twice. On `openmcx:0.21-mcdata` the MCPTT all-call-types regression passed on one server instance (prearranged 21, failure/refresh, broadcast 56, private 96, chat 67, ad hoc 81, remote group 20, ambient listening 51), plus emergency first-to-answer 29. The later images change only MCData code and the shared functional alias PIDF codec; on `openmcx:0.25-mcdata` the MCPTT functional alias scenario passed its 33 assertions (fixture `--private-call --adhoc --functional-alias`), and the unit tests cover both namespaces.
+The SDS scenario (`mcdata_sds_scenario.py`) makes 163 assertions and its wire verifier (`verify_mcdata_sds.py`) 64 checks, clear SIP (debug mode), on one MCData server instance. They cover every MCData SDS feature: the ad hoc, functional alias, affiliation, disposition and emergency alert documents describe parts of the same scenario. The regression runs it in the `mcdata` and `smoke-mcdata` labs, and with protected signalling in `mcdata-xml`.
 
 | ID | Scenario | Result evidence |
 |---|---|---|
-| SD-00 | All four clients MCData-authorised and affiliated; the server binds each MCData ID to its client and group | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`) |
+| SD-00 | All four clients MCData-authorised and affiliated; the server binds each MCData ID to its client and group | Scenario report (`artifacts/integration/mcdata-sds-results.json`) |
 | SD-01 | One-to-one text SDS: 202 Accepted, delivered only to the target with the sender and message IDs, rendered to the user | Same report |
 | SD-02 | A reply keeps the Conversation ID and carries InReplyTo | Same report |
 | SD-03 | DELIVERED notification for a "delivery" request | Same report |
@@ -92,7 +92,7 @@ Recorded on **2026-09-22** against image `openmcx:0.29-mcdata` (`fb662f09297d`),
 | SD-09 | A de-affiliated member receives no group SDS | Same report |
 | SD-10 | Group rejections 404/163, 116, 206, 488/207, 167, 148, 201, 208, 217, 200, 120, 198; members re-affiliate. On a `--protected` fixture the first six are refused by the client, which holds no GMK for those groups ([protected payload tests](MCDATA_PROTECTED_TEST.md)) | Same report |
 | SD-11 | Application priority: `<user-requested-priority>` 5 (one-to-one) and 3 (group) delivered as `<used-priority>`; none when not requested (V19.7.0 §9.2.2.4.1.1 step 5c) | Same report |
-| SD-12 | SIP wire checks (64), with clause 15 bodies decoded independently of the C++ codec: authorisation body; affiliation with a PIDF and de-affiliation with Expires 0 and no PIDF; the affiliation status SUBSCRIBE, its fetch and 403 answers, and the NOTIFY bodies with affiliated groups, the echoed p-id and terminating states; SDS Accept-Contact and P-Preferred-Service; one-to-one and group request shapes; 202; downlink P-Asserted-Service, request URI, calling user and group; unchanged relay of signalling and payload; all three disposition request types; InReplyTo; DELIVERED, READ and DELIVERED AND READ notifications; notification routing; the Sender IE in group notifications, aggregated notifications (one body per notification, calling group, no calling user), every accepted group notification relayed exactly once; `used-priority` replacing `user-requested-priority`; ad hoc request shapes, 202 with the ad hoc group identity and ad hoc delivery; functional alias status change, 300 redirect and follow-up, alias presentation; emergency alert and cancellation shapes with location and `<originated-by>`, alert notifications with `<mc-org>`, receipts with `<alert-ind-rcvd>`, alert rejections with `<alert-ind>`, 168 and 120; UNDELIVERED sent to the server and never relayed, re-delivery bodies identical to the original and only for messages reported UNDELIVERED; 21 SDS rejection warnings | Wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
+| SD-12 | SIP wire checks (64), with clause 15 bodies decoded independently of the C++ codec: authorisation body; affiliation with a PIDF and de-affiliation with Expires 0 and no PIDF; the affiliation status SUBSCRIBE, its fetch and 403 answers, and the NOTIFY bodies with affiliated groups, the echoed p-id and terminating states; SDS Accept-Contact and P-Preferred-Service; one-to-one and group request shapes; 202; downlink P-Asserted-Service, request URI, calling user and group; unchanged relay of signalling and payload; all three disposition request types; InReplyTo; DELIVERED, READ and DELIVERED AND READ notifications; notification routing; the Sender IE in group notifications, aggregated notifications (one body per notification, calling group, no calling user), every accepted group notification relayed exactly once; `used-priority` replacing `user-requested-priority`; ad hoc request shapes, 202 with the ad hoc group identity and ad hoc delivery; functional alias status change, 300 redirect and follow-up, alias presentation; emergency alert and cancellation shapes with location and `<originated-by>`, alert notifications with `<mc-org>`, receipts with `<alert-ind-rcvd>`, alert rejections with `<alert-ind>`, 168 and 120; UNDELIVERED sent to the server and never relayed, re-delivery bodies identical to the original and only for messages reported UNDELIVERED; 21 SDS rejection warnings | Wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
 | SD-13 | Unit tests: byte-exact clause 15 fixtures, reserved, protected, duplicated and truncated content rejected, `mcdata-info` schema order, MCData PIDF, binary multipart | `test_mcdata` in the image build (19/19 native tests on `openmcx:0.27-mcdata`), including `user-requested-priority`, `used-priority` and the UNDELIVERED notification type |
 
 ## High-level call flow (group SDS with delivery notification)

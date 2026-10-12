@@ -37,20 +37,16 @@ mcx-client --config FILE --command 'adhoc broadcast sip:bob.mcptt@mcx.test sip:c
 
 The status file reports `requested_functional_aliases`, `last_fa_result` (action, aliases, status code, warning, `p_id_fa`, `take_over`, and per alias the outcome from the NOTIFY: `activated`, `deactivated`, `take-over-possible` or `refused`), `functional_alias_subscription_result`, `active_functional_aliases`, `takeover_possible_functional_aliases`, `functional_alias`, `functional_alias_redirect`, and the received `calling_functional_alias` / `called_functional_alias`. The server status reports `functional_aliases` (alias → activated MCPTT IDs in activation order).
 
-## Separate four-client fixture
+## Running the tests
+
+The functional-alias scenario runs in the `functional-alias` lab of the regression:
 
 ```bash
-python3 tools/prepare-prearranged-test.py --directory artifacts/alias-lab --project openmcx-alias \
-  --debug-sip --private-call --adhoc --functional-alias --image openmcx:0.17
-mkdir -p artifacts/alias-lab/artifacts/speech && cp artifacts/speech/{alpha,bravo}.wav artifacts/alias-lab/artifacts/speech/
-.cache/deps/docker-compose-linux-x86_64 -p openmcx-alias -f artifacts/alias-lab/compose.json up -d
-python3 tests/integration/functional_alias_scenario.py --compose artifacts/alias-lab/compose.json \
-  --artifacts artifacts/alias-lab/artifacts
-python3 tests/integration/verify_functional_alias.py artifacts/alias-lab/artifacts/integration/capture.pcap \
-  --service sip:mcptt@mcx.test --output artifacts/alias-lab/artifacts/integration/functional-alias-sip-wire.json
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =functional-alias
 ```
 
-Capture the server namespace as in the [private-call tests](PRIVATE_CALL_TEST.md#separate-four-client-fixture), using `tcpdump --immediate-mode`, and stop it a few seconds after the scenario ends. Otherwise buffered final packets can be lost.
+The lab uses `--private-call --adhoc --functional-alias`. Over debug TCP SIP the run also captures at the MCPTT server
+and checks the capture with `tests/integration/verify_functional_alias.py`.
 
 | Alias | Users | Limit | Take-over |
 |---|---|---|---|
@@ -60,27 +56,23 @@ Capture the server namespace as in the [private-call tests](PRIVATE_CALL_TEST.md
 
 In this fixture client-d is callable (unlike the plain `--private-call` fixture), so both medic users can be reached.
 
-## Performed tests
+## Checks
 
-Recorded on **2026-10-06** against images `openmcx-*:alias` (`openmcx-mcptt-server` `08924b533cea`) and `openmcx-client:alias` (`161fd41621dd`), fixture `--private-call --adhoc --functional-alias`, clear media, debug SIP. The scenario made **35 assertions**, all **PASS**, on one server instance (`tools/regress.py --select functional-alias`). A second run with a capture at `mcptt-server` (eth0) also passed, and `verify_functional_alias.py` passed its 14 checks on it: 8 alias PUBLISHes (7 answered 200, 1 answered 403/201), 4 status SUBSCRIBEs and 12 status NOTIFYs.
+| ID | What is checked |
+|---|---|
+| FA-01 | The client subscribes to its own status first; two permitted users activate `medic` within its limit of 2 (200, then NOTIFY `activated`) |
+| FA-02 | Activation by a user outside the alias user list → 403 with warning 201 |
+| FA-03 | `dispatcher` activated by a; b's activation beyond the limit → 200, then NOTIFY `take-over-possible` |
+| FA-04 | b's take-over after the offer replaces a (NOTIFY `activated`), and a is notified it lost the alias; a, offered nothing, sends an activation without `<take-over>` → 200, refused in the NOTIFY, nothing changes |
+| FA-05 | `private-fa medic` → 300 naming the first activated user; the caller re-invites that user, who is told the called alias |
+| FA-06 | An activated caller alias is presented on a private call and on a group call to every member; a requested alias that is not activated is not presented |
+| FA-07 | `first-to-answer-fa medic` rings both activated users; the first answer wins and the other is cancelled |
+| FA-08 | An ad hoc list entry naming `medic` invites both activated users, each told the called alias |
+| FA-09 | Broadcast ad hoc call: receiver request denied with cause 5; receivers get the speech; release at transmission end |
+| FA-10 | Deactivation (200, then NOTIFY without the alias) removes the user; the alias then resolves to the remaining user |
+| FA-11 | An alias with no activated user → 403/145 |
 
-| ID | Scenario | Assertions |
-|---|---|---|
-| FA-01 | The client subscribes to its own status first; two permitted users activate `medic` within its limit of 2 (200, then NOTIFY `activated`) | 3 |
-| FA-02 | Activation by a user outside the alias user list → 403 with warning 201 | 1 |
-| FA-03 | `dispatcher` activated by a; b's activation beyond the limit → 200, then NOTIFY `take-over-possible` | 2 |
-| FA-04 | b's take-over after the offer replaces a (NOTIFY `activated`), and a is notified it lost the alias; a, offered nothing, sends an activation without `<take-over>` → 200, refused in the NOTIFY, nothing changes | 3 |
-| FA-05 | `private-fa medic` → 300 naming the first activated user; the caller re-invites that user, who is told the called alias | 4 |
-| FA-06 | An activated caller alias is presented on a private call and on a group call to every member; a requested alias that is not activated is not presented | 6 |
-| FA-07 | `first-to-answer-fa medic` rings both activated users; the first answer wins and the other is cancelled | 3 |
-| FA-08 | An ad hoc list entry naming `medic` invites both activated users, each told the called alias | 2 |
-| FA-09 | Broadcast ad hoc call: receiver request denied with cause 5; receivers get the speech; release at transmission end | 4 |
-| FA-10 | Deactivation (200, then NOTIFY without the alias) removes the user; the alias then resolves to the remaining user | 3 |
-| FA-11 | An alias with no activated user → 403/145 | 1 |
-
-Independent SIP wire checks (14, `verify_functional_alias.py`): PUBLISH with the presence event and the FA PIDF extension; Expires 4294967295/0; entity, tuple and alias IDs; answers 200, or 403 only with warning 201; a status SUBSCRIBE (`<request-type>functional-alias-status-determination`, Expires 4294967295) by every publishing user; a NOTIFY with the `<p-id-fa>` of each accepted PUBLISH; NOTIFYs with `status="activated"` and `status="take-over-possible"`; the take-over element only for an offered alias; `call-to-functional-alias-ind` INVITEs; a 300 naming the selected MCPTT ID and called alias; re-INVITE of that ID without the indicator; 403/145; presentation on terminating INVITEs; and no presentation of a non-activated alias.
-
-An earlier run's capture lost its last second, because it was copied as the scenario ended. The recorded run uses `tcpdump --immediate-mode` and a 3 s delay.
+Independent SIP wire checks (`verify_functional_alias.py`): PUBLISH with the presence event and the FA PIDF extension; Expires 4294967295/0; entity, tuple and alias IDs; answers 200, or 403 only with warning 201; a status SUBSCRIBE (`<request-type>functional-alias-status-determination`, Expires 4294967295) by every publishing user; a NOTIFY with the `<p-id-fa>` of each accepted PUBLISH; NOTIFYs with `status="activated"` and `status="take-over-possible"`; the take-over element only for an offered alias; `call-to-functional-alias-ind` INVITEs; a 300 naming the selected MCPTT ID and called alias; re-INVITE of that ID without the indicator; 403/145; presentation on terminating INVITEs; and no presentation of a non-activated alias.
 
 ## Coverage gaps
 
@@ -90,4 +82,4 @@ An earlier run's capture lost its last second, because it was copied as the scen
 | Location-based activation | §9A.2.1.4 and the manual-deactivation restriction are not implemented. |
 | Group binding | Functional alias to group binding (§9A.4, warning 176) is not implemented. |
 | Call-list restrictions | `<ListOfAllowedFAsToCall>` and `<ListOfAllowedFAsToBeCalledFrom>` (warnings 171/172) are not evaluated. |
-| Multiple servers | The functional-alias scenario passes with separate participating and controlling servers: activation goes to the server owning the aliases (H2). |
+| Multiple servers | Covered: the functional-alias scenario also runs with separate participating and controlling servers; activation goes to the server owning the aliases. |

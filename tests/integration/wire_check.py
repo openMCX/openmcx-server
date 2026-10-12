@@ -21,8 +21,10 @@ The capture and the verifier's report are kept as integration/<scenario>-wire.pc
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -164,6 +166,16 @@ def start(args, cli):
 
 
 # ------------------------------------------------------------------------------
+def name_capture(report, copy, pcap):
+    """Name the kept capture, not the temporary copy the verifier read, in its report."""
+    try:
+        text = report.read_text()
+    except OSError:
+        return
+    report.write_text(text.replace(json.dumps(str(copy))[1:-1], json.dumps(str(pcap))[1:-1]))
+
+
+# ------------------------------------------------------------------------------
 def finish(args, cli):
     """Stop the capture and run the scenario's verifiers; print one JSON result line."""
     found, reason = applicable(args, cli)
@@ -182,20 +194,26 @@ def finish(args, cli):
         / f'{args.scenario.removesuffix("_scenario").replace("_", "-")}-results.json'
     )
     errors, reports = [], []
-    for index, verifier in enumerate(found[1]):
-        output = report if index == 0 else report.with_name(f'{report.stem}-{index}.json')
-        command = [sys.executable, str(HERE / verifier[0]), str(pcap)] + [
-            str(results) if part == '{results}' else part for part in verifier[1:]
-        ]
-        command += ['--output', str(output)]
+    # The verifiers read a copy in a temporary directory: Ubuntu 26.04 confines tshark with AppArmor
+    # (/etc/apparmor.d/tshark), which lets it read files under /tmp but not under the user's home directory.
+    with tempfile.TemporaryDirectory(prefix='openmcx-wire-') as scratch:
+        capture = Path(scratch) / pcap.name
+        shutil.copyfile(pcap, capture)
         # tshark reads its preferences from the user's configuration directory; a fresh one keeps them default.
-        environment = dict(os.environ, WIRESHARK_CONFIG_DIR=str(pcap.parent / '.wireshark'))
-        Path(environment['WIRESHARK_CONFIG_DIR']).mkdir(exist_ok=True)
-        run = subprocess.run(command, capture_output=True, text=True, timeout=600, env=environment)
-        reports.append(str(output))
-        if run.returncode:
-            text = (run.stdout + run.stderr).strip().splitlines()
-            errors.append(f'{verifier[0]}: ' + ' | '.join(text[-3:])[:400])
+        environment = dict(os.environ, WIRESHARK_CONFIG_DIR=str(Path(scratch) / '.wireshark'))
+        Path(environment['WIRESHARK_CONFIG_DIR']).mkdir()
+        for index, verifier in enumerate(found[1]):
+            output = report if index == 0 else report.with_name(f'{report.stem}-{index}.json')
+            command = [sys.executable, str(HERE / verifier[0]), str(capture)] + [
+                str(results) if part == '{results}' else part for part in verifier[1:]
+            ]
+            command += ['--output', str(output)]
+            run = subprocess.run(command, capture_output=True, text=True, timeout=600, env=environment)
+            reports.append(str(output))
+            name_capture(output, capture, pcap)
+            if run.returncode:
+                text = (run.stdout + run.stderr).strip().splitlines()
+                errors.append(f'{verifier[0]}: ' + ' | '.join(text[-3:])[:400])
     print(json.dumps(dict(scenario=label, passed=not errors, error='; '.join(errors), reports=reports)))
     return 1 if errors else 0
 

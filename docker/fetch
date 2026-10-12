@@ -5,7 +5,7 @@
 #
 # With DEPS_MIRROR set (docker build --build-arg DEPS_MIRROR=https://mirror.example/deps), FILE is taken from that
 # mirror instead of URL, for offline or air-gapped builds. The versions, URLs and hashes are the build arguments of
-# the Dockerfiles; tools/check-dependencies.py keeps them equal to dependencies.lock.json.
+# the Dockerfiles; tools/check-dependencies.py keeps them equal to dependencies/lock.json.
 set -eu
 file=$1 url=$2 sha256=$3 output=$4
 if [ -n "${DEPS_MIRROR:-}" ]; then url="${DEPS_MIRROR%/}/$file"; fi

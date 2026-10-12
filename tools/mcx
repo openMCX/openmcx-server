@@ -21,10 +21,10 @@ case "${1:-help}" in
     ;;
   up)
     test -f config/generated/site.json || python3 tools/provision.py
-    exec "$MCX_COMPOSE" -f compose.yaml up -d
+    exec "$MCX_COMPOSE" -f docker/compose/compose.yaml up -d
     ;;
   # -v: the lab's named and anonymous volumes go with it (tools/lab-clean removes older leftovers).
-  down) exec "$MCX_COMPOSE" -f compose.yaml down -v --remove-orphans ;;
+  down) exec "$MCX_COMPOSE" -f docker/compose/compose.yaml down -v --remove-orphans ;;
   speech)
     mkdir -p artifacts/speech
     docker run --rm --user "$(id -u):$(id -g)" -v "$MCX_ROOT/artifacts/speech:/speech" openmcx-dev:0.1 bash -lc 'espeak-ng -s 135 -w /tmp/alpha.wav "Alpha calling Bravo. Mission critical voice test. Radio check one two three." && ffmpeg -v error -y -i /tmp/alpha.wav -ar 16000 -ac 1 /speech/alpha.wav && espeak-ng -s 135 -w /tmp/bravo.wav "Bravo responding to Alpha. Your transmission is received. Radio check four five six." && ffmpeg -v error -y -i /tmp/bravo.wav -ar 16000 -ac 1 /speech/bravo.wav'
@@ -33,6 +33,6 @@ case "${1:-help}" in
     docker run --rm --user "$(id -u):$(id -g)" -v "$MCX_ROOT:/workspace" openmcx-dev:0.1 bash -lc 'cmake -S . -B build && cmake --build build -j4 && ctest --test-dir build --output-on-failure'
     docker run --rm --user "$(id -u):$(id -g)" -e GOCACHE=/tmp/go-cache -e GOPATH=/tmp/go -v "$MCX_ROOT:/workspace" -w /workspace/services openmcx-dev:0.1 go test ./...
     ;;
-  compose) shift; exec "$MCX_COMPOSE" -f compose.yaml "$@" ;;
+  compose) shift; exec "$MCX_COMPOSE" -f docker/compose/compose.yaml "$@" ;;
   *) echo 'Usage: tools/mcx fetch|provision|build|speech|up|down|test|compose [arguments]' ;;
 esac

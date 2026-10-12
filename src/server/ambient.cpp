@@ -219,8 +219,10 @@ SipResponse McServer::ambient_invite(const SipMessage &message, const User &user
 void McServer::ambient_floor(const std::shared_ptr<Session> &session, Leg &joined) {
   const auto owner = session->arbitrator->owner();
   if (owner) {
-    send_notice(joined, *owner == joined.user ? FloorNotice{FloorNoticeKind::Granted, joined.user, joined.user, 0}
-                                              : FloorNotice{FloorNoticeKind::Taken, joined.user, *owner, 0});
+    send_notice(joined, *owner == joined.user
+                            ? FloorNotice{FloorNoticeKind::Granted, joined.user, joined.user, 0, 0, 254,
+                                          session->arbitrator->talk_time_remaining(monotonic_ms())}
+                            : FloorNotice{FloorNoticeKind::Taken, joined.user, *owner, 0});
     return;
   }
   std::size_t connected = 0;

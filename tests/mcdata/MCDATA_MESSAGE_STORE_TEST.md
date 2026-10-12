@@ -31,7 +31,7 @@ TS 24.282 clause 21 bases MCData-7 and MCData-8 on the OMA RESTful Network Messa
 
 | Choice | Reason |
 |---|---|
-| The JSON names of NMS V1.0 as recalled: `object`, `objectList`, `selectionCriteria`, `folder`, `folderReferenceList`, `targetSourceRef`, `bulkUpdate`, `nmsSubscription`, `nmsSubscriptionUpdate`, `nmsEventList`, `notificationChannel`, `notificationList`, `requestError` with SVC and POL message IDs | The OMA specifications are not supplied. |
+| The JSON names of NMS V1.0 as the implementation uses them (not checked against the OMA specification): `object`, `objectList`, `selectionCriteria`, `folder`, `folderReferenceList`, `targetSourceRef`, `bulkUpdate`, `nmsSubscription`, `nmsSubscriptionUpdate`, `nmsEventList`, `notificationChannel`, `notificationList`, `requestError` with SVC and POL message IDs | The OMA specifications were not available (see the coverage gaps, OMA conformance). |
 | The attributes of a deposited communication (Direction, Request-Type, From, To, Group-Id, Message-Id, Conversation-Id, Text) | TS 23.282 §7.13.3.8 names only the object; its content is left open. |
 | Storage choices are kept in the participating function's memory | TS 24.282 §21.3.3.2 step 5 says "update or store the record" without a lifetime. |
 | §21.3.3.2 step 4f (a resource-lists body for the specific variants) accepts the D.7 body instead | The client procedure (§21.3.2.2 step 6) sends the users and groups in the D.7 body, not in resource-lists. |
@@ -106,7 +106,7 @@ sequenceDiagram
 
 ```bash
 python3 tools/prepare-prearranged-test.py --directory artifacts/msgstore-lab --project openmcx-msgstore \
-  --debug-sip --mcdata --msgstore --image openmcx:0.69-msgstore
+  --debug-sip --mcdata --msgstore --image openmcx:<tag>
 C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-msgstore -f artifacts/msgstore-lab/compose.json"
 $C up -d --wait
 python3 tests/integration/mcdata_msgstore_scenario.py --compose artifacts/msgstore-lab/compose.json \
@@ -122,11 +122,11 @@ python3 tests/integration/mcdata_msgstore_scenario.py --compose artifacts/msgsto
 | client-c | No `<allow-store-comms-in-msgstore>` |
 | client-d | Storage, but not of private communications |
 
-Every lab now runs a `message-store` and a `notification-server` container.
+Every lab runs a `message-store` and a `notification-server` container.
 
 ## Performed tests
 
-Recorded on **2026-09-25** against image `openmcx:0.69-msgstore` (`ebb21427490c`), built from branch `mcptt-mcdata`. The scenario report (`artifacts/ms-lab-3/artifacts/mcdata-msgstore.json`) records **PASS** with 81 checks.
+The scenario (`mcdata_msgstore_scenario.py`) makes 81 checks and writes its report to `artifacts/mcdata-msgstore.json`; the regression runs it in the `msgstore` lab.
 
 | ID | Checks |
 |---|---|
@@ -143,13 +143,7 @@ Recorded on **2026-09-25** against image `openmcx:0.69-msgstore` (`ebb21427490c`
 | MS-11 | A file of the message store is sent by reference; the recipient downloads it and verifies its hash |
 | MS-12 | Unsubscribing removes the channel and the subscription |
 
-The MCData server recorded 4 storage controls, 4 refusals, and 12 deposits with no failures. Go unit tests (`services/internal/common/msgstore_test.go`) cover the store, the notification server and upload by reference. `services/cmd/mcx-http-proxy/main_test.go` covers the proxy routes and what they keep out of reach.
-
-Regression on the same image, where every lab now also runs the message store and the notification server:
-- the six MCData scenarios (SDS, FD, release, status, media plane, IP connectivity) and the protected MCData scenario passed;
-- `run_all_call_types.sh` (8 call types) passed;
-
-The media plane scenario first failed one check, MP-20: it read the server's periodically written status file once, before the file was refreshed. The check now waits, and the scenario then passed.
+Go unit tests (`services/internal/common/msgstore_test.go`) cover the store, the notification server and upload by reference. `services/cmd/mcx-http-proxy/main_test.go` covers the proxy routes and what they keep out of reach.
 
 ## Coverage gaps
 

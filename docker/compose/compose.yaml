@@ -4,7 +4,7 @@ x-app: &app
   init: true
   tmpfs: [/run/mcx]
   volumes:
-    - ./artifacts:/artifacts
+    - ../../artifacts:/artifacts
   networks: [mcx]
 x-common: &common
   <<: *app
@@ -28,10 +28,10 @@ services:
       message-store: {condition: service_healthy}
       notification-server: {condition: service_healthy}
     volumes:
-      - ./config/generated/http-proxy.json:/config/http-proxy.json:ro
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/tls/http-proxy.crt:/config/tls/http-proxy.crt:ro
-      - ./config/generated/tls/http-proxy.key:/config/tls/http-proxy.key:ro
+      - ../../config/generated/http-proxy.json:/config/http-proxy.json:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/tls/http-proxy.crt:/config/tls/http-proxy.crt:ro
+      - ../../config/generated/tls/http-proxy.key:/config/tls/http-proxy.key:ro
     healthcheck:
       <<: *health
       test: [CMD, curl, --fail, --silent, --cacert, /config/tls/ca.crt, 'https://http-proxy:8443/readyz']
@@ -44,9 +44,9 @@ services:
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql-root-password
     volumes:
       - sip-db:/var/lib/mysql
-      - ./config/generated/mysql-password:/run/secrets/mysql-password:ro
-      - ./config/generated/mysql-root-password:/run/secrets/mysql-root-password:ro
-      - ./config/generated/sip-db.sql:/docker-entrypoint-initdb.d/01-subscriber.sql:ro
+      - ../../config/generated/mysql-password:/run/secrets/mysql-password:ro
+      - ../../config/generated/mysql-root-password:/run/secrets/mysql-root-password:ro
+      - ../../config/generated/sip-db.sql:/docker-entrypoint-initdb.d/01-subscriber.sql:ro
     healthcheck:
       test: [CMD-SHELL, 'MYSQL_PWD=$$(cat /run/secrets/mysql-root-password) mysql -h 127.0.0.1 -u root -D mcx -e "SELECT 1 FROM subscriber LIMIT 1" >/dev/null']
       interval: 3s
@@ -58,11 +58,11 @@ services:
     depends_on:
       sip-db: {condition: service_healthy}
     volumes:
-      - ./config/generated/kamailio.cfg:/config/kamailio.cfg:ro
-      - ./config/generated/tls.cfg:/config/tls.cfg:ro
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/tls/sip-core.crt:/config/tls/sip-core.crt:ro
-      - ./config/generated/tls/sip-core.key:/config/tls/sip-core.key:ro
+      - ../../config/generated/kamailio.cfg:/config/kamailio.cfg:ro
+      - ../../config/generated/tls.cfg:/config/tls.cfg:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/tls/sip-core.crt:/config/tls/sip-core.crt:ro
+      - ../../config/generated/tls/sip-core.key:/config/tls/sip-core.key:ro
     networks: [mcx]
     healthcheck:
       <<: *health
@@ -71,11 +71,11 @@ services:
     <<: *common
     command: [--role, idms, --config, /config/site.json, --tls-cert, /config/tls/idms.crt, --tls-key, /config/tls/idms.key, --signing-key, /config/oidc-private.pem, --data-dir, /data]
     volumes:
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/site.json:/config/site.json:ro
-      - ./config/generated/tls/idms.crt:/config/tls/idms.crt:ro
-      - ./config/generated/tls/idms.key:/config/tls/idms.key:ro
-      - ./config/generated/oidc-private.pem:/config/oidc-private.pem:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/site.json:/config/site.json:ro
+      - ../../config/generated/tls/idms.crt:/config/tls/idms.crt:ro
+      - ../../config/generated/tls/idms.key:/config/tls/idms.key:ro
+      - ../../config/generated/oidc-private.pem:/config/oidc-private.pem:ro
       - idms:/data
     healthcheck:
       <<: *health
@@ -84,11 +84,11 @@ services:
     <<: *common
     command: [--role, gms, --config, /config/site.json, --tls-cert, /config/tls/gms.crt, --tls-key, /config/tls/gms.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
     volumes:
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/site.json:/config/site.json:ro
-      - ./config/generated/tls/gms.crt:/config/tls/gms.crt:ro
-      - ./config/generated/tls/gms.key:/config/tls/gms.key:ro
-      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/site.json:/config/site.json:ro
+      - ../../config/generated/tls/gms.crt:/config/tls/gms.crt:ro
+      - ../../config/generated/tls/gms.key:/config/tls/gms.key:ro
+      - ../../config/generated/oidc-public.pem:/config/oidc-public.pem:ro
       - gms:/data
     healthcheck:
       <<: *health
@@ -97,11 +97,11 @@ services:
     <<: *common
     command: [--role, cms, --config, /config/site.json, --tls-cert, /config/tls/cms.crt, --tls-key, /config/tls/cms.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
     volumes:
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/site.json:/config/site.json:ro
-      - ./config/generated/tls/cms.crt:/config/tls/cms.crt:ro
-      - ./config/generated/tls/cms.key:/config/tls/cms.key:ro
-      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/site.json:/config/site.json:ro
+      - ../../config/generated/tls/cms.crt:/config/tls/cms.crt:ro
+      - ../../config/generated/tls/cms.key:/config/tls/cms.key:ro
+      - ../../config/generated/oidc-public.pem:/config/oidc-public.pem:ro
       - cms:/data
     healthcheck:
       <<: *health
@@ -110,11 +110,11 @@ services:
     <<: *common
     command: [--role, lms, --config, /config/site.json, --tls-cert, /config/tls/lms.crt, --tls-key, /config/tls/lms.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
     volumes:
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/site.json:/config/site.json:ro
-      - ./config/generated/tls/lms.crt:/config/tls/lms.crt:ro
-      - ./config/generated/tls/lms.key:/config/tls/lms.key:ro
-      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/site.json:/config/site.json:ro
+      - ../../config/generated/tls/lms.crt:/config/tls/lms.crt:ro
+      - ../../config/generated/tls/lms.key:/config/tls/lms.key:ro
+      - ../../config/generated/oidc-public.pem:/config/oidc-public.pem:ro
       - lms:/data
     healthcheck:
       <<: *health
@@ -123,11 +123,11 @@ services:
     <<: *common
     command: [--role, content, --config, /config/site.json, --tls-cert, /config/tls/content-server.crt, --tls-key, /config/tls/content-server.key, --verification-key, /config/oidc-public.pem, --data-dir, /data, --ca-file, /config/tls/ca.crt]
     volumes:
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/site.json:/config/site.json:ro
-      - ./config/generated/tls/content-server.crt:/config/tls/content-server.crt:ro
-      - ./config/generated/tls/content-server.key:/config/tls/content-server.key:ro
-      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/site.json:/config/site.json:ro
+      - ../../config/generated/tls/content-server.crt:/config/tls/content-server.crt:ro
+      - ../../config/generated/tls/content-server.key:/config/tls/content-server.key:ro
+      - ../../config/generated/oidc-public.pem:/config/oidc-public.pem:ro
       - content:/data
     healthcheck:
       <<: *health
@@ -137,11 +137,11 @@ services:
     <<: *common
     command: [--role, msgstore, --config, /config/site.json, --tls-cert, /config/tls/message-store.crt, --tls-key, /config/tls/message-store.key, --verification-key, /config/oidc-public.pem, --data-dir, /data, --ca-file, /config/tls/ca.crt]
     volumes:
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/site.json:/config/site.json:ro
-      - ./config/generated/tls/message-store.crt:/config/tls/message-store.crt:ro
-      - ./config/generated/tls/message-store.key:/config/tls/message-store.key:ro
-      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/site.json:/config/site.json:ro
+      - ../../config/generated/tls/message-store.crt:/config/tls/message-store.crt:ro
+      - ../../config/generated/tls/message-store.key:/config/tls/message-store.key:ro
+      - ../../config/generated/oidc-public.pem:/config/oidc-public.pem:ro
       - msgstore:/data
     healthcheck:
       <<: *health
@@ -150,11 +150,11 @@ services:
     <<: *common
     command: [--role, notification, --config, /config/site.json, --tls-cert, /config/tls/notification-server.crt, --tls-key, /config/tls/notification-server.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
     volumes:
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/site.json:/config/site.json:ro
-      - ./config/generated/tls/notification-server.crt:/config/tls/notification-server.crt:ro
-      - ./config/generated/tls/notification-server.key:/config/tls/notification-server.key:ro
-      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/site.json:/config/site.json:ro
+      - ../../config/generated/tls/notification-server.crt:/config/tls/notification-server.crt:ro
+      - ../../config/generated/tls/notification-server.key:/config/tls/notification-server.key:ro
+      - ../../config/generated/oidc-public.pem:/config/oidc-public.pem:ro
       - notification:/data
     healthcheck:
       <<: *health
@@ -163,11 +163,11 @@ services:
     <<: *common
     command: [--role, kms, --config, /config/site.json, --tls-cert, /config/tls/kms.crt, --tls-key, /config/tls/kms.key, --verification-key, /config/oidc-public.pem, --data-dir, /data]
     volumes:
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/site.json:/config/site.json:ro
-      - ./config/generated/tls/kms.crt:/config/tls/kms.crt:ro
-      - ./config/generated/tls/kms.key:/config/tls/kms.key:ro
-      - ./config/generated/oidc-public.pem:/config/oidc-public.pem:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/site.json:/config/site.json:ro
+      - ../../config/generated/tls/kms.crt:/config/tls/kms.crt:ro
+      - ../../config/generated/tls/kms.key:/config/tls/kms.key:ro
+      - ../../config/generated/oidc-public.pem:/config/oidc-public.pem:ro
       - kms:/data
     healthcheck:
       <<: *health
@@ -177,11 +177,11 @@ services:
     entrypoint: [/usr/local/bin/mcx-user-db]
     command: [--config, /config/site.json, --diameter-config, /config/diameter-user-db.conf]
     volumes:
-      - ./config/generated/site.json:/config/site.json:ro
-      - ./config/generated/diameter-user-db.conf:/config/diameter-user-db.conf:ro
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/tls/mcx-user-db.crt:/config/tls/mcx-user-db.crt:ro
-      - ./config/generated/tls/mcx-user-db.key:/config/tls/mcx-user-db.key:ro
+      - ../../config/generated/site.json:/config/site.json:ro
+      - ../../config/generated/diameter-user-db.conf:/config/diameter-user-db.conf:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/tls/mcx-user-db.crt:/config/tls/mcx-user-db.crt:ro
+      - ../../config/generated/tls/mcx-user-db.key:/config/tls/mcx-user-db.key:ro
     healthcheck:
       <<: *health
       test: [CMD-SHELL, 'test -r /proc/net/sctp/eps && python3 -c "import pathlib; assert any(int(row.split()[5]) == 3868 for row in pathlib.Path(\"/proc/net/sctp/eps\").read_text().splitlines()[1:])"']
@@ -196,12 +196,12 @@ services:
       cms: {condition: service_healthy}
       mcx-user-db: {condition: service_healthy}
     volumes:
-      - ./artifacts:/artifacts
-      - ./config/generated/mcptt-server.json:/config/mcptt-server.json:ro
-      - ./config/generated/diameter-server.conf:/config/diameter-server.conf:ro
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/tls/mcptt-server.crt:/config/tls/mcptt-server.crt:ro
-      - ./config/generated/tls/mcptt-server.key:/config/tls/mcptt-server.key:ro
+      - ../../artifacts:/artifacts
+      - ../../config/generated/mcptt-server.json:/config/mcptt-server.json:ro
+      - ../../config/generated/diameter-server.conf:/config/diameter-server.conf:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/tls/mcptt-server.crt:/config/tls/mcptt-server.crt:ro
+      - ../../config/generated/tls/mcptt-server.key:/config/tls/mcptt-server.key:ro
     healthcheck:
       <<: *health
       test: [CMD, python3, /healthcheck.py, /artifacts/mcptt-server/status.json, ready]
@@ -218,11 +218,11 @@ services:
       gms: {condition: service_healthy}
       cms: {condition: service_healthy}
     volumes:
-      - ./artifacts:/artifacts
-      - ./config/generated/mcvideo-server.json:/config/mcvideo-server.json:ro
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/tls/mcvideo-server.crt:/config/tls/mcvideo-server.crt:ro
-      - ./config/generated/tls/mcvideo-server.key:/config/tls/mcvideo-server.key:ro
+      - ../../artifacts:/artifacts
+      - ../../config/generated/mcvideo-server.json:/config/mcvideo-server.json:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/tls/mcvideo-server.crt:/config/tls/mcvideo-server.crt:ro
+      - ../../config/generated/tls/mcvideo-server.key:/config/tls/mcvideo-server.key:ro
     healthcheck:
       <<: *health
       test: [CMD, python3, /healthcheck.py, /artifacts/mcvideo-server/status.json, ready]
@@ -237,11 +237,11 @@ services:
       cms: {condition: service_healthy}
       content-server: {condition: service_healthy}
     volumes:
-      - ./artifacts:/artifacts
-      - ./config/generated/mcdata-server.json:/config/mcdata-server.json:ro
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/tls/mcdata-server.crt:/config/tls/mcdata-server.crt:ro
-      - ./config/generated/tls/mcdata-server.key:/config/tls/mcdata-server.key:ro
+      - ../../artifacts:/artifacts
+      - ../../config/generated/mcdata-server.json:/config/mcdata-server.json:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/tls/mcdata-server.crt:/config/tls/mcdata-server.crt:ro
+      - ../../config/generated/tls/mcdata-server.key:/config/tls/mcdata-server.key:ro
     healthcheck:
       <<: *health
       test: [CMD, python3, /healthcheck.py, /artifacts/mcdata-server/status.json, ready]
@@ -256,11 +256,11 @@ services:
       mcdata-server: {condition: service_healthy}
       idms: {condition: service_healthy}
     volumes:
-      - ./artifacts:/artifacts
-      - ./config/generated/client-a.json:/config/client-a.json:ro
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/tls/client-a.crt:/config/tls/client-a.crt:ro
-      - ./config/generated/tls/client-a.key:/config/tls/client-a.key:ro
+      - ../../artifacts:/artifacts
+      - ../../config/generated/client-a.json:/config/client-a.json:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/tls/client-a.crt:/config/tls/client-a.crt:ro
+      - ../../config/generated/tls/client-a.key:/config/tls/client-a.key:ro
     healthcheck:
       <<: *health
       test: [CMD, python3, /healthcheck.py, /artifacts/client-a/status.json, authorized]
@@ -275,11 +275,11 @@ services:
       mcdata-server: {condition: service_healthy}
       idms: {condition: service_healthy}
     volumes:
-      - ./artifacts:/artifacts
-      - ./config/generated/client-b.json:/config/client-b.json:ro
-      - ./config/generated/tls/ca.crt:/config/tls/ca.crt:ro
-      - ./config/generated/tls/client-b.crt:/config/tls/client-b.crt:ro
-      - ./config/generated/tls/client-b.key:/config/tls/client-b.key:ro
+      - ../../artifacts:/artifacts
+      - ../../config/generated/client-b.json:/config/client-b.json:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/tls/client-b.crt:/config/tls/client-b.crt:ro
+      - ../../config/generated/tls/client-b.key:/config/tls/client-b.key:ro
     healthcheck:
       <<: *health
       test: [CMD, python3, /healthcheck.py, /artifacts/client-b/status.json, authorized]

@@ -7,8 +7,8 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl openssl \
     && rm -rf /var/lib/apt/lists/*
 
-# The generator renders compose.yaml with Docker Compose (no Docker daemon is needed for that); the version and
-# checksum of dependencies.lock.json.
+# The generator renders docker/compose/compose.yaml with Docker Compose (no Docker daemon is needed for that); the
+# version and checksum of dependencies/lock.json.
 ARG COMPOSE_URL=https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64
 ARG COMPOSE_SHA256=dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372
 RUN mkdir -p /opt/mcxserver/.cache/deps \
@@ -16,7 +16,6 @@ RUN mkdir -p /opt/mcxserver/.cache/deps \
     && echo "$COMPOSE_SHA256  /opt/mcxserver/.cache/deps/docker-compose-linux-x86_64" | sha256sum -c - \
     && chmod +x /opt/mcxserver/.cache/deps/docker-compose-linux-x86_64
 
-COPY compose.yaml /opt/mcxserver/compose.yaml
 COPY config/lab.json /opt/mcxserver/config/lab.json
 COPY docker /opt/mcxserver/docker
 COPY tools /opt/mcxserver/tools

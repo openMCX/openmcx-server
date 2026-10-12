@@ -31,7 +31,7 @@ The GMS and the CMS check every document they are asked to store, in the order o
 
 The errors: `<not-utf-8>`, `<not-well-formed>` (also for a DTD or entity declaration), `<schema-validation-error>` (a document that fails the schema, has another root element, or holds an element of a namespace whose schema the server has but which that schema does not define). A profile replacement with another MIME type is refused 415 (RFC 4825 §8.2.1).
 
-The schemas are embedded in `mcx-common` and compiled with libxml2; nothing is fetched. The 3GPP schemas are taken from the specifications (clauses in `dependencies.lock.json`); the OMA, IETF and W3C ones were downloaded from their publishers. `dependencies.lock.json` lists each file with its source and SHA-256. The GMS and the CMS also check the documents they generate from the site configuration, and do not start if one does not conform.
+The schemas are embedded in `mcx-common` and compiled with libxml2; nothing is fetched. The 3GPP schemas are taken from the specifications (clauses in `dependencies/lock.json`); the OMA, IETF and W3C ones were downloaded from their publishers. `dependencies/lock.json` lists each file with its source and SHA-256. The GMS and the CMS also check the documents they generate from the site configuration, and do not start if one does not conform.
 
 The CMS serves the user profile of TS 24.484 §8.3.2.3: the rights are boolean elements of the `<cp:ruleset>` actions (the Release 13 ones directly, the later ones in `<anyExt>`), the groups are in `<OnNetwork>`/`<MCPTTGroupInfo>`, and `<IncomingPrivateCallList>` is in the `<anyExt>` of `<OnNetwork>`. What the schema cannot express (MC ID, SIP URI, client ID, several or "any" emergency private call and alert recipients) is in the namespace `urn:openmcx:ns:userProfile:1.0`, which §8.3.2.1 item 12 allows.
 
@@ -91,13 +91,14 @@ sequenceDiagram
     S->>C: NOTIFY xcap-diff, previous-etag only (removed)
 ```
 
-## Run a separate lab
+## Running the tests
+
+The group management scenario and the XCAP schema scenario run in the `group-management` lab, and the MCData server's
+group document subscription in the `group-management-mcdata` lab of the regression:
 
 ```bash
-python3 tools/prepare-prearranged-test.py --directory artifacts/groups-lab --project openmcx-groups \
-  --debug-sip --group-management --image openmcx:0.71-gms
-python3 tests/integration/group_management_scenario.py --compose artifacts/groups-lab/compose.json \
-  --artifacts artifacts/groups-lab/artifacts --project openmcx-groups
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =group-management
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =group-management-mcdata
 ```
 
 `--group-management` gives these rights:
@@ -108,29 +109,25 @@ python3 tests/integration/group_management_scenario.py --compose artifacts/group
 | Single system | client-b | Manages the provisioned group |
 | Single system | client-c, client-d | No management rights |
 
-## Performed tests
+## Checks
 
-Recorded on **2026-09-25** against image `openmcx:0.71-gms` (`02689fdd5960`), built from branch `mcptt-mcdata`. Every report records **PASS**.
+### Group documents
 
-| ID | Checks | Evidence |
-|---|---|---|
-| GM-00 | Every client is authorised | Scenario report (`artifacts/gm-lab-f/artifacts/group-management.json`) |
-| GM-01–GM-02 | Creation in the creator's own tree (201); a group ID in use refused 409 with a `<uniqueness-failure>` and an `<alt-value>`; a user without the right refused 403 | Same report |
-| GM-03 | A member subscribes to two groups (200); the first NOTIFY carries both documents and the member reads them | Same report |
-| GM-04 | The owner adds a member and a manager of the provisioned group removes one; each change is notified with a new entity tag | Same report |
-| GM-05 | A member who does not manage the group, and a manager of another group, are refused 403 | Same report |
-| GM-06 | A user who is no longer a member cannot subscribe (403) | Same report |
-| GM-07 | The owner deletes the document; the subscriber is notified of the removal | Same report |
+| ID | What is checked |
+|---|---|
+| GM-00 | Every client is authorised |
+| GM-01–GM-02 | Creation in the creator's own tree (201); a group ID in use refused 409 with a `<uniqueness-failure>` and an `<alt-value>`; a user without the right refused 403 |
+| GM-03 | A member subscribes to two groups (200); the first NOTIFY carries both documents and the member reads them |
+| GM-04 | The owner adds a member and a manager of the provisioned group removes one; each change is notified with a new entity tag |
+| GM-05 | A member who does not manage the group, and a manager of another group, are refused 403 |
+| GM-06 | A user who is no longer a member cannot subscribe (403) |
+| GM-07 | The owner deletes the document; the subscriber is notified of the removal |
 
-The group management scenario passed 17 checks. The Go unit tests (with the XCAP selector, write, authorization and persistence tests) and the 22 C++ test suites passed.
+The Go unit tests cover the XCAP selector, writes, authorisation and persistence.
 
-Regression on the same image: `run_all_call_types.sh` (8 call types) passed, as did the protected prearranged scenario (key parameters IEI 0x79) and the MCData SDS scenario.
+### MCS server subscriptions and service configuration
 
-### MCS server subscriptions and service configuration — 2026-09-26
-
-Image `openmcx:item6-e` (`b71957e866f2`), built from branch `mcptt-mcdata` on `afda6e2` with these changes. `tools/regress.py --all` passed all 39 labs, among them `group-management` (21 checks, CFG-01 to CFG-04 added) and the new `group-management-mcdata` lab (`--private-call --mcdata --group-management`, 10 checks).
-
-| ID | Checks | Lab |
+| ID | What is checked | Lab |
 |---|---|---|
 | MCS-01 | The first group SDS makes the MCData server subscribe to the group document at the MCPTT server's PSI; the MCPTT server accepts the MCData server's PSI as subscriber and notifies the full state | `group-management-mcdata` |
 | MCS-02 | Later group SDSs are answered from the kept document | `group-management-mcdata` |
@@ -140,13 +137,17 @@ Image `openmcx:item6-e` (`b71957e866f2`), built from branch `mcptt-mcdata` on `a
 | CFG-03 | The administrator client-a removes an action from client-b's profile with XCAP PUT: 200 | `group-management` |
 | CFG-04 | client-b is notified and reads its changed profile, which no longer grants that action | `group-management` |
 
-The Go test `TestCMSProfileUpdateByAdministrator` covers the refusals (another user, a document for another MCPTT ID, a document that is not a user profile), the new entity tag, and the update surviving a restart of the CMS. The MCPTT server backs off from a common service that does not answer for 10 s, so the document subscriptions do not stall it while that service restarts; before this, a restart of the CMS during the `first-to-answer` scenario held the server up long enough to fail a call.
+The Go test `TestCMSProfileUpdateByAdministrator` covers the refusals (another user, a document for another MCPTT ID, a
+document that is not a user profile), the new entity tag, and the update surviving a restart of the CMS. The MCPTT
+server backs off from a common service that does not answer for 10 s, so the document subscriptions do not stall it
+while that service restarts. CFG-03 and CFG-04 revoke a right by setting its `<cp:actions>` element to false.
 
-### Schema validation — 2026-09-27
+### Schema validation
 
-Image `openmcx:t7-1` (`2c58005fec32`) and client image `openmcx-client:t7-1` (`c31a1e8c472a`), built from `test/xcap-schema` of mcxserver (on `3b89ab3`) and of mcxclient (on `mc-client-c++` `3667f3b`, with the `profile-revoke` change for the new profile). The new scenario `xcap_schema_scenario.py` runs in the `group-management` lab. A probe in client-a's container signs in as client-a and sends the XCAP requests itself, so that the documents can be malformed on purpose. Scenario report (`artifacts/t7/group-management/xcap-schema.json`).
+The scenario `xcap_schema_scenario.py` runs in the `group-management` lab. A probe in client-a's container signs in as
+client-a and sends the XCAP requests itself, so that the documents can be malformed on purpose.
 
-| ID | Checks |
+| ID | What is checked |
 |---|---|
 | XS-00 | The GMS and the CMS started: they checked every group and user profile document they generate from the lab configuration against the schemas |
 | XS-01, XS-12 | A conforming group document (entry with `<user-priority>`, member-list rule, `<supported-services>` with `<mcptt-speech>`, `<protect-media>`) is created (201); a conforming entry is added (201) and the document deleted (200) |
@@ -161,9 +162,8 @@ Image `openmcx:t7-1` (`2c58005fec32`) and client image `openmcx-client:t7-1` (`c
 | XS-18, XS-19 | 409 `<constraint-failure>` "Wrong User Profile URI" and "Priority value out of range" (§8.3.2.6) |
 | XS-20 | The conforming profile is accepted (200) |
 
-The scenario passed 23 checks. In the same run, `group_management_scenario.py` passed 21 checks, CFG-03 and CFG-04 now revoking a right by setting its `<cp:actions>` element to false. Go unit tests (`TestGroupDocumentValidationErrors`, `TestCMSProfileUpdateByAdministrator`, `TestGeneratedGroupDocumentsConform`, `TestGeneratedProfileDocumentsConform`, `TestValidatorRefusesExternalEntities`) and the 23 C++ test suites passed.
-
-Regression over TCP (`tools/regress.py --jobs 1`): `smoke`, `smoke-mcdata`, `first-to-answer`, `private-services`, `regroup` (with `temporary_group_scenario`, 26 checks), `group-management`, `group-management-mcdata` passed (`smoke` and `first-to-answer` on a second run: the first lacked the speech fixtures in the worktree). Over TLS, `smoke` and `smoke-mcdata` passed.
+Go unit tests: `TestGroupDocumentValidationErrors`, `TestCMSProfileUpdateByAdministrator`,
+`TestGeneratedGroupDocumentsConform`, `TestGeneratedProfileDocumentsConform`, `TestValidatorRefusesExternalEntities`.
 
 ## Coverage gaps
 

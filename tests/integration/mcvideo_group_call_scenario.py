@@ -227,16 +227,16 @@ def main():
             {role: status(role).get('mcvideo_session_uri') for role in ROLES},
         )
         # MV-GC-02 TS 24.581 clause 6.2.4 and clause 6.3.4: a Transmission Request is granted; the
-        # others learn from Transmission Arbitration Taken who transmits.
+        # others learn from the Media Transmission Notification who transmits (clauses 6.3.4.4.2 step 3, 6.3.6.3.3).
         command('client-a', 'mcvideo-transmit')
         wait('MV-GC-02 client-a granted', lambda: status('client-a').get('mcvideo_transmitting') is True)
         wait(
             'MV-GC-02 the others see client-a transmitting',
             lambda: all(status(role).get('mcvideo_transmitter') == ids['client-a'] for role in ROLES[1:]),
         )
-        # MV-GC-13 TS 24.581 clause 4.1.1.2: Media Reception Notification to every other member; they
-        # accept with Receive Media Request, except client-d, which receives nothing until
-        # it accepts by hand.
+        # MV-GC-13 TS 24.581 clauses 6.3.6.3.3 step 1b and 6.3.7.3.3: in an ordinary group call the Media
+        # Transmission Notification to every other member says manual reception (Reception Mode '1'); they
+        # accept with Receive Media Request, except client-d, which receives nothing until it accepts by hand.
         wait(
             'MV-GC-13 every other member notified of the transmission',
             lambda: all(status(role).get('mcvideo_reception_notifications', 0) >= 1 for role in ROLES[1:]),
@@ -496,13 +496,12 @@ def main():
             ('Transmission Request', 'MCV0', 0),
             ('Transmission Granted', 'MCV1', 0),
             ('Transmission Rejected', 'MCV1', 1),
-            ('Transmission Arbitration Taken', 'MCV1', 2),
             ('Transmission Revoked', 'MCV1', 4),
             ('Queue Position Info', 'MCV1', 5),
             ('Transmission idle', 'MCV1', 15),
             ('Receive Media Request', 'MCV0', 4),
             ('Receive Media Response', 'MCV1', 7),
-            ('Media Reception Notification', 'MCV1', 8),
+            ('Media Transmission Notification', 'MCV1', 6),
             ('Transmission End Request', 'MCV2', 0),
             ('Transmission End Response', 'MCV2', 1),
             ('Media Reception End Request', 'MCV2', 2),
@@ -520,6 +519,18 @@ def main():
             ('MCV0', 2) not in kinds,
             observations['transmission_control'],
         )
+        # TS 24.581 clauses 6.3.4.4.2 step 3, 6.3.6.3.3 and 6.3.7.3.3: on-network, the other members learn of a
+        # transmission from the Media Transmission Notification; the server's state machines (clause 6.3) send no
+        # Transmission Arbitration Taken (clause 7.2, off-network) and no Media Reception Notification.
+        for label, name, subtype in (
+            ('Transmission Arbitration Taken', 'MCV1', 2),
+            ('Media Reception Notification', 'MCV1', 8),
+        ):
+            check(
+                f'MV-GC-07 no {label} ({name}, subtype {subtype}) on-network',
+                (name, subtype) not in kinds,
+                observations['transmission_control'],
+            )
         granted = [
             payload
             for src, dst, payload in packets

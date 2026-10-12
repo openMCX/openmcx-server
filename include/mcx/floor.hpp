@@ -128,6 +128,8 @@ std::uint8_t read_priority(const FloorField &field);
 //------------------------------------------------------------------------------
 // TS 24.380 clause 8.2.3.3: builds the Duration field, in seconds.
 FloorField duration_field(std::uint16_t seconds);
+// The Duration field (clause 8.2.3.3) for a T2 value in milliseconds: whole seconds, rounded up.
+FloorField duration_field_ms(std::uint64_t milliseconds);
 //------------------------------------------------------------------------------
 // TS 24.380 clause 8.2.3.3: reads the Duration field.
 std::uint16_t read_duration(const FloorField &field);
@@ -368,6 +370,8 @@ public:
   [[nodiscard]] std::uint16_t revoke_cause() const override { return revoke_cause_; }
 
   [[nodiscard]] bool awaiting_grant_media() const override { return queued_grant_ && !first_media_ms_; }
+
+  [[nodiscard]] std::uint64_t talk_time_remaining(std::uint64_t now_ms) const override;
 
   std::vector<FloorNotice> release(std::string_view participant, std::uint64_t now_ms) override;
   // Adds authorization without changing ownership, queue ordering, or timers.

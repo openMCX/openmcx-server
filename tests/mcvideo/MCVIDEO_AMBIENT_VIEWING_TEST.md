@@ -1,18 +1,16 @@
 # MCVideo ambient viewing call tests
 
-These tests cover **increment V7 of the MCVideo plan**: on-demand ambient viewing calls (TS 24.281 V19.6.0 §15.1 to §15.4, without the pre-established session of §15.2.2), remotely and locally initiated, with the release feature capability of annex D.3 and server-initiated release. H.264 video is checked picture by picture.
+On-demand ambient viewing calls (TS 24.281 §15.1 to §15.4, without the pre-established session of §15.2.2), remotely and locally initiated, with the release feature capability of annex D.3 and server-initiated release. H.264 video is checked picture by picture.
 
-Back to the [MCVideo test index](../MCVIDEO_TEST.md). Architecture: MCVideo design, [standards and acceptance](../../docs/architecture/mcvideo-standards-and-acceptance.md) (row MV-AMB-01).
+Back to the [MCVideo test index](../MCVIDEO_TEST.md). Acceptance: [MCVideo standards and acceptance](../../docs/architecture/mcvideo-standards-and-acceptance.md) (row MV-AMB-01).
 
 ## How it works
 
-- **Shared with MCPTT ambient listening.** The call is the shared core's ambient call (TS 24.379 §11.1.6), which §15 follows step for step. The service profile now names its parts:
+- **Shared with MCPTT ambient listening.** The call is the shared core's ambient call (TS 24.379 §11.1.6), which §15 follows step for step. The service profile names its parts:
   - the `<session-type>`: `ambient-listening` or `ambient-viewing`
   - the `<...-type>` element: `<ambient-listening-type>` or `<ambient-viewing-type>`
   - the party in the release reasons: `listened-to` or `viewed-to`
   - the release feature-capability indicator: `g.3gpp.mcptt.ambient-listening-call-release` or `g.3gpp.mcvideo.ambient-viewing-call-release`, from annex D.3 of each specification
-
-  MCPTT keeps every name it had.
 - **Remote-init** (the originator views the target):
   - The viewed-to client is invited with `Priv-Answer-Mode: Auto` and a null alert (`Alert-Info: <file:///dev/null>`), and answers automatically.
   - Its answer carries the implicit transmission request (§15.2.1.1 step 13), and the server grants it. So its video goes to the viewing user without the viewed-to user doing anything.
@@ -39,29 +37,25 @@ mcx-client --config FILE --command 'mcvideo-hangup'   # refused without the rele
 ## Running the tests
 
 ```bash
-tools/regress.py --image openmcx:v7 --client-image openmcx-client:v7 --select mcvideo-ambient
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =mcvideo-ambient
 ```
 
-## Performed tests
+The scenario makes 32 checks. Over TLS the wire checks (MV-AV-05) are skipped. `test_protocol` checks that MCVideo writes `<ambient-viewing-type>` and the viewed-to release reasons, and that MCPTT still writes `<ambient-listening-type>`.
 
-| ID | Date | Build | Test | Result |
-|---|---|---|---|---|
-| MV-AV-01 | 2026-09-27 | `openmcx:v7` (`f0660961630b`), `openmcx-client:v7` (`7a4001c2c4c7`) | Remote-init: client-a views client-b. client-b transmits without asking, and client-a decodes 20 pictures, all equal, and does not transmit. client-a may release the call and client-b may not: its client refuses client-b's release and the call stays up. client-a releases and both are idle | Passed |
-| MV-AV-02 | 2026-09-27 | same | Local-init: client-a asks client-b to view it. client-a transmits without asking, and client-b decodes 22 pictures, all equal. Both may release; client-b releases and both are idle | Passed |
-| MV-AV-03 | 2026-09-27 | same | client-b, not authorised, is refused with 403 `154 user not authorised to make ambient viewing call` | Passed |
-| MV-AV-04 | 2026-09-27 | same | While client-a views client-b, client-c calls client-b. The ambient call ends, and client-a's BYE carries `call-request-for-viewed-to-client`. client-c's private call to client-b goes through | Passed |
-| MV-AV-05 | 2026-09-27 | same | Captured at `mcvideo-server`: INVITEs with `<session-type>ambient-viewing</session-type>` and each `<ambient-viewing-type>`; `Priv-Answer-Mode: Auto` on every one; the null alert to the viewed-to user of a remote-init call; `Feature-Caps` with `g.3gpp.mcvideo.ambient-viewing-call-release` to the viewing user of a local-init call and in a 200 (OK); the BYE with the release reason | Passed |
+## Tests
 
-The scenario made 32 checks (`artifacts/regress-v7-try3/mcvideo-ambient/`, capture `artifacts/integration/mcvideo-ambient-viewing.pcap`). The full regression on the same images passed 84 of 85 scenarios in 46 labs, MCPTT ambient listening (`call-types/ambient`) included (`artifacts/regress-v7/`). `test_protocol` checks that MCVideo writes `<ambient-viewing-type>` and the viewed-to release reasons, and that MCPTT still writes `<ambient-listening-type>`.
-
-Defects found by the runs and fixed:
-- The server applied MCPTT's SDP direction rule to ambient viewing and refused a conformant offer with 488.
-- The scenario first read the client's command exit code to detect a refused release; a refusal is reported in `last_error`.
+| ID | What is checked |
+|---|---|
+| MV-AV-01 | Remote-init: client-a views client-b. client-b transmits without asking, and client-a decodes its pictures, all equal, and does not transmit. client-a may release the call and client-b may not: its client refuses client-b's release and the call stays up. client-a releases and both are idle |
+| MV-AV-02 | Local-init: client-a asks client-b to view it. client-a transmits without asking, and client-b decodes its pictures, all equal. Both may release; client-b releases and both are idle |
+| MV-AV-03 | client-b, not authorised, is refused with 403 `154 user not authorised to make ambient viewing call` |
+| MV-AV-04 | While client-a views client-b, client-c calls client-b. The ambient call ends, and client-a's BYE carries `call-request-for-viewed-to-client`. client-c's private call to client-b goes through |
+| MV-AV-05 | Captured at `mcvideo-server`: INVITEs with `<session-type>ambient-viewing</session-type>` and each `<ambient-viewing-type>`; `Priv-Answer-Mode: Auto` on every one; the null alert to the viewed-to user of a remote-init call; `Feature-Caps` with `g.3gpp.mcvideo.ambient-viewing-call-release` to the viewing user of a local-init call and in a 200 (OK); the BYE with the release reason |
 
 ## Coverage gaps
 
 | Area | Gap |
 |---|---|
-| Pre-established sessions | §15.2.2, §15.3.1.3, §15.3.1.4 and §15.3.2.3: pre-established sessions are unsupported (H8) |
+| Pre-established sessions | §15.2.2, §15.3.1.3, §15.3.1.4 and §15.3.2.3: not in present edition |
 | Other release reasons | `administrator-action`, `private-call-expiry` and `call-request-initiated-by-viewed-to-client` are sent by the shared code (the MCPTT ambient tests exercise them) but are not driven here: the viewed-to client is busy in the ambient call and does not start another |
-| Security | The PCK of §15.2.1.1 step 10 comes with V9 |
+| Security | The PCK of §15.2.1.1 step 10 is tested in the [protected call tests](MCVIDEO_PROTECTED_TEST.md) (MV-SE-08) |

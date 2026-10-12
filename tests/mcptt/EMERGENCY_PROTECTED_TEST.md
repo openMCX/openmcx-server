@@ -2,32 +2,21 @@
 
 Single-system, on-network, on-demand **prearranged group calls**, using four clients. These tests do not certify every MCPTT procedure or third-party interoperability.
 
-## Verified results — 2026-09-21
+## Running the tests
 
-The final application image is `8d2c91f1439c`. The native suite passed all 16 tests, and all Go package tests passed. The final image rebuild also passed its 15 native tests (the image build excludes SCTP).
-
-| Final-image scenario | Result |
-|---|---|
-| Protected TLS lifecycle with four clients | 21 checks passed |
-| Protected TLS priority, emergency and location | 43 checks passed |
-| Protected TLS floor procedures | 19 checks passed |
-| Protected TLS rejection, cancellation, timeout and session survival | 15 checks passed |
-| Protected debug-SIP priority/emergency | 43 checks passed |
-| Live SRTP/SRTCP replay and tamper injection | 16 checks passed; valid speech continued |
-| Debug-SIP refresh capture | 2 accepted refreshes and 7 conference notifications verified |
-
-See the final TLS reports and capture (`artifacts/protected-tls-lab/artifacts/integration`) (`passed-image7-*-results.json`, `protected-tls-image7.pcap`), live negative report (`artifacts/protected-lab/artifacts/integration/protected-negative-results.json`), and refresh wire report (`artifacts/protected-lab/artifacts/integration/protected-refresh-v7-wire.json`).
-
-The preceding image6 protected lifecycle run additionally passed a real GKTP renewal check with manual deaffiliation preserved. Its independent wire report (`artifacts/protected-lab/artifacts/integration/protected-v6-wire-verification.json`) verified 692 byte-identical encrypted relays, 38 SRTCP packets, 8 negotiated protected legs, 4 CSK publications and 10 GKTP notifications. Separate tests passed all 7 emergency-timeout checks and 14 SIP/HTTPS security probes. TLS captures remain encrypted; the debug-SIP capture provides the accepted-refresh wire evidence.
-
-## Run a separate lab
-
-The preparation command requires a new directory. The numeric key-parameter IEI below is an explicit **local test profile**, not an assigned standard value; see the security audit.
+The protected lifecycle runs in the `protected-prearranged` lab of the regression:
 
 ```bash
-docker build -t openmcx:0.1 -f docker/Dockerfile .
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =protected-prearranged
+```
+
+The floor and priority scenarios on protected media run by hand on a prepared lab. The numeric key-parameter IEI
+below is an explicit **local test profile**, not an assigned standard value. The preparation command needs a new
+directory:
+
+```bash
 python3 tools/prepare-prearranged-test.py \
-  --directory artifacts/protected-lab --project openmcx-protected \
+  --directory artifacts/protected-lab --project openmcx-protected --images <tag> --client-image openmcx-client:<tag> \
   --debug-sip --floor-queue --priority --protected --key-parameters-iei 0x79
 mkdir -p artifacts/protected-lab/artifacts/speech
 cp artifacts/speech/{alpha,bravo}.wav artifacts/protected-lab/artifacts/speech/
@@ -49,25 +38,26 @@ python3 tests/integration/prearranged_priority_scenario.py \
   --artifacts artifacts/protected-lab/artifacts --project openmcx-protected
 ```
 
-| Scenario | Evidence |
+| Scenario | What is checked |
 |---|---|
-| Key provisioning | HTTPS KMS initialization/key provisioning; client-server CSK publication; recipient-bound GKTP subscriptions and notifications |
-| Protected lifecycle | Third-client late entry, leave/rejoin, two concurrent groups, decoded speech and independent teardown |
-| Protected floor | Queue query/cancel/requeue, acknowledged SRTCP, queued-grant confirmation, speech and abandoned-grant cleanup |
-| Priority | Numeric and emergency preemption; normal/imminent/emergency transitions; late entry; permission rejection; alert receipt and cancellation |
-| Emergency timeout | Separate `--timer-only` run with an isolated short `emergency_timeout_ms`; downgrade must retain the established call |
-| Negative crypto | Published vectors, wrong recipient/key, tamper, replay, stale group-key rollback, expiry and SSRC reuse; live SRTP/SRTCP replay/tamper injection with continued valid speech |
+| Key provisioning | HTTPS KMS initialisation and key provisioning; client-server CSK publication; recipient-bound GKTP subscriptions and notifications |
+| Protected lifecycle | Third-client late entry, leave and rejoin, two concurrent groups, decoded speech and independent teardown |
+| Protected floor | Queue query, cancel and requeue, acknowledged SRTCP, queued-grant confirmation, speech and abandoned-grant cleanup |
+| Priority | Numeric and emergency preemption; normal, imminent and emergency transitions; late entry; permission rejection; alert receipt and cancellation |
+| Emergency timeout | Separate `--timer-only` run with a short `emergency_timeout_ms`; the downgrade must keep the established call |
+| Negative crypto | Published vectors, wrong recipient or key, tamper, replay, stale group-key rollback, expiry and SSRC reuse; live SRTP/SRTCP replay and tamper injection with continued valid speech |
 | SIP peer isolation | A matching CANCEL from another client certificate is rejected; the originating peer remains accepted |
 
-Results and captures are in protected integration artifacts (`artifacts/protected-lab/artifacts/integration`) and priority integration artifacts (`artifacts/priority-lab/artifacts/integration`). These private lab captures contain signaling; do not publish them unreviewed.
+The scenarios write their results and captures under the lab's `artifacts/integration/`. A lab capture contains
+signalling; do not publish it unreviewed.
 
 Client control commands include `call emergency`, `call imminent`,
 `emergency on|off`, `imminent on|off`, `alert on|off`,
 `alert off <originator MCPTT URI>` and `priority <0..99>`.
 Alert activation requires `mcptt.emergency_location`: explicitly supplied,
 already-encoded TS 23.032 24-bit latitude/longitude fields. The fixture values
-are synthetic; see the location profile.
-The server checks each operation against the group's configured authorization
+are synthetic; see the [location tests](LOCATION_TEST.md).
+The server checks each operation against the group's configured authorisation
 policy; setting a client flag does not grant permission.
 
 Use `--check-key-refresh` on the lifecycle scenario to wait for a real GKTP renewal and verify that explicitly deaffiliated clients remain detached.
@@ -76,8 +66,8 @@ The independent [wire verifier](../integration/verify_protected.py) reads raw UD
 
 ```bash
 MCX_TSHARK=/path/to/tshark python3 tests/integration/verify_protected.py \
-  artifacts/protected-lab/artifacts/integration/protected-v6.pcap \
-  --output artifacts/protected-lab/artifacts/integration/protected-v6-wire-verification.json
+  artifacts/protected-lab/artifacts/integration/<capture>.pcap \
+  --output artifacts/protected-lab/artifacts/integration/protected-wire-verification.json
 ```
 
 ## High-level flow

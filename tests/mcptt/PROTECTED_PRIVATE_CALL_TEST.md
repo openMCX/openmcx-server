@@ -22,49 +22,33 @@ The PCK is end to end. The caller generates it, the callee's KMS-provisioned SAK
 
 In a first-to-answer call, TS 33.180 E.1.3 assigns CS-ID 0 to "the initiator of the private call", while the answering invitee is the MIKEY initiator (§7.2.4.2). This implementation reads E.1.3 literally: the caller's streams use CS-ID 0. Interoperability with a peer that reads it the other way would fail at SRTP authentication, not silently.
 
-## Run a separate lab
+## Running the tests
+
+The protected private-call scenario runs in the `protected-private` lab of the regression, and again with XML
+protection in the `xml-protection` and `xml-integrity` labs:
 
 ```bash
-docker build -t openmcx:0.54-pck -f docker/Dockerfile .
-python3 tools/prepare-prearranged-test.py --directory artifacts/pck-lab --project openmcx-pck \
-  --debug-sip --private-call --protected --key-parameters-iei 0x79 --image openmcx:0.54-pck
-mkdir -p artifacts/pck-lab/artifacts/speech artifacts/pck-lab/artifacts/integration
-cp artifacts/speech/{alpha,bravo}.wav artifacts/pck-lab/artifacts/speech/
-.cache/deps/docker-compose-linux-x86_64 -p openmcx-pck -f artifacts/pck-lab/compose.json up -d --wait
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =protected-private
 ```
 
-`--key-parameters-iei` only affects the group keys (GMK/CSK). The PCK does not use it. Capture the server namespace, then run and verify:
-
-```bash
-SERVER=$(.cache/deps/docker-compose-linux-x86_64 -p openmcx-pck -f artifacts/pck-lab/compose.json ps -q mcptt-server)
-docker run -d --rm --name openmcx-pck-capture --network "container:$SERVER" --cap-drop ALL --cap-add NET_RAW \
-  openmcx-dev:0.1 tcpdump -Z root -i eth0 -U -s 0 -w /tmp/c.pcap '(udp and not port 53) or tcp port 5060'
-python3 tests/integration/protected_private_scenario.py \
-  --compose artifacts/pck-lab/compose.json --artifacts artifacts/pck-lab/artifacts --project openmcx-pck
-sleep 5
-docker cp openmcx-pck-capture:/tmp/c.pcap artifacts/pck-lab/artifacts/integration/protected-private.pcap
-docker stop openmcx-pck-capture
-python3 tests/integration/verify_protected_private.py artifacts/pck-lab/artifacts/integration/protected-private.pcap \
-  --output artifacts/pck-lab/artifacts/integration/protected-private-wire.json
-```
+The lab uses `--private-call --protected --key-parameters-iei 0x79`. `--key-parameters-iei` only affects the group keys (GMK/CSK). The PCK does not use it. Over debug TCP SIP the run
+also captures at the MCPTT server and checks the capture with `tests/integration/verify_protected_private.py`.
 
 A protected client provisions from the KMS when it starts. After a client restart, wait for the lab to be healthy before running the next scenario. Otherwise a scenario can read the previous process's status file and send its first command too early.
 
-## Performed tests
+## Checks
 
-Recorded on **2026-09-24** against image `openmcx:0.54-pck`, built from branch `mcptt-mcdata`. The native suite passed all 20 tests. Every report records **PASS**.
+| ID | What is checked |
+|---|---|
+| PP-01 | Automatic commencement: the server reports a protected session, and both parties select the same PCK-ID with purpose tag 1 |
+| PP-02 | Speech both ways, each decrypted and decoded by the other party (CS-ID 0 and 1); floor control over SRTCP under each CSK; no speech at non-participants; release removes the PCK |
+| PP-03 | Manual commencement answered later shares the PCK; each call has its own PCK |
+| PP-04 | An altered I_MESSAGE (`tamper-key` test aid) → 488 with warning 136; the callee never joins |
+| PP-05 | First-to-answer: both invitees ring without key material; the answering invitee's PCK reaches the caller; the other invitee is cancelled without a key; speech is decrypted |
+| PP-06 | Ambient listening (remote-init): protected session, shared PCK, the listening user decrypts the listened-to user's speech |
+| PP-07 | Emergency private call: protected and keyed; speech decrypted |
 
-| ID | Scenario | Checks |
-|---|---|---|
-| PP-01 | Automatic commencement: the server reports a protected session, and both parties select the same PCK-ID with purpose tag 1 | 2 |
-| PP-02 | Speech both ways, each decrypted and decoded by the other party (CS-ID 0 and 1); floor control over SRTCP under each CSK; no speech at non-participants; release removes the PCK | 8 |
-| PP-03 | Manual commencement answered later shares the PCK; each call has its own PCK | 4 |
-| PP-04 | An altered I_MESSAGE (`tamper-key` test aid) → 488 with warning 136; the callee never joins | 3 |
-| PP-05 | First-to-answer: both invitees ring without key material; the answering invitee's PCK reaches the caller; the other invitee is cancelled without a key; speech is decrypted | 8 |
-| PP-06 | Ambient listening (remote-init): protected session, shared PCK, the listening user decrypts the listened-to user's speech | 3 |
-| PP-07 | Emergency private call: protected and keyed; speech decrypted | 5 |
-
-The scenario ran 35 checks: 33 numbered, plus the readiness and idle-start checks. The [wire verifier](../integration/verify_protected_private.py) decodes the capture independently and passed 58 checks over six calls:
+The [wire verifier](../integration/verify_protected_private.py) decodes the capture independently:
 
 | ID | Wire check |
 |---|---|
@@ -72,19 +56,12 @@ The scenario ran 35 checks: 33 numbered, plus the readiness and idle-start check
 | W-02 | The server's INVITE to the callee carries the caller's I_MESSAGE byte for byte |
 | W-03 | A first-to-answer request carries no key. The invitee's 200 and the server's 200 to the caller carry the same I_MESSAGE, whose IDRi is the answering invitee |
 | W-04 | The altered I_MESSAGE is answered 488 with warning 136 |
-| W-05 | SRTP ends in the call's PCK-ID as the MKI, with no ROC. Every packet is relayed byte-identically: 1384, 674 and 674 packets on the three private calls with speech, and 212 on the ambient listening call |
+| W-05 | SRTP ends in the call's PCK-ID as the MKI, with no ROC. Every packet is relayed byte-identically, on the private calls with speech and on the ambient listening call |
 | W-06 | Floor control is SRTCP whose MKI carries the CSK purpose tag 2 |
 
-The existing scenarios were run again on the protected fixture, each on a freshly started lab. Every private, first-to-answer and ambient listening call in them was protected by a PCK:
-
-| Scenario | Checks |
-|---|---|
-| [Private calls](PRIVATE_CALL_TEST.md) (PC-01 onward, including emergency, first-to-answer, services and timers) | 96 |
-| [Ambient listening](AMBIENT_LISTENING_TEST.md) | 51 |
-| [Emergency first-to-answer](FIRST_TO_ANSWER_TEST.md) | 29 |
-| [Protected group call lifecycle](EMERGENCY_PROTECTED_TEST.md) (GMK path after the SRTP changes) | 21 |
-
-On a clear-media fixture (`--private-call --broadcast --chat --adhoc`), `run_all_call_types.sh` passed all eight call types on one server.
+The other private-call scenarios also run on a protected lab: every private, first-to-answer and ambient listening
+call in them is then protected by a PCK ([private calls](PRIVATE_CALL_TEST.md), [ambient listening](AMBIENT_LISTENING_TEST.md),
+[emergency first-to-answer](FIRST_TO_ANSWER_TEST.md)).
 
 Unit tests: PCK SRTP key and salt known answers for CS-ID 0 and 1, calculated independently from RFC 3830 §4.1.3 and RFC 6043 §6.1. They also cover the MKI position and the absence of a ROC; rejection of the wrong direction, replay and the wrong purpose tag; the PCK I_MESSAGE round trip and initiator extraction; and the SDP `key-mgmt` round trip with its malformed forms. The private context tests cover direction separation, suspension and resumption without restarting the packet index, and removal.
 
@@ -92,9 +69,9 @@ Unit tests: PCK SRTP key and salt known answers for CS-ID 0 and 1, calculated in
 
 | Area | Gap |
 |---|---|
-| Interoperability | Lab to lab only. The ECCSI SIGN length field is 129 (the full RFC 6507 signature), where E.1.2 says 32; see the security audit. No independent MIKEY-SAKKE peer has been tested. |
+| Interoperability | Lab to lab only. The ECCSI SIGN length field is 129 (the full RFC 6507 signature), where E.1.2 says 32. No independent MIKEY-SAKKE peer has been tested. |
 | Multiple servers | Within one system, protected private calls across participating and controlling servers work, with the floor control between servers under an SPK; see the [split protected tests](PROTECTED_SPLIT_TEST.md). |
 | Optional MIKEY features | SAKKE-to-self (E.5), identity hiding (E.7), a security profile supplied in a GENERIC-ID map (E.3.3) and the MC Security Gateway warning are not implemented. The parser rejects them. |
-| Ad hoc group calls | End-to-end security for ad hoc group calls (S16) uses a GMK, not a PCK, and remains refused |
-| Pre-established and off-network | Not implemented (H8, H3) |
+| Ad hoc group calls | End-to-end security for ad hoc group calls uses a GMK, not a PCK, and is refused |
+| Pre-established and off-network | Not in present edition |
 | TLS captures | Wire checks use the debug-SIP fixture; with TLS the same flows run but the SDP cannot be inspected from the capture |

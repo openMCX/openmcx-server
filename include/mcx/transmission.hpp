@@ -7,6 +7,7 @@
 #include "mcx/floor.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -123,6 +124,29 @@ FloorField transmitting_user_field(std::string_view mcvideo_id);
 //------------------------------------------------------------------------------
 // TS 24.581 clause 9.2.3.6: reads the User Id of the Transmitting User field.
 std::string read_transmitting_user(const FloorField &field);
+
+//------------------------------------------------------------------------------
+// TS 24.581 clause 9.2.3.22: builds the Reception Mode field: 0 when the receiver is granted permission to receive
+// the media automatically, 1 when it is not.
+FloorField reception_mode_field(bool automatic);
+
+//------------------------------------------------------------------------------
+// TS 24.581 clause 9.2.3.22: reads the Reception Mode field; true for automatic reception.
+bool read_reception_mode(const FloorField &field);
+
+//------------------------------------------------------------------------------
+// TS 24.581 clause 6.3.6.3.3 step 1: the Reception Mode of a Media Transmission Notification, automatic ('0') in a
+// broadcast, emergency or imminent peril call, manual ('1') otherwise; without the server's reception control every
+// member receives every transmission, which is automatic reception.
+bool automatic_reception(bool reception_control, bool broadcast, bool emergency, bool imminent);
+
+//------------------------------------------------------------------------------
+// TS 24.581 clause 9.2.13: a Media Transmission Notification to the participant whose RTCP SSRC is ssrc, of the
+// transmission by transmitter with these audio and video SSRCs: the Permission to Request the Transmission field,
+// the Transmission Indicator field when indicator is set, and the Reception Mode field.
+Packet media_transmission_notification(std::uint32_t ssrc, std::string_view transmitter, std::uint32_t audio_ssrc,
+                                       std::uint32_t video_ssrc, bool permission_to_request,
+                                       std::optional<std::uint16_t> indicator, bool automatic);
 
 //------------------------------------------------------------------------------
 // Helper: the first field of the packet with this field ID, or null.

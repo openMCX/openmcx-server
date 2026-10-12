@@ -10,7 +10,7 @@ https://github.com/openMCX/openmcx-server.
 
 Third-party software
 --------------------
-Built into the openMCX programs or their images (versions pinned in dependencies.lock.json and docker/packages; the
+Built into the openMCX programs or their images (versions pinned in dependencies/lock.json and docker/packages; the
 source archives are fetched from the listed upstream and verified by SHA-256):
 
   wolfSSL 5.8.2            GPL-3.0-or-later         https://github.com/wolfSSL/wolfssl

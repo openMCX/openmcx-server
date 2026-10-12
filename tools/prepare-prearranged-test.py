@@ -1999,7 +1999,7 @@ def main():
     compose_bin = ROOT / '.cache/deps/docker-compose-linux-x86_64'
     profiles = ['--profile', 'mcvideo'] if args.mcvideo else []
     rendered = subprocess.run(
-        [str(compose_bin), '-f', str(ROOT / 'compose.yaml'), *profiles, 'config', '--format', 'json'],
+        [str(compose_bin), '-f', str(ROOT / 'docker/compose/compose.yaml'), *profiles, 'config', '--format', 'json'],
         check=True,
         capture_output=True,
         text=True,

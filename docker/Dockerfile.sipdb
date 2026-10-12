@@ -2,7 +2,7 @@
 # data directory initialised at build time. The official image initialises it at
 # every start (about 20 s per lab); this one starts in about 2 s and then runs the
 # lab's SQL itself. Same environment, secrets, init scripts and health check as
-# compose.yaml's sip-db, so a lab only swaps the image (tools/regress.py).
+# docker/compose/compose.yaml's sip-db, so a lab only swaps the image (tools/regress.py).
 FROM mysql@sha256:a08db11d440f1426eb47fbdf7cf2e458aa11bc79341bd2a5461f0296f1272f88
 # Outside /var/lib/mysql, which the base image declares a volume: a build step's
 # writes there would be dropped.

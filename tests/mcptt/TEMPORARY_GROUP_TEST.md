@@ -38,28 +38,28 @@ mcx-client --config FILE --command 'group <temporary group ID>'   # use it, as a
 
 `status.json` records the last XCAP answer in `xcap_last`, with a `seq` number per answer, and the temporary groups the client has been told of in `regroups`. The server records each one in `regroups` with `"temporary": true`, and the groups it marked in `regrouped_groups`.
 
-## Fixture
+## Running the tests
 
-`--regroup` (`tools/prepare-prearranged-test.py`) adds two constituent groups: `operations-north` with client-a and client-b, and `operations-south` with client-c and client-d. Client-a may form temporary groups; client-b may not.
+`temporary_group_scenario.py` runs with the regroup scenario in the `regroup` lab of the regression. The lab's
+`--regroup` option adds two constituent groups: `operations-north` with client-a and client-b, and `operations-south`
+with client-c and client-d. Client-a may form temporary groups; client-b may not.
 
 ```bash
-tools/regress.py --image openmcx:item1-c --select regroup   # temporary_group_scenario.py
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =regroup
 ```
 
-## Performed tests
+## Checks
 
-Recorded on **2026-09-26** against image `openmcx:item1-c` (`6c35017730b2`), built from branch `mcptt-mcdata`. Every report records **PASS**: `temporary_group_scenario.py` passed 26 checks. `regroup_scenario.py` passed on the same lab.
-
-| ID | Checks | Result |
+| ID | Scenario | What is checked |
 |---|---|---|
-| TG-01 | Client-b, which may not form temporary groups, asks to form one | PASS. 403; nothing was formed |
-| TG-02 | Client-a forms a temporary group of north and south | PASS. 200 with `<temporary-group-document-ETag>`; the server holds it as a controlling temporary group and marks both groups regrouped; all four members are told, with both constituents named |
-| TG-03 | The same document again; a new temporary group with north | PASS. 409; 403 (north is already combined) |
-| TG-04 | A call on north while it is combined | PASS. Refused with warning 148 |
-| TG-05 | A group call on the temporary group | PASS. Every member reads its document and uses it; alice's call reaches bob and a member of south |
-| TG-06 | Tear down by client-b, then by client-a | PASS. Client-b is refused; client-a is answered 200; the call is released, every member is told, and both groups are free |
-| TG-07 | A call on north afterwards | PASS. Answered |
-| TG-08 | A chat temporary group | PASS. Alice's chat call is accepted, and client-c joins the same session from south; tear down frees both groups |
+| TG-01 | Client-b, which may not form temporary groups, asks to form one | 403; nothing is formed |
+| TG-02 | Client-a forms a temporary group of north and south | 200 with `<temporary-group-document-ETag>`; the server holds it as a controlling temporary group and marks both groups regrouped; all four members are told, with both constituents named |
+| TG-03 | The same document again; a new temporary group with north | 409; 403 (north is already combined) |
+| TG-04 | A call on north while it is combined | Refused with warning 148 |
+| TG-05 | A group call on the temporary group | Every member reads its document and uses it; alice's call reaches bob and a member of south |
+| TG-06 | Tear down by client-b, then by client-a | Client-b is refused; client-a is answered 200; the call is released, every member is told, and both groups are free |
+| TG-07 | A call on north afterwards | Answered |
+| TG-08 | A chat temporary group | Alice's chat call is accepted, and client-c joins the same session from south; tear down frees both groups |
 
 The Go unit tests cover formation and tear down (authorisation, an identity of another provider, a constituent already combined and the protected marks), and the GMOP and group document elements.
 

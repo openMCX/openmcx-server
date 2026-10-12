@@ -135,7 +135,7 @@ The function's reference comment follows the separator directly (2.2).
 |---|---|---|
 | C++ | clang-format 23 | `.clang-format` (LLVM base, 2-space indent, 120 columns, the current conventions) |
 | Go | gofmt | (none) |
-| Python | ruff format 0.16 | `ruff.toml` (120 columns) |
+| Python | ruff format 0.16 | `tools/ruff.toml` (120 columns) |
 | Kotlin | ktlint | (with the Android clean-up) |
 
 Formatting changes go in commits of their own, listed in `.git-blame-ignore-revs` so that `git blame` skips them.

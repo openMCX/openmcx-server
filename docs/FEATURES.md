@@ -139,5 +139,5 @@ Every feature is backed by evidence that is regenerated on each build:
 
 ## Limitations
 
-What is not in this edition and the known limits of what is implemented are listed, checked against the code, in
+What is not in the present edition and the known limits of what is implemented are listed, checked against the code, in
 [LIMITATIONS.md](LIMITATIONS.md).

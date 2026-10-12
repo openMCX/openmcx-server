@@ -2,7 +2,7 @@
 
 These tests cover **MCData affiliation status determination and implicit affiliation** (TS 24.282 V19.7.0 §8.2.3, §8.3.2.4, §8.3.2.5 and §8.3.2.15): the client subscribes to its own affiliation status and the server notifies it of every change, including the groups a user is affiliated to implicitly.
 
-Back to the [MCData test index](../MCDATA_TEST.md). The shared four-client fixture, the client status fields and the MCData deployment are described in the [standalone SDS tests](MCDATA_SDS_TEST.md), which also holds the shared coverage gaps. Architecture: MCData Phase 1 design, [standards and acceptance](../../docs/architecture/mcdata-standards-and-acceptance.md).
+Back to the [MCData test index](../MCDATA_TEST.md). The shared four-client fixture, the client status fields and the MCData deployment are described in the [standalone SDS tests](MCDATA_SDS_TEST.md), which also holds the shared coverage gaps. Acceptance: [MCData acceptance matrix](../../docs/architecture/mcdata-standards-and-acceptance.md).
 
 ## How it works
 
@@ -26,14 +26,14 @@ mcx-client --config FILE --command 'mcdata-affiliation-status fetch [<MCData ID>
 
 ## Performed tests
 
-Recorded on **2026-09-22** against image `openmcx:0.29-mcdata` (`fb662f09297d`), TS 24.282 V19.7.0, clear SIP (debug mode), in a fresh lab captured from the first request: 163 scenario assertions and 64 wire checks on one MCData server instance. The scenario and the wire report cover every MCData SDS feature, so the evidence links below are shared with the other MCData SDS documents.
+The tests run in the SDS scenario (`mcdata_sds_scenario.py`, 163 assertions) and its wire verifier (`verify_mcdata_sds.py`, 64 checks), clear SIP (debug mode), on one MCData server instance; the regression runs them in the `mcdata` lab. The scenario and the wire report cover every MCData SDS feature, so the evidence below is shared with the other MCData SDS documents.
 
 | ID | Scenario | Result evidence |
 |---|---|---|
-| AF-01 | Every client holds an affiliation status subscription whose NOTIFY matches the server; client-d is implicitly affiliated to its configured group and keeps it in its own PUBLISH | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| AF-02–AF-03 | A fetch (Expires 0) returns the current affiliations in one terminating NOTIFY; a fetch of another user's status is rejected with 403 | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| AF-04 | De-subscription ends with a terminating NOTIFY; a new subscription reports the unchanged affiliation | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| AF-05 | De-affiliation and re-affiliation are reported by NOTIFY, the second carrying the `<p-id>` of its PUBLISH | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
+| AF-01 | Every client holds an affiliation status subscription whose NOTIFY matches the server; client-d is implicitly affiliated to its configured group and keeps it in its own PUBLISH | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| AF-02–AF-03 | A fetch (Expires 0) returns the current affiliations in one terminating NOTIFY; a fetch of another user's status is rejected with 403 | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| AF-04 | De-subscription ends with a terminating NOTIFY; a new subscription reports the unchanged affiliation | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| AF-05 | De-affiliation and re-affiliation are reported by NOTIFY, the second carrying the `<p-id>` of its PUBLISH | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
 
 ## Coverage gaps
 

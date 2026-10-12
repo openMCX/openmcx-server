@@ -1,8 +1,8 @@
 # MCVideo private call tests
 
-These tests cover **increment V4 of the MCVideo plan**: on-network MCVideo private calls with transmission control (TS 24.281 V19.6.0 §10.2.2) and without it (§10.2.3), in the commencement modes of §6.2.3, ended by either party (§10.2.4), and refused by the private-call rulesets of the MCVideo user profiles, with H.264 video carried both ways.
+On-network MCVideo private calls with transmission control (TS 24.281 §10.2.2) and without it (§10.2.3), in the commencement modes of §6.2.3, ended by either party (§10.2.4), and refused by the private-call rulesets of the MCVideo user profiles, with H.264 video carried both ways.
 
-Back to the [MCVideo test index](../MCVIDEO_TEST.md). Architecture: MCVideo design, [standards and acceptance](../../docs/architecture/mcvideo-standards-and-acceptance.md) (row MV-PRIV-01).
+Back to the [MCVideo test index](../MCVIDEO_TEST.md). Acceptance: [MCVideo standards and acceptance](../../docs/architecture/mcvideo-standards-and-acceptance.md) (row MV-PRIV-01).
 
 ## How it works
 
@@ -37,31 +37,33 @@ mcx-client --config FILE --command 'mcvideo-answer'   # or mcvideo-reject, for a
 
 ## Running the tests
 
+The scenario runs in the `mcvideo` lab, beside the affiliation and group call scenarios:
+
 ```bash
-python3 tools/regress.py --image openmcx:v4 --select =mcvideo --output artifacts/regress-v4
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =mcvideo
 ```
 
-## Performed tests
+The scenario makes 41 checks. Over TLS the wire checks (MV-PC-07) are skipped.
 
-| ID | Date | Build | Test | Result |
-|---|---|---|---|---|
-| MV-PC-01 | 2026-09-26 | `openmcx:v4` (`4ad3622659bf`) | client-a calls client-b (automatic); each knows the other; nobody else is in the call; client-a transmits and client-b decodes 20 pictures, all equal; client-b transmits and client-a decodes 22, all equal | Passed |
-| MV-PC-02 | 2026-09-26 | same | client-b ends the call; both are idle | Passed |
-| MV-PC-03 | 2026-09-26 | same | Manual commencement: client-b rings while client-a waits, then answers; both active | Passed |
-| MV-PC-04 | 2026-09-26 | same | client-b declines a manual call; client-a gets 480 `399 mcx "110 user declined the call invitation"` | Passed |
-| MV-PC-05 | 2026-09-26 | same | client-d calls client-a: 403 `107`; client-a calls client-d: 403 `144`; client-b calls client-d: 403 `127`; client-b calls client-c: 403 `159` | Passed |
-| MV-PC-06 | 2026-09-26 | same | client-a forces automatic commencement at client-c; answered at once; client-c ends it | Passed |
-| MV-PC-08 | 2026-09-26 | same | client-a calls client-b without transmission control; both send at once; each decodes 21 of the other's pictures, all equal | Passed |
-| MV-PC-07 | 2026-09-26 | same | Captured at `mcvideo-server`: 9 private INVITEs to the MCVideo PSI, the called MCVideo ID in resource-lists, `Answer-Mode: Auto`, `Answer-Mode: Manual` and `Priv-Answer-Mode: Auto`, offers with and without `m=application` | Passed |
+## Tests
 
-The scenario made 41 checks (`artifacts/regress-v4/mcvideo/`, capture `artifacts/integration/mcvideo-private-call.pcap`); the affiliation (17) and group call (74) scenarios passed on the same image, and so did 14 MCPTT scenarios on the shared private-call path (the smoke labs, `private_services_scenario`, `first_to_answer_emergency_scenario` and the eight call types of `call-types`, `artifacts/regress-v4-mcptt/`). Defects found by the runs and fixed: the shared private-call path built the MCPTT-only transfer and forwarding warnings for every call, which the MCVideo warning table refuses; the ringing client sent a 180 without its prepared answer, so the later 200 never completed; a failure the INVITE's response reported after the dialog had ended was lost; the client subscribed to the conference package in a private call; and the server offered `mc_queueing` in a call without transmission control.
+| ID | What is checked |
+|---|---|
+| MV-PC-01 | client-a calls client-b (automatic); each knows the other; nobody else is in the call; client-a transmits and client-b decodes its pictures, all equal; client-b transmits and client-a decodes its pictures, all equal |
+| MV-PC-02 | client-b ends the call; both are idle |
+| MV-PC-03 | Manual commencement: client-b rings while client-a waits, then answers; both active |
+| MV-PC-04 | client-b declines a manual call; client-a gets 480 `399 mcx "110 user declined the call invitation"` |
+| MV-PC-05 | client-d calls client-a: 403 `107`; client-a calls client-d: 403 `144`; client-b calls client-d: 403 `127`; client-b calls client-c: 403 `159` |
+| MV-PC-06 | client-a forces automatic commencement at client-c; answered at once; client-c ends it |
+| MV-PC-08 | client-a calls client-b without transmission control; both send at once; each decodes the other's pictures, all equal |
+| MV-PC-07 | Captured at `mcvideo-server`: private INVITEs to the MCVideo PSI, the called MCVideo ID in resource-lists, `Answer-Mode: Auto`, `Answer-Mode: Manual` and `Priv-Answer-Mode: Auto`, offers with and without `m=application` |
 
 ## Coverage gaps
 
 | Area | Gap |
 |---|---|
-| Emergency private calls | Upgrade, cancellation and the in-progress states (§10.2.2.2.4, §10.2.2.2.5, §10.2.2.4.3 to §10.2.2.4.6) come with V5 |
+| Emergency private calls | Setting one up is tested in the [emergency tests](MCVIDEO_EMERGENCY_TEST.md) (MV-EM-06); upgrade, cancellation and the in-progress states (§10.2.2.2.4, §10.2.2.2.5, §10.2.2.4.3 to §10.2.2.4.6) are not exercised |
 | Server-initiated end | §10.2.5 (the private call timers ending a call) is not exercised |
-| Functional aliases | Calling a functional alias comes with V8 |
+| Functional aliases | Calling a functional alias is tested in the [functional alias tests](MCVIDEO_FUNCTIONAL_ALIAS_TEST.md) (MV-FA-09) |
 | Timers | Private call setup and duration timers of the shared core apply; only the setup timer is configured |
-| Security | Private call keys (PCK) come with V9 |
+| Security | Private call keys (PCK) are tested in the [protected call tests](MCVIDEO_PROTECTED_TEST.md) |

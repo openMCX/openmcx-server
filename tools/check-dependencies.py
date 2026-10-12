@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that the pinned archives the Dockerfiles fetch are those of dependencies.lock.json.
+"""Check that the pinned archives the Dockerfiles fetch are those of dependencies/lock.json.
 
 Each Dockerfile names an archive with three build arguments, <NAME>_FILE, <NAME>_URL and <NAME>_SHA256 (fetched by
 docker/fetch). Every such triple must equal an entry of the lock file marked "use": "image", and every such entry
@@ -39,10 +39,10 @@ def base_image_problems(lock):
     problems = []
     default, releases = lock['base_image'], lock.get('base_images', {})
     if default not in releases.values():
-        problems.append(f'dependencies.lock.json: base_image {default} is not one of base_images')
+        problems.append(f'dependencies/lock.json: base_image {default} is not one of base_images')
     for release, image in releases.items():
         if not image.startswith(f'ubuntu:{release}@sha256:'):
-            problems.append(f'dependencies.lock.json: base_images {release} is {image}')
+            problems.append(f'dependencies/lock.json: base_images {release} is {image}')
     packages = (ROOT / 'docker' / 'packages').read_text()
     problems += [
         f'docker/packages: no package list for {release}' for release in releases if f'{release})' not in packages
@@ -51,27 +51,27 @@ def base_image_problems(lock):
         arguments = dict(re.findall(r'^ARG (\w+)=(\S*)$', dockerfile.read_text(), re.MULTILINE))
         for name in ('BASE_IMAGE', 'RUNTIME_BASE'):
             if name in arguments and arguments[name] != default:
-                problems.append(f'{dockerfile.name}: {name} is not the base_image of dependencies.lock.json')
+                problems.append(f'{dockerfile.name}: {name} is not the base_image of dependencies/lock.json')
         # docker/Dockerfile.centos: the CentOS Stream builder and runtime images ("centos_images").
         for name, key in (('BUILDER_IMAGE', 'builder'), ('RUNTIME_IMAGE', 'runtime')):
             if name in arguments and arguments[name] != lock.get('centos_images', {}).get(key):
-                problems.append(f'{dockerfile.name}: {name} is not centos_images.{key} of dependencies.lock.json')
+                problems.append(f'{dockerfile.name}: {name} is not centos_images.{key} of dependencies/lock.json')
     return problems
 
 
 # ------------------------------------------------------------------------------
 def main():
     """Compare the Dockerfiles with the lock file and report each difference."""
-    lock = json.loads((ROOT / 'dependencies.lock.json').read_text())['software']
+    lock = json.loads((ROOT / 'dependencies/lock.json').read_text())['software']
     pinned = {(item['file'], item['url'], item['sha256']) for item in lock if item.get('use') == 'image'}
     used = dockerfile_archives()
     problems = [
-        f'{dockerfile}: {triple[0]} is not pinned as such in dependencies.lock.json'
+        f'{dockerfile}: {triple[0]} is not pinned as such in dependencies/lock.json'
         for triple, dockerfile in used.items()
         if triple not in pinned
     ]
-    problems += [f'dependencies.lock.json: {triple[0]} is used by no Dockerfile' for triple in pinned - used.keys()]
-    problems += base_image_problems(json.loads((ROOT / 'dependencies.lock.json').read_text()))
+    problems += [f'dependencies/lock.json: {triple[0]} is used by no Dockerfile' for triple in pinned - used.keys()]
+    problems += base_image_problems(json.loads((ROOT / 'dependencies/lock.json').read_text()))
     for problem in problems:
         print(problem)
     print(f'{len(used)} archives checked, {len(problems)} differences')

@@ -260,6 +260,7 @@ void McServer::supervise_session(const std::string &group, const std::shared_ptr
     supervise_call_timers(group, session, now);
   }
   notices(*session, session->arbitrator->tick(now));
+  unpermitted_media_tick(*session, now);
   service_session_tick(session, now);
   // TS 23.379 clause 10.6.2.5.2 step 3: the broadcast ends when the initiator's
   // transmission completes (release, revoke or media timeout).

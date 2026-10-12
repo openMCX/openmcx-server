@@ -5,6 +5,8 @@
 
 #include "data_server.hpp"
 
+#include "transfer_record.hpp"
+
 namespace mcx {
 
 //------------------------------------------------------------------------------
@@ -66,7 +68,23 @@ void DataServer::tick() {
 void DataServer::file_transfer_timers(std::uint64_t now, unsigned indication) {
   for (auto &[message, transfer] : transfers_) {
     if (transfer.tdc1 && transfer.tdc1 <= now) send_file_aggregate(message, transfer); // TDC1
-    if (transfer.media_plane) continue;
+    if (transfer.media_plane) {
+      // TS 24.282 clause 12.2: the record only correlates the disposition notifications; once every recipient has
+      // reported a final one, or the time for them has passed, what TDC1 still holds is sent and the record is
+      // forgotten (removed in tick()).
+      if (transfer.expires &&
+          media_transfer_finished(transfer.recipients, transfer.downloaded, transfer.rejected, transfer.expires, now)) {
+        if (transfer.tdc1) send_file_aggregate(message, transfer);
+        event("mcdata_media_file_transfer_closed",
+              {{"message_id", message},
+               {"downloaded", transfer.downloaded.size()},
+               {"rejected", transfer.rejected.size()},
+               {"recipients", transfer.recipients.size()},
+               {"reason", transfer.expires <= now ? "notification time passed" : "every recipient reported"}});
+        transfer.expires = 0;
+      }
+      continue;
+    }
     // TS 24.282 clause 13.2.4.5.4.1: announce the intent to release before TDC2 expires, then TDC3.
     if (indication && !transfer.intent_sent && transfer.expires && transfer.expires <= now + indication)
       release_intent(message, transfer);

@@ -20,6 +20,16 @@ reference captures of tutorials 3, 4 and 5 hold the 5G or 4G core's signalling (
 the GTP-U user plane and the SIP, decrypted in Wireshark; each tutorial links its capture and explains it in its step "Look at the
 capture".
 
+**tshark on Ubuntu 26.04.** Ubuntu 26.04 confines `tshark` with AppArmor: it reads files under `/tmp`, not under
+your home directory, and answers `You don't have permission to read the file`. Wireshark is not affected, and `run.sh`
+runs tshark in its capture container. To run `tshark -r` on a capture in your home directory, copy the capture to
+`/tmp`, or allow your own files once:
+
+```bash
+echo 'owner @{HOME}/** r,' | sudo tee /etc/apparmor.d/local/tshark
+sudo apparmor_parser -r /etc/apparmor.d/tshark
+```
+
 ## Unit Test Tutorials
 
 One MC service feature each, on one computer with headless clients and no phones, numbered from 1 in `unit-tests/`.

@@ -90,6 +90,8 @@ sequenceDiagram
     A->>S: MESSAGE, emergency alert with its location (12.1.1.4)
 ```
 
+<a id="seal-location-management-server-sl-01-to-sl-06-isl-01-to-isl-06"></a>
+
 ## SEAL location management server (SL-01 to SL-06)
 
 The LMS role is also the **SEAL location management server** (SLM-S) of TS 24.545 V19.4.0 over HTTP (TS 23.280 §10.9.3, TS 23.434 §9.3). It works alongside the participating functions' location procedures above; it does not replace them. The body is `application/vnd.3gpp.seal-location-info+xml` (namespace `urn:3gpp:ns:sealLocationInfo:1.0`). A position is carried as `<threebytes>` values coded as in TS 23.032 §6.1.
@@ -124,24 +126,17 @@ openmcx-mcptt-server --config FILE --command 'seal-locate [history] <MCPTT ID>[,
 
 The client records `seal` in its status (the configuration, and the reports sent, stored and sent as history). The server records `seal` with the subscription, the latest position of each user (`via` notification or request) and the history positions it was given.
 
-## Run a separate lab
+## Running the tests
+
+The location scenario, with the SEAL checks, runs in the `location` lab of the regression:
 
 ```bash
-docker build -t openmcx:0.68-loc -f docker/Dockerfile .
-python3 tools/prepare-prearranged-test.py --directory artifacts/location-lab --project openmcx-location \
-  --debug-sip --priority --location --image openmcx:0.68-loc
-mkdir -p artifacts/location-lab/artifacts/{speech,integration} && cp artifacts/speech/{alpha,bravo}.wav artifacts/location-lab/artifacts/speech/
-C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-location -f artifacts/location-lab/compose.json"
-$C up -d --wait mcptt-server
-docker run -d --rm --name openmcx-location-capture --network "container:$($C ps -q mcptt-server)" --cap-drop ALL --cap-add NET_RAW \
-  openmcx-dev:0.1 tcpdump -Z root -i eth0 -U -s 0 -w /tmp/c.pcap 'tcp port 5060'
-$C up -d --wait
-python3 tests/integration/location_scenario.py --compose artifacts/location-lab/compose.json \
-  --artifacts artifacts/location-lab/artifacts --project openmcx-location
-docker cp openmcx-location-capture:/tmp/c.pcap artifacts/location-lab/artifacts/integration/location.pcap; docker stop openmcx-location-capture
-python3 tests/integration/verify_location.py artifacts/location-lab/artifacts/integration/location.pcap \
-  --service sip:mcptt@mcx.test --output artifacts/location-lab/artifacts/integration/location-wire.json
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =location
 ```
+
+The lab uses `--priority --location`. Over debug TCP SIP the run also captures at the MCPTT server and checks the
+capture with `tests/integration/verify_location.py` (W-00 to W-07): the configurations, requests and reports, with the
+emergency alert's own location told apart.
 
 `--location` sets up the following. It also configures the MCData server, for the [MCData location tests](../mcdata/MCDATA_LOCATION_TEST.md).
 
@@ -156,27 +151,21 @@ python3 tests/integration/verify_location.py artifacts/location-lab/artifacts/in
 | Positions | The clients start 750 m apart along 48° N |
 
 
-## Performed tests
+## Checks
 
-Recorded on **2026-09-25** against image `openmcx:0.68-loc` (`088f3e9629d4`), built from branch `mcptt-mcdata`. Every report records **PASS**.
+| ID | What is checked |
+|---|---|
+| LOC-01–LOC-02 | Configuration after service authorisation (TriggerIds t1 to t7); the log-on report of each client, stored with its coordinate |
+| LOC-03 | A user whose profile denies reporting is refused 403 and nothing is stored |
+| LOC-04–LOC-07 | Travelled distance, zone entry and exit with border widths, cell change with the serving ECGI, a group call |
+| LOC-08–LOC-11 | A request answered with the RequestId and the reporting user; refresh through a request to the client; LocationFilter in and out; a user who does not share is not reported |
+| LOC-12–LOC-14 | Refusals 193, 192 and 194 |
+| LOC-15 | An authorised Update adds a periodic trigger; the target reports on it |
+| LOC-16 | Group geographic area: entry recorded; exit de-affiliates the client; entry affiliates it again |
+| LOC-17 | Emergency alert area: entry raises the client's alert; Emergency reports on the emergency trigger; exit recorded |
+| SL-01–SL-06 | The SEAL location management server: bob's client reads its configuration and reports every 2 s; the MCPTT server subscribes to bob, carol and dave, and is notified of bob's positions, including after he moves; an on-demand request; offline, bob's client stores its positions and sends them as history, which reaches the server; on demand with history; unsubscription |
 
-| ID | Checks | Evidence |
-|---|---|---|
-| LOC-01–LOC-02 | Configuration after service authorisation (TriggerIds t1 to t7); the log-on report of each client, stored with its coordinate | Scenario report (`artifacts/loc-lab-f2/artifacts/location.json`) |
-| LOC-03 | A user whose profile denies reporting is refused 403 and nothing is stored | Same report |
-| LOC-04–LOC-07 | Travelled distance, zone entry and exit with border widths, cell change with the serving ECGI, a group call | Same report |
-| LOC-08–LOC-11 | A request answered with the RequestId and the reporting user; refresh through a request to the client; LocationFilter in and out; a user who does not share is not reported | Same report |
-| LOC-12–LOC-14 | Refusals 193, 192 and 194 | Same report |
-| LOC-15 | An authorised Update adds a periodic trigger; the target reports on it | Same report |
-| LOC-16 | Group geographic area: entry recorded; exit de-affiliates the client; entry affiliates it again | Same report |
-| LOC-17 | Emergency alert area: entry raises the client's alert; Emergency reports on the emergency trigger; exit recorded | Same report |
-| SL-01–SL-06 | The SEAL location management server: bob's client reads its configuration and reports every 2 s; the MCPTT server subscribes to bob, carol and dave, and is notified of bob's positions, including after he moves; an on-demand request; offline, bob's client stores its positions and sends them as history, which reaches the server; on demand with history; unsubscription (11 checks) | `location.json` of the `location` lab |
-
-The location scenario passed 39 checks. `verify_location.py` passed 14 wire checks (W-00 to W-07) on the capture of the server namespace (result (`artifacts/loc-lab-f2/artifacts/integration/location-wire.json`)): 7 configurations, 9 requests and 29 reports, with the emergency alert's own location told apart.
-
-The SEAL checks were recorded on **2026-09-26** against image `openmcx:item7-b` (`f190af423284`): the location scenario passed 50 checks. The Go unit tests cover the SLM-S. The C++ unit tests cover the location-info documents.
-
-Regression on the same image: `run_all_call_types.sh` (8 call types) passed. On the binaries of this change (a layered test image), the priority scenario, the six MCData scenarios clear and with signalling and XML protection and the protected MCData scenario also passed.
+The Go unit tests cover the SLM-S. The C++ unit tests cover the location-info documents.
 
 ## Coverage gaps
 
@@ -188,4 +177,4 @@ Regression on the same image: `run_all_call_types.sh` (8 call types) passed. On 
 | Group areas | The client affiliates to, or de-affiliates from, its configured group only. A notice for another group is recorded but not acted on. |
 | Report in another request | A report always travels in its own MESSAGE (§13.3.4.2 allows adding it to a request the client sends anyway). |
 | Functional alias target | A request naming `<location-of-functional-alias-URI>` covers the users who activated the alias at this server. The owning server's status determination (§9A.2.2.2.7) is not queried. |
-| Off-network | Off-network location (TS 24.379 clause 13 has no off-network procedures; TS 23.280 §10.9 is on-network) is not applicable. |
+| Off-network | Not applicable: TS 24.379 clause 13 has no off-network procedures, and TS 23.280 §10.9 is on-network. |

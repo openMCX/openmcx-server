@@ -1,8 +1,8 @@
 # Regroup using a preconfigured group
 
-These tests cover a **regroup using a preconfigured group** (TS 24.379 V19.7.0 clause 16). An authorised user creates a temporary group that takes its whole configuration from an existing *preconfigured* group. In a **group regroup** (clause 16.2) its members come from the groups it was formed of; in a **user regroup** (clause 16.3) they are the users named in the request. The recorded results cover the implemented subset below, not complete conformance.
+These tests cover a **regroup using a preconfigured group** (TS 24.379 V19.7.0 clause 16). An authorised user creates a temporary group that takes its whole configuration from an existing *preconfigured* group. In a **group regroup** (clause 16.2) its members come from the groups it was formed of; in a **user regroup** (clause 16.3) they are the users named in the request. The tests cover the implemented subset below, not complete conformance.
 
-Back to the [MCPTT test index](../MCPTT_TEST.md). The prearranged group call the regroup carries is in the [prearranged tests](PREARRANGED_TEST.md), which describe the shared four-client fixture. Blocker entry: S13.
+Back to the [MCPTT test index](../MCPTT_TEST.md). The prearranged group call the regroup carries is in the [prearranged tests](PREARRANGED_TEST.md), which describe the shared four-client fixture.
 
 ## How it works
 
@@ -50,64 +50,54 @@ mcx-client --config FILE --command 'group <tgi> from=<group>'   # test aid: name
 
 `status.json` records `regroups` (each regroup the client has been told of, with its preconfigured group and its constituent groups or users) and `regroup_result` (the action, identity, status and warning of the last request); `call_group` names the regroup of a call taken on a user regroup. The server records `regroups` (with `users`, `affiliated` and the `controller`) and `regrouped_groups`.
 
-## Fixture and commands
+## Running the tests
 
 `--regroup` adds a preconfigured group `operations-preconf` (marked preconfigured-use-only, all four users) and two constituent groups: `operations-north` with client-a and client-b, and `operations-south` with client-c and client-d. Each client is affiliated to its own constituent group. Only client-a has `<allow-regroup>`. The group regroup is `operations-regroup-1`; the user regroup `operations-regroup-2` names client-a and client-c.
 
+The regroup scenario and the [temporary group scenario](TEMPORARY_GROUP_TEST.md) run in the `regroup` lab of the
+regression. The same scenario also passes on separate servers (`--split --regroup`: controlling function on
+`mcptt-server`, clients served by `mcptt-part-1` and `mcptt-part-2`), on a lab prepared by hand.
+
 ```bash
-docker build -t openmcx:0.51-regroup -f docker/Dockerfile .
-python3 tools/prepare-prearranged-test.py --directory artifacts/regroup-lab --project openmcx-regroup \
-  --debug-sip --regroup --image openmcx:0.51-regroup
-C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-regroup -f artifacts/regroup-lab/compose.json"
-$C up -d mcptt-server                        # start the capture before the clients authorise
-docker run -d --rm --name openmcx-regroup-capture --network "container:$($C ps -q mcptt-server)" \
-  --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.1 \
-  sh -c "tcpdump -Z root -i eth0 -U --immediate-mode -s 0 -w /tmp/c.pcap 'tcp port 5060'"
-$C up -d
-python3 tests/integration/regroup_scenario.py \
-  --compose artifacts/regroup-lab/compose.json --artifacts artifacts/regroup-lab/artifacts --project openmcx-regroup
-docker cp openmcx-regroup-capture:/tmp/c.pcap artifacts/regroup-lab/artifacts/integration/regroup.pcap
-python3 tests/integration/verify_regroup.py artifacts/regroup-lab/artifacts/integration/regroup.pcap \
-  --service sip:mcptt@mcx.test --output artifacts/regroup-lab/artifacts/integration/regroup-sip-wire.json
-docker rm -f openmcx-regroup-capture         # the reports and the capture are kept; the lab is not
-$C down -v
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =regroup
 ```
 
-## Performed tests
+Over debug TCP SIP the run also captures at the MCPTT server and checks the capture with
+`tests/integration/verify_regroup.py`.
 
-Recorded on **2026-09-24** against image `openmcx:0.52-chatregroup` (`d51a902eba46`), TS 24.379 V19.7.0, clear SIP (debug mode), in fresh labs. Every report records **PASS**: 69 scenario assertions on one server and the same 69 on the split system (`--split --regroup`: controlling function on `mcptt-server`, clients served by `mcptt-part-1` and `mcptt-part-2`), where each request crosses from a participating server. On the same image every MCPTT call type passed on one server instance and on the split system (prearranged, failure/refresh, broadcast, private, chat, ad hoc, remote-group and ambient listening). The 24 wire checks below were recorded on `openmcx:0.51-regroup` (`28e9cd400f45`) with the 42 assertions of RG-01 to RU-05.
+## Checks
 
-| ID | Scenario | Result evidence |
+| ID | Scenario | What is checked |
 |---|---|---|
-| RG-01 | A user without `<allow-regroup>` asks for a regroup | PASS. Refused 403 with warning 160 by its own participating function, and nothing is created |
-| RG-02 | An authorised user creates the regroup | PASS. Answered 200; every affiliated member of both constituent groups is told, with the preconfigured group and both constituents named; the server records it |
-| RG-03 | A second regroup with the same identity | PASS. Refused 403 with warning 165 |
-| RG-04 | A call on a constituent group while it is regrouped | PASS. Refused with warning 148 |
-| RG-05 | A call on the temporary group identity | PASS. Each client uses the regroup without a document of its own, all four affiliate, and the call joins members of both constituent groups |
-| RG-06 | A user without `<allow-regroup>` asks for removal | PASS. Refused 403 with warning 161, and the regroup is still held |
-| RG-07 | Removal by an authorised user | PASS. Answered 200; every member is told, the call on the regroup is released and the server no longer holds it |
-| RG-08 | The constituent groups after removal | PASS. The members select them again and a call is answered |
-| RG-09 | Removing a regroup that does not exist | PASS. Refused 403 with warning 163 |
-| RU-01 | A user without `<allow-regroup>` asks for a user regroup | PASS. Refused 403 with warning 160 |
-| RU-02 | An authorised user creates a user regroup of client-a and client-c | PASS. Answered 200; both named users are told, with the preconfigured group and the users named and no groups; client-b and client-d are not told; the server holds the regroup with both users affiliated, and no constituent group is regrouped |
-| RU-03 | A second regroup with the same identity | PASS. Refused 403 with warning 165 |
-| RU-04 | A call on the user regroup | PASS. client-a selects the regroup and calls; client-c, which still has its own constituent group selected, is invited and takes the call on the regroup; client-b and client-d are not invited |
-| RU-05 | Removal of the user regroup | PASS. Refused 403 with warning 161 for client-b; answered 200 for client-a; both members are told, the call is released and the server no longer holds it; a second removal is refused 403 with warning 163 |
-| RG-10 | A member that affiliates after the regroup exists (16.2.4.3) | PASS. With client-d not affiliated, a regroup is created and client-d is not told; when it affiliates to its constituent group again it is told, with the preconfigured group and both constituents |
-| RG-11 | The controlling function removes a group regroup on its own decision (16.2.3.3) | PASS. Every member is told, the server no longer holds it and the constituent groups are free |
-| RU-06 | The same for a user regroup | PASS. Both users are told and the server no longer holds it |
-| RC-01 | A regroup whose preconfigured group is a chat group | PASS. Created and notified to every member of both constituents; the regroup carries the chat configuration |
-| RC-02 | A chat group call on the regroup (steps 5 and 5a) | PASS. Client-a calls from its own constituent group and is accepted; client-c joins the same session from the other constituent, each naming the group it calls from |
-| RC-03 | A call naming a group that is not a constituent (step 6b) | PASS. Refused 403 with warning 120 |
-| RC-04 | A call on a regroup that names no calling group (step 5a) | PASS. Refused 403, without a warning, before the affiliation check |
-| RC-05 | A call on a regrouped constituent group (step 4c-ii) | PASS. Refused with warning 148, and the caller is sent a copy of the notification of the regroup its group is now in |
-| RC-06 | Removal of the chat regroup | PASS. Every member is told and both constituent groups are free |
+| RG-01 | A user without `<allow-regroup>` asks for a regroup | Refused 403 with warning 160 by its own participating function, and nothing is created |
+| RG-02 | An authorised user creates the regroup | Answered 200; every affiliated member of both constituent groups is told, with the preconfigured group and both constituents named; the server records it |
+| RG-03 | A second regroup with the same identity | Refused 403 with warning 165 |
+| RG-04 | A call on a constituent group while it is regrouped | Refused with warning 148 |
+| RG-05 | A call on the temporary group identity | Each client uses the regroup without a document of its own, all four affiliate, and the call joins members of both constituent groups |
+| RG-06 | A user without `<allow-regroup>` asks for removal | Refused 403 with warning 161, and the regroup is still held |
+| RG-07 | Removal by an authorised user | Answered 200; every member is told, the call on the regroup is released and the server no longer holds it |
+| RG-08 | The constituent groups after removal | The members select them again and a call is answered |
+| RG-09 | Removing a regroup that does not exist | Refused 403 with warning 163 |
+| RU-01 | A user without `<allow-regroup>` asks for a user regroup | Refused 403 with warning 160 |
+| RU-02 | An authorised user creates a user regroup of client-a and client-c | Answered 200; both named users are told, with the preconfigured group and the users named and no groups; client-b and client-d are not told; the server holds the regroup with both users affiliated, and no constituent group is regrouped |
+| RU-03 | A second regroup with the same identity | Refused 403 with warning 165 |
+| RU-04 | A call on the user regroup | client-a selects the regroup and calls; client-c, which still has its own constituent group selected, is invited and takes the call on the regroup; client-b and client-d are not invited |
+| RU-05 | Removal of the user regroup | Refused 403 with warning 161 for client-b; answered 200 for client-a; both members are told, the call is released and the server no longer holds it; a second removal is refused 403 with warning 163 |
+| RG-10 | A member that affiliates after the regroup exists (16.2.4.3) | With client-d not affiliated, a regroup is created and client-d is not told; when it affiliates to its constituent group again it is told, with the preconfigured group and both constituents |
+| RG-11 | The controlling function removes a group regroup on its own decision (16.2.3.3) | Every member is told, the server no longer holds it and the constituent groups are free |
+| RU-06 | The same for a user regroup | Both users are told and the server no longer holds it |
+| RC-01 | A regroup whose preconfigured group is a chat group | Created and notified to every member of both constituents; the regroup carries the chat configuration |
+| RC-02 | A chat group call on the regroup (steps 5 and 5a) | Client-a calls from its own constituent group and is accepted; client-c joins the same session from the other constituent, each naming the group it calls from |
+| RC-03 | A call naming a group that is not a constituent (step 6b) | Refused 403 with warning 120 |
+| RC-04 | A call on a regroup that names no calling group (step 5a) | Refused 403, without a warning, before the affiliation check |
+| RC-05 | A call on a regrouped constituent group (step 4c-ii) | Refused with warning 148, and the caller is sent a copy of the notification of the regroup its group is now in |
+| RC-06 | Removal of the chat regroup | Every member is told and both constituent groups are free |
 
 ### Wire verification
 
-[`verify_regroup.py`](../../tests/integration/verify_regroup.py) decodes the capture independently of the implementation, reading the regroup bodies against the schema of F.7.2. All 24 checks PASS over 259 SIP messages: 12 regroup requests and 12 notifications, answered 200 four times and 403 eight times.
+[`verify_regroup.py`](../../tests/integration/verify_regroup.py) decodes the capture independently of the implementation, reading the regroup bodies against the schema of F.7.2.
 
-| Check | Evidence |
+| Check | What is checked |
 |---|---|
 | Request | A SIP MESSAGE to the MCPTT service identity carrying the regroup body, with the MCPTT client ID and the service identity |
 | Body | Every body carries an action and a temporary group identity, and every creation its preconfigured group; no body names both groups and users; a group regroup creation names the constituent groups, a user regroup creation names the users, and a removal request names only the identity and the action |
@@ -121,10 +111,10 @@ Recorded on **2026-09-24** against image `openmcx:0.52-chatregroup` (`d51a902eba
 
 | Area | Gap |
 |---|---|
-| User regroup across servers | Recorded on the split system. A user the controlling function holds no registration for is taken to be served by its own participating function |
+| User regroup across servers | Covered on separate servers. A user the controlling function holds no registration for is taken to be served by its own participating function |
 | Function identity | A request from one MCPTT function to another is recognised by its source peer and an asserted identity that is not a user registered through that peer. The participating function relays a user's own request with the user's identity rather than its own (§16.2.2.2 step 5e), since the controlling function authorises the user by it |
-| Emergency state | A regroup in an in-progress emergency state is not removed (warning 169), but the state is read from this server's own priority record; §16.2.1.2 leaves the check to the client as well. No recorded run puts a regroup in an emergency state |
+| Emergency state | A regroup in an in-progress emergency state is not removed (warning 169), but the state is read from this server's own priority record; §16.2.1.2 leaves the check to the client as well. No scenario puts a regroup in an emergency state |
 | Client affiliation | The client takes a call on a user regroup it has been told of, but its affiliation status still reports only its selected group |
 | Security | The regroup takes the preconfigured group's keys with the rest of its configuration; protected regroups using a preconfigured group were not tested. |
 | Constituent fan-out | Step 11b of §10.1.2.4.1 is not implemented: the controlling function does not send the INVITE of §10.1.2.4.1.1A to the non-controlling function of each other constituent group. It reaches those members directly instead, which works because a partner system registers its users' affiliations to the regroup, but means a constituent group's own function is not in the path of the call |
-| Off-network | Regroup is on-network only here (H3) |
+| Off-network | Not in present edition |

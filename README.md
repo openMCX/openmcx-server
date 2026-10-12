@@ -64,12 +64,11 @@ It is not an interoperability-certified implementation: see the [limitations](do
 ## Documentation
 
 - **[Feature list](docs/FEATURES.md)**: what each service supports and how it is verified
-- **[Limitations](docs/LIMITATIONS.md)**: what this edition does not include, and the limits of what it does
 - **[Using the lab](docs/USAGE.md)**: build, run, client commands, verification and SIP debugging
 - **[Developer guide](docs/DEVELOPER_GUIDE.md)**: architecture, source tree, request flow, state machines, testing and workflow
-- **Tests**: [MCPTT](tests/README.md), [MCData](tests/MCDATA_TEST.md) and [MCVideo](tests/MCVIDEO_TEST.md) test indexes, with call flows and evidence
-- **Acceptance matrices**: [MCPTT](docs/architecture/mcptt-standards-and-acceptance.md), [MCData](docs/architecture/mcdata-standards-and-acceptance.md) and [MCVideo](docs/architecture/mcvideo-standards-and-acceptance.md)
-- **3GPP correction candidates**: [Release 19](docs/3GPP_CORRECTION_CANDIDATES.pdf), AI-assisted review, awaiting expert confirmation
+- **[Tutorials](tutorials/README.md)**: end-to-end and unit-test tutorials, with reference captures
+- **[3GPP correction candidates](docs/3GPP_CORRECTION_CANDIDATES.pdf)**: Release 19, AI-assisted review, awaiting expert confirmation
+- **[Limitations](docs/LIMITATIONS.md)**: what the present edition does not include, and the limits of what it does
 
 ## Licence
 

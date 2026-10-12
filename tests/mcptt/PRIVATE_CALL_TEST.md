@@ -1,6 +1,6 @@
 # Private call tests
 
-These tests cover **on-network, on-demand private calls with floor control** between two MCPTT users (TS 23.379 §10.7, TS 24.379 §11.1.1). The recorded results cover the implemented subset below. They do not certify complete private-call conformance. [First-to-answer calls](#first-to-answer-call), [emergency private calls](#emergency-private-call) and the [private call services](#private-call-services) are covered. Announced transfer, pre-established and off-network private calls are not implemented; see [coverage gaps](#coverage-gaps).
+These tests cover **on-network, on-demand private calls with floor control** between two MCPTT users (TS 23.379 §10.7, TS 24.379 §11.1.1). The tests cover the implemented subset below. They do not certify complete private-call conformance. [First-to-answer calls](#first-to-answer-call), [emergency private calls](#emergency-private-call) and the [private call services](#private-call-services) are covered. Pre-established and off-network private calls are not in present edition; see [coverage gaps](#coverage-gaps).
 
 Back to the [test index by call type](../MCPTT_TEST.md).
 
@@ -60,20 +60,18 @@ mcx-client --config FILE --command hangup
 
 If you omit the mode, the client uses `mcptt.private_call_mode` (default `auto`). `answer-mode manual` makes the callee ring unless the caller forces automatic mode. The status file reports `call_type`, `private_peer`, `first_to_answer` and, after a failed attempt, `last_call_failure` (`status`, `warning`). While a first-to-answer call rings, the caller's `call_state` is `progress`; `private_peer` is set from the answer.
 
-## Separate four-client fixture
+## Running the tests
 
-The preparation script refuses to overwrite an existing directory. The `--image` option leaves other labs' image tags alone.
+The private-call scenario runs in the `call-types` lab (one server) and the `call-types-split` lab (separate
+participating and controlling servers), and the private call services scenario in the `private-services` lab of the
+regression:
 
 ```bash
-docker build -t openmcx:0.8-fta -f docker/Dockerfile .
-python3 tools/prepare-prearranged-test.py --directory artifacts/private-lab --project openmcx-private \
-  --debug-sip --private-call --private-refresh --image openmcx:0.8-fta
-mkdir -p artifacts/private-lab/artifacts/speech
-cp artifacts/speech/{alpha,bravo}.wav artifacts/private-lab/artifacts/speech/
-.cache/deps/docker-compose-linux-x86_64 -p openmcx-private -f artifacts/private-lab/compose.json up -d
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =call-types
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =private-services
 ```
 
-`--private-call` gives each user a different ruleset, so every rejection branch can be reached. It sets `setup_timeout_ms=5000`, `max_calls=1` and `maximum_duration_ms=30000`. `--private-refresh` raises the private call timer to 70 s and inactivity to 120 s, so the PC-12 call outlasts the 45 s refresh point of the 90 s SIP session timer.
+`--private-call` gives each user a different ruleset, so every rejection branch can be reached. It sets `setup_timeout_ms=5000`, `max_calls=1` and `maximum_duration_ms=30000`. A lab prepared by hand with `--private-refresh` raises the private call timer to 70 s and inactivity to 120 s, so the PC-12 call outlasts the 45 s refresh point of the 90 s SIP session timer; `verify_private_call.py --require-refresh` then also checks the refresh.
 
 | User | Ruleset |
 |---|---|
@@ -82,79 +80,49 @@ cp artifacts/speech/{alpha,bravo}.wav artifacts/private-lab/artifacts/speech/
 | client-c | Automatic only; any target; accepts incoming private calls only from a (`incoming_from`) |
 | client-d | No private-call authorization; `callable: false` |
 
-Capture the server namespace, then run and verify:
+Over debug TCP SIP the run also captures at the MCPTT server and checks the capture with
+`tests/integration/verify_private_call.py`, which reassembles TCP/5060 itself and does not need tshark.
 
-```bash
-SERVER=$(.cache/deps/docker-compose-linux-x86_64 -p openmcx-private -f artifacts/private-lab/compose.json ps -q mcptt-server)
-docker run --rm --name openmcx-private-capture --network "container:$SERVER" --cap-drop ALL --cap-add NET_RAW \
-  openmcx-dev:0.1 tcpdump -Z root -i eth0 -U -s 0 -w - '(udp and not port 53) or tcp port 5060' \
-  > artifacts/private-lab/artifacts/integration/private-call.pcap &
-python3 tests/integration/private_call_scenario.py \
-  --compose artifacts/private-lab/compose.json --artifacts artifacts/private-lab/artifacts
-docker stop openmcx-private-capture
-python3 tests/integration/verify_private_call.py artifacts/private-lab/artifacts/integration/private-call.pcap \
-  --service sip:mcptt@mcx.test --require-refresh --output artifacts/private-lab/artifacts/integration/private-call-sip-wire.json
-python3 tools/inspect-pcap.py artifacts/private-lab/artifacts/integration/private-call.pcap \
-  artifacts/private-lab/artifacts/integration/private-call-floor-wire.json
-```
+The `--private-services` option adds client-d's forwarding on no answer to client-a with a 3 s TNP1, and a user
+`offline` that never registers and forwards to client-a on no answer; client-a may call client-d.
 
-`verify_private_call.py` reassembles TCP/5060 itself and does not need tshark. It requires debug (clear) SIP. Use `--require-refresh` only with a `--private-refresh` fixture.
+## Checks
 
-## Performed tests
+| ID | What is checked |
+|---|---|
+| PC-01 | Automatic commencement: exactly two private legs, calling/called identities, same-group members not invited, no conference subscription |
+| PC-02 | Two-way decoded speech, competing request denied, non-participants receive nothing (checked against a baseline), callee hangup ends both legs, session URI cleared |
+| PC-03 | Manual commencement: callee rings, `answer` makes the call active, caller hangup |
+| PC-04 | Manual decline: callee `reject` → caller receives 480 with warning 110; session cleaned up |
+| PC-05 | `Priv-Answer-Mode: Auto` answers even though the callee is set to manual |
+| PC-06 | Local manual setting rings despite a requested `Answer-Mode: Auto`; caller CANCEL (487) clears the callee |
+| PC-07 | Unanswered call → 408 at the setup timer; callee cleared |
+| PC-08 | Caller authorisation 107/126/143/144 and unregistered callee 480. Called-party authorisation: 403/127 for a `callable: false` callee and 403/159 for a caller missing from `incoming_from`, while a listed caller reaches that callee. Rejected calls never reach the callee |
+| PC-09 | At `max_calls`: calls to a busy callee and a busy caller → 486; established call unaffected |
+| PC-10 | A private call alongside an independent group call: separate sessions, concurrent floor owners, ending the private call keeps the group call |
+| PC-11 | A deaffiliated callee is still reachable by private call |
+| PC-12 | The private call timer releases the call while speech flows |
+| PC-13 | SIP wire. Private calls: one `resource-lists` entry per originating INVITE; terminating INVITE identities and `isfocus` Contact; commencement headers forwarded; clear SDP; warnings 107/126/143/144/127/159, 408, 486 and 480; callee decline on the terminating leg; no conference SUBSCRIBE; BYE answered 200. Refresh (with `--require-refresh`): in-dialog refreshes on private dialogs answered 200 with `Session-Expires`. First-to-answer: two or more invitees, `Priv-Answer-Mode: Manual`, 183 before 200, `mcptt-called-party-id` names an invitee, unselected invitees cancelled, any loser BYE carries `not selected for call`, 480/153/156. Emergency: emergency-ind and Resource-Priority on setup, in-dialog upgrade and downgrade, 403 carrying the unchanged state, the INFO alert correction and warning 149 |
+| PC-14 | Floor and RTP decoding: all floor types decode; Audio SSRC fields validated |
+| PC-16 | First-to-answer: both invitees ring in forced manual mode while their local mode is automatic; the caller sees 183; the first answerer becomes the peer and gets speech, and the other is cancelled; either invitee may win; one decline leaves the other ringing, and all declining → 480; caller CANCEL clears every invitee; concurrent answers select exactly one invitee; an unlisted invitee is filtered out; 403/156, 403/107 and 403/153 |
+| PC-17 | Unit and service tests: `test_private_call` (ruleset branches, callee checks 127/159, first-to-answer 145/107/156/153 and filtering), `test_protocol` (`mcptt-called-party-id`, `release-reason`), Go `TestCMSServesCalleePrivateCallPolicy` |
+| PC-18 | Emergency private call: authorised emergency call with alert (caller MEPC 3 / MEPP 2 / MPEA 3; callee MEPP 2 with the caller's alert); unauthorised cancellation rejected with MEPP restored; authorised cancellation of call and alert; in-dialog upgrade; release resets the states; unauthorised emergency calls rejected (no permission, recipient not preconfigured); an unauthorised alert withdrawn by SIP INFO (MPEA 1) while the emergency call proceeds |
 
-Recorded on **2026-09-21** against image `openmcx:0.8-fta` (`6e367912416c`), built from branch `feat/mcptt-phase1` on top of `7a41a2f` with the S1–S3 changes. The fixture was prepared with `--private-call --private-refresh`, clear media, and debug SIP over TCP. Every report below records **PASS**. The scenario run made 83 assertions (80 numbered, plus readiness, idle-start and unchanged-server checks) on one server instance. It superseded the earlier run on image `openmcx:0.2-private`, which made 53 assertions.
+### Private call services
 
-| ID | Scenario | Assertions | Result evidence |
-|---|---|---|---|
-| PC-01 | Automatic commencement: exactly two private legs, calling/called identities, same-group members not invited, no conference subscription | 3 | Scenario report (`artifacts/private-lab/artifacts/integration/private-call-results.json`) |
-| PC-02 | Two-way decoded speech (355/337 packets), competing request denied, non-participants receive nothing (checked against a baseline), callee hangup ends both legs, session URI cleared | 10 | Same report |
-| PC-03 | Manual commencement: callee rings, `answer` makes the call active, caller hangup | 3 | Same report |
-| PC-04 | Manual decline: callee `reject` → caller receives 480 with warning 110; session cleaned up | 3 | Same report |
-| PC-05 | `Priv-Answer-Mode: Auto` answers even though the callee is set to manual | 2 | Same report |
-| PC-06 | Local manual setting rings despite a requested `Answer-Mode: Auto`; caller CANCEL (487) clears the callee | 2 | Same report |
-| PC-07 | Unanswered call → 408 at the 5 s setup timer (observed 5.26 s); callee cleared | 3 | Same report |
-| PC-08 | Caller authorization 107/126/143/144 and unregistered callee 480. Called-party authorization: 403/127 for a `callable: false` callee and 403/159 for a caller missing from `incoming_from`, while a listed caller reaches that callee. Rejected calls never reach the callee | 10 | Same report |
-| PC-09 | At `max_calls`: calls to a busy callee and a busy caller → 486; established call unaffected | 5 | Same report |
-| PC-10 | A private call alongside an independent group call: separate sessions, concurrent floor owners, ending the private call keeps the group call | 7 | Same report |
-| PC-11 | A deaffiliated callee is still reachable by private call | 4 | Same report |
-| PC-12 | The private call timer (70 s with `--private-refresh`) releases the call while speech flows (observed 69.93 s), so the call spans the 45 s refresh point | 2 | Same report |
-| PC-13 | SIP wire (37 checks). Private calls: one `resource-lists` entry per originating INVITE; terminating INVITE identities and `isfocus` Contact; commencement headers forwarded; clear SDP; warnings 107/126/143/144/127/159, 408, 486 and 480; callee decline on the terminating leg; no conference SUBSCRIBE; BYE answered 200. **Refresh (S2):** two in-dialog refreshes on private dialogs answered 200 with `Session-Expires`. **First-to-answer:** two or more invitees, `Priv-Answer-Mode: Manual`, 183 before 200, `mcptt-called-party-id` names an invitee, unselected invitees cancelled, any loser BYE carries `not selected for call`, 480/153/156 | 37 | SIP wire report (`artifacts/private-lab/artifacts/integration/private-call-sip-wire.json`) |
-| PC-14 | Floor/RTP decoding: all floor types decode; 12 Audio SSRC fields validated over 4,276 packets | decoder | Floor wire report (`artifacts/private-lab/artifacts/integration/private-call-floor-wire.json`) |
-| PC-15 | Regression on the same image. In the private lab: prearranged lifecycle 21 and failure/refresh 15. In a combined fixture (`--private-call --broadcast --chat --adhoc`, one server instance): prearranged 21, failure 15, broadcast 32, private 83, chat 35, ad hoc 44 | 266 | Lifecycle (`artifacts/private-lab/artifacts/integration/prearranged-results.json`), failure (`artifacts/private-lab/artifacts/integration/prearranged-failure-results.json`), combined lab (`artifacts/combined-lab/artifacts/integration`) |
-| PC-16 | First-to-answer (S3): both invitees ring in forced manual mode while their local mode is automatic; the caller sees 183; the first answerer becomes the peer and gets speech, and the other is cancelled; either invitee may win; one decline leaves the other ringing, and all declining → 480; caller CANCEL clears every invitee; concurrent answers select exactly one invitee; an unlisted invitee is filtered out; 403/156, 403/107 and 403/153 | 26 | Scenario report (`artifacts/private-lab/artifacts/integration/private-call-results.json`) |
-| PC-17 | Unit and service tests: `test_private_call` (ruleset branches, callee checks 127/159, first-to-answer 145/107/156/153 and filtering), `test_protocol` (`mcptt-called-party-id`, `release-reason`), Go `TestCMSServesCalleePrivateCallPolicy`; native suite 17/17 and Go tests pass | native/Go | `tools/mcx test` |
-
-The capture of every scenario is private-call.pcap (`artifacts/private-lab/artifacts/integration/private-call.pcap`). An earlier run on this image (kept in `artifacts/private-lab/run1/`) hit the concurrent-answer race: the losing invitee's 200 crossed the CANCEL and was released by BYE with `<release-reason>not selected for call</release-reason>`. That run follows a SIP-engine fix. Before the fix, a run on `openmcx:0.7-fta` left the losing invitee connected, because PJSIP does not end a call whose 2xx crosses the CANCEL. Container identities (`artifacts/private-lab/artifacts/integration/private-containers.txt`) record the deployment. TShark was unavailable, so external Wireshark dissection was not run.
-
-### Emergency private calls and private call services — 2026-09-22
-
-Image `openmcx:0.17` (`7a42efef3b69`). The `--private-call --private-refresh` run made **95 assertions**, all **PASS**: PC-01–PC-12 and PC-16 as above (session refresh again spanned by a 69.9 s call), plus PC-18 below. Its SIP wire check (45 checks) adds the emergency checks: emergency-ind and Resource-Priority on setup, in-dialog upgrade and downgrade, 403 carrying the unchanged state, the INFO alert correction and warning 149. The floor decode covered 4,398 packets with 12 Audio SSRC fields. The separate `--private-call --private-services` run made **32 assertions**, all **PASS**. Evidence: `artifacts/final-private/` and `artifacts/final-services/` (`…/artifacts/integration/`).
-
-| ID | Scenario | Assertions |
-|---|---|---|
-| PC-18 | Emergency private call (S4): authorised emergency call with alert (caller MEPC 3 / MEPP 2 / MPEA 3; callee MEPP 2 with the caller's alert); unauthorised cancellation rejected with MEPP restored; authorised cancellation of call and alert; in-dialog upgrade; release resets the states; unauthorised emergency calls rejected (no permission, recipient not preconfigured); an unauthorised alert withdrawn by SIP INFO (MPEA 1) while the emergency call proceeds | 12 |
-| PS-01 | Call-back: the target stores the request with its urgency, the requester entry reaches PCCB-I3, and fulfilment rings the requester in manual mode; both entries are deleted | 6 |
-| PS-02, PS-03 | Call-back cancellation removes both entries; unauthorised request → 403/151 | 3 |
-| PS-04, PS-05 | Remotely initiated call: the remote user calls the requested target and the requester is told of success; unauthorised request → 403/158 | 4 |
-| PS-06, PS-06b, PS-07 | Transfer: the transferred user keeps its call with the requester while it calls the target, ends up in a call with the target, and the requester is told of success and leaves; a failed transfer leaves the requester and the transferred user in their call; unauthorised transfer → 403/170 | 9 |
-| PS-08 | Manual forwarding: the ringing callee forwards, the caller gets 480/175, reaches the target, and the forwarding user is told of success | 5 |
-| PS-09 | Immediate forwarding: 480/175, the forwarding user is never rung, and the caller reaches the forwarding target | 4 |
-| PS-10 | Client-side profile enforcement (S10): a client with enforcement on refuses a call-back its downloaded `<ruleset>` does not grant, and nothing reaches the target | 2 |
-
-The combined all-call-type run on the same image is listed in the [test index](../MCPTT_TEST.md).
-
-### Announced transfer, forwarding on no answer and application priority — 2026-09-25
-
-Image `openmcx:item4-e` (`132768e2c262`), built from branch `mcptt-mcdata` on `e55382c` with these changes. The `--private-call --private-services` scenario made **53 assertions**, all **PASS**, in `tools/regress.py --select mcptt` (21 labs, all passing). The fixture adds client-d's forwarding on no answer to client-a with a 3 s TNP1, and a user `offline` that never registers and forwards to client-a on no answer; client-a may call client-d.
-
-| ID | Scenario | Assertions |
-|---|---|---|
-| PS-04a | Remotely initiated private call with `<ric-app-level-priority>` mcptt.6: the remote user's call is placed, and the server accepts its Resource-Priority for that call | 3 |
-| PS-11 | Forwarding on no answer: client-b calls client-d, which rings; after TNP1 (measured 3.0 s) client-b gets 480/175 and a forward request with reason no-answer, client-d's invitation is cancelled, client-b reaches client-a, and the server reports the expiry | 7 |
-| PS-12 | A call to the unregistered user `offline` is forwarded at once with reason no-answer, and the caller reaches the forwarding target | 3 |
-| PS-13 | Announced transfer: client-a holds its call with client-b (the server holds the leg) and calls client-d, whose answer returns its dialog; both calls coexist. `transfer complete`: client-b's call with Replaces replaces client-a's call at client-d, client-d reports the replaced dialog, and client-a is told of success and has left both calls | 8 |
-
-A first run of PS-13 crashed client-a on a PJSIP assertion: client-a's BYE to the target crossed the server's BYE ending the replaced call, and the response to client-a's BYE then reached a session PJSIP had destroyed. The SIP engine now keeps its reference to a session it ends until that BYE's transaction ends.
+| ID | What is checked |
+|---|---|
+| PS-01 | Call-back: the target stores the request with its urgency, the requester entry reaches PCCB-I3, and fulfilment rings the requester in manual mode; both entries are deleted |
+| PS-02, PS-03 | Call-back cancellation removes both entries; unauthorised request → 403/151 |
+| PS-04, PS-05 | Remotely initiated call: the remote user calls the requested target and the requester is told of success; unauthorised request → 403/158 |
+| PS-04a | Remotely initiated private call with `<ric-app-level-priority>` mcptt.6: the remote user's call is placed, and the server accepts its Resource-Priority for that call |
+| PS-06, PS-06b, PS-07 | Transfer: the transferred user keeps its call with the requester while it calls the target, ends up in a call with the target, and the requester is told of success and leaves; a failed transfer leaves the requester and the transferred user in their call; unauthorised transfer → 403/170 |
+| PS-08 | Manual forwarding: the ringing callee forwards, the caller gets 480/175, reaches the target, and the forwarding user is told of success |
+| PS-09 | Immediate forwarding: 480/175, the forwarding user is never rung, and the caller reaches the forwarding target |
+| PS-10 | Client-side profile enforcement: a client with enforcement on refuses a call-back its downloaded `<ruleset>` does not grant, and nothing reaches the target |
+| PS-11 | Forwarding on no answer: client-b calls client-d, which rings; after TNP1 client-b gets 480/175 and a forward request with reason no-answer, client-d's invitation is cancelled, client-b reaches client-a, and the server reports the expiry |
+| PS-12 | A call to the unregistered user `offline` is forwarded at once with reason no-answer, and the caller reaches the forwarding target |
+| PS-13 | Announced transfer: client-a holds its call with client-b (the server holds the leg) and calls client-d, whose answer returns its dialog; both calls coexist. `transfer complete`: client-b's call with Replaces replaces client-a's call at client-d, client-d reports the replaced dialog, and client-a is told of success and has left both calls |
 
 ## High-level call flows
 
@@ -271,21 +239,7 @@ sequenceDiagram
 
 If C's 200 crosses the CANCEL, the server acknowledges it and sends BYE with `<release-reason>not selected for call</release-reason>`. If every invitee declines, the caller gets 480; the individual declines are not relayed. A caller CANCEL cancels every invitee.
 
-## Physical-setup validation — not yet performed
-
-This work is proposed for physical clients and a deployed network. None of it is marked passed by the lab results above.
-
-| ID | Physical test to perform | What to validate and retain |
-|---|---|---|
-| PC-P01 | Real-device private call in each commencement mode | Ringing and answer UI, decline, forced auto answer, button-to-grant and mouth-to-ear delay, audio quality |
-| PC-P02 | Private call during an active group call on another device pair | Isolation, concurrent floors, correct audio routing at the endpoints |
-| PC-P03 | Network impairment and recovery | Loss/jitter/outage during setup, ringing and talk bursts; cleanup of half-established legs |
-| PC-P04 | Policy change during a live call | CMS withdrawal of authorization or target list; the call is released within the revalidation interval |
-| PC-P05 | Independent implementation | Selected scenarios against an independently implemented client/server; compare `resource-lists`, `mcptt-info`, commencement headers and warnings |
-
 ## Coverage gaps
-
-"Not implemented" is separate from "not validated" here. The blockers and implementation guide gives the blocker, prerequisites and implementation outline for each item.
 
 | Area | Gap |
 |---|---|
@@ -294,9 +248,9 @@ This work is proposed for physical clients and a deployed network. None of it is
 | First-to-answer variants | PCK protection by the answering invitee is covered in the [protected private-call tests](PROTECTED_PRIVATE_CALL_TEST.md). First-to-answer calls to a functional alias are covered in the [functional-alias tests](FUNCTIONAL_ALIAS_TEST.md). |
 | Private call services | The forwarding-settings MESSAGE (`forward-private-call-settings-request`), and the `<forwarding-other-list>` check (warning 174) are not implemented. Private calls without floor control (§11.1.2) have their own [test document](PRIVATE_NO_FLOOR_TEST.md). TNP1 runs where the called user's private-call policy is applied (the combined server or the controlling function), with immediate forwarding, rather than only at the terminating participating function. Announced transfer is exercised on one server: the target's `<replaces-header-value>` names its dialog with the server, which Replaces matches by Call-ID. |
 | Ambient listening | Implemented separately; see the [ambient listening tests](AMBIENT_LISTENING_TEST.md). |
-| Pre-established sessions | Private calls over a pre-established session (§11.1.1.2.2) need resource sharing (H8); session-addressed rejoin is not implemented. |
+| Pre-established sessions | Private calls over a pre-established session (§11.1.1.2.2): not in present edition; they need resource sharing in the PCRF or PCF. |
 | Called-party authorization | Warnings 127 and 159 are evaluated by the controlling server, and again by the terminating participating server when the called user is served elsewhere. `<ListOfAllowedFAsToBeCalledFrom>` (functional aliases) is not. |
-| Multiple servers | The private-call and private-services scenarios pass with separate participating and controlling servers (H2). |
-| Off-network | Off-network private calls (§11.2) are not implemented. |
+| Multiple servers | Covered: the private-call and private-services scenarios also run with separate participating and controlling servers. |
+| Off-network | Off-network private calls (§11.2): not in present edition. |
 | Profile transport | The ruleset comes from the CMS internal JSON resource, not a complete TS 24.484 XCAP user-profile document. The client does not read it. |
-| Wire qualification | The SIP and floor checks use in-repository decoders, and the private-call floor frames were dissected by tshark 4.2.2 with no expert diagnostics (H6). Independent-peer interoperability has not been performed. |
+| Wire qualification | The SIP and floor checks use in-repository decoders, and the private-call floor frames were dissected by tshark with no expert diagnostics. Independent-peer interoperability has not been performed. |

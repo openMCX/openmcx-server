@@ -42,6 +42,10 @@ void McpttServer::floor_packet(Leg &leg, const Datagram &datagram) {
     floor_request(leg, session, arbitrator, priority);
   } else if (packet.type == FloorType::Release) {
     if (leg.floor_retries) leg.floor_retries->cancel(FloorType::Granted);
+    // TS 24.380 clause 6.3.5.7.4: a Floor Release leaves 'U: not permitted but sends media' with Floor Idle or
+    // Floor Taken (below); from 'U: permitted' it is the release clause 6.3.5.3.8 looks back to.
+    leg.released_floor = arbitrator.owner() == leg.user;
+    leg.sends_without_permission = false;
     const auto released = arbitrator.release(leg.user, monotonic_ms());
     if (released.empty()) {
       const auto owner = arbitrator.owner();
@@ -121,7 +125,9 @@ void McpttServer::floor_request(Leg &leg, const std::shared_ptr<Session> &sessio
     if (arbitrator.state() == FloorState::PendingRevoke)
       send_notice(leg, {FloorNoticeKind::Revoke, leg.user, leg.user, arbitrator.revoke_cause()});
     else
-      send_notice(leg, {FloorNoticeKind::Granted, leg.user, leg.user, 0, leg.granted_priority});
+      // TS 24.380 clause 6.3.4.4.8: Floor Granted again, with the T2 still running for the participant.
+      send_notice(leg, {FloorNoticeKind::Granted, leg.user, leg.user, 0, leg.granted_priority, 254,
+                        arbitrator.talk_time_remaining(monotonic_ms())});
   } else
     notices(*session, arbitrator.request(leg.user, monotonic_ms(), priority, leg.local.queueing && leg.remote->queueing,
                                          preemptive));
@@ -159,13 +165,16 @@ void McpttServer::send_floor_notice(Leg &leg, const FloorNotice &notice) {
     }
     packet.type = FloorType::Granted;
     leg.granted_priority = notice.priority;
+    leg.sends_without_permission = leg.released_floor = false;
     if (leg.session->broadcast && leg.user == leg.session->initiator) leg.session->broadcast_transmitted = true;
-    packet.fields.push_back(duration_field(cfg_.at(svc_.name).value("max_talk_ms", 30000) / 1000));
+    // TS 24.380 clauses 6.3.4.4.2 step 1a and 6.3.4.4.8 step 1a: the T2 (Stop talking) the arbitrator applies.
+    packet.fields.push_back(duration_field_ms(notice.duration_ms));
     packet.fields.push_back(audio_ssrc_field(leg.audio_ssrc));
     packet.fields.push_back(priority_field(notice.priority));
     break;
   case FloorNoticeKind::Taken:
     leg.floor_granted = false;
+    leg.released_floor = false; // now 'U: not permitted and Floor Taken' (clause 6.3.5.4.2)
     packet.type = FloorType::Taken;
     packet.fields.push_back(message_sequence_field(++leg.floor_sequence));
     packet.fields.push_back(granted_party_identity_field(notice.participant));

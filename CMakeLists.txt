@@ -39,6 +39,10 @@ if(BUILD_TESTING)
     add_executable(test_server_values tests/test_server_values.cpp)
     target_include_directories(test_server_values PRIVATE src/server)
     add_test(NAME server_values COMMAND test_server_values)
+    # The lifetime of the MCData server's media-plane transfer record (src/mcdata/transfer_record.hpp, header only).
+    add_executable(test_transfer_record tests/test_transfer_record.cpp)
+    target_include_directories(test_transfer_record PRIVATE src/mcdata)
+    add_test(NAME transfer_record COMMAND test_transfer_record)
 endif()
 
 add_library(mcx_keying src/security/keying.cpp src/security/key_documents.cpp)

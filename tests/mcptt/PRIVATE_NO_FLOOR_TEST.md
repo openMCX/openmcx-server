@@ -36,30 +36,30 @@ A client answers an offer without floor control without one. `status.json` adds 
 
 ## Running the tests
 
+The scenario runs in the `private-no-floor` lab (one server) and the `private-no-floor-split` lab (through the
+participating servers) of the regression:
+
 ```bash
-python3 tools/regress.py --image openmcx:nofloor --client-image openmcx-client:nofloor \
-    --select =private-no-floor,=private-no-floor-split --output artifacts/regress-no-floor
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =private-no-floor,=private-no-floor-split
 ```
 
-## Performed tests
+## Checks
 
-| ID | Date | Build | Test | Result |
-|---|---|---|---|---|
-| PNF-01 | 2026-09-28 | server `openmcx:nofloor` (`44702362fc44`), client `openmcx-client:nofloor` (`54fefc8a7520`) | client-a calls client-b without floor control (automatic); both active, `floor_control` false at both; each knows the other; nobody else is in the call | Passed |
-| PNF-02 | 2026-09-28 | same | Both speak at once: client-a sends 337 frames and client-b 355; client-b receives 337 and client-a 355, while both talk; no floor denial; the call stays up after the speech | Passed |
-| PNF-03 | 2026-09-28 | same | The call is still up 35.1 s after it was set up, past the 30 s private call timer | Passed |
-| PNF-04 | 2026-09-28 | same | client-b ends the call; both are idle | Passed |
-| PNF-05 | 2026-09-28 | same | Manual commencement without floor control: client-b rings, answers and speaks at once; client-a hears it; client-a ends the call | Passed |
-| PNF-06 | 2026-09-28 | same | The next private call has floor control again; client-a is granted the floor | Passed |
-| PNF-07 | 2026-09-28 | same | Captured at `mcptt-server`: two client offers to the MCPTT PSI and two server offers to the callee without `m=application`; four 200 answers without it; the client offers carry `a=ssrc`; the following call offers `udp MCPTT` | Passed |
-
-Both labs made 56 checks each: `private-no-floor` on a combined server, and `private-no-floor-split` through the participating servers. As a negative control, the same scenario fails at PNF-01 against the previous server image (`openmcx:v9g`), which answers the offer with 400. On the new server image the smoke, `mcvideo`, `mcvideo-ambient`, `first-to-answer`, `private-services`, `protected-private` and the eight `call-types` scenarios also passed.
+| ID | What is checked |
+|---|---|
+| PNF-01 | client-a calls client-b without floor control (automatic); both active, `floor_control` false at both; each knows the other; nobody else is in the call |
+| PNF-02 | Both speak at once: each receives every frame the other sends, while both talk; no floor denial; the call stays up after the speech |
+| PNF-03 | The call is still up after the private call timer would have ended a call with floor control |
+| PNF-04 | client-b ends the call; both are idle |
+| PNF-05 | Manual commencement without floor control: client-b rings, answers and speaks at once; client-a hears it; client-a ends the call |
+| PNF-06 | The next private call has floor control again; client-a is granted the floor |
+| PNF-07 | Captured at `mcptt-server`: the client offers to the MCPTT PSI and the server offers to the callee have no `m=application`; the 200 answers have none either; the client offers carry `a=ssrc`; the following call offers `udp MCPTT` |
 
 ## Coverage gaps
 
 | Area | Gap |
 |---|---|
-| Pre-established sessions | The `mc_no_floor_ctrl` REFER of §11.1.2.3.1 is not implemented; pre-established sessions are refused |
+| Pre-established sessions | The `mc_no_floor_ctrl` REFER of §11.1.2.3.1: not in present edition; pre-established sessions are refused |
 | First-to-answer | Accepted by the server; mcx-client offers no floor-free first-to-answer call, so it is not exercised |
 | Protected media | The server relays PCK-protected speech unchanged; not exercised without floor control |
 | Refusal of other call types | Group, ad hoc and ambient listening offers without floor control get 488; covered by review, not by a scenario |

@@ -1,8 +1,8 @@
 # MCVideo service authorisation and affiliation tests
 
-These tests cover **increment V1 of the MCVideo plan**: MCVideo service authorisation by SIP PUBLISH (TS 24.281 V19.6.0 §7.2.2, §7.3.3) and MCVideo affiliation with its status subscription (clause 8), between the MCVideo client module of `mcx-client` and `mcvideo-server`, beside MCPTT on the same SIP registration (§7.1).
+MCVideo service authorisation by SIP PUBLISH (TS 24.281 §7.2.2, §7.3.3) and MCVideo affiliation with its status subscription (clause 8), between the MCVideo client module of `mcx-client` and `mcvideo-server`, beside MCPTT on the same SIP registration (§7.1).
 
-Back to the [MCVideo test index](../MCVIDEO_TEST.md). Architecture: MCVideo design, [standards and acceptance](../../docs/architecture/mcvideo-standards-and-acceptance.md) (rows MV-AUTH-01, MV-AFF-01, MV-CODEC-01).
+Back to the [MCVideo test index](../MCVIDEO_TEST.md). Acceptance: [MCVideo standards and acceptance](../../docs/architecture/mcvideo-standards-and-acceptance.md) (rows MV-AUTH-01, MV-AFF-01, MV-CODEC-01).
 
 ## How it works
 
@@ -20,7 +20,7 @@ Back to the [MCVideo test index](../MCVIDEO_TEST.md). Architecture: MCVideo desi
 | Registration | One Contact with both MC services' feature tags and ICSIs | §7.1, §7.2.1AA |
 | Affiliation | Status subscription first; PIDF in the MCVideo namespace with `p-id`; MCVideo membership from the GMS; a group the user is not a member of left out of the NOTIFY (200 to the PUBLISH), 403 for another service's document; Expires 0 de-affiliates | §8.2.1.2, §8.2.1.3, §8.2.2.2.3, §8.3.1 |
 | NOTIFY `p-id` | The NOTIFY a PUBLISH triggers carries that PUBLISH's `p-id` | §8.2.2.2.5 step d |
-| MCPTT | Unchanged beside MCVideo, with two spec corrections made in the shared core: a failed authorisation carries warning `101` (TS 24.379 §7.3.3 step 6) and the NOTIFY echoes the handled `p-id` (§9.2.2.2.5) | TS 24.379 §7.3.3, §9.2.2.2.5 |
+| MCPTT | Unchanged beside MCVideo; the shared core sends warning `101` on a failed authorisation (TS 24.379 §7.3.3 step 6) and echoes the handled `p-id` in the NOTIFY (§9.2.2.2.5) for both services | TS 24.379 §7.3.3, §9.2.2.2.5 |
 
 Configuration: `tools/prepare-prearranged-test.py --mcvideo` gives each client an `mcvideo` section (`user_id`, `service_uri`, `group_id`) and group `operations` the four users as MCVideo members; group `video-closed` has client-a only.
 
@@ -36,23 +36,25 @@ mcx-client --config FILE --command 'mcvideo-authorize [token]'   # re-authorise;
 
 ## Running the tests
 
+The scenario runs in the `mcvideo` lab, beside the group and private call scenarios:
+
 ```bash
-python3 tools/regress.py --image openmcx:v1 --select =mcvideo --output artifacts/regress-v1
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =mcvideo
 ```
 
-## Performed tests
+The scenario makes 17 checks.
 
-| ID | Date | Build | Test | Result |
-|---|---|---|---|---|
-| MV-AF-01 | 2026-09-26 | `openmcx:v1` (`ef18357ed001`) | Four clients MCVideo authorised; the MCVideo server holds four users | Passed |
-| MV-AF-02 | 2026-09-26 | same | Four clients affiliated to operations after their status subscription; four affiliated users at the server; the NOTIFY echoes the PUBLISH's `p-id` | Passed |
-| MV-AF-03 | 2026-09-26 | same | MCPTT authorised and affiliated beside MCVideo; `mcptt-server` keeps its four MCPTT users | Passed |
-| MV-AF-04 | 2026-09-26 | same | A PUBLISH with an invalid token gets 403 `399 mcx "101 service authorisation failed"`; the client stays authorised | Passed |
-| MV-AF-05 | 2026-09-26 | same | client-b's affiliation PUBLISH naming video-closed, where it is not an MCVideo member, gets 200 (TS 24.281 clause 8.2.2.2.3 step 8; 403 before 2026-10-09); the NOTIFY leaves video-closed out, so it stays affiliated to operations only | Passed |
-| MV-AF-06 | 2026-09-26 | same | client-a, a member, affiliates to video-closed too; the NOTIFY lists both groups | Passed |
-| MV-AF-07 | 2026-09-26 | same | client-d de-affiliates with Expires 0; three affiliated users remain; its MCPTT affiliation is untouched | Passed |
+## Tests
 
-The scenario made 17 checks (`artifacts/regress-v1/mcvideo/`). The smoke labs (`prearranged_scenario`, `mcdata_sds_scenario`, `mcvideo_server_scenario` with 10 checks) passed on the same image. The first runs found two defects, both fixed before this run: the NOTIFY carried a new `p-id` instead of the handled one (a shared-core defect that MCPTT had too), and the client's affiliation to a second group sent that group alone, which the server correctly took as the client's whole set.
+| ID | What is checked |
+|---|---|
+| MV-AF-01 | Four clients MCVideo authorised; the MCVideo server holds four users |
+| MV-AF-02 | Four clients affiliated to operations after their status subscription; four affiliated users at the server; the NOTIFY echoes the PUBLISH's `p-id` |
+| MV-AF-03 | MCPTT authorised and affiliated beside MCVideo; `mcptt-server` keeps its four MCPTT users |
+| MV-AF-04 | A PUBLISH with an invalid token gets 403 `399 mcx "101 service authorisation failed"`; the client stays authorised |
+| MV-AF-05 | client-b's affiliation PUBLISH naming video-closed, where it is not an MCVideo member, gets 200 (TS 24.281 clause 8.2.2.2.3 step 8); the NOTIFY leaves video-closed out, so it stays affiliated to operations only |
+| MV-AF-06 | client-a, a member, affiliates to video-closed too; the NOTIFY lists both groups |
+| MV-AF-07 | client-d de-affiliates with Expires 0; three affiliated users remain; its MCPTT affiliation is untouched |
 
 ## Coverage gaps
 
@@ -61,5 +63,5 @@ The scenario made 17 checks (`artifacts/regress-v1/mcvideo/`). The smoke labs (`
 | Service authorisation by REGISTER | §7.2.1 and §7.3.2 (third-party registration) are not implemented; the client authorises by PUBLISH |
 | Service settings | Subscription to and notification of service settings (§7.2.4, §7.3.6) and PUBLISH for settings only (§7.3.4) are not exercised |
 | Affiliation variants | Negotiated mode (§8.2.1.4, §8.2.1.5), group dynamic data (§8.2.1.6), rules-based affiliation (§8.2.1.7), implicit affiliation (§8.2.2.2.15) and affiliation across servers (§8.2.2.2.6) are not exercised |
-| Security | The CSK upload and protected signalling of §7.2.2 steps 3-4 and §7.2.5 come with V9 |
-| Wire evidence | Checked through client and server state; SIP wire assertions follow with the call increments |
+| Security | The CSK upload and protected signalling of §7.2.2 steps 3-4 and §7.2.5 are tested in the [protected call tests](MCVIDEO_PROTECTED_TEST.md) and the [XML protection tests](MCVIDEO_XML_PROTECTION_TEST.md) |
+| Wire evidence | These tests check client and server state; the call tests check the SIP on the wire |

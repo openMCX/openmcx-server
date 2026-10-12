@@ -1,0 +1,17 @@
+# Optional: run locally compiled native binaries during development.
+services:
+  mcptt-server:
+    volumes:
+      - ../../build/openmcx-mcptt-server:/usr/local/bin/openmcx-mcptt-server:ro
+  mcx-user-db:
+    volumes:
+      - ../../build/mcx-user-db:/usr/local/bin/mcx-user-db:ro
+  client-a:
+    volumes:
+      - ../../../openmcx-client/linux/build/mcx-client:/usr/local/bin/mcx-client:ro
+  client-b:
+    volumes:
+      - ../../../openmcx-client/linux/build/mcx-client:/usr/local/bin/mcx-client:ro
+  http-proxy:
+    volumes:
+      - ../../build/mcx-http-proxy:/usr/local/bin/mcx-http-proxy:ro

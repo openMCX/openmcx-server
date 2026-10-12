@@ -33,7 +33,7 @@ Back to the [MCData test index](../MCDATA_TEST.md).
 
 | Step | Behavior | Reference |
 |---|---|---|
-| CSK | With `mcdata.protect_signalling`, the client creates a CSK (purpose tag `0010`) under its MCData ID, encapsulated to the MCData server's identity. It uploads the CSK in an `application/mikey` body of its first service authorisation PUBLISH. The MCData server provisions its own KMS identity, its public service identity, which the KMS now issues when the site configuration names it. It authenticates the upload, or answers 488 with warning 136. | 24.282 §7.2.1A step 3; 33.180 §9.2.1.3 |
+| CSK | With `mcdata.protect_signalling`, the client creates a CSK (purpose tag `0010`) under its MCData ID, encapsulated to the MCData server's identity. It uploads the CSK in an `application/mikey` body of its first service authorisation PUBLISH. The MCData server provisions its own KMS identity, its public service identity, which the KMS issues when the site configuration names it. It authenticates the upload, or answers 488 with warning 136. | 24.282 §7.2.1A step 3; 33.180 §9.2.1.3 |
 | Protected signalling | Every `application/vnd.3gpp.mcdata-signalling` body between that client and the server, in SIP and in MSRP SEND requests, is an MCData Protected Payload message under the CSK. The message type is inherited with bit 7 set. The server opens what arrives before any procedure reads it, and seals what it sends separately for each client. This covers SDS and FD signalling payloads, notifications, FD HTTP TERMINATION, COMMUNICATION RELEASE and the FD signalling of a media plane offer. A clear body, a body under another key, or one that fails authentication is answered 403, and counted. | 33.180 §8.5, §9.5.3; 24.282 §6.6.3.1-6.6.3.2 |
 
 ### XML confidentiality protection
@@ -70,9 +70,9 @@ Values not assigned by the specifications:
 
 ```bash
 docker build -t openmcx-dev:0.1 -f docker/Dockerfile.dev .   # pjsip with PJSIP_MAX_PKT_LEN 16000
-docker build -t openmcx:0.56-dpm -f docker/Dockerfile .
+docker build -t openmcx:<tag> -f docker/Dockerfile .
 python3 tools/prepare-prearranged-test.py --directory artifacts/dpp-lab --project openmcx-dpp \
-  --debug-sip --private-call --mcdata --protected --key-parameters-iei 0x79 --image openmcx:0.56-dpm
+  --debug-sip --private-call --mcdata --protected --key-parameters-iei 0x79 --image openmcx:<tag>
 C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-dpp -f artifacts/dpp-lab/compose.json"
 $C up -d --wait mcdata-server
 docker run -d --rm --name openmcx-dpp-capture --network "container:$($C ps -q mcdata-server)" \
@@ -94,7 +94,7 @@ The client status has `mcdata_authentication` (`enabled`, `signed`, `verified`, 
 
 ## Performed tests
 
-Recorded on **2026-09-25** against image `openmcx:0.59-xml`, built from branch `mcptt-mcdata`. The native suite passed all 20 tests and the Go tests passed. Every report records **PASS**.
+The protection unit tests and the Go tests pass. The regression runs the scenario in the `mcdata-protected` lab.
 
 | ID | Scenario | Checks |
 |---|---|---|
@@ -116,7 +116,7 @@ Recorded on **2026-09-25** against image `openmcx:0.59-xml`, built from branch `
 | DA-01 | With `--sign-payloads`: every received message carried a verified signature; the senders signed, the recipients verified, nothing failed | 2 |
 | DA-02 | A message whose signature was altered (`tamper-sig` test aid) is refused by the recipient and never rendered | 3 |
 
-The scenario ran 52 checks, including readiness, and 57 with `--sign-payloads` (image `openmcx:0.61-sign`), where the verifier passed 145 checks over 18 signed SIP payloads and every MSRP payload signed. The [wire verifier](../integration/verify_mcdata_protected.py) decodes the capture of SIP and MSRP at the MCData server independently. It passed 118 checks over:
+The scenario makes 52 checks, including readiness, and 57 with `--sign-payloads`, where the verifier makes 145 checks over the signed SIP payloads and checks that every MSRP payload is signed. The [wire verifier](../integration/verify_mcdata_protected.py) decodes the capture of SIP and MSRP at the MCData server independently. It passed 118 checks over:
 
 - 7 protected SIP payloads and 32 protected SIP signalling bodies
 - 83 XML bodies
@@ -158,7 +158,7 @@ None was refused.
 
 The media plane and FD scenarios were not run with payload protection. Many of their checks test the lab's size limits (auto-receive at 64 octets, 300 octets per one-to-one request), which the 59 octets of a Protected Payload message cross.
 
-On clear fixtures, the SDS, FD, media plane, communication release, enhanced status and IP connectivity scenarios passed on the same image; the media plane and IP connectivity ones used a fixture without `--mcdata-release`, as their documents specify. So did the eight MCPTT call types (`run_all_call_types.sh`). The [protected private-call scenario](../mcptt/PROTECTED_PRIVATE_CALL_TEST.md) (35 checks) last passed on `openmcx:0.56-dpm`; the signalling change touches only MCData.
+The same scenarios run clear in the `mcdata` and `mcdata-ipconn` labs.
 
 The image build also raises pjsip's `PJSIP_MAX_PKT_LEN` from 4000 to 16000. A service authorisation PUBLISH carrying the access token, the CSK I_MESSAGE and the XML bodies exceeded 4000 octets once the token carried the MCData key management scope. The long identities of client-c and client-d crossed the limit first, and the send failed with `PJSIP_EMSGTOOLONG`.
 
@@ -173,4 +173,4 @@ The image build also raises pjsip's `PJSIP_MAX_PKT_LEN` from 4000 to 16000. A se
 | Context recovery | The MCData server answers the sender before delivery and does not relay a recipient's 606. A sender whose recipient lost the PCK context is not told. It sends a new I_MESSAGE only when its own context expires. |
 | Multiple servers | The MCData server is one combined participating and controlling function: there are no separate servers. |
 | Interoperability | Lab to lab only. The algorithm and ciphertext IEI values are local, and the ECCSI SIGN length field is 129 (see the security audit). |
-| Off-network | The I_MESSAGE inside the Protected Payload message (NOTE 4 of Table 8.5.4.1-1) is for off-network use and is not implemented (H3). |
+| Off-network | The I_MESSAGE inside the Protected Payload message (NOTE 4 of Table 8.5.4.1-1) is for off-network use: not in present edition. |

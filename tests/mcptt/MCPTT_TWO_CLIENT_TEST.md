@@ -8,7 +8,7 @@ the call ends, and A restarts and reaffiliates without restarting the server.
 
 **Configuration only; no upstream Kamailio source patch.**
 [`kamailio.cfg`](../../docker/kamailio.cfg) and
-[`compose.debug.yaml`](../../compose.debug.yaml) enable explicit `SIP_DEBUG_NO_TLS`:
+[`docker/compose/compose.debug.yaml`](../../docker/compose/compose.debug.yaml) enable explicit `SIP_DEBUG_NO_TLS`:
 
 - Debug: SIP over TCP/5060, corresponding server route and health check; server
   identity and dialog ACK checks use source addresses on the isolated lab network.
@@ -16,8 +16,8 @@ the call ends, and A restarts and reaffiliates without restarting the server.
   identity handling remain active in debug mode. HTTPS services remain encrypted.
 - Public session Contacts use loose routing mode 1 and resolve to the application
   server for ACK, BYE and refresh requests.
-- Earlier configuration also set `tls_threads_mode=2` for OpenSSL 3 and disabled
-  DNS caching so recreated Docker service addresses are resolved again.
+- The configuration sets `tls_threads_mode=2` for OpenSSL 3 and disables DNS caching, so
+  recreated Docker service addresses are resolved again.
 
 ## Setup outside the SIP diagram
 
@@ -157,13 +157,13 @@ sequenceDiagram
 
 Fanout acceptance precedes the originator's final answer. Independent conference
 and floor notifications can interleave. The restart check runs after capture stops;
-idempotent teardown prevents the former duplicate BYE transaction.
+idempotent teardown sends a single BYE transaction.
 
 ## Run and inspect
 
 ```bash
 # From the repository root, after building/provisioning the lab:
-tools/mcx compose -f compose.debug.yaml up -d --force-recreate sip-core mcptt-server client-a client-b
+tools/mcx compose -f docker/compose/compose.debug.yaml up -d --force-recreate sip-core mcptt-server client-a client-b
 tools/mcx test
 MCX_TSHARK=/path/to/tshark tools/test-lab --disable-tls
 ```
@@ -173,15 +173,6 @@ whether external dissection ran. Wireshark filters: `sip`, `rtcp`, `rtp`.
 If floor traffic is not automatically recognized, decode UDP/5000 and UDP/5002
 as RTCP for the default lab configuration.
 
-Latest verified run: **11/11 native tests and Go tests passed; two-way speech,
-floor contention, teardown and restart passed. TShark 4.6.4 decoded all 29 floor
-packets with zero expert diagnostics.** This validates the tested lab subset,
-not full MCPTT conformance.
-
-- Server SIP + RTP + floor capture (`artifacts/integration/mcptt-debug.pcap`)
-- SIP-core capture, including registration (`artifacts/integration/sip-debug.pcap`)
-- Wire/dissector results (`artifacts/integration/wire-debug-results.json`)
-- Speech results (`artifacts/integration/speech-debug-results.json`)
-- Restart results (`artifacts/integration/restart-debug-results.json`)
-
-Capture files are written by the host user with private artifact permissions.
+The run writes the server capture (SIP, RTP and floor), the SIP-core capture with the registrations, and the wire,
+dissector, speech and restart results under `artifacts/integration/`. Capture files are written by the host user with
+private artifact permissions.

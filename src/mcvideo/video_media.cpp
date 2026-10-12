@@ -53,9 +53,15 @@ void McvideoServer::service_media_packets(Leg &leg) {
 void McvideoServer::video_packet(Leg &leg, const Datagram &datagram) {
   const auto session = leg.session;
   const bool open = session->no_media_control;
-  if (!eligible(leg) || !leg.remote->video || (!open && session->arbitrator->owner() != leg.user) ||
+  if (!eligible(leg) || !leg.remote->video ||
       !UdpSocket::matches(datagram.source, leg.remote->address, leg.remote->video->port)) {
     status_["media_dropped"] = status_.value("media_dropped", 0u) + 1;
+    return;
+  }
+  // TS 24.581 clauses 6.3.5.3.8 and 6.3.5.4.6: video from a participant without permission is not forwarded.
+  if (!open && session->arbitrator->owner() != leg.user) {
+    status_["media_dropped"] = status_.value("media_dropped", 0u) + 1;
+    if (datagram.bytes.size() > 12) unpermitted_media(leg); // RTP media with payload
     return;
   }
   auto packet = decode_rtp(datagram.bytes);

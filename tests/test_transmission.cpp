@@ -120,5 +120,36 @@ int main() {
   assert(refused([] { (void)encode({Type::Granted, false, 1, {FloorField{23, {1, 2, 3, 4}}}}); }));
   assert(refused([] { (void)encode({Type::Request, false, 1, {FloorField{0, {5, 1}}}}); }));
   assert(refused([] { (void)encode({Type::Granted, false, 1, {FloorField{4, {}}}}); }));
+
+  // TS 24.581 clause 9.2.13: the Media Transmission Notification (MCV1, subtype x0110) the server sends to every
+  // other participant when one transmits (clauses 6.3.4.4.2 step 3, 6.3.5.7.4 step 3 and 6.3.6.3.3): the
+  // transmitter's MCVideo ID and SSRCs, Permission to Request, the Transmission Indicator of an emergency call and
+  // the Reception Mode (clause 9.2.3.22: '0' automatic, '1' not).
+  const auto notification = media_transmission_notification(9, "sip:alice@mcx.test", 0xa1a2a3a4, 0xb1b2b3b4, true,
+                                                            floor_call_type_bits(false, true, false), true);
+  const auto notification_bytes = encode(notification);
+  assert(notification_bytes[11] == '1' && (notification_bytes[0] & 0x1f) == 6);
+  const auto notified = decode(notification_bytes);
+  assert(notified == notification && notified.type == Type::MediaTransmissionNotification);
+  assert(read_transmitting_user(*find(notified, Field::TransmittingUserId)) == "sip:alice@mcx.test");
+  assert(read_audio_ssrc(*find(notified, Field::AudioSsrc)) == 0xa1a2a3a4);
+  assert(read_video_ssrc(*find(notified, Field::VideoSsrc)) == 0xb1b2b3b4);
+  assert(read_permission_to_request(*find(notified, Field::PermissionToRequest)));
+  assert(read_floor_indicator(*find(notified, Field::Indicator)) == 0x1000);
+  assert(read_reception_mode(*find(notified, Field::ReceptionMode)));
+  assert(find(notified, Field::ReceptionMode)->value == (std::vector<std::uint8_t>{0, 0}));
+  const auto manual = media_transmission_notification(9, "sip:alice@mcx.test", 1, 2, false, std::nullopt, false);
+  assert(!find(manual, Field::Indicator) && !read_reception_mode(*find(manual, Field::ReceptionMode)));
+  assert(!read_permission_to_request(*find(manual, Field::PermissionToRequest)));
+  assert(refused([] { (void)encode({Type::MediaTransmissionNotification, false, 1, {FloorField{22, {0, 2}}}}); }));
+  assert(refused([] { (void)encode({Type::MediaTransmissionNotification, false, 1, {FloorField{22, {0}}}}); }));
+
+  // TS 24.581 clause 6.3.6.3.3 step 1: automatic reception in a broadcast, emergency or imminent peril call (1a),
+  // manual reception otherwise (1b); without the server's reception control every member receives.
+  assert(!automatic_reception(true, false, false, false));
+  assert(automatic_reception(true, true, false, false));
+  assert(automatic_reception(true, false, true, false));
+  assert(automatic_reception(true, false, false, true));
+  assert(automatic_reception(false, false, false, false));
   std::cout << "transmission tests passed\n";
 }

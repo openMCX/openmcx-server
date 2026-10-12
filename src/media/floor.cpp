@@ -339,6 +339,13 @@ FloorField duration_field(std::uint16_t seconds) {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.3: the Duration field in seconds for a timer value in milliseconds, rounded up so that a
+// running T2 is never announced as already expired, at most 65535.
+FloorField duration_field_ms(std::uint64_t milliseconds) {
+  return duration_field(static_cast<std::uint16_t>(std::min<std::uint64_t>((milliseconds + 999) / 1000, 65535)));
+}
+
+//------------------------------------------------------------------------------
 // TS 24.380 clause 8.2.3.3: reads the Duration field.
 std::uint16_t read_duration(const FloorField &field) {
   require_field(field, FloorFieldId::Duration, 2);
@@ -918,7 +925,8 @@ std::vector<FloorNotice> FloorArbitrator::request(std::string_view participant, 
   queued_grant_ = false;
   grant_transmissions_ = 1;
   last_grant_ms_ = now_ms;
-  std::vector<FloorNotice> notices{{FloorNoticeKind::Granted, id, id, 0, priority}};
+  // TS 24.380 clause 6.3.4.4.2 step 1a: the Duration field carries T2 (Stop talking).
+  std::vector<FloorNotice> notices{{FloorNoticeKind::Granted, id, id, 0, priority, 254, max_talk_ms_}};
   for (const auto &recipient : authorized_) {
     if (recipient != id) {
       notices.push_back({FloorNoticeKind::Taken, recipient, id, 0, priority});
@@ -1008,6 +1016,15 @@ void FloorArbitrator::media_received(std::string_view participant, std::uint64_t
 }
 
 //------------------------------------------------------------------------------
+// TS 24.380 clause 6.3.4.4.8 step 1a: the value of T2 (Stop talking) running for the permitted participant. T2
+// starts with its first RTP packet (clause 6.3.4.4.5), so before that it is the whole maximum talk time.
+std::uint64_t FloorArbitrator::talk_time_remaining(std::uint64_t now_ms) const {
+  if (!owner_ || !first_media_ms_) return max_talk_ms_;
+  const auto talked = now_ms >= *first_media_ms_ ? now_ms - *first_media_ms_ : 0;
+  return talked >= max_talk_ms_ ? 0 : max_talk_ms_ - talked;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.380 clause 8.2.3.5: the Queue Info of a participant: its position in the queue, or 254 when it is not
 // queued.
 FloorNotice FloorArbitrator::queue_position(std::string_view participant) const {
@@ -1069,7 +1086,7 @@ std::vector<FloorNotice> FloorArbitrator::tick(std::uint64_t now_ms) {
       elapsed(last_grant_ms_, options_.grant_retry_ms)) {
     ++grant_transmissions_;
     last_grant_ms_ = now_ms;
-    return {{FloorNoticeKind::Granted, *owner_, *owner_, 0, owner_priority_}};
+    return {{FloorNoticeKind::Granted, *owner_, *owner_, 0, owner_priority_, 254, max_talk_ms_}};
   }
   // TS 24.380 clause 6.3.4.4.5: T2 runs from the first RTP packet of the permitted participant.
   if (!first_media_ms_ || !elapsed(*first_media_ms_, max_talk_ms_)) return {};

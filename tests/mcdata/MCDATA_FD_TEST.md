@@ -2,7 +2,7 @@
 
 These tests cover **MCData file distribution (FD) using HTTP** (TS 24.282 V19.7.0 §10.2.2 to §10.2.4), with the FD disposition notifications of §12.2, the file availability timer TDC2 of §12.4 and the release of a distribution (§15.1.13). The recorded results cover the implemented subset below, not complete MCData conformance. FD over the media plane, file distribution to a network-stored file (upload by reference), deferred delivery and payload protection are not implemented; see [coverage gaps](#coverage-gaps).
 
-Back to the [MCData test index](../MCDATA_TEST.md). Standalone SDS is in the [SDS tests](MCDATA_SDS_TEST.md). Architecture: MCData Phase 1 design, [standards and acceptance](../../docs/architecture/mcdata-standards-and-acceptance.md).
+Back to the [MCData test index](../MCDATA_TEST.md). Standalone SDS is in the [SDS tests](MCDATA_SDS_TEST.md). Acceptance: [MCData acceptance matrix](../../docs/architecture/mcdata-standards-and-acceptance.md).
 
 ## How it works
 
@@ -63,21 +63,21 @@ openmcx-mcdata-server --config FILE --command 'release-intent <message ID>'   # 
 ## Separate four-client fixture
 
 ```bash
-docker build -t openmcx:0.35-mcdata -f docker/Dockerfile .
-python3 tools/prepare-prearranged-test.py --directory artifacts/fd35-lab --project openmcx-fd35 \
-  --debug-sip --private-call --mcdata --image openmcx:0.35-mcdata
-C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-fd35 -f artifacts/fd35-lab/compose.json"
+docker build -t openmcx:<tag> -f docker/Dockerfile .
+python3 tools/prepare-prearranged-test.py --directory artifacts/mcdata-fd-lab --project openmcx-mcdata-fd \
+  --debug-sip --private-call --mcdata --image openmcx:<tag>
+C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-mcdata-fd -f artifacts/mcdata-fd-lab/compose.json"
 $C up -d mcdata-server                      # start the capture before the clients authorise
-docker run -d --rm --name openmcx-fd35-capture --network "container:$($C ps -q mcdata-server)" \
+docker run -d --rm --name openmcx-mcdata-fd-capture --network "container:$($C ps -q mcdata-server)" \
   --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.1 \
   sh -c "tcpdump -Z root -i eth0 -U --immediate-mode -s 0 -w /tmp/c.pcap 'tcp port 5060'"
 $C up -d
 python3 tests/integration/mcdata_fd_scenario.py \
-  --compose artifacts/fd35-lab/compose.json --artifacts artifacts/fd35-lab/artifacts --project openmcx-fd35
-docker cp openmcx-fd35-capture:/tmp/c.pcap artifacts/fd35-lab/artifacts/integration/mcdata-fd.pcap
-python3 tests/integration/verify_mcdata_fd.py artifacts/fd35-lab/artifacts/integration/mcdata-fd.pcap \
-  --service sip:mcdata@mcx.test --output artifacts/fd35-lab/artifacts/integration/mcdata-fd-sip-wire.json
-docker rm -f openmcx-fd35-capture            # the reports and the capture are kept; the lab is not
+  --compose artifacts/mcdata-fd-lab/compose.json --artifacts artifacts/mcdata-fd-lab/artifacts --project openmcx-mcdata-fd
+docker cp openmcx-mcdata-fd-capture:/tmp/c.pcap artifacts/mcdata-fd-lab/artifacts/integration/mcdata-fd.pcap
+python3 tests/integration/verify_mcdata_fd.py artifacts/mcdata-fd-lab/artifacts/integration/mcdata-fd.pcap \
+  --service sip:mcdata@mcx.test --output artifacts/mcdata-fd-lab/artifacts/integration/mcdata-fd-sip-wire.json
+docker rm -f openmcx-mcdata-fd-capture            # the reports and the capture are kept; the lab is not
 $C down -v
 ```
 
@@ -85,19 +85,13 @@ The fixture adds file distribution to the MCData rules of the [SDS fixture](MCDA
 
 ## Performed tests
 
-**2026-09-27, branch `feature/android-fd-support` (`9b05778`), image `openmcx:fd-9b05778`:** the configurable transfer
-bounds and timeouts. `go test ./...` passes, with `TestConfiguredContentLimitAllowsLargeStreamingUpload`,
-`TestContentRequestLimitRejectsKnownAndUnknownLength`, `TestSlowFileTransferUsesConfiguredTimeout` and
-`TestGroupUploadCannotBypassServiceLimit`. In a separate four-client fixture (client image `openmcx-client:0927-f631a3c`)
-this scenario passes its 64 checks and the SDS scenario its 163. With the Android client, two phones exchanged image,
-PDF and MP4 files and a 100,000,000-byte file through the proxy with `--content-request-limit-bytes 100065536` and
-`--file-transfer-timeout-ms 900000`.
+The content server's transfer bounds and timeouts are configurable; the Go tests `TestConfiguredContentLimitAllowsLargeStreamingUpload`, `TestContentRequestLimitRejectsKnownAndUnknownLength`, `TestSlowFileTransferUsesConfiguredTimeout` and `TestGroupUploadCannotBypassServiceLimit` cover them. With the Android client, two phones exchanged image, PDF and MP4 files and a 100,000,000-byte file through the proxy with `--content-request-limit-bytes 100065536` and `--file-transfer-timeout-ms 900000`.
 
-Recorded on **2026-09-22** against image `openmcx:0.35-mcdata` (`a346b042dd8c`), built from branch `mcdata-phase1` on top of `14453d9` with the clause 13 release changes, TS 24.282 V19.7.0, clear SIP (debug mode), in a fresh lab captured from the first request. Every report records **PASS**: 64 scenario assertions and 38 wire checks on one MCData server instance. Earlier runs: `openmcx:0.34-mcdata` (`8eb39dc57989`, discovery) 52 assertions and 35 wire checks; `openmcx:0.33-mcdata` (`88edd680a813`, file hash) 48 and 32; `openmcx:0.32-mcdata` (`403c3532e3ea`, notification aggregation) 47 and 30; `openmcx:0.31-mcdata` (`d0a55ed1966c`, release) 45 and 29. The first recorded run, `openmcx:0.30-mcdata` (`aa950fa5e40d`), made 37 assertions and 25 wire checks without the release procedures. On `openmcx:0.31-mcdata` the SDS scenario passed its 163 assertions and 64 wire checks, covering the shared MCData server and client paths.
+The scenario (`mcdata_fd_scenario.py`) makes 64 assertions and its wire verifier (`verify_mcdata_fd.py`) 38 checks, clear SIP (debug mode), on one MCData server instance; the regression runs them in the `mcdata` lab, and with protected signalling in `mcdata-xml`.
 
 | ID | Scenario | Result evidence |
 |---|---|---|
-| FD-01 | One-to-one FD: the file is uploaded and its URL sent; the small file is received automatically (auto-receive); the downloaded bytes are identical to the file sent and match the hash selector of the metadata; accepted and completed notifications reach the originator; the server records the download | Scenario report (`artifacts/fd35-lab/artifacts/integration/mcdata-fd-results.json`) |
+| FD-01 | One-to-one FD: the file is uploaded and its URL sent; the small file is received automatically (auto-receive); the downloaded bytes are identical to the file sent and match the hash selector of the metadata; accepted and completed notifications reach the originator; the server records the download | Scenario report (`artifacts/integration/mcdata-fd-results.json`) |
 | FD-02 | Group FD: every other affiliated member is offered the file without mandatory download and the sender is not; one accepts and downloads identical bytes, one rejects, one defers; all four notifications reach the originator; the server records the download and the rejection | Same report |
 | FD-03 | File availability: with a 3 s availability TDC2 expires, the members are told the file is no longer available, the server forgets the transfer and a later download returns 404 | Same report |
 | FD-04 | Rejections: 200, 229, 230, 213, 488/214, 404/163, 212 (file URL does not exist), 208 and 202; the media storage function itself refuses an upload over the service limit with 413 and an upload by a user who may not transmit data with 403 | Same report |
@@ -108,7 +102,7 @@ Recorded on **2026-09-22** against image `openmcx:0.35-mcdata` (`a346b042dd8c`),
 | FD-10 | Prior indication and extension: the server announces its intent to release, the originator asks for an extension and it is accepted, and a later policy release stops the transmission with its reason and deletes the file | Same report |
 | FD-11 | Release by an authorised user: a user without the authorisation is rejected with 403, the authorised user is answered with RELEASE SUCCESS and the originator is told that its transmission was stopped | Same report |
 | FD-09 | Discovery: the absolute URI of the media storage function is discovered for a one-to-one and for a group distribution, and refused with 213 for a group without file distribution and with 200 for a user that may not transmit | Same report |
-| FD-12 | SIP wire checks (38), with clause 15 bodies decoded independently of the C++ codec: FD feature tag, ICSI and P-Preferred-Service; one FILEURL payload with file metadata, the RFC 5547 hash selector and an RFC 5322 file availability; one-to-one and group request shapes; 202; delivery with the recipient, originator and calling group; the file URL relayed unchanged; the Mandatory download IE added by auto-receive; the four notification types and their relay; the FD NETWORK NOTIFICATION with `request-type` `notify`; the 300 redirect and its follow-up; the discovery request and its msf-disc-res answer; the intent to release and the transmission stopped with their Reason header, the extension request and its ACCEPTED answer, and the authorised-user release with its 403 and 202; the release request and its TERMINATION RESPONSE with RELEASE SUCCESS, the FILE DELETED notification and the 404/224 rejection; aggregated notifications with one body each and the calling group; nine rejection warnings | Wire report (`artifacts/fd35-lab/artifacts/integration/mcdata-fd-sip-wire.json`), capture (`artifacts/fd35-lab/artifacts/integration/mcdata-fd.pcap`) |
+| FD-12 | SIP wire checks (38), with clause 15 bodies decoded independently of the C++ codec: FD feature tag, ICSI and P-Preferred-Service; one FILEURL payload with file metadata, the RFC 5547 hash selector and an RFC 5322 file availability; one-to-one and group request shapes; 202; delivery with the recipient, originator and calling group; the file URL relayed unchanged; the Mandatory download IE added by auto-receive; the four notification types and their relay; the FD NETWORK NOTIFICATION with `request-type` `notify`; the 300 redirect and its follow-up; the discovery request and its msf-disc-res answer; the intent to release and the transmission stopped with their Reason header, the extension request and its ACCEPTED answer, and the authorised-user release with its 403 and 202; the release request and its TERMINATION RESPONSE with RELEASE SUCCESS, the FILE DELETED notification and the 404/224 rejection; aggregated notifications with one body each and the calling group; nine rejection warnings | Wire report (`artifacts/integration/mcdata-fd-sip-wire.json`), capture (`artifacts/integration/mcdata-fd.pcap`) |
 | FD-13 | Unit tests: byte-exact FD SIGNALLING PAYLOAD, FD NOTIFICATION and FD NETWORK NOTIFICATION fixtures, the half-octet IEs, a payload that is not FILEURL, a missing file URL, the Metadata IE attributes, and FD HTTP TERMINATION with its termination and release response types | `test_mcdata` in the image build |
 | FD-14 | Content server tests: upload, download, HEAD, the internal listing and removal, the service and group size limits, transmission and reception control | `go test ./...` in the image build |
 

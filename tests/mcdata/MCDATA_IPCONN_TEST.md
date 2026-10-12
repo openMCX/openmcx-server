@@ -2,7 +2,7 @@
 
 These tests cover **MCData IP connectivity**: a one-to-one session that carries IP packets between two MCData clients through a GRE-in-UDP tunnel (TS 24.282 V19.7.0 clause 20, TS 24.582 V19.0.0 clause 13, IETF RFC 8086 over RFC 2784). Clause 20 defines one-to-one sessions only; there is no group IP connectivity in V19.7.0. The recorded results cover the implemented subset below, not complete conformance.
 
-Back to the [MCData test index](../MCDATA_TEST.md). The shared four-client fixture is described in the [standalone SDS tests](MCDATA_SDS_TEST.md#separate-four-client-fixture). Architecture: MCData Phase 1 design. Acceptance row: MD-IP-01 in the [MCData acceptance matrix](../../docs/architecture/mcdata-standards-and-acceptance.md).
+Back to the [MCData test index](../MCDATA_TEST.md). The shared four-client fixture is described in the [standalone SDS tests](MCDATA_SDS_TEST.md#separate-four-client-fixture). Acceptance row: MD-IP-01 in the [MCData acceptance matrix](../../docs/architecture/mcdata-standards-and-acceptance.md).
 
 ## How it works
 
@@ -40,31 +40,31 @@ mcx-client --config FILE --command 'ipcon close'
 The fixture is the one of the [SDS tests](MCDATA_SDS_TEST.md#separate-four-client-fixture): client-a may send only to b and c; b accepts only a; c accepts anyone; d may not transmit; `desk.fa` may be activated by a and b. `tools/provision.py` gives each client its tunnel address, `mcdata.ipconn.address` = `10.77.0.1` to `10.77.0.4`. The capture covers SIP and every UDP port, because the tunnel ports are ephemeral.
 
 ```bash
-docker build -t openmcx:0.45-mcdata -f docker/Dockerfile .
-python3 tools/prepare-prearranged-test.py --directory artifacts/ipconn45-lab --project openmcx-ipconn45 \
-  --debug-sip --private-call --mcdata --image openmcx:0.45-mcdata
-C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-ipconn45 -f artifacts/ipconn45-lab/compose.json"
+docker build -t openmcx:<tag> -f docker/Dockerfile .
+python3 tools/prepare-prearranged-test.py --directory artifacts/mcdata-ipconn-lab --project openmcx-mcdata-ipconn \
+  --debug-sip --private-call --mcdata --image openmcx:<tag>
+C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-mcdata-ipconn -f artifacts/mcdata-ipconn-lab/compose.json"
 $C up -d mcdata-server                      # start the capture before the clients authorise
-docker run -d --rm --name openmcx-ipconn45-capture --network "container:$($C ps -q mcdata-server)" \
+docker run -d --rm --name openmcx-mcdata-ipconn-capture --network "container:$($C ps -q mcdata-server)" \
   --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.1 \
   sh -c "tcpdump -Z root -i eth0 -U --immediate-mode -s 0 -w /tmp/c.pcap 'tcp port 5060 or (udp and not port 53)'"
 $C up -d
 python3 tests/integration/mcdata_ipconn_scenario.py \
-  --compose artifacts/ipconn45-lab/compose.json --artifacts artifacts/ipconn45-lab/artifacts --project openmcx-ipconn45
-docker cp openmcx-ipconn45-capture:/tmp/c.pcap artifacts/ipconn45-lab/artifacts/integration/mcdata-ipconn.pcap
-python3 tests/integration/verify_mcdata_ipconn.py artifacts/ipconn45-lab/artifacts/integration/mcdata-ipconn.pcap \
-  --service sip:mcdata@mcx.test --output artifacts/ipconn45-lab/artifacts/integration/mcdata-ipconn-sip-wire.json
-docker rm -f openmcx-ipconn45-capture        # the reports and the capture are kept; the lab is not
+  --compose artifacts/mcdata-ipconn-lab/compose.json --artifacts artifacts/mcdata-ipconn-lab/artifacts --project openmcx-mcdata-ipconn
+docker cp openmcx-mcdata-ipconn-capture:/tmp/c.pcap artifacts/mcdata-ipconn-lab/artifacts/integration/mcdata-ipconn.pcap
+python3 tests/integration/verify_mcdata_ipconn.py artifacts/mcdata-ipconn-lab/artifacts/integration/mcdata-ipconn.pcap \
+  --service sip:mcdata@mcx.test --output artifacts/mcdata-ipconn-lab/artifacts/integration/mcdata-ipconn-sip-wire.json
+docker rm -f openmcx-mcdata-ipconn-capture        # the reports and the capture are kept; the lab is not
 $C down -v
 ```
 
 ## Performed tests
 
-Recorded on **2026-09-23** against image `openmcx:0.45-mcdata` (`1c55cb9d508d`), built from branch `mcdata-phase1` on top of `a6dcb1a`, TS 24.282 V19.7.0 and TS 24.582 V19.0.0, clear SIP (debug mode), in a fresh lab captured from the first request. Every report records **PASS**: 31 scenario assertions and 22 wire checks on one MCData server instance. tshark 4.2.2 independently decodes all 44 tunnel datagrams as GRE carrying ICMP. On the same image, each in a fresh lab: the media plane scenario (128 assertions, 63 wire checks), SDS (163, 64), FD over HTTP (64, 38) and every MCPTT call type on one server instance (prearranged 21, failure/refresh 15, broadcast 56, private 96, chat 67, ad hoc 81, remote group 20, ambient listening 51).
+The scenario (`mcdata_ipconn_scenario.py`) makes 31 assertions and its wire verifier (`verify_mcdata_ipconn.py`) 22 checks, clear SIP (debug mode), on one MCData server instance; the regression runs them in the `mcdata-ipconn` lab, and with protected signalling in `mcdata-xml-ipconn`. tshark also decodes every tunnel datagram independently as GRE carrying ICMP.
 
 | ID | Scenario | Result evidence |
 |---|---|---|
-| IP-01 | Setup: the session opens at both clients; the called client learns the caller and Referred-By; the server holds one established tunnel and faces each client from a port of its own | Scenario report (`artifacts/ipconn45-lab/artifacts/integration/mcdata-ipconn-results.json`) |
+| IP-01 | Setup: the session opens at both clients; the called client learns the caller and Referred-By; the server holds one established tunnel and faces each client from a port of its own | Scenario report (`artifacts/integration/mcdata-ipconn-results.json`) |
 | IP-02 | IP traffic both ways: five 64-byte ICMP echoes from the caller are answered by the called client's IP application with the data unchanged and TTL 64, three 1200-byte echoes go the other way, and the server relays all 16 datagrams | Same report |
 | IP-03 | The IP application drops packets for an address that is not its own, and nothing answers them | Same report |
 | IP-04 | The server drops well-formed GRE datagrams sent to a tunnel port from another container, and nothing reaches the called client | Same report |
@@ -72,7 +72,7 @@ Recorded on **2026-09-23** against image `openmcx:0.45-mcdata` (`1c55cb9d508d`),
 | IP-06 | A second session to a client that already has one is refused with 486, passed back to the caller, while the first continues; the called party may release the session too | Same report |
 | IP-07 | Rejections: `200` without `<allow-transmit-data>`, `229` outside the one-to-one list, `230` outside the target's incoming list, `145` for an alias nobody has activated; no tunnel is created | Same report |
 | IP-08 | Session to a functional alias: the 300 names the user who activated `desk.fa`, the caller invites that user with `<called-functional-alias-URI>`, the called client learns the alias, and IP traffic flows | Same report |
-| IP-09 | SIP and tunnel wire checks (22), decoded independently of the C++ implementation: the request's feature tag, ICSI, Accept-Contact, resource-lists and SDP with `mcdata-ipconn-s-port`; the invitation with the ICSI, Referred-By and both users; the server's own address and ports on each leg; 100 and then 200 to the caller; the 300 and the follow-up with the called alias; the rejections 200, 229, 230, 145 and 486; BYE; every tunnel datagram between the SDP ends, sent from the named source port, with a UDP checksum, GRE version 0 without key or sequence, IPv4 and ICMP checksums that verify, each reply matching its request, each datagram relayed unchanged; and tshark decoding the same datagrams | Wire report (`artifacts/ipconn45-lab/artifacts/integration/mcdata-ipconn-sip-wire.json`), capture (`artifacts/ipconn45-lab/artifacts/integration/mcdata-ipconn.pcap`) |
+| IP-09 | SIP and tunnel wire checks (22), decoded independently of the C++ implementation: the request's feature tag, ICSI, Accept-Contact, resource-lists and SDP with `mcdata-ipconn-s-port`; the invitation with the ICSI, Referred-By and both users; the server's own address and ports on each leg; 100 and then 200 to the caller; the 300 and the follow-up with the called alias; the rejections 200, 229, 230, 145 and 486; BYE; every tunnel datagram between the SDP ends, sent from the named source port, with a UDP checksum, GRE version 0 without key or sequence, IPv4 and ICMP checksums that verify, each reply matching its request, each datagram relayed unchanged; and tshark decoding the same datagrams | Wire report (`artifacts/integration/mcdata-ipconn-sip-wire.json`), capture (`artifacts/integration/mcdata-ipconn.pcap`) |
 | IP-10 | Unit tests: the tunnel SDP with and without the source port, the session-level and media-level addresses and the 13.5.2.1 example; the RFC 1071 checksum on the well-known IPv4 header (`0xb861`); byte-exact IPv4 and ICMP echo; GRE for IPv4 and IPv6, with a verified checksum, and the rejection of a key, version 1, a non-IP protocol type, a mismatched protocol type and short headers | `test_ipconn` in the image build |
 
 The capture was taken on the server's container interface, where the kernel leaves UDP checksums to be completed by the interface (checksum offload), which a veth never does. Every tunnel datagram therefore shows a non-zero partial checksum over the pseudo header, which the verifier and tshark both accept as offload; no datagram has its checksum disabled.

@@ -1,8 +1,8 @@
 # MCVideo remote group selection tests
 
-These tests cover **step V8d of increment V8 of the MCVideo plan**: the remote change of an MCVideo user's selected group (TS 24.281 V19.6.0 9.2.4). They cover a change that makes the target affiliate first, a change to a group it is already affiliated to, a call on the newly selected group, and the refusals 155, 120 and 167.
+The remote change of an MCVideo user's selected group (TS 24.281 9.2.4): a change that makes the target affiliate first, a change to a group it is already affiliated to, a call on the newly selected group, and the refusals 155, 120 and 167.
 
-Back to the [MCVideo test index](../MCVIDEO_TEST.md). Architecture: MCVideo design, [standards and acceptance](../../docs/architecture/mcvideo-standards-and-acceptance.md) (row MV-SVC-01).
+Back to the [MCVideo test index](../MCVIDEO_TEST.md). Acceptance: [MCVideo standards and acceptance](../../docs/architecture/mcvideo-standards-and-acceptance.md) (row MV-SVC-01).
 
 ## How it works
 
@@ -24,7 +24,7 @@ Back to the [MCVideo test index](../MCVIDEO_TEST.md). Architecture: MCVideo desi
   - With `<affiliation-required>`, the target affiliates to the group. It waits for the NOTIFY whose `<p-id>` is that of its PUBLISH, and checks the group is affiliated there (step 1c).
   - It then selects the group. The group selected before stays affiliated, as an extra group.
   - It sends back `<response-type>group-selection-change-response</response-type>` with `<selected-group-change-outcome>` `success` or `fail`, and the requester in the resource list. The server relays this to the requester.
-- **Selected group.** The target's calls without a named group, and its affiliation requests, now use the selected group.
+- **Selected group.** The target's calls without a named group, and its affiliation requests, use the selected group.
 
 ## Client commands and status
 
@@ -40,38 +40,32 @@ mcx-client --config FILE --command 'mcvideo-select-remote <MCVideo ID> <group>'
 ## Running the tests
 
 ```bash
-tools/regress.py --image openmcx:v8d --client-image openmcx-client:v8d --select mcvideo-group-selection
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =mcvideo-group-selection
 ```
 
 The lab (`--mcvideo`) adds:
-- `video-field`, a second prearranged group of the four users, to which none is affiliated at the start.
+- `video-field`, a second prearranged group of the four users, to which none is affiliated at the start. It carries the MCVideo group's priority policy, which the call on it needs.
 - client-a may change the selected group of client-b and client-d.
 
-## Performed tests
+The scenario makes 28 checks over debug TCP and 25 over TLS, where the wire checks (MV-SG-07) are skipped.
 
-| ID | Date | Build | Test | Result |
-|---|---|---|---|---|
-| MV-SG-01 | 2026-09-27 | `openmcx:v8d` (`942030d13ad5`), `openmcx-client:v8d` (`52b6732184f3`) | client-a asks to change client-b's selected group to video-field and gets 200. client-b is asked to affiliate, and the server then holds its affiliation. client-b selects video-field, keeps its affiliation to the first group, and reports success, which client-a is told | Passed |
-| MV-SG-02 | 2026-09-27 | same | client-a and client-c affiliate to video-field. client-b's next call, naming no group, is on video-field and reaches both; client-d, not affiliated to it, is not in it | Passed |
-| MV-SG-03 | 2026-09-27 | same | A change back to the first group, to which client-b is affiliated, is accepted without asking it to affiliate, and client-b selects it | Passed |
-| MV-SG-04 | 2026-09-27 | same | client-c, whose list does not name client-b, is refused with 403 `155` | Passed |
-| MV-SG-05 | 2026-09-27 | same | Changing client-d's selected group to video-closed, of which client-d is no member, is refused with 403 `120` | Passed |
-| MV-SG-06 | 2026-09-27 | same | Changing client-b's selected group to the preconfigured-use-only video-regroup is refused with 403 `167`. client-b's selected group is unchanged | Passed |
-| MV-SG-07 | 2026-09-27 | same | Captured at `mcvideo-server` over debug TCP. The request carries `group-selection-change-request`, the group in `<mcvideo-request-uri>` and client-b listed. The server's request to client-b has the group in `<mcvideo-calling-group-id>` and `<affiliation-required>true`. The response carries `group-selection-change-response` and `<selected-group-change-outcome>success` | Passed |
+## Tests
 
-Run results:
-- **Debug TCP:** 28 checks (`artifacts/regress-v8d-mcvideo-tcp/mcvideo-group-selection/`).
-- **TLS:** 25 checks, with the wire checks skipped (`artifacts/regress-v8d-tls/`).
-- **All MCVideo labs:** on the same images over TCP, all passed (12 scenarios in 10 labs, `artifacts/regress-v8d-mcvideo-tcp/`). This covers the new group and the client's selected group.
-
-Defects found by the runs and fixed:
-- The lab's video-field group was first made without the MCVideo group's priority policy. The client's Resource-Priority on the call was then refused with 403.
+| ID | What is checked |
+|---|---|
+| MV-SG-01 | client-a asks to change client-b's selected group to video-field and gets 200. client-b is asked to affiliate, and the server then holds its affiliation. client-b selects video-field, keeps its affiliation to the first group, and reports success, which client-a is told |
+| MV-SG-02 | client-a and client-c affiliate to video-field. client-b's next call, naming no group, is on video-field and reaches both; client-d, not affiliated to it, is not in it |
+| MV-SG-03 | A change back to the first group, to which client-b is affiliated, is accepted without asking it to affiliate, and client-b selects it |
+| MV-SG-04 | client-c, whose list does not name client-b, is refused with 403 `155` |
+| MV-SG-05 | Changing client-d's selected group to video-closed, of which client-d is no member, is refused with 403 `120` |
+| MV-SG-06 | Changing client-b's selected group to the preconfigured-use-only video-regroup is refused with 403 `167`. client-b's selected group is unchanged |
+| MV-SG-07 | Captured at `mcvideo-server` over debug TCP. The request carries `group-selection-change-request`, the group in `<mcvideo-request-uri>` and client-b listed. The server's request to client-b has the group in `<mcvideo-calling-group-id>` and `<affiliation-required>true`. The response carries `group-selection-change-response` and `<selected-group-change-outcome>success` |
 
 ## Coverage gaps
 
 | Area | Gap |
 |---|---|
 | Relay of the response | The server answers the requester 200 when it has relayed the request, not when the target accepts it (9.2.4.3.1, 9.2.4.4). The outcome still reaches the requester in the response MESSAGE. This is as for the remotely initiated group call |
-| Separate servers and systems | The request is served by a combined participating and controlling function. Across servers and systems it comes with V10 to V12 |
+| Separate servers and systems | The request is tested on a combined participating and controlling function; across separate servers it is not exercised, and across MC systems it is not in present edition |
 | Client-side checks | The requesting client leaves the checks of `<RemoteGroupSelectionURIList>` and preconfigured-use-only (9.2.4.2.1 steps 1 and 1A) to the server |
 | MCPTT | The server procedure serves MCPTT (TS 24.379 10.1.4), but the MCPTT profile has no `RemoteGroupSelectionURIList` in the CMS and the MCPTT lab client has no command |

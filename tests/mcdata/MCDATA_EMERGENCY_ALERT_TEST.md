@@ -2,7 +2,7 @@
 
 These tests cover the **MCData group emergency alert** (TS 24.282 V19.7.0 §16.2 with §6.3.7): raising an alert with a location report, notifying the affiliated members, the receipts, late alerts, and cancellation by the originator or by another authorised user. Emergency and imminent-peril MCData *communications* are media-plane sessions and are not implemented.
 
-Back to the [MCData test index](../MCDATA_TEST.md). The shared four-client fixture, the client status fields and the MCData deployment are described in the [standalone SDS tests](MCDATA_SDS_TEST.md), which also holds the shared coverage gaps. Architecture: MCData Phase 1 design, [standards and acceptance](../../docs/architecture/mcdata-standards-and-acceptance.md).
+Back to the [MCData test index](../MCDATA_TEST.md). The shared four-client fixture, the client status fields and the MCData deployment are described in the [standalone SDS tests](MCDATA_SDS_TEST.md), which also holds the shared coverage gaps. Acceptance: [MCData acceptance matrix](../../docs/architecture/mcdata-standards-and-acceptance.md).
 
 ## How it works
 
@@ -25,16 +25,16 @@ mcx-client --config FILE --command 'mcdata-alert cancel [group=<id>] [<originato
 
 ## Performed tests
 
-Recorded on **2026-09-22** against image `openmcx:0.29-mcdata` (`fb662f09297d`), TS 24.282 V19.7.0, clear SIP (debug mode), in a fresh lab captured from the first request: 163 scenario assertions and 64 wire checks on one MCData server instance. The scenario and the wire report cover every MCData SDS feature, so the evidence links below are shared with the other MCData SDS documents.
+The tests run in the SDS scenario (`mcdata_sds_scenario.py`, 163 assertions) and its wire verifier (`verify_mcdata_sds.py`, 64 checks), clear SIP (debug mode), on one MCData server instance; the regression runs them in the `mcdata` lab. The scenario and the wire report cover every MCData SDS feature, so the evidence below is shared with the other MCData SDS documents.
 
 | ID | Scenario | Result evidence |
 |---|---|---|
-| EA-01 | Group emergency alert: 200, MDEA 3 and the MCData emergency state; a receipt with `<alert-ind-rcvd>`; every other affiliated member notified with originator, organisation and location; the server records the outstanding alert | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| EA-02 | A member that de-affiliates and affiliates again receives the outstanding alert | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| EA-03 | The originator cancels: MDEA 1, the emergency state ends, other members and the server clear the alert | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| EA-04 | Another authorised user cancels the originator's alert with `<originated-by>`; the originator returns to MDEA 1 | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| EA-05 | Alert rejections: no activation permission (403, `<alert-ind>` false), group outside the dedicated alert groups, group without alert permission, 168 preconfigured use only, 120 not a member; no cancel permission (403, `<alert-ind>` true) | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| EA-06 | Implicit affiliation of an eligible member alerting on an unaffiliated group | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
+| EA-01 | Group emergency alert: 200, MDEA 3 and the MCData emergency state; a receipt with `<alert-ind-rcvd>`; every other affiliated member notified with originator, organisation and location; the server records the outstanding alert | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| EA-02 | A member that de-affiliates and affiliates again receives the outstanding alert | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| EA-03 | The originator cancels: MDEA 1, the emergency state ends, other members and the server clear the alert | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| EA-04 | Another authorised user cancels the originator's alert with `<originated-by>`; the originator returns to MDEA 1 | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| EA-05 | Alert rejections: no activation permission (403, `<alert-ind>` false), group outside the dedicated alert groups, group without alert permission, 168 preconfigured use only, 120 not a member; no cancel permission (403, `<alert-ind>` true) | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| EA-06 | Implicit affiliation of an eligible member alerting on an unaffiliated group | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
 
 ## High-level call flow (group emergency alert)
 

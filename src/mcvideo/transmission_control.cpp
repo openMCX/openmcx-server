@@ -40,32 +40,17 @@ void McvideoServer::send_transmission_notice(Leg &leg, const FloorNotice &notice
     }
     packet.type = Type::Granted;
     leg.granted_priority = notice.priority;
-    packet.fields = {duration_field(cfg_.at(svc_.name).value("max_talk_ms", 30000) / 1000),
-                     audio_ssrc_field(leg.audio_ssrc), video_ssrc_field(leg.video_ssrc),
-                     priority_field(notice.priority)};
+    leg.sends_without_permission = leg.released_floor = false;
+    // TS 24.581 clause 9.2.5: the Duration field, the transmission time the arbitrator applies (as TS 24.380
+    // clause 6.3.4.4.2 step 1a; TS 24.581 leaves the value open).
+    packet.fields = {duration_field_ms(notice.duration_ms), audio_ssrc_field(leg.audio_ssrc),
+                     video_ssrc_field(leg.video_ssrc), priority_field(notice.priority)};
     break;
   case FloorNoticeKind::Taken:
-    leg.floor_granted = false;
-    packet.type = Type::ArbitrationTaken;
-    packet.fields = {message_sequence_field(++leg.floor_sequence), transmitting_user_field(notice.participant),
-                     permission_to_request_field(!leg.session->broadcast)};
-    for (auto &[dialog, other] : legs_)
-      if (other->session == leg.session && other->user == notice.participant) {
-        packet.fields.push_back(audio_ssrc_field(other->audio_ssrc));
-        packet.fields.push_back(video_ssrc_field(other->video_ssrc));
-        // TS 24.581 clauses 4.1.1.2 and 9.2.16: with reception control, a member is told of the new
-        // transmission and receives it once it accepts (Receive Media Request).
-        if (reception_control()) {
-          leg.receiving = false;
-          send_transmission({Type::MediaReceptionNotification,
-                             false,
-                             leg.remote->floor_ssrc,
-                             {user_id_field(notice.participant), audio_ssrc_field(other->audio_ssrc),
-                              video_ssrc_field(other->video_ssrc)}},
-                            leg);
-        }
-      }
-    break;
+    // TS 24.581 clauses 6.3.4.4.2 step 3, 6.3.6.3.3 and 6.3.7.3.3: another participant transmits; the member gets
+    // the Media Transmission Notification of the transmission, with its Reception Mode.
+    transmission_notification(leg, notice.participant);
+    return;
   case FloorNoticeKind::QueuePosition:
     packet.type = Type::QueuePositionInfo;
     packet.fields = {queue_info_field(notice.queue_position, notice.priority)};
@@ -86,6 +71,36 @@ void McvideoServer::send_transmission_notice(Leg &leg, const FloorNotice &notice
     break;
   }
   send_transmission(packet, leg);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.581 clauses 6.3.4.4.2 step 3 and 6.3.5.7.4 step 3: the Media Transmission Notification of a transmission
+// (the transmitter's MCVideo ID and audio and video SSRCs, Permission to Request '0' in a broadcast group call, the
+// Transmission Indicator in a broadcast, emergency or imminent peril call), sent by the reception control
+// arbitration logic to every other participant (clause 6.3.6.3.3 step 1) with the Reception Mode: '0' (automatic)
+// in a broadcast, emergency or imminent peril call, '1' (manual) otherwise; without reception control the server
+// sends every transmission to every member, and says so with '0'. The participant is in 'U: not permitted and
+// Transmit Taken' (clause 6.3.5.4.2); with automatic reception the transmitter's SSRCs are in its Active SSRC List
+// and it receives at once ('U: permitted to receive', clause 6.3.7.3.3 step 5), with manual reception it receives
+// once it asks (Receive Media Request, clause 6.3.7.3.4).
+void McvideoServer::transmission_notification(Leg &leg, const std::string &transmitter) {
+  using namespace mcx::transmission;
+  const Leg *granted = nullptr;
+  for (const auto &[dialog, other] : legs_)
+    if (other->session == leg.session && other->user == transmitter) granted = other.get();
+  const auto &state = call_priority(*leg.session);
+  const bool broadcast = leg.session->broadcast;
+  const bool automatic = automatic_reception(reception_control(), broadcast, state.emergency, state.imminent);
+  leg.floor_granted = false;
+  leg.released_floor = false;
+  leg.receiving = automatic;
+  if (!granted || !leg.remote) return;
+  std::optional<std::uint16_t> indicator;
+  if (broadcast || state.emergency || state.imminent)
+    indicator = floor_call_type_bits(broadcast, state.emergency, state.imminent);
+  send_transmission(media_transmission_notification(leg.remote->floor_ssrc, transmitter, granted->audio_ssrc,
+                                                    granted->video_ssrc, !broadcast, indicator, automatic),
+                    leg);
 }
 
 //------------------------------------------------------------------------------
@@ -167,8 +182,10 @@ void McvideoServer::transmission_packet(Leg &leg, const Datagram &datagram) {
     const bool emergency_request = current_priority.emergency_users.contains(leg.user);
     const bool imminent_request = !current_priority.emergency && current_priority.imminent_users.contains(leg.user);
     const std::uint8_t preemptive = emergency_request ? 3 : imminent_request ? 2 : 0;
+    // TS 24.581 clause 6.3.4.4.8: Transmission Granted again, with the transmission time still left.
     if (arbitrator.owner() == leg.user)
-      send_notice(leg, {FloorNoticeKind::Granted, leg.user, leg.user, 0, leg.granted_priority});
+      send_notice(leg, {FloorNoticeKind::Granted, leg.user, leg.user, 0, leg.granted_priority, 254,
+                        arbitrator.talk_time_remaining(monotonic_ms())});
     else
       notices(*session, arbitrator.request(leg.user, monotonic_ms(), priority,
                                            leg.local.queueing && leg.remote->queueing, preemptive));
@@ -177,16 +194,29 @@ void McvideoServer::transmission_packet(Leg &leg, const Datagram &datagram) {
     break;
   }
   case Type::Release:
+    leg.released_floor = arbitrator.owner() == leg.user;
     notices(*session, arbitrator.release(leg.user, monotonic_ms()));
     event("transmission_released", {{"user_id", leg.user}});
     break;
-  case Type::EndRequest:
+  case Type::EndRequest: {
     // TS 24.581 clauses 9.2.20 and 9.2.21: the transmitter ends its transmission (clause 6.3.4.4.6), or a queued
     // participant withdraws its request (clause 6.2.4.9.4), which leaves the queue (clause 6.3.5.4.5 step 3).
     send_transmission({Type::EndResponse, false, leg.remote->floor_ssrc, transmitter_fields(session)}, leg);
+    // TS 24.581 clause 6.3.5.7.4: it also leaves 'U: not permitted but sends media' (step 1, the acknowledgement,
+    // is answered above with any other message).
+    const bool sent_without_permission = leg.sends_without_permission;
+    leg.sends_without_permission = false;
+    leg.released_floor = arbitrator.owner() == leg.user;
     notices(*session, arbitrator.release(leg.user, monotonic_ms()));
+    if (sent_without_permission) {
+      if (const auto owner = arbitrator.owner())
+        transmission_notification(leg, *owner); // TS 24.581 clause 6.3.5.7.4 step 3
+      else
+        send_notice(leg, {FloorNoticeKind::Idle, leg.user, "", 0}); // step 2: Transmission Idle
+    }
     event("transmission_ended", {{"user_id", leg.user}});
     break;
+  }
   case Type::ReceiveMediaRequest: {
     // TS 24.581 clauses 9.2.14 and 9.2.15: a member accepts the current transmission, or is told why not.
     auto fields = transmitter_fields(session);

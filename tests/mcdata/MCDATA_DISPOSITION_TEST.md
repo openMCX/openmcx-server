@@ -2,7 +2,7 @@
 
 These tests cover the handling of **SDS disposition notifications beyond their delivery** (TS 24.282 V19.7.0 §12.2.2.1 steps 5–6 and §12.2.3 step 15c): storage and re-delivery of an undelivered message with timer TDP1, and aggregation of a group's notifications with timer TDC1.
 
-Back to the [MCData test index](../MCDATA_TEST.md). The shared four-client fixture, the client status fields and the MCData deployment are described in the [standalone SDS tests](MCDATA_SDS_TEST.md), which also holds the shared coverage gaps. Architecture: MCData Phase 1 design, [standards and acceptance](../../docs/architecture/mcdata-standards-and-acceptance.md).
+Back to the [MCData test index](../MCDATA_TEST.md). The shared four-client fixture, the client status fields and the MCData deployment are described in the [standalone SDS tests](MCDATA_SDS_TEST.md), which also holds the shared coverage gaps. Acceptance: [MCData acceptance matrix](../../docs/architecture/mcdata-standards-and-acceptance.md).
 
 ## How it works
 
@@ -24,15 +24,15 @@ mcx-client --config FILE --command 'mcdata-storage full|unlimited|<n>'   # recei
 
 ## Performed tests
 
-Recorded on **2026-09-22** against image `openmcx:0.29-mcdata` (`fb662f09297d`), TS 24.282 V19.7.0, clear SIP (debug mode), in a fresh lab captured from the first request: 163 scenario assertions and 64 wire checks on one MCData server instance. The scenario and the wire report cover every MCData SDS feature, so the evidence links below are shared with the other MCData SDS documents.
+The tests run in the SDS scenario (`mcdata_sds_scenario.py`, 163 assertions) and its wire verifier (`verify_mcdata_sds.py`, 64 checks), clear SIP (debug mode), on one MCData server instance; the regression runs them in the `mcdata` lab. The scenario and the wire report cover every MCData SDS feature, so the evidence below is shared with the other MCData SDS documents.
 
 | ID | Scenario | Result evidence |
 |---|---|---|
-| AG-01 | The three DELIVERED notifications of SD-08 arrive in one aggregated SIP MESSAGE as soon as every recipient has reported | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| AG-02 | Read requested: two members read, one does not; nothing reaches the sender while TDC1 runs; at expiry one aggregate carries both READ notifications; the third member's later READ is relayed individually with the notifier as calling user | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| RD-01 | A client without storage reports UNDELIVERED for a one-to-one SDS and does not deliver it; the server stores it with TDP1 running; the originator receives nothing | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| RD-02 | TDP1 expiry re-delivers the message (undelivered again, second attempt); after storage is freed the next re-delivery reaches the user with the same Message ID, DELIVERED reaches the originator and the stored copy is deleted | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
-| RD-03 | Group SDS: the other members deliver; for the member without storage the message is discarded after the attempt limit (three UNDELIVERED), and the originator gets no notification from that member | Scenario report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/mcdata29-lab/artifacts/integration/mcdata-sds.pcap`) |
+| AG-01 | The three DELIVERED notifications of SD-08 arrive in one aggregated SIP MESSAGE as soon as every recipient has reported | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| AG-02 | Read requested: two members read, one does not; nothing reaches the sender while TDC1 runs; at expiry one aggregate carries both READ notifications; the third member's later READ is relayed individually with the notifier as calling user | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| RD-01 | A client without storage reports UNDELIVERED for a one-to-one SDS and does not deliver it; the server stores it with TDP1 running; the originator receives nothing | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| RD-02 | TDP1 expiry re-delivers the message (undelivered again, second attempt); after storage is freed the next re-delivery reaches the user with the same Message ID, DELIVERED reaches the originator and the stored copy is deleted | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
+| RD-03 | Group SDS: the other members deliver; for the member without storage the message is discarded after the attempt limit (three UNDELIVERED), and the originator gets no notification from that member | Scenario report (`artifacts/integration/mcdata-sds-results.json`), wire report (`artifacts/integration/mcdata-sds-sip-wire.json`), capture (`artifacts/integration/mcdata-sds.pcap`) |
 
 ## Coverage gaps
 

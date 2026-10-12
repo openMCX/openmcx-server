@@ -779,6 +779,38 @@ void test_broadcast_fields() {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.380 clause 6.3.4.4.2 step 1a: the Floor Granted carries T2 (Stop talking), the value the arbitrator applies,
+// also when repeated on T20; clause 6.3.4.4.8 step 1a: a Floor Request from the permitted participant gets the T2
+// still running for it, which starts with its first RTP packet (clause 6.3.4.4.5). The Duration field is in whole
+// seconds, rounded up.
+void test_granted_duration() {
+  assert(mcx::read_duration(mcx::duration_field_ms(14500)) == 15);
+  assert(mcx::read_duration(mcx::duration_field_ms(15000)) == 15);
+  assert(mcx::read_duration(mcx::duration_field_ms(0)) == 0);
+  assert(mcx::read_duration(mcx::duration_field_ms(1000000000)) == 65535);
+
+  mcx::FloorArbitratorOptions options;
+  options.max_talk_ms = 20000;
+  options.queue_enabled = true;
+  options.grant_retry_ms = 100;
+  options.media_idle_ms = 60000;
+  mcx::FloorArbitrator floor({"a", "b"}, options);
+  const auto grant = floor.request("a", 0);
+  assert(grant[0].kind == mcx::FloorNoticeKind::Granted && grant[0].duration_ms == 20000);
+  assert(floor.talk_time_remaining(500) == 20000); // T2 not started before the first RTP packet
+  floor.media_received("a", 1000);
+  assert(floor.talk_time_remaining(1000) == 20000);
+  assert(floor.talk_time_remaining(6500) == 14500);
+  assert(floor.talk_time_remaining(21000) == 0);
+  assert(floor.request("a", 6500).empty()); // the server answers it from talk_time_remaining()
+
+  (void)floor.request("b", 7000, 0, true);
+  (void)floor.release("a", 8000);
+  const auto repeat = floor.tick(8100); // T20: the queued participant's Floor Granted again
+  assert(repeat.size() == 1 && repeat[0].recipient == "b" && repeat[0].duration_ms == 20000);
+}
+
+//------------------------------------------------------------------------------
 // Runs every floor control test.
 int main() {
   test_preemptive_floor_request();
@@ -792,6 +824,7 @@ int main() {
   test_timed_arbitration_and_queue();
   test_queue_depth();
   test_queued_grant_retransmission();
+  test_granted_duration();
   test_participant_timers();
   test_release_state_reordering();
   test_implicit_grant();

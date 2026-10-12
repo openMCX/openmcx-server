@@ -415,8 +415,10 @@ its service hooks (`src/mcvideo/mcvideo_server.hpp`):
   handles Receive Media Request (reception control), and Remote Transmission (cancel) Request
   (`remote_transmission`).
 - `media_control_notice` is `send_transmission_notice`: a grant becomes Transmission Granted with new audio and video
-  SSRCs, a taken floor becomes Transmission Arbitration Taken (and, with `reception_control`, a Media Reception
-  Notification after which the leg receives video only once it accepts), and so on.
+  SSRCs, a taken floor becomes a Media Transmission Notification (`transmission_notification`) whose Reception
+  Mode is automatic in broadcast, emergency and imminent peril calls and without `reception_control`, manual
+  otherwise (TS 24.581 clause 6.3.6.3.3); with manual reception the leg receives video only once it accepts, and
+  so on.
 - `service_media_packets` reads the leg's video and `video_packet` (`src/mcvideo/video_media.cpp`) relays the
   transmitting participant's video to the receiving legs.
 - `service_invite` handles video push to and pull from the server (`server_video_invite`,
@@ -475,9 +477,10 @@ stateDiagram-v2
 |---|---|---|
 | Floor Request in 'G: Floor Idle' | `FloorArbitrator::request`: owner set, Granted to the requester, Taken to the others | TS 24.380 clause 6.3.4.3.3 |
 | Floor Request in 'G: Floor Taken' | `request`: pre-emptive priority higher than the owner's revokes (cause 4) and queues; with queueing, queued (Queue Position Info, or Deny cause 7 when full); otherwise Deny cause 1; unauthorised Deny cause 255 | clauses 6.3.4.4.7, 6.3.5.4.4 |
-| Floor Request from the owner | `McpttServer::floor_request` resends Floor Granted, or Floor Revoke in 'G: pending Floor Revoke' | clause 6.3.4.4.8 |
+| Floor Request from the owner | `McpttServer::floor_request` resends Floor Granted with the T2 still running (`talk_time_remaining`), or Floor Revoke in 'G: pending Floor Revoke' | clause 6.3.4.4.8 |
 | Floor Release | `release`, then `finish_owner` | clauses 6.3.4.4.6, 6.3.4.5.4 |
 | RTP from the owner | `media_received`: T2 starts at the first packet, T1 restarts, T20 stops | clause 6.3.4.4.5 |
+| RTP from a participant without permission | `McServer::unpermitted_media`: not forwarded; Floor Revoke cause #3 and 'U: not permitted but sends media' while another participant has the floor, or after its own Floor Release; T8 repeats the revoke while the media goes on; Floor Release or a grant ends it | clauses 6.3.5.3.8, 6.3.5.4.6, 6.3.5.7 |
 | Timers | `tick`: T7 (Floor Idle, counter C7), T20 (Floor Granted, counter C20), T1 (End of RTP media), T2 (Stop talking), T3 (Stop talking grace), Floor Revoke resent as for T8 | clauses 6.3.4.3.4, 6.3.4.4.3, 6.3.4.4.4, 6.3.4.4.9, 6.3.4.5.5, 6.3.4.5.6, 6.3.5.6.3 |
 | Participant joins or leaves | `add` (Taken or Idle to the new participant), `remove` | clause 6.3.5 on entering |
 | Priority change | `set_priority_class`, called by `apply_priority` (`src/server/priority.cpp`): 3 emergency, 2 imminent peril, 1 pre-emptive user, 0 normal; reorders the queue | TS 24.379 clause 4.6 |
@@ -535,9 +538,6 @@ TS 24.379 describes call setup and release as procedures. OpenMCX keeps their st
 
 ### 5.6 Known gaps against the server state machines
 
-- 'U: not permitted but sends media' (TS 24.380 clause 6.3.5.4.6): the media of a participant without permission is
-  dropped and counted in `media_dropped` (`McServer::audio_packet`), but no Floor Revoke with cause 3 is sent and no
-  such state is entered.
 - 'G: Floor Initialising', the non-controlling function's floor control (clause 6.5), multi-talker and dual floor
   control are not implemented ([limitations](LIMITATIONS.md)).
 
@@ -696,7 +696,7 @@ Over debug TCP SIP (the default transport), `tests/integration/wire_check.py` ca
 before the clients sign in, and the scenario's verifier (`tests/integration/verify_*.py`) decodes the capture
 independently of the C++ code: message order, bodies, floor and MSRP messages, and the messages that must not be sent.
 `verifiers()` in `wire_check.py` maps a scenario to its verifier. The result is reported as `<scenario>/wire`.
-Labs over TLS and split labs skip it ([using the lab](USAGE.md#regression-matrix)).
+Labs over TLS and split labs skip it ([using the lab](USAGE.md#6-tests)).
 
 ### 9.4 Adding a scenario and a lab
 
@@ -724,7 +724,7 @@ shows on the wire needs its capture regenerated.
 
 ### 10.1 Build and style
 
-- Build everything in Docker ([building](BUILD.md)); nothing is installed on the host. `compose.dev.yaml` mounts
+- Build everything in Docker ([building](BUILD.md)); nothing is installed on the host. `docker/compose/compose.dev.yaml` mounts
   binaries built under `build/` into a running lab.
 - Follow the [coding style](CODING_STYLE.md): no single-letter names, the separator line before every function, one
   topic per file, `tools/format` and `tools/lint` in the `openmcx-lint` image. Formatting changes go in commits of

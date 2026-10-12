@@ -1,6 +1,6 @@
 # Emergency call tests
 
-These tests cover **MCPTT emergency calls**: the on-network emergency group call on a prearranged group, emergency alerts, the in-progress emergency group timer (TNG2), and the emergency variants of the other call types (TS 23.379 §10.6.2.6, TS 24.379 §4.6, §6.2.8, §6.3.3.1). The recorded results cover the implemented subset below, not complete emergency conformance. GPS/LMS location acquisition and emergency state that persists across a server restart are not implemented; see [coverage gaps](#coverage-gaps).
+These tests cover **MCPTT emergency calls**: the on-network emergency group call on a prearranged group, emergency alerts, the in-progress emergency group timer (TNG2), and the emergency variants of the other call types (TS 23.379 §10.6.2.6, TS 24.379 §4.6, §6.2.8, §6.3.3.1). The tests cover the implemented subset below, not complete emergency conformance. GPS/LMS location acquisition and emergency state that persists across a server restart are not implemented; see [coverage gaps](#coverage-gaps).
 
 Back to the [test index by call type](../MCPTT_TEST.md). Related: [imminent-peril calls](IMMINENT_PERIL_CALL_TEST.md) and [first-to-answer calls](FIRST_TO_ANSWER_TEST.md).
 
@@ -20,10 +20,10 @@ Back to the [test index by call type](../MCPTT_TEST.md). Related: [imminent-peri
 |---|---|---|
 | Prearranged group call | Emergency group call, alerts, TNG2 (this document) | EM-01–EM-09 below |
 | Private call | Emergency private call with MEPC/MEPP/MPEA states; in-dialog upgrade and cancellation; alert withdrawal by SIP INFO (§6.2.8.3, §11.1.1.4.3–6) | [PC-18](PRIVATE_CALL_TEST.md#emergency-private-call), 12 checks in this run |
-| First-to-answer call | Emergency first-to-answer call; invitees save and restore MEPP (§11.1.1.2.1.2 step 3b) | [FE-01–FE-09](FIRST_TO_ANSWER_TEST.md#performed-tests) |
+| First-to-answer call | Emergency first-to-answer call; invitees save and restore MEPP (§11.1.1.2.1.2 step 3b) | [FE-01–FE-09](FIRST_TO_ANSWER_TEST.md#checks) |
 | Chat group call | Emergency join invites affiliated members who have not joined (§10.1.2.4.1 step 14) | [CH-14](CHAT_CALL_TEST.md), 5 emergency checks in this run |
 | Ad hoc group call | Emergency ad hoc call with TNG2 release, and ad hoc emergency alert groups (§6.2.8.1.21–27, §17.4.2.2 steps 7A–7B, 14A) | [AH-15, AH-17](ADHOC_CALL_TEST.md), 4 + 9 emergency checks in this run |
-| Broadcast group call | `call broadcast emergency`, or an in-dialog upgrade by the broadcast initiator; Floor Indicator B+D (local policy); receivers stay receive-only | [BC-18](BROADCAST_CALL_TEST.md#emergency-and-imminent-peril-broadcast-h7--2026-09-22) |
+| Broadcast group call | `call broadcast emergency`, or an in-dialog upgrade by the broadcast initiator; Floor Indicator B+D (local policy); receivers stay receive-only | [BC-18](BROADCAST_CALL_TEST.md#checks) |
 
 ## Implemented profile (emergency group call)
 
@@ -50,52 +50,42 @@ mcx-client --config FILE --command 'alert off sip:alice.mcptt@mcx.test'   # thir
 
 Status reports `priority` (normal, imminent or emergency), `alerts`, `alert_locations` and pending procedures. The server status shows `group_priority` per group. Emergency alerts need `mcptt.emergency_location` (synthetic encoded fields in the fixture); see the location profile.
 
-## Separate four-client fixture
+## Running the tests
+
+The group emergency and imminent-peril scenario (`prearranged_priority_scenario.py`) runs in the `priority` lab of the
+regression; the emergency variants of the other call types run in the `call-types` and `first-to-answer` labs:
 
 ```bash
-docker build -t openmcx:0.18-emergency -f docker/Dockerfile .
-python3 tools/prepare-prearranged-test.py --directory artifacts/emergency-lab --project openmcx-emergency \
-  --debug-sip --floor-queue --priority --image openmcx:0.18-emergency
-mkdir -p artifacts/emergency-lab/artifacts/speech
-cp artifacts/speech/{alpha,bravo}.wav artifacts/emergency-lab/artifacts/speech/
-.cache/deps/docker-compose-linux-x86_64 -p openmcx-emergency -f artifacts/emergency-lab/compose.json up -d
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =priority
 ```
 
-`--priority` authorises client-a and client-b for emergency, imminent peril and alerts. Only client-a may cancel alerts. client-b is a permitted numeric preemptor at priority 75 or higher. The fixture also sets the Resource-Priority values (normal `mcpttp.0`, imminent `mcpttp.10`, emergency `mcpttp.15`) and `emergency_timeout_ms=300000`.
+The lab's `--priority` option authorises client-a and client-b for emergency, imminent peril and alerts. Only
+client-a may cancel alerts. client-b is a permitted numeric preemptor at priority 75 or higher. It also sets the
+Resource-Priority values (normal `mcpttp.0`, imminent `mcpttp.10`, emergency `mcpttp.15`) and
+`emergency_timeout_ms=300000`. Over debug TCP SIP the run also captures at the MCPTT server and checks the capture
+with `tests/integration/verify_group_priority.py`.
 
-```bash
-python3 tests/integration/prearranged_priority_scenario.py \
-  --compose artifacts/emergency-lab/compose.json --artifacts artifacts/emergency-lab/artifacts --project openmcx-emergency
-python3 tests/integration/verify_group_priority.py artifacts/emergency-lab/artifacts/integration/group-priority.pcap \
-  --service sip:mcptt@mcx.test --emergency-priority mcpttp.15 --imminent-priority mcpttp.10 \
-  --output artifacts/emergency-lab/artifacts/integration/group-priority-sip-wire.json
-# TNG2: temporarily set priority_policy.emergency_timeout_ms to 8000 in generated/site.json, restart gms, then:
-python3 tests/integration/prearranged_priority_scenario.py \
-  --compose artifacts/emergency-lab/compose.json --artifacts artifacts/emergency-lab/artifacts \
-  --project openmcx-emergency --timer-only
-```
+The TNG2 expiry (EM-09) needs a short timer and is run by hand on a prepared lab: set
+`priority_policy.emergency_timeout_ms` to 30000 or less in the lab's `generated/site.json`, restart the GMS, and run
+`prearranged_priority_scenario.py --timer-only`.
 
-Capture the server namespace during the first run, as for the other call types.
+## Checks
 
-## Performed tests
+| ID | What is checked |
+|---|---|
+| EM-01 | An emergency initial call reaches all participants with the emergency state; the call closes while the group emergency persists; a standalone cancellation receipt restores the group state |
+| EM-02 | Alert before the upgrade; the encoded alert location reaches participants; an imminent call is upgraded to emergency; emergency precedence is confirmed by post-ACK INFO |
+| EM-03 | Unauthorised emergency cancellation rejected; a late entrant inherits the emergency state |
+| EM-04 | A numeric preemptor takes the idle emergency-group floor; the emergency originator preempts its grant and media; emergency speech received and released |
+| EM-05 | A second authorised emergency indication is accepted and that user transmits; cancellation is refused while they transmit |
+| EM-06 | Authorised cancellation restores the normal call; an independent alert is cancelled after the downgrade |
+| EM-07 | Unauthorised emergency activation leaves the call normal; an unauthorised alert is rejected |
+| EM-08 | An independent alert is delivered without upgrading the call and its location reaches everyone; unauthorised self-cancellation refused; authorised third-party cancellation confirmed |
+| EM-09 | TNG2 downgrades the group without releasing the session |
+| EM-10 | SIP and floor wire checks: emergency and imminent requests carry their indications and Resource-Priority; an in-dialog emergency upgrade; server propagation with Resource-Priority; explicit `emergency-ind` false on cancellation; 403 for unauthorised requests; alert MESSAGEs with location and alert cancellation; INFO correction; floor D-bit and E-bit |
+| EM-11 | Emergency variants of the other call types: emergency private (PC-18), emergency chat (CH-14), emergency ad hoc with TNG2 (AH-15), ad hoc emergency alert (AH-17), emergency first-to-answer (FE-01 to FE-09) |
 
-Recorded on **2026-09-22** against image `openmcx:0.18-emergency` (`18502ee52297`), built from branch `feat/mcptt-phase1` (uncommitted changes on top of `4fdfc8c`). The fixture ran clear media with debug SIP. Every report records **PASS**. The group priority run made 43 assertions on one server instance; the rows below group them, and rows 1–10, 36 and 43 are setup, numeric preemption and cleanup. The other call types' emergency checks come from the combined run of all call types on the same image.
-
-| ID | Scenario | Checks | Result evidence |
-|---|---|---|---|
-| EM-01 | An emergency initial call reaches all participants with the emergency state; the call closes while the group emergency persists; a standalone cancellation receipt restores the group state | 3 | Priority report (`artifacts/emergency-lab/artifacts/integration/prearranged-priority-results.json`) |
-| EM-02 | Alert before the upgrade; the encoded alert location reaches participants; an imminent call is upgraded to emergency; emergency precedence is confirmed by post-ACK INFO | 4 | Same report |
-| EM-03 | Unauthorised emergency cancellation rejected; a late entrant inherits the emergency state | 2 | Same report |
-| EM-04 | A numeric preemptor takes the idle emergency-group floor; the emergency originator preempts its grant and media; emergency speech received and released | 5 | Same report |
-| EM-05 | A second authorised emergency indication is accepted and that user transmits; cancellation is refused while they transmit | 4 | Same report |
-| EM-06 | Authorised cancellation restores the normal call; an independent alert is cancelled after the downgrade | 2 | Same report |
-| EM-07 | Unauthorised emergency activation leaves the call normal; an unauthorised alert is rejected | 2 | Same report |
-| EM-08 | An independent alert is delivered without upgrading the call and its location reaches everyone; unauthorised self-cancellation refused; authorised third-party cancellation confirmed | 4 | Same report |
-| EM-09 | TNG2 (8 s test value) downgrades the group without releasing the session | 7 | Timer report (`artifacts/emergency-lab/artifacts/integration/prearranged-priority-timer-results.json`) |
-| EM-10 | SIP and floor wire checks (10): emergency and imminent requests carry their indications and Resource-Priority; an in-dialog emergency upgrade; server propagation with Resource-Priority; explicit `emergency-ind` false on cancellation; 403 for unauthorised requests; alert MESSAGEs with location and alert cancellation; INFO correction; floor D-bit (33 messages) and E-bit (4) | 10 | Wire report (`artifacts/emergency-lab/artifacts/integration/group-priority-sip-wire.json`), capture (`artifacts/emergency-lab/artifacts/integration/group-priority.pcap`) |
-| EM-11 | Emergency variants in the combined run: emergency private (PC-18, 12), emergency chat (CH-14, 5), emergency ad hoc with TNG2 (AH-15, 4), ad hoc emergency alert (AH-17, 9), emergency first-to-answer (FE-01–FE-09, 29 + 10 wire) | 69 | Private (`artifacts/fta-lab/artifacts/integration/private-call-results.json`), chat (`artifacts/fta-lab/artifacts/integration/chat-call-results.json`), ad hoc (`artifacts/fta-lab/artifacts/integration/adhoc-call-results.json`), first-to-answer (`artifacts/fta-lab/artifacts/integration/first-to-answer-emergency-results.json`) |
-
-Container identities (`artifacts/emergency-lab/artifacts/integration/emergency-containers.txt`) record the deployment. Earlier runs of the same scenario on protected media are recorded as PGC-11/12/15/21 in the [emergency and protected tests](EMERGENCY_PROTECTED_TEST.md).
+The same scenario on protected media is covered by the [emergency and protected tests](EMERGENCY_PROTECTED_TEST.md).
 
 ## High-level call flow
 
@@ -126,24 +116,13 @@ sequenceDiagram
     Note over S: Or: TNG2 expiry downgrades without releasing the call
 ```
 
-## Physical-setup validation — not yet performed
-
-| ID | Physical test to perform | What to validate and retain |
-|---|---|---|
-| EM-P01 | Emergency activation and cancellation on real devices | Emergency indication, alert display with real location, preemption of the current speaker |
-| EM-P02 | Radio/core priority | Resource-Priority mapped to bearer QoS under congestion; SIP priority alone is insufficient evidence |
-| EM-P03 | GPS-derived alert location | Real encoded coordinates, freshness and accuracy |
-| EM-P04 | Independent implementation | Emergency and alert signaling, Resource-Priority and floor D-bit with another vendor |
-
 ## Coverage gaps
-
-The blockers and implementation guide describes each item.
 
 | Area | Gap |
 |---|---|
 | Emergency broadcast | Implemented as a local Floor Indicator policy (B+D); no stage-3 procedure exists, so interoperability cannot be claimed. Only the initiator may change the priority in-dialog. |
 | Location | The alert carries the configured `emergency_location`, not a reported position. Location triggers, including the emergency ones, are covered in the [location tests](LOCATION_TEST.md), and encrypted location XML in the [XML protection tests](XML_PROTECTION_TEST.md). Positions are simulated; there is no GPS acquisition or freshness check. |
 | Persistence | Emergency state is held in memory; a server restart loses it. |
-| Multiple servers | With separate participating and controlling servers (H2 split system) the group emergency scenario (43 checks) and the emergency private, first-to-answer, chat, broadcast and ad hoc variants pass. |
-| Radio priority | Resource-Priority is signalled but not mapped to network QoS in this lab. |
+| Multiple servers | Covered: the group emergency scenario and the emergency private, first-to-answer, chat, broadcast and ad hoc variants also run with separate participating and controlling servers. |
+| Radio priority | In this lab Resource-Priority is signalled only. The request for QoS over N5 and Rx is checked in the `pcf-n5` and `rx` labs and in end-to-end tutorials 3 to 5. |
 | Wire qualification | In-repository decoders only; no independent-peer run. |

@@ -34,6 +34,9 @@ struct FloorNotice {
   std::uint16_t reject_cause{};     // TS 24.380 clause 8.2.3.4: the Reject Cause field
   std::uint8_t priority{};          // TS 24.380 clause 8.2.3.2: the Floor Priority field
   std::uint8_t queue_position{254}; // TS 24.380 clause 8.2.3.5: the Queue Position Info, 254 when not queued
+  // TS 24.380 clauses 6.3.4.4.2 and 6.3.4.4.8: in a Floor Granted, the value of T2 (Stop talking) for the Duration
+  // field (clause 8.2.3.3), in milliseconds.
+  std::uint64_t duration_ms{};
 
   bool operator==(const FloorNotice &) const = default;
 };
@@ -64,6 +67,9 @@ public:
   [[nodiscard]] virtual FloorState state() const = 0;
   [[nodiscard]] virtual std::uint16_t revoke_cause() const = 0;
   [[nodiscard]] virtual bool awaiting_grant_media() const = 0;
+  // TS 24.380 clause 6.3.4.4.8: the value of T2 (Stop talking) running for the participant granted the floor, in
+  // milliseconds: all of it before its first RTP packet starts T2 (clause 6.3.4.4.5).
+  [[nodiscard]] virtual std::uint64_t talk_time_remaining(std::uint64_t now_ms) const = 0;
   // TS 24.380 clauses 6.3.4.4.6 and 6.3.4.5.4: a Floor Release from a participant.
   virtual std::vector<FloorNotice> release(std::string_view participant, std::uint64_t now_ms) = 0;
   virtual std::vector<FloorNotice> add(std::string_view participant) = 0;

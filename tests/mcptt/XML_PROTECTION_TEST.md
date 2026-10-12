@@ -43,40 +43,38 @@ sequenceDiagram
     Note over S: with separate participating and controlling servers, the hop between them uses their SPK
 ```
 
-## Run a separate lab
+## Running the tests
+
+The XML protection scenario runs in the `xml-protection` (confidentiality), `xml-integrity` (confidentiality and
+integrity) and `xml-protection-split` / `xml-integrity-split` (separate participating and controlling servers) labs of
+the regression:
 
 ```bash
-python3 tools/prepare-prearranged-test.py --directory artifacts/xml-lab --project openmcx-xml \
-  --debug-sip --private-call --protected --key-parameters-iei 0x79 --xml-protection --integrity-protection --image openmcx:sig-q
-python3 tests/integration/xml_protection_scenario.py --compose artifacts/xml-lab/compose.json \
-  --artifacts artifacts/xml-lab/artifacts --project openmcx-xml
-# Leave out --integrity-protection for confidentiality only, or --xml-protection for integrity only.
-# Or: tools/regress.py --image openmcx:sig-q --select xml-protection,xml-integrity,xml-integrity-split
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =xml-protection,=xml-integrity,=xml-integrity-split
 ```
 
 The clients and servers report `xml_protection` in their status: whether each protection is enabled, and how many bodies they encrypted, decrypted, signed, verified and refused.
 
-## Performed tests
+## Checks
 
-Recorded on **2026-09-25** against a layered test image (`openmcx:sig-q`, `2c06e7172142`): `openmcx:0.72` with this change's binaries, built from branch `mcptt-mcdata`. Every report records **PASS**.
+| ID | What is checked |
+|---|---|
+| XP-00 | The clients are authorised with protection enabled |
+| XP-01 | The service authorisation is protected: the servers decrypt every client's access token |
+| XP-02 | A group call with protected mcptt-info |
+| XP-03 | A private call with the called party protected (one server) |
+| XP-04 | Every client and server encrypts and decrypts MCPTT XML |
+| XP-05 | Nothing is refused |
+| XP-06 | With integrity protection, every client and server signs its XML bodies and verifies those it receives |
 
-| ID | Checks | Evidence |
-|---|---|---|
-| XP-00 | The clients are authorised with protection enabled | Combined server (`artifacts/regress-sig1/xml-integrity/artifacts/xml-protection.json`); separate participating and controlling servers (`artifacts/regress-sig1/xml-integrity-split/artifacts/xml-protection.json`) |
-| XP-01 | The service authorisation was protected: the servers decrypted every client's access token | Same reports |
-| XP-02 | A group call with protected mcptt-info | Same reports |
-| XP-03 | A private call with the called party protected | Combined server (`artifacts/regress-sig1/xml-integrity/artifacts/xml-protection.json`) |
-| XP-04 | Every client and server encrypted and decrypted MCPTT XML | Both reports |
-| XP-05 | Nothing was refused | Both reports |
-| XP-06 | Every client and server signed its XML bodies and verified those it received | Both reports |
-
-With both protections on, the protected private call scenario (automatic, manual, tampered key, first-to-answer, ambient listening, emergency) and the prearranged scenario also passed, on both servers, and with confidentiality alone the same labs passed (`xml-protection`). Every other protected lab (MCPTT and MCData) passed unchanged on the same image.
+In the same labs the protected private call scenario (automatic, manual, tampered key, first-to-answer, ambient
+listening, emergency) and the prearranged scenario run with the protection on.
 
 ## Coverage gaps
 
 | Area | Gap |
 |---|---|
-| MCData integrity | The MCData XML signatures of TS 24.282 §6.5.3 are not implemented yet. |
+| MCData integrity | The MCData XML signatures of TS 24.282 §6.5.3 are not implemented. |
 | Service configuration | `<confidentiality-protection>` and `<allow-signalling-protection>` are not read from a service configuration document. |
-| Pre-established sessions | The REFER case of §6.6.2.1 does not arise (pre-established sessions are not supported). |
+| Pre-established sessions | The REFER case of §6.6.2.1 does not arise (pre-established sessions are not in present edition). |
 | Negative lab test | No scenario sends a tampered or undecryptable body; the xmlsec unit tests cover tampered bodies and signatures, keys of another XPK and decryption failures. |

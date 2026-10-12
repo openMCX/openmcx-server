@@ -9,7 +9,7 @@
 #
 # Packages: BaseOS, AppStream and CRB, and EPEL 10 for nlohmann JSON, the AMR-WB codecs and libidn. freeDiameter and
 # OpenH264 have no EL10 package, so they are built from their pinned sources, like pjsip, wolfSSL and Go
-# (dependencies.lock.json, checked by tools/check-dependencies.py). The runtime images use BaseOS and AppStream only:
+# (dependencies/lock.json, checked by tools/check-dependencies.py). The runtime images use BaseOS and AppStream only:
 # the few libraries from EPEL or built here are copied in, and every image checks with ldd that nothing is missing.
 
 ARG BUILDER_IMAGE=quay.io/centos/centos:stream10@sha256:3f924e68a32f956996f69431e59e069fbcef608ab9de821a78693167d25348d4

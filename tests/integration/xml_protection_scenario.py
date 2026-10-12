@@ -110,6 +110,9 @@ def main():
             lambda: all(status(role).get('authorized') and counters(role).get('enabled') for role in CLIENTS),
             120,
         )
+        # The client starts a group call only once it is affiliated to the group, and its affiliation PUBLISH follows
+        # its authorisation: wait for it before XP-02.
+        wait('XP-00 the clients are affiliated', lambda: all(status(role).get('affiliated') for role in CLIENTS), 60)
         wait(
             'XP-01 the service authorisation was protected: each server decrypted the access token',
             lambda: sum(counters(server).get('decrypted', 0) for server in servers) >= len(CLIENTS),
