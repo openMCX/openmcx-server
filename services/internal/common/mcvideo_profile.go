@@ -442,7 +442,10 @@ func mcvideoProfileConstraints(raw []byte, xui, name string) error {
 		}
 		return nil
 	}
-	return check(root)
+	if err := check(root); err != nil {
+		return err
+	}
+	return authorizationLimitConstraint(root)
 }
 
 // ------------------------------------------------------------------------------

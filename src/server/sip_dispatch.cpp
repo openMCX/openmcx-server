@@ -46,7 +46,8 @@ SipResponse McServer::incoming(const SipMessage &message) {
     // Requests from a peer MCPTT/MCVideo server (another function of this system).
     if (!peer.empty() && peer_request(message, peer, event_name, response)) return response;
     if (message.method == "PUBLISH" && event_name == "poc-settings") {
-      service_authorization(message, response);
+      if (get_header(message.headers, "Expires") == "0") service_log_off(message, response); // clause 7.3.5
+      else service_authorization(message, response);
       return response;
     }
     // BYE outside a relayed call: only the leg's own user may end it.
@@ -241,12 +242,33 @@ void McServer::service_authorization(const SipMessage &message, SipResponse &res
   // The token's subject is the MCPTT ID (TS 33.180 clause 5.1.2); an MCVideo server
   // binds the token's MCVideo ID instead (token_subject_valid).
   if (!token_subject_valid(claims)) throw std::runtime_error("introspection subject mismatch");
+  const auto id = claims.at(svc_.id_claim).get<std::string>();
+  const auto now = std::time(nullptr);
+  // A binding whose service authorisation has ended (clause 7.3.3 step 8) binds nothing any more: it goes, and the
+  // user is authorised as if it had never been there.
+  std::vector<std::string> ended;
+  for (const auto &[sip, user] : users_)
+    if (user.peer.empty() && user.expires <= now && (sip == asserted || user.id == id)) ended.push_back(sip);
+  for (const auto &sip : ended) remove_binding(users_.find(sip), "service authorisation ended");
   auto old = users_.find(asserted);
+  // The public user identity is bound to another MC service ID (another user still authorised with it), or is a user
+  // served by a peer server.
   if (old != users_.end() &&
-      (old->second.id != claims.at(svc_.id_claim).get<std::string>() || old->second.client != info.client_id))
+      (old->second.id != id || (!old->second.peer.empty() && old->second.client != info.client_id)))
     throw std::runtime_error("live authorization identity remapping refused");
-  if (auto *existing = by_id(claims.at(svc_.id_claim)); existing && existing->sip != asserted)
-    throw std::runtime_error("MCPTT identity already bound to another SIP identity");
+  // Clause 7.3.3 steps 3a and 3b: the user is already authorised on another MCPTT client (another client ID, or
+  // another public user identity). The present edition keeps one binding per MC service ID: the CMS's service
+  // configuration document sets <max-simultaneous-authorizations> to 1 and refuses a user profile with a higher
+  // <user-max-simultaneous-authorizations>, so another live authorisation means that the maximum is reached
+  // (clause 7.3.3 step 5b, a second binding, is not in the present edition).
+  for (const auto &[sip, user] : users_)
+    if (user.peer.empty() && user.id == id && (sip != asserted || user.client != info.client_id)) {
+      event("service_authorization_refused",
+            {{"user_id", id}, {"client_id", info.client_id}, {"reason", "maximum number of service authorizations"}});
+      response.status_code = 486;
+      response.headers = {{"Warning", warning_value(warn(Warning::max_authorizations))}};
+      return;
+    }
   auto match = get_header(request.headers, "SIP-If-Match");
 
   // TS 24.379 clause 7.3.3 steps 5 and 7: the user is bound before the PUBLISH is processed by RFC 3903, so a
@@ -300,6 +322,61 @@ bool McServer::open_with_uploaded_csk(const SipMessage &message, SipMessage &ope
     if (opened.parts.size() == 1) opened.body = opened.parts.front().body;
   }
   return true;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 7.3.5 (TS 24.281 clause 7.3.5): a SIP PUBLISH for poc-settings with Expires 0 logs the MCPTT client
+// off (clause 7.2.1A NOTE 3). The public user identity is the asserted one (step 1). RFC 3903 (step 2): a removal
+// names the publication in SIP-If-Match (section 4.5); one that names no publication of the user is answered 412
+// (section 6 step 3), a request with neither entity tag nor body 400 (section 6 step 5), and a single entity tag only
+// (400). Then the service settings and the binding go (steps 3 and 4, remove_binding) and the answer is 200 (step 5)
+// with Expires 0 and the publication's entity tag (RFC 3903 section 6 step 6).
+void McServer::service_log_off(const SipMessage &message, SipResponse &response) {
+  const auto asserted = asserted_identity(message);
+  if (asserted.empty() || asserted != message.from_uri) {
+    response.status_code = 403;
+    return;
+  }
+  const auto match = std::string(get_header(message.headers, "SIP-If-Match"));
+  auto found = users_.find(asserted);
+  if (found != users_.end() && !found->second.peer.empty()) found = users_.end();
+  if (match.find(',') != std::string::npos || (match.empty() && message.body.empty() && message.parts.empty())) {
+    response.status_code = 400;
+    return;
+  }
+  if (!match.empty() && (found == users_.end() || match != found->second.auth_etag)) {
+    response.status_code = 412;
+    return;
+  }
+  if (found != users_.end()) {
+    event("service_logged_off", {{"user_id", found->second.id}, {"client_id", found->second.client}});
+    remove_binding(found, "log-off");
+  }
+  response.headers = {{"Expires", "0"}, {"SIP-ETag", match.empty() ? random_id() : match}};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 7.3.5 steps 3 and 4 (TS 24.281 clause 7.3.5), and clause 7.3.3 step 8 when the service
+// authorisation ends: the served user's service settings end, with all its affiliations (TS 23.280 clause 10.8: the
+// affiliation status subscription is terminated, RFC 6665 section 4.2.2), its functional aliases, calls and relays,
+// and its controllers learn that it is no longer served here; then the binding of its MC service ID, client ID and
+// public user identity is removed.
+void McServer::remove_binding(std::map<std::string, User>::iterator found, const char *reason) {
+  if (found == users_.end()) return;
+  auto &user = found->second;
+  const auto id = user.id;
+  user.expires = 0;
+  user.groups.clear();
+  if (!user.subscription.empty() && user.subscription_expires > std::time(nullptr))
+    sip_.notify(user.subscription, "presence", "terminated;reason=noresource", "application/pidf+xml",
+                affiliation_xml(affiliation_status(svc_, user, random_id()), true));
+  user.subscription.clear();
+  deactivate_functional_aliases(id);
+  disconnect_user(id);
+  end_user_relays(id);
+  register_with_controllers(user, true);
+  event("service_binding_removed", {{"user_id", id}, {"client_id", user.client}, {"reason", reason}});
+  users_.erase(found);
 }
 
 //------------------------------------------------------------------------------

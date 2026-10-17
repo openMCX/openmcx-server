@@ -284,8 +284,18 @@ TS 24.379 clause 7.3.3 (TS 24.281 clause 7.3.3), with TS 24.379 clause 6.6.2.
    (`register_with_controllers`, TS 24.379 clause 9.2.2.2.6) and the location reporting configuration
    (`location_.configure`, TS 24.379 clause 13.2.2).
 
-The MCData server does the same in `DataServer::authorise` (`src/mcdata/authorisation.cpp`), with `Expires: 0`
-meaning log-off.
+Before binding, an ended authorisation of the user's (or of the public user identity) is removed (clause 7.3.3 step
+8), and a live one from another client ID or public user identity is refused with 486 and warning 164, the
+`<max-simultaneous-authorizations>` of 1 being reached (clause 7.3.3 steps 3a and 3b).
+
+A poc-settings `PUBLISH` with `Expires: 0` is the log-off of clause 7.3.5 (`McServer::service_log_off`): RFC 3903
+first (the `SIP-If-Match` of the user's publication, else 412; neither entity tag nor body, 400), then
+`remove_binding` ends the affiliations (the affiliation status subscription is terminated), functional aliases, calls
+and relays, withdraws the user from its controllers and removes the binding, and the answer is 200 with `Expires: 0`
+and the entity tag. `expire_users` calls `remove_binding` when a service authorisation ends.
+
+The MCData server does the same in `DataServer::authorise` and `DataServer::log_off` (`src/mcdata/authorisation.cpp`),
+with warning 228.
 
 ### 4.2 Affiliation
 

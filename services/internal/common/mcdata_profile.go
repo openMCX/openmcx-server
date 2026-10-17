@@ -265,7 +265,8 @@ func mcdataProfileDocumentName(index int) string {
 
 // ------------------------------------------------------------------------------
 // TS 24.484 clause 10.3.2.6: mcdataProfileConstraints are the validation constraints the schema does not express:
-// the XUI of the document URI and the document name.
+// the XUI of the document URI and the document name, and the maximum of simultaneous service authorizations
+// (authorizationLimitConstraint).
 func mcdataProfileConstraints(raw []byte, xui, name string) error {
 	root, err := parseXMLTree(raw)
 	if err != nil {
@@ -278,7 +279,7 @@ func mcdataProfileConstraints(raw []byte, xui, name string) error {
 	if name != "mcdata-user-profile-"+index+".xml" {
 		return constraintFailure("The user profile document name does not comply with the format: 'mcdata-user-profile-<profile-index>.xml'")
 	}
-	return nil
+	return authorizationLimitConstraint(root)
 }
 
 // ------------------------------------------------------------------------------

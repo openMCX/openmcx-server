@@ -149,6 +149,17 @@ void SipEngine::register_account(unsigned expires, SipResponseHandler handler) {
 }
 
 //------------------------------------------------------------------------------
+// RFC 3261 section 10.2.2: removes the registration of this engine's Contact (Expires 0, TS 24.229 clause 5.1.1.6
+// for a UE): the registration is no longer refreshed until register_account.
+void SipEngine::unregister_account(SipResponseHandler handler) {
+  if (impl_->registration == nullptr) throw std::logic_error("no SIP registration to remove");
+  impl_->registration_handler = std::move(handler);
+  pjsip_tx_data *data = nullptr;
+  require_success(pjsip_regc_unregister(impl_->registration, &data), "create de-REGISTER request");
+  require_success(pjsip_regc_send(impl_->registration, data), "send de-REGISTER request");
+}
+
+//------------------------------------------------------------------------------
 // RFC 3261 section 8.1: sends an out-of-dialog request (SipEngine::Impl::send_request).
 void SipEngine::request(std::string_view method, std::string_view request_uri, std::string_view content_type,
                         std::string_view body, const std::vector<SipHeader> &headers, SipResponseHandler handler) {

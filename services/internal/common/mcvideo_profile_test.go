@@ -137,3 +137,26 @@ func TestMCVideoProfileConstraints(test *testing.T) {
 		test.Fatal("an MCPTT profile passed the MCVideo schema")
 	}
 }
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clauses 8.3.2.1, 9.3.2.1 and 10.3.2.1 with TS 24.379, TS 24.281 and TS 24.282 clause 7.3.3 steps 3a and
+// 3b: a user profile of any MC service may set <user-max-simultaneous-authorizations> to 1, not more (one binding per
+// MC service ID in the present edition).
+func TestAuthorizationLimitConstraint(test *testing.T) {
+	for _, testCase := range []struct {
+		check         func(raw []byte, xui, name string) error
+		root, ns, doc string
+	}{{profileConstraints, "mcptt-user-profile", "urn:3gpp:mcptt:user-profile:1.0", "mcptt-user-profile-1.xml"},
+		{mcvideoProfileConstraints, "mcvideo-user-profile", "urn:3gpp:ns:mcvideo:user-profile:1.0", "mcvideo-user-profile-1.xml"},
+		{mcdataProfileConstraints, "mcdata-user-profile", "urn:3gpp:ns:mcdata:user-profile:1.0", "mcdata-user-profile-1.xml"}} {
+		for value, refused := range map[string]bool{"1": false, "2": true} {
+			raw := `<` + testCase.root + ` xmlns="` + testCase.ns + `" XUI-URI="sip:a@x" user-profile-index="1"><OnNetwork index="0">` +
+				`<anyExt><user-max-simultaneous-authorizations>` + value + `</user-max-simultaneous-authorizations></anyExt>` +
+				`</OnNetwork></` + testCase.root + `>`
+			err := testCase.check([]byte(raw), "sip:a@x", testCase.doc)
+			if refused != (err != nil) || (err != nil && !strings.Contains(err.Error(), "At most 1 simultaneous service authorization")) {
+				test.Fatalf("%s with %s: %v", testCase.root, value, err)
+			}
+		}
+	}
+}

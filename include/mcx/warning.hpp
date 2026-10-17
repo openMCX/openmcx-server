@@ -84,6 +84,8 @@ enum class Warning {
   alias_binding_exists,           // code 178 in TS 24.379 and TS 24.281 table 4.4.2-2
   group_selection_not_authorised, // code 155 in TS 24.379 table 4.4.2-2; TS 24.281 clause 9.2.4.3.1 step 3a
   alias_status_not_authorised,    // code 201 in TS 24.379 table 4.4.2-2 (MCPTT only)
+  // Added with the log-off: the maximum of simultaneous service authorizations (clause 7.3.3 steps 3a and 3b).
+  max_authorizations, // code 164 in TS 24.379 table 4.4.2-2, 166 in TS 24.281 table 4.4.2-2
 };
 
 //------------------------------------------------------------------------------
@@ -157,6 +159,7 @@ constexpr WarningEntry mcptt_warning(Warning warning) {
   case Warning::regroup_create_not_authorised: return {160, "user not authorised to request creation of a regroup"};
   case Warning::regroup_remove_not_authorised: return {161, "user not authorised to request removal of a regroup"};
   case Warning::group_unknown: return {163, "the group identity indicated in the request does not exist"};
+  case Warning::max_authorizations: return {164, "maximum number of service authorizations reached"};
   case Warning::regroup_id_in_use: return {165, "group ID for regroup already in use"};
   case Warning::preconfigured_use_only: return {167, "call is not allowed on the preconfigured group"};
   case Warning::regroup_remove_in_emergency:
@@ -236,6 +239,7 @@ constexpr WarningEntry mcvideo_warning(Warning warning) {
   case Warning::regroup_create_not_authorised: return {160, "user not authorised to request creation of a regroup"};
   case Warning::regroup_remove_not_authorised: return {161, "user not authorised to request removal of a regroup"};
   case Warning::group_unknown: return {163, "the group identity indicated in the request does not exist"};
+  case Warning::max_authorizations: return {166, "maximum number of service authorizations reached"};
   case Warning::regroup_id_in_use: return {165, "group ID for regroup already in use"};
   case Warning::preconfigured_use_only: return {167, "call is not allowed on the preconfigured group"};
   case Warning::adhoc_initiation_not_authorised: return {185, "user not authorised to initiate the adhoc group call"};

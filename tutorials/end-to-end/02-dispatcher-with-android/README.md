@@ -90,10 +90,9 @@ docker compose -f docker-compose-dispatcher.yaml down         # stop; the activa
 docker compose -f docker-compose-dispatcher.yaml down -v      # stop and forget the account
 ```
 
-Tutorial 1's system is not affected by either. After `down -v` the position is a new device: activating `dispatcher`
-on it again is refused until tutorial 1's system restarts (one device per user, step 4); activate another user, or
-restart tutorial 1's system first. If tutorial 1 starts over with a new system, also start the position
-over (`down -v`) and activate it again.
+Tutorial 1's system is not affected by either. After `down -v` the position has forgotten its account: activate
+`dispatcher` on it again (step 4). If tutorial 1 starts over with a new system, also start the position over
+(`down -v`) and activate it again.
 
 ## How it is put together
 

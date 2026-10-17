@@ -433,7 +433,11 @@ class DataServer {
   SipResponse authorise(const SipMessage &request);
 
   // authorise: a SIP PUBLISH with Expires 0 logs the user off.
-  SipResponse log_off(const std::string &asserted);
+  SipResponse log_off(const SipMessage &request, const std::string &asserted);
+
+  // TS 24.282 clause 7.3.5 steps 3 and 4, clause 7.3.3 step 8: the end of a user's service settings and the removal
+  // of its binding.
+  void remove_binding(std::map<std::string, User>::iterator found, const char *reason);
 
   // authorise: the CSK upload and the decryption of the MCData info body, or the refusal.
   std::optional<SipResponse> authorise_csk(const SipMessage &request, const std::string &asserted,

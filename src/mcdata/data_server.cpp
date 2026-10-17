@@ -58,9 +58,10 @@ void DataServer::tick() {
   std::erase_if(held_, [now](const auto &entry) { return entry.second.retain_until <= now; });
   if (held_order_.size() != held_.size())
     std::erase_if(held_order_, [this](const auto &key) { return !held_.contains(key); });
+  std::vector<std::string> ended;
   for (const auto &[sip, user] : users_)
-    if (user.expires <= std::time(nullptr)) deactivate_aliases(user.id);
-  std::erase_if(users_, [](const auto &entry) { return entry.second.expires <= std::time(nullptr); });
+    if (user.expires <= std::time(nullptr)) ended.push_back(sip);
+  for (const auto &sip : ended) remove_binding(users_.find(sip), "service authorisation ended");
   if (now - last_save_ < 200) return;
   last_save_ = now;
   save_status();

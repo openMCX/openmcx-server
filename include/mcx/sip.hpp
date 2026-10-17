@@ -215,6 +215,9 @@ public:
   // service's media feature tag and g.3gpp.icsi-ref.
   void register_account(unsigned expires, std::string_view content_type, std::string_view body,
                         SipResponseHandler handler);
+  // RFC 3261 section 10.2.2: removes this engine's registration (its Contact with Expires 0) and stops refreshing it;
+  // register_account registers again.
+  void unregister_account(SipResponseHandler handler = {});
   // Requests, INVITEs and SUBSCRIBEs go through the SIP core unless their
   // headers include an explicit Route, which then selects the next hop; for an
   // INVITE or SUBSCRIBE it is also the dialog's fixed route set.

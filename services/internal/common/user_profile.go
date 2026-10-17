@@ -543,7 +543,27 @@ func profileConstraints(raw []byte, xui, name string) error {
 		}
 		return nil
 	}
-	return check(root, "")
+	if err := check(root, ""); err != nil {
+		return err
+	}
+	return authorizationLimitConstraint(root)
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clauses 8.3.2.1, 9.3.2.1 and 10.3.2.1: <user-max-simultaneous-authorizations> of the <anyExt> of
+// <OnNetwork>, the user's maximum of simultaneous service authorizations, is 1 at most here: the MC service servers
+// keep one binding per MC service ID (TS 24.379, TS 24.281 and TS 24.282 clause 7.3.3 steps 3a and 3b; a second
+// binding, step 5b, is not in the present edition), so a profile that allows more is refused.
+func authorizationLimitConstraint(node *xmlNode) error {
+	if node.Name.Local == "user-max-simultaneous-authorizations" && strings.TrimSpace(node.Text) != "1" {
+		return constraintFailure("At most 1 simultaneous service authorization per user is supported")
+	}
+	for _, childNode := range node.Children {
+		if err := authorizationLimitConstraint(childNode); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ------------------------------------------------------------------------------

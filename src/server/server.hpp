@@ -1484,6 +1484,11 @@ protected:
   bool terminating_request(const SipMessage &message, const std::string &peer, SipResponse &response);
   // TS 24.379 clause 7.3.3: service authorisation (PUBLISH of poc-settings).
   void service_authorization(const SipMessage &message, SipResponse &response);
+  // TS 24.379 clause 7.3.5: log-off (PUBLISH of poc-settings with Expires 0).
+  void service_log_off(const SipMessage &message, SipResponse &response);
+  // TS 24.379 clause 7.3.5 steps 3 and 4, clause 7.3.3 step 8: the end of a served user's service settings and the
+  // removal of its binding.
+  void remove_binding(std::map<std::string, User>::iterator found, const char *reason);
   [[nodiscard]] std::optional<SipResponse> plain_reinvite(const SipMessage &message, const User &user);
   // TS 24.379 clause 6.6.2: accept the uploaded CSK and open the protected parts with it.
   bool open_with_uploaded_csk(const SipMessage &message, SipMessage &opened,

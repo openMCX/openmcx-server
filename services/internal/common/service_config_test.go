@@ -33,12 +33,15 @@ func TestServiceConfigurationDocuments(test *testing.T) {
 			[]string{`<service-configuration-params domain="` + cfg.Domain + `">`, "<T1-end-of-rtp-media>PT5.5S</T1-end-of-rtp-media>",
 				"<C7-floor-idle>10</C7-floor-idle>", "<floor-control-queue><depth>1</depth></floor-control-queue>",
 				"<emergency-resource-priority><resource-priority-namespace>mcpttq</resource-priority-namespace><resource-priority-priority>14</resource-priority-priority>",
-				"<normal-resource-priority><resource-priority-namespace>mcpttq</resource-priority-namespace><resource-priority-priority>1</resource-priority-priority>"}},
+				"<normal-resource-priority><resource-priority-namespace>mcpttq</resource-priority-namespace><resource-priority-priority>1</resource-priority-priority>",
+				"<anyExt><max-simultaneous-authorizations>1</max-simultaneous-authorizations></anyExt></on-network>"}},
 		{"org.3gpp.mcvideo.service-config", "application/vnd.3gpp.mcvideo-service-config+xml", mcvideoServiceConfigSchema,
-			[]string{"<imminent-peril-resource-priority><resource-priority-namespace>mcpttp</resource-priority-namespace><resource-priority-priority>10</resource-priority-priority>"}},
+			[]string{"<imminent-peril-resource-priority><resource-priority-namespace>mcpttp</resource-priority-namespace><resource-priority-priority>10</resource-priority-priority>",
+				"<anyExt><max-simultaneous-authorizations>1</max-simultaneous-authorizations></anyExt></on-network>"}},
 		{"org.3gpp.mcdata.service-config", "application/vnd.3gpp.mcdata-service-config+xml", mcdataServiceConfigSchema,
 			[]string{"<default-file-availability>600</default-file-availability>",
-				"<anyExt><emergency-resource-priority><resource-priority-namespace>mcpttp</resource-priority-namespace><resource-priority-priority>15</resource-priority-priority>"}},
+				"<anyExt><emergency-resource-priority><resource-priority-namespace>mcpttp</resource-priority-namespace><resource-priority-priority>15</resource-priority-priority>",
+				"</normal-resource-priority><max-simultaneous-authorizations>1</max-simultaneous-authorizations></anyExt>"}},
 	} {
 		rr := httptest.NewRecorder()
 		cms.ServeHTTP(rr, bearerRequest("GET", "/xcap-root/"+tc.auid+"/global/service-config.xml", alice, nil))

@@ -18,7 +18,7 @@ SipResponse DataServer::authorise(const SipMessage &request) {
   SipResponse response;
   const auto asserted = asserted_identity(request);
   if (asserted.empty() || asserted != request.from_uri) return reject(403, "", asserted, "authorisation");
-  if (get_header(request.headers, "Expires") == "0") return log_off(asserted); // TS 24.282 clause 7.3.5
+  if (get_header(request.headers, "Expires") == "0") return log_off(request, asserted); // TS 24.282 clause 7.3.5
   const auto *info_part = part(request, mcdata::info_mime);
   if (!info_part || !part(request, "application/poc-settings+xml"))
     return reject(403, "101 service authorisation failed", asserted, "authorisation");
@@ -38,9 +38,22 @@ SipResponse DataServer::authorise(const SipMessage &request) {
   if (!checked) return reject(403, "101 service authorisation failed", asserted, "authorisation");
   const auto &claims = *checked;
   const auto id = claims.value(mcdata_service.id_claim, std::string{});
+  // A binding whose service authorisation has ended (clause 7.3.3 step 8) binds nothing any more.
+  std::vector<std::string> ended;
   for (const auto &[sip, other] : users_)
-    if (other.id == id && sip != asserted)
-      return reject(403, "101 service authorisation failed", asserted, "authorisation");
+    if (other.expires <= std::time(nullptr) && (sip == asserted || other.id == id)) ended.push_back(sip);
+  for (const auto &sip : ended) remove_binding(users_.find(sip), "service authorisation ended");
+  // The public user identity is bound to another MCData ID, still authorised.
+  if (const auto bound = users_.find(asserted); bound != users_.end() && bound->second.id != id)
+    return reject(403, "101 service authorisation failed", asserted, "authorisation");
+  // Clause 7.3.3 steps 3a and 3b: the user is already authorised on another MCData client (another client ID, or
+  // another public user identity). The present edition keeps one binding per MCData ID: the CMS's service
+  // configuration document sets <max-simultaneous-authorizations> to 1 and refuses a user profile with a higher
+  // <user-max-simultaneous-authorizations>, so another live authorisation means that the maximum is reached
+  // (clause 7.3.3 step 5b, a second binding, is not in the present edition).
+  for (const auto &[sip, other] : users_)
+    if (other.id == id && (sip != asserted || other.client != info.client_id))
+      return reject(486, "228 maximum number of service authorizations reached", asserted, "authorisation");
 
   // The CSK was signed by the MCData ID the access token names.
   if (csk && uploader != id) return reject(403, "101 service authorisation failed", asserted, "authorisation");
@@ -51,10 +64,6 @@ SipResponse DataServer::authorise(const SipMessage &request) {
   const auto match = std::string(get_header(request.headers, "SIP-If-Match"));
   const bool unknown_etag = !match.empty() && (existing == users_.end() || match != existing->second.auth_etag);
   auto &user = users_[asserted];
-  if (!user.id.empty() && (user.id != id || user.client != info.client_id)) {
-    user.groups.clear();
-    user.subscription.clear();
-  }
   user.id = id;
   user.client = info.client_id;
   user.sip = asserted;
@@ -77,21 +86,42 @@ SipResponse DataServer::authorise(const SipMessage &request) {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.282 clause 7.3.5: a SIP PUBLISH with Expires 0 logs the user off: its affiliations end, its functional
-// aliases are deactivated (clause 22.2.2.3.6).
-SipResponse DataServer::log_off(const std::string &asserted) {
-  SipResponse response;
+// TS 24.282 clause 7.3.5: a SIP PUBLISH for poc-settings with Expires 0 logs the MCData client off. The public user
+// identity is the asserted one (step 1). RFC 3903 (step 2): a removal names the publication in SIP-If-Match (section
+// 4.5); one that names no publication of the user is answered 412 (section 6 step 3), a request with neither entity
+// tag nor body 400 (section 6 step 5), and a single entity tag only (400). Then the service settings and the binding
+// go (steps 3 and 4, remove_binding) and the answer is 200 (step 5) with Expires 0 and the publication's entity tag
+// (RFC 3903 section 6 step 6).
+SipResponse DataServer::log_off(const SipMessage &request, const std::string &asserted) {
+  const auto match = std::string(get_header(request.headers, "SIP-If-Match"));
   const auto found = users_.find(asserted);
+  if (match.find(',') != std::string::npos || (match.empty() && request.body.empty() && request.parts.empty()))
+    return reject(400, "", asserted, "log-off");
+  if (!match.empty() && (found == users_.end() || match != found->second.auth_etag))
+    return reject(412, "", asserted, "log-off");
   if (found != users_.end()) {
-    event("mcdata_logged_off", {{"user_id", found->second.id}});
-    found->second.groups.clear();
-    notify_affiliation(found->second, {}, true);
-    deactivate_aliases(found->second.id); // TS 24.282 clause 22.2.2.3.6
-    users_.erase(found);
+    event("mcdata_logged_off", {{"user_id", found->second.id}, {"client_id", found->second.client}});
+    remove_binding(found, "log-off");
   }
+  SipResponse response;
   response.status_code = 200;
-  response.headers = {{"Expires", "0"}};
+  response.headers = {{"Expires", "0"}, {"SIP-ETag", match.empty() ? random_id() : match}};
   return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 7.3.5 steps 3 and 4, and clause 7.3.3 step 8 when the service authorisation ends: the user's
+// service settings end, with all its affiliations (TS 23.280 clause 10.8: the affiliation status subscription is
+// terminated, RFC 6665 section 4.2.2) and its functional aliases (clause 22.2.2.3.6); then the binding of its MCData
+// ID, client ID and public user identity is removed.
+void DataServer::remove_binding(std::map<std::string, User>::iterator found, const char *reason) {
+  if (found == users_.end()) return;
+  auto &user = found->second;
+  user.groups.clear();
+  notify_affiliation(user, {}, true);
+  deactivate_aliases(user.id);
+  event("mcdata_binding_removed", {{"user_id", user.id}, {"client_id", user.client}, {"reason", reason}});
+  users_.erase(found);
 }
 
 //------------------------------------------------------------------------------

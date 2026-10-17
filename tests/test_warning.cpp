@@ -107,6 +107,10 @@ int main() {
              .starts_with("176 user not authorized to request for binding"));
   assert(warning_text(mcvideo_service, Warning::group_selection_not_authorised) ==
          "155 user not authorised to change user's selected group");
+  // TS 24.379 and TS 24.281 clause 7.3.3 steps 3a and 3b: the same text, under different codes.
+  assert(warning_text(mcptt_service, Warning::max_authorizations) == "164 maximum number of service authorizations reached");
+  assert(warning_text(mcvideo_service, Warning::max_authorizations) ==
+         "166 maximum number of service authorizations reached");
   // TS 24.379 clause 9A.2.2.2.3 step 4B: warning 201, which TS 24.281 clause 20.2.2.2.3 does not send.
   assert(warning_text(mcptt_service, Warning::alias_status_not_authorised) ==
          "201 user not authorized to change the functional alias status");

@@ -29,6 +29,10 @@ const (
 	serviceConfigDocument    = "service-config.xml"
 	defaultFileAvailabilityS = 120
 	maxFileAvailabilityS     = 600
+	// <max-simultaneous-authorizations> (TS 24.484 clauses 8.4.2.1, 9.4.2.1 and 10.4.2.1): the MC service servers
+	// keep one binding per MC service ID (TS 24.379, TS 24.281 and TS 24.282 clause 7.3.3 steps 3a and 3b; a second
+	// binding, step 5b, is not in the present edition).
+	maxSimultaneousAuthorizations = 1
 )
 
 // ------------------------------------------------------------------------------
@@ -270,6 +274,9 @@ type mcpttServiceConfigXML struct {
 			Emergency resourcePriorityXML `xml:"emergency-resource-priority"`
 			Imminent  resourcePriorityXML `xml:"imminent-peril-resource-priority"`
 			Normal    resourcePriorityXML `xml:"normal-resource-priority"`
+			AnyExt    struct {
+				MaxAuthorizations int `xml:"max-simultaneous-authorizations"`
+			} `xml:"anyExt"`
 		} `xml:"on-network"`
 	} `xml:"service-configuration-params"`
 }
@@ -284,6 +291,9 @@ type mcvideoServiceConfigXML struct {
 			Emergency resourcePriorityXML `xml:"emergency-resource-priority"`
 			Imminent  resourcePriorityXML `xml:"imminent-peril-resource-priority"`
 			Normal    resourcePriorityXML `xml:"normal-resource-priority"`
+			AnyExt    struct {
+				MaxAuthorizations int `xml:"max-simultaneous-authorizations"`
+			} `xml:"anyExt"`
 		} `xml:"on-network"`
 	} `xml:"service-configuration-params"`
 }
@@ -304,6 +314,8 @@ type mcdataServiceConfigXML struct {
 				Emergency resourcePriorityXML `xml:"emergency-resource-priority"`
 				Imminent  resourcePriorityXML `xml:"imminent-peril-resource-priority"`
 				Normal    resourcePriorityXML `xml:"normal-resource-priority"`
+				// <max-simultaneous-authorizations> (item d).
+				MaxAuthorizations int `xml:"max-simultaneous-authorizations"`
 			} `xml:"anyExt"`
 		} `xml:"on-network"`
 	} `xml:"service-configuration-params"`
@@ -336,6 +348,7 @@ func (svc *service) serviceConfigDocument(auid string) ([]byte, string, *documen
 		timers.C7, timers.C17, timers.C20, timers.C55, timers.C56 = t["c7"], t["c17"], t["c20"], t["c55"], t["c56"]
 		rp := conf.ResourcePriority
 		on.Emergency, on.Imminent, on.Normal = resourcePriorityElement(rp.Emergency), resourcePriorityElement(rp.Imminent), resourcePriorityElement(rp.Normal)
+		on.AnyExt.MaxAuthorizations = maxSimultaneousAuthorizations
 		doc, mime, schema = out, "application/vnd.3gpp.mcptt-service-config+xml", mcpttServiceConfigSchema
 	case "org.3gpp.mcvideo.service-config":
 		rp := sc.mcvideo().ResourcePriority
@@ -343,6 +356,7 @@ func (svc *service) serviceConfigDocument(auid string) ([]byte, string, *documen
 		out.Params.Domain = svc.cfg.Domain
 		on := &out.Params.OnNetwork
 		on.Emergency, on.Imminent, on.Normal = resourcePriorityElement(rp.Emergency), resourcePriorityElement(rp.Imminent), resourcePriorityElement(rp.Normal)
+		on.AnyExt.MaxAuthorizations = maxSimultaneousAuthorizations
 		doc, mime, schema = out, "application/vnd.3gpp.mcvideo-service-config+xml", mcvideoServiceConfigSchema
 	case "org.3gpp.mcdata.service-config":
 		conf := sc.mcdata()
@@ -352,6 +366,7 @@ func (svc *service) serviceConfigDocument(auid string) ([]byte, string, *documen
 		on.FileAvailability.Default, on.FileAvailability.Max = conf.DefaultFileAvailabilityS, conf.MaxFileAvailabilityS
 		rp := conf.ResourcePriority
 		on.AnyExt.Emergency, on.AnyExt.Imminent, on.AnyExt.Normal = resourcePriorityElement(rp.Emergency), resourcePriorityElement(rp.Imminent), resourcePriorityElement(rp.Normal)
+		on.AnyExt.MaxAuthorizations = maxSimultaneousAuthorizations
 		doc, mime, schema = out, "application/vnd.3gpp.mcdata-service-config+xml", mcdataServiceConfigSchema
 	default:
 		return nil, "", nil, false

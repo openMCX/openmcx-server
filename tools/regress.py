@@ -94,7 +94,15 @@ LABS = [
     # MCX Admin (slices B2, C): the accounts managed by MCX Admin; needs --admin-image.
     lab('admin', 'single', ['--admin'], ['prearranged_scenario', 'admin_scenario'], ['admin']),
     # MCX Admin with MCData rights: a user created there uses MCData (ADM-13).
-    lab('admin-mcdata', 'single', ['--admin', '--private-call', '--mcdata'], ['admin_scenario'], ['admin']),
+    # service_limit_scenario: a second client ID of a user is refused with 486 until the first client logs off
+    # (TS 24.379 and TS 24.282 clause 7.3.3 steps 3a and 3b, clause 7.3.5).
+    lab(
+        'admin-mcdata',
+        'single',
+        ['--admin', '--private-call', '--mcdata'],
+        ['admin_scenario', 'service_limit_scenario'],
+        ['admin'],
+    ),
     # MCX Admin with protected groups: membership changes re-key the group (ADM-14).
     lab('admin-protected', 'single', ['--admin'] + KEYS, ['admin_scenario'], ['admin', 'protected']),
     lab(
@@ -105,13 +113,15 @@ LABS = [
         ['smoke', 'mcdata'],
     ),
     # Two-minute tokens: the clients renew them before expiry and keep their service authorisation.
+    # service_logoff_scenario: the clients' log-off and log-on, log-off on the wire (TS 24.379 clause 7.3.5, RFC 3903)
+    # and a dead client's binding removed when its service authorisation ends (clause 7.3.3 step 8).
     # server_restart_scenario: a restarted MCPTT server refuses unknown users with 404/141; the clients'
     # next authorisation refresh gets 412, and they publish anew (TS 24.379 clause 7.2.2, RFC 3903 section 5).
     lab(
         'token-refresh',
         'single',
         ['--private-call', '--mcdata', '--token-ttl', '120'],
-        ['token_refresh_scenario', 'server_restart_scenario'],
+        ['token_refresh_scenario', 'server_restart_scenario', 'service_logoff_scenario'],
         ['mcptt', 'mcdata', 'common'],
     ),
     # Raw requests from client-a's container: affiliation PUBLISH refusals and per-group outcome (TS 24.379 clause
