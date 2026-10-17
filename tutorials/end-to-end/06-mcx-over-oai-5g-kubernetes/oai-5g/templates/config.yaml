@@ -1,0 +1,24 @@
+{{- /* The OAI configuration (files/, tutorial 3's) and the dispatcher's device file. */ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels:
+    {{- include "oai5g.labels" (dict "root" . "name" "config") | nindent 4 }}
+data:
+  config.yaml: |
+    {{- .Files.Get "files/mcx_core_config.yaml" | nindent 4 }}
+  oai_db.sql: |
+    {{- .Files.Get "files/oai_db.sql" | nindent 4 }}
+  mysql-healthcheck.sh: |
+    {{- .Files.Get "files/mysql-healthcheck.sh" | nindent 4 }}
+  gnb.yaml: |
+    {{- .Files.Get "files/gnb.yaml" | nindent 4 }}
+  nr-ue.yaml: |
+    {{- .Files.Get "files/nr-ue.yaml" | nindent 4 }}
+  device.json.in: |
+    {{- .Files.Get "files/device.json.in" | nindent 4 }}
+  {{- range $name := list "pcc_rules" "policy_decisions" "qos_data" "traffic_rules" }}
+  policy-{{ $name }}.yaml: |
+    {{- $.Files.Get (printf "files/policies/%s.yaml" $name) | nindent 4 }}
+  {{- end }}

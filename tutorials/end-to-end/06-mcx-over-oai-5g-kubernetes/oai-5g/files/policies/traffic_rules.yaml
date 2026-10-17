@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: LicenseRef-CSSL-1.0
+
+redirection-scenario:
+  redirectInfo:
+    redirectEnabled: true
+    redirectAddressType: URL
+    redirectServerAddress: facebook.com
+  routeToLocs:
+    - dnai: access
+    - dnai: internet

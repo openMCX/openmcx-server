@@ -42,7 +42,7 @@ spec:
         - name: kamailio
           image: {{ include "openmcx.image" (dict "root" . "program" "openmcx-kamailio" "tag" .Values.images.tag) }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
-          args: [-DD, -E, -A, CLIENT_SDP_CHECK, -A, CORE_RPC, -f, /config/kamailio.cfg]
+          args: [-DD, -E, -A, CLIENT_SDP_CHECK, -A, CORE_RPC,{{ if .Values.sipCore.tlsKeylog }} -A, TLS_KEYLOG,{{ end }} -f, /config/kamailio.cfg]
           ports:
             - {name: sip, containerPort: 5060, protocol: TCP}
             {{- if $edge }}

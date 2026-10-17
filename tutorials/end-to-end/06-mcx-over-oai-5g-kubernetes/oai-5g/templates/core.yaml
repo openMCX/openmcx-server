@@ -1,0 +1,93 @@
+{{- /*
+The OAI 5G core functions, one pod each, as in tutorial 3: they read their part of one configuration
+(mcx_core_config.yaml) and find each other by their Service names. Each waits for the functions its Compose service
+depends on.
+*/ -}}
+{{- $root := . -}}
+{{- $sbi := dict "name" "sbi" "port" 8080 -}}
+{{- $nfs := list
+  (dict "nf" "nrf" "image" .Values.images.nrf "ports" (list $sbi))
+  (dict "nf" "udr" "image" .Values.images.udr "ports" (list $sbi) "peers" (list "mysql:3306" "oai-nrf:8080"))
+  (dict "nf" "udm" "image" .Values.images.udm "ports" (list $sbi) "peers" (list "oai-udr:8080"))
+  (dict "nf" "ausf" "image" .Values.images.ausf "ports" (list $sbi) "peers" (list "oai-udm:8080"))
+  (dict "nf" "pcf" "image" .Values.images.pcf "ports" (list $sbi) "peers" (list "oai-nrf:8080") "policies" true)
+  (dict "nf" "amf" "image" .Values.images.amf "ports" (list $sbi (dict "name" "n2" "port" 38412 "protocol" "SCTP")) "peers" (list "oai-ausf:8080" "oai-pcf:8080"))
+  (dict "nf" "smf" "image" .Values.images.smf "ports" (list $sbi (dict "name" "n4" "port" 8805 "protocol" "UDP")) "peers" (list "oai-amf:8080" "oai-pcf:8080"))
+  (dict "nf" "upf" "image" .Values.images.upf "ports" (list (dict "name" "n4" "port" 8805 "protocol" "UDP") (dict "name" "n3" "port" 2152 "protocol" "UDP")) "peers" (list "oai-smf:8080") "privileged" true "probe" (list "pgrep" "oai_upf"))
+-}}
+{{- range $nfs }}
+{{- $name := printf "oai-%s" .nf }}
+---
+{{ include "oai5g.service" (dict "root" $root "name" $name "notReady" true "ports" .ports) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "oai5g.labels" (dict "root" $root "name" $name) | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "oai5g.selector" (dict "root" $root "name" $name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "oai5g.labels" (dict "root" $root "name" $name) | nindent 8 }}
+      annotations:
+        checksum/config: {{ $root.Files.Get "files/mcx_core_config.yaml" | sha256sum }}
+    spec:
+      enableServiceLinks: false
+      {{- if .peers }}
+      initContainers:
+        {{- include "oai5g.waitFor" (dict "root" $root "peers" .peers) | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .nf }}
+          image: {{ .image }}
+          imagePullPolicy: {{ $root.Values.images.pullPolicy }}
+          env:
+            - {name: TZ, value: Europe/Paris}
+          ports:
+            {{- range .ports }}
+            - {name: {{ .name }}, containerPort: {{ .port }}, protocol: {{ .protocol | default "TCP" }}}
+            {{- end }}
+          readinessProbe:
+            {{- if .probe }}
+            {{- /* The UPF serves no SBI: it is ready when it runs (the SMF associates with it over N4). */}}
+            exec:
+              command: {{ toJson .probe }}
+            {{- else }}
+            tcpSocket:
+              port: 8080
+            {{- end }}
+            periodSeconds: 5
+            timeoutSeconds: 10
+          {{- if .privileged }}
+          securityContext:
+            privileged: true
+          {{- end }}
+          volumeMounts:
+            - {name: config, mountPath: /openair-{{ .nf }}/etc/config.yaml, subPath: config.yaml, readOnly: true}
+            {{- if .policies }}
+            - {name: policies, mountPath: /openair-pcf/policies, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $root.Release.Name }}-config
+        {{- if .policies }}
+        - name: policies
+          configMap:
+            name: {{ $root.Release.Name }}-config
+            items:
+              {{- /* The file names of tutorial 3's oai/policies/. */}}
+              {{- range $p, $file := dict "pcc_rules" "pcc_rules" "policy_decisions" "policy_decision" "qos_data" "qos_data" "traffic_rules" "traffic_rule" }}
+              - key: policy-{{ $p }}.yaml
+                path: {{ $p }}/{{ $file }}.yaml
+              {{- end }}
+        {{- end }}
+{{- end }}

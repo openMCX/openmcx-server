@@ -108,6 +108,16 @@ def set_ports(config, host, ports, media):
         path.write_text(json.dumps(cfg, indent=2) + '\n')
 
 
+def set_pcf(config, pcf):
+    """The MCPTT server's N5 block (chart value mcptt.pcf), as tutorial 3's setup/pcf.py writes it."""
+    if not pcf:
+        return
+    path = config / 'mcptt-server.json'
+    cfg = json.loads(path.read_text())
+    cfg['pcf'] = pcf
+    path.write_text(json.dumps(cfg, indent=2) + '\n')
+
+
 def manifest(name, namespace, files, host, ports, media):
     metadata = {
         'name': name,
@@ -175,6 +185,7 @@ def in_cluster(args, host, ports, media):
         sys.exit(f'reading Secret {namespace}/{args.name}: HTTP {status} {existing.get("message", "")}')
     config = generate(host)
     set_ports(config, host, ports, media)
+    set_pcf(config, json.loads(os.environ.get('OPENMCX_MCPTT_PCF') or '{}'))
     body = manifest(args.name, namespace, secret_files(config), host, ports, media)
     status, answer = api('POST', base, body)
     if status not in (200, 201):

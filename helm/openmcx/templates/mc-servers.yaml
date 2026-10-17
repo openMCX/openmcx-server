@@ -67,6 +67,9 @@ spec:
             - {name: diameter, containerPort: 3869, protocol: SCTP}
             - {name: diameter-tls, containerPort: 5869, protocol: SCTP}
             {{- end }}
+            {{- if and (eq $s.name "mcptt-server") $root.Values.mcptt.pcf }}
+            - {name: n5-notify, containerPort: 8099, protocol: TCP}
+            {{- end }}
             {{- range $base := $s.media }}
             {{- $ports := include "openmcx.mediaPorts" (dict "base" $base "count" $n) | fromYamlArray }}
             {{- if $edge }}

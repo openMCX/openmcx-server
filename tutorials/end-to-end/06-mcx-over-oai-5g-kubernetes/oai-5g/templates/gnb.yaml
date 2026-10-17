@@ -1,0 +1,71 @@
+{{- /*
+The OAI gNB in rfsimulator mode, as oai-gnb in tutorial 3. Its configuration names the AMF and its own N2/N3 address
+by IP: the pod writes them into a copy at start (@AMF_IP@, @GNB_IP@ of files/gnb.yaml). The nr-UE connects to its
+rfsimulator server (TCP 4043).
+*/ -}}
+{{ include "oai5g.service" (dict "root" . "name" "oai-gnb" "ports" (list (dict "name" "rfsim" "port" 4043) (dict "name" "n3" "port" 2152 "protocol" "UDP"))) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oai-gnb
+  labels:
+    {{- include "oai5g.labels" (dict "root" . "name" "oai-gnb") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "oai5g.selector" (dict "root" . "name" "oai-gnb") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "oai5g.labels" (dict "root" . "name" "oai-gnb") | nindent 8 }}
+      annotations:
+        checksum/config: {{ .Files.Get "files/gnb.yaml" | sha256sum }}
+    spec:
+      enableServiceLinks: false
+      initContainers:
+        {{- include "oai5g.waitFor" (dict "root" . "peers" (list "oai-amf:8080")) | nindent 8 }}
+      containers:
+        - name: gnb
+          image: {{ .Values.images.gnb }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command:
+            - bash
+            - -c
+            - |
+              AMF_IP=$(getent hosts oai-amf | awk '{print $1; exit}')
+              sed -e "s/@AMF_IP@/$AMF_IP/" -e "s/@GNB_IP@/$POD_IP/g" /config/gnb.yaml > /opt/oai-gnb/etc/gnb.yaml
+              echo "AMF $AMF_IP, gNB $POD_IP"
+              exec /tini -v -- /opt/oai-gnb/bin/entrypoint.sh /opt/oai-gnb/bin/nr-softmodem
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - {name: USE_ADDITIONAL_OPTIONS, value: "-E --rfsim --log_config.global_log_options level,nocolor,time"}
+            - {name: ASAN_OPTIONS, value: detect_leaks=0}
+          ports:
+            - {name: rfsim, containerPort: 4043}
+            - {name: n3, containerPort: 2152, protocol: UDP}
+          readinessProbe:
+            exec:
+              command: [pgrep, nr-softmodem]
+            periodSeconds: 10
+            timeoutSeconds: 10
+          securityContext:
+            capabilities:
+              drop: [ALL]
+              add: [SYS_NICE]
+          volumeMounts:
+            - {name: config, mountPath: /config/gnb.yaml, subPath: gnb.yaml, readOnly: true}
+            - {name: etc, mountPath: /opt/oai-gnb/etc}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config
+        # The configuration with the addresses filled in.
+        - name: etc
+          emptyDir: {}

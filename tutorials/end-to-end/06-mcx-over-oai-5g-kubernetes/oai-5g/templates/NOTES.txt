@@ -1,0 +1,15 @@
+Tutorial 6's 5G network in namespace {{ .Release.Namespace }}: the OAI 5G core, the gNB and the nr-UE (rfsimulator),
+the dispatcher position inside the nr-UE, for the OpenMCX system at {{ .Values.externalAddress }}.
+
+1. Wait until every pod is ready (the nr-UE last, once its PDU session is up):
+
+     kubectl -n {{ .Release.Namespace }} get pods
+
+2. The UE's address and the route of the node:
+
+     kubectl -n {{ .Release.Namespace }} logs deploy/oai-nr-ue -c ue-route
+     kubectl -n {{ .Release.Namespace }} logs ds/ue-pool-route
+
+3. The dispatcher position at http://localhost:8080/:
+
+     kubectl -n {{ .Release.Namespace }} port-forward deploy/oai-nr-ue 8080

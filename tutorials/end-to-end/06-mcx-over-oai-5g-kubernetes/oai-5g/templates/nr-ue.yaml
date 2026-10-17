@@ -1,0 +1,173 @@
+{{- /*
+One nr-UE (IMSI ue.imsi, DNN mcptt) with the dispatcher position in its network namespace, as oai-nr-ue, ue-route and
+dispatcher share one in tutorial 3: one pod, three containers.
+- nr-ue: the UE; its PDU session is the tunnel interface oaitun_ue1 with an address of the UE pool.
+- ue-route: routes HOST_IP through oaitun_ue1 once the PDU session is up, and writes the UE's address to /ue/ip.
+- dispatcher: tutorial 2's position, with the UE's address; its accounts reach the SIP core at HOST_IP (hostAliases),
+  so the activation, the sign-in, the registration and every call cross the 5G user plane.
+*/ -}}
+{{- $host := include "oai5g.externalAddress" . -}}
+{{- if and .Values.dispatcher.enabled .Values.dispatcher.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-dispatcher
+  labels:
+    {{- include "oai5g.labels" (dict "root" . "name" "dispatcher") | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.dispatcher.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.dispatcher.persistence.size }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oai-nr-ue
+  labels:
+    {{- include "oai5g.labels" (dict "root" . "name" "oai-nr-ue") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "oai5g.selector" (dict "root" . "name" "oai-nr-ue") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "oai5g.labels" (dict "root" . "name" "oai-nr-ue") | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      hostAliases:
+        - ip: {{ $host | quote }}
+          hostnames: [sip-core]
+      initContainers:
+        - name: wait-for-gnb
+          image: {{ .Values.images.nrUe }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          # The name resolves once the gNB is ready (its rfsimulator server listens).
+          command: [sh, -c, 'until getent hosts oai-gnb >/dev/null; do echo "waiting for oai-gnb"; sleep 2; done']
+      containers:
+        - name: nr-ue
+          image: {{ .Values.images.nrUe }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command:
+            - bash
+            - -c
+            - |
+              GNB_IP=$(getent hosts oai-gnb | awk '{print $1; exit}')
+              export USE_ADDITIONAL_OPTIONS="-E --rfsim -r 106 --numerology 1 --uicc0.imsi {{ .Values.ue.imsi }} -C 3319680000 --rfsimulator.[0].serveraddr $GNB_IP --log_config.global_log_options level,nocolor,time"
+              exec /tini -v -- /opt/oai-nr-ue/bin/entrypoint.sh /opt/oai-nr-ue/bin/nr-uesoftmodem
+          readinessProbe:
+            exec:
+              command: [pgrep, nr-uesoftmodem]
+            periodSeconds: 10
+            timeoutSeconds: 10
+          # No PDU session three minutes after the start (e.g. the network rejected the registration, which the UE
+          # does not retry): the kubelet starts the UE again.
+          livenessProbe:
+            exec:
+              command: [ip, link, show, oaitun_ue1]
+            initialDelaySeconds: 180
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 4
+          securityContext:
+            capabilities:
+              drop: [ALL]
+              add: [NET_ADMIN, NET_RAW, SYS_NICE]
+          volumeMounts:
+            - {name: config, mountPath: /opt/oai-nr-ue/etc/nr-ue.yaml, subPath: nr-ue.yaml, readOnly: true}
+            - {name: tun, mountPath: /dev/net/tun}
+        - name: ue-route
+          image: {{ .Values.images.nrUe }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command:
+            - bash
+            - -c
+            - |
+              while true; do
+                UE_IP=$(ip -4 -o addr show oaitun_ue1 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
+                if [ -n "$UE_IP" ]; then
+                  ip route replace "$HOST_IP/32" dev oaitun_ue1
+                  if [ "$(cat /ue/ip 2>/dev/null)" != "$UE_IP" ]; then
+                    echo "$UE_IP" > /ue/ip
+                    echo "UE address $UE_IP, $HOST_IP through oaitun_ue1"
+                  fi
+                fi
+                sleep 3
+              done
+          env:
+            - {name: HOST_IP, value: {{ $host | quote }}}
+          readinessProbe:
+            exec:
+              command: [test, -s, /ue/ip]
+            periodSeconds: 3
+            timeoutSeconds: 10
+          securityContext:
+            capabilities:
+              drop: [ALL]
+              add: [NET_ADMIN]
+          volumeMounts:
+            - {name: ue, mountPath: /ue}
+        {{- if .Values.dispatcher.enabled }}
+        - name: dispatcher
+          image: {{ .Values.images.dispatcher }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              until [ -s /ue/ip ]; do sleep 1; done
+              DISPATCHER_IP=$(cat /ue/ip)
+              sed -e "s/DISPATCHER_IP/$DISPATCHER_IP/g" -e "s/HOST_IP/$HOST_IP/g" /tutorials/device.json.in > /run/mcx/device.json
+              # A new UE address (UE or core restarted): the activated accounts follow it.
+              OLD=$(cat /data/ue-ip 2>/dev/null || true)
+              if [ -n "$OLD" ] && [ "$OLD" != "$DISPATCHER_IP" ]; then
+                for f in /data/accounts/*/config.json; do [ -f "$f" ] && sed -i "s/\"$OLD\"/\"$DISPATCHER_IP\"/g" "$f"; done
+              fi
+              echo "$DISPATCHER_IP" > /data/ue-ip
+              exec dispatcher --listen 0.0.0.0:8080 --device /run/mcx/device.json --data /data --outbox /data/outbox
+          env:
+            - {name: HOST_IP, value: {{ $host | quote }}}
+            - {name: MCX_LOG, value: {{ .Values.dispatcher.log | quote }}}
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet:
+              path: /api/session
+              port: 8080
+            periodSeconds: 5
+            timeoutSeconds: 10
+          volumeMounts:
+            - {name: config, mountPath: /tutorials/device.json.in, subPath: device.json.in, readOnly: true}
+            - {name: ue, mountPath: /ue, readOnly: true}
+            - {name: dispatcher-data, mountPath: /data}
+            - {name: run, mountPath: /run/mcx}
+        {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config
+        - name: tun
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice
+        - name: ue
+          emptyDir: {}
+        - name: run
+          emptyDir: {medium: Memory}
+        {{- if .Values.dispatcher.enabled }}
+        - name: dispatcher-data
+          {{- if .Values.dispatcher.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-dispatcher
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}

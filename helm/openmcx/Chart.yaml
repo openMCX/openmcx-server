@@ -3,10 +3,10 @@ name: openmcx
 description: >-
   OpenMCX, 3GPP Release 19 mission-critical services: MCPTT, MCData and MCVideo servers, the common services
   (IdMS, GMS, CMS, KMS, LMS, Credential Service, content server, message store, notification server), the SIP core
-  and MCX Admin. Experimental: validated with helm lint, helm template and kubeconform, not yet installed on a
-  cluster.
+  and MCX Admin. Experimental: installed on a one-node kind cluster (tutorial 6), not yet on a cluster of several
+  nodes or on OpenShift.
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "1.0.0"
 kubeVersion: ">=1.26.0-0"
 home: https://github.com/openMCX/openmcx-server

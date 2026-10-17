@@ -1,0 +1,84 @@
+{{- /*
+The node's part of the path between the OpenMCX pods and the UEs, tutorial 3's host-network.sh in a DaemonSet:
+- the UE pool is routed through the UPF pod (its address is looked up again every few seconds: a new UPF pod has a
+  new address);
+- packets of the pods to the UE pool leave from externalAddress (SNAT, before the CNI's masquerading): the UE sees one
+  address both ways, and the PCF's packet filters (the server's address in the SDP) match the speech the UPF carries;
+- when externalAddress is not the node's own (a kind node: a container behind the computer's address), the UE's
+  packets for it go to the node's hostPorts (the portmap CNI plugin's chain CNI-HOSTPORT-DNAT) instead of leaving
+  the node: they keep the UE's address, which the SIP core checks against the SDP. Only the UE pool's packets: the
+  node does not get the address itself, so the computer still reaches it.
+The commands run in the node's namespaces (nsenter), with the node's ip and iptables. Stopping the pod removes all of
+it again.
+*/ -}}
+{{- if .Values.uePoolRoute.enabled }}
+{{- $host := include "oai5g.externalAddress" . }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ue-pool-route
+  labels:
+    {{- include "oai5g.labels" (dict "root" . "name" "ue-pool-route") | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "oai5g.selector" (dict "root" . "name" "ue-pool-route") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "oai5g.labels" (dict "root" . "name" "ue-pool-route") | nindent 8 }}
+    spec:
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: ClusterFirstWithHostNet
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: ue-pool-route
+          # Any image with sh, nsenter and getent: the nr-UE's, already on the node.
+          image: {{ .Values.images.nrUe }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              node() { nsenter -t 1 -m -n -- "$@"; }
+              SNAT="-d $POOL ! -s $POOL -j SNAT --to-source $HOST_IP"
+              HOSTPORTS="-s $POOL -d $HOST_IP -j CNI-HOSTPORT-DNAT"
+
+              stop() {
+                node ip route del "$POOL" 2>/dev/null
+                node iptables -t nat -D POSTROUTING $SNAT 2>/dev/null
+                node iptables -t nat -D PREROUTING $HOSTPORTS 2>/dev/null
+                echo "removed: route $POOL, SNAT to $HOST_IP, hostPorts for $POOL"
+                exit 0
+              }
+              trap stop TERM INT
+
+              node iptables -t nat -C POSTROUTING $SNAT 2>/dev/null || node iptables -t nat -I POSTROUTING 1 $SNAT
+              echo "SNAT: packets to $POOL leave from $HOST_IP"
+              if ! node ip -4 -o addr show | grep -q " inet $HOST_IP/"; then
+                until node iptables -t nat -S CNI-HOSTPORT-DNAT >/dev/null 2>&1; do
+                  echo "waiting for the hostPorts (chain CNI-HOSTPORT-DNAT)"; sleep 3
+                done
+                node iptables -t nat -C PREROUTING $HOSTPORTS 2>/dev/null || node iptables -t nat -I PREROUTING 1 $HOSTPORTS
+                echo "hostPorts: packets of $POOL to $HOST_IP reach the pods' hostPorts on this node"
+              fi
+
+              UPF_WAS=
+              while true; do
+                UPF=$(getent hosts oai-upf | awk '{print $1; exit}')
+                if [ -n "$UPF" ]; then
+                  DEV=$(node ip route get "$UPF" | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+                  node ip route replace "$POOL" via "$UPF" dev "$DEV" onlink
+                  [ "$UPF" = "$UPF_WAS" ] || echo "route: $POOL via the UPF $UPF ($DEV)"
+                  UPF_WAS=$UPF
+                fi
+                sleep 3 & wait $!
+              done
+          env:
+            - {name: HOST_IP, value: {{ $host | quote }}}
+            - {name: POOL, value: {{ .Values.uePool | quote }}}
+          securityContext:
+            privileged: true
+{{- end }}

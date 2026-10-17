@@ -1,0 +1,35 @@
+# Tutorial 6: the openmcx chart's values (helm/openmcx). Tutorial 1's system, as in tutorial 3, with the MCPTT
+# server's N5 settings of tutorial 3 (its setup/pcf.py): the PCF and the MCPTT server by their Service names in the
+# namespace both charts share.
+#
+#   helm install openmcx ../../../helm/openmcx -n openmcx --create-namespace \
+#       -f openmcx-values.yaml --set externalAddress=<HOST_IP>
+
+externalAddress: ""   # HOST_IP: this computer's IPv4 address on the Wi-Fi
+
+expose:
+  type: hostPort      # the kind node publishes the ports on HOST_IP (kind-cluster.sh)
+
+images:
+  prefix: openmcx/
+  tag: 1.0.0
+
+mcptt:
+  # N5 (TS 29.514): for each call leg of a UE in the 5G pool, an app session at the OAI PCF for the leg's media.
+  pcf:
+    enabled: true
+    pcf_uri: http://oai-pcf:8080                       # the PCF's SBI (HTTP/2 cleartext)
+    dnn: mcptt
+    snssai: {sst: 1}
+    af_app_id: mcptt
+    notif_bind: 0.0.0.0:8099
+    notif_uri_base: http://mcptt-server:8099/npcf-af   # where the PCF sends its notifications
+    ue_subnets: [12.1.1.0/24]
+    audio_bw_kbps: 41
+    required: false
+    prio_map: {normal: "", imminent: PRIO_12, emergency: PRIO_16}
+
+mcdata:
+  enabled: true
+mcvideo:
+  enabled: true

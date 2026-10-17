@@ -79,6 +79,21 @@ expose:
       floorPort: 7200  # transmission control
       videoPort: 7400  # video
 
+# The SIP core.
+sipCore:
+  # Troubleshooting only: the SIP core writes the TLS session secrets of every SIP hop to
+  # /tmp/kamailio-tls-keylog.txt, for Wireshark to decrypt a capture (docs/USAGE.md section 7). The file decrypts all
+  # SIP, access tokens included: never in production.
+  tlsKeylog: false
+
+# The MCPTT server.
+mcptt:
+  # N5 (TS 29.514): the MCPTT server as application function asks a 5G core's PCF for the QoS of its UEs' call legs.
+  # The setup Job writes this object as the "pcf" block of mcptt-server.json (docs/POLICY.md); empty: no N5,
+  # as in tutorial 1. Tutorial 6 sets it (tutorials/end-to-end/06-mcx-over-oai-5g-kubernetes/openmcx-values.yaml).
+  # Like the rest of the configuration it is written once, with the Secret.
+  pcf: {}
+
 # Optional services.
 mcdata:
   enabled: true

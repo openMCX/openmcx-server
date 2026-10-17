@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: LicenseRef-CSSL-1.0
+# rfsim5g-mcx: PCC rules referenced by policy_decisions.
+
+non-gbr-rule-5qi-69:
+  flowInfos:
+    - flowDescription: permit out ip from any to assigned
+      packetFilterUsage: true
+  precedence: 25
+  refQosData:
+    - non-gbr-qos-5qi-69
+
+non-gbr-rule-5qi-9:
+  flowInfos:
+    - flowDescription: permit out ip from any to assigned
+      packetFilterUsage: true
+  precedence: 24
+  refQosData:
+    - non-gbr-qos-5qi-9

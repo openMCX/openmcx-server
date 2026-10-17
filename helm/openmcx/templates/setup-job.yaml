@@ -116,6 +116,9 @@ spec:
             - {name: OPENMCX_PORTS, value: {{ .Values.expose.ports | toJson | quote }}}
             - name: OPENMCX_MEDIA
               value: {{ dict "mcptt" .Values.expose.media.mcptt "mcvideo" .Values.expose.media.mcvideo | toJson | quote }}
+            {{- with .Values.mcptt.pcf }}
+            - {name: OPENMCX_MCPTT_PCF, value: {{ toJson . | quote }}}
+            {{- end }}
             - {name: HOME, value: /tmp}
           volumeMounts:
             - {name: scripts, mountPath: /scripts, readOnly: true}

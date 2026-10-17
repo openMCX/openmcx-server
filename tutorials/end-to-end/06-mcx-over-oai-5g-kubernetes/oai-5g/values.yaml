@@ -1,0 +1,49 @@
+# Tutorial 6: tutorial 3's 5G network on Kubernetes (README.md of the tutorial). Install it in the namespace of the
+# openmcx chart: the MCPTT server reaches the PCF as oai-pcf, the PCF the MCPTT server as mcptt-server.
+
+# HOST_IP: the address the phones, and the dispatcher inside the nr-UE, reach the OpenMCX system on (the openmcx
+# chart's externalAddress). Required.
+externalAddress: ""
+
+images:
+  # OAI's AMF, PCF, SMF and UPF v2.2.1 with the N5 patches of tutorial 3 (../../03-mcx-over-oai-5g/oai/cn5g/).
+  amf: openmcx/oai-amf:mcx-n5
+  pcf: openmcx/oai-pcf:mcx-n5
+  smf: openmcx/oai-smf:mcx-n5
+  upf: openmcx/oai-upf:mcx-n5
+  nrf: oaisoftwarealliance/oai-nrf:v2.2.1
+  udr: oaisoftwarealliance/oai-udr:v2.2.1
+  udm: oaisoftwarealliance/oai-udm:v2.2.1
+  ausf: oaisoftwarealliance/oai-ausf:v2.2.1
+  mysql: mysql:9.6
+  gnb: oaisoftwarealliance/oai-gnb:2026.w39
+  nrUe: oaisoftwarealliance/oai-nr-ue:2026.w39
+  dispatcher: openmcx/openmcx-dispatcher:1.0.0
+  # Waiting for peers (nc).
+  tools: busybox:1.36.1
+  pullPolicy: IfNotPresent
+
+# The UEs' addresses (DNN mcptt, mcx_core_config.yaml). The node routes them through the UPF.
+uePool: 12.1.1.0/24
+
+# The nr-UE: the subscriber of oai_db.sql and its PDU session on DNN mcptt.
+ue:
+  imsi: "208990100001100"
+
+# The dispatcher position inside the nr-UE (tutorial 2's), at http://localhost:8080/ through
+# `kubectl port-forward deploy/oai-nr-ue 8080`.
+dispatcher:
+  enabled: true
+  log: info
+  # Its accounts (activation) survive a restart of the pod.
+  persistence:
+    enabled: true
+    size: 64Mi
+    storageClass: ""
+
+# The node's part of the path between the OpenMCX pods and the UEs (tutorial 3's host-network.sh): a DaemonSet that,
+# on every node, routes the UE pool through the UPF pod and lets the pods' packets to the UE pool leave from
+# externalAddress. On a kind node it also gives the node externalAddress (a /32 on lo), so that the UE's packets for
+# HOST_IP reach the hostPorts there instead of leaving the node. Privileged, host network and PID.
+uePoolRoute:
+  enabled: true

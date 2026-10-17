@@ -1,0 +1,13 @@
+apiVersion: v2
+name: oai-5g
+description: >-
+  Tutorial 6: tutorial 3's 5G network on Kubernetes. The OAI 5G core (NRF, UDR, UDM, AUSF, AMF, SMF, PCF, UPF; AMF,
+  PCF, SMF and UPF patched for N5), the OAI gNB and one nr-UE over the rfsimulator, and the OpenMCX dispatcher
+  position inside the nr-UE. Installed next to the openmcx chart, in the same namespace.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.26.0-0"
+home: https://github.com/openMCX/openmcx-server
+annotations:
+  licenses: AGPL-3.0-or-later (chart), CSSL-1.0 (OAI configuration in files/)

@@ -87,7 +87,7 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 
 ## Deployment
 
-MCX runs over 5G SA cores with QoS over N5 and over a 4G core with QoS over Rx in tutorials 3 to 5, with a simulated
-RAN; it has not been run on a production network. The Helm chart is experimental: it renders and validates, and has not
-yet been installed on a cluster. It is not an interoperability-certified implementation: it has not yet been tested
+MCX runs over 5G SA cores with QoS over N5 and over a 4G core with QoS over Rx in tutorials 3 to 6, with a simulated
+RAN; it has not been run on a production network. The Helm chart is experimental: tutorial 6 installs it on a one-node
+kind cluster; it has not been run on a cluster of several nodes or on OpenShift. It is not an interoperability-certified implementation: it has not yet been tested
 against independent implementations.

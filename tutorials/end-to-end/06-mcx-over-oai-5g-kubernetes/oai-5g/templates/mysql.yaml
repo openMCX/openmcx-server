@@ -1,0 +1,50 @@
+{{- /* MySQL with the OAI subscriber database (oai_db.sql), as oai-mysql in tutorial 3. Recreated at each start. */ -}}
+{{ include "oai5g.service" (dict "root" . "name" "mysql" "notReady" true "ports" (list (dict "name" "mysql" "port" 3306))) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oai-mysql
+  labels:
+    {{- include "oai5g.labels" (dict "root" . "name" "mysql") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "oai5g.selector" (dict "root" . "name" "mysql") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "oai5g.labels" (dict "root" . "name" "mysql") | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: mysql
+          image: {{ .Values.images.mysql }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          env:
+            - {name: TZ, value: Europe/Paris}
+            - {name: MYSQL_DATABASE, value: oai_db}
+            - {name: MYSQL_USER, value: test}
+            - {name: MYSQL_PASSWORD, value: test}
+            - {name: MYSQL_ROOT_PASSWORD, value: linux}
+          ports:
+            - {name: mysql, containerPort: 3306}
+          readinessProbe:
+            exec:
+              command: [bash, /tmp/mysql-healthcheck.sh]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 10
+          volumeMounts:
+            - {name: config, mountPath: /docker-entrypoint-initdb.d/oai_db.sql, subPath: oai_db.sql, readOnly: true}
+            - {name: config, mountPath: /tmp/mysql-healthcheck.sh, subPath: mysql-healthcheck.sh, readOnly: true}
+            - {name: data, mountPath: /var/lib/mysql}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config
+        - name: data
+          emptyDir: {}
