@@ -38,9 +38,15 @@ struct HttpTimeouts {
 // ports). The connection goes to the address; TLS still checks the certificate against the named host (SNI included).
 using HttpAddressMap = std::map<std::string, std::string>;
 
+// The trust anchors of an HTTP client: the configured CA only, or the system's CAs as well (/etc/ssl/certs), for an
+// IdMS of another vendor whose certificate a public CA issued; its login page opens in the system browser, which
+// trusts them too (TS 33.180 annex B.4.2).
+enum class HttpTrust { configured, configured_and_system };
+
 class HttpClient {
 public:
-  explicit HttpClient(std::string ca_file, HttpTimeouts timeouts = {}, HttpAddressMap address_map = {});
+  explicit HttpClient(std::string ca_file, HttpTimeouts timeouts = {}, HttpAddressMap address_map = {},
+                      HttpTrust trust = HttpTrust::configured);
   // TS 24.482 annex A.2.1.2: sends one HTTP request over TLS, with optional basic authentication and header fields.
   HttpResponse request(std::string_view method, const std::string &url, const std::string &body = {},
                        const std::map<std::string, std::string> &headers = {}, const std::string &user = {},
@@ -50,6 +56,7 @@ private:
   std::string ca_;
   HttpTimeouts timeouts_;
   HttpAddressMap address_map_;
+  HttpTrust trust_;
 };
 
 //------------------------------------------------------------------------------
@@ -69,6 +76,26 @@ std::string random_id();
 //------------------------------------------------------------------------------
 // Helper: an application/x-www-form-urlencoded body.
 std::string form_encode(const std::map<std::string, std::string> &fields);
+
+//------------------------------------------------------------------------------
+// TS 33.180 table B.4.2.2-1: the scope of an authorization request whose configuration ("scope") names none.
+inline constexpr const char *oidc_default_scope =
+    "openid 3gpp:mc:ptt_service 3gpp:mc:ptt_key_management_service 3gpp:mc:data_key_management_service "
+    "3gpp:mc:video_key_management_service";
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex B.4.2.2: the authorization request of the authorization code grant with PKCE (S256), for the
+// user's browser: "url" (the authorization endpoint with the parameters of table B.4.2.2-1) and the "state",
+// "nonce" and "code_verifier" the client keeps for the response. cfg holds the issuer, client_id, redirect_uri and
+// optionally the scope.
+nlohmann::json oidc_authorization_request(const HttpClient &http, const nlohmann::json &cfg);
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex B.4.2.4 and B.4.2.5: the token request for the authorization code the browser was redirected
+// with; the result holds the tokens, the verified ID token's "claims", the "nonce" and, from an IdMS that issues one,
+// the "refresh_token".
+nlohmann::json oidc_exchange_code(const HttpClient &http, const nlohmann::json &cfg, const std::string &code,
+                                  const std::string &code_verifier, const std::string &nonce);
 
 //------------------------------------------------------------------------------
 // TS 24.482 clause 6.2.1 and TS 33.180 annex B.4.2: the authorization code grant with the user's password; the result
@@ -104,8 +131,24 @@ struct oidc_refresh_failed : std::runtime_error {
 bool oidc_refresh_refusal(const HttpResponse &response);
 
 //------------------------------------------------------------------------------
-// TS 33.180 annex B.11.1: validates an ID token against the IdMS JWKS, its issuer, audience and nonce, and returns its
-// claims.
+// RFC 7515 section 4.1.4: a token signed with a key ("kid") the JWKS does not hold; IdMS may have a new key.
+struct oidc_unknown_signing_key : std::runtime_error {
+  using std::runtime_error::runtime_error;
+};
+
+//------------------------------------------------------------------------------
+// TS 33.180 clause 8.6.1: the IdMS JWKS, from the "jwks_uri" of the issuer's discovery document.
+nlohmann::json oidc_jwks(const HttpClient &http, const std::string &issuer);
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex B.11.2: validates an access token against the IdMS JWKS, its issuer and audience (alone or among
+// others), its times and the scope and client_id claims of table B.2.2.2-1, and returns its claims.
+nlohmann::json verify_access_token(std::string_view token, const nlohmann::json &jwks, std::string_view issuer,
+                                   std::string_view audience);
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex B.11.1: validates an ID token against the IdMS JWKS, its issuer, audience and nonce (which the ID
+// token of a refresh may leave out), and returns its claims.
 nlohmann::json verify_id_token(std::string_view token, const nlohmann::json &jwks, std::string_view issuer,
-                               std::string_view audience, std::string_view nonce);
+                               std::string_view audience, std::string_view nonce, bool refreshed = false);
 } // namespace mcx

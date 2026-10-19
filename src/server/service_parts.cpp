@@ -51,10 +51,6 @@ Json McServer::PartsGlue::common_document(const std::string &role, const std::st
 }
 
 //------------------------------------------------------------------------------
-// Helper: the IdMS introspection of an access token.
-Json McServer::PartsGlue::introspect(const std::string &token) { return server_.introspect(token); }
-
-//------------------------------------------------------------------------------
 // Helper: a SIP MESSAGE request.
 void McServer::PartsGlue::send_message(const std::string &uri, const std::string &type, const std::string &body,
                                        const std::vector<SipHeader> &headers, SipResponseHandler handler) {

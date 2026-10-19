@@ -175,7 +175,8 @@ func TestAuthorizationCodePKCEIssuesBoundTokensAndPreservesState(test *testing.T
 	if err != nil {
 		test.Fatal(err)
 	}
-	if access.MCPTTID != "sip:alice@mcx.test" || access.SIPURI != "sip:alice@ims.mcx.test" || access.ClientID != "alice-device" || access.MCID != "alice-mc" {
+	if access.MCPTTID != "sip:alice@mcx.test" || access.SIPURI != "sip:alice@ims.mcx.test" || access.ClientID != "mcx-client" ||
+		access.MCClientID != "alice-device" || access.MCID != "alice-mc" {
 		test.Fatalf("identity binding missing: %+v", access)
 	}
 	id, err := VerifyToken(tokens.IDToken, &key.PublicKey, testConfig().Issuer, "mcx-client", testNow)

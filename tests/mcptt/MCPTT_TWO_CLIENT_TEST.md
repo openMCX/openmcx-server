@@ -28,7 +28,7 @@ HTTPS bodies are not readable in the SIP captures.
 |---|---|
 | Each client → IdMS | GET discovery → 200; GET authorize (PKCE) → 200; POST login → 302/code; POST token → 200; GET JWKS → 200 |
 | Each client → HTTP proxy → CMS/GMS | GET user profile and group document → 200 |
-| Server → IdMS / user database | POST token introspection → 200; Diameter Data-Pull-Request/Answer (DPR/DPA) over SCTP during service authorization |
+| Server → IdMS / user database | Diameter Data-Pull-Request/Answer (DPR/DPA) over SCTP during service authorization |
 | Server → GMS | Group-policy GET/200 during affiliation, call admission and floor checks; periodic revalidation during the call |
 
 The server and database establish their Diameter peer connection before the call.

@@ -436,9 +436,9 @@ std::string gktp_document_xml(std::string_view group, std::string_view id, std::
 }
 
 //------------------------------------------------------------------------------
-// TS 24.481 clauses 7.7.2 and 7.7.8: the GMK GKTP of the MCS GKTP document of a group; refuses one whose
-// activation time is still to come.
-Bytes parse_gktp_document(std::string_view xml, std::string_view group, std::uint64_t now) {
+// TS 24.481 clauses 7.7.2 and 7.7.8: the GMK GKTP of the MCS GKTP document of a group, whatever its activation time
+// (the GMS may send the next one ahead of a key change).
+Bytes parse_gktp_document(std::string_view xml, std::string_view group) {
   auto doc = document(xml);
   auto *root = xmlDocGetRootElement(doc.get());
   gktp_extensions(root);
@@ -449,8 +449,6 @@ Bytes parse_gktp_document(std::string_view xml, std::string_view group, std::uin
   auto *gmks = one(all, "GMK-GKTPs", gktpns);
   auto *gktp = one(gmks, "GKTP", gktpns);
   require(!attr(gktp, "id").empty(), "missing GKTP id");
-  auto activation = attr(gktp, "activationtime");
-  if (!activation.empty()) require(timevalue(activation) <= now, "GKTP not active");
   return unhex(content(gktp));
 }
 

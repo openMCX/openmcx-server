@@ -205,6 +205,35 @@ void inactive_keys() {
 }
 
 //------------------------------------------------------------------------------
+// TS 33.180 clause 5.7 and annex E.6.4: a GMK received ahead of its Activation time leaves the current one in use
+// (a receiver still holding only the current GMK decodes the media); the most recent active one is used.
+void next_group_key_waits() {
+  mcx::ProtectedCall tx, rx;
+  auto current = key();
+  tx.set_group(current);
+  rx.set_group(current);
+  auto next = current;
+  next.csb_id = 2;
+  next.key[0] ^= 1;
+  next.random[0] ^= 1;
+  next.properties->activation_unix_seconds = std::uint64_t(std::time(nullptr)) + 300;
+  tx.set_group(next);
+  check(tx.group_ready(), "current GMK stays ready while the next waits");
+  auto packet = rtp();
+  check(rx.unprotect_media(tx.protect_media(packet, "sip:alice@example.org"), "sip:alice@example.org") == packet,
+        "media stays under the current GMK");
+  auto later = current;
+  later.csb_id = 3;
+  later.key[1] ^= 1;
+  later.properties->activation_unix_seconds = current.properties->activation_unix_seconds + 10;
+  tx.set_group(later);
+  rx.set_group(later);
+  packet[3] = 2;
+  check(rx.unprotect_media(tx.protect_media(packet, "sip:alice@example.org"), "sip:alice@example.org") == packet,
+        "the most recent active GMK is used");
+}
+
+//------------------------------------------------------------------------------
 // TS 33.180 annexes E.6.9 and E.6.10: a repeated GMK with its Status now revoked, or a repeated CSK with
 // an earlier Expiry time, takes effect.
 void duplicate_metadata() {
@@ -450,6 +479,7 @@ int main() {
                     {"expiry", expiry},
                     {"expiry_zero_never_expires", expiry_zero_never_expires},
                     {"inactive_keys", inactive_keys},
+                    {"next_group_key_waits", next_group_key_waits},
                     {"duplicate_metadata", duplicate_metadata},
                     {"bounded_media_lifecycle", bounded_media_lifecycle},
                     {"unauthenticated_context_does_not_evict", unauthenticated_context_does_not_evict},

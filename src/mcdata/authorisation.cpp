@@ -33,8 +33,7 @@ SipResponse DataServer::authorise(const SipMessage &request) {
   const auto info = mcdata::parse_info(info_body);
   if (info.access_token.empty() || info.client_id.empty())
     return reject(403, "101 service authorisation failed", asserted, "authorisation");
-  const auto checked =
-      introspect_claims(http_, cfg_.at("common"), info.access_token, asserted, info.client_id, mcdata_service.id_claim);
+  const auto checked = service_claims(tokens_, info.access_token, mcdata_service, asserted, info.client_id);
   if (!checked) return reject(403, "101 service authorisation failed", asserted, "authorisation");
   const auto &claims = *checked;
   const auto id = claims.value(mcdata_service.id_claim, std::string{});

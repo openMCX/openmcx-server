@@ -91,7 +91,7 @@ flowchart LR
   C -- "XCAP, key management, files (HTTPS)" --> H
   H --> G & CM & KM & L & CS
   P -- "Diameter MCPTT-2 (SCTP/TLS)" --> U
-  P & V & D -- "HTTPS /internal/*, token introspection" --> G & CM & I
+  P & V & D -- "HTTPS /internal/*, IdMS keys (JWKS)" --> G & CM & I
   P & V -- "HTTPS key provisioning" --> KM
   P -. "MCPTT-3: SIP direct between split servers" .- P
 ```
@@ -107,7 +107,9 @@ flowchart LR
 - **HTTP.** Clients authenticate at the IdMS (OIDC authorisation code with PKCE) and reach the other common services
   through `mcx-http-proxy`. The servers read group documents, user profiles and the service configuration from the
   common services' internal interface (`/internal/...`, HTTP Basic with the server's client ID and secret,
-  `src/server/parts/common_services.cpp`) and introspect access tokens at the IdMS (`/introspect`).
+  `src/server/parts/common_services.cpp`) and check access tokens themselves against the IdMS's keys, the JWKS its
+  discovery document names (TS 33.180 annex B.11.2, `AccessTokens` in the same file), so any IdMS that follows annex
+  B can issue them.
 - **Diameter.** The MCPTT server pulls the user profile from `mcx-user-db` at service authorisation (MCPTT-2,
   `DiameterProfileClient` in `src/common/diameter.cpp`). The MCPTT and MCVideo servers may also be the AF towards a
   PCRF over Rx or a PCF over N5 ([QoS for call media](POLICY.md)).
@@ -171,8 +173,9 @@ starts the policy clients, installs the SIP body filters (section 6) and loops u
 locks or worker threads, with one exception: the SEAL location notification channel of `McServer` is read by a
 detached thread of its own, which hands its results over through `SealChannel` under a mutex.
 
-Calls to the common services (`internal()`, `group_profile()`, `user_profile()`, `introspect()`) are synchronous
-HTTPS requests made on this thread; nothing is cached between requests. A common service that does not answer holds
+Calls to the common services (`internal()`, `group_profile()`, `user_profile()`) are synchronous HTTPS requests made on
+this thread; nothing is cached between requests, except the IdMS's JWKS (`AccessTokens`), fetched at the first access
+token and again, at most once a minute, for a token of a key it does not hold. A common service that does not answer holds
 the loop up until the request times out; the document polling then backs off from it for a while
 (`service_down`, `service_failed` in `src/server/temporary_groups.cpp`).
 
@@ -274,9 +277,12 @@ TS 24.379 clause 7.3.3 (TS 24.281 clause 7.3.3), with TS 24.379 clause 6.6.2.
 3. `open_with_uploaded_csk` accepts the CSK at the key client (`KeyClient::accept_csk`), verifies the signatures of
    the XML bodies and decrypts their protected content with it (403 with Warning 139 or 140 on failure).
 4. The asserted identity must equal the From URI; token and client ID must be present.
-5. `introspect_claims` (`src/server/parts/common_services.cpp`) introspects the token at the IdMS and binds the SIP
-   URI, client ID and MC service ID claim; a failure is 403 with the service authorisation Warning (step 6 of the
-   clause). `token_subject_valid` (a service hook) checks the subject.
+5. `service_claims` (`src/server/parts/common_services.cpp`) checks the token (TS 33.180 annex B.11.2): its RS256
+   signature by a key of the IdMS's JWKS, `iss`, `aud` (the MC servers' audience), `exp`, the claims of tables
+   B.2.2.2-1 and B.2.2.3-1 (`scope`, which must hold the service's scope, `client_id`, the MC service ID claim). A
+   token of OpenMCX's IdMS (it has `mc_id`) binds the SIP URI (`sip_uri`) and the MC client ID (`mc_client_id`) as
+   well, and `token_subject_valid` (a service hook) checks its subject; another IdMS's token has the annex B claims
+   only. A failure is 403 with the service authorisation Warning (step 6 of the clause).
 6. The MCPTT server pulls the user profile over Diameter (`diameter_->pull`).
 7. `bind_authorized_user` stores the `User` (MC service ID, client ID, SIP URI, expiry from the token, the CSK as
    floor keys), answers 200 with `SIP-ETag` (or 412 for an unknown `SIP-If-Match`, RFC 3903), logs
@@ -557,7 +563,7 @@ OpenMCX applies TS 33.180 in four layers. Where each applies in the request pipe
 
 | Layer | Keys | Where | Code |
 |---|---|---|---|
-| Transport | TLS certificates | SIP over TLS (port 5061) between clients, SIP core and servers; HTTPS to the common services; Diameter over TLS | `SipTlsConfig`, `HttpClient` (`src/security/http.cpp`); `--disable-tls` gives clear SIP over TCP for capture-based tests only |
+| Transport | TLS certificates | SIP over TLS (port 5061) between clients, SIP core and servers; HTTPS to the common services; Diameter over TLS | `SipTlsConfig`, `HttpClient` (`src/security/http.cpp`: the configured CA only, or with the system's CAs as well for IdMS, `HttpTrust`); `--disable-tls` gives clear SIP over TCP for capture-based tests only |
 | XML confidentiality | XPK: the client's CSK towards a client, the SPK towards a peer server | The SIP engine's body filters: `McServer::protect_outgoing` just before sending, `protect_incoming` on receipt, before `incoming` sees the request (TS 24.379 clauses 6.6.2.3.2 and 6.6.1.4) | `src/server/xml_protection.cpp`, `src/security/xml_security.cpp` (`xmlsec::encrypt`, `decrypt`, the per-service `Profile` of sensitive elements) |
 | XML integrity | integrity key derived from the XPK | Same filters: `sign_parts` adds an `application/vnd.3gpp.mcptt-signed+xml` body; `verify_parts` checks and removes it before decryption (TS 24.379 clause 6.6.3) | `src/server/xml_protection.cpp` |
 | Media and media plane control | GMK (group media, distributed in GKTP documents by the GMS), PCK (private calls, end to end), CSK (floor and transmission control, SRTCP), SPK (between servers) | `ProtectedCall` per user: `unprotect_floor` in `floor_packet`, `protect_floor` in `transmit_floor` and `send_transmission`; group SRTP is relayed unchanged (`audio_packet`) | `include/mcx/protected_call.hpp`, `src/security/security.cpp` (AEAD_AES_128_GCM), `src/security/keying.cpp` (MIKEY-SAKKE, ECCSI), `src/security/key_client.cpp` |
@@ -606,7 +612,8 @@ then reads:
   `call_policy`, `private_call`, `adhoc_call`, `floor_ack`, `document_poll_ms`, `configuration_poll_ms`, and for
   MCVideo the `floor_*` timer settings and `reception_control`. A participating server without `controller`, or a
   controller that is not a configured peer, refuses to start.
-- `common`: the common services' URLs and the server's client ID and secret.
+- `common`: the common services' URLs and the server's client ID and secret; `issuer` (default: `idms`), the IdMS
+  whose access tokens the server accepts, and `token_audience` (default: `client_id`), their audience.
 - `diameter_config`: MCPTT-2; required by the MCPTT server (`McpttServer` constructor), not used by MCVideo.
 - `security`: the KMS client (`KeyClient`) and the switches `confidentiality_protection` and `integrity_protection`
   of the XML protection (`McServer::xml_protection`, `integrity_protection`); without the block there is neither.
@@ -622,7 +629,7 @@ switches).
 | Group document | GMS `GET /internal/group?id=` (`McServer::group_profile`, with regroups merged) | on each request that needs it, and polled for document subscriptions |
 | User profile | MCPTT: Diameter pull from `mcx-user-db` at service authorisation; all services: CMS `GET /internal/user?<id>=` (`McServer::user_profile`) for rulesets | on each request that needs it |
 | Service configuration (TS 24.484 clauses 8.4 and 9.4: Resource-Priority values, floor timers and queue) | CMS `GET /internal/service-config?service=` (`McServer::refresh_service_config`) | every 30 s, every 2 s until the first answer |
-| Access token claims | IdMS `POST /introspect` | at service authorisation |
+| IdMS's keys, for the access tokens | the JWKS of the issuer's discovery document (`AccessTokens`, over HTTPS trusting `tls.ca_file` and the system's CAs, `HttpTrust::configured_and_system`) | at the first access token, then for a token of a new key |
 | Keys | KMS (`KeyClient::provision`) and GMS (GKTP documents) | at start and per key subscription |
 
 The service's view of a document is passed through its hooks (`service_user_profile`, `service_members`), so the

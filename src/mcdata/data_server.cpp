@@ -219,7 +219,8 @@ void DataServer::status_procedures() {
 //------------------------------------------------------------------------------
 // Helper: construct the server from its configuration: the SIP stack.
 DataServer::DataServer(Json cfg, bool disable_tls)
-    : cfg_(std::move(cfg)), http_(cfg_.at("tls").at("ca_file")), control_(cfg_.at("control_fifo")),
+    : cfg_(std::move(cfg)), http_(cfg_.at("tls").at("ca_file")), tokens_(cfg_.at("tls").at("ca_file"), cfg_.value("common", Json::object())),
+      control_(cfg_.at("control_fifo")),
       sip_(
           [&] {
             // TS 24.282 clause 6.3.7.1.23 step 4: the 200 (OK) to an INVITE asserts the service's identity.

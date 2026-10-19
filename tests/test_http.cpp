@@ -127,7 +127,7 @@ private:
 //------------------------------------------------------------------------------
 // TS 33.180 tables B.2.1.2-1 and B.2.1.3-1: the ID token standard claims and the mcptt_id claim, with the nonce.
 // The client_id and sip_uri claims are an OpenMCX extension (not in those tables): the identity binding the OpenMCX
-// IdMS adds and verify_id_token requires.
+// IdMS adds, which verify_id_token checks where it is given.
 json valid_claims() {
   const auto now = std::time(nullptr);
   return {{"iss", "https://idms.example.test"},
@@ -156,6 +156,51 @@ template <typename Function> void expect_rejected(std::string_view name, Functio
     return;
   }
   throw std::runtime_error(std::string(name) + " was accepted");
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex B.11.2 with tables B.2.2.2-1 and B.2.2.3-1: an access token of another IdMS (a subject of its own,
+// the MC servers among other audiences, no OpenMCX claims) is accepted; one without scope or client_id, of another
+// issuer or audience, expired or of an unknown key is not.
+void access_tokens(const SigningKey &key, const json &keys) {
+  const auto now = std::time(nullptr);
+  const json claims = {{"iss", "https://idms.example.test"},
+                       {"sub", "6f1c2a9e-2b5d-4c1e-9a43-0d7d1f1e2b3c"},
+                       {"aud", json::array({"account", "mcx-servers"})},
+                       {"azp", "mcptt-client"},
+                       {"client_id", "mcptt-client"},
+                       {"scope", "openid 3gpp:mc:ptt_service"},
+                       {"mcptt_id", "sip:alice@mcx.test"},
+                       {"iat", now},
+                       {"exp", now + 300}};
+  const auto check = [&key, &keys](const json &changed) {
+    return mcx::verify_access_token(key.token(changed), keys, "https://idms.example.test", "mcx-servers");
+  };
+  if (check(claims).at("mcptt_id") != "sip:alice@mcx.test") throw std::runtime_error("access token refused");
+  auto changed = claims;
+  changed["aud"] = "mcx-servers";
+  changed.erase("iat");
+  (void)check(changed);
+  for (const auto *name : {"scope", "client_id", "exp", "aud"}) {
+    changed = claims;
+    changed.erase(name);
+    expect_rejected(std::string("an access token without ") + name, [&] { (void)check(changed); });
+  }
+  changed = claims;
+  changed["iss"] = "https://other.example.test";
+  expect_rejected("an access token of another issuer", [&] { (void)check(changed); });
+  changed = claims;
+  changed["aud"] = json::array({"account"});
+  expect_rejected("an access token for another audience", [&] { (void)check(changed); });
+  changed = claims;
+  changed["exp"] = now - 1;
+  expect_rejected("an expired access token", [&] { (void)check(changed); });
+  auto other = keys;
+  other["keys"][0]["kid"] = "rotated";
+  try {
+    (void)mcx::verify_access_token(key.token(claims), other, "https://idms.example.test", "mcx-servers");
+    throw std::runtime_error("a token of an unknown key accepted");
+  } catch (const mcx::oidc_unknown_signing_key &) {}
 }
 
 } // namespace
@@ -249,7 +294,7 @@ void address_map_and_pin() {
 
 //------------------------------------------------------------------------------
 // TS 33.180 clause 6.1.2 and annex B.11.1: clear HTTP is refused; a valid ID token returns its claims, and a token
-// with another subject, an empty identity binding, a wrong issuer, audience or nonce, an expired or not yet valid
+// without a subject or MCPTT ID, an empty identity binding, a wrong issuer, audience or nonce, an expired or not yet valid
 // lifetime, a changed signature, an encryption key or another key algorithm is refused.
 int main() {
   if (mcx::url_encode("sip:a+b@example.test") != "sip%3Aa%2Bb%40example.test") throw std::runtime_error("URI escaping");
@@ -264,9 +309,22 @@ int main() {
   const auto verified = mcx::verify_id_token(token, keys, "https://idms.example.test", "mcptt-client", "test-nonce");
   if (verified.at("mcptt_id") != "sip:alice@mcx.test") throw std::runtime_error("valid signed JWT claims not returned");
 
+  // TS 33.180 table B.2.1.2-1: sub is any identifier IdMS never reassigns (a third-party IdMS gives a UUID), and
+  // an IdMS other than OpenMCX's names no client_id or sip_uri.
   auto changed = claims;
-  changed["sub"] = "sip:mallory@mcx.test";
-  expect_rejected("mismatched subject binding", [&] { verify(key.token(changed), keys); });
+  changed["sub"] = "6f1c2a9e-2b5d-4c1e-9a43-0d7d1f1e2b3c";
+  changed.erase("client_id");
+  changed.erase("sip_uri");
+  if (mcx::verify_id_token(key.token(changed), keys, "https://idms.example.test", "mcptt-client", "test-nonce")
+          .at("mcptt_id") != "sip:alice@mcx.test")
+    throw std::runtime_error("third-party ID token refused");
+
+  changed = claims;
+  changed.erase("sub");
+  expect_rejected("no subject", [&] { verify(key.token(changed), keys); });
+  changed = claims;
+  changed.erase("mcptt_id");
+  expect_rejected("no MCPTT ID", [&] { verify(key.token(changed), keys); });
 
   changed = claims;
   changed["client_id"] = "";
@@ -306,6 +364,19 @@ int main() {
   verify(key.token(changed), keys);
   changed["iat"] = std::time(nullptr) + 60;
   expect_rejected("issued-at beyond the clock skew", [&] { verify(key.token(changed), keys); });
+
+  // OpenID Connect Core 1.0 section 3.1.3.7: an audience list names the client, and then azp is the client.
+  changed = claims;
+  changed["aud"] = json::array({"mcptt-client", "account"});
+  changed["azp"] = "mcptt-client";
+  verify(key.token(changed), keys);
+  changed.erase("azp");
+  expect_rejected("an audience list without azp", [&] { verify(key.token(changed), keys); });
+  changed["aud"] = json::array({"account"});
+  changed["azp"] = "mcptt-client";
+  expect_rejected("an audience list without the client", [&] { verify(key.token(changed), keys); });
+
+  access_tokens(key, keys);
 
   // RFC 6749 section 5.2 and TS 33.180 annex B.5: only "invalid_grant" refuses the refresh token; another error, a
   // server error or an unparsable body leaves it valid (oidc_refresh then throws the retryable oidc_refresh_failed).

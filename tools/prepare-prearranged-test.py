@@ -1575,6 +1575,177 @@ def add_admin(fixture, compose, args):
 
 
 # ------------------------------------------------------------------------------
+# The OIDC scopes of TS 33.180 table B.4.2.2-1 OpenMCX serves.
+MC_SCOPES = [
+    f'3gpp:mc:{scope}'
+    for scope in (
+        'ptt_service', 'video_service', 'data_service',
+        'ptt_key_management_service', 'video_key_management_service', 'data_key_management_service',
+        'ptt_config_management_service', 'video_config_management_service', 'data_config_management_service',
+        'ptt_group_management_service', 'video_group_management_service', 'data_group_management_service',
+        'location_management_service',
+    )
+]
+
+
+# ------------------------------------------------------------------------------
+def add_keycloak(fixture, compose, args):
+    """Keycloak (args.keycloak, an image) as the lab's IdMS instead of OpenMCX's: an IdMS of another vendor, as
+    at a Plugtest. It answers at the same address (the service "idms", https://idms:8443) with its own paths, the
+    realm "openmcx" (issuer https://idms:8443/realms/openmcx), and signs with the lab's IdMS key, which the common
+    services verify with. The realm holds the users, with their MC service IDs as attributes; the client of
+    oauth_client_id (public, PKCE S256, the lab's redirect URIs) and its mappers give the tokens the claims of
+    TS 33.180 annex B.2: mcptt_id, mcdata_id, mcvideo_id, and in the access token the MC servers' audience
+    (server_client_id) and client_id; the MC scopes are client scopes. Keycloak's own login page signs users in:
+    the clients have no password and keep a refresh token in /refresh (generated/refresh), which
+    tools/keycloak-sign-in.py obtains for them before they start."""
+    gen = fixture / 'generated'
+    site_path = gen / 'site.json'
+    site = json.loads(site_path.read_text())
+    issuer = 'https://idms:8443/realms/openmcx'
+    client_id, audience = site['oauth_client_id'], site['server_client_id']
+
+    def mapper(name, kind, config, access=True, id_token=True):
+        """A protocol mapper of the client, its claim in the access token and the ID token as asked."""
+        flags = {'access.token.claim': str(access).lower(), 'id.token.claim': str(id_token).lower(),
+                 'introspection.token.claim': 'true', 'userinfo.token.claim': 'false'}
+        return dict(name=name, protocol='openid-connect', protocolMapper=kind, config={**flags, **config})
+
+    def attribute(claim):
+        """A user attribute as the claim of the same name, in both tokens."""
+        config = {'user.attribute': claim, 'claim.name': claim, 'jsonType.label': 'String'}
+        return mapper(claim, 'oidc-usermodel-attribute-mapper', config)
+
+    realm = dict(
+        realm='openmcx',
+        enabled=True,
+        sslRequired='external',
+        accessTokenLifespan=site['token_ttl_seconds'],
+        ssoSessionIdleTimeout=36000,
+        ssoSessionMaxLifespan=36000,
+        clientScopes=[
+            dict(name=scope, protocol='openid-connect',
+                 attributes={'include.in.token.scope': 'true', 'display.on.consent.screen': 'false'})
+            for scope in MC_SCOPES
+        ],
+        clients=[
+            dict(
+                clientId=client_id,
+                enabled=True,
+                publicClient=True,
+                standardFlowEnabled=True,
+                directAccessGrantsEnabled=False,
+                implicitFlowEnabled=False,
+                redirectUris=site['oauth_redirect_uris'],
+                attributes={'pkce.code.challenge.method': 'S256', 'post.logout.redirect.uris': '+'},
+                defaultClientScopes=[],
+                optionalClientScopes=MC_SCOPES,
+                protocolMappers=[
+                    mapper('sub', 'oidc-sub-mapper', {}),
+                    attribute('mcptt_id'),
+                    attribute('mcdata_id'),
+                    attribute('mcvideo_id'),
+                    mapper(
+                        'MC servers', 'oidc-audience-mapper', {'included.custom.audience': audience}, id_token=False
+                    ),
+                    mapper('client_id', 'oidc-hardcoded-claim-mapper',
+                           {'claim.name': 'client_id', 'claim.value': client_id, 'jsonType.label': 'String'},
+                           id_token=False),
+                ],
+            )
+        ],
+        users=[
+            dict(
+                username=user['username'],
+                enabled=True,
+                email=f"{user['username']}@{site['domain']}",
+                emailVerified=True,
+                firstName=user['username'],
+                lastName='lab',
+                credentials=[dict(type='password', value=user['password'], temporary=False)],
+                attributes={
+                    claim: [user[claim]] for claim in ('mcptt_id', 'mcdata_id', 'mcvideo_id') if user.get(claim)
+                },
+            )
+            for user in site['users']
+        ],
+        components={
+            # The lab's IdMS key signs the tokens (RS256); Keycloak adds its own key for its HS512 tokens.
+            'org.keycloak.keys.KeyProvider': [
+                dict(name='openmcx', providerId='rsa', subComponents={},
+                     config=dict(priority=['200'], enabled=['true'], active=['true'], algorithm=['RS256'],
+                                 privateKey=[(gen / 'oidc-private.pem').read_text()]))
+            ],
+            # The MC service IDs are attributes of their own, outside Keycloak's user profile.
+            'org.keycloak.userprofile.UserProfileProvider': [
+                dict(providerId='declarative-user-profile', subComponents={},
+                     config={'kc.user.profile.config': [json.dumps(dict(
+                         unmanagedAttributePolicy='ENABLED',
+                         attributes=[
+                             dict(name=name, displayName=name,
+                                  permissions=dict(view=['admin', 'user'], edit=['admin']), multivalued=False)
+                             for name in ('username', 'email', 'firstName', 'lastName')
+                         ]))]})
+            ],
+        },
+    )
+    keycloak = gen / 'keycloak'
+    keycloak.mkdir()
+    (keycloak / 'openmcx.json').write_text(json.dumps(realm, indent=2) + '\n')
+    (keycloak / 'openmcx.json').chmod(0o644)  # read by Keycloak's own user in its container
+    keycloak.chmod(0o755)
+    refresh = gen / 'refresh'
+    refresh.mkdir()
+    refresh.chmod(0o777)  # the clients' own users write their refresh tokens
+
+    site['issuer'] = issuer
+    site_path.write_text(json.dumps(site, indent=2) + '\n')
+    for path in gen.glob('*.json'):
+        cfg = json.loads(path.read_text())
+        if not isinstance(cfg, dict):
+            continue
+        if 'common' in cfg:
+            # TS 33.180 annex B.11.2: the MC servers check the tokens of Keycloak's issuer.
+            cfg['common']['issuer'] = issuer
+        elif 'oauth' in cfg:
+            cfg['oauth']['issuer'] = issuer
+            for key in ('username', 'password'):
+                cfg['oauth'].pop(key, None)
+            cfg['oauth']['refresh_token_file'] = f'/refresh/{path.stem}.json'
+        else:
+            continue
+        path.write_text(json.dumps(cfg, indent=2) + '\n')
+
+    def bind(source, target, read_only=True):
+        """A bind mount of the fixture."""
+        return dict(type='bind', source=str(source), target=target, read_only=read_only)
+
+    services = compose['services']
+    services['idms'] = dict(
+        image=args.keycloak,
+        command=[
+            'start', '--import-realm', '--hostname=https://idms:8443', '--https-port=8443', '--http-enabled=false',
+            '--https-certificate-file=/opt/keycloak/conf/idms.crt',
+            '--https-certificate-key-file=/opt/keycloak/conf/idms.key', '--health-enabled=true',
+        ],
+        volumes=[
+            bind(gen / 'tls/idms.crt', '/opt/keycloak/conf/idms.crt'),
+            bind(gen / 'tls/idms.key', '/opt/keycloak/conf/idms.key'),
+            bind(keycloak / 'openmcx.json', '/opt/keycloak/data/import/openmcx.json'),
+        ],
+        networks=copy.deepcopy(services['idms']['networks']),
+        # Keycloak opens its management port (health) once the realm is imported.
+        healthcheck=dict(
+            test=['CMD-SHELL', 'exec 3<>/dev/tcp/127.0.0.1/9000'], interval='3s', timeout='3s', retries=100
+        ),
+    )
+    compose['volumes'].pop('idms', None)
+    for name, service in services.items():
+        if name.startswith('client-'):
+            service['volumes'].append(bind(refresh, '/refresh', read_only=False))
+
+
+# ------------------------------------------------------------------------------
 def main():
     """Parse the command line, provision the lab, apply the flags and write compose.json."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -1704,6 +1875,11 @@ def main():
     )
     parser.add_argument('--admin-image', help='the MCX Admin image (built from the openmcx-admin repository)')
     parser.add_argument(
+        '--keycloak',
+        metavar='IMAGE',
+        help='Keycloak (this image) as IdMS instead of OpenMCX\'s: an IdMS of another vendor (TS 33.180 annex B)',
+    )
+    parser.add_argument(
         '--token-ttl',
         type=int,
         help='IdMS access token lifetime in seconds instead of the input\'s (token renewal tests)',
@@ -1741,6 +1917,8 @@ def main():
         source['token_ttl_seconds'] = args.token_ttl
     if args.admin and not args.admin_image:
         parser.error('--admin needs --admin-image')
+    if args.keycloak and args.admin:
+        parser.error('--keycloak and --admin exclude each other: MCX Admin manages the accounts of OpenMCX\'s IdMS')
     if args.admin:
         source['extra_roles'] = [*source.get('extra_roles', []), 'mcxadmin', 'credentials', 'client-e']
     if [user['role'] for user in source['users']] != ['client-a', 'client-b']:
@@ -2107,6 +2285,8 @@ def main():
     service_configuration(fixture)
     if args.admin:
         add_admin(fixture, compose, args)
+    if args.keycloak:
+        add_keycloak(fixture, compose, args)
     # Docker log rotation (docs/USAGE.md section 2): each container's log at most three files of 10 MB, for the services
     # added above as for those of docker/compose/compose.yaml.
     for service in compose['services'].values():

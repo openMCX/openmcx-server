@@ -122,7 +122,6 @@ public:
 
   Json common_document(const std::string & /*role*/, const std::string & /*path*/) override { return Json::object(); }
 
-  Json introspect(const std::string & /*token*/) override { return Json::object(); }
 
   void publish(const std::string &uri, const std::string &type, const std::string &body,
                const std::vector<SipHeader> &headers, SipResponseHandler handler) override {

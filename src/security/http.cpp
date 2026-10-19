@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <initializer_list>
 #include <memory>
 #include <stdexcept>
 
@@ -164,9 +165,10 @@ nlohmann::json HttpResponse::json() const {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.482 annex A.2.1.2: an HTTPS client that verifies the server against a configured trust anchor.
-HttpClient::HttpClient(std::string ca_file, HttpTimeouts timeouts, HttpAddressMap address_map)
-    : ca_(std::move(ca_file)), timeouts_(timeouts), address_map_(std::move(address_map)) {
+// TS 24.482 annex A.2.1.2: an HTTPS client that verifies the server against a configured trust anchor (and the
+// system's CAs, with HttpTrust::configured_and_system).
+HttpClient::HttpClient(std::string ca_file, HttpTimeouts timeouts, HttpAddressMap address_map, HttpTrust trust)
+    : ca_(std::move(ca_file)), timeouts_(timeouts), address_map_(std::move(address_map)), trust_(trust) {
   for (const auto &[named, reached] : address_map_)
     if (named.find(':') == named.npos || reached.find(':') == reached.npos ||
         (named + reached).find_first_of(" \r\n") != std::string::npos)
@@ -192,6 +194,8 @@ HttpResponse HttpClient::request(std::string_view method, const std::string &url
   curl_easy_setopt(easy, CURLOPT_URL, url.c_str());
   curl_easy_setopt(easy, CURLOPT_CUSTOMREQUEST, verb.c_str());
   curl_easy_setopt(easy, CURLOPT_CAINFO, ca_.c_str());
+  // libcurl adds the CA directory it was built with (on Ubuntu the system's) unless told otherwise.
+  curl_easy_setopt(easy, CURLOPT_CAPATH, trust_ == HttpTrust::configured_and_system ? "/etc/ssl/certs" : nullptr);
   curl_easy_setopt(easy, CURLOPT_SSL_VERIFYPEER, 1L);
   curl_easy_setopt(easy, CURLOPT_SSL_VERIFYHOST, 2L);
   curl_easy_setopt(easy, CURLOPT_PROTOCOLS_STR, "https");
@@ -348,12 +352,12 @@ std::string random_id() {
   return b64({reinterpret_cast<char *>(bytes.data()), bytes.size()});
 }
 
+namespace {
 //------------------------------------------------------------------------------
-// TS 33.180 annex B.11.1 (OpenID Connect Core 1.0 section 3.1.3.7): validates an RS256-signed ID token against the
-// IdMS JWKS (RFC 7517, RFC 7518 section 3.3), its iss, aud, nonce, exp, iat and nbf claims, and the MCX claims of
-// TS 33.180 table B.2.1.3-1 (the subject must be the mcptt_id).
-json verify_id_token(std::string_view token, const json &jwks, std::string_view issuer, std::string_view audience,
-                     std::string_view nonce) {
+// Helper: RFC 7515 section 5.2 with RFC 7518 section 3.3: the claims of an RS256-signed JWT whose signature the IdMS
+// JWKS (RFC 7517) key named by its "kid" verifies. A token of a key the JWKS does not hold throws
+// oidc_unknown_signing_key.
+json signed_claims(std::string_view token, const json &jwks) {
   if (token.size() > max_id_token) throw std::runtime_error("oversized token");
   auto first = token.find('.'), second = token.find('.', first == token.npos ? 0 : first + 1);
   if (first == token.npos || second == token.npos || token.find('.', second + 1) != token.npos)
@@ -369,7 +373,7 @@ json verify_id_token(std::string_view token, const json &jwks, std::string_view 
       if (!key.is_null()) throw std::runtime_error("duplicate JWKS key");
       key = candidate;
     }
-  if (key.is_null()) throw std::runtime_error("unknown signing key");
+  if (key.is_null()) throw oidc_unknown_signing_key("unknown signing key");
 
   auto nbytes = unb64(key.at("n").get<std::string>()), ebytes = unb64(key.at("e").get<std::string>());
   std::unique_ptr<BIGNUM, decltype(&BN_free)> modulus(
@@ -398,27 +402,80 @@ json verify_id_token(std::string_view token, const json &jwks, std::string_view 
   if (!md || EVP_DigestVerifyInit(md.get(), nullptr, EVP_sha256(), nullptr, pub.get()) != 1 ||
       EVP_DigestVerify(md.get(), reinterpret_cast<const unsigned char *>(signature.data()), signature.size(),
                        reinterpret_cast<const unsigned char *>(token.data()), second) != 1)
-    throw std::runtime_error("ID token signature rejected");
+    throw std::runtime_error("token signature rejected");
 
-  auto claims = json::parse(unb64(token.substr(first + 1, second - first - 1)));
-  auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-  auto identity = [&claims](const char *name) {
-    const auto value = claims.find(name);
-    if (value == claims.end() || !value->is_string() || value->get_ref<const std::string &>().empty())
-      throw std::runtime_error("ID token identity binding rejected");
-    return value->get<std::string>();
+  return json::parse(unb64(token.substr(first + 1, second - first - 1)));
+}
+
+//------------------------------------------------------------------------------
+// Helper: RFC 7519 section 4.1: "exp" ahead (TS 33.180 annex B.12), "iat" (where required or given) not ahead by
+// more than the clock skew, and "nbf" (where given) passed.
+bool times_valid(const json &claims, bool iat_required) {
+  const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+  const auto number = [&claims](const char *name) {
+    return claims.contains(name) && claims.at(name).is_number_integer();
   };
-  const auto subject = identity("sub");
-  const auto mcptt_id = identity("mcptt_id");
-  (void)identity("client_id");
-  (void)identity("sip_uri");
+  return number("exp") && claims.at("exp").get<long long>() > now &&
+         (number("iat") ? claims.at("iat").get<long long>() <= now + id_token_clock_skew_s
+                        : !iat_required && !claims.contains("iat")) &&
+         (!claims.contains("nbf") || (number("nbf") && claims.at("nbf").get<long long>() <= now));
+}
 
-  if (claims.value("iss", "") != issuer || claims.value("aud", "") != audience || claims.value("nonce", "") != nonce ||
-      !claims.at("exp").is_number_integer() || !claims.at("iat").is_number_integer() ||
-      claims.at("exp").get<long long>() <= now || claims.at("iat").get<long long>() > now + id_token_clock_skew_s ||
-      (claims.contains("nbf") && (!claims.at("nbf").is_number_integer() || claims.at("nbf").get<long long>() > now)) ||
-      subject != mcptt_id)
+//------------------------------------------------------------------------------
+// Helper: RFC 7519 section 4.1.3: "aud" is the audience, or an array that names it.
+bool audience_valid(const json &claims, std::string_view audience) {
+  const auto aud = claims.find("aud");
+  if (aud == claims.end()) return false;
+  if (aud->is_string()) return aud->get_ref<const std::string &>() == audience;
+  if (!aud->is_array()) return false;
+  for (const auto &item : *aud)
+    if (item.is_string() && item.get_ref<const std::string &>() == audience) return true;
+  return false;
+}
+
+//------------------------------------------------------------------------------
+// Helper: a claim that is a non-empty string.
+bool named(const json &claims, const char *name) {
+  const auto value = claims.find(name);
+  return value != claims.end() && value->is_string() && !value->get_ref<const std::string &>().empty();
+}
+} // namespace
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex B.11.1 (OpenID Connect Core 1.0 section 3.1.3.7): validates an RS256-signed ID token against the
+// IdMS JWKS (RFC 7517, RFC 7518 section 3.3), its iss, aud, nonce, exp, iat and nbf claims, and the MCX claims of
+// TS 33.180 table B.2.1.3-1. The ID token of a refresh may leave the nonce out (OpenID Connect Core 1.0 section 12.2).
+json verify_id_token(std::string_view token, const json &jwks, std::string_view issuer, std::string_view audience,
+                     std::string_view nonce, bool refreshed) {
+  auto claims = signed_claims(token, jwks);
+  // TS 33.180 tables B.2.1.2-1 and B.2.1.3-1: sub is any identifier of the user that IdMS never reassigns, and
+  // mcptt_id the MCPTT ID; the client checks the IDs against its configuration. client_id and sip_uri (an OpenMCX
+  // extension, not in those tables) are checked where an IdMS gives them.
+  bool bound = named(claims, "sub") && named(claims, "mcptt_id");
+  for (const auto *name : {"client_id", "sip_uri", "mcdata_id", "mcvideo_id"})
+    bound = bound && (!claims.contains(name) || named(claims, name));
+  if (!bound) throw std::runtime_error("ID token identity binding rejected");
+
+  // OpenID Connect Core 1.0 section 3.1.3.7 steps 3 and 4: aud names the client; with other audiences, azp is the
+  // client.
+  const auto &aud = claims.contains("aud") ? claims.at("aud") : json{};
+  const bool authorized_party = !aud.is_array() || aud.size() == 1 || claims.value("azp", "") == audience;
+  if (claims.value("iss", "") != issuer || !audience_valid(claims, audience) || !authorized_party ||
+      (claims.contains("nonce") || !refreshed ? claims.value("nonce", "") != nonce : false) ||
+      !times_valid(claims, true))
     throw std::runtime_error("ID token claims rejected");
+  return claims;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex B.11.2: validates an access token (RFC 7519 section 7.2): its RS256 signature by a key of the IdMS
+// JWKS, iss, aud (the MC servers' audience, alone or among others), exp, iat and nbf, and the claims of tables
+// B.2.2.2-1 and B.2.2.3-1: scope and client_id; the MC service ID is the caller's to check.
+json verify_access_token(std::string_view token, const json &jwks, std::string_view issuer, std::string_view audience) {
+  auto claims = signed_claims(token, jwks);
+  if (claims.value("iss", "") != issuer || !audience_valid(claims, audience) || !times_valid(claims, false) ||
+      !named(claims, "scope") || !named(claims, "client_id"))
+    throw std::runtime_error("access token claims rejected");
   return claims;
 }
 
@@ -426,39 +483,98 @@ json verify_id_token(std::string_view token, const json &jwks, std::string_view 
 // Helper: an "application/x-www-form-urlencoded" body.
 std::string form_encode(const std::map<std::string, std::string> &fields) { return form(fields); }
 
+namespace {
 //------------------------------------------------------------------------------
-// TS 24.482 clause 6.2.1 and TS 33.180 annex B.4.2 (clauses B.4.2.2 to B.4.2.5): OIDC discovery, the authorization
-// code grant with PKCE (RFC 7636, S256), the username and password login, and the token request; the result holds
-// the tokens, the verified ID token's "claims", its "nonce" and, from an IdMS that issues one, the "refresh_token".
-json oidc_login(const HttpClient &http, const json &cfg) {
-  const std::string issuer = cfg.at("issuer"), client = cfg.at("client_id"), redirect = cfg.at("redirect_uri");
-  auto discovery = http.request("GET", issuer + "/.well-known/openid-configuration").json();
+// Helper: checks the OpenID Connect Discovery 1.0 document (section 4) of the configured issuer. The endpoints are
+// under the issuer, or https URLs elsewhere (section 3: an IdMS may serve them from other hosts).
+json checked_discovery(json discovery, const std::string &issuer, std::initializer_list<const char *> endpoints) {
   if (discovery.at("issuer") != issuer) throw std::runtime_error("OIDC issuer mismatch");
-  for (auto name : {"authorization_endpoint", "token_endpoint", "jwks_uri"})
-    if (!discovery.at(name).get<std::string>().starts_with(issuer + "/"))
-      throw std::runtime_error("OIDC endpoint outside issuer");
+  for (const auto *name : endpoints) {
+    const auto endpoint = discovery.at(name).get<std::string>();
+    if (!endpoint.starts_with(issuer + "/") && !endpoint.starts_with("https://"))
+      throw std::runtime_error("OIDC endpoint neither under the issuer nor https");
+  }
+  return discovery;
+}
+
+//------------------------------------------------------------------------------
+// Helper: fetches and checks the discovery document of the configured issuer.
+json oidc_discovery(const HttpClient &http, const std::string &issuer, std::initializer_list<const char *> endpoints) {
+  return checked_discovery(http.request("GET", issuer + "/.well-known/openid-configuration").json(), issuer, endpoints);
+}
+} // namespace
+
+//------------------------------------------------------------------------------
+// TS 33.180 clause 8.6.1 leaves how a resource server gets IdMS's keys open: the JWKS (RFC 7517) its discovery
+// document names (OpenID Connect Discovery 1.0 section 3, "jwks_uri").
+json oidc_jwks(const HttpClient &http, const std::string &issuer) {
+  const auto discovery = oidc_discovery(http, issuer, {"jwks_uri"});
+  auto keys = http.request("GET", discovery.at("jwks_uri")).json();
+  if (!keys.contains("keys") || !keys.at("keys").is_array()) throw std::runtime_error("invalid JWKS");
+  return keys;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex B.4.2.2: the authorization request of the authorization code grant with PKCE (RFC 7636, S256):
+// "url" (the authorization endpoint with the parameters of table B.4.2.2-1) and the "state", "nonce" and
+// "code_verifier" the client keeps for the response.
+json oidc_authorization_request(const HttpClient &http, const json &cfg) {
+  const std::string issuer = cfg.at("issuer"), client = cfg.at("client_id"), redirect = cfg.at("redirect_uri");
+  const auto discovery = oidc_discovery(http, issuer, {"authorization_endpoint", "token_endpoint", "jwks_uri"});
 
   auto verifier = random_id(), state = random_id(), nonce = random_id();
   unsigned char digest[32];
   unsigned int len = 0;
   if (EVP_Digest(verifier.data(), verifier.size(), digest, &len, EVP_sha256(), nullptr) != 1)
     throw std::runtime_error("PKCE digest failure");
+  const auto endpoint = discovery.at("authorization_endpoint").get<std::string>();
+  const auto url = endpoint + (endpoint.find('?') == std::string::npos ? "?" : "&") +
+                   form({{"response_type", "code"},
+                         {"client_id", client},
+                         {"redirect_uri", redirect},
+                         {"scope", cfg.value("scope", std::string(oidc_default_scope))},
+                         {"state", state},
+                         {"nonce", nonce},
+                         // TS 33.180 table B.4.2.2-1: REQUIRED, the password-based ACR value.
+                         {"acr_values", "3gpp:acr:password"},
+                         {"code_challenge", b64({reinterpret_cast<char *>(digest), len})},
+                         {"code_challenge_method", "S256"}});
+  return {{"url", url}, {"state", state}, {"nonce", nonce}, {"code_verifier", verifier}};
+}
 
-  auto authorization =
-      http.request("GET", discovery.at("authorization_endpoint").get<std::string>() + "?" +
-                              form({{"response_type", "code"},
-                                    {"client_id", client},
-                                    {"redirect_uri", redirect},
-                                    {"scope", "openid 3gpp:mc:ptt_service 3gpp:mc:ptt_key_management_service "
-                                              "3gpp:mc:data_key_management_service "
-                                              "3gpp:mc:video_key_management_service"},
-                                    {"state", state},
-                                    {"nonce", nonce},
-                                    // TS 33.180 table B.4.2.2-1: REQUIRED, the password-based ACR value.
-                                    {"acr_values", "3gpp:acr:password"},
-                                    {"code_challenge", b64({reinterpret_cast<char *>(digest), len})},
-                                    {"code_challenge_method", "S256"}}))
-          .json();
+//------------------------------------------------------------------------------
+// TS 33.180 annex B.4.2.4 and B.4.2.5: the token request for an authorization code, and the verified ID token's
+// "claims" (annex B.11.1) with the "nonce" of the authorization request.
+json oidc_exchange_code(const HttpClient &http, const json &cfg, const std::string &code,
+                        const std::string &code_verifier, const std::string &nonce) {
+  const std::string issuer = cfg.at("issuer"), client = cfg.at("client_id"), redirect = cfg.at("redirect_uri");
+  if (code.empty()) throw std::runtime_error("OIDC code absent");
+  const auto discovery = oidc_discovery(http, issuer, {"token_endpoint", "jwks_uri"});
+  auto response = http.request("POST", discovery.at("token_endpoint"),
+                               form({{"grant_type", "authorization_code"},
+                                     {"client_id", client},
+                                     {"redirect_uri", redirect},
+                                     {"code", code},
+                                     {"code_verifier", code_verifier}}),
+                               {{"Content-Type", "application/x-www-form-urlencoded"}});
+  constexpr long ok = 200;
+  if (response.status != ok)
+    throw std::runtime_error("OIDC token request refused: HTTP " + std::to_string(response.status));
+  auto tokens = response.json();
+  auto keys = http.request("GET", discovery.at("jwks_uri")).json();
+  tokens["claims"] = verify_id_token(tokens.at("id_token").get<std::string>(), keys, issuer, client, nonce);
+  tokens["nonce"] = nonce;
+  return tokens;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.482 clause 6.2.1 and TS 33.180 annex B.4.2 (clauses B.4.2.2 to B.4.2.5): the authorization request, the
+// username and password login on the OpenMCX IdMS (its scripted login, POST {issuer}/login), and the code exchange.
+json oidc_login(const HttpClient &http, const json &cfg) {
+  const std::string issuer = cfg.at("issuer"), redirect = cfg.at("redirect_uri");
+  const auto request = oidc_authorization_request(http, cfg);
+  const std::string state = request.at("state");
+  auto authorization = http.request("GET", request.at("url")).json();
 
   auto login = http.request("POST", issuer + "/login",
                             form({{"request_id", authorization.at("request_id")},
@@ -469,22 +585,7 @@ json oidc_login(const HttpClient &http, const json &cfg) {
   auto location = login.headers.at("location");
   if (!location.starts_with(redirect + "?") || query_value(location, "state") != state)
     throw std::runtime_error("OIDC redirect or state mismatch");
-  auto code = query_value(location, "code");
-  if (code.empty()) throw std::runtime_error("OIDC code absent");
-
-  auto tokens = http.request("POST", discovery.at("token_endpoint"),
-                             form({{"grant_type", "authorization_code"},
-                                   {"client_id", client},
-                                   {"redirect_uri", redirect},
-                                   {"code", code},
-                                   {"code_verifier", verifier}}),
-                             {{"Content-Type", "application/x-www-form-urlencoded"}})
-                    .json();
-
-  auto keys = http.request("GET", discovery.at("jwks_uri")).json();
-  tokens["claims"] = verify_id_token(tokens.at("id_token").get<std::string>(), keys, issuer, client, nonce);
-  tokens["nonce"] = nonce;
-  return tokens;
+  return oidc_exchange_code(http, cfg, query_value(location, "code"), request.at("code_verifier"), request.at("nonce"));
 }
 
 //------------------------------------------------------------------------------
@@ -516,12 +617,9 @@ json oidc_refresh(const HttpClient &http, const json &cfg, const std::string &re
     }
   };
 
-  const auto discovery =
-      transient([&] { return http.request("GET", issuer + "/.well-known/openid-configuration").json(); });
-  if (discovery.at("issuer") != issuer) throw std::runtime_error("OIDC issuer mismatch");
-  for (const auto *name : {"token_endpoint", "jwks_uri"})
-    if (!discovery.at(name).get<std::string>().starts_with(issuer + "/"))
-      throw std::runtime_error("OIDC endpoint outside issuer");
+  const auto discovery = checked_discovery(
+      transient([&] { return http.request("GET", issuer + "/.well-known/openid-configuration").json(); }), issuer,
+      {"token_endpoint", "jwks_uri"});
 
   const auto response = transient([&] {
     return http.request(
@@ -533,10 +631,12 @@ json oidc_refresh(const HttpClient &http, const json &cfg, const std::string &re
   if (response.status != ok) throw oidc_refresh_failed("token refresh failed: HTTP " + std::to_string(response.status));
 
   auto tokens = response.json();
-  auto keys = http.request("GET", discovery.at("jwks_uri")).json();
-  // OpenID Connect Core 1.0 section 12.2: the ID token of a refresh names the same user, with the nonce
-  // of the authentication.
-  tokens["claims"] = verify_id_token(tokens.at("id_token").get<std::string>(), keys, issuer, client, nonce);
+  // TS 33.180 table B.5.3-1: the ID token is optional. OpenID Connect Core 1.0 section 12.2: one given names the
+  // same user, and its nonce, where given, is the authentication's.
+  if (tokens.contains("id_token")) {
+    auto keys = http.request("GET", discovery.at("jwks_uri")).json();
+    tokens["claims"] = verify_id_token(tokens.at("id_token").get<std::string>(), keys, issuer, client, nonce, true);
+  }
   tokens["nonce"] = nonce;
   return tokens;
 }

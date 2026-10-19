@@ -563,7 +563,7 @@ Json McServer::session_status(const std::string &group, const std::shared_ptr<Se
 // 5.5 and 11.1.3).
 McServer::McServer(const ServiceProfile &service, Json cfg, bool disable_tls)
     : svc_(configured_service(service, cfg)), cfg_(std::move(cfg)), http_(cfg_.at("tls").at("ca_file")),
-      control_(cfg_.at("control_fifo")),
+      tokens_(cfg_.at("tls").at("ca_file"), cfg_.value("common", Json::object())), control_(cfg_.at("control_fifo")),
       diameter_core_(start_diameter_core_for(cfg_)),
       diameter_(cfg_.contains("diameter_config") ? std::make_unique<DiameterProfileClient>(diameter_core_) : nullptr),
       sip_(

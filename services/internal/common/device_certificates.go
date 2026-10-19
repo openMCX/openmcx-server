@@ -120,7 +120,7 @@ func (svc *service) issueClientCertificate(writer http.ResponseWriter, request *
 		return
 	}
 	username, domain, ok := strings.Cut(strings.TrimPrefix(claims.SIPURI, "sip:"), "@")
-	if !ok || username == "" || domain != svc.cfg.Domain || claims.ClientID == "" {
+	if !ok || username == "" || domain != svc.cfg.Domain || claims.MCClientID == "" {
 		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "no_client_identity"})
 		return
 	}
@@ -149,7 +149,7 @@ func (svc *service) issueClientCertificate(writer http.ResponseWriter, request *
 	now := svc.now()
 	template := &x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: "mcx-device " + claims.ClientID},
+		Subject:      pkix.Name{CommonName: "mcx-device " + claims.MCClientID},
 		NotBefore:    now.Add(-5 * time.Minute),
 		NotAfter:     now.Add(time.Duration(svc.creds.issuer.days) * 24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
@@ -162,7 +162,7 @@ func (svc *service) issueClientCertificate(writer http.ResponseWriter, request *
 	if _, isRSA := csr.PublicKey.(*rsa.PublicKey); isRSA {
 		template.KeyUsage |= x509.KeyUsageKeyEncipherment
 	}
-	for _, id := range []string{claims.ClientID, claims.SIPURI} {
+	for _, id := range []string{claims.MCClientID, claims.SIPURI} {
 		if uri, err := url.Parse(id); err == nil && uri.Scheme != "" {
 			template.URIs = append(template.URIs, uri)
 		}
@@ -174,12 +174,12 @@ func (svc *service) issueClientCertificate(writer http.ResponseWriter, request *
 	}
 	serialHex := hex.EncodeToString(serial.Bytes())
 	if _, err := svc.creds.db.ExecContext(request.Context(), `INSERT INTO client_certificates (serial, username, domain, client_id, not_after, issued_at)
-		VALUES (?, ?, ?, ?, ?, ?)`, serialHex, username, domain, claims.ClientID, template.NotAfter.UTC(), now.UTC()); err != nil {
+		VALUES (?, ?, ?, ?, ?, ?)`, serialHex, username, domain, claims.MCClientID, template.NotAfter.UTC(), now.UTC()); err != nil {
 		svc.logEvent("client_certificate_failed", map[string]any{"user": username, "error": err.Error()})
 		writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": "store_unavailable"})
 		return
 	}
-	svc.logEvent("client_certificate_issued", map[string]any{"user": username, "client_id": claims.ClientID, "serial": serialHex,
+	svc.logEvent("client_certificate_issued", map[string]any{"user": username, "client_id": claims.MCClientID, "serial": serialHex,
 		"not_after": template.NotAfter.Unix()})
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"certificate": string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})),

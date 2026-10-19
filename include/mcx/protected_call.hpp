@@ -60,6 +60,9 @@ class ProtectedCall {
   // Selection is separate from epoch lifetime. Switching away must preserve
   // both receiver replay windows and sender packet indices until key expiry.
   std::optional<std::uint32_t> active_group_;
+  // TS 33.180 annex E.6.4: a GMK received ahead of its Activation time while the selected one is still usable
+  // (the next key of a key change); it is selected once that time comes.
+  std::optional<std::uint32_t> next_group_;
   std::map<std::uint32_t, GroupEpoch> group_epochs_;
 
   // TS 33.180 clause 7.4.1: one PCK per private call. The context lives until the call
@@ -87,6 +90,37 @@ class ProtectedCall {
   static std::uint64_t expiry_of(const keying::KeyProperties &properties) {
     return properties.expiry_unix_seconds == 0 ? std::numeric_limits<std::uint64_t>::max()
                                                : properties.expiry_unix_seconds;
+  }
+
+  // TS 33.180 annex E.6.4: the Activation time of a key, 0 meaning the timestamp of its I_MESSAGE.
+  static std::uint64_t activation_of(const keying::KeyMessage &key) {
+    const auto activation = key.properties ? key.properties->activation_unix_seconds : 0;
+    return activation ? activation : key.ntp_seconds - 2208988800ULL;
+  }
+
+  // The epoch in use: the waiting next one once its Activation time has come, else the selected one.
+  std::optional<std::uint32_t> selected_group() const {
+    if (next_group_) {
+      const auto next = group_epochs_.find(*next_group_);
+      if (next != group_epochs_.end() && activation_of(next->second.key) <= std::uint64_t(std::time(nullptr)))
+        return next_group_;
+    }
+    return active_group_;
+  }
+
+  // Selects [id], or, when its Activation time is still to come and the selected epoch is usable now, keeps that
+  // one until then (TS 33.180 clause 5.7 and annex E.6.4).
+  void select_group(std::uint32_t id) {
+    const auto now = std::uint64_t(std::time(nullptr));
+    if (activation_of(group_epochs_.at(id).key) > now && active_group_ && *active_group_ != id) {
+      try {
+        valid(group_epochs_.at(*active_group_).key);
+        next_group_ = id;
+        return;
+      } catch (...) {}
+    }
+    active_group_ = id;
+    next_group_.reset();
   }
 
   // TS 33.180 annex E.6.9 (Status bit 0: not revoked), annex E.6.4 (Activation time) and annex E.6.10 (Expiry
@@ -140,6 +174,10 @@ class ProtectedCall {
   // the GUK-ID (clause 5.2.3, annex F.1.3); a private call's PCK takes precedence.
   std::vector<std::uint8_t> audio(std::span<const std::uint8_t> packet, const std::string &sender, bool protect) {
     if (active_private_) return private_audio(packet, protect);
+    if (const auto selected = selected_group(); selected != active_group_) {
+      active_group_ = selected;
+      next_group_.reset();
+    }
     if (!active_group_ || sender.empty()) throw std::runtime_error("group media key or sender unavailable");
     auto &epoch = group_epochs_.at(*active_group_);
     auto *group_key_ = &epoch.key;
@@ -209,7 +247,7 @@ public:
   }
 
   // TS 33.180 clause 7.3.3 and clause 7.4.2: selects a GMK epoch, keeping earlier unexpired epochs and their replay
-  // state.
+  // state; one ahead of its Activation time waits while the selected one is usable (select_group).
   void set_group(const keying::KeyMessage &key) {
     if (!key.properties) throw std::runtime_error("GMK properties unavailable");
     auto found = group_epochs_.find(key.csb_id);
@@ -225,7 +263,7 @@ public:
            (!(old.properties->status & 1) && (key.properties->status & 1))))
         throw std::runtime_error("GMK epoch properties changed unsafely");
       old.properties = key.properties;
-      active_group_ = key.csb_id;
+      select_group(key.csb_id);
       return;
     }
 
@@ -233,6 +271,7 @@ public:
     for (auto it = group_epochs_.begin(); it != group_epochs_.end();) {
       if (!it->second.key.properties || expiry_of(*it->second.key.properties) <= now) {
         if (active_group_ == it->first) active_group_.reset();
+        if (next_group_ == it->first) next_group_.reset();
         it = group_epochs_.erase(it);
       } else
         ++it;
@@ -242,10 +281,13 @@ public:
     // ciphertext replay or outbound nonce reuse when that group is selected.
     if (group_epochs_.size() >= group_epoch_capacity) throw std::runtime_error("unexpired GMK epoch capacity reached");
     group_epochs_.emplace(key.csb_id, GroupEpoch{key, {}, {}, 0});
-    active_group_ = key.csb_id;
+    select_group(key.csb_id);
   }
 
-  void clear_group() { active_group_.reset(); }
+  void clear_group() {
+    active_group_.reset();
+    next_group_.reset();
+  }
 
   // A private call selects its PCK in place of the group key. local_initiator is
   // true for the user who initiated the call (TS 33.180 table E.1.3-1), which in a first-to-answer
@@ -284,9 +326,10 @@ public:
   bool private_ready() const { return active_private_.has_value(); }
 
   bool group_ready() const {
-    if (!active_group_) return false;
+    const auto selected = selected_group();
+    if (!selected) return false;
     try {
-      valid(group_epochs_.at(*active_group_).key);
+      valid(group_epochs_.at(*selected).key);
       return true;
     } catch (...) {
       return false;

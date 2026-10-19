@@ -41,10 +41,9 @@ public:
   }
   // This server's PSI.
   [[nodiscard]] virtual std::string service_uri() const = 0;
-  // A document of a common service's internal interface ("cms", "gms"), and the IdMS token introspection
-  // (parts/common_services.hpp); both throw on failure.
+  // A document of a common service's internal interface ("cms", "gms", parts/common_services.hpp); throws on
+  // failure.
   virtual Json common_document(const std::string &role, const std::string &path) = 0;
-  virtual Json introspect(const std::string &token) = 0;
   // SIP: a MESSAGE request, a PUBLISH request, and the final response to a request answered later.
   virtual void send_message(const std::string &uri, const std::string &type, const std::string &body,
                             const std::vector<SipHeader> &headers, SipResponseHandler handler) = 0;

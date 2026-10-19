@@ -123,6 +123,27 @@ tools/regress.py --images <tag> --client-image openmcx-client:<tag> --all --tran
   selection as a soak.
 - To run the binaries from `build/` in the lab: `tools/mcx compose -f docker/compose/compose.dev.yaml up -d`.
 
+### Another vendor's IdMS (Keycloak)
+
+`--keycloak <image>` makes Keycloak the lab's IdMS instead of OpenMCX's, as an IdMS of another vendor at a Plugtest
+(TS 33.180 annex B). It answers as `idms` with the issuer `https://idms:8443/realms/openmcx` and signs with the lab's
+IdMS key; the realm `generated/keycloak/openmcx.json` holds the users with their MC service IDs, the MC scopes and the
+mappers for the claims of annex B.2. The clients have no password: `tools/keycloak-sign-in.py` signs them in on
+Keycloak's login page and leaves each a refresh token, with which they start.
+
+```bash
+python3 tools/prepare-prearranged-test.py --directory <lab> --project kc --private-call --mcdata \
+  --images <tag> --client-image openmcx-client:<tag> --keycloak quay.io/keycloak/keycloak:26.3.3
+C=".cache/deps/docker-compose-linux-x86_64 -p kc -f <lab>/compose.json"
+$C up -d --wait idms
+docker run --rm -u "$(id -u):$(id -g)" --network kc_mcx -v <lab>:<lab> -v "$PWD/tools:/tools:ro" openmcx-dev:0.1 \
+  python3 /tools/keycloak-sign-in.py <lab>
+$C up -d --wait
+```
+
+The tokens of OpenMCX's IdMS carry claims of its own as well (`mc_id`, `sip_uri`, `mc_client_id`), which bind them to
+the user's SIP identity and client; a Keycloak token has the claims of annex B.2 only, and the servers check those.
+
 The tests are described in the [MCPTT](../tests/MCPTT_TEST.md), [MCData](../tests/MCDATA_TEST.md) and
 [MCVideo](../tests/MCVIDEO_TEST.md) test indexes.
 

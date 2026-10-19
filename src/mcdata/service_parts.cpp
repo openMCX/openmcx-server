@@ -28,11 +28,6 @@ Json DataServer::PartsGlue::common_document(const std::string &role, const std::
   return server_.internal(role, path);
 }
 
-//------------------------------------------------------------------------------
-// Helper: the IdMS introspection of an access token.
-Json DataServer::PartsGlue::introspect(const std::string &token) {
-  return introspect_token(server_.http_, server_.cfg_.at("common"), token);
-}
 
 //------------------------------------------------------------------------------
 // Helper: a SIP MESSAGE request.

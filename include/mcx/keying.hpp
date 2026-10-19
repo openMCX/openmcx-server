@@ -254,4 +254,9 @@ std::uint32_t mikey_csb_id(std::span<const std::uint8_t> message);
 // TS 33.180 annex E.6: a key may be used only if its Status (annex E.6.9) is not revoked, between its Activation Time
 // (annex E.6.4) and its Expiry Time (annex E.6.10), and, for a GMK, for one of its MC Group IDs (annex E.6.3).
 void require_active(const KeyMessage &key, std::string_view group, std::uint64_t now);
+
+//------------------------------------------------------------------------------
+// As require_active, but a key whose Activation Time is still to come passes: it is kept for that time (annex E.6.4,
+// a GMK sent ahead of a key change, TS 24.481 clause 7.7.8).
+void require_unexpired(const KeyMessage &key, std::string_view group, std::uint64_t now);
 } // namespace mcx::keying

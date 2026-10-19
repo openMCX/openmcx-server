@@ -334,9 +334,11 @@ Arguments arguments(int argc, char **argv) {
       parsed.activate = argv[++index];
     else if (arg == "--password-file" && index + 1 < argc)
       parsed.password_file = argv[++index];
+    else if (arg == "--authorization-request")
+      parsed.authorization_request = true;
     else
-      throw std::invalid_argument(
-          "usage: --config FILE [--disable-tls] [--command TEXT | --status] [--activate URL --password-file FILE]");
+      throw std::invalid_argument("usage: --config FILE [--disable-tls] [--command TEXT | --status] [--activate URL "
+                                  "--password-file FILE] [--authorization-request]");
   }
   if (parsed.config.empty()) throw std::invalid_argument("--config required");
   return parsed;

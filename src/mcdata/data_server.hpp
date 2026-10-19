@@ -77,6 +77,8 @@ class DataServer {
 
   Json cfg_, status_;
   HttpClient http_;
+  // TS 33.180 annex B.11.2: the access tokens of the users, checked against IdMS's keys.
+  AccessTokens tokens_;
   // ---- Signalling and XML protection (protection.cpp): TS 33.180 clause 9.5, TS 24.282 clause 6.6.3 ----
   // MCData signalling protection: with a client that uploaded a CSK, every
   // application/vnd.3gpp.mcdata-signalling body is an MCData Protected Payload message
@@ -891,7 +893,6 @@ class DataServer {
     std::vector<BodyPart> seal_for_client(const std::string &sip, std::vector<BodyPart> parts) override;
     [[nodiscard]] std::string service_uri() const override;
     Json common_document(const std::string &role, const std::string &path) override;
-    Json introspect(const std::string &token) override;
     void send_message(const std::string &uri, const std::string &type, const std::string &body,
                       const std::vector<SipHeader> &headers, SipResponseHandler handler) override;
     void publish(const std::string &uri, const std::string &type, const std::string &body,

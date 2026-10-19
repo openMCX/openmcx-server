@@ -115,6 +115,8 @@ struct Arguments {
   // MCX Admin activation (a client): the one-time activation URL, and a file with the account's password, which the
   // user set on IdMS's page.
   std::string activate, password_file;
+  // A sign-in in the user's browser (a client): print the authorization request (TS 33.180 annex B.4.2.2) and end.
+  bool authorization_request = false;
   bool status = false;
   bool disable_tls = false;
 };

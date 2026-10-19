@@ -57,7 +57,9 @@ func (svc *service) discovery(writer http.ResponseWriter, _ *http.Request) {
 		"code_challenge_methods_supported": []string{"S256"}, "acr_values_supported": []string{acrPassword},
 		"scopes_supported": []string{"openid", "3gpp:mc:ptt_service", "3gpp:mc:data_service", "3gpp:mc:ptt_key_management_service", "3gpp:mc:data_key_management_service",
 			"3gpp:mc:video_service", "3gpp:mc:video_key_management_service",
-			"3gpp:mc:ptt_config_management_service", "3gpp:mc:ptt_group_management_service"},
+			"3gpp:mc:ptt_config_management_service", "3gpp:mc:video_config_management_service", "3gpp:mc:data_config_management_service",
+			"3gpp:mc:ptt_group_management_service", "3gpp:mc:video_group_management_service", "3gpp:mc:data_group_management_service",
+			"3gpp:mc:location_management_service"},
 		"grant_types_supported": []string{"authorization_code", "refresh_token"},
 	})
 }
@@ -104,7 +106,7 @@ func (svc *service) sweepAuthorizationState() {
 // token repeats it. acr_values is a voluntary claim request (OpenID Connect Core 1.0 section 3.1.2.1): the
 // user is authenticated by password whatever it names, and the ID token's acr says so (acrPassword).
 // Deviation from TS 33.180 table B.4.2.2-1 (acr_values REQUIRED): a request without acr_values is accepted, as
-// from the OpenMCX clients, which do not send it yet.
+// from the Android client of OpenMCX 1.0.0, which did not send it (the OpenMCX clients send it now).
 func (svc *service) authorize(writer http.ResponseWriter, request *http.Request) {
 	query := request.URL.Query()
 	if len(request.URL.RawQuery) > 8192 || len(query.Get("state")) > maxAuthorizationParameter ||
@@ -274,12 +276,12 @@ func (svc *service) introspect(writer http.ResponseWriter, request *http.Request
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
 		return
 	}
-	claims, err := VerifyToken(request.Form.Get("token"), svc.verificationKey, svc.cfg.Issuer, svc.cfg.ServerClientID, svc.now())
-	if err != nil || claims.Type != "access" || (svc.cfg.AdminAccounts != nil && !svc.accountActive(request.Context(), claims.MCPTTID)) {
+	claims, err := VerifyAccessToken(request.Form.Get("token"), svc.verificationKey, svc.cfg.Issuer, svc.cfg.ServerClientID, svc.now())
+	if err != nil || (svc.cfg.AdminAccounts != nil && !svc.accountActive(request.Context(), claims.MCPTTID)) {
 		writeJSON(writer, http.StatusOK, map[string]bool{"active": false})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"active": true, "sub": claims.Subject, "mc_id": claims.MCID, "mcptt_id": claims.MCPTTID, "mcdata_id": claims.MCDataID, "mcvideo_id": claims.MCVideoID, "sip_uri": claims.SIPURI, "client_id": claims.ClientID, "exp": claims.Expires})
+	writeJSON(writer, http.StatusOK, map[string]any{"active": true, "sub": claims.Subject, "mc_id": claims.MCID, "mcptt_id": claims.MCPTTID, "mcdata_id": claims.MCDataID, "mcvideo_id": claims.MCVideoID, "sip_uri": claims.SIPURI, "client_id": claims.ClientID, "mc_client_id": claims.MCClientID, "scope": claims.Scope, "exp": claims.Expires})
 }
 
 // ------------------------------------------------------------------------------

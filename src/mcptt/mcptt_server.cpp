@@ -42,7 +42,7 @@ std::optional<std::string> McpttServer::ambient_direction_refusal(const MediaDes
 }
 
 //------------------------------------------------------------------------------
-// TS 33.180 clause 5.1.2: the access token's subject is the MCPTT ID.
+// OpenMCX: the subject of an access token of OpenMCX's IdMS is the MCPTT ID.
 bool McpttServer::token_subject_valid(const Json &claims) const {
   return claims.value("sub", "") == claims.value(svc_.id_claim, "");
 }

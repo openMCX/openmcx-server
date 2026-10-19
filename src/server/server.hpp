@@ -305,6 +305,8 @@ protected:
 
   Json cfg_, status_;
   HttpClient http_;
+  // TS 33.180 annex B.11.2: the access tokens of the users, checked against IdMS's keys.
+  AccessTokens tokens_;
   Control control_;
   // The process's freeDiameter core, shared by MCPTT-2 and Rx (src/common/diameter_core.hpp); null when neither
   // is configured.
@@ -1212,7 +1214,6 @@ protected:
                                                   std::vector<SipHeader> headers) const override;
     [[nodiscard]] std::string service_uri() const override;
     Json common_document(const std::string &role, const std::string &path) override;
-    Json introspect(const std::string &token) override;
     void send_message(const std::string &uri, const std::string &type, const std::string &body,
                       const std::vector<SipHeader> &headers, SipResponseHandler handler) override;
     void publish(const std::string &uri, const std::string &type, const std::string &body,
@@ -1331,8 +1332,6 @@ protected:
   std::optional<xmlsec::Key> key_by_id(const SipTransmission &transmission, std::uint32_t id) const;
 
   std::vector<BodyPart> protect_incoming(const SipTransmission &transmission, std::vector<BodyPart> parts);
-
-  Json introspect(const std::string &token) { return introspect_token(http_, cfg_.at("common"), token); }
 
   // ---- Split of the call procedures (private_call, adhoc, private_services, ambient, video_push_pull) ----
   // The invitees of a private or first-to-answer call that pass the terminating checks (TS 24.379 clause

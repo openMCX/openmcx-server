@@ -66,9 +66,9 @@ std::string gktp_document_xml(std::string_view group, std::string_view id, std::
                               std::uint64_t now);
 
 //------------------------------------------------------------------------------
-// TS 24.481 clauses 7.7.2 and 7.7.8: the GMK GKTP of the MCS GKTP document of a group; refuses one whose activation
-// time is still to come.
-Bytes parse_gktp_document(std::string_view xml, std::string_view group, std::uint64_t now);
+// TS 24.481 clauses 7.7.2 and 7.7.8: the GMK GKTP of the MCS GKTP document of a group. One whose activation time is
+// still to come is returned too: the GMK's own Activation Time (TS 33.180 annex E.6.4) says from when it is used.
+Bytes parse_gktp_document(std::string_view xml, std::string_view group);
 
 //------------------------------------------------------------------------------
 // TS 24.481 clauses 6.3.13.2.1, 7.7.3 and 7.7.10: the XCAP path of the <GKTPs> element of the MCS GKTP document of a

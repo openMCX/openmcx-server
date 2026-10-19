@@ -8,7 +8,7 @@ Back to the [MCData test index](../MCDATA_TEST.md). File distribution is in the 
 
 - **Deployment.** `mcdata-server` (`openmcx-mcdata-server`) is its own container and SIP application server. Its public service identity is `sip:mcdata@DOMAIN`, and Kamailio routes requests for it there. It combines the participating and controlling MCData functions. The MCData client is a module of `mcx-client` and shares the UE's single SIP registration with the MCPTT client (§7.1).
 - **Identities.** Each user has a distinct MCData ID (`sip:<user>.mcdata@DOMAIN`), carried in the IdMS access token (`mcdata_id`) and served by the CMS.
-- **Service authorisation.** After MCPTT authorisation, the client sends PUBLISH `poc-settings` to the MCData PSI with an `mcdata-info` body (access token, client ID) and a `poc-settings` body. The server introspects the token at IdMS and binds MCData ID, client ID and public user identity.
+- **Service authorisation.** After MCPTT authorisation, the client sends PUBLISH `poc-settings` to the MCData PSI with an `mcdata-info` body (access token, client ID) and a `poc-settings` body. The server checks the token against the IdMS's keys and binds MCData ID, client ID and public user identity.
 - **Affiliation.** PUBLISH `presence` with `mcdata-info` (own MCData ID) and a PIDF in the `urn:3gpp:ns:mcdataPresInfo:1.0` namespace. The server checks MCData group membership in the GMS.
 - **SDS.** A SIP MESSAGE to the MCData PSI carries three bodies: `mcdata-info` (`request-type` `one-to-one-sds` or `group-sds`), the binary SDS SIGNALLING PAYLOAD and the binary DATA PAYLOAD (clause 15, MONP coding). One-to-one SDS also carries a `resource-lists` body with the target. The server checks transmission control (§11.1), relays the binary bodies unchanged to each target with `mcdata-request-uri`, `mcdata-calling-user-id` and, for a group, `mcdata-calling-group-id`, and answers **202 Accepted**.
 - **Dispositions.** The receiving client sends an SDS NOTIFICATION to the original sender (named in `resource-lists`): DELIVERED at once for "delivery"; READ after a display indication for "read"; for "delivery and read", DELIVERED AND READ if displayed before timer TDU1, otherwise DELIVERED at TDU1 expiry and READ after display.
@@ -17,7 +17,7 @@ Back to the [MCData test index](../MCDATA_TEST.md). File distribution is in the 
 
 | Step | Behaviour | Reference |
 |---|---|---|
-| Authorisation | Token introspection; MCData ID, client ID and SIP identity must match; 403 `101` otherwise; Expires 0 logs off | 24.282 §7.2.2, §7.3.3, §7.3.5 |
+| Authorisation | Token check (TS 33.180 annex B.11.2); MCData ID, client ID and SIP identity must match; 403 `101` otherwise; Expires 0 logs off | 24.282 §7.2.2, §7.3.3, §7.3.5 |
 | Affiliation | MCData PIDF; groups must list the user as an MCData member; Expires 0 de-affiliates, with or without a PIDF body | §8.2.2 (V19.7.0 NOTE 1), §8.3, §8.4.1 |
 | Sender binding | Unknown or expired sender → 404 `141` | §9.2.2.3.1 step 3 |
 | Bodies | Missing `mcdata-info`, signalling or payload → 403 `199`; malformed, reserved or protected TLV content → 400 | §9.2.2.4.2 step 2, §15.2 |

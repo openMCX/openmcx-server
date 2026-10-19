@@ -8,7 +8,7 @@ Back to the [MCVideo test index](../MCVIDEO_TEST.md). Acceptance: [MCVideo stand
 
 - **Identities.** Each user has an MCVideo ID (`sip:<user>.mcvideo@DOMAIN`), carried in the IdMS access token (`mcvideo_id`) and served by the CMS. The MCVideo PSI is `sip:mcvideo@DOMAIN`; the SIP core routes it to `mcvideo-server`.
 - **Registration.** The UE keeps one registration for all its MC services: with MCVideo configured, its Contact carries `+g.3gpp.mcptt;+g.3gpp.mcvideo` and both ICSIs in `+g.3gpp.icsi-ref` (§7.2.1AA).
-- **Service authorisation.** After its MCPTT authorisation the client sends PUBLISH `poc-settings` to the MCVideo PSI with P-Preferred-Service `urn:urn-7:3gpp-service.ims.icsi.mcvideo`, an `<mcvideoinfo>` body (access token, client ID) and a `poc-settings` body (§7.2.1A, §7.2.2). The server introspects the token at the IdMS and binds the token's MCVideo ID, the client ID and the asserted SIP identity (§7.3.3 step 5); a refused token gets 403 with warning `101` (step 6).
+- **Service authorisation.** After its MCPTT authorisation the client sends PUBLISH `poc-settings` to the MCVideo PSI with P-Preferred-Service `urn:urn-7:3gpp-service.ims.icsi.mcvideo`, an `<mcvideoinfo>` body (access token, client ID) and a `poc-settings` body (§7.2.1A, §7.2.2). The server checks the token against the IdMS's keys and binds the token's MCVideo ID, the client ID and the asserted SIP identity (§7.3.3 step 5); a refused token gets 403 with warning `101` (step 6).
 - **Affiliation.** The client subscribes to its affiliation status (SUBSCRIBE `presence`, §8.2.1.3), then affiliates with PUBLISH `presence`: `<mcvideoinfo>` (own MCVideo ID, client ID) and a PIDF in `urn:3gpp:ns:mcvideoPresInfo:1.0` with a `p-id` (§8.2.1.2, §8.3.1). The server checks MCVideo group membership at the GMS (the group's `mcvideo` members) and answers with a NOTIFY listing the affiliated groups and echoing the `p-id`. De-affiliation is PUBLISH with Expires 0.
 - **Server.** `mcvideo-server` runs the shared core with the MCVideo profile: the same authorisation and affiliation procedures as MCPTT, in the MCVideo namespaces and with the TS 24.281 warning table. It refuses an affiliation document of another service.
 
@@ -16,7 +16,7 @@ Back to the [MCVideo test index](../MCVIDEO_TEST.md). Acceptance: [MCVideo stand
 
 | Step | Behaviour | Reference |
 |---|---|---|
-| Authorisation | Token introspection; MCVideo ID from the token, client ID and SIP identity must match; 403 `101` otherwise; the token's subject stays the MCPTT ID | 24.281 §7.2.1A, §7.2.2, §7.3.3 |
+| Authorisation | Token check (TS 33.180 annex B.11.2); MCVideo ID from the token, client ID and SIP identity must match; 403 `101` otherwise; the token's subject stays the MCPTT ID | 24.281 §7.2.1A, §7.2.2, §7.3.3 |
 | Registration | One Contact with both MC services' feature tags and ICSIs | §7.1, §7.2.1AA |
 | Affiliation | Status subscription first; PIDF in the MCVideo namespace with `p-id`; MCVideo membership from the GMS; a group the user is not a member of left out of the NOTIFY (200 to the PUBLISH), 403 for another service's document; Expires 0 de-affiliates | §8.2.1.2, §8.2.1.3, §8.2.2.2.3, §8.3.1 |
 | NOTIFY `p-id` | The NOTIFY a PUBLISH triggers carries that PUBLISH's `p-id` | §8.2.2.2.5 step d |

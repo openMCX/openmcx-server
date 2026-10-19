@@ -77,7 +77,9 @@ def access_token(cfg):
     verifier = secrets.token_urlsafe(48)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     query = urllib.parse.urlencode(dict(response_type="code", client_id=oauth["client_id"],
-                                        redirect_uri=oauth["redirect_uri"], scope="openid", state="s",
+                                        redirect_uri=oauth["redirect_uri"], state="s",
+                                        # TS 33.180 table B.4.2.2-1: the MCPTT and MCData servers check their scope.
+                                        scope="openid 3gpp:mc:ptt_service 3gpp:mc:data_service",
                                         nonce=secrets.token_hex(8), code_challenge=challenge,
                                         code_challenge_method="S256"))
     status, _, body = call("GET", oauth["issuer"] + "/authorize?" + query)
@@ -162,10 +164,11 @@ def main():
     try:
         cfg = json.loads(pathlib.Path(args.config).read_text())
         token = access_token(cfg)
-        # The MC client ID the IdMS bound to the token (the account's first one); a server introspects it and refuses
-        # another one in the PUBLISH (TS 24.379 clause 7.3.3 step 6).
+        # The MC client ID the OpenMCX IdMS bound to the token (mc_client_id, the account's first one; client_id is the
+        # OAuth client, TS 33.180 table B.2.2.2-1); a server refuses another one in the PUBLISH (TS 24.379 clause
+        # 7.3.3 step 6).
         payload = token.split(".")[1]
-        client_id = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))["client_id"]
+        client_id = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))["mc_client_id"]
         sip = SipProbe(cfg, args.disable_tls)
         for name in ["mcptt"] + (["mcdata"] if args.mcdata else []):
             service = Service(sip, cfg, name, token)

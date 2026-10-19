@@ -36,7 +36,7 @@ static std::string substituted_identity;
 namespace mcx {
 //------------------------------------------------------------------------------
 // Stub: no connection.
-HttpClient::HttpClient(std::string, HttpTimeouts, HttpAddressMap) {}
+HttpClient::HttpClient(std::string, HttpTimeouts, HttpAddressMap, HttpTrust) {}
 
 //------------------------------------------------------------------------------
 // Stub: the text unchanged.
@@ -170,6 +170,17 @@ int main() {
     reject([&] { bob.open_group(gms.uri, "sip:group@example.org", older_xml); });
     check(bob.open_group(gms.uri, "sip:group@example.org", next_xml).csb_id == 124,
           "rejected rollback changed current epoch");
+    // TS 33.180 annex E.6.4, TS 24.481 clause 7.7.8: the next GMK sent ahead of its Activation time is kept, not
+    // refused (ProtectedCall uses it from that time).
+    auto ahead = key;
+    ahead.key.fill(7);
+    ahead.random.fill(8);
+    ahead.csb_id = mcx::derive_guk_id(ahead.key, 126, "sip:bob@example.org");
+    ahead.properties->activation_unix_seconds = now() - 2208988800ULL + 30;
+    auto ahead_data =
+        mcx::keying::create_mikey(authority.public_parameters, gms, "sip:bob@example.org", ahead, &profile);
+    auto ahead_xml = mcx::keying::gktp_document_xml("sip:group@example.org", "126", ahead_data, now() + 30);
+    check(bob.open_group(gms.uri, "sip:group@example.org", ahead_xml).csb_id == 126, "GMK ahead of its activation");
     // A current signature cannot make expired CSK properties usable.
     auto alice_identity = mcx::keying::issue(authority, "sip:alice@example.org", now());
     auto expired_csk = csk;

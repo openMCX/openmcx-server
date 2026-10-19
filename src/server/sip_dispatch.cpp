@@ -212,8 +212,8 @@ bool McServer::terminating_request(const SipMessage &message, const std::string 
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 7.3.3 (TS 24.281 clause 7.3.3) with TS 24.379 clause 6.6.2: service authorisation, a PUBLISH of
-// poc-settings carrying the access token and client ID; the token is introspected at the IdM server (TS 33.180
-// clause 5.1.2) before the user is bound.
+// poc-settings carrying the access token and client ID; the token is checked against IdMS's keys (TS 33.180
+// clause 5.1.2, annex B.11.2) before the user is bound.
 void McServer::service_authorization(const SipMessage &message, SipResponse &response) {
   // TS 24.379 clause 7.3.3 (TS 24.281 clause 7.3.3) with TS 24.379 clause 6.6.2: service authorisation.
   // The access token and client ID may be encrypted
@@ -229,8 +229,7 @@ void McServer::service_authorization(const SipMessage &message, SipResponse &res
     response.status_code = 403;
     return;
   }
-  const auto checked =
-      introspect_claims(http_, cfg_.at("common"), info.access_token, asserted, info.client_id, svc_.id_claim);
+  const auto checked = service_claims(tokens_, info.access_token, svc_, asserted, info.client_id);
   if (!checked) {
     // TS 24.379 clause 7.3.3 step 6, TS 24.281 clause 7.3.3 step 6.
     response.status_code = 403;
@@ -239,9 +238,9 @@ void McServer::service_authorization(const SipMessage &message, SipResponse &res
   }
   const auto &claims = *checked;
 
-  // The token's subject is the MCPTT ID (TS 33.180 clause 5.1.2); an MCVideo server
-  // binds the token's MCVideo ID instead (token_subject_valid).
-  if (!token_subject_valid(claims)) throw std::runtime_error("introspection subject mismatch");
+  // An OpenMCX token's subject is the MCPTT ID; an MCVideo server binds the token's MCVideo ID instead
+  // (token_subject_valid). TS 33.180 table B.2.2.2-1 has no subject: another IdMS's token is not checked for it.
+  if (openmcx_token(claims) && !token_subject_valid(claims)) throw std::runtime_error("access token subject mismatch");
   const auto id = claims.at(svc_.id_claim).get<std::string>();
   const auto now = std::time(nullptr);
   // A binding whose service authorisation has ended (clause 7.3.3 step 8) binds nothing any more: it goes, and the
@@ -381,7 +380,7 @@ void McServer::remove_binding(std::map<std::string, User>::iterator found, const
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 7.3.3 (TS 24.281 clause 7.3.3): bind the service authorised user (its MCPTT ID from the
-// introspected token, its client ID and its SIP identity) with its uploaded CSK (step 5), then process the PUBLISH
+// checked token, its client ID and its SIP identity) with its uploaded CSK (step 5), then process the PUBLISH
 // by RFC 3903 (step 7): a SIP-If-Match naming no publication is answered 412 and leaves no publication, and the
 // client's new publication (RFC 3903 section 5) then keeps the binding.
 void McServer::bind_authorized_user(const Json &claims, const McpttInfo &info, const std::string &asserted,
@@ -499,8 +498,8 @@ bool McServer::client_document_subscribe(const SipMessage &message, const User &
     if (groups.empty() && profiles.empty()) continue;
     // TS 24.481 clause 6.3.13.3.2.2 step c and TS 24.484 clause 6.3.13.3.2.2 step c: the identity is that of the
     // access token.
-    const auto claims = introspect(message_info(message, svc_).access_token);
-    if (!claims.value("active", false) || claims.value(svc_.id_claim, "") != user.id) {
+    const auto claims = tokens_.verify(message_info(message, svc_).access_token, svc_);
+    if (!claims || claims->value(svc_.id_claim, "") != user.id) {
       response.status_code = 403;
       return true;
     }
@@ -545,7 +544,7 @@ std::optional<std::uint64_t> McServer::refreshed_expires(const SipMessage &messa
 
 //------------------------------------------------------------------------------
 // TS 24.481 clause 7.7: a group member's subscription to the group's GKTP document (its group key), checked against
-// the introspected access token and the group membership.
+// the access token and the group membership.
 void McServer::key_subscribe(const SipMessage &message, const User &user, SipResponse &response) {
   const auto info = message_info(message, svc_);
   if (!keys_ || info.client_id != user.client || info.access_token.empty() ||
@@ -553,9 +552,10 @@ void McServer::key_subscribe(const SipMessage &message, const User &user, SipRes
     response.status_code = 403;
     return;
   }
-  const auto claims = introspect(info.access_token);
-  if (!claims.value("active", false) || claims.value(svc_.id_claim, "") != user.id ||
-      claims.value("client_id", "") != user.client || !member(group_profile(info.request_uri), user.id)) {
+  const auto claims = tokens_.verify(info.access_token, svc_);
+  if (!claims || claims->value(svc_.id_claim, "") != user.id ||
+      (openmcx_token(*claims) && claims->value("mc_client_id", "") != user.client) ||
+      !member(group_profile(info.request_uri), user.id)) {
     response.status_code = 403;
     return;
   }

@@ -36,6 +36,7 @@ struct ServiceProfile {
   const char *info_prefix;   // element prefix: <prefix>info, <prefix>-Params, <prefix>URI
   const char *location_mime; // location-info body (annex F.3)
   const char *id_claim;      // IdMS access-token claim with the user's MC service ID (TS 33.180 table B.2.2.3-1)
+  const char *scope;         // the access token's scope for the service (TS 33.180 table B.4.2.2-1)
   // The ambient call: its <session-type> and <...-type> element prefix, and the word for the party it is about, as in
   // its release reasons (TS 24.379 clause 11.1.6 ambient listening, "listened-to"; TS 24.281 clause 15 ambient
   // viewing, "viewed-to").
@@ -60,6 +61,7 @@ inline constexpr ServiceProfile mcptt_service{
     "mcptt",
     "application/vnd.3gpp.mcptt-location-info+xml",
     "mcptt_id",
+    "3gpp:mc:ptt_service",
     "ambient-listening",
     "listened-to",
     "",
@@ -79,6 +81,7 @@ inline constexpr ServiceProfile mcvideo_service{
     "mcvideo",
     "application/vnd.3gpp.mcvideo-location-info+xml",
     "mcvideo_id",
+    "3gpp:mc:video_service",
     "ambient-viewing",
     "viewed-to",
     "",
@@ -99,6 +102,7 @@ inline constexpr ServiceProfile mcdata_service{
     "mcdata",
     mcdata::location_mime,
     "mcdata_id",
+    "3gpp:mc:data_service",
     "",
     "",
     "mcdata_",

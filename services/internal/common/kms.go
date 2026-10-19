@@ -191,7 +191,8 @@ func (svc *service) kmsProvision(writer http.ResponseWriter, request *http.Reque
 			return
 		}
 		current, exists := svc.siteUser("mcptt_id", claims.MCPTTID)
-		if !exists || current.ClientID != claims.ClientID {
+		// An OpenMCX token names the user's MC client as well (TokenClaims.OpenMCX).
+		if !exists || (claims.OpenMCX() && current.ClientID != claims.MCClientID) {
 			writeJSON(writer, http.StatusForbidden, map[string]string{"error": "forbidden_identity"})
 			return
 		}

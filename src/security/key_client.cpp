@@ -427,11 +427,12 @@ keying::KeyMessage KeyClient::open_group(std::string_view gms, std::string_view 
   impl_->ensure_provisioned(now);
   now = now_ntp();
 
-  const auto message = keying::parse_gktp_document(xml, group, now);
+  const auto message = keying::parse_gktp_document(xml, group);
   auto key =
       keying::open_mikey(impl_->parameters, impl_->lookup(), impl_->identity, gms, message, now, 300, &impl_->profile);
   require((key.csb_id >> 28) == 0 && key.properties && key.properties->type == 0, "received key is not a GMK");
-  keying::require_active(key, group, now - ntp_epoch);
+  // A GMK not yet active is kept: ProtectedCall uses it from its Activation Time (TS 33.180 annex E.6.4).
+  keying::require_unexpired(key, group, now - ntp_epoch);
   key.csb_id ^= derive_guk_id(key.key, 0, impl_->user_uri);
 
   impl_->remove_expired(now - ntp_epoch);

@@ -73,9 +73,12 @@ int main() {
     const Bytes mikey{1, 2, 3, 4, 0xff};
     auto group = gktp_document_xml("sip:g@example.org", "key1", mikey, now);
     check(group.find("01020304ff") != std::string::npos, "GKTP uses hexBinary");
-    check(parse_gktp_document(group, "sip:g@example.org", now) == mikey, "GKTP group binding");
-    rejects([&] { parse_gktp_document(group, "sip:h@example.org", now); });
-    rejects([&] { parse_gktp_document(group, "sip:g@example.org", now - 1); });
+    check(parse_gktp_document(group, "sip:g@example.org") == mikey, "GKTP group binding");
+    rejects([&] { parse_gktp_document(group, "sip:h@example.org"); });
+    // TS 24.481 clause 7.7.8: a GKTP sent ahead of its activation time is kept (TS 33.180 annex E.6.4).
+    check(parse_gktp_document(gktp_document_xml("sip:g@example.org", "key2", mikey, now + 3600), "sip:g@example.org") ==
+              mikey,
+          "GKTP ahead of its activation time");
     check(gktp_selector("sip:g@example.org").find("org.3gpp.MCPTT-GKTP/global/byGroupID/sip%3Ag%40example.org/~~/") ==
               0,
           "standard GKTP selector");
@@ -110,12 +113,11 @@ int main() {
     auto unknown = group;
     at = unknown.find("</list-service>");
     unknown.insert(at, "<unknown xmlns=\"urn:example:extension\" must-understand=\"true\"/>");
-    rejects([&] { parse_gktp_document(unknown, "sip:g@example.org", now); });
+    rejects([&] { parse_gktp_document(unknown, "sip:g@example.org"); });
     const auto xroot = "https://gms.example.org/xcap-root/";
     auto diff = gktp_xcap_diff(group, "sip:g@example.org", xroot);
     check(diff.find("urn:ietf:params:xml:ns:xcap-diff") != std::string::npos, "RFC5874 XCAP diff root");
-    check(parse_gktp_document(parse_gktp_xcap_diff(diff, "sip:g@example.org", xroot), "sip:g@example.org", now) ==
-              mikey,
+    check(parse_gktp_document(parse_gktp_xcap_diff(diff, "sip:g@example.org", xroot), "sip:g@example.org") == mikey,
           "XCAP element snapshot recovery");
     rejects([&] { parse_gktp_xcap_diff(diff, "sip:g@example.org", "https://evil.example.org/"); });
     rejects([&] { parse_gktp_xcap_diff(diff, "sip:h@example.org", xroot); });

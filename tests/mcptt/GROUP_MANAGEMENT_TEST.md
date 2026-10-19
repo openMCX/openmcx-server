@@ -76,7 +76,7 @@ sequenceDiagram
     Note over G: create right in the profile, group ID unique, document valid
     G-->>A: 201 Created, ETag
     C->>S: SUBSCRIBE Event xcap-diff, resource-lists of both groups, access token in mcptt-info
-    Note over S: token introspected, member of each group (7.2.12)
+    Note over S: token checked, member of each group (7.2.12)
     S-->>C: 200 OK
     S->>C: NOTIFY xcap-diff, new-etag of each document
     C->>G: GET each document (Bearer)

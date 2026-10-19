@@ -107,8 +107,8 @@ func (svc *service) authenticateBearer(writer http.ResponseWriter, request *http
 		bearerDenied(writer)
 		return TokenClaims{}, false
 	}
-	claims, err := VerifyToken(value[len(prefix):], svc.verificationKey, svc.cfg.Issuer, svc.cfg.ServerClientID, svc.now())
-	if err != nil || claims.Type != "access" {
+	claims, err := VerifyAccessToken(value[len(prefix):], svc.verificationKey, svc.cfg.Issuer, svc.cfg.ServerClientID, svc.now())
+	if err != nil {
 		bearerDenied(writer)
 		return TokenClaims{}, false
 	}

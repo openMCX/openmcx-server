@@ -20,6 +20,11 @@ import (
 	"time"
 )
 
+// The scope of the test access tokens: all MC services (TS 33.180 table B.4.2.2-1).
+const testScope = "openid 3gpp:mc:ptt_service 3gpp:mc:data_service 3gpp:mc:video_service " +
+	"3gpp:mc:ptt_key_management_service 3gpp:mc:data_key_management_service 3gpp:mc:video_key_management_service " +
+	"3gpp:mc:ptt_config_management_service 3gpp:mc:ptt_group_management_service"
+
 // ------------------------------------------------------------------------------
 // Helper: a signed access token of a configured user for an audience, issued at the given time.
 func tokenFor(test *testing.T, cfg Config, key *rsa.PrivateKey, username string, now time.Time, audience string) string {
@@ -32,6 +37,7 @@ func tokenFor(test *testing.T, cfg Config, key *rsa.PrivateKey, username string,
 	if err != nil {
 		test.Fatal(err)
 	}
+	claims.Scope = testScope
 	token, err := signToken(claims, key)
 	if err != nil {
 		test.Fatal(err)
@@ -69,6 +75,50 @@ func TestVerifyTokenRejectsExpiredAndWrongAudience(test *testing.T) {
 	valid := tokenFor(test, cfg, key, "alice", testNow, cfg.ServerClientID)
 	if _, err := VerifyToken(valid, &key.PublicKey, cfg.Issuer, "different-audience", testNow); err == nil {
 		test.Fatal("wrong audience accepted")
+	}
+}
+
+// ------------------------------------------------------------------------------
+// TS 33.180 annex B.2.2 and B.11.2: an access token of another IdMS (a subject of its own, several audiences, the
+// OAuth client as client_id, no OpenMCX claims) is accepted; one without scope, client_id or MCPTT ID is not, nor an
+// OpenMCX token without its binding claims, nor an ID token.
+func TestVerifyAccessTokenClaims(test *testing.T) {
+	cfg, key := testConfig(), testKey(test)
+	sign := func(claims map[string]any) string {
+		token, err := signClaims(claims, key)
+		if err != nil {
+			test.Fatal(err)
+		}
+		return token
+	}
+	other := func() map[string]any {
+		return map[string]any{"iss": cfg.Issuer, "sub": "6f1c2d1e-8f5b-4d8e-9c55-0a1b2c3d4e5f", "aud": []string{"account", cfg.ServerClientID},
+			"exp": testNow.Add(time.Minute).Unix(), "iat": testNow.Unix(), "typ": "Bearer", "azp": "mcx-client", "client_id": "mcx-client",
+			"scope": "openid 3gpp:mc:ptt_service", "mcptt_id": "sip:alice@mcx.test"}
+	}
+	claims, err := VerifyAccessToken(sign(other()), &key.PublicKey, cfg.Issuer, cfg.ServerClientID, testNow)
+	if err != nil || claims.OpenMCX() || claims.MCPTTID != "sip:alice@mcx.test" {
+		test.Fatalf("another IdMS's access token: %+v %v", claims, err)
+	}
+	for name, change := range map[string]func(map[string]any){
+		"no scope":       func(c map[string]any) { delete(c, "scope") },
+		"no client_id":   func(c map[string]any) { delete(c, "client_id") },
+		"no MCPTT ID":    func(c map[string]any) { delete(c, "mcptt_id") },
+		"other audience": func(c map[string]any) { c["aud"] = []string{"account"} },
+		"not yet valid":  func(c map[string]any) { c["nbf"] = testNow.Add(time.Minute).Unix() },
+		"an ID token":    func(c map[string]any) { c["token_type"] = "id" },
+		"OpenMCX, no SIP": func(c map[string]any) {
+			c["mc_id"], c["token_type"], c["mc_client_id"] = "alice-mc", "access", "alice-device"
+		},
+		"OpenMCX, no type": func(c map[string]any) {
+			c["mc_id"], c["sip_uri"], c["mc_client_id"] = "alice-mc", "sip:alice@ims.mcx.test", "alice-device"
+		},
+	} {
+		claims := other()
+		change(claims)
+		if _, err := VerifyAccessToken(sign(claims), &key.PublicKey, cfg.Issuer, cfg.ServerClientID, testNow); err == nil {
+			test.Fatalf("%s accepted", name)
+		}
 	}
 }
 

@@ -993,13 +993,21 @@ std::string mikey_initiator(std::span<const byte> message) {
 // (annex E.6.4; 0 is the I_MESSAGE timestamp) and its Expiry Time (annex E.6.10; 0 never expires), and, for a GMK,
 // for one of its MC Group IDs (annex E.6.3).
 void require_active(const KeyMessage &key, std::string_view group, std::uint64_t now) {
+  require_unexpired(key, group, now);
+  const auto &properties = *key.properties;
+  const auto activation =
+      properties.activation_unix_seconds ? properties.activation_unix_seconds : key.ntp_seconds - 2208988800ULL;
+  require(now >= activation, "key inactive or expired");
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex E.6.9, E.6.10 and E.6.3: not revoked, not expired, and for a GMK one of its groups; the Activation
+// Time (annex E.6.4) is left to the user of the key.
+void require_unexpired(const KeyMessage &key, std::string_view group, std::uint64_t now) {
   require(key.properties.has_value(), "missing protected key properties");
   const auto &properties = *key.properties;
   require((properties.status & 1) != 0, "key revoked");
-  const auto activation =
-      properties.activation_unix_seconds ? properties.activation_unix_seconds : key.ntp_seconds - 2208988800ULL;
-  require(now >= activation && (!properties.expiry_unix_seconds || now < properties.expiry_unix_seconds),
-          "key inactive or expired");
+  require(!properties.expiry_unix_seconds || now < properties.expiry_unix_seconds, "key inactive or expired");
   if (properties.type == 0)
     require(!group.empty() &&
                 std::find(properties.groups.begin(), properties.groups.end(), group) != properties.groups.end(),
