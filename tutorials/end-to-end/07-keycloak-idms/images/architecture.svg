@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Tutorial 7: the phones and the dispatcher sign in on Keycloak's page; the OpenMCX servers accept Keycloak's tokens</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6472"/>
+    </marker>
+  </defs>
+  <rect width="900" height="420" rx="14" fill="#ffffff"/>
+
+  <!-- the three clients -->
+  <g font-size="14" fill="#1f2937">
+    <rect x="30" y="44" width="190" height="78" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
+    <text x="125" y="70" text-anchor="middle" font-weight="600">Phone A</text>
+    <text x="125" y="90" text-anchor="middle" font-size="12" fill="#4b5563">Alice · OpenMCX app</text>
+    <text x="125" y="108" text-anchor="middle" font-size="12" fill="#6d28d9">sign-in: Chrome tab</text>
+
+    <rect x="30" y="140" width="190" height="78" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
+    <text x="125" y="166" text-anchor="middle" font-weight="600">Phone B</text>
+    <text x="125" y="186" text-anchor="middle" font-size="12" fill="#4b5563">Bob · OpenMCX app</text>
+    <text x="125" y="204" text-anchor="middle" font-size="12" fill="#6d28d9">sign-in: Chrome tab</text>
+
+    <rect x="30" y="236" width="190" height="78" rx="12" fill="#eef7ee" stroke="#2f8a3b" stroke-width="1.5"/>
+    <text x="125" y="262" text-anchor="middle" font-weight="600">Dispatcher Client</text>
+    <text x="125" y="282" text-anchor="middle" font-size="12" fill="#4b5563">client-c · browser 127.0.0.1:8080</text>
+    <text x="125" y="300" text-anchor="middle" font-size="12" fill="#6d28d9">sign-in: browser</text>
+  </g>
+
+  <!-- the three clients reach the system over the Wi-Fi -->
+  <g stroke="#5b6472" stroke-width="1.6" fill="none">
+    <path d="M220,83 C270,83 270,200 320,200" marker-end="url(#arrow)"/>
+    <path d="M220,179 C270,179 270,200 320,200" marker-end="url(#arrow)"/>
+    <path d="M220,275 C270,275 270,200 320,200" marker-end="url(#arrow)"/>
+  </g>
+  <rect x="243" y="14" width="58" height="22" rx="11" fill="#ffffff" stroke="#9ca3af"/>
+  <text x="272" y="30" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">Wi-Fi</text>
+
+  <!-- computer -->
+  <rect x="325" y="20" width="550" height="384" rx="16" fill="#fff7ed" stroke="#ea8a1a" stroke-width="2"/>
+  <text x="345" y="50" font-size="16" font-weight="700" fill="#9a4b05">Computer · HOST_IP</text>
+  <text x="855" y="50" text-anchor="end" font-size="12" fill="#9a4b05">no MCX Admin: the accounts live in Keycloak</text>
+
+  <g font-size="13" fill="#1f2937">
+    <!-- Keycloak -->
+    <rect x="345" y="66" width="510" height="88" rx="10" fill="#f3e8ff" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="365" y="93" font-weight="700" fill="#5b21b6">Keycloak · IdMS</text>
+    <text x="490" y="93" font-size="12" fill="#5b21b6">https://HOST_IP:8443/realms/openmcx</text>
+    <text x="365" y="115" font-size="12" fill="#4b5563">realm openmcx: users with their MC service IDs, the MC scopes,</text>
+    <text x="365" y="134" font-size="12" fill="#4b5563">the OAuth client and its claim mappers · signs with the system's IdMS key</text>
+
+    <!-- MC servers -->
+    <rect x="345" y="182" width="245" height="64" rx="10" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="467" y="210" text-anchor="middle" font-weight="600">MCPTT server</text>
+    <text x="467" y="230" text-anchor="middle" font-size="12" fill="#4b5563">voice, floor control</text>
+    <rect x="610" y="182" width="245" height="64" rx="10" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="732" y="210" text-anchor="middle" font-weight="600">MCData server</text>
+    <text x="732" y="230" text-anchor="middle" font-size="12" fill="#4b5563">messages, files</text>
+
+    <!-- common services -->
+    <rect x="345" y="258" width="510" height="72" rx="10" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="365" y="282" font-weight="600">Common services</text>
+    <text x="365" y="301" fill="#4b5563" font-size="12">GMS · CMS · KMS · LMS · HTTP proxy</text>
+    <text x="365" y="318" fill="#4b5563" font-size="12">content server · message store · notification server</text>
+
+    <!-- SIP core -->
+    <rect x="345" y="342" width="510" height="44" rx="10" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="365" y="369" font-weight="600">SIP core</text>
+    <text x="440" y="369" fill="#4b5563">Kamailio + MySQL · registration, routing</text>
+  </g>
+
+</svg>

@@ -123,13 +123,13 @@ tools/regress.py --images <tag> --client-image openmcx-client:<tag> --all --tran
   selection as a soak.
 - To run the binaries from `build/` in the lab: `tools/mcx compose -f docker/compose/compose.dev.yaml up -d`.
 
-### Another vendor's IdMS (Keycloak)
+### Keycloak as IdMS
 
-`--keycloak <image>` makes Keycloak the lab's IdMS instead of OpenMCX's, as an IdMS of another vendor at a Plugtest
-(TS 33.180 annex B). It answers as `idms` with the issuer `https://idms:8443/realms/openmcx` and signs with the lab's
-IdMS key; the realm `generated/keycloak/openmcx.json` holds the users with their MC service IDs, the MC scopes and the
-mappers for the claims of annex B.2. The clients have no password: `tools/keycloak-sign-in.py` signs them in on
-Keycloak's login page and leaves each a refresh token, with which they start.
+`--keycloak <image>` makes Keycloak the lab's IdMS instead of OpenMCX's (TS 33.180 annex B). It answers as `idms` with
+the issuer `https://idms:8443/realms/openmcx` and signs with the lab's IdMS key; the realm
+`generated/keycloak/openmcx.json` holds the users with their MC service IDs, the MC scopes and the mappers for the
+claims of annex B.2. The clients have no password: `tools/keycloak-sign-in.py` signs them in on Keycloak's login page
+and leaves each a refresh token, with which they start.
 
 ```bash
 python3 tools/prepare-prearranged-test.py --directory <lab> --project kc --private-call --mcdata \

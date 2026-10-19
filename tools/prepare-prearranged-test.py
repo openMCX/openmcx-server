@@ -1590,8 +1590,7 @@ MC_SCOPES = [
 
 # ------------------------------------------------------------------------------
 def add_keycloak(fixture, compose, args):
-    """Keycloak (args.keycloak, an image) as the lab's IdMS instead of OpenMCX's: an IdMS of another vendor, as
-    at a Plugtest. It answers at the same address (the service "idms", https://idms:8443) with its own paths, the
+    """Keycloak (args.keycloak, an image) as the lab's IdMS instead of OpenMCX's. It answers at the same address (the service "idms", https://idms:8443) with its own paths, the
     realm "openmcx" (issuer https://idms:8443/realms/openmcx), and signs with the lab's IdMS key, which the common
     services verify with. The realm holds the users, with their MC service IDs as attributes; the client of
     oauth_client_id (public, PKCE S256, the lab's redirect URIs) and its mappers give the tokens the claims of
@@ -1877,7 +1876,7 @@ def main():
     parser.add_argument(
         '--keycloak',
         metavar='IMAGE',
-        help='Keycloak (this image) as IdMS instead of OpenMCX\'s: an IdMS of another vendor (TS 33.180 annex B)',
+        help='Keycloak (this image) as IdMS instead of OpenMCX\'s (TS 33.180 annex B)',
     )
     parser.add_argument(
         '--token-ttl',

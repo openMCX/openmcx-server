@@ -39,8 +39,8 @@ struct HttpTimeouts {
 using HttpAddressMap = std::map<std::string, std::string>;
 
 // The trust anchors of an HTTP client: the configured CA only, or the system's CAs as well (/etc/ssl/certs), for an
-// IdMS of another vendor whose certificate a public CA issued; its login page opens in the system browser, which
-// trusts them too (TS 33.180 annex B.4.2).
+// external IdMS (Keycloak, for example) whose certificate a public CA issued; its login page opens in the system
+// browser, which trusts them too (TS 33.180 annex B.4.2).
 enum class HttpTrust { configured, configured_and_system };
 
 class HttpClient {

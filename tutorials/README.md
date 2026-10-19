@@ -15,6 +15,7 @@ and RANs.
 | 4 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;srsRAN&nbsp;(ZeroMQ)](end-to-end/04-mcx-over-srsran-5g/README.md) | Tutorial 3 with the srsRAN gNB and srsUE (simulated radio); the call falls back to the default QoS flow. |
 | 5 | [MCX&nbsp;over&nbsp;a&nbsp;4G&nbsp;core&nbsp;(Open5GS)&nbsp;and&nbsp;the&nbsp;OAI&nbsp;LTE&nbsp;RAN&nbsp;(RFSIM)](end-to-end/05-mcx-over-4g-open5gs-oai/README.md) | Tutorial 3 on 4G: Open5GS EPC and OAI LTE RAN (simulated radio); MCPTT QoS over Rx, a QCI 65 bearer. |
 | 6 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;RAN&nbsp;(RFSIM)&nbsp;on&nbsp;Kubernetes](end-to-end/06-mcx-over-oai-5g-kubernetes/README.md) | Tutorial 3 on a one-node kind cluster, installed with Helm: the OpenMCX chart and a chart for the OAI 5G core, gNB and nr-UE. |
+| 7 | [Sign&nbsp;in&nbsp;with&nbsp;Keycloak&nbsp;as&nbsp;IdMS](end-to-end/07-keycloak-idms/README.md) | Keycloak in the place of OpenMCX's IdMS: two Android phones and a dispatcher sign in on its page (TS 33.180 annex B.4.2), and the servers accept its tokens. `develop` images. |
 
 Each tutorial has its own folder in `end-to-end/` with its Docker Compose file and `.env.example`; tutorial 6 has its
 Helm chart and values instead.
