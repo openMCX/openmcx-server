@@ -9,6 +9,7 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 |---|---|
 | Off-network (ProSe/PC5), relays, isolated operation (IOPS) | Not in present edition: the procedures need direct radio (MCPTT §10.2, §10.3, §11.2; MCData §9.3) |
 | Interconnection, MC gateways and migration | Not in present edition |
+| Separate participating and controlling servers of different vendors | Not in present edition: the link between the two servers is OpenMCX-specific, a deviation from 3GPP to be fixed. Affiliation passes as one PUBLISH per user, not one per group (TS 24.379 §9.2.2.2.6, §9.2.2.3.3), and relayed requests carry the user's identity instead of the participating server's PSI (§6.3.2.1.3); MCVideo the same (TS 24.281). With both servers OpenMCX, the split layout works |
 | Interworking with LMR, GSM-R, PSTN and other non-3GPP systems | Not in present edition |
 | FRMCS (railway) extensions | Not in present edition |
 | MBS and eMBMS delivery | Not in present edition: group media is unicast |

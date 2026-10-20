@@ -82,11 +82,13 @@ def main():
         all(header(message, 'expires') in ('4294967295', '0') for message in publishes)
         and any(header(message, 'expires') == '0' for message in publishes),
     )
+    # TS 24.379 clause 9A.3.1.2 items 7 and 8: one alias ID for each alias the user wants active, so an Expires 0
+    # PUBLISH that gives every alias up may list none (clause 9A.2.2.2.3 step 13 deactivates them all).
     check(
-        'each PUBLISH names the user as the presence entity with a client tuple and alias IDs',
+        'each PUBLISH names the user as the presence entity with a client tuple, and alias IDs unless Expires 0',
         all(
             re.search(r'<presence[^>]+entity="sip:', message['body'])
-            and 'functionalAliasID="sip:' in message['body']
+            and ('functionalAliasID="sip:' in message['body'] or header(message, 'expires') == '0')
             and re.search(r'<tuple id="[^"]+"', message['body'])
             for message in publishes
         ),

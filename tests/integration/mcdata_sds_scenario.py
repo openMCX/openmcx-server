@@ -720,6 +720,13 @@ def main():
             'FA-01 two users hold patrol-car-12 within its limit of two',
             lambda: set(aliases().get(patrol_car, [])) == {ids['client-c'], ids['client-d']},
         )
+        # TS 24.282 clause 22.2.2.2.3 step 12 a: an alias listed again stays as it is, in its place among the alias's
+        # activations (the oldest is the one a take-over replaces).
+        fa('client-c', f'mcdata-fa activate {patrol_car}', 200, 'activated')
+        check(
+            'FA-01 an alias listed again keeps its activation order',
+            aliases().get(patrol_car) == [ids['client-c'], ids['client-d']],
+        )
 
         # FA-02 SDS to a functional alias: 300 Multiple Choices, then a new request to the selected user.
         text = unique('to-medic')
@@ -802,6 +809,18 @@ def main():
         # FA-06 deactivation: an empty set is Expires 0.
         fa('client-c', f'mcdata-fa deactivate {patrol_car}', 200, 'deactivated')
         wait('FA-06 client-c no longer holds patrol-car-12', lambda: aliases().get(patrol_car) == [ids['client-d']])
+        # FA-07 two changes in a row (TS 24.282 clause 22.2.1.2 step 6 a): the second, sent before the NOTIFY of the
+        # first, lists both aliases, as the server takes each list as the whole set (clause 22.2.2.2.3 step 12 b).
+        fa('client-b', f'mcdata-fa deactivate {front_desk}', 200, 'deactivated')
+        command('client-a', f'mcdata-fa activate {front_desk}')
+        command('client-a', f'mcdata-fa activate {incident_commander}')
+        wait(
+            'FA-07 client-a holds front-desk and incident-commander after two activations in a row',
+            lambda: aliases().get(front_desk) == [ids['client-a']]
+            and aliases().get(incident_commander) == [ids['client-a']],
+        )
+        fa('client-a', f'mcdata-fa deactivate {incident_commander}', 200, 'deactivated')
+        fa('client-a', f'mcdata-fa deactivate {front_desk}', 200, 'deactivated')
 
         # ------------------------------------------------------------------------------
         # One of the MCData server's counters.

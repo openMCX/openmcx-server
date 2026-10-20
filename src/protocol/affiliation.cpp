@@ -37,24 +37,34 @@ std::string affiliation_xml(const Affiliation &affiliation, bool notification) {
 //------------------------------------------------------------------------------
 // TS 24.379 clause 9.3.1.2 (TS 24.282 clause 8.4.1, TS 24.281 clause 8.3.1): reads an affiliation PIDF (a request
 // of TS 24.379 clause 9.2.2.2.3 or a notification): the client, its groups with their status and the service by
-// namespace.
-Affiliation parse_affiliation(std::string_view xml) {
+// namespace. A request has the one <tuple> of its client. A notification has one <tuple> "per each MCPTT client" of
+// the user (clause 9.3.1.2), so with `client` set the tuple of that client is read, and none means no group.
+Affiliation parse_affiliation(std::string_view xml, std::string_view client) {
   auto doc = document(xml);
   auto root = xmlDocGetRootElement(doc.get());
   if (!is(root, "presence", pidf_ns)) invalid("wrong PIDF namespace");
   Affiliation affiliation;
   affiliation.user_id = attr(root, "entity");
-  auto tuple = unique_child(root, "tuple", pidf_ns);
-  affiliation.client_id = attr(tuple, "id");
-  auto status = unique_child(tuple, "status", pidf_ns);
+  std::vector<xmlNode *> tuples;
+  for (auto child = root->children; child; child = child->next)
+    if (is(child, "tuple", pidf_ns)) tuples.push_back(child);
+  if (client.empty() && tuples.size() != 1) invalid("an affiliation request has one tuple");
 
   // TS 24.282 clause 8.4.1 and TS 24.281 clause 8.3.1: MCData and MCVideo use the same
   // structure in their own namespaces.
   bool mcptt = false;
-  for (auto node = status->children; node; node = node->next) {
-    if (is(node, "affiliation", affiliation_ns)) mcptt = true;
-    if (is(node, "affiliation", mcdata_affiliation_ns)) affiliation.mcdata = true;
-    if (is(node, "affiliation", mcvideo_affiliation_ns)) affiliation.mcvideo = true;
+  xmlNode *tuple = client.empty() ? tuples.front() : nullptr;
+  for (auto *each : tuples) {
+    auto status = unique_child(each, "status", pidf_ns);
+    for (auto node = status->children; node; node = node->next) {
+      if (is(node, "affiliation", affiliation_ns)) mcptt = true;
+      if (is(node, "affiliation", mcdata_affiliation_ns)) affiliation.mcdata = true;
+      if (is(node, "affiliation", mcvideo_affiliation_ns)) affiliation.mcvideo = true;
+    }
+    if (!client.empty() && attr(each, "id") == client) {
+      if (tuple) invalid("duplicate tuple of the client");
+      tuple = each;
+    }
   }
   if (int(mcptt) + int(affiliation.mcdata) + int(affiliation.mcvideo) > 1) invalid("mixed MC service affiliation");
 
@@ -70,14 +80,16 @@ Affiliation parse_affiliation(std::string_view xml) {
   const char *ns = affiliation_namespace(affiliation.mcdata, affiliation.mcvideo);
   auto id = unique_child(root, "p-id", ns, false);
   if (id) affiliation.publication_id = text(id);
+  affiliation.client_id = tuple ? attr(tuple, "id") : std::string(client);
   std::set<std::string> seen;
-  for (auto node = status->children; node; node = node->next)
-    if (is(node, "affiliation", ns)) {
-      auto group = attr(node, "group");
-      if (group.empty() || !seen.insert(group).second || seen.size() > 64) invalid("invalid affiliation groups");
-      affiliation.groups.push_back(group);
-      affiliation.statuses.push_back(attr(node, "status"));
-    }
+  if (tuple)
+    for (auto node = unique_child(tuple, "status", pidf_ns)->children; node; node = node->next)
+      if (is(node, "affiliation", ns)) {
+        auto group = attr(node, "group");
+        if (group.empty() || !seen.insert(group).second) invalid("invalid affiliation groups");
+        affiliation.groups.push_back(group);
+        affiliation.statuses.push_back(attr(node, "status"));
+      }
   if (affiliation.user_id.empty() || affiliation.client_id.empty()) invalid("missing PIDF identity");
 
   return affiliation;

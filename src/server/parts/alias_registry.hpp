@@ -6,7 +6,7 @@
 // and the MCData server (TS 24.282 clause 22.2.2): which users have activated each alias, the per-alias admission of
 // an activation (the user list of the alias definition, the maximum number of simultaneous activations and the
 // take-over, TS 24.484 clauses 8.4.2.1 and 8.3.2.1), and the deactivation of a user's aliases. Each service keeps its
-// own PUBLISH procedure: the core changes the listed aliases one by one, MCData replaces the user's whole set.
+// own PUBLISH procedure; each replaces the user's whole set, an alias listed again keeping its place.
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.484
 // V19.6.0 (Rel-19).

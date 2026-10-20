@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # ------------------------------------------------------------------------------
 def main():
-    """Run the group management checks GM-00 to GM-07 and the configuration checks CFG-01 to CFG-04, and
+    """Run the group management checks GM-00 to GM-08 and the configuration checks CFG-01 to CFG-04, and
     write group-management.json."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--compose', type=Path, required=True)
@@ -206,6 +206,40 @@ def main():
         wait(
             'GM-06 a user no longer a member cannot subscribe: 403',
             lambda: (status('client-d').get('group_subscription_result') or {}).get('status') == 403,
+        )
+        # GM-08: TS 24.481 clause 6.3.13.2.1, a re-SUBSCRIBE with a modified list: its entries are the whole list. With
+        # the provisioned group alone, the squad document is no longer followed; listed again, it is notified anew. RFC
+        # 5875 section 4.7: each re-subscription is answered with the full state, unchanged documents included.
+        group_before = notified('client-c', group)
+        command('client-c', f'group-resubscribe {group}')
+        wait(
+            'GM-08 the re-SUBSCRIBE with the provisioned group alone is accepted 200',
+            lambda: (status('client-c').get('group_subscription_result') or {}).get('groups') == [group]
+            and status('client-c')['group_subscription_result'].get('status') == 200,
+        )
+        wait(
+            'GM-08 the GMS follows only the provisioned group for client-c',
+            lambda: any(
+                sub.get('subscriber') == ids['client-c'] and sorted(sub.get('groups', {})) == [group]
+                for sub in (status('mcptt-server').get('group_document_subscriptions') or {}).get('subscriptions', [])
+            ),
+            10,
+        )
+        wait(
+            'GM-08 the re-subscription is notified with the full state: the unchanged provisioned group again',
+            lambda: notified('client-c', group) > group_before,
+            10,
+        )
+        before = notified('client-c', squad)
+        xcap('client-a', f'group-member add {squad} {ids["client-d"]}', 201, 'GM-08 the owner changes the squad: 201')
+        time.sleep(8)  # four polls of the GMS (document_poll_ms 2000)
+        check('GM-08 the squad change is not notified to client-c', notified('client-c', squad) == before)
+        command('client-c', f'group-resubscribe {squad} {group}')
+        wait(
+            'GM-08 listed again, the squad document is notified with its new member',
+            lambda: notified('client-c', squad) > before
+            and ids['client-d'] in docs('client-c')[squad].get('members', []),
+            15,
         )
         # GM-07: TS 24.481 clause 6.3.5, the owner deletes the document; the subscriber learns it is gone.
         xcap('client-a', 'group-delete squad', 200, 'GM-07 the owner deletes the document')

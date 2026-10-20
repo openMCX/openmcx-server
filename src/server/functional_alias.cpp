@@ -25,7 +25,10 @@ bool McServer::is_functional_alias(const std::string &id) {
 //------------------------------------------------------------------------------
 // TS 24.379 clause 9A.2.2.2.3 (TS 24.281 clause 20.2.2.2.3): a served user's functional alias status change. Only the
 // participating checks answer the PUBLISH with a refusal (403, 403 with warning 201, 423); past them it is answered
-// 200, and this server, owning the aliases as well, decides each alias on its own as TS 24.379 clause 9A.2.2.3.3
+// 200. The PUBLISH names the whole set the user wants active (steps 12 to 14): with a nonzero Expires an alias the user
+// holds and lists again stays as it is (step 12 a, keeping its place among the alias's activations), one it holds but
+// leaves out is deactivated (step 12 b) and a new one is activated (step 12 c); Expires 0 deactivates every alias of
+// the user (step 13). This server, owning the aliases as well, decides each change as TS 24.379 clause 9A.2.2.3.3
 // does (clause 9A.2.2.2.6: one status change per alias). The user learns the outcome from the NOTIFY of its status
 // subscription (clauses 9A.2.2.2.5 and 9A.2.1.3) carrying the handled p-id-fa: an activated alias is listed
 // "activated", one at its limit that the user may take over "take-over-possible", a refused one is left out.
@@ -50,8 +53,7 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
   // The service's own namespace: TS 24.379 clause 9A.3.1 or TS 24.281 clause 20.3.1.
   if (request.mcdata != (svc_.service == Service::mcdata) || request.mcvideo != (svc_.service == Service::mcvideo))
     return reject(400, "functional alias of another service");
-  if (request.user_id != user.id || request.client_id != user.client || request.aliases.empty())
-    return reject(403, "identity mismatch");
+  if (request.user_id != user.id || request.client_id != user.client) return reject(403, "identity mismatch");
 
   std::map<std::string, Json> definitions;
   for (const auto &alias : request.aliases) {
@@ -87,17 +89,23 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
   const auto may_take_over = [&] { return user_profile(user.id).value("functional_alias_takeover", false); };
   const AliasAdmissionRules rules{svc_.service, request.take_over, true, false, may_take_over};
   std::map<std::string, std::string> outcomes;
+  // Steps 12 b and 13: the aliases the user holds and this PUBLISH does not keep are deactivated.
+  std::set<std::string> held;
+  for (const auto &[alias, users] : change.next)
+    if (std::find(users.begin(), users.end(), user.id) != users.end()) held.insert(alias);
+  for (const auto &alias : held)
+    if (deactivate || std::find(request.aliases.begin(), request.aliases.end(), alias) == request.aliases.end()) {
+      std::erase(change.next[alias], user.id);
+      outcomes[alias] = "deactivated";
+    }
   for (const auto &alias : request.aliases) {
+    if (deactivate) break;
     const auto &definition = definitions[alias];
     if (definition.is_null()) {
       outcomes[alias] = "refused";
       continue;
     }
-    if (deactivate) {
-      std::erase(change.next[alias], user.id);
-      outcomes[alias] = "deactivated";
-      continue;
-    }
+    // Step 12 a: an alias held and listed again stays (the refresh of AliasAdmissionRules); step 12 c: a new one.
     const auto admission = AliasRegistry::admit(change, alias, user.id, definition, rules);
     if (admission == AliasAdmission::Admitted) {
       outcomes[alias] = "activated";
@@ -124,16 +132,17 @@ SipResponse McServer::functional_alias_publish(const SipMessage &message, const 
     changed_users.insert(previous);
     event("functional_alias_taken_over", {{"alias", alias}, {"from", previous}, {"by", user.id}});
   }
+  // The aliases the user may take over are those this PUBLISH found at their limit (TS 24.379 clause 3.1).
   auto &possible = alias_takeover_possible_[user.id];
+  possible.clear();
   for (const auto &[alias, outcome] : outcomes)
-    if (outcome == "take-over-possible")
-      possible.insert(alias);
-    else
-      possible.erase(alias);
+    if (outcome == "take-over-possible") possible.insert(alias);
   if (possible.empty()) alias_takeover_possible_.erase(user.id);
-  schedule([this, changed_users, aliases = std::set<std::string>(request.aliases.begin(), request.aliases.end()),
-            publisher = user.id,
-            pid = request.publish_id] { alias_status_changed(changed_users, aliases, publisher, pid); });
+  std::set<std::string> aliases(request.aliases.begin(), request.aliases.end());
+  aliases.insert(held.begin(), held.end());
+  schedule([this, changed_users, aliases, publisher = user.id, pid = request.publish_id] {
+    alias_status_changed(changed_users, aliases, publisher, pid);
+  });
   std::vector<std::string> changed;
   for (const auto &[alias, outcome] : outcomes)
     if (outcome == "activated" || outcome == "deactivated") changed.push_back(alias);

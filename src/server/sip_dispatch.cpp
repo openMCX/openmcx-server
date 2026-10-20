@@ -368,7 +368,7 @@ void McServer::remove_binding(std::map<std::string, User>::iterator found, const
   user.groups.clear();
   if (!user.subscription.empty() && user.subscription_expires > std::time(nullptr))
     sip_.notify(user.subscription, "presence", "terminated;reason=noresource", "application/pidf+xml",
-                affiliation_xml(affiliation_status(svc_, user, random_id()), true));
+                affiliation_xml(affiliation_status(svc_, user, {}), true));
   user.subscription.clear();
   deactivate_functional_aliases(id);
   disconnect_user(id);
@@ -433,22 +433,10 @@ void McServer::bind_authorized_user(const Json &claims, const McpttInfo &info, c
 // documents, or changes the list of its subscription in the dialog.
 void McServer::server_document_subscribe(const SipMessage &message, const std::string &identity,
                                          SipResponse &response) {
+  if (refresh_document_subscription(message, response)) return;
   std::vector<std::string> groups;
   for (const auto &part : message.parts)
     if (part.content_type == resource_lists_mime) groups = subscribed_groups(part.body);
-  if (const auto existing = doc_subscriptions_.find(message.dialog_id); existing != doc_subscriptions_.end()) {
-    const auto expires = refreshed_expires(message);
-    if (!expires) {
-      response.status_code = 400;
-      return;
-    }
-    existing->second.expires = std::time(nullptr) + static_cast<std::time_t>(*expires);
-    for (const auto &group : groups)
-      if (!existing->second.etags.contains(group) && group_exists(group)) existing->second.etags[group] = "";
-    schedule([this, id = message.dialog_id] { notify_documents(id); });
-    response.headers = {{"Expires", std::to_string(*expires)}};
-    return;
-  }
   if (groups.empty()) {
     response.status_code = 400;
     return;
@@ -513,6 +501,11 @@ bool McServer::client_document_subscribe(const SipMessage &message, const User &
 // RFC 6665 section 4.2.1.2 (TS 24.481 clause 6.3.13.3.2.2, TS 24.484 clause 6.3.13.3.2.2): a re-SUBSCRIBE in the
 // dialog of a group or configuration document subscription refreshes it, or ends it with Expires 0 (the final
 // NOTIFY follows). Returns false when the dialog is neither subscription's; a malformed Expires is answered 400.
+// TS 24.481 clauses 6.3.13.2.1 and 6.3.13.2.2: a resource list in a group document re-SUBSCRIBE is the modified list,
+// one entry for each document to be subscribed to: it replaces the subscribed groups (one left out is no longer
+// followed), checked as at the initial SUBSCRIBE. RFC 5875 section 4.7: the notifier "MUST re-send the current full XML
+// diff content" on a re-subscription (no conditional subscription is offered), so every re-SUBSCRIBE that does not end
+// the subscription is notified again with the full state, like the initial one.
 bool McServer::refresh_document_subscription(const SipMessage &message, SipResponse &response) {
   const auto documents = doc_subscriptions_.find(message.dialog_id);
   const auto configuration = config_subscriptions_.find(message.dialog_id);
@@ -524,12 +517,43 @@ bool McServer::refresh_document_subscription(const SipMessage &message, SipRespo
   }
   const auto until = std::time(nullptr) + static_cast<std::time_t>(*expires);
   if (documents != doc_subscriptions_.end()) {
-    documents->second.expires = until;
-    if (*expires == 0) schedule([this, id = message.dialog_id] { notify_documents(id); });
+    auto &sub = documents->second;
+    bool listed = false;
+    std::vector<std::string> groups;
+    for (const auto &part : message.parts)
+      if (part.content_type == resource_lists_mime) {
+        listed = true;
+        groups = subscribed_groups(part.body);
+      }
+    if (listed && *expires != 0) {
+      if (groups.empty() || groups.size() > 16) {
+        response.status_code = 400;
+        return true;
+      }
+      std::map<std::string, std::string> etags;
+      for (const auto &group : groups) {
+        if (!(sub.server ? group_exists(group) : subscription_allowed(group, sub.subscriber))) {
+          docsub_count("refused");
+          event("group_document_subscription_refused", {{"subscriber", sub.subscriber}, {"group", group}});
+          response.status_code = 403;
+          return true;
+        }
+        const auto kept = sub.etags.find(group);
+        etags[group] = kept == sub.etags.end() ? std::string{} : kept->second;
+      }
+      sub.etags = std::move(etags);
+      event("group_document_subscription_changed", {{"subscriber", sub.subscriber}, {"groups", groups}});
+    }
+    sub.expires = until;
+    if (*expires != 0) sub.initial = true;
+    schedule([this, id = message.dialog_id] { notify_documents(id); });
   } else {
     configuration->second.expires = until;
-    if (*expires == 0) schedule([this, id = message.dialog_id] { notify_configuration(id); });
+    if (*expires != 0) configuration->second.initial = true;
+    schedule([this, id = message.dialog_id] { notify_configuration(id); });
   }
+  // RFC 6665 section 4.2.1.1: the 200 (OK) carries the duration granted.
+  response.headers = {{"Expires", std::to_string(*expires)}};
   return true;
 }
 
@@ -663,8 +687,10 @@ bool McServer::alias_status_subscribe(const SipMessage &message, const User &use
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 9.2.1.3: subscription to the user's affiliation status (Expires 0 ends it); any other event
-// package is refused with 489.
+// TS 24.379 clauses 9.2.1.3 and 9.2.2.2.4: subscription to the user's affiliation status; any other event package is
+// refused with 489. Expires 0 ends the subscription in its dialog, or out of it fetches the current state (clause
+// 9.2.1.3 step 5): either way one final NOTIFY with the current state on its own dialog. The subscription only carries
+// the notifications: ending it leaves the affiliations as they are (clause 9.2.2.2.4).
 void McServer::affiliation_subscribe(const SipMessage &message, User &user, const std::string &event_name,
                                      SipResponse &response) {
   if (event_name != "presence") {
@@ -672,18 +698,16 @@ void McServer::affiliation_subscribe(const SipMessage &message, User &user, cons
     return;
   }
   if (get_header(message.headers, "Expires") == "0") {
-    if (user.subscription != message.dialog_id) {
-      response.status_code = 481;
-      return;
+    if (user.subscription == message.dialog_id) {
+      user.subscription.clear();
+      user.subscription_expires = 0;
     }
-    user.groups.clear();
-    user.subscription_expires = 0;
-    auto id = user.id;
-    schedule([this, id] {
-      disconnect_user(id);
-      if (const auto *served = by_id(id)) register_with_controllers(*served);
-    });
     response.headers = {{"Expires", "0"}};
+    schedule([this, id = user.id, dialog = message.dialog_id] {
+      if (const auto *served = by_id(id))
+        sip_.notify(dialog, "presence", "terminated;reason=timeout", "application/pidf+xml",
+                    affiliation_xml(affiliation_status(svc_, *served, {}), true));
+    });
     return;
   }
   user.subscription = message.dialog_id;
@@ -711,7 +735,9 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
       response = functional_alias_publish(message, user, info, part.body);
       return;
     }
-  if (info.client_id != user.client || info.request_uri != user.id) {
+  // TS 24.379 clause 9.2.2.2.3 steps 1 to 4: the mcptt-info names the served user (<mcptt-request-uri>); the client
+  // is the one of the PIDF's tuple (step 10), the mcptt-info needs no <mcptt-client-id> (clause 9.2.1.2 step 2).
+  if (info.request_uri != user.id) {
     response.status_code = 403;
     return;
   }
@@ -735,14 +761,16 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
       if (affiliation) throw std::runtime_error("duplicate PIDF");
       affiliation = parse_affiliation(part.body);
     }
+  const bool removing = expires == "0";
   // The PUBLISH does not depend on a subscription to the affiliation status: without one, the outcome is not notified
-  // (clause 9.2.2.2.5).
-  if (!affiliation || !own_affiliation(*affiliation) || affiliation->user_id != user.id ||
-      affiliation->client_id != user.client) {
+  // (clause 9.2.2.2.5). Clause 9.2.1.2 NOTE 2: a client no longer interested in any group needs no PIDF, Expires 0
+  // is enough (clause 9.2.2.2.3 precondition 5 asks for the PIDF all the same, a defect of the clause).
+  if (affiliation
+          ? !own_affiliation(*affiliation) || affiliation->user_id != user.id || affiliation->client_id != user.client
+          : !removing) {
     response.status_code = 403;
     return;
   }
-  const bool removing = expires == "0";
   std::set<std::string> groups;
   const auto limit = removing ? 0u : affiliation_limit(user.id);
   if (!removing)
@@ -767,7 +795,7 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
       groups.insert(group);
     }
   user.affiliation_etag = removing ? std::string{} : random_id();
-  user.handled_pid = affiliation->publication_id;
+  user.handled_pid = affiliation ? affiliation->publication_id : std::string{};
   apply_affiliation(user, std::move(groups));
   response.headers = {{"Expires", removing ? "0" : "4294967295"}};
   if (!removing) response.headers.push_back({"SIP-ETag", user.affiliation_etag});

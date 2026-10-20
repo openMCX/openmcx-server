@@ -414,8 +414,9 @@ Regroup parse_regroup(std::string_view xml, const ServiceProfile &service = mcpt
 // clause 9.2.2.2.5).
 std::string affiliation_xml(const Affiliation &affiliation, bool notification);
 //------------------------------------------------------------------------------
-// TS 24.379 clause 9.3.1.2 (TS 24.282 clause 8.4.1, TS 24.281 clause 8.3.1): reads an affiliation PIDF.
-Affiliation parse_affiliation(std::string_view xml);
+// TS 24.379 clause 9.3.1.2 (TS 24.282 clause 8.4.1, TS 24.281 clause 8.3.1): reads an affiliation PIDF: a request
+// (its one tuple), or with `client` a notification, of whose tuples that client's is read (none: no group).
+Affiliation parse_affiliation(std::string_view xml, std::string_view client = {});
 //------------------------------------------------------------------------------
 // TS 24.379 clause 7.2.3 with clause 7.4.1.2.2: writes the application/poc-settings+xml of a client.
 std::string poc_settings_xml(std::string_view client_id, unsigned profile_index = 0);

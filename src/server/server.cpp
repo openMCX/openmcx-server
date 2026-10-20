@@ -401,18 +401,14 @@ void McServer::retry_floor_messages(std::uint64_t now) {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clauses 9.2.1.3 and 7.3.3: an expired affiliation status subscription removes the user's affiliations;
-// the end of a service authorisation (clause 7.3.3 step 8) ends a served user's service settings and removes its
-// binding (remove_binding), and removes a peer's user (its functional aliases, calls and relays); the users served
-// here are registered again with their controllers at the registration refresh interval.
+// TS 24.379 clauses 9.2.2.2.4 and 7.3.3: an expired affiliation status subscription ends its notifications only (the
+// affiliations stay, clause 9.2.2.2.11); the end of a service authorisation (clause 7.3.3 step 8) ends a served
+// user's service settings and removes its binding (remove_binding), and removes a peer's user (its functional
+// aliases, calls and relays); the users served here are registered again with their controllers at the registration
+// refresh interval.
 void McServer::expire_users(std::uint64_t now) {
   for (auto &[sip, user] : users_)
-    if (!user.subscription.empty() && user.subscription_expires <= std::time(nullptr)) {
-      user.subscription.clear();
-      user.groups.clear();
-      disconnect_user(user.id);
-      register_with_controllers(user);
-    }
+    if (!user.subscription.empty() && user.subscription_expires <= std::time(nullptr)) user.subscription.clear();
   std::vector<std::string> ended;
   for (const auto &[sip, user] : users_)
     if (user.peer.empty() && user.expires <= std::time(nullptr)) ended.push_back(sip);

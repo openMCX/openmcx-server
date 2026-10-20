@@ -14,7 +14,13 @@ scenario checks that
     (step 8), and the server affiliates the user to the member group only: the controlling function refuses the
     other (TS 24.379 clause 9.2.2.3.3 step 5) and the participating function removes it (clause 9.2.2.2.6);
   - a SIP-If-Match with an entity tag the server never issued gets 412 (Conditional Request Failed), the current
-    one 200 (OK) (RFC 3903 section 6).
+    one 200 (OK) (RFC 3903 section 6);
+  - a service info without the client ID is answered 200 (OK): the client is the PIDF's tuple (TS 24.379 clause
+    9.2.1.2 step 2, clause 9.2.2.2.3 step 10);
+  - Expires 0 with no PIDF is answered 200 (OK) with Expires 0 and ends every affiliation of the client (TS 24.379
+    clause 9.2.1.2 NOTE 2, TS 24.282 clause 8.2.2 NOTE 1); the member group is then published again;
+  - a SUBSCRIBE out of any dialog with Expires 0, a fetch of the current state, is answered 200 (OK) with Expires 0
+    (TS 24.379 clause 9.2.1.3 step 5).
 
 Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), RFC 3903.
 """
@@ -124,6 +130,15 @@ def main():
                    code == 200 and headers.get('sip-etag') and headers.get('expires') == MAX, seen)
             expect(f'{service}: unknown SIP-If-Match -> 412', seen['unknown_etag'][0] == 412, seen['unknown_etag'])
             expect(f'{service}: current SIP-If-Match -> 200', seen['current_etag'][0] == 200, seen['current_etag'])
+            expect(f'{service}: no client ID in the service info -> 200', seen['no_client_id'][0] == 200,
+                   seen['no_client_id'])
+            code, headers = seen['expires_0_no_pidf']
+            expect(f'{service}: Expires 0 without a PIDF -> 200 with Expires 0',
+                   code == 200 and headers.get('expires') == '0', seen['expires_0_no_pidf'])
+            expect(f'{service}: the member group published again -> 200', seen['restored'][0] == 200, seen['restored'])
+        code, headers = outcomes['mcptt']['fetch_expires_0']
+        expect('mcptt: a fetch (SUBSCRIBE, Expires 0, no dialog) -> 200 with Expires 0',
+               code == 200 and headers.get('expires') == '0', outcomes['mcptt']['fetch_expires_0'])
 
         # The per-group outcome: the member group affiliated, the other refused.
         for server, refused, affiliated, prefix in (
@@ -134,6 +149,9 @@ def main():
             expect(f'{prefix}: the non-member group refused', refusals, found[-6:])
             exact = [entry for entry in found if entry['event'] == affiliated and entry.get('groups') == [MEMBER]]
             expect(f'{prefix}: affiliated to the member group only', exact, found[-6:])
+            ended = events(server, {affiliated.replace('affiliated', 'deaffiliated')})
+            expect(f'{prefix}: Expires 0 without a PIDF ended every affiliation',
+                   any(entry.get('groups') == [] for entry in ended), ended[-3:])
         result['passed'] = True
     except Exception as error:  # noqa: BLE001 - the result records any failure
         result['error'] = str(error)

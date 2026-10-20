@@ -122,6 +122,7 @@ tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =gr
 | GM-05 | A member who does not manage the group, and a manager of another group, are refused 403 |
 | GM-06 | A user who is no longer a member cannot subscribe (403) |
 | GM-07 | The owner deletes the document; the subscriber is notified of the removal |
+| GM-08 | A re-SUBSCRIBE with a modified list replaces the subscribed documents (§6.3.13.2.1: one `<entry>` for each document to be subscribed to): with the provisioned group alone the GMS follows only it, notifies the full state again (RFC 5875 §4.7) and a squad change is not notified; listed again, the squad document is notified with its new member (run before GM-07) |
 
 The Go unit tests cover the XCAP selector, writes, authorisation and persistence.
 

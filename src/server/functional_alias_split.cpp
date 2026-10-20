@@ -48,8 +48,9 @@ bool McServer::aliases_owned_elsewhere() const { return role_ == "participating"
 // TS 24.379 clause 9A.2.2.2.3 at a server not owning the aliases: the participating checks (steps 4 to 5), the 200
 // (step 8), the served user's functional alias information entries (steps 10 to 14), the status change of each
 // changed alias passed on to the owning server (step 15, clause 9A.2.2.2.6) and the NOTIFY with the handled p-id-fa
-// (steps 16 and 17, clause 9A.2.2.2.5). An Expires 0 deactivates the listed aliases, a nonzero one activates them
-// (OpenMCX's clients list the aliases they change, as for the server owning them).
+// (steps 16 and 17, clause 9A.2.2.2.5). The PUBLISH names the whole set the user wants active: with a nonzero Expires
+// the aliases listed are kept or activated and the others deactivated (step 12), Expires 0 deactivates them all (step
+// 13); only the aliases whose status changes are passed on (step 15).
 SipResponse McServer::served_alias_publish(const SipMessage &message, const User &user, const McpttInfo &info,
                                            const std::string &body) {
   SipResponse response;
@@ -68,8 +69,7 @@ SipResponse McServer::served_alias_publish(const SipMessage &message, const User
   }
   if (request.mcdata || request.mcvideo != (svc_.service == Service::mcvideo))
     return reject(400, "functional alias of another service");
-  if (request.user_id != user.id || request.client_id != user.client || request.aliases.empty())
-    return reject(403, "identity mismatch");
+  if (request.user_id != user.id || request.client_id != user.client) return reject(403, "identity mismatch");
 
   // Steps 4A and 4B (MCPTT only): the aliases the user may change, those whose <mcptt-user-list> names it.
   if (svc_.service == Service::mcptt)
@@ -96,26 +96,30 @@ SipResponse McServer::served_alias_publish(const SipMessage &message, const User
   // Steps 10 to 14: the candidate entries replace the served ones.
   auto &entries = served_aliases_[user.id];
   std::vector<std::pair<std::string, bool>> onward; // alias, activation
-  for (const auto &alias : request.aliases) {
-    const auto found = entries.find(alias);
-    if (deactivate) {
-      if (found == entries.end()) continue;
-      found->second.status = "deactivating";
-      onward.emplace_back(alias, false);
-      continue;
+  const auto listed = [&](const std::string &alias) {
+    return !deactivate && std::find(request.aliases.begin(), request.aliases.end(), alias) != request.aliases.end();
+  };
+  // Steps 12 b and 13: an entry this PUBLISH does not keep becomes "deactivating"; an active one (or one still being
+  // activated) is deactivated at the owning server too (step 15 d).
+  for (auto &[alias, entry] : entries) {
+    if (listed(alias) || entry.status == "deactivating") continue;
+    entry.status = "deactivating";
+    onward.emplace_back(alias, false);
+  }
+  // Step 12 a: an entry listed again stays, a deactivating one is activated again (step 15 c); step 12 c: a new entry
+  // is activated (step 15 a), with <take-over> when the PUBLISH carries it.
+  if (!deactivate)
+    for (const auto &alias : request.aliases) {
+      auto &entry = entries[alias];
+      if (entry.status == "activated" || entry.status == "activating") continue;
+      entry.status = "activating";
+      entry.publish_id = request.publish_id;
+      entry.take_over = request.take_over;
+      onward.emplace_back(alias, true);
     }
-    auto &entry = entries[alias];
-    if (entry.status == "activated" && !request.take_over) continue; // a refresh of an active alias
-    entry.status = "activating";
-    entry.publish_id = request.publish_id;
-    entry.take_over = request.take_over;
-    onward.emplace_back(alias, true);
-  }
   if (entries.empty()) served_aliases_.erase(user.id);
-  if (auto possible = alias_takeover_possible_.find(user.id); possible != alias_takeover_possible_.end()) {
-    for (const auto &alias : request.aliases) possible->second.erase(alias);
-    if (possible->second.empty()) alias_takeover_possible_.erase(possible);
-  }
+  // The aliases offered for take-over are offered again by the owning server's answers to this PUBLISH.
+  alias_takeover_possible_.erase(user.id);
   // Step 15 (clause 9A.2.2.2.6), then steps 16 and 17 (clause 9A.2.2.2.5) once the 200 is sent.
   schedule([this, id = user.id, onward, pid = request.publish_id] {
     for (const auto &[alias, activation] : onward) send_alias_onward(id, alias, activation);

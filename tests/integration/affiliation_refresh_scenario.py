@@ -10,7 +10,9 @@ duration the server grants ends (RFC 6665 section 4.1.2.1); the refresh-affiliat
 scenario checks that
   - AR-01 during a group call, client-b's in-dialog re-SUBSCRIBE is answered, client-b stays affiliated and the call
     goes on for all four;
-  - AR-02 after the refresh, a new group call still reaches client-b.
+  - AR-02 after the refresh, a new group call still reaches client-b;
+  - AR-03 client-b ends its subscription (Expires 0 in its dialog) and stays affiliated: a group call still reaches
+    it (TS 24.379 clauses 9.2.2.2.4 and 9.2.2.2.11); a new subscription reports it affiliated.
 
 Specifications: RFC 6665, TS 24.379 V19.7.0 (Rel-19).
 """
@@ -111,6 +113,20 @@ def main():
         wait('AR-02 a new group call still reaches client-b', in_call(ROLES))
         command('client-a', 'hangup')
         wait('AR-02 the call is released', idle)
+        # AR-03: TS 24.379 clause 9.2.2.2.4, the subscription only carries the notifications: client-b ends it, and
+        # stays affiliated (clause 9.2.2.2.11), so a group call still reaches it; a new subscription reports it.
+        since = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - 1))
+        command('client-b', 'affiliation-subscription end')
+        wait(
+            'AR-03 client-b ends its affiliation status subscription (final NOTIFY)',
+            lambda: logged('client-b', 'affiliation_subscription_ended', since),
+        )
+        command('client-a', 'call')
+        wait('AR-03 a group call still reaches client-b, whose affiliation stays', in_call(ROLES))
+        command('client-a', 'hangup')
+        wait('AR-03 the call is released', idle)
+        command('client-b', 'affiliation-subscription start')
+        wait('AR-03 a new subscription reports client-b affiliated', lambda: status('client-b').get('affiliated'), 15)
         result['passed'] = True
     except Exception as error:  # noqa: BLE001 - the result records any failure
         result['error'] = str(error)

@@ -346,6 +346,27 @@ int main() {
     mixed.insert(mixed.find("</status>"),
                  "<mp:affiliation xmlns:mp=\"urn:3gpp:ns:mcpttPresInfo:1.0\" group=\"sip:x@mcx.test\"/>");
     rejects([&] { parse_affiliation(mixed); });
+    // TS 24.379 clause 9.3.1.2: a notification has one <tuple> per client of the user: the client reads its own,
+    // and none of its own is no group; a request has the one tuple of its client. No count limit on groups.
+    const std::string two =
+        R"(<presence xmlns="urn:ietf:params:xml:ns:pidf" xmlns:mc="urn:3gpp:ns:mcpttPresInfo:1.0" entity="sip:a@x">)"
+        R"(<tuple id="urn:uuid:phone"><status><mc:affiliation group="sip:g1@x" status="affiliated"/></status></tuple>)"
+        R"(<tuple id="urn:uuid:tablet"><status><mc:affiliation group="sip:g2@x" status="affiliating"/>)"
+        R"(<mc:affiliation group="sip:g3@x"/></status></tuple></presence>)";
+    const auto tablet = parse_affiliation(two, "urn:uuid:tablet");
+    check(tablet.client_id == "urn:uuid:tablet" &&
+              tablet.groups == std::vector<std::string>{"sip:g2@x", "sip:g3@x"} &&
+              tablet.statuses == std::vector<std::string>{"affiliating", ""},
+          "the client's own tuple of a notification");
+    const auto other = parse_affiliation(two, "urn:uuid:laptop");
+    check(other.client_id == "urn:uuid:laptop" && other.groups.empty(), "no tuple of the client: no group");
+    rejects([&] { parse_affiliation(two); });
+    std::string many = R"(<presence xmlns="urn:ietf:params:xml:ns:pidf" xmlns:mc="urn:3gpp:ns:mcpttPresInfo:1.0" )"
+                       R"(entity="sip:a@x"><tuple id="urn:uuid:phone"><status>)";
+    for (int index = 0; index < 100; ++index)
+      many += "<mc:affiliation group=\"sip:g" + std::to_string(index) + "@x\"/>";
+    many += "</status></tuple></presence>";
+    check(parse_affiliation(many).groups.size() == 100, "100 groups read");
     auto both = video;
     both.mcdata = true;
     rejects([&] { (void)affiliation_xml(both, false); });

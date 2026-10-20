@@ -78,15 +78,16 @@ void McServer::end_implicit_affiliation(const std::string &id, const std::string
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 9.2.2.2.11: affiliation status determination: whether the user is affiliated to the group
-// (a live registration and affiliation subscription, or membership of a user regroup).
+// TS 24.379 clause 9.2.2.2.11: affiliation status determination: whether the user is affiliated to the group (its
+// client's group entry, while the registration lives, or membership of a user regroup). The status subscription
+// (clause 9.2.2.2.4) only carries notifications: the affiliation does not depend on it (clause 9.2.2.2.3).
 bool McServer::affiliated(const std::string &id, const std::string &group) {
   const auto *user = by_id(id);
   if (!user || user->expires <= std::time(nullptr)) return false;
   // TS 24.379 clause 16.3.2.4 step 3h: a member of a user regroup is affiliated with it without asking.
   if (const auto regroup = regroups_.find(group); regroup != regroups_.end() && regroup->second.affiliated.contains(id))
     return true;
-  return !user->subscription.empty() && user->subscription_expires > std::time(nullptr) && user->groups.contains(group);
+  return user->groups.contains(group);
 }
 
 //------------------------------------------------------------------------------
@@ -187,8 +188,8 @@ void McServer::apply_affiliation(User &user, std::set<std::string> groups) {
 void McServer::notify(User &user) {
   // A peer's user gets affiliation notifications from its own server.
   if (!user.peer.empty() || user.subscription.empty() || user.subscription_expires <= std::time(nullptr)) return;
-  const auto affiliation = affiliation_status(
-      svc_, user, user.handled_pid.empty() ? random_id() : std::exchange(user.handled_pid, std::string{}));
+  // Clause 9.2.2.2.5 step 3d: the <p-id> only when a PUBLISH caused the notification (its handled p-id).
+  const auto affiliation = affiliation_status(svc_, user, std::exchange(user.handled_pid, std::string{}));
   auto body = affiliation_xml(affiliation, true);
   sip_.notify(user.subscription, "presence", "active;expires=3600", "application/pidf+xml", body);
 }

@@ -62,14 +62,18 @@ SipResponse DataServer::functional_alias_publish(const SipMessage &received, Use
     }
   };
   auto change = functional_aliases_.change();
+  // Steps 12 b and 13: the aliases the user holds and this PUBLISH does not keep are deactivated; one listed again
+  // stays as it is, in its place among the alias's activations (step 12 a).
   std::set<std::string> before;
   for (auto &[alias, users] : change.next)
     if (std::find(users.begin(), users.end(), user.id) != users.end()) before.insert(alias);
-  for (auto &[alias, users] : change.next) std::erase(users, user.id);
+  for (const auto &alias : before)
+    if (expires == "0" || std::find(request.aliases.begin(), request.aliases.end(), alias) == request.aliases.end())
+      std::erase(change.next[alias], user.id);
 
   // TS 24.282 clause 22.2.2.3.3 steps 5 and 6: take-over needs <allow-takeover> and the user's
   // <allow-takeover-functional-alias-other-user>, read from the user's profile once the limit is reached.
-  const AliasAdmissionRules rules{Service::mcdata, request.take_over, false, true, may_take_over};
+  const AliasAdmissionRules rules{Service::mcdata, request.take_over, true, true, may_take_over};
   std::map<std::string, std::string> outcomes;
   if (expires != "0")
     for (const auto &alias : request.aliases) {

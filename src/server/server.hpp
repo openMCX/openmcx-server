@@ -1074,6 +1074,7 @@ protected:
     std::map<std::string, std::string> etags; // group ID -> entity tag last notified ("" before)
     std::int64_t expires = 0;
     bool pending = false, initial = true;
+    bool server = false; // an MCS server of this system (clause 6.3.13.2.2), which may follow any group
     std::uint64_t next_poll = 0;
   };
 
@@ -1504,7 +1505,8 @@ protected:
   void user_request(const SipMessage &message, User &user, const std::string &event_name, SipResponse &response);
   // TS 24.481 and TS 24.484 clauses 6.3.13.3.2.2: a client's group or configuration document subscription.
   bool client_document_subscribe(const SipMessage &message, const User &user, SipResponse &response);
-  // RFC 6665 section 4.2.1.2: a refresh (or end) of a group or configuration document subscription in its dialog.
+  // RFC 6665 section 4.2.1.2: a refresh (or end) of a group or configuration document subscription in its dialog;
+  // a resource list in it is the modified list of group documents (TS 24.481 clauses 6.3.13.2.1, 6.3.13.2.2).
   bool refresh_document_subscription(const SipMessage &message, SipResponse &response);
   // Local limits of this server on the document and key subscriptions it accepts (TS 24.481 and TS 24.484 give
   // none): at most max_subscription_s per subscription and max_subscriptions of each kind; a refresh without

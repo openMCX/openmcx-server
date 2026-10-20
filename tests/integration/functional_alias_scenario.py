@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # ------------------------------------------------------------------------------
 def main():
-    """Run the functional alias checks FA-01 to FA-11 and write integration/functional-alias-results.json."""
+    """Run the functional alias checks FA-01 to FA-15 and write integration/functional-alias-results.json."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--compose', type=Path, required=True)
     parser.add_argument('--artifacts', type=Path, required=True)
@@ -361,6 +361,58 @@ def main():
         wait(
             'FA-11 call to an alias with no activated user rejected with 403 warning 145',
             rejected('client-b', 403, '145 unable to determine called party'),
+        )
+
+        # FA-12 to FA-15: a PUBLISH names the user's whole set (TS 24.379 clause 9A.2.2.2.3 steps 12 to 14, the client
+        # listing every alias wanted active, clause 9A.2.1.2 step 6 a). client-b gives duty-officer up first.
+        command('client-b', f'fa deactivate {duty_officer}')
+        wait('FA-12 duty-officer released by client-b', lambda: duty_officer not in active_aliases())
+        command('client-a', f'fa activate {duty_officer}')
+        wait('FA-12 duty-officer activated by client-a', lambda: active_aliases().get(duty_officer) == [ids['client-a']])
+        command('client-a', f'fa activate {incident_commander}')
+        wait(
+            'FA-12 a second alias activated: both stay active',
+            lambda: (
+                active_aliases().get(duty_officer) == [ids['client-a']]
+                and active_aliases().get(incident_commander) == [ids['client-a']]
+            ),
+        )
+        # The client deactivates one alias by listing the other (step 12 b), not by Expires 0.
+        command('client-a', f'fa deactivate {duty_officer}')
+        wait(
+            'FA-13 one of two aliases deactivated, the other stays active',
+            lambda: (
+                fa_result('client-a', 'deactivate', 200, duty_officer, 'deactivated')()
+                and duty_officer not in active_aliases()
+                and active_aliases().get(incident_commander) == [ids['client-a']]
+            ),
+        )
+        # Another client's PUBLISH: Expires 0 deactivates every alias of the user, whatever it lists (step 13).
+        command('client-a', f'fa activate {duty_officer}')
+        wait(
+            'FA-14 both aliases active again',
+            lambda: (
+                active_aliases().get(duty_officer) == [ids['client-a']]
+                and active_aliases().get(incident_commander) == [ids['client-a']]
+            ),
+        )
+        command('client-a', f'fa publish 0 {incident_commander}')
+        wait(
+            'FA-14 Expires 0 listing one alias deactivates both',
+            lambda: duty_officer not in active_aliases() and incident_commander not in active_aliases(),
+        )
+        # An alias listed again keeps its place among the alias's activations (step 12 a): client-c joins
+        # patrol-car-12 after client-d, and client-d's PUBLISH listing it again leaves client-d first.
+        command('client-c', f'fa activate {patrol_car}')
+        wait(
+            'FA-15 client-c activates patrol-car-12 after client-d',
+            lambda: active_aliases().get(patrol_car) == [ids['client-d'], ids['client-c']],
+        )
+        command('client-d', f'fa publish 4294967295 {patrol_car}')
+        time.sleep(2)
+        wait(
+            'FA-15 an alias listed again keeps its activation order',
+            lambda: active_aliases().get(patrol_car) == [ids['client-d'], ids['client-c']],
         )
 
         assert status('mcptt-server')['instance_id'] == instance, 'server restarted during scenario'
