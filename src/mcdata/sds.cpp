@@ -57,7 +57,7 @@ SipResponse DataServer::sds(const SipMessage &sip_request, const User &sender, m
   Dispatched sent;
   sent.originator = sender.id;
   sent.group = info.calling_group;
-  sent.deadline = monotonic_ms() + disposition_wait_ms;
+  sent.deadline = monotonic_ms() + disposition_wait_ms();
   sent.disposition = signalling_message.disposition;
   for (const auto *target : targets) {
     if (const auto alias = called_aliases.find(target->id); alias != called_aliases.end())
@@ -396,17 +396,19 @@ SipResponse DataServer::notification(const SipMessage &request, const User &noti
       return reject(403, "116 user is not part of the MCData group", notifier.id, "notification");
   }
 
-  // Correlate with the relayed message when it was recorded (TS 24.282 clause 9.2.2.4.2 step 4).
+  // Correlate with the relayed message recorded at TS 24.282 clause 9.2.2.4.2 step 4; clause 12.2.3 step 5: one that
+  // cannot be correlated is refused with warning 216.
   const auto found = dispatched_.find(mcdata::uuid_text(notice.message));
-  if (found != dispatched_.end() &&
-      (found->second.originator != target || !found->second.recipients.contains(notifier.id)))
+  if (found == dispatched_.end())
+    return reject(403, "216 unable to correlate the disposition notification", notifier.id, "notification");
+  if (found->second.originator != target || !found->second.recipients.contains(notifier.id))
     return reject(403, "", notifier.id, "notification");
 
   // The optional Sender MCData user ID IE must name the notifier.
   if (notice.sender && *notice.sender != notifier.id) return reject(403, "", notifier.id, "notification");
   const auto *originator = by_id(target);
   if (!originator) return reject(404, "", notifier.id, "notification");
-  if (found != dispatched_.end() && !info.calling_group.empty() && notice.sender &&
+  if (!info.calling_group.empty() && notice.sender &&
       aggregation().value("enabled", false) && !found->second.aggregate_sent) {
     // TS 24.282 clause 12.2.3 step 15c: collect until TDC1 expires or every recipient has reported.
     auto &sent = found->second;

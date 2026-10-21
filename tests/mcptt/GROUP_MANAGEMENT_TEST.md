@@ -124,6 +124,7 @@ tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =gr
 | GM-07 | The owner deletes the document; the subscriber is notified of the removal |
 | GM-08 | A re-SUBSCRIBE with a modified list replaces the subscribed documents (§6.3.13.2.1: one `<entry>` for each document to be subscribed to): with the provisioned group alone the GMS follows only it, notifies the full state again (RFC 5875 §4.7) and a squad change is not notified; listed again, the squad document is notified with its new member (run before GM-07) |
 | GM-09 | A subscription listing a group the user may follow and one it may not is accepted (200) and follows the first alone; §6.3.13.3.2.2 step d refuses 403 only when none may be followed (run before GM-07) |
+| GM-10 | A list of 17 groups (the squad and 16 that do not exist) is accepted (200), in a new subscription and in a re-SUBSCRIBE, and the GMS follows the squad alone: §6.3.13.3.2.2 sets no limit on the number of listed groups (run before GM-07) |
 
 The Go unit tests cover the XCAP selector, writes, authorisation and persistence.
 

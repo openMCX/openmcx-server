@@ -620,7 +620,8 @@ then reads:
 - `pcf`, `rx`: policy control ([QoS for call media](POLICY.md)).
 
 `DataServer` reads its own `mcdata` block (aggregation, redelivery, release, media, IP connectivity, protection
-switches).
+switches, and `disposition_wait_ms`: how long a sent SDS waits for its disposition notifications, 86400000 (24 hours) by default;
+a notification arriving later is refused 403 with warning 216, TS 24.282 clause 12.2.3 step 5).
 
 ### 7.3 What the servers read from the common services
 

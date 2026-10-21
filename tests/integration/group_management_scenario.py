@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # ------------------------------------------------------------------------------
 def main():
-    """Run the group management checks GM-00 to GM-09 and the configuration checks CFG-01 to CFG-04, and
+    """Run the group management checks GM-00 to GM-10 and the configuration checks CFG-01 to CFG-04, and
     write group-management.json."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--compose', type=Path, required=True)
@@ -256,6 +256,25 @@ def main():
             ),
             10,
         )
+        # GM-10: TS 24.481 clause 6.3.13.3.2.2 sets no limit on the groups of one list: client-d lists the squad and 16
+        # groups that do not exist, in a new subscription and then in a re-SUBSCRIBE (RFC 5875 section 4.7), and is
+        # accepted each time, following the squad alone.
+        for step, verb, first in (('initial', 'group-subscribe', 0), ('re-SUBSCRIBE', 'group-resubscribe', 16)):
+            listed = [squad] + [f'sip:absent-{n}-{squad[4:]}' for n in range(first, first + 16)]
+            command('client-d', f'{verb} {" ".join(listed)}')
+            wait(
+                f'GM-10 a list of 17 groups is accepted 200 ({step})',
+                lambda: (status('client-d').get('group_subscription_result') or {}).get('groups') == listed
+                and status('client-d')['group_subscription_result'].get('status') == 200,
+            )
+            wait(
+                f'GM-10 the GMS follows only the squad for client-d ({step})',
+                lambda: any(
+                    sub.get('subscriber') == ids['client-d'] and sorted(sub.get('groups', {})) == [squad]
+                    for sub in (status('mcptt-server').get('group_document_subscriptions') or {}).get('subscriptions', [])
+                ),
+                10,
+            )
         # GM-07: TS 24.481 clause 6.3.5, the owner deletes the document; the subscriber learns it is gone.
         xcap('client-a', 'group-delete squad', 200, 'GM-07 the owner deletes the document')
         wait(

@@ -68,8 +68,7 @@ SipResponse McServer::doc_subscribe(const SipMessage &message, const std::string
                                     const std::vector<std::string> &groups, bool server) {
   SipResponse response;
   const auto expires = refreshed_expires(message);
-  if (!expires || *expires > max_subscription_s || doc_subscriptions_.size() >= max_subscriptions || groups.empty() ||
-      groups.size() > 16) {
+  if (!expires || *expires > max_subscription_s || doc_subscriptions_.size() >= max_subscriptions || groups.empty()) {
     response.status_code = 400;
     return response;
   }

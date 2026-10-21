@@ -526,7 +526,7 @@ bool McServer::refresh_document_subscription(const SipMessage &message, SipRespo
         groups = subscribed_groups(part.body);
       }
     if (listed && *expires != 0) {
-      if (groups.empty() || groups.size() > 16) {
+      if (groups.empty()) {
         response.status_code = 400;
         return true;
       }

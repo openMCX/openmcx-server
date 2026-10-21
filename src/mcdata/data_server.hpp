@@ -60,8 +60,9 @@ class DataServer {
 
   //------------------------------------------------------------------------------
   // A relayed SDS message awaiting disposition notifications (TS 24.282 clause 9.2.2.4.2 step 4).
-  // How long a dispatched SDS waits for its disposition notifications (a local choice; TS 24.282 sets none).
-  static constexpr std::uint64_t disposition_wait_ms = 600000;
+  // How long a dispatched SDS waits for its disposition notifications, mcdata.disposition_wait_ms (a local choice;
+  // TS 24.282 sets none). A notification arriving later cannot be correlated (clause 12.2.3 step 5, warning 216).
+  std::uint64_t disposition_wait_ms() const { return cfg_.at("mcdata").value("disposition_wait_ms", 86400000u); }
 
   struct Dispatched {
     std::string originator, group;

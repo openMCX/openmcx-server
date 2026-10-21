@@ -238,30 +238,48 @@ def main():
             warned = "101 service authorisation failed" in headers.get("warning", "")
             check(f"{service}_invalid_access_token_warning_101", warned, {True})
         if args.mcdata:
-            # TS 24.282 clause 12.2.3 step 3: an SDS disposition notification without the resource list naming the
-            # originator is refused 403 with warning "145 unable to determine called party". The Conversation and
-            # Message IDs are random 7-bit octets (the probe sends a text body).
-            ids = bytes(octet & 0x7F for octet in secrets.token_bytes(32))
-            notice = (bytes([0x05, 0x01]) + bytes(5) + ids).decode()
-            info = '<mcdatainfo xmlns="urn:3gpp:ns:mcdataInfo:1.0"><mcdata-Params/></mcdatainfo>'
-            boundary = "probe-" + secrets.token_hex(12)
-            body = (
-                f"--{boundary}\r\nContent-Type: application/vnd.3gpp.mcdata-info+xml\r\n\r\n{info}\r\n"
-                f"--{boundary}\r\nContent-Type: application/vnd.3gpp.mcdata-signalling\r\n\r\n{notice}\r\n"
-                f"--{boundary}--\r\n"
-            )
-            uri = cfg["mcdata"]["service_uri"]
-            fields = {
-                "Accept-Contact": '*;+g.3gpp.icsi-ref="urn%3Aurn-7%3A3gpp-service.ims.icsi.mcdata.sds"'
-                ';require;explicit',
-                "Content-Type": "multipart/mixed; boundary=" + boundary,
-            }
-            challenge = sip.request("MESSAGE", uri, fields, body)
-            valid = sip.digest("MESSAGE", uri, challenge)
-            code, headers = sip.request("MESSAGE", uri, fields, body, authorization=valid)
+            def sds_notification(kind, originator=None):
+                """An SDS disposition notification of the kind (1 UNDELIVERED, 2 DELIVERED) for a random Message ID,
+                with a resource list naming the originator when one is given: the final status and Warning. The Conversation and Message IDs are
+                random 7-bit octets (the probe sends a text body)."""
+                ids = bytes(octet & 0x7F for octet in secrets.token_bytes(32))
+                notice = (bytes([0x05, kind]) + bytes(5) + ids).decode()
+                info = '<mcdatainfo xmlns="urn:3gpp:ns:mcdataInfo:1.0"><mcdata-Params/></mcdatainfo>'
+                boundary = "probe-" + secrets.token_hex(12)
+                body = (
+                    f"--{boundary}\r\nContent-Type: application/vnd.3gpp.mcdata-info+xml\r\n\r\n{info}\r\n"
+                    f"--{boundary}\r\nContent-Type: application/vnd.3gpp.mcdata-signalling\r\n\r\n{notice}\r\n"
+                )
+                if originator:
+                    entries = f'<entry uri="{escape(originator, {chr(34): "&quot;"})}"/>'
+                    body += (
+                        f"--{boundary}\r\nContent-Type: application/resource-lists+xml\r\n\r\n"
+                        '<resource-lists xmlns="urn:ietf:params:xml:ns:resource-lists"><list>'
+                        f"{entries}</list></resource-lists>\r\n"
+                    )
+                body += f"--{boundary}--\r\n"
+                uri = cfg["mcdata"]["service_uri"]
+                fields = {
+                    "Accept-Contact": '*;+g.3gpp.icsi-ref="urn%3Aurn-7%3A3gpp-service.ims.icsi.mcdata.sds"'
+                    ';require;explicit',
+                    "Content-Type": "multipart/mixed; boundary=" + boundary,
+                }
+                challenge = sip.request("MESSAGE", uri, fields, body)
+                valid = sip.digest("MESSAGE", uri, challenge)
+                return sip.request("MESSAGE", uri, fields, body, authorization=valid)
+
+            # TS 24.282 clause 12.2.3 step 3: without the resource list naming the originator, 403 with warning
+            # "145 unable to determine called party".
+            code, headers = sds_notification(1)
             check("mcdata_notification_without_resource_list_rejected", code, {403})
             warned = "145 unable to determine called party" in headers.get("warning", "")
             check("mcdata_notification_without_resource_list_warning_145", warned, {True})
+            # TS 24.282 clause 12.2.3 step 5: a notification for a message the server never relayed cannot be
+            # correlated: 403 with warning "216 unable to correlate the disposition notification".
+            code, headers = sds_notification(2, cfg["mcdata"]["user_id"])
+            check("mcdata_uncorrelated_notification_rejected", code, {403})
+            warned = "216 unable to correlate the disposition notification" in headers.get("warning", "")
+            check("mcdata_uncorrelated_notification_warning_216", warned, {True})
         core = cfg["sip"]["core_uri"]
         check(
             "sip_dialog_route_requires_authentication",

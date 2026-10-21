@@ -30,7 +30,7 @@ cites against the text.
 
 ## Scope and interoperability (kept locally, not cited per clause)
 
-The stage 1 requirements decide what the services offer; the Plugtests scenarios are how independent implementations
+The stage 1 requirements decide what the services offer; the ETSI test scenarios are how independent implementations
 test against each other. Neither is followed clause by clause in the code.
 
 | Specification | Title (short) | Version | Date |
@@ -39,7 +39,7 @@ test against each other. Neither is followed clause by clause in the code.
 | TS 22.179 | MCPTT requirements (stage 1) | V19.3.0 | 2026-01 |
 | TS 22.281 | MCVideo requirements (stage 1) | V19.0.0 | 2025-10 |
 | TS 22.282 | MCData requirements (stage 1) | V19.0.0 | 2025-10 |
-| ETSI TS 103 564 | Plugtests scenarios for mission critical services | V1.6.1 | 2024-04 |
+| ETSI TS 103 564 | Test scenarios for mission critical services | V1.6.1 | 2024-04 |
 
 ## Cited, text not yet kept locally
 

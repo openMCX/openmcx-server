@@ -9,7 +9,8 @@ Once the clients are authorised, sip_negative.py runs in client-a's container, o
 client-a's credentials, and checks the SIP core's digest challenges and refusals (RFC 3261 section 22), the service
 authorisation refusal of an invalid access token, 403 with warning "101 service authorisation failed" (TS 24.379
 clause 7.3.3 step 6 and, in a lab with MCData, TS 24.282 clause 7.3.3; there also an SDS disposition notification
-without a resource list, 403 with warning "145 unable to determine called party", clause 12.2.3 step 3), the
+without a resource list, 403 with warning "145 unable to determine called party", clause 12.2.3 step 3, and one
+for a message never relayed, 403 with warning "216 unable to correlate the disposition notification", step 5), the
 authentication of a forged in-dialog
 request, and the CMS and IdMS refusals (TS 33.180 annexes B.4.2.2 and B.10). Its result is written as
 integration/security-results.json.
