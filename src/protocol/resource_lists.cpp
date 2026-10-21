@@ -64,21 +64,20 @@ std::string resource_list_xml(const std::vector<std::string> &targets) {
 }
 
 //------------------------------------------------------------------------------
-// RFC 4826 with RFC 5366: reads the distinct SIP URIs of a resource list (at most 64 entries).
+// RFC 4826 with RFC 5366: reads the distinct SIP URIs of a resource list (no count limit: the configured maximum of
+// participants applies, with its own warning; the body is bounded).
 std::vector<std::string> parse_resource_list_targets(std::string_view xml) {
   auto doc = document(xml);
   auto root = xmlDocGetRootElement(doc.get());
   if (!is(root, "resource-lists", resource_lists_ns)) invalid("wrong resource-lists namespace");
   std::vector<std::string> targets;
   std::set<std::string> seen;
-  std::size_t entries = 0;
   for (auto list = root->children; list; list = list->next) {
     if (list->type != XML_ELEMENT_NODE) continue;
     if (!is(list, "list", resource_lists_ns)) invalid("unexpected resource-lists element");
     for (auto entry = list->children; entry; entry = entry->next) {
       if (entry->type != XML_ELEMENT_NODE) continue;
       if (!is(entry, "entry", resource_lists_ns)) invalid("unsupported resource-list member");
-      if (++entries > 64) invalid("too many resource-list entries");
       auto target = attr(entry, "uri");
       conference_uri(target, true);
       if (seen.insert(target).second) targets.push_back(target);

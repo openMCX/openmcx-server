@@ -517,7 +517,8 @@ class DataServer {
   std::optional<SipResponse> fd_group(const User &sender, mcdata::Info &info, std::uint64_t size,
                                       std::vector<const User *> &targets);
 
-  SipResponse fd_notification(const User &sender, mcdata::Info info, const BodyPart &signalling);
+  SipResponse fd_notification(const SipMessage &request, const User &sender, mcdata::Info info,
+                              const BodyPart &signalling);
 
   void send_file_aggregate(const std::string &message, FileTransfer &transfer);
 

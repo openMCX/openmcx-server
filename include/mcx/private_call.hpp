@@ -107,12 +107,13 @@ inline FirstToAnswerDecision authorize_first_to_answer(const nlohmann::json &pol
     return policy.is_object() && policy.contains(key) && policy.at(key).is_boolean() && policy.at(key).get<bool>();
   };
 
+  // The caller, empty entries and repeats call nobody; the clause refuses only a request that leaves no one to call
+  // (step 8: 145). Two or more invitees are the client's rule (clause 11.1), not a check of the participating function.
   std::vector<std::string> targets;
   for (const auto &target : requested)
     if (!target.empty() && target != caller && std::find(targets.begin(), targets.end(), target) == targets.end())
       targets.push_back(target);
-  if (targets.size() < 2 || targets.size() != requested.size())
-    return deny(403, warning_text(service, Warning::called_party_unknown));
+  if (targets.empty()) return deny(403, warning_text(service, Warning::called_party_unknown));
   if (!flag("allow")) return deny(403, warning_text(service, Warning::private_call_not_authorised));
   if (!flag("first_to_answer")) return deny(403, warning_text(service, Warning::first_to_answer_not_authorised));
 

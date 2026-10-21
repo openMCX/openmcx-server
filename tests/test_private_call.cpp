@@ -113,9 +113,11 @@ int main() {
   const auto both = authorize_first_to_answer(fta, alice, {bob, carol});
   check(bool(both) && both.targets == std::vector<std::string>({bob, carol}),
         "authorised first-to-answer call rejected");
-  check(warning_code(authorize_first_to_answer(fta, alice, {bob})) == "145", "single invitee accepted");
-  check(warning_code(authorize_first_to_answer(fta, alice, {bob, alice})) == "145", "caller accepted as invitee");
-  check(warning_code(authorize_first_to_answer(fta, alice, {bob, ""})) == "145", "empty invitee accepted");
+  check(bool(authorize_first_to_answer(fta, alice, {bob})), "single invitee refused");
+  const auto self = authorize_first_to_answer(fta, alice, {bob, alice, "", bob, carol});
+  check(bool(self) && self.targets == std::vector<std::string>({bob, carol}),
+        "caller, empty or repeated invitee not dropped");
+  check(warning_code(authorize_first_to_answer(fta, alice, {alice, ""})) == "145", "list without invitee accepted");
   check(warning_code(authorize_first_to_answer(full, alice, {bob, carol})) == "156",
         "first-to-answer without permission");
   check(warning_code(authorize_first_to_answer({{"first_to_answer", true}}, alice, {bob, carol})) == "107",

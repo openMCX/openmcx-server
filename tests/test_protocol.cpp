@@ -104,6 +104,20 @@ int main() {
         "conference endpoint data lost");
   conference.full = false;
   check(!parse_conference_info(conference_info_xml(conference)).full, "partial conference state lost");
+  {
+    // RFC 4575 section 5.6: a partial notification removes a user with state "deleted", without <endpoint>.
+    auto partial = conference;
+    partial.users = {{"sip:bob@example.test", {}, "disconnected", {}, "deleted"}};
+    const auto back = parse_conference_info(conference_info_xml(partial));
+    check(!back.full && back.users.size() == 1 && back.users[0].state == "deleted" &&
+              back.users[0].status == "disconnected",
+          "a deleted user of a partial notification");
+    rejects([&] {
+      (void)parse_conference_info(R"(<conference-info xmlns="urn:ietf:params:xml:ns:conference-info" )"
+                                  R"(entity="sip:g@example.test" state="partial" version="2"><users>)"
+                                  R"(<user entity="sip:bob@example.test" state="gone"/></users></conference-info>)");
+    });
+  }
   conference.deleted = true;
   conference.users.clear();
   check(parse_conference_info(conference_info_xml(conference)).deleted, "deleted conference state lost");

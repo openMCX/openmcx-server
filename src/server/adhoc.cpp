@@ -478,17 +478,23 @@ void McServer::remove_adhoc_participant(const std::shared_ptr<Session> &session,
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 17.4.6.1 steps 1 and 1a: invite users newly meeting the criteria and remove
-// those that no longer do.
+// TS 24.379 clauses 17.4.6.1 and 17.4.5.2.1 steps 4 and 5: invite users newly meeting the criteria, unless removed
+// by a modification or already in the group (one who left stays in it, clause 17.2.4); remove those that no longer
+// do, unless invited by a modification (clause 17.2.6).
 void McServer::apply_participant_criteria(const std::shared_ptr<Session> &session) {
   const auto resolved = resolve_participant_criteria(session->criteria, session->initiator);
   const std::set<std::string> now(resolved.begin(), resolved.end());
   const auto limit = cfg_.at(svc_.name).value("adhoc_call", Json::object()).value("max_participants", 0u);
+  const auto member = [&](const std::string &id) {
+    return std::find(session->members.begin(), session->members.end(), id) != session->members.end();
+  };
   for (const auto &id : resolved)
-    if (!session->criteria_matches.contains(id) && session->members.size() - 1 < limit)
+    if (!session->criteria_matches.contains(id) && !session->manual_removals.contains(id) && !member(id) &&
+        session->members.size() - 1 < limit)
       add_adhoc_participant(session, id);
   for (const auto &id : std::vector<std::string>(session->members.begin(), session->members.end()))
-    if (id != session->initiator && !now.contains(id)) remove_adhoc_participant(session, id);
+    if (id != session->initiator && !now.contains(id) && !session->manual_invites.contains(id))
+      remove_adhoc_participant(session, id);
   session->criteria_matches = now;
 }
 
@@ -525,35 +531,74 @@ SipResponse McServer::adhoc_modify(const SipMessage &message, const User &user, 
         return reject(403, warn(Warning::adhoc_participants_unknown));
       }
     }
-  const bool criteria = !info.participant_criteria.empty();
-  if (entries.empty() == !criteria || (criteria && session->criteria.empty()))
+  // TS 24.379 clause 17.4.5.1.1 step 4: the list (a) and the criteria (b) are handled independently. A client sends
+  // the session's information as established (clause 17.2.6.1.1 step 1), so the criteria it already has come with a
+  // list change and are no change; a request with neither is refused.
+  bool criteria = !info.participant_criteria.empty();
+  if (criteria && !entries.empty() && info.participant_criteria == session->criteria) criteria = false;
+  if ((entries.empty() && !criteria) || (criteria && session->criteria.empty()))
     return reject(403, warn(Warning::adhoc_participants_unknown));
 
-  const auto limit = cfg_.at(svc_.name).value("adhoc_call", Json::object()).value("max_participants", 0u);
   if (criteria) {
     try {
       (void)parse_participant_criteria(info.participant_criteria);
     } catch (const std::exception &) {
       return reject(403, warn(Warning::adhoc_participants_unknown));
     }
-    session->criteria = info.participant_criteria;
-    apply_participant_criteria(session);
-  } else {
+  }
+
+  const auto limit = cfg_.at(svc_.name).value("adhoc_call", Json::object()).value("max_participants", 0u);
+  if (!entries.empty()) {
     ParticipantChanges changes;
     try {
       changes = split_participant_changes(entries);
     } catch (const std::exception &) {
       return reject(403, warn(Warning::adhoc_participants_unknown));
     }
+    // TS 24.379 clause 17.4.5.1.1 step 3a: a functional alias stands for the users that activated it, invited (each
+    // told the called alias) or removed; 403 with warning 145 only when no user at all is left to invite or remove.
+    bool aliases = false;
+    const auto resolve = [&](const std::vector<std::string> &listed, bool inviting) {
+      std::vector<std::string> out;
+      for (const auto &entry : listed) {
+        auto users = is_functional_alias(entry) ? functional_alias_users(entry) : std::vector<std::string>{entry};
+        if (is_functional_alias(entry)) {
+          aliases = true;
+          std::erase(users, user.id);
+        }
+        for (const auto &id : users)
+          if (std::find(out.begin(), out.end(), id) == out.end()) {
+            out.push_back(id);
+            if (inviting && is_functional_alias(entry)) session->participant_aliases[id] = entry;
+          }
+      }
+      return out;
+    };
+    changes.invite = resolve(changes.invite, true);
+    changes.remove = resolve(changes.remove, false);
+    if (aliases && changes.invite.empty() && changes.remove.empty())
+      return reject(403, warn(Warning::called_party_unknown));
     std::size_t count = session->members.size() - 1;
     for (const auto &id : changes.invite)
       if (std::find(session->members.begin(), session->members.end(), id) == session->members.end()) ++count;
     for (const auto &id : changes.remove)
       if (std::find(session->members.begin(), session->members.end(), id) != session->members.end()) --count;
     if (count > limit) return reject(403, warn(Warning::adhoc_too_many_participants));
-    for (const auto &id : changes.remove) remove_adhoc_participant(session, id);
+    for (const auto &id : changes.remove) {
+      remove_adhoc_participant(session, id);
+      session->manual_invites.erase(id);
+      session->manual_removals.insert(id);
+    }
     for (const auto &id : changes.invite)
-      if (id != session->initiator) add_adhoc_participant(session, id);
+      if (id != session->initiator) {
+        add_adhoc_participant(session, id);
+        session->manual_removals.erase(id);
+        session->manual_invites.insert(id);
+      }
+  }
+  if (criteria) {
+    session->criteria = info.participant_criteria;
+    apply_participant_criteria(session);
   }
   response.status_code = 200;
   response.local_media = leg->local;

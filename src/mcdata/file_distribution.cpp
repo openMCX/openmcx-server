@@ -287,7 +287,16 @@ std::optional<SipResponse> DataServer::fd_group(const User &sender, mcdata::Info
 //------------------------------------------------------------------------------
 // TS 24.282 clauses 12.2.2.1 and 12.2.3 for FD: relay the disposition to the originator and keep
 // the stored file list (clause 12.2.2.1 step 13, clause 12.2.3 step 6).
-SipResponse DataServer::fd_notification(const User &sender, mcdata::Info info, const BodyPart &signalling) {
+SipResponse DataServer::fd_notification(const SipMessage &request, const User &sender, mcdata::Info info,
+                                        const BodyPart &signalling) {
+  // TS 24.282 clause 12.2.3 step 3: exactly one <entry> names the originator.
+  try {
+    const auto *resources = part(request, resource_lists_mime);
+    if (!resources) throw std::runtime_error("no resource list");
+    (void)parse_private_call_target(resources->body);
+  } catch (const std::exception &) {
+    return reject(403, "145 unable to determine called party", sender.id, "fd-notification");
+  }
   const auto notice = mcdata::decode_fd_notification(signalling.body);
   const auto message_id = mcdata::uuid_text(notice.message);
   const auto found = transfers_.find(message_id);

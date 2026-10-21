@@ -32,11 +32,17 @@ std::string conference_info_xml(const ConferenceInfo &info) {
     std::set<std::string> users;
     for (const auto &user : info.users) {
       conference_uri(user.user_id);
+      if (!users.insert(user.user_id).second) invalid("duplicate conference user");
+      // RFC 4575 section 5.6: a user removed in a partial notification, without <endpoint>.
+      if (user.state == "deleted") {
+        out += "<user entity=\"" + xml_escape(user.user_id) + "\" state=\"deleted\"/>";
+        continue;
+      }
       conference_uri(user.endpoint_uri);
       conference_status(user.status);
-      if (!users.insert(user.user_id).second) invalid("duplicate conference user");
-      out += "<user entity=\"" + xml_escape(user.user_id) + "\"><endpoint entity=\"" + xml_escape(user.endpoint_uri) +
-             "\"><status>" + user.status + "</status>";
+      out += "<user entity=\"" + xml_escape(user.user_id) + "\"" +
+             (user.state.empty() ? std::string{} : " state=\"" + xml_escape(user.state) + "\"") +
+             "><endpoint entity=\"" + xml_escape(user.endpoint_uri) + "\"><status>" + user.status + "</status>";
       if (!user.functional_alias.empty()) {
         conference_uri(user.functional_alias);
         out += "<mcpttConfInfo:functional-alias>" + xml_escape(user.functional_alias) +
@@ -94,7 +100,16 @@ ConferenceInfo parse_conference_info(std::string_view xml) {
       user.user_id = attr(node, "entity");
       conference_uri(user.user_id);
       if (!identities.insert(user.user_id).second) invalid("duplicate conference user");
-      auto endpoint = unique_child(node, "endpoint", conference_ns);
+      user.state = attr(node, "state");
+      if (!user.state.empty() && user.state != "full" && user.state != "partial" && user.state != "deleted")
+        invalid("invalid conference user state");
+      // RFC 4575 section 5.6: a user removed in a partial notification needs no <endpoint>.
+      auto endpoint = unique_child(node, "endpoint", conference_ns, user.state != "deleted");
+      if (!endpoint) {
+        user.status = "disconnected";
+        info.users.push_back(std::move(user));
+        continue;
+      }
       user.endpoint_uri = attr(endpoint, "entity");
       conference_uri(user.endpoint_uri);
       user.status = scalar(unique_child(endpoint, "status", conference_ns));

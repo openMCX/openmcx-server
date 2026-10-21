@@ -248,6 +248,9 @@ struct BodyPart {
 // functional alias.
 struct ConferenceUser {
   std::string user_id, endpoint_uri, status = "connected", functional_alias;
+  // RFC 4575 section 5.6: the user's "state" in a partial notification ("full", "partial" or "deleted"); a deleted
+  // user may carry no <endpoint>.
+  std::string state;
 };
 
 //------------------------------------------------------------------------------

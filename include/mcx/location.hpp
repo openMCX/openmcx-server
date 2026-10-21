@@ -141,6 +141,25 @@ struct Requested {
 };
 
 //------------------------------------------------------------------------------
+// TS 24.379 annex F.3.3: a ConfigScope "Update" is "in addition to any previous location configuration" ("To remove
+// configuration elements a "Full" configuration is needed"): the elements requested before stay requested, those of
+// the update are added, and the update's minimumIntervalLength applies.
+inline Requested updated(const std::optional<Requested> &stored, const Requested &update) {
+  if (!stored) return update;
+  Requested out = update;
+  out.serving_ecgi = out.serving_ecgi || stored->serving_ecgi;
+  out.neighbouring_ecgi = out.neighbouring_ecgi || stored->neighbouring_ecgi;
+  out.mbms_sa = out.mbms_sa || stored->mbms_sa;
+  out.mbsfn = out.mbsfn || stored->mbsfn;
+  out.coordinate = out.coordinate || stored->coordinate;
+  out.serving_ncgi = out.serving_ncgi || stored->serving_ncgi;
+  out.neighbouring_ncgi = out.neighbouring_ncgi || stored->neighbouring_ncgi;
+  out.mbsfsa = out.mbsfsa || stored->mbsfsa;
+  out.bearing_speed = out.bearing_speed || stored->bearing_speed;
+  return out;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.379 annex F.3.3, TS 23.280 table 10.9.2.1-1: a location reporting configuration, <Configuration>.
 struct Configuration {
   bool full = true; // ConfigScope "Full" or "Update"

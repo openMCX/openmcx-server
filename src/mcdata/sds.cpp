@@ -263,11 +263,14 @@ std::optional<SipResponse> DataServer::adhoc_recipients(const SipMessage &sip_re
     if (id != sender.id && std::find(participants.begin(), participants.end(), id) == participants.end())
       participants.push_back(id);
   };
+  // Step 6A b-ii: a listed functional alias stands for the users that activated it (A); 403 with warning 145 only when
+  // no MCData ID has activated any of the listed aliases (B).
+  bool aliases = false, resolved = false;
   for (const auto &id : requested) {
-    // Step 6A b-ii: a listed functional alias stands for the users that activated it.
     if (resources && alias_definition(id)) {
+      aliases = true;
       const auto users = alias_users(id, sender.id);
-      if (users.empty()) return reject(403, "145 unable to determine called party", sender.id, request);
+      resolved = resolved || !users.empty();
       for (const auto &user : users) {
         if (!called.contains(user)) called[user] = id;
         add(user);
@@ -276,6 +279,7 @@ std::optional<SipResponse> DataServer::adhoc_recipients(const SipMessage &sip_re
     }
     add(id);
   }
+  if (aliases && !resolved) return reject(403, "145 unable to determine called party", sender.id, request);
   if (participants.empty()) return reject(403, "240 Can't determine the adhoc group participants", sender.id, request);
 
   // Participant limit; the MCData warning table code is 242 (the procedure text cites MCPTT's 189).
@@ -367,7 +371,8 @@ SipResponse DataServer::notification(const SipMessage &request, const User &noti
   } catch (const std::exception &) {
     target.clear();
   }
-  if (target.empty()) return reject(403, "", notifier.id, "notification");
+  // TS 24.282 clause 12.2.3 step 3: exactly one <entry> names the originator.
+  if (target.empty()) return reject(403, "145 unable to determine called party", notifier.id, "notification");
   if (notice.type == mcdata::DispositionNotification::Undelivered) {
     // TS 24.282 clause 12.2.2.1 step 5: stored for re-delivery; not sent on to the originator.
     undelivered(notifier.id, mcdata::uuid_text(notice.message));

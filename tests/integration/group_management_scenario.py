@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # ------------------------------------------------------------------------------
 def main():
-    """Run the group management checks GM-00 to GM-08 and the configuration checks CFG-01 to CFG-04, and
+    """Run the group management checks GM-00 to GM-09 and the configuration checks CFG-01 to CFG-04, and
     write group-management.json."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--compose', type=Path, required=True)
@@ -240,6 +240,21 @@ def main():
             lambda: notified('client-c', squad) > before
             and ids['client-d'] in docs('client-c')[squad].get('members', []),
             15,
+        )
+        # GM-09: TS 24.481 clause 6.3.13.3.2.2 step d, 403 only when no listed document may be followed: client-d, now
+        # a squad member but still not one of the provisioned group, subscribes to both and follows the squad alone.
+        command('client-d', f'group-subscribe {squad} {group}')
+        wait(
+            'GM-09 a list with one group the user may not follow is accepted 200',
+            lambda: (status('client-d').get('group_subscription_result') or {}).get('status') == 200,
+        )
+        wait(
+            'GM-09 the GMS follows only the squad for client-d',
+            lambda: any(
+                sub.get('subscriber') == ids['client-d'] and sorted(sub.get('groups', {})) == [squad]
+                for sub in (status('mcptt-server').get('group_document_subscriptions') or {}).get('subscriptions', [])
+            ),
+            10,
         )
         # GM-07: TS 24.481 clause 6.3.5, the owner deletes the document; the subscriber learns it is gone.
         xcap('client-a', 'group-delete squad', 200, 'GM-07 the owner deletes the document')

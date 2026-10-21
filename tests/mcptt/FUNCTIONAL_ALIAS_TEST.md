@@ -68,6 +68,7 @@ In this fixture client-d is callable (unlike the plain `--private-call` fixture)
 | FA-06 | An activated caller alias is presented on a private call and on a group call to every member; a requested alias that is not activated is not presented |
 | FA-07 | `first-to-answer-fa patrol-car-12` rings both activated users; the first answer wins and the other is cancelled |
 | FA-08 | An ad hoc list entry naming `patrol-car-12` invites both activated users, each told the called alias |
+| FA-08b | In a change of the participants (§17.4.5.1.1 step 3a): the alias added invites its users, each told the called alias; removed, they leave; an alias nobody holds, alone → 403/145 |
 | FA-09 | Broadcast ad hoc call: receiver request denied with cause 5; receivers get the speech; release at transmission end |
 | FA-10 | Deactivation (200, then NOTIFY without the alias) removes the user; the alias then resolves to the remaining user |
 | FA-11 | An alias with no activated user → 403/145 |

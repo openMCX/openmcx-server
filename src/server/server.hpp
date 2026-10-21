@@ -188,6 +188,9 @@ protected:
     // the last evaluation.
     std::string criteria;
     std::set<std::string> criteria_matches;
+    // TS 24.379 clauses 17.4.5.2.1 steps 4a and 5a: users invited or removed by a modification (clause 17.2.6),
+    // which the criteria do not remove or invite again.
+    std::set<std::string> manual_invites, manual_removals;
     // Functional aliases (TS 24.379 clause 9A): the initiator's active alias presented to the
     // other participants, and for a call to an alias, the called alias.
     std::string initiator_alias, called_alias;

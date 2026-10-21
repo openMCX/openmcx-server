@@ -237,6 +237,31 @@ def main():
             # The warning text is fixed by the specification; only whether it matched is recorded.
             warned = "101 service authorisation failed" in headers.get("warning", "")
             check(f"{service}_invalid_access_token_warning_101", warned, {True})
+        if args.mcdata:
+            # TS 24.282 clause 12.2.3 step 3: an SDS disposition notification without the resource list naming the
+            # originator is refused 403 with warning "145 unable to determine called party". The Conversation and
+            # Message IDs are random 7-bit octets (the probe sends a text body).
+            ids = bytes(octet & 0x7F for octet in secrets.token_bytes(32))
+            notice = (bytes([0x05, 0x01]) + bytes(5) + ids).decode()
+            info = '<mcdatainfo xmlns="urn:3gpp:ns:mcdataInfo:1.0"><mcdata-Params/></mcdatainfo>'
+            boundary = "probe-" + secrets.token_hex(12)
+            body = (
+                f"--{boundary}\r\nContent-Type: application/vnd.3gpp.mcdata-info+xml\r\n\r\n{info}\r\n"
+                f"--{boundary}\r\nContent-Type: application/vnd.3gpp.mcdata-signalling\r\n\r\n{notice}\r\n"
+                f"--{boundary}--\r\n"
+            )
+            uri = cfg["mcdata"]["service_uri"]
+            fields = {
+                "Accept-Contact": '*;+g.3gpp.icsi-ref="urn%3Aurn-7%3A3gpp-service.ims.icsi.mcdata.sds"'
+                ';require;explicit',
+                "Content-Type": "multipart/mixed; boundary=" + boundary,
+            }
+            challenge = sip.request("MESSAGE", uri, fields, body)
+            valid = sip.digest("MESSAGE", uri, challenge)
+            code, headers = sip.request("MESSAGE", uri, fields, body, authorization=valid)
+            check("mcdata_notification_without_resource_list_rejected", code, {403})
+            warned = "145 unable to determine called party" in headers.get("warning", "")
+            check("mcdata_notification_without_resource_list_warning_145", warned, {True})
         core = cfg["sip"]["core_uri"]
         check(
             "sip_dialog_route_requires_authentication",

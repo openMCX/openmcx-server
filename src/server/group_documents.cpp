@@ -78,18 +78,24 @@ SipResponse McServer::doc_subscribe(const SipMessage &message, const std::string
   sub.server = server;
   sub.expires = std::time(nullptr) + static_cast<std::int64_t>(*expires);
   for (const auto &group : groups) {
-    // TS 24.481 clause 7.2.12.2: a member may subscribe to its group's document.
+    // TS 24.481 clause 7.2.12.2: a member may subscribe to its group's document. Clause 6.3.13.3.2.2 step d: 403 only
+    // when no listed document may be followed; one that may not is left out.
     if (!(server ? group_exists(group) : subscription_allowed(group, identity))) {
       docsub_count("refused");
       event("group_document_subscription_refused", {{"subscriber", identity}, {"group", group}});
-      response.status_code = 403;
-      return response;
+      continue;
     }
     sub.etags[group] = "";
   }
+  if (sub.etags.empty()) {
+    response.status_code = 403;
+    return response;
+  }
   doc_subscriptions_[message.dialog_id] = sub;
   docsub_count("subscriptions");
-  event("group_document_subscription", {{"subscriber", identity}, {"groups", groups}});
+  std::vector<std::string> followed;
+  for (const auto &[group, etag] : sub.etags) followed.push_back(group);
+  event("group_document_subscription", {{"subscriber", identity}, {"groups", followed}});
   response.status_code = 200;
   response.headers = {{"Expires", std::to_string(*expires)}};
   schedule([this, id = message.dialog_id] { notify_documents(id); });

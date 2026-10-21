@@ -270,7 +270,7 @@ Regroup parse_regroup(std::string_view xml, const ServiceProfile &service) {
         auto value = text(child);
         if (value.empty()) invalid("empty regroup entry");
         if (std::find(into.begin(), into.end(), value) != into.end()) invalid("duplicate regroup entry");
-        if (into.size() >= 64) invalid("too many regroup entries");
+        // No count limit (TS 24.379 clause 16.1: regroups of "large numbers of users"); the body is bounded.
         into.push_back(std::move(value));
       }
   };

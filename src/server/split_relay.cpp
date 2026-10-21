@@ -436,8 +436,8 @@ SipResponse McServer::relay_message(const SipMessage &message, const std::string
 SipResponse McServer::relay_subscription(const SipMessage &message, const User &user, const std::string &alias,
                                          const SessionAlias &target) {
   SipResponse response;
-  // RFC 3261 section 20.19: a missing or malformed Expires is a bad request.
-  const auto expires = parse_expires(get_header(message.headers, "Expires"));
+  // RFC 6665 section 4.1.2.1: without Expires the subscription lasts the default; a malformed one is a bad request.
+  const auto expires = refreshed_expires(message);
   if (!expires) {
     response.status_code = 400;
     return response;
@@ -513,9 +513,15 @@ SipResponse McServer::relay_conference(const SipMessage &message, const std::sha
   SipResponse response;
   response.status_code = 200;
   if (!from_peer || message.method != "NOTIFY" || message.dialog_id != relay->upstream_dialog) {
-    // The client's refresh or removal is answered here.
-    if (message.method == "SUBSCRIBE")
-      response.headers = {{"Expires", std::string(get_header(message.headers, "Expires"))}};
+    // The client's refresh or removal is answered here (RFC 6665 section 4.2.1.1: with the duration it lasts).
+    if (message.method == "SUBSCRIBE") {
+      const auto expires = refreshed_expires(message);
+      if (!expires) {
+        response.status_code = 400;
+        return response;
+      }
+      response.headers = {{"Expires", std::to_string(*expires)}};
+    }
     return response;
   }
   const auto state = std::string(get_header(message.headers, "Subscription-State"));

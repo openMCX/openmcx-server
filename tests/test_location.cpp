@@ -353,6 +353,33 @@ int main() {
       check(!rep.configured() && !rep.poll(90000), "an empty configuration cancels reporting");
     }
     {
+      // TS 24.379 annex F.3.3: an "Update" adds the elements it requests to those requested before (removing one needs
+      // a "Full" configuration), and its minimumIntervalLength applies; the participating function's copy too.
+      Configuration first;
+      first.non_emergency = Requested{};
+      first.non_emergency->coordinate = true;
+      first.non_emergency->minimum_interval = 10;
+      Configuration update;
+      update.full = false;
+      update.non_emergency = Requested{};
+      update.non_emergency->serving_ecgi = true;
+      update.non_emergency->minimum_interval = 5;
+      Reporter rep;
+      rep.configure(first, 0);
+      rep.configure(update, 1000);
+      const auto &held = rep.configuration().non_emergency;
+      check(held && held->coordinate && held->serving_ecgi && held->minimum_interval == 5,
+            "an update adds the requested elements to those requested before");
+      Registry reg;
+      reg.configure("dave", first);
+      const auto stored = reg.configure("dave", update).non_emergency;
+      check(stored && stored->coordinate && stored->serving_ecgi, "the stored configuration keeps them too");
+      Configuration full = update;
+      full.full = true;
+      rep.configure(full, 2000);
+      check(!rep.configuration().non_emergency->coordinate, "a full configuration replaces them");
+    }
+    {
       // TS 24.379 annex F.3.3: adaptive trigger: MinPeriod 5 s, PersistencePeriod 2 s, AdditionalTime 10 s, MinDistance 50 m.
       Reporter rep;
       Configuration adaptive;

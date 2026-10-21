@@ -455,6 +455,31 @@ def main():
         wait(
             'AH-16 re-affiliated user is invited again', lambda: adhoc_active(['client-a', 'client-c', 'client-d']), 20
         )
+        # TS 24.379 clauses 17.2.6.1.1 step 1 and 17.4.5.1.1 step 4: a list change of a call by criteria carries the
+        # session's criteria unchanged; the list is applied.
+        command('client-a', f"adhoc-modify add {ids['client-b']}")
+        wait(
+            'AH-16 a list change carrying the unchanged criteria is accepted: client-b invited',
+            lambda: adhoc_active(['client-a', 'client-b', 'client-c', 'client-d'])
+            and (status('client-a').get('last_modify_result') or {}).get('status') == 200,
+            20,
+        )
+        # TS 24.379 clause 17.4.5.2.1 steps 4a and 5a: the criteria do not remove a user invited by a modification
+        # (client-b, not affiliated to the group) nor invite again one removed by a modification (client-d, still
+        # affiliated).
+        assert holds(lambda: adhoc_active(['client-a', 'client-b', 'client-c', 'client-d']), 5), (
+            'manually invited user removed by the criteria'
+        )
+        checks.append('AH-16 a user invited by a modification stays outside the criteria')
+        command('client-a', f"adhoc-modify remove {ids['client-d']}")
+        wait(
+            'AH-16 modify removes a user meeting the criteria',
+            lambda: adhoc_active(['client-a', 'client-b', 'client-c']),
+        )
+        assert holds(lambda: adhoc_active(['client-a', 'client-b', 'client-c']), 5), (
+            'manually removed user invited again by the criteria'
+        )
+        checks.append('AH-16 a user removed by a modification is not invited again by the criteria')
         command('client-a', 'hangup')
         wait('AH-16 criteria call released', idle)
         on('client-c', first)

@@ -1142,11 +1142,12 @@ void Reporter::configure(const Configuration &configuration, std::uint64_t now) 
     detected_.clear();
     fired_.clear();
   } else {
-    // "Update": the configuration is in addition to the previous one; a trigger
-    // with an existing TriggerId replaces it.
+    // "Update": the configuration is in addition to the previous one (the requested elements are added to those
+    // requested before); a trigger with an existing TriggerId replaces it.
     configuration_.full = true;
-    if (configuration.non_emergency) configuration_.non_emergency = configuration.non_emergency;
-    if (configuration.emergency) configuration_.emergency = configuration.emergency;
+    if (configuration.non_emergency)
+      configuration_.non_emergency = updated(configuration_.non_emergency, *configuration.non_emergency);
+    if (configuration.emergency) configuration_.emergency = updated(configuration_.emergency, *configuration.emergency);
     const auto merge = [&](std::vector<Trigger> &into, const std::vector<Trigger> &from) {
       for (const auto &entry : from) {
         const auto same =
@@ -1347,13 +1348,13 @@ std::optional<Report> Reporter::poll(std::uint64_t now) {
 namespace mcx::location {
 //------------------------------------------------------------------------------
 // TS 24.379 annex F.3.3: a received configuration applied to the stored one: "Full" replaces it, "Update" adds
-// to it (a trigger with an existing TriggerId replaces that one).
+// to it (the requested elements to those requested before; a trigger with an existing TriggerId replaces that one).
 Configuration apply(const Configuration &stored, const Configuration &received) {
   if (received.full) return received;
   Configuration out = stored;
   out.full = true;
-  if (received.non_emergency) out.non_emergency = received.non_emergency;
-  if (received.emergency) out.emergency = received.emergency;
+  if (received.non_emergency) out.non_emergency = updated(out.non_emergency, *received.non_emergency);
+  if (received.emergency) out.emergency = updated(out.emergency, *received.emergency);
   const auto merge = [](std::vector<Trigger> &into, const std::vector<Trigger> &from) {
     for (const auto &entry : from) {
       const auto same =

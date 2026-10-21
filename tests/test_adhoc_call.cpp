@@ -60,8 +60,9 @@ int main() {
   foreign.insert(foreign.find("</list>"), "<external anchor=\"x\"/>");
   rejects([&] { (void)parse_resource_list_targets(foreign); });
   std::string many = "<?xml version=\"1.0\"?><resource-lists xmlns=\"urn:ietf:params:xml:ns:resource-lists\"><list>";
-  for (int index = 0; index < 65; ++index) many += "<entry uri=\"sip:u" + std::to_string(index) + "@mcx.test\"/>";
-  rejects([&] { (void)parse_resource_list_targets(many + "</list></resource-lists>"); });
+  // No count limit: 200 entries are read (the configured maximum of participants is checked by the procedure).
+  for (int index = 0; index < 200; ++index) many += "<entry uri=\"sip:u" + std::to_string(index) + "@mcx.test\"/>";
+  check(parse_resource_list_targets(many + "</list></resource-lists>").size() == 200, "200 resource-list entries");
 
   // TS 24.379 clause 17.4.2.2 steps 4 to 7: allowed (185), supported (186), participants determinable (187),
   // within the participant limit (189); the caller is not an invitee of its own call.

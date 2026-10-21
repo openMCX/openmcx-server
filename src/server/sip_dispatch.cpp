@@ -530,19 +530,26 @@ bool McServer::refresh_document_subscription(const SipMessage &message, SipRespo
         response.status_code = 400;
         return true;
       }
+      // TS 24.481 clause 6.3.13.3.2.2 step d, as at the initial SUBSCRIBE: 403 only when no listed document may be
+      // followed (the subscription is then left as it was); one that may not is left out.
       std::map<std::string, std::string> etags;
+      std::vector<std::string> followed;
       for (const auto &group : groups) {
         if (!(sub.server ? group_exists(group) : subscription_allowed(group, sub.subscriber))) {
           docsub_count("refused");
           event("group_document_subscription_refused", {{"subscriber", sub.subscriber}, {"group", group}});
-          response.status_code = 403;
-          return true;
+          continue;
         }
         const auto kept = sub.etags.find(group);
         etags[group] = kept == sub.etags.end() ? std::string{} : kept->second;
+        followed.push_back(group);
+      }
+      if (etags.empty()) {
+        response.status_code = 403;
+        return true;
       }
       sub.etags = std::move(etags);
-      event("group_document_subscription_changed", {{"subscriber", sub.subscriber}, {"groups", groups}});
+      event("group_document_subscription_changed", {{"subscriber", sub.subscriber}, {"groups", followed}});
     }
     sub.expires = until;
     if (*expires != 0) sub.initial = true;
@@ -644,8 +651,8 @@ void McServer::conference_subscribe(const SipMessage &message, const User &user,
     response.headers = {{"Warning", warning_value(warn(Warning::conference_subscription_not_allowed))}};
     return;
   }
-  // RFC 3261 section 20.19: a missing or malformed Expires is a bad request.
-  const auto expiry = parse_expires(get_header(message.headers, "Expires"));
+  // RFC 6665 section 4.1.2.1: without Expires the subscription lasts the default; a malformed one is a bad request.
+  const auto expiry = refreshed_expires(message);
   if (!expiry) {
     response.status_code = 400;
     return;

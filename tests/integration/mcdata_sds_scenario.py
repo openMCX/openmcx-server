@@ -805,6 +805,17 @@ def main():
             '145',
             'FA-05 ad hoc alias with no activated user rejected with 145',
         )
+        # Step 6A b-ii B: 145 only when no listed alias has an activated user; one that has is enough.
+        text = unique('adhoc-mixed')
+        send(
+            'client-a',
+            f'sds-adhoc {patrol_car},{incident_commander} {text}',
+            label='FA-05 ad hoc SDS to an activated and an unheld alias accepted',
+        )
+        wait(
+            'FA-05 the user behind the activated alias receives it',
+            lambda: inbox('client-c', text) and inbox('client-c', text)[0]['called_functional_alias'] == patrol_car,
+        )
 
         # FA-06 deactivation: an empty set is Expires 0.
         fa('client-c', f'mcdata-fa deactivate {patrol_car}', 200, 'deactivated')

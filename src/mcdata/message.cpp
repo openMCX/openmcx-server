@@ -75,7 +75,7 @@ SipResponse DataServer::message(const SipMessage &sip_request) {
 // notification or FD HTTP TERMINATION goes to its procedure.
 SipResponse DataServer::message_fd(const SipMessage &sip_request, const User &user, const mcdata::Info &info,
                                    const BodyPart &signalling, mcdata::MessageType type) {
-  if (type == mcdata::MessageType::FdNotification) return fd_notification(user, info, signalling);
+  if (type == mcdata::MessageType::FdNotification) return fd_notification(sip_request, user, info, signalling);
   if (type == mcdata::MessageType::FdHttpTermination)
     return fd_termination(user, signalling, reason_text(std::string(get_header(sip_request.headers, "Reason"))));
   if (type != mcdata::MessageType::FdSignalling)

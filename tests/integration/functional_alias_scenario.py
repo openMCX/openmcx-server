@@ -311,6 +311,36 @@ def main():
         command('client-a', 'hangup')
         wait('FA-08 released', idle, 20)
 
+        # FA-08b an alias in a change of the participants (TS 24.379 clause 17.4.5.1.1 step 3a): invited, the users
+        # behind it join, each told the called alias; removed, they leave; an alias nobody holds alone is 403 145.
+        command('client-a', f"adhoc {ids['client-b']}")
+        wait('FA-08b ad hoc call with client-b', lambda: all(
+            status(client).get('call_state') == 'active' for client in ['client-a', 'client-b']), 20)
+        command('client-a', f'adhoc-modify add {patrol_car}')
+        wait(
+            'FA-08b the users behind the added alias join, told the called alias',
+            lambda: all(
+                status(client).get('call_state') == 'active' and status(client).get('called_functional_alias') == patrol_car
+                for client in ['client-c', 'client-d']
+            ),
+            20,
+        )
+        command('client-a', f'adhoc-modify remove {patrol_car}')
+        wait(
+            'FA-08b the users behind the removed alias leave',
+            lambda: all(status(client).get('call_state') == 'idle' for client in ['client-c', 'client-d'])
+            and status('client-b').get('call_state') == 'active',
+            20,
+        )
+        command('client-a', f'adhoc-modify add {incident_commander}')
+        wait(
+            'FA-08b an alias nobody holds, alone in the change: 403 with warning 145',
+            lambda: (status('client-a').get('last_modify_result') or {}).get('status') == 403
+            and '145 ' in (status('client-a').get('last_modify_result') or {}).get('warning', ''),
+        )
+        command('client-a', 'hangup')
+        wait('FA-08b released', idle, 20)
+
         # FA-09 broadcast ad hoc call: receive-only invitees (cause #5, TS 24.380 clause 8.2.6.2),
         # release at transmission end.
         command('client-a', f"adhoc broadcast {ids['client-b']} {ids['client-c']}")

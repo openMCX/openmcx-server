@@ -48,7 +48,9 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   forwarding is manual only.
 - **Broadcast group calls.** Group-broadcast and user-broadcast hierarchies are a project profile, because TS 24.379
   §4.12 defines no procedure for them.
-- **Ad hoc group calls.** End-to-end security is not implemented; the calls are clear (488).
+- **Ad hoc group calls.** End-to-end security is not implemented; the calls are clear (488). The participant lists
+  of an ad hoc group emergency alert (the total list and the users who have not acknowledged it, TS 24.379
+  §6.3.3.1.24) are not sent.
 - **Functional aliases.** Activations do not expire, and the alias-to-alias call policy (warnings 171 and 172) is not
   implemented. On separate participating and controlling servers, a user can follow its own aliases but not the users
   of an alias (TS 24.379 clause 9A.2.2.2.10). The status lists only the aliases being changed, activated or offered for
