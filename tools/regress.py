@@ -142,6 +142,9 @@ LABS = [
     # TS 24.379 clauses 6.3.5.2, 6.3.5.3, 6.3.8.2 and 10.1.1.4.2: group calls refused by the group document and its
     # call policy (warnings 115, 119, 121 and 112).
     lab('group-admission', 'single', ['--admission-groups'], ['group_admission_scenario'], ['mcptt', 'failure']),
+    # TS 24.379 clauses 7.2.1 and 7.3.2: the clients authorise in their REGISTER; the SIP core's third-party REGISTER
+    # takes it to the MCPTT server.
+    lab('register-auth', 'single', ['--register-auth'], ['register_authorisation_scenario'], ['mcptt', 'common']),
     lab(
         'smoke-mcvideo',
         'single',

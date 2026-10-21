@@ -50,6 +50,11 @@ SipResponse McServer::incoming(const SipMessage &message) {
       else service_authorization(message, response);
       return response;
     }
+    // TS 24.379 clause 7.3.2: the SIP core's third-party REGISTER (a REGISTER reaches a server only from the core).
+    if (message.method == "REGISTER" && peer.empty()) {
+      third_party_register(message, response);
+      return response;
+    }
     // BYE outside a relayed call: only the leg's own user may end it.
     if (message.method == "BYE") {
       const auto found = legs_.find(message.dialog_id);
@@ -280,6 +285,53 @@ void McServer::service_authorization(const SipMessage &message, SipResponse &res
     if (profile.empty()) throw std::runtime_error("empty Diameter user profile");
   }
   bind_authorized_user(claims, info, asserted, old, match, unknown_etag, uploaded, uploader, profile, response);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 7.3.2 (TS 24.281 clause 7.3.2): service authorisation from the REGISTER the client sent, which
+// the SIP core includes as a message/sip body in a third-party REGISTER (TS 24.229 clause 5.4.1.7). The REGISTER's
+// application/vnd.3gpp.mcptt-info+xml (access token, client ID; the CSK upload of TS 33.180 clause 9.2.1.3 with
+// it) is authorised as a service authorisation PUBLISH is (steps 3, 4 and 4a; clause 7.3.3). A third-party REGISTER
+// with Expires 0 is a deregistration: the user's binding ends.
+void McServer::third_party_register(const SipMessage &message, SipResponse &response) {
+  // Step 1: the IMS public user identity is the To of the third-party REGISTER.
+  const auto identity = message.to_uri;
+  if (identity.empty()) {
+    response.status_code = 400;
+    return;
+  }
+  const auto expires = std::string(get_header(message.headers, "Expires"));
+  if (expires == "0") {
+    remove_binding(users_.find(identity), "deregistration");
+    response.headers = {{"Expires", "0"}};
+    return;
+  }
+  // The client's REGISTER (RFC 3420): its body parts, without which there is nothing to authorise.
+  std::vector<BodyPart> parts;
+  for (const auto &part : parts_of(message))
+    if (part.content_type == "message/sip") parts = parse_sip_fragment_parts(part.body);
+  const bool has_info =
+      std::any_of(parts.begin(), parts.end(), [&](const auto &part) { return part.content_type == svc_.info_mime; });
+  if (!has_info) {
+    response.headers = {{"Expires", expires.empty() ? "3600" : expires}};
+    return;
+  }
+  SipMessage inner = message;
+  inner.method = "PUBLISH";
+  inner.from_uri = identity;
+  inner.content_type = "multipart/mixed";
+  inner.body.clear();
+  inner.parts = std::move(parts);
+  inner.headers = {{"P-Asserted-Identity", "<" + identity + ">"}};
+  // A re-registration of the same client refreshes the binding without ending its calls (step 4a), as a
+  // publication refresh does.
+  if (const auto found = users_.find(identity); found != users_.end() && !found->second.auth_etag.empty())
+    inner.headers.push_back({"SIP-If-Match", found->second.auth_etag});
+  service_authorization(inner, response);
+  if (response.status_code != 200) return;
+  // A REGISTER has no entity tag (RFC 3903 is for PUBLISH); the expiry is the registration's.
+  response.headers = {{"Expires", expires.empty() ? "3600" : expires}};
+  event("service_authorized_by_register", {{"user", identity}});
 }
 
 //------------------------------------------------------------------------------

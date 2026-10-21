@@ -14,13 +14,15 @@ namespace mcx {
 //------------------------------------------------------------------------------
 // TS 24.282 clause 7.3.3: service authorisation by a SIP PUBLISH for poc-settings (access token checked at the
 // IdM server, CSK upload accepted); a SIP PUBLISH with Expires 0 logs the user off (TS 24.282 clause 7.3.5).
-SipResponse DataServer::authorise(const SipMessage &request) {
+SipResponse DataServer::authorise(const SipMessage &request, bool from_register) {
   SipResponse response;
   const auto asserted = asserted_identity(request);
   if (asserted.empty() || asserted != request.from_uri) return reject(403, "", asserted, "authorisation");
   if (get_header(request.headers, "Expires") == "0") return log_off(request, asserted); // TS 24.282 clause 7.3.5
   const auto *info_part = part(request, mcdata::info_mime);
-  if (!info_part || !part(request, "application/poc-settings+xml"))
+  // The PUBLISH carries poc-settings too (clause 7.2.2); the REGISTER the client sent only the MCData info (clause
+  // 7.3.2).
+  if (!info_part || (!from_register && !part(request, "application/poc-settings+xml")))
     return reject(403, "101 service authorisation failed", asserted, "authorisation");
 
   // TS 24.282 clause 7.2.2 steps 3 and 4 and clause 7.3.3 steps 2 and 3 (clause 7.3.1A), with TS 33.180
@@ -81,6 +83,57 @@ SipResponse DataServer::authorise(const SipMessage &request) {
 
   // TS 24.282 clause 17.2.2: location reporting is configured upon successful service authorisation.
   pending_.push_back([this, id] { location_.configure(id); });
+  return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 7.3.2: service authorisation from the REGISTER the client sent, which the SIP core includes as a
+// message/sip body in a third-party REGISTER (TS 24.229 clause 5.4.1.7); its mcdata-info is authorised as a service
+// authorisation PUBLISH is. The IMS public user identity is the To of the third-party REGISTER (step 1); Expires 0
+// logs the user off (clause 7.3.5).
+SipResponse DataServer::third_party_register(const SipMessage &request) {
+  const auto identity = request.to_uri;
+  const auto expires = std::string(get_header(request.headers, "Expires"));
+  SipResponse response;
+  response.status_code = 200;
+  if (identity.empty()) {
+    response.status_code = 400;
+    return response;
+  }
+  if (expires == "0") {
+    if (const auto found = users_.find(identity); found != users_.end()) {
+      event("mcdata_logged_off", {{"user_id", found->second.id}, {"client_id", found->second.client}});
+      remove_binding(found, "log-off");
+    }
+    response = SipResponse{};
+    response.status_code = 200;
+    response.headers = {{"Expires", "0"}};
+    return response;
+  }
+  std::vector<BodyPart> parts;
+  for (const auto &body : request.parts.empty() && !request.body.empty()
+                              ? parse_body_parts(request.content_type, request.body)
+                              : request.parts)
+    if (body.content_type == "message/sip") parts = parse_sip_fragment_parts(body.body);
+  const bool has_info =
+      std::any_of(parts.begin(), parts.end(), [](const auto &body) { return body.content_type == mcdata::info_mime; });
+  if (!has_info) {
+    response.headers = {{"Expires", expires.empty() ? "3600" : expires}};
+    return response;
+  }
+  SipMessage inner = request;
+  inner.method = "PUBLISH";
+  inner.from_uri = identity;
+  inner.content_type = "multipart/mixed";
+  inner.body.clear();
+  inner.parts = std::move(parts);
+  inner.headers = {{"P-Asserted-Identity", "<" + identity + ">"}, {"Expires", "4294967295"}};
+  if (const auto found = users_.find(identity); found != users_.end() && !found->second.auth_etag.empty())
+    inner.headers.push_back({"SIP-If-Match", found->second.auth_etag});
+  response = authorise(inner, true);
+  if (response.status_code != 200) return response;
+  response.headers = {{"Expires", expires.empty() ? "3600" : expires}};
+  event("mcdata_authorised_by_register", {{"user", identity}});
   return response;
 }
 

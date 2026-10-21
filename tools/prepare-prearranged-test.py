@@ -1823,6 +1823,11 @@ def main():
     )
     parser.add_argument('--mcdata', action='store_true', help='Provision differentiated MCData rulesets and SDS groups')
     parser.add_argument(
+        '--register-auth',
+        action='store_true',
+        help='The four clients authorise in their REGISTER (TS 24.379 clause 7.2.1, a third-party REGISTER to the server)',
+    )
+    parser.add_argument(
         '--admission-groups',
         action='store_true',
         help='Add groups refusing a group call: disabled (115), initiation (119), join (121), required member (112)',
@@ -1982,6 +1987,12 @@ def main():
     add_parallel_group(fixture, source)
     if args.admission_groups:
         add_admission_groups(fixture)
+    if args.register_auth:
+        for role in ['client-a', 'client-b', 'client-c', 'client-d']:
+            path = fixture / f'generated/{role}.json'
+            config = json.loads(path.read_text())
+            config['mcptt']['authorise_by_register'] = True
+            path.write_text(json.dumps(config, indent=2) + '\n')
     server_file = fixture / 'generated/mcptt-server.json'
     server = json.loads(server_file.read_text())
     server['mcptt']['call_policy'] = dict(end_when_initiator_leaves=True, setup_timeout_ms=3000, minimum_participants=2)

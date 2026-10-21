@@ -1496,6 +1496,8 @@ protected:
   // removal of its binding.
   void remove_binding(std::map<std::string, User>::iterator found, const char *reason);
   [[nodiscard]] std::optional<SipResponse> plain_reinvite(const SipMessage &message, const User &user);
+  // TS 24.379 clause 7.3.2: service authorisation by third-party REGISTER.
+  void third_party_register(const SipMessage &message, SipResponse &response);
   // TS 24.379 clause 6.6.2: accept the uploaded CSK and open the protected parts with it.
   bool open_with_uploaded_csk(const SipMessage &message, SipMessage &opened,
                               std::optional<keying::KeyMessage> &uploaded, std::string &uploader,

@@ -433,7 +433,8 @@ class DataServer {
   void redeliver(const std::pair<std::string, std::string> &key, Held &held);
 
   // ---- Service authorisation and affiliation (authorisation.cpp): TS 24.282 clauses 7.3 and 8.3.2 ----
-  SipResponse authorise(const SipMessage &request);
+  SipResponse authorise(const SipMessage &request, bool from_register = false);
+  SipResponse third_party_register(const SipMessage &request);
 
   // authorise: a SIP PUBLISH with Expires 0 logs the user off.
   SipResponse log_off(const SipMessage &request, const std::string &asserted);
