@@ -52,9 +52,12 @@ and checks the capture with `tests/integration/verify_functional_alias.py`.
 |---|---|---|---|
 | `duty-officer.alias` | client-a, client-b | 1 | allowed; only client-b has the user permission |
 | `patrol-car-12.alias` | client-c, client-d | 2 | no |
-| `incident-commander.alias` | client-a | 1 | never activated |
+| `incident-commander.alias` | client-a | 1 | no |
 
 In this fixture client-d is callable (unlike the plain `--private-call` fixture), so both patrol-car-12 users can be reached.
+The group document lists incident-commander in `<forbidden-deaffiliation-FAs>` and duty-officer in
+`<forbidden-deaffiliation-if-last-FAs>` (TS 24.481 §7.2.4.2), and client-a may bind aliases to groups
+(`<allow-functional-alias-binding-with-group>`).
 
 ## Checks
 
@@ -76,6 +79,8 @@ In this fixture client-d is callable (unlike the plain `--private-call` fixture)
 | FA-13 | One of two aliases deactivated by listing the other: it is deactivated, the other stays |
 | FA-14 | A PUBLISH with `Expires: 0` listing one alias (test aid `fa publish`) deactivates both |
 | FA-15 | An alias listed again keeps its place among the alias's activations |
+| FA-16 | Single server only (skipped in the split lab, see LIMITATIONS). §9.2.2.3.3 step 10 a0 i: while client-a holds incident-commander its de-affiliation (`Expires: 0`) is answered 200 but the server keeps it affiliated; once the alias is deactivated the de-affiliation takes effect |
+| FA-17 | Single server only. §9.2.2.3.3 step 10 a0 ii: duty-officer activated but not bound to the group does not hold client-a; bound (`fa bind`, §9A.4.2.1.2, 200), client-a as its last bound user stays affiliated; unbound (§9A.4.2.1.3), the de-affiliation takes effect |
 
 Independent SIP wire checks (`verify_functional_alias.py`): PUBLISH with the presence event and the FA PIDF extension; Expires 4294967295/0; entity, tuple and alias IDs (none in an `Expires: 0` PUBLISH giving every alias up, §9A.3.1.2 item 7); answers 200, or 403 only with warning 201; a status SUBSCRIBE (`<request-type>functional-alias-status-determination`, Expires 4294967295) by every publishing user; a NOTIFY with the `<p-id-fa>` of each accepted PUBLISH; NOTIFYs with `status="activated"` and `status="take-over-possible"`; the take-over element only for an offered alias; `call-to-functional-alias-ind` INVITEs; a 300 naming the selected MCPTT ID and called alias; re-INVITE of that ID without the indicator; 403/145; presentation on terminating INVITEs; and no presentation of a non-activated alias.
 
@@ -85,6 +90,6 @@ Independent SIP wire checks (`verify_functional_alias.py`): PUBLISH with the pre
 |---|---|
 | Status determination | The client follows its own status only (§9A.2.1.3 step 2). With separate participating and owning servers, the participating server refuses a subscription to the users of an alias (§9A.2.2.2.10). On a single server the `activating`/`deactivating` states never show, because the owning decision is immediate. The server owning the alias offers no take-over between servers, so the participating server offers it when the owning server refuses an activation the user could take over. A `take-over-possible` offer stays until the user's next request for that alias. |
 | Location-based activation | §9A.2.1.4 and the manual-deactivation restriction are not implemented. |
-| Group binding | Functional alias to group binding (§9A.4, warning 176) is not implemented. |
+| Group binding | Functional alias to group binding (§9A.4) is exercised only in FA-17: one alias bound to and unbound from one group; the refusals (warning 178, a user without the right) are not run here. |
 | Call-list restrictions | `<ListOfAllowedFAsToCall>` and `<ListOfAllowedFAsToBeCalledFrom>` (warnings 171/172) are not evaluated. |
 | Multiple servers | Covered: the `functional-alias-split` lab runs the same scenario on separate participating and controlling servers. The participating server answers the client and passes each change on to the controlling server, which owns the aliases (per-alias PUBLISH, §9A.2.2.2.6). It follows the outcome by subscription (§9A.2.2.2.7, §9A.2.2.3.4), and the client sees `activating`, then the outcome. |

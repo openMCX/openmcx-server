@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // ------------------------------------------------------------------------------
@@ -70,7 +71,49 @@ type listServiceXML struct {
 	MaxAutoRecvBytes     int                    `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-on-network-max-data-size-auto-recv,omitempty"`
 	OnNetworkTemporary   *temporaryXML          `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-temporary"`
 	OnNetworkRegrouped   []regroupedXML         `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-regrouped"`
+	ForbiddenFAs         *listEntryXML          `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 forbidden-deaffiliation-FAs"`
+	ForbiddenIfLastFAs   *listEntryXML          `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 forbidden-deaffiliation-if-last-FAs"`
 	Configuration        *groupConfigurationXML `xml:"urn:openmcx:ns:groupConfiguration:1.0 configuration"`
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.4.2: a ListEntryType element, one <entry> with a <uri-entry> per URI.
+type listEntryXML struct {
+	Entries []listEntryEntryXML `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 entry"`
+}
+
+type listEntryEntryXML struct {
+	URI string `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 uri-entry"`
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the ListEntryType element of URIs; nil without any.
+func listEntries(uris []string) *listEntryXML {
+	if len(uris) == 0 {
+		return nil
+	}
+	list := &listEntryXML{}
+	for _, uri := range uris {
+		list.Entries = append(list.Entries, listEntryEntryXML{URI: uri})
+	}
+	return list
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the URIs of a ListEntryType element; an empty <uri-entry> is an error.
+func listEntryURIs(list *listEntryXML) ([]string, error) {
+	if list == nil {
+		return nil, nil
+	}
+	var uris []string
+	for _, entry := range list.Entries {
+		uri := strings.TrimSpace(entry.URI)
+		if uri == "" {
+			return nil, errors.New("an <entry> without its <uri-entry>")
+		}
+		uris = append(uris, uri)
+	}
+	return uris, nil
 }
 
 // ------------------------------------------------------------------------------
@@ -313,6 +356,8 @@ func groupDocument(group Group, withList bool) ([]byte, error) {
 	if group.Disabled {
 		ls.Disabled = &struct{}{}
 	}
+	ls.ForbiddenFAs = listEntries(group.ForbiddenDeaffiliationFAs)
+	ls.ForbiddenIfLastFAs = listEntries(group.ForbiddenDeaffiliationIfLastFAs)
 	if withList {
 		list := &groupListXML{Entries: []groupEntryXML{}}
 		receiveOnly := policyIDs(group.PriorityPolicy, "receive_only_users")
@@ -413,6 +458,13 @@ func parseGroupDocument(raw []byte) (Group, error) {
 		}
 	}
 	group.Disabled = ls.Disabled != nil
+	var err error
+	if group.ForbiddenDeaffiliationFAs, err = listEntryURIs(ls.ForbiddenFAs); err != nil {
+		return Group{}, err
+	}
+	if group.ForbiddenDeaffiliationIfLastFAs, err = listEntryURIs(ls.ForbiddenIfLastFAs); err != nil {
+		return Group{}, err
+	}
 	if ls.InviteMembers != nil && !*ls.InviteMembers && group.Type == "" {
 		group.Type = "chat"
 	}

@@ -21,9 +21,11 @@ func TestGroupDocumentRoundTrip(test *testing.T) {
 	group := Group{ID: "sip:ops@mcx.test", Type: "chat", Members: []string{"sip:alice@mcx.test", "sip:erin@other.test"},
 		UserPriorities: map[string]int{"sip:erin@other.test": 3}, ProtectMedia: false, ProtectFloor: true,
 		PreconfiguredUseOnly: true, AllowGettingMemberList: true, SubordinateGroups: []string{"sip:sub@mcx.test"},
-		CallPolicy:        map[string]interface{}{"max_participants": float64(5), "setup_timeout_ms": float64(4000)},
-		PriorityPolicy:    map[string]interface{}{"emergency_users": []interface{}{"sip:alice@mcx.test"}},
-		FloorPriorityCaps: map[string]uint8{"sip:alice@mcx.test": 7},
+		CallPolicy:                      map[string]interface{}{"max_participants": float64(5), "setup_timeout_ms": float64(4000)},
+		PriorityPolicy:                  map[string]interface{}{"emergency_users": []interface{}{"sip:alice@mcx.test"}},
+		FloorPriorityCaps:               map[string]uint8{"sip:alice@mcx.test": 7},
+		ForbiddenDeaffiliationFAs:       []string{"sip:dispatcher.fa@mcx.test"},
+		ForbiddenDeaffiliationIfLastFAs: []string{"sip:commander.fa@mcx.test", "sip:medic.fa@mcx.test"},
 		MCData: &GroupMCData{Members: []string{"sip:alice.data@mcx.test"}, SDSSupported: true, AllowSDS: true,
 			AllowEnhancedStatus: true, EnhancedStatusValues: []EnhancedStatusValue{{ID: "1", Value: "On scene"}}},
 		// The MCVideo server reads the MCVideo members with the group.
@@ -42,18 +44,25 @@ func TestGroupDocumentRoundTrip(test *testing.T) {
 	}
 	for _, want := range []string{`<group xmlns="urn:oma:xml:poc:list-service">`, `<list-service uri="sip:ops@mcx.test">`,
 		`<entry uri="sip:erin@other.test">`, `enabler="urn:urn-7:3gpp-service.ims.icsi.mcptt"`,
-		`enabler="urn:urn-7:3gpp-service.ims.icsi.mcdata"`, `enabler="urn:urn-7:3gpp-service.ims.icsi.mcvideo"`, `<on-network-max-participant-count xmlns="urn:3gpp:ns:mcpttGroupInfo:1.0">5<`} {
+		`enabler="urn:urn-7:3gpp-service.ims.icsi.mcdata"`, `enabler="urn:urn-7:3gpp-service.ims.icsi.mcvideo"`, `<on-network-max-participant-count xmlns="urn:3gpp:ns:mcpttGroupInfo:1.0">5<`,
+		`<forbidden-deaffiliation-FAs xmlns="urn:3gpp:ns:mcpttGroupInfo:1.0"><entry `, `sip:dispatcher.fa@mcx.test</uri-entry>`} {
 		if !strings.Contains(string(raw), want) {
 			test.Fatalf("document lacks %s: %s", want, raw)
 		}
 	}
 	// TS 24.481 clause 6.3.16.3: without <list>.
 	bare, err := groupDocument(group, false)
-	if err != nil || strings.Contains(string(bare), "<list>") || strings.Contains(string(bare), "<entry") {
+	if err != nil || strings.Contains(string(bare), "<list>") || strings.Contains(string(bare), "<entry uri=") {
 		test.Fatalf("document excluding members still lists them: %v %s", err, bare)
 	}
 	if _, err := parseGroupDocument([]byte(`<group xmlns="urn:oma:xml:poc:list-service"><list-service/></group>`)); err == nil {
 		test.Fatal("document without uri accepted")
+	}
+	// TS 24.481 clause 7.2.4.2: an <entry> of <forbidden-deaffiliation-FAs> names its alias in <uri-entry>.
+	empty := `<group xmlns="urn:oma:xml:poc:list-service"><list-service uri="sip:ops@mcx.test"><forbidden-deaffiliation-FAs ` +
+		`xmlns="urn:3gpp:ns:mcpttGroupInfo:1.0"><entry/></forbidden-deaffiliation-FAs></list-service></group>`
+	if _, err := parseGroupDocument([]byte(empty)); err == nil {
+		test.Fatal("forbidden de-affiliation entry without uri-entry accepted")
 	}
 }
 

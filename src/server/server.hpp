@@ -792,6 +792,9 @@ protected:
   // ---- Affiliation (affiliation.cpp): TS 24.379 clause 9.2.2 ----
   void apply_affiliation(User &user, std::set<std::string> groups);
 
+  // TS 24.379 clause 9.2.2.3.3 step 10 a0: of the groups the user leaves, those it may not leave.
+  std::set<std::string> deaffiliation_forbidden(const User &user, const std::set<std::string> &leaving);
+
   void notify(User &user);
 
   // ---- Group calls (group_call.cpp): TS 24.379 clause 10.1 ----

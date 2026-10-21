@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # ------------------------------------------------------------------------------
 def main():
-    """Run the functional alias checks FA-01 to FA-15 and write integration/functional-alias-results.json."""
+    """Run the functional alias checks FA-01 to FA-17 and write integration/functional-alias-results.json."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--compose', type=Path, required=True)
     parser.add_argument('--artifacts', type=Path, required=True)
@@ -444,6 +444,60 @@ def main():
             'FA-15 an alias listed again keeps its activation order',
             lambda: active_aliases().get(patrol_car) == [ids['client-d'], ids['client-c']],
         )
+
+        # FA-16 and FA-17: TS 24.379 clause 9.2.2.3.3 step 10 a0, a de-affiliation refused while the group document
+        # forbids it for an activated alias: incident-commander always (<forbidden-deaffiliation-FAs>), duty-officer
+        # for the last user to have bound it to the group (<forbidden-deaffiliation-if-last-FAs>, clause 9A.4). The
+        # PUBLISH is answered 200 all the same and the user stays affiliated. A single server only: on split servers
+        # the controlling function never sees a per-group de-affiliation (docs/LIMITATIONS.md).
+        split = (generated / 'mcptt-part-1.json').exists()
+        group = configs['client-a']['mcptt']['group_id']
+
+        def server_affiliated(role):
+            return group in ((status('mcptt-server').get('affiliations') or {}).get(ids[role]) or [])
+
+        def deaffiliation_kept(label):
+            command('client-a', 'deaffiliate')
+            time.sleep(2)
+            wait(label, lambda: server_affiliated('client-a'), 5)
+
+        def deaffiliation_done(label):
+            command('client-a', 'deaffiliate')
+            wait(label, lambda: not server_affiliated('client-a'))
+            command('client-a', 'affiliate')
+            wait(f'{label}: affiliated again', lambda: server_affiliated('client-a') and status('client-a').get('affiliated'))
+
+        def binding(action):
+            before = (status('client-a').get('alias_binding_result') or {}).get('request', 0)
+            command('client-a', f'fa {action} {duty_officer} {group}')
+            wait(
+                f'FA-17 the {action} request is answered 200',
+                lambda: (status('client-a').get('alias_binding_result') or {}).get('request', 0) > before
+                and status('client-a')['alias_binding_result'].get('status') == 200,
+            )
+
+        def forbidden_deaffiliation():
+            command('client-a', f'fa activate {incident_commander}')
+            wait('FA-16 incident-commander activated by client-a', lambda: active_aliases().get(incident_commander) == [ids['client-a']])
+            deaffiliation_kept('FA-16 de-affiliation refused while incident-commander is activated: still affiliated')
+            command('client-a', f'fa deactivate {incident_commander}')
+            wait('FA-16 incident-commander deactivated', lambda: incident_commander not in active_aliases())
+            deaffiliation_done('FA-16 without the alias the de-affiliation takes effect')
+
+            command('client-a', f'fa activate {duty_officer}')
+            wait('FA-17 duty-officer activated by client-a', lambda: active_aliases().get(duty_officer) == [ids['client-a']])
+            deaffiliation_done('FA-17 an activated alias not bound to the group does not hold the user')
+            binding('bind')
+            deaffiliation_kept('FA-17 de-affiliation refused for the last user to have bound duty-officer: still affiliated')
+            binding('unbind')
+            deaffiliation_done('FA-17 once unbound the de-affiliation takes effect')
+            command('client-a', f'fa deactivate {duty_officer}')
+            wait('FA-17 duty-officer deactivated', lambda: duty_officer not in active_aliases())
+
+        if split:
+            observations['forbidden_deaffiliation'] = 'skipped: split servers'
+        else:
+            forbidden_deaffiliation()
 
         assert status('mcptt-server')['instance_id'] == instance, 'server restarted during scenario'
         checks.append('server instance unchanged')

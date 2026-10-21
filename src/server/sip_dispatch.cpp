@@ -801,6 +801,12 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
       }
       groups.insert(group);
     }
+  // TS 24.379 clause 9.2.2.3.3 step 10 a0: the controlling function refuses some de-affiliations, and the user stays
+  // affiliated to those groups (the PUBLISH is still answered 200, step 8 of clause 9.2.2.2.3).
+  std::set<std::string> leaving;
+  for (const auto &group : user.groups)
+    if (!groups.contains(group)) leaving.insert(group);
+  groups.merge(deaffiliation_forbidden(user, leaving));
   user.affiliation_etag = removing ? std::string{} : random_id();
   user.handled_pid = affiliation ? affiliation->publication_id : std::string{};
   apply_affiliation(user, std::move(groups));

@@ -476,7 +476,9 @@ def add_broadcast_hierarchy(fixture, source):
 def add_functional_aliases(fixture, source):
     """Functional aliases (TS 24.379 clause 9A) managed by the CMS: "duty-officer" for a
     and b (one activation, take-over allowed, b may take over) and "patrol-car-12" for
-    c and d (two activations); "incident-commander" has users but is never activated."""
+    c and d (two activations); "incident-commander" for a. The group forbids client-a's
+    de-affiliation while it holds incident-commander, or as the last user to have bound
+    duty-officer to it; client-a may bind aliases to groups."""
     site_file = fixture / 'generated/site.json'
     site = json.loads(site_file.read_text())
     ids = {
@@ -494,7 +496,16 @@ def add_functional_aliases(fixture, source):
         dict(id=alias('patrol-car-12'), users=[ids['client-c'], ids['client-d']], max_simultaneous_activations=2),
         dict(id=alias('incident-commander'), users=[ids['client-a']], max_simultaneous_activations=1),
     ]
+    # TS 24.481 clause 7.2.4.2, TS 24.379 clause 9.2.2.3.3 step 10 a0: client-a may not leave the group while it holds
+    # incident-commander, nor while it is the last user to have bound duty-officer to it (FA-16, FA-17).
+    group_id = json.loads((fixture / 'generated/client-a.json').read_text())['mcptt']['group_id']
+    for group in site['groups']:
+        if group['id'] == group_id:
+            group['forbidden_deaffiliation_fas'] = [alias('incident-commander')]
+            group['forbidden_deaffiliation_if_last_fas'] = [alias('duty-officer')]
     for user in site['users']:
+        if user['mcptt_id'] == ids['client-a']:
+            user['functional_alias_binding'] = True
         if user['mcptt_id'] == ids['client-b']:
             user['functional_alias_takeover'] = True
         # Both patrol-car-12 users must be reachable by private calls in this fixture.

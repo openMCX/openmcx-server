@@ -140,6 +140,48 @@ bool McServer::implicitly_affiliate(User &user, const std::string &group, const 
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clause 9.2.2.3.3 step 10 a0: a de-affiliation is refused while the group document lists in
+// <forbidden-deaffiliation-FAs> a functional alias the user has activated, or in <forbidden-deaffiliation-if-last-FAs>
+// one the user has activated and is the last user to have bound to the group (clause 9A.4). It is the controlling
+// function's step, taken here only when this server controls the groups: a participating function of split servers
+// holds neither the bindings nor the decision (the per-user PUBLISH of the split link, docs/LIMITATIONS.md). MCPTT only:
+// TS 24.281 and TS 24.282 have no such step.
+std::set<std::string> McServer::deaffiliation_forbidden(const User &user, const std::set<std::string> &leaving) {
+  std::set<std::string> kept;
+  if (svc_.service != Service::mcptt || !call_controller().empty()) return kept;
+  const auto activated = [&](const std::string &alias) { return functional_alias_active(alias, user.id); };
+  const auto last_bound = [&](const std::string &alias, const std::string &group) {
+    const auto bound = [&](const std::string &id) {
+      const auto user_bindings = alias_bindings_.find(id);
+      if (user_bindings == alias_bindings_.end()) return false;
+      const auto binding = user_bindings->second.find(group);
+      return binding != user_bindings->second.end() && binding->second == alias;
+    };
+    if (!bound(user.id)) return false;
+    for (const auto &[id, bindings] : alias_bindings_)
+      if (id != user.id && bound(id)) return false;
+    return true;
+  };
+  for (const auto &group : leaving) {
+    Json profile;
+    try {
+      profile = group_profile(group);
+    } catch (const std::exception &) { // a group no longer known
+      continue;
+    }
+    std::string alias;
+    for (const auto &entry : profile.value("forbidden_deaffiliation_fas", std::vector<std::string>{}))
+      if (alias.empty() && activated(entry)) alias = entry;
+    for (const auto &entry : profile.value("forbidden_deaffiliation_if_last_fas", std::vector<std::string>{}))
+      if (alias.empty() && activated(entry) && last_bound(entry, group)) alias = entry;
+    if (alias.empty()) continue;
+    kept.insert(group);
+    event("deaffiliation_refused", {{"user_id", user.id}, {"group_id", group}, {"alias", alias}});
+  }
+  return kept;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.379 clause 9.2.2.2.3: new group affiliations of a user: late entry to ongoing calls, current
 // priority state, and release from calls of groups no longer affiliated.
 void McServer::apply_affiliation(User &user, std::set<std::string> groups) {

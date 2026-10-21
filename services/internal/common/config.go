@@ -375,6 +375,11 @@ type Group struct {
 	Disabled       bool           `json:"disabled,omitempty"`
 	UserPriorities map[string]int `json:"user_priorities,omitempty"`
 	Members        []string       `json:"members"`
+	// <forbidden-deaffiliation-FAs> and <forbidden-deaffiliation-if-last-FAs> (TS 24.481 clause 7.2.4.2): functional
+	// aliases whose users may not de-affiliate, always or as the last user to have bound the alias to the group
+	// (TS 24.379 clause 9.2.2.3.3 step 10 a0).
+	ForbiddenDeaffiliationFAs       []string `json:"forbidden_deaffiliation_fas,omitempty"`
+	ForbiddenDeaffiliationIfLastFAs []string `json:"forbidden_deaffiliation_if_last_fas,omitempty"`
 	// <on-network-allow-getting-member-list> for members (TS 24.481 clause 7.2.12);
 	// without it a member reads only its own <entry>.
 	AllowGettingMemberList bool                   `json:"allow_getting_member_list,omitempty"`

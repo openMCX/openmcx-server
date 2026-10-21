@@ -32,9 +32,10 @@ func TestSchemasCompile(test *testing.T) {
 func TestGeneratedGroupDocumentsConform(test *testing.T) {
 	group := Group{ID: "sip:g@x", Members: []string{"sip:a@x", "sip:b@x"}, UserPriorities: map[string]int{"sip:b@x": 7},
 		AllowGettingMemberList: true, PreconfiguredUseOnly: true, ProtectMedia: true,
-		CallPolicy:            map[string]interface{}{"max_participants": float64(4)},
-		TemporaryConstituents: []string{"sip:c1@x"},
-		RegroupedBy:           &TemporaryRegroup{TGI: "sip:t@x", Requestor: "sip:a@x", Constituents: []string{"sip:g@x"}},
+		CallPolicy:                map[string]interface{}{"max_participants": float64(4)},
+		TemporaryConstituents:     []string{"sip:c1@x"},
+		RegroupedBy:               &TemporaryRegroup{TGI: "sip:t@x", Requestor: "sip:a@x", Constituents: []string{"sip:g@x"}},
+		ForbiddenDeaffiliationFAs: []string{"sip:f1@x"}, ForbiddenDeaffiliationIfLastFAs: []string{"sip:f2@x", "sip:f3@x"},
 		MCData: &GroupMCData{Members: []string{"sip:a.data@x"}, AllowEnhancedStatus: true,
 			EnhancedStatusValues: []EnhancedStatusValue{{ID: "1", Value: "busy"}}}}
 	for _, withList := range []bool{true, false} {
