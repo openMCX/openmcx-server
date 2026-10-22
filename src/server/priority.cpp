@@ -295,9 +295,9 @@ McServer::EmergencyChange McServer::emergency_change(const McpttInfo &info, bool
 }
 
 //------------------------------------------------------------------------------
-// Only the initiator of a broadcast group call may make it an emergency or
-// imminent-peril call or cancel that state (project policy; receivers cannot
-// transmit, TS 24.380 clause 6.3.5.3.4).
+// TS 24.379 clause 6.3.3.1.13.4: by local policy ("e.g if the requester is ... the initiator"), only the initiator of
+// a broadcast group call cancels its emergency state. An authorised receiver may raise emergency or imminent peril
+// and cancel imminent peril as in any group call (clause 10.1.1.4.7 steps 3 to 6, clause 6.3.3.1.13.6).
 SipResponse &McServer::broadcast_priority_refused(SipResponse &response) {
   response.status_code = 403;
   response.headers = {{"Warning", warning_value(warn(Warning::function_not_allowed,

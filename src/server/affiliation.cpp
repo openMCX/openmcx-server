@@ -22,10 +22,21 @@ unsigned McServer::affiliation_limit(const std::string &id) {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 9.2.2.2.12 step 10: an implicit affiliation beyond N2 is refused. Local policy
-// (TS 24.379 clause 10.1.2.3.1.1 NOTE 5, the chat procedure) exempts emergency and imminent peril.
+// TS 24.379 clause 9.2.2.2.12 step 10: an implicit affiliation beyond N2 is refused. Local policy (TS 24.379 clauses
+// 10.1.1.3.1.1 and 10.1.2.3.1.1 NOTE 5) exempts only an authorised request for originating a priority call as
+// clause 6.3.2.1.8.1 determines it: the user profile's <allow-emergency-group-call> (<allow-imminent-peril-call>),
+// with its <MCPTTGroupInitiation> entry naming this group or the currently selected group.
 bool McServer::affiliation_limit_reached(const User &user, const McpttInfo &info) {
-  if (info.emergency == true || info.imminent_peril == true) return false;
+  if (info.emergency == true || info.imminent_peril == true) {
+    const bool emergency = info.emergency == true;
+    try {
+      const auto rights = user_profile(user.id).value("group_call", Json::object());
+      const auto dedicated = rights.value(emergency ? "emergency_group" : "imminent_group", std::string());
+      if (rights.value(emergency ? "emergency" : "imminent", false) &&
+          (dedicated.empty() || dedicated == info.request_uri))
+        return false;
+    } catch (const std::exception &) {}
+  }
   const auto limit = affiliation_limit(user.id);
   return limit && user.groups.size() >= limit;
 }

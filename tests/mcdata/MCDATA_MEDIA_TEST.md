@@ -99,6 +99,7 @@ The scenario (`mcdata_media_scenario.py`) makes 128 assertions and its wire veri
 | MP-22 | Ad hoc group SDS session: participants determined from criteria, the session offered and answered `a=sendrecv` at every participant, all of them holding the same ad hoc group, a message and its in-band DELIVERED notifications, a message from another participant reaching everyone else, the emergency upgrade refused by the client (not implemented), and closing the session releases every leg | Same report |
 | MP-23 | File distribution to an ad hoc group over the media plane (`adhoc-group-fd-session`): both participants receive the file with its hash verified and the ad hoc group, and the sending leg is released once it has been relayed | Same report |
 | MP-24 | Ad hoc rejections: 238 without `<allow-adhoc-group-data-comn>`, 242 above `<max-no-participants>`, 241 when no listed user may participate, and 240 for criteria that determine nobody and for an unknown ad hoc group | Same report |
+| MP-25 | Application priority (§9.2.3.4.3 step c): a standalone SDS with `<user-requested-priority>` 4 reaches the recipient in an INVITE whose `<used-priority>` is 4; without a requested priority the recipient's INVITE has none (MP-01) | Same report |
 
 ## High-level call flow (standalone SDS over the media plane)
 

@@ -257,15 +257,23 @@ def main():
             and observations['c_from_b']['equal'] == observations['c_from_b']['compared'],
             observations['c_from_b'],
         )
+        # MV-AH-02 TS 24.281 clause 6.3.8.1: the initiator leaving ends only a pre-arranged group call (item 3), and
+        # a group call with one participant left is released (item 2).
         command('client-a', 'mcvideo-hangup')
-        wait('MV-AH-02 the originator leaving ends the call for all', lambda: idle(*ROLES), 30)
+        wait('MV-AH-02 the originator leaves', lambda: idle('client-a'), 30)
+        time.sleep(2)
+        check('MV-AH-02 the call goes on for the others without its initiator', in_adhoc(['client-b', 'client-c']))
+        command('client-b', 'mcvideo-hangup')
+        wait('MV-AH-02 with one participant left, the call is released', lambda: idle(*ROLES), 30)
 
         # MV-AH-03 TS 24.281 clause 22.2.2.1.1 step 12 and clause 22.4.6.1: participants by criteria. Everyone
         # affiliated to the MCVideo group is invited.
         command('client-a', f'mcvideo-adhoc criteria affiliated:{group}')
         wait('MV-AH-03 the criteria call invites every user affiliated to the group', lambda: in_adhoc(ROLES))
-        command('client-a', 'mcvideo-hangup')
-        wait('MV-AH-03 the call ended', lambda: idle(*ROLES), 30)
+        for role in ('client-a', 'client-b', 'client-c'):
+            command(role, 'mcvideo-hangup')
+            wait(f'MV-AH-03 {role} leaves', lambda role=role: idle(role), 30)
+        wait('MV-AH-03 the call ended with one participant left', lambda: idle(*ROLES), 30)
 
         # MV-AH-04 TS 24.281 clause 22.3.2.1.1: client-d may not make ad hoc group calls (warning 185).
         refused(

@@ -168,6 +168,17 @@ def main():
             lambda: counters().get('media_sds', 0) >= 1 and counters().get('media_delivered', 0) > before,
         )
         check('MP-01 no signalling plane SDS was used', not (status('client-b').get('mcdata_inbox') or []))
+        check(
+            'MP-01 without a requested priority the recipient\'s INVITE has no <used-priority>',
+            media('client-b').get('used_priority') is None,
+        )
+
+        # MP-25 TS 24.282 clause 9.2.3.4.3 step c: the controlling function puts the <user-requested-priority> of
+        # the originator's INVITE into the recipient's INVITE as <used-priority>.
+        text = f'media-priority-{secrets.token_hex(4)}'
+        command('client-a', f'sds-media priority=4 {ids["client-b"]} {text}')
+        wait('MP-25 the recipient receives the prioritised SDS', lambda: bool(received('client-b', text)))
+        check('MP-25 the recipient\'s INVITE carries <used-priority> 4', media('client-b').get('used_priority') == 4)
 
         # MP-02 the media plane applies the same transmission control as TS 24.282 clause 11.1.
         send(

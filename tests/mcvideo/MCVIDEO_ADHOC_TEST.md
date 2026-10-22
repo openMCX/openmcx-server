@@ -12,7 +12,8 @@ Back to the [MCVideo test index](../MCVIDEO_TEST.md). Acceptance: [MCVideo stand
   - The client sends INVITE to the MCVideo PSI with `session-type` adhoc. It names the users in a resource-lists body, or the criteria in `<call-participants-criteria>`.
   - `mcvideo-server` invites them, and returns the ad hoc group identity it assigned in `<mcvideo-calling-group-id>` of the 200 (OK) (2xx step 4).
   - The invited clients see the same identity.
-- **Transmission control** is the group call's, one transmitter at a time. With `end_when_initiator_leaves`, the originator leaving ends the call.
+- **Transmission control** is the group call's, one transmitter at a time.
+- **Release** (§6.3.8.1): the call is released when one or no participant is left (item 2) or TNG3 expires (item 5). The initiator leaving does not end it (item 3 is for pre-arranged group calls), unlike an MCPTT ad hoc group call (TS 24.379 §6.3.8.1 item 3, local policy).
 - **Ad hoc group emergency alert.** The shared core's ad hoc alert (TS 24.379 12.1A, which TS 24.281 12.1A follows). A cancellation is confirmed to the originator by a receipt with `<adhoc-alert-ind>` false and `<adhoc-alert-ind-rcvd>` true (§12.1A.3.2 step 4 g)).
 - **Configuration.**
   - `mcvideo-server` has `mcvideo.adhoc_call` (enabled, 3 participants besides the originator, timers).
@@ -41,7 +42,7 @@ The scenario makes 28 checks. Over TLS the wire checks (MV-AH-05) are skipped.
 | ID | What is checked |
 |---|---|
 | MV-AH-01 | client-a calls client-b and client-c. All three share one ad hoc group identity, assigned by the server and different from the preconfigured group; client-d is not invited. client-a transmits, and client-b and client-c decode its pictures, all equal. Then client-b transmits and client-c decodes it, all pictures equal |
-| MV-AH-02 | The originator leaves and the call ends for all |
+| MV-AH-02 | The originator leaves and the call goes on for the others (TS 24.281 §6.3.8.1 item 3 is for pre-arranged calls only); when one participant is left, the call is released (item 2) |
 | MV-AH-03 | Criteria `affiliated:<MCVideo group>`: every affiliated user is invited, and all four are in one ad hoc call |
 | MV-AH-04 | client-d is refused with 403 `185 user not authorised to initiate the adhoc group call` |
 | MV-AH-05 | Captured at `mcvideo-server`: ad hoc INVITEs to the MCVideo PSI; the called MCVideo IDs in resource-lists; the criteria in `<call-participants-criteria>`; the 200 (OK) naming the ad hoc group in `<mcvideo-calling-group-id>` |

@@ -12,14 +12,18 @@
 namespace mcx {
 
 //------------------------------------------------------------------------------
-// Helper: the session policy of an ad hoc group call: at least two participants, no floor protection,
-// released when the initiator leaves unless configured otherwise (local policy of TS 24.379 clause 6.3.8.1
-// step 3), no required members.
+// Helper: the session policy of an ad hoc group call: at least two participants, no floor protection, no
+// required members. An MCPTT ad hoc group call is released when the initiator leaves unless configured otherwise
+// (local policy of TS 24.379 clause 6.3.8.1 item 3); TS 24.281 clause 6.3.8.1 item 3 limits that to a pre-arranged
+// MCVideo group call, so an MCVideo ad hoc group call goes on without its initiator.
 Json McServer::adhoc_call_policy() const {
   auto policy = cfg_.at(svc_.name).value("adhoc_call", Json::object());
   policy["minimum_participants"] = 2;
   policy["protect_floor"] = false;
-  if (!policy.contains("end_when_initiator_leaves")) policy["end_when_initiator_leaves"] = true;
+  if (svc_.service == Service::mcvideo)
+    policy["end_when_initiator_leaves"] = false;
+  else if (!policy.contains("end_when_initiator_leaves"))
+    policy["end_when_initiator_leaves"] = true;
   policy.erase("required_members");
   return policy;
 }

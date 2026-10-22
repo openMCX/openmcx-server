@@ -96,18 +96,24 @@ def main():
             raise AssertionError(f'{phase_name}: ' + ', '.join(failed or [probes.get('error', 'unknown')]))
 
     # ------------------------------------------------------------------------------
-    def removed(service, event_name, user):
-        """Whether the service's log has the end of the user's binding at the end of its service authorisation."""
+    def events(service, event_name, user, reason=None):
+        """How many times the service's log has the event for the user (with the reason, if given)."""
         logs = subprocess.run(cli + ['logs', '--no-log-prefix', service], capture_output=True, text=True).stdout
+        count = 0
         for line in logs.splitlines():
             try:
                 entry = json.loads(line)
             except ValueError:
                 continue
             if (entry.get('event') == event_name and entry.get('user_id') == user
-                    and entry.get('reason') == 'service authorisation ended'):
-                return True
-        return False
+                    and (reason is None or entry.get('reason') == reason)):
+                count += 1
+        return count
+
+    # ------------------------------------------------------------------------------
+    def removed(service, event_name, user):
+        """Whether the service's log has the end of the user's binding at the end of its service authorisation."""
+        return events(service, event_name, user, 'service authorisation ended') > 0
 
     try:
         wait('client-a is authorised', lambda: authorised_after(0), 90)
@@ -131,10 +137,16 @@ def main():
 
         # 3. A phone that dies.
         restarted = time.time()
+        authorised = {'mcptt-server': ('service_authorized', config['mcptt']['user_id'])}
+        if mcdata:
+            authorised['mcdata-server'] = ('mcdata_service_authorised', config['mcdata']['user_id'])
+        before = {service: events(service, *event) for service, event in authorised.items()}
         subprocess.run(cli + ['restart', 'client-a'], check=True, capture_output=True, timeout=60)
-        # Authorised for each of its services before it dies, so that each server has a binding to end.
+        # Authorised for each of its services before it dies, so that each server has a binding to end. The servers'
+        # logs tell, not the status file, which the client stopped by the restart may write last.
         wait('client-a, restarted, is authorised',
-             lambda: authorised_after(restarted) and (not mcdata or status().get('mcdata_authorized')), 90)
+             lambda: authorised_after(restarted)
+             and all(events(service, *event) > before[service] for service, event in authorised.items()), 90)
         subprocess.run(cli + ['kill', 'client-a'], check=True, capture_output=True, timeout=60)
         wait('the MCPTT server removes client-a\'s binding when its service authorisation ends',
              lambda: removed('mcptt-server', 'service_binding_removed', config['mcptt']['user_id']), 240)

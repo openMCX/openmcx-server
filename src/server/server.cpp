@@ -132,8 +132,10 @@ void McServer::release_departed_leg(const std::shared_ptr<Leg> &leg, const std::
   notify_conference(session, session->dialogs.empty());
   if (session->dialogs.empty()) {
     sessions_.erase(session->group);
-  } else if (session->established && session->dialogs.size() == 1 && !session->adhoc) {
-    // TS 24.379 clause 6.3.8.1 item 2 (one participant left) does not list ad hoc group calls.
+  } else if (session->established && session->dialogs.size() == 1 &&
+             (!session->adhoc || svc_.service == Service::mcvideo)) {
+    // TS 24.379 clause 6.3.8.1 item 2 (one participant left) does not list MCPTT ad hoc group calls; TS 24.281
+    // clause 6.3.8.1 item 2 applies to every MCVideo group call.
     sip_.bye(*session->dialogs.begin());
   } else
     complete_setup(session);

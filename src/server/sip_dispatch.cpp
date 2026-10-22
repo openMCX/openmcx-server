@@ -1161,8 +1161,8 @@ void McServer::group_invite(const SipMessage &message, User &user, McpttInfo &in
   if (updating != legs_.end())
     return priority_reinvite(message, user, info, session, profile, updating->second, correction, response);
 
-  // Receivers of a broadcast group call cannot change its priority.
-  if (session && session->broadcast && user.id != session->initiator && (info.emergency || info.imminent_peril)) {
+  // Clause 6.3.3.1.13.4, local policy: a receiver of a broadcast group call does not cancel its emergency state.
+  if (session && session->broadcast && user.id != session->initiator && info.emergency == false) {
     broadcast_priority_refused(response);
     return;
   }
@@ -1382,7 +1382,8 @@ void McServer::priority_reinvite(const SipMessage &message, const User &user, Mc
     response.status_code = 403;
     return;
   }
-  if (session->broadcast && user.id != session->initiator) {
+  // Clause 6.3.3.1.13.4, local policy: a receiver of a broadcast group call does not cancel its emergency state.
+  if (session->broadcast && user.id != session->initiator && info.emergency == false) {
     broadcast_priority_refused(response);
     return;
   }

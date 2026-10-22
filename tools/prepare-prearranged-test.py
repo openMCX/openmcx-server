@@ -59,7 +59,9 @@ def add_admission_groups(fixture):
     """Four prearranged groups of the four clients, each refusing a group call for one reason (TS 24.379 clauses
     6.3.5.2 step 5a, 10.1.1.4.2 and 6.3.8.2): <on-network-disabled> (warning 115), initiation by client-b only (119),
     joining by client-b and client-c only (121) and client-d a required affiliated member (480, 112). Every client may
-    select them.
+    select them. A chat group, and <MaxAffiliationsN2> 1 for client-c and client-d, for the N2 limit of an implicit
+    affiliation (TS 24.379 clause 10.1.2.3.1.1 step 7 and NOTE 5): client-c may make emergency calls on it, client-d
+    may not.
     """
     site_file = fixture / 'generated/site.json'
     site = json.loads(site_file.read_text())
@@ -75,16 +77,31 @@ def add_admission_groups(fixture):
         'required': dict(call_policy=dict(required_affiliated_members=[ids['client-d']])),
     }
     names = [base.replace('@', f'-{kind}@') for kind in groups]
-    site['groups'] = [group for group in site['groups'] if group['id'] not in names]
+    chat = base.replace('@', '-n2chat@')
+    resources = dict(normal='mcpttp.0', imminent='mcpttp.10', emergency='mcpttp.15')
+    site['groups'] = [group for group in site['groups'] if group['id'] not in names + [chat]]
     for name, extra in zip(names, groups.values()):
         site['groups'].append(dict(id=name, members=members, protect_media=False, protect_floor=False, **extra))
+    priority = dict(
+        emergency_users=[ids['client-c']],
+        emergency_cancel_users=[ids['client-c']],
+        resource_priority=resources,
+        emergency_timeout_ms=300000,
+    )
+    site['groups'].append(
+        dict(id=chat, type='chat', members=members, protect_media=False, protect_floor=False, priority_policy=priority)
+    )
+    names.append(chat)
     for user in site['users']:
         if user['mcptt_id'] in members:
             user['groups'] += [name for name in names if name not in user['groups']]
+        if user['mcptt_id'] in (ids['client-c'], ids['client-d']):
+            user['max_affiliations'] = 1
     site_file.write_text(json.dumps(site, indent=2) + '\n')
     for role, config in configs.items():
         allowed = config['mcptt'].get('allowed_groups', [config['mcptt']['group_id']])
         config['mcptt']['allowed_groups'] = allowed + [name for name in names if name not in allowed]
+        config['mcptt'].setdefault('resource_priority', resources)
         (fixture / f'generated/{role}.json').write_text(json.dumps(config, indent=2) + '\n')
 
 

@@ -156,8 +156,14 @@ def main():
             for message in invites
         ),
     )
+    # The server's answers to the initiator carry mcptt-info; the initiator's own 200 to a re-INVITE of the server
+    # (a receiver's priority change, clause 10.1.1.4.7) in the same dialog does not (TS 24.379 clauses 6.2.3.1.1
+    # step 7a and 6.2.3.2.1).
     accepted = [
-        response for message in originating for response in finals[message['call_id']] if response['status'] == 200
+        response
+        for message in originating
+        for response in finals[message['call_id']]
+        if response['status'] == 200 and response['info']
     ]
     check(
         '200 OK to the initiator confirms broadcast-ind true',
@@ -181,7 +187,7 @@ def main():
         any(message['info'].get('emergency-ind') == 'true' for message in terminating),
     )
     check(
-        "a receiver's in-dialog priority change in a broadcast is rejected with 403",
+        "a receiver's in-dialog emergency cancellation in a broadcast is rejected with 403",
         any(
             response['status'] == 403 and 'broadcast group call receiver' in header(response, 'warning')
             for rs in finals.values()

@@ -14,7 +14,10 @@ reason. The scenario checks that the controlling function refuses
   - GA-03 a member the policy does not allow to join an ongoing call with 403 and warning "121 user is not authorised
     to join the group call" (clause 6.3.5.3), while the members it allows are in the call;
   - GA-04 a call while a required member is not affiliated with 480 (Temporarily Unavailable) and warning "112 group
-    call abandoned due to required group members not part of the group session" (clause 6.3.8.2).
+    call abandoned due to required group members not part of the group session" (clause 6.3.8.2);
+  - GA-05 a chat join that needs an implicit affiliation beyond the user's N2 limit with 486 (Busy Here) and warning
+    "102 too many simultaneous affiliations" (clause 10.1.2.3.1.1 step 7), also for an emergency request the user is
+    not authorised for; an authorised emergency request is spared by local policy (NOTE 5, clause 6.3.2.1.8.1).
 
 Specifications: TS 24.379 V19.7.0 (Rel-19).
 """
@@ -148,6 +151,42 @@ def main():
             '112 group call abandoned due to required group members not part of the group session',
         )
         select(['client-a', 'client-b', 'client-c'], base)
+
+        # GA-05: client-c and client-d are affiliated to their group, which is their N2 limit of 1; joining the chat
+        # group needs an implicit affiliation.
+        chat = base.replace('@', '-n2chat@')
+
+        def outcomes(role):
+            """How many refused chat joins the role's client has logged."""
+            run = subprocess.run(
+                cli + ['logs', '--no-color', '--no-log-prefix', role], capture_output=True, text=True, timeout=30
+            )
+            return run.stdout.count('"reason":"chat join: ')
+
+        def join(label, role, text, code, warning=''):
+            # Two refusals in a row leave the same last_call_failure, so a refusal is told apart by the count.
+            before = outcomes(role)
+            command(role, f'chat-join {text}')
+            wait(
+                label,
+                lambda: (
+                    (code < 300 or outcomes(role) > before)
+                    and (failure := status(role).get('last_call_failure') or {}).get('status') == code
+                    and warning in failure.get('warning', '')
+                ),
+            )
+            wait(f'{label}: client back to idle', lambda: status(role).get('call_state') == 'idle')
+            observations[label.split(' ', 2)[1]] = status(role).get('last_call_failure')
+
+        join('GA-05 d a chat join beyond N2: 486 with warning 102', 'client-d', chat, 486, '102 too many simultaneous')
+        join(
+            'GA-05 e an unauthorised emergency chat join beyond N2: 486 with warning 102',
+            'client-d',
+            f'{chat} emergency',
+            486,
+            '102 too many simultaneous',
+        )
+        join('GA-05 c an authorised emergency chat join beyond N2 is accepted', 'client-c', f'{chat} emergency', 200)
         result['passed'] = True
     except Exception as error:  # noqa: BLE001 - the result records any failure
         result['error'] = str(error)

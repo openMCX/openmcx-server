@@ -228,6 +228,8 @@ class DataServer {
     bool originating = false;            // the leg from the sender
     std::vector<std::string> recipients; // the affiliated members of a group request
     std::uint64_t max_bytes = 0;         // the group's SDS size limit, checked on arrival
+    // The originator's <user-requested-priority>.
+    std::optional<unsigned> requested_priority;
     // An SDS session (TS 24.282 clause 9.2.4) stays open: every leg of one session shares this key,
     // and each MSRP SEND is relayed to the other legs (TS 24.582 clause 6.3.2.3).
     std::string key;
@@ -595,6 +597,8 @@ class DataServer {
     std::uint64_t file_bytes = 0;
     bool corrected = false, alert = false, alert_refused = false;
     std::string alert_location;
+    // TS 24.282 clauses 9.2.3.4.3 step c and 9.2.4.4.3 step d: the <user-requested-priority> of the request.
+    std::optional<unsigned> requested_priority;
   };
 
   // media_invite: the kind of communication requested, or its refusal.
@@ -739,7 +743,7 @@ class DataServer {
                             const std::string &level = "normal", const FileOffer *file = nullptr,
                             const std::string &alert_location = {}, bool alert = false,
                             const std::string &called_alias = {}, bool session = false,
-                            SipResponseHandler answered = {});
+                            SipResponseHandler answered = {}, std::optional<unsigned> used_priority = std::nullopt);
 
   // ---- Release of communications over the media plane (release.cpp): TS 24.282 clause 13.2 ----
   //------------------------------------------------------------------------------

@@ -227,6 +227,7 @@ SipResponse DataServer::media_invite(const SipMessage &request) {
   if (info.request_type == "one-to-one-ipconn") return ipcon_invite(request, user, info, *sdp, resources);
   MediaInvite invite;
   if (auto refused = media_invite_kind(user, info, *sdp, invite)) return *refused;
+  invite.requested_priority = info.user_requested_priority;
 
   // TS 24.282 clause 9.2.4.4.4 step 3A with clause 6.3.7.1.9: the combination of priority indications.
   if (!valid_priority_combination(info))
@@ -576,6 +577,7 @@ std::shared_ptr<DataServer::MediaSession> DataServer::media_invite_leg(const Sip
   leg->target = invite.target;
   leg->group = invite.group;
   leg->recipients = invite.recipients;
+  leg->requested_priority = invite.requested_priority;
   leg->max_bytes = invite.group_limit;
   leg->originating = true;
   leg->adhoc = invite.adhoc;
@@ -607,12 +609,14 @@ void DataServer::media_invite_recipients(const User &user, const MediaInvite &in
   const auto offered = invite.file_request ? std::make_shared<FileOffer>(invite.file_offer) : nullptr;
   const auto &alert_location = invite.alert_location;
   const bool alert = invite.alert;
+  const auto priority = invite.requested_priority;
   for (const auto &recipient : invite.recipients) {
     const auto alias = invite.called_aliases.contains(recipient) ? invite.called_aliases.at(recipient) : std::string{};
-    pending_.push_back([this, originator, recipient, session_group, key, level, offered, alert_location, alert, alias] {
-      media_deliver(originator, recipient, session_group, {}, {}, key, level, offered.get(), alert_location, alert,
-                    alias);
-    });
+    pending_.push_back(
+        [this, originator, recipient, session_group, key, level, offered, alert_location, alert, alias, priority] {
+          media_deliver(originator, recipient, session_group, {}, {}, key, level, offered.get(), alert_location, alert,
+                        alias, false, {}, priority);
+        });
   }
 }
 

@@ -318,6 +318,17 @@ def main():
             lambda: broadcast_priority('emergency'),
             20,
         )
+        # TS 24.379 clause 6.3.3.1.13.4, local policy: only the initiator cancels a broadcast's emergency state.
+        command('client-b', 'emergency off')
+        wait(
+            'BC-18 a receiver\'s emergency cancellation is refused with 403',
+            lambda: (
+                status('client-b').get('last_error') == 'priority update: 403'
+                and not status('client-b').get('priority_pending')
+            ),
+        )
+        assert broadcast_priority('emergency'), 'refused cancellation changed the call'
+        checks.append('BC-18 the refused cancellation leaves the broadcast in emergency')
         base = {client: status(client).get('received_packets', 0) for client in receivers}
         command('client-a', 'ptt /artifacts/speech/alpha.wav')
         wait(
@@ -342,23 +353,24 @@ def main():
         command('client-a', 'emergency off')
         wait('BC-18 initiator cancels the group emergency state', lambda: group_priority('normal'), 15)
 
-        # BC-19 in-dialog imminent peril upgrade: refused for a receiver, allowed
-        # for the initiator; the Floor Indicator then carries B and E.
+        # BC-19 in-dialog imminent peril upgrade (TS 24.379 clause 10.1.1.4.7 steps 4 and 6): refused for a receiver
+        # not authorised for imminent peril (client-d), accepted for an authorised receiver (client-b), as in any
+        # group call; the Floor Indicator then carries B and E.
         command('client-a', 'call broadcast')
         wait('BC-19 normal broadcast active', lambda: broadcast_priority('normal'), 20)
-        command('client-b', 'imminent on')
+        command('client-d', 'imminent on')
         wait(
-            'BC-19 receiver priority upgrade refused with 403',
+            'BC-19 an unauthorised receiver\'s upgrade is refused with 403',
             lambda: (
-                status('client-b').get('last_error') == 'priority update: 403'
-                and not status('client-b').get('priority_pending')
+                status('client-d').get('last_error') == 'priority update: 403'
+                and not status('client-d').get('priority_pending')
             ),
         )
         assert broadcast_priority('normal'), 'refused upgrade changed the call'
-        checks.append('BC-19 refused upgrade leaves the broadcast normal')
-        command('client-a', 'imminent on')
+        checks.append('BC-19 the refused upgrade leaves the broadcast normal')
+        command('client-b', 'imminent on')
         wait(
-            'BC-19 initiator upgrades the broadcast to imminent peril for every member',
+            'BC-19 an authorised receiver upgrades the broadcast to imminent peril for every member',
             lambda: broadcast_priority('imminent'),
             15,
         )

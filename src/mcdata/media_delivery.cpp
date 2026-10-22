@@ -131,10 +131,12 @@ void DataServer::media_received(const std::shared_ptr<MediaSession> &session, co
   std::vector<std::pair<std::string, std::string>> forward;
   for (const auto &[type, body] : bodies) forward.emplace_back(type, body);
   const auto originator = session->originator, group = session->group, message_id = session->message_id;
+  const auto priority = session->requested_priority;
   for (const auto &recipient : session->recipients) {
     const auto alias = session->aliases.contains(recipient) ? session->aliases.at(recipient) : std::string{};
-    pending_.push_back([this, originator, recipient, group, message_id, forward, alias] {
-      media_deliver(originator, recipient, group, message_id, forward, {}, "normal", nullptr, {}, false, alias);
+    pending_.push_back([this, originator, recipient, group, message_id, forward, alias, priority] {
+      media_deliver(originator, recipient, group, message_id, forward, {}, "normal", nullptr, {}, false, alias, false,
+                    {}, priority);
     });
   }
 }
@@ -336,7 +338,8 @@ std::string DataServer::media_deliver(const std::string &originator, const std::
                                       const std::vector<std::pair<std::string, std::string>> &bodies,
                                       const std::string &key, const std::string &level, const FileOffer *file,
                                       const std::string &alert_location, bool alert, const std::string &called_alias,
-                                      bool session, SipResponseHandler answered) {
+                                      bool session, SipResponseHandler answered,
+                                      std::optional<unsigned> used_priority) {
   const bool emergency = level == "emergency", imminent = level == "imminent_peril";
   const auto *recipient = by_id(target);
   if (!recipient) return {};
@@ -380,6 +383,9 @@ std::string DataServer::media_deliver(const std::string &originator, const std::
   info.request_uri = target;
   info.calling_user = originator;
   info.calling_group = group; // TS 24.282 clause 9.2.3.4.3: the recipient learns the group
+  // TS 24.282 clauses 9.2.3.4.3 step c and 9.2.4.4.3 step d: the <used-priority> of an SDS or an SDS session is the
+  // <user-requested-priority> of the originator's INVITE, which is not passed on.
+  if (!file) info.used_priority = used_priority;
 
   // TS 24.282 clause 6.3.7.1.11 steps 6 and 7: the recipient learns the in-progress state, and
   // step 6c the emergency alert that came with the request (clause 6.3.7.1.3).
