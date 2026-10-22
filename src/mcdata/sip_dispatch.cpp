@@ -16,37 +16,13 @@ namespace mcx {
 SipResponse DataServer::incoming(const SipMessage &request) {
   // Only the SIP core is a trusted source (dispatch refuses any other).
   if (request.source_address != core_address_) return dispatch(request);
-  const auto found = users_.find(asserted_identity(request));
-  const auto *key = found != users_.end() ? signalling_key(found->first) : nullptr;
-  const auto xml = found != users_.end() ? xml_key(found->first) : std::nullopt;
-  if (!key && !xml) return dispatch(request);
+  // TS 24.282 clause 7.3.2: the SIP core's third-party REGISTER asserts no identity; third_party_register opens the
+  // client's REGISTER it carries.
+  if (request.method == "REGISTER") return dispatch(request);
+  const auto sip = asserted_identity(request);
   auto opened = request;
-  try {
-    auto parts = request.parts.empty() && !request.body.empty() ? parse_body_parts(request.content_type, request.body)
-                                                                : request.parts;
-    if (key) parts = open_from(*key, std::move(parts));
-    try {
-      parts = decrypt_xml(xml, std::move(parts));
-    } catch (const std::exception &error) {
-      // TS 24.282 clause 6.5.2.4.2 steps 1 and 3.
-      ++xml_refused_;
-      event("mcdata_xml_refused",
-            {{"user_id", found->second.id}, {"method", request.method}, {"reason", error.what()}});
-      SipResponse response;
-      response.status_code = 403;
-      response.headers = {{"Warning", warning_value("140 unable to decrypt XML content")}};
-      return response;
-    }
-    opened.parts = std::move(parts);
-    if (request.parts.empty() && opened.parts.size() == 1) opened.body = opened.parts.front().body;
-  } catch (const std::exception &error) {
-    ++signalling_refused_;
-    event("mcdata_signalling_refused",
-          {{"user_id", found->second.id}, {"method", request.method}, {"reason", error.what()}});
-    SipResponse response;
-    response.status_code = 403;
-    return response;
-  }
+  if (auto refused = open_signalling(sip, opened)) return *refused;
+  const auto xml = users_.contains(sip) ? xml_key(sip) : std::nullopt;
   auto response = dispatch(opened);
 
   // The XML of the answer is protected like any other sent to this client.
@@ -55,6 +31,44 @@ SipResponse DataServer::incoming(const SipMessage &request) {
   else if (xml && response.content_type == mcdata::info_mime && !response.body.empty())
     response.body = encrypt_xml(xml, {{std::string(mcdata::info_mime), response.body}}).front().body;
   return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clauses 6.5.2 and 6.6.3: open the bodies of a request of the user sip, signed with its signalling key
+// and with XML encrypted with its CSK, in place. A request of a user without keys is left as it is; one that cannot
+// be opened is refused (403, with warning 140 for XML that cannot be decrypted).
+std::optional<SipResponse> DataServer::open_signalling(const std::string &sip, SipMessage &message) {
+  const auto found = users_.find(sip);
+  const auto *key = found != users_.end() ? signalling_key(found->first) : nullptr;
+  const auto xml = found != users_.end() ? xml_key(found->first) : std::nullopt;
+  if (!key && !xml) return std::nullopt;
+  try {
+    const bool whole = message.parts.empty();
+    auto parts = whole && !message.body.empty() ? parse_body_parts(message.content_type, message.body) : message.parts;
+    if (key) parts = open_from(*key, std::move(parts));
+    try {
+      parts = decrypt_xml(xml, std::move(parts));
+    } catch (const std::exception &error) {
+      // TS 24.282 clause 6.5.2.4.2 steps 1 and 3.
+      ++xml_refused_;
+      event("mcdata_xml_refused",
+            {{"user_id", found->second.id}, {"method", message.method}, {"reason", error.what()}});
+      SipResponse response;
+      response.status_code = 403;
+      response.headers = {{"Warning", warning_value("140 unable to decrypt XML content")}};
+      return response;
+    }
+    message.parts = std::move(parts);
+    if (whole && message.parts.size() == 1) message.body = message.parts.front().body;
+  } catch (const std::exception &error) {
+    ++signalling_refused_;
+    event("mcdata_signalling_refused",
+          {{"user_id", found->second.id}, {"method", message.method}, {"reason", error.what()}});
+    SipResponse response;
+    response.status_code = 403;
+    return response;
+  }
+  return std::nullopt;
 }
 
 //------------------------------------------------------------------------------

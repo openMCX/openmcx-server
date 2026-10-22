@@ -130,6 +130,8 @@ SipResponse DataServer::third_party_register(const SipMessage &request) {
   inner.headers = {{"P-Asserted-Identity", "<" + identity + ">"}, {"Expires", "4294967295"}};
   if (const auto found = users_.find(identity); found != users_.end() && !found->second.auth_etag.empty())
     inner.headers.push_back({"SIP-If-Match", found->second.auth_etag});
+  // A renewal of an authorised user comes signed and with its XML encrypted, as its PUBLISH would.
+  if (auto refused = open_signalling(identity, inner)) return *refused;
   response = authorise(inner, true);
   if (response.status_code != 200) return response;
   response.headers = {{"Expires", expires.empty() ? "3600" : expires}};

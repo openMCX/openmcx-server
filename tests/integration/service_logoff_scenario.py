@@ -132,7 +132,9 @@ def main():
         # 3. A phone that dies.
         restarted = time.time()
         subprocess.run(cli + ['restart', 'client-a'], check=True, capture_output=True, timeout=60)
-        wait('client-a, restarted, is authorised', lambda: authorised_after(restarted), 90)
+        # Authorised for each of its services before it dies, so that each server has a binding to end.
+        wait('client-a, restarted, is authorised',
+             lambda: authorised_after(restarted) and (not mcdata or status().get('mcdata_authorized')), 90)
         subprocess.run(cli + ['kill', 'client-a'], check=True, capture_output=True, timeout=60)
         wait('the MCPTT server removes client-a\'s binding when its service authorisation ends',
              lambda: removed('mcptt-server', 'service_binding_removed', config['mcptt']['user_id']), 240)

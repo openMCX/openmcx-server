@@ -5,8 +5,8 @@ Checks (TS 24.379 clause 7.3.2, TS 24.229 clause 5.4.1.7):
   - every REGISTER the server receives is a third-party REGISTER: From and Contact the SIP core, To a client's public
     user identity, Content-Type message/sip;
   - its message/sip body is the client's REGISTER: the request line, the same To, and an
-    application/vnd.3gpp.mcptt-info+xml body with the access token and the client ID; the client's Authorization
-    header is not in it;
+    application/vnd.3gpp.mcptt-info+xml body with the access token and the client ID (with --protected, encrypted
+    XML is accepted in their place); the client's Authorization header is not in it;
   - each is answered 200 (OK), and no client authorised by a poc-settings PUBLISH (clause 7.2.2) instead;
   - a de-registration (Expires 0, a client's log-off) carries the client's REGISTER with Expires 0 and no Authorization;
   - at least --users users were authorised so.
@@ -31,6 +31,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('capture', type=Path)
     parser.add_argument('--users', type=int, default=4)
+    parser.add_argument('--protected', action='store_true', help='the access token and client ID are encrypted')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     messages, seen = [], set()
@@ -84,8 +85,10 @@ def main():
             body.startswith('REGISTER ')
             and to.split(';')[0].strip('<> ') in body
             and 'application/vnd.3gpp.mcptt-info+xml' in body
-            and 'mcptt-access-token' in body
-            and 'mcptt-client-id' in body
+            and (
+                ('mcptt-access-token' in body and 'mcptt-client-id' in body)
+                or (args.protected and 'EncryptedData' in body)
+            )
             and 'authorization:' not in body.lower()
         )
         if finals.get((message['call_id'], header(message, 'cseq'))) == 200:
@@ -108,7 +111,12 @@ def main():
         passed=not failures,
         checks=checks,
         failures=failures,
-        counts=dict(third_party_registers=len(registers), deregistrations=len(removals), users=sorted(users), poc_settings_publishes=len(publishes)),
+        counts=dict(
+            third_party_registers=len(registers),
+            deregistrations=len(removals),
+            users=sorted(users),
+            poc_settings_publishes=len(publishes),
+        ),
     )
     args.output.write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))

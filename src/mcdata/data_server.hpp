@@ -927,6 +927,7 @@ class DataServer {
 
   // ---- SIP dispatch (sip_dispatch.cpp) ----
   SipResponse incoming(const SipMessage &request);
+  std::optional<SipResponse> open_signalling(const std::string &sip, SipMessage &message);
 
   SipResponse dispatch(const SipMessage &request);
 

@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """Service authorisation by REGISTER through the SIP core's third-party REGISTER.
 
-Run in a lab prepared with --register-auth: the four clients send their access token and client ID in a REGISTER
-(TS 24.379 clause 7.2.1) instead of the PUBLISH of clause 7.2.2. The scenario checks that
-  - RA-01 each client is authorised and affiliated;
-  - RA-02 the MCPTT server authorised each user from a third-party REGISTER (clause 7.3.2);
+Run in a lab prepared with --register-auth --mcvideo: the four clients send their access token and client ID for
+MCPTT, MCData and MCVideo each in a REGISTER of its own (TS 24.379, TS 24.282 and TS 24.281 clause 7.2.1) instead of
+the PUBLISH of clause 7.2.2. The scenario checks that
+  - RA-01 each client is authorised for the three services and affiliated;
+  - RA-02 the MCPTT, MCData and MCVideo servers authorised each user from a third-party REGISTER (clause 7.3.2);
   - RA-03 a group call with the four clients is set up and released;
+  - RA-05 with a short token lifetime (--token-ttl), each client renews its token and authorises again by REGISTER,
+    at each of the three servers;
   - RA-04 a client's log-off de-registers it, and the SIP core's third-party REGISTER with Expires 0 removes its
-    binding at the MCPTT server.
-The wire verifier (verify_third_party_register.py) checks the third-party REGISTER itself.
+    binding at the three servers.
+The wire verifier (verify_third_party_register.py) checks the third-party REGISTERs at the MCPTT server.
 
-Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.229 (clause 5.4.1.7).
+Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 24.229
+(clause 5.4.1.7).
 """
 
 import argparse
@@ -37,6 +41,8 @@ def main():
     cli = [str(ROOT / '.cache/deps/docker-compose-linux-x86_64'), '-p', args.project, '-f', str(args.compose.resolve())]
     checks = []
     result = dict(scenario='register-authorisation', passed=False, checks=checks)
+    site = json.loads((args.compose.resolve().parent / 'generated' / 'site.json').read_text())
+    ttl = site.get('token_ttl_seconds', 3600)
 
     # ------------------------------------------------------------------------------
     def status(role):
@@ -71,10 +77,10 @@ def main():
         raise AssertionError(label + ' timed out: ' + json.dumps({role: status(role) for role in ROLES})[:3000])
 
     # ------------------------------------------------------------------------------
-    def server_events(names):
-        """The MCPTT server's JSON log entries whose 'event' is one of names."""
+    def server_events(names, server='mcptt-server'):
+        """A server's JSON log entries whose 'event' is one of names."""
         run = subprocess.run(
-            cli + ['logs', '--no-color', '--no-log-prefix', 'mcptt-server'], capture_output=True, text=True, timeout=30
+            cli + ['logs', '--no-color', '--no-log-prefix', server], capture_output=True, text=True, timeout=30
         )
         found = []
         for line in run.stdout.splitlines():
@@ -89,16 +95,27 @@ def main():
 
     try:
         wait(
-            'RA-01 four clients authorised and affiliated',
-            lambda: all(status(role).get('authorized') and status(role).get('affiliated') for role in ROLES),
+            'RA-01 four clients authorised for MCPTT, MCData and MCVideo, and affiliated',
+            lambda: all(
+                status(role).get('authorized')
+                and status(role).get('mcdata_authorized')
+                and status(role).get('mcvideo_authorized')
+                and status(role).get('affiliated')
+                for role in ROLES
+            ),
             90,
         )
-        by_register = {entry.get('user') for entry in server_events({'service_authorized_by_register'})}
-        if len(by_register) < 4:
-            raise AssertionError(f'RA-02 authorised by third-party REGISTER: {sorted(by_register)}')
-        checks.append('RA-02 the MCPTT server authorised the four users from third-party REGISTERs')
-        print(checks[-1], flush=True)
-        result['users'] = sorted(by_register)
+        for server, name in (
+            ('mcptt-server', 'service_authorized_by_register'),
+            ('mcdata-server', 'mcdata_authorised_by_register'),
+            ('mcvideo-server', 'service_authorized_by_register'),
+        ):
+            by_register = {entry.get('user') for entry in server_events({name}, server)}
+            if len(by_register) < 4:
+                raise AssertionError(f'RA-02 {server} authorised by third-party REGISTER: {sorted(by_register)}')
+            checks.append(f'RA-02 the {server} authorised the four users from third-party REGISTERs')
+            print(checks[-1], flush=True)
+            result[server] = sorted(by_register)
         command('client-a', 'call')
         wait(
             'RA-03 a group call with the four clients',
@@ -106,12 +123,42 @@ def main():
         )
         command('client-a', 'hangup')
         wait('RA-03 the call is released', lambda: all(status(role).get('call_state') == 'idle' for role in ROLES))
+        if ttl <= 300:
+            # RA-05: the renewal of the token before it expires is a new REGISTER per service (clause 7.2.1).
+            for server, name in (
+                ('mcptt-server', 'service_authorized_by_register'),
+                ('mcdata-server', 'mcdata_authorised_by_register'),
+                ('mcvideo-server', 'service_authorized_by_register'),
+            ):
+                wait(
+                    f'RA-05 the four users renewed their authorisation at the {server} by REGISTER',
+                    lambda server=server, name=name: all(
+                        [entry.get('user') for entry in server_events({name}, server)].count(user) >= 2
+                        for user in result[server]
+                    ),
+                    ttl + 60,
+                )
+            wait(
+                'RA-05 the four clients are still authorised for the three services after the renewal',
+                lambda: all(
+                    status(role).get('token_renewals', 0) >= 1
+                    and status(role).get('authorized')
+                    and status(role).get('mcdata_authorized')
+                    and status(role).get('mcvideo_authorized')
+                    for role in ROLES
+                ),
+            )
         command('client-d', 'log-off')
         wait(
             'RA-04 the log-off of client-d removes its binding by a third-party REGISTER with Expires 0',
-            lambda: any(
-                entry.get('reason') == 'deregistration' for entry in server_events({'service_binding_removed'})
-            ),
+            lambda: all(
+                any(
+                    entry.get('reason') == 'deregistration'
+                    for entry in server_events({'service_binding_removed'}, server)
+                )
+                for server in ('mcptt-server', 'mcvideo-server')
+            )
+            and bool(server_events({'mcdata_logged_off'}, 'mcdata-server')),
         )
         result['passed'] = True
     except Exception as error:  # noqa: BLE001 - the result records any failure

@@ -25,9 +25,10 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 
 ### Security and keys
 
-- **Registration.** The service authorisation by third-party REGISTER (TS 24.379 clause 7.3.2) is tested for MCPTT
-  only: the Linux client sends only the mcptt-info in its REGISTER (`mcptt.authorise_by_register`) and authorises
-  MCData and MCVideo by PUBLISH, and the Android client authorises by PUBLISH (clause 7.3.3).
+- **Registration.** The service authorisation by third-party REGISTER (TS 24.379, TS 24.281 and TS 24.282 clause
+  7.3.2) is offered by the Linux client only (`mcptt.authorise_by_register`); the Android client authorises by PUBLISH
+  (clause 7.3.3). A server that refuses an authorisation by third-party REGISTER cannot tell the client, which got its
+  200 (OK) from the SIP core's registrar.
 - **Keys.** The servers and the GMS fetch keys from the KMS over an internal interface, not with the access-token
   request of TS 33.180 annex D.2; a KMS of another vendor would not serve them.
 - **Profile.** The default lab keeps media and floor protection off; the protected fixtures use an explicitly configured

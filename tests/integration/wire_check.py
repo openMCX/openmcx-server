@@ -84,7 +84,10 @@ def verifiers(scenario, flags):
         'regroup_scenario': ('mcptt-server', [['verify_regroup.py', '--service', MCPTT]]),
         'location_scenario': ('mcptt-server', [['verify_location.py', '--service', MCPTT]]),
         'protected_private_scenario': ('mcptt-server', [['verify_protected_private.py']]),
-        'register_authorisation_scenario': ('mcptt-server', [['verify_third_party_register.py']]),
+        'register_authorisation_scenario': (
+            'mcptt-server',
+            [['verify_third_party_register.py'] + (['--protected'] if protected else [])],
+        ),
         'mcdata_location_scenario': (
             'mcdata-server',
             [['verify_location.py', '--service', MCDATA, '--mcdata'] + (['--protected'] if protected else [])],

@@ -144,7 +144,22 @@ LABS = [
     lab('group-admission', 'single', ['--admission-groups'], ['group_admission_scenario'], ['mcptt', 'failure']),
     # TS 24.379 clauses 7.2.1 and 7.3.2: the clients authorise in their REGISTER; the SIP core's third-party REGISTER
     # takes it to the MCPTT server.
-    lab('register-auth', 'single', ['--register-auth'], ['register_authorisation_scenario'], ['mcptt', 'common']),
+    lab(
+        'register-auth',
+        'single',
+        ['--register-auth', '--mcvideo'],
+        ['register_authorisation_scenario'],
+        ['mcptt', 'mcdata', 'mcvideo', 'common'],
+    ),
+    # The same with protected signalling, media and XML (each REGISTER carries its service's CSK upload) and tokens
+    # that are renewed during the scenario (RA-05).
+    lab(
+        'register-auth-protected',
+        'single',
+        ['--register-auth', '--mcvideo'] + KEYS + ['--xml-protection', '--token-ttl', '120'],
+        ['register_authorisation_scenario'],
+        ['mcptt', 'mcdata', 'mcvideo', 'common', 'protected'],
+    ),
     lab(
         'smoke-mcvideo',
         'single',
