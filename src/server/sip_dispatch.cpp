@@ -756,6 +756,20 @@ void McServer::affiliation_subscribe(const SipMessage &message, User &user, cons
     response.status_code = 489;
     return;
   }
+  // TS 24.379 clause 9.2.2.2.4 steps 1 to 4: the mcptt-info names the served user (<mcptt-request-uri>); no user is
+  // authorised for another user's affiliation status. A SUBSCRIBE without the mcptt-info is the subscriber's own.
+  if (user.subscription != message.dialog_id && !message.body.empty()) {
+    std::string served;
+    try {
+      served = message_info(message, svc_).request_uri;
+    } catch (const std::exception &) {
+      served.clear(); // a body without the service info names no other user
+    }
+    if (!served.empty() && served != user.id) {
+      response.status_code = 403;
+      return;
+    }
+  }
   if (get_header(message.headers, "Expires") == "0") {
     if (user.subscription == message.dialog_id) {
       user.subscription.clear();

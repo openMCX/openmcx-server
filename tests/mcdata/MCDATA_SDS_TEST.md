@@ -135,4 +135,5 @@ A one-to-one SDS follows the same pattern with a `resource-lists` body naming th
 | Security | Payload protection, signalling protection under the CSK and XML confidentiality are covered by the [protected MCData tests](MCDATA_PROTECTED_TEST.md); the scenarios here run clear. XML integrity protection is not implemented. |
 | Profiles | The MCData server reads the ruleset and group elements as internal JSON projections. The GMS serves the TS 24.481 group documents over XCAP ([group management tests](../mcptt/GROUP_MANAGEMENT_TEST.md)); the MCData service configuration document is not served. MCData-2 (Diameter to the MCData user database) is not used. |
 | Registration | The REGISTER Contact does not carry the MCData media feature tags (§7.2.1); service authorisation uses PUBLISH only. |
+| Terminating binding | A one-to-one SDS to a configured user without a binding gets 404 (§9.2.2.3.2 step 3). Not tested: every lab user logs on, and the profiles may name only configured users. |
 | Wire qualification | In-repository decoders only; no independent-peer run. Clear SIP (debug mode) only. |

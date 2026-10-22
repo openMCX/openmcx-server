@@ -3,7 +3,7 @@
 # OpenMCX Licence Information : AGPL-3.0-or-later
 #
 
-"""Bounded replay and tamper tests of protected media and floor control, confined to the openmcx-protected fixture.
+"""Bounded replay and tamper tests of protected media and floor control, confined to the isolated lab of --project.
 
 During a protected group call it captures live ciphertext in the server's network namespace and injects four invalid
 packets: an SRTP media packet towards client-b and an SRTCP floor control packet towards the server, each once replayed
@@ -29,6 +29,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 import wave
 from verify_protected import parse_srtp, parse_srtcp
@@ -113,12 +114,16 @@ def complete_pcap(source, destination):
 
 # ------------------------------------------------------------------------------
 def captured_packets(tshark, path):
-    """The UDP packets of the capture at path, decoded by tshark, as dicts of frame, addresses, ports and payload."""
+    """The UDP packets of the capture at path, decoded by tshark, as dicts of frame, addresses, ports and payload.
+    tshark reads a copy in a temporary directory: an AppArmor profile may confine it to /tmp (as in wire_check.py)."""
     fields = ['frame.number', 'ip.src', 'ip.dst', 'udp.srcport', 'udp.dstport', 'udp.payload']
-    command = [tshark, '-r', str(path), '-Y', 'udp', '-T', 'fields', '-E', 'occurrence=f']
-    for field in fields:
-        command += ['-e', field]
-    output = subprocess.run(command, check=True, capture_output=True, text=True, timeout=10).stdout
+    with tempfile.TemporaryDirectory(prefix='openmcx-protected-negative-') as scratch:
+        copy = Path(scratch) / Path(path).name
+        shutil.copyfile(path, copy)
+        command = [tshark, '-r', str(copy), '-Y', 'udp', '-T', 'fields', '-E', 'occurrence=f']
+        for field in fields:
+            command += ['-e', field]
+        output = subprocess.run(command, check=True, capture_output=True, text=True, timeout=10).stdout
     packets = []
     for line in output.splitlines():
         values = line.split('\t')
@@ -175,14 +180,15 @@ def main():
     if args.self_test:
         self_test()
         return 0
-    if args.project != PROJECT:
-        parser.error('only the isolated openmcx-protected fixture is permitted')
+    if args.project == 'openmcx':
+        parser.error('this scenario requires a separate test project')
     if args.compose is None or args.artifacts is None or not args.tshark:
         parser.error('--compose, --artifacts and tshark/MCX_TSHARK are required')
     compose = json.loads(args.compose.read_text())
-    if compose.get('name') != PROJECT:
+    if compose.get('name') != args.project:
         parser.error('compose must identify the isolated protected fixture')
-    cli = [str(ROOT / '.cache/deps/docker-compose-linux-x86_64'), '-p', PROJECT, '-f', str(args.compose.resolve())]
+    project = args.project
+    cli = [str(ROOT / '.cache/deps/docker-compose-linux-x86_64'), '-p', project, '-f', str(args.compose.resolve())]
     output = args.artifacts.resolve() / 'integration'
     output.mkdir(parents=True, exist_ok=True)
     result = dict(
@@ -195,7 +201,7 @@ def main():
             'Rejection counters and continued speech are checked; no cryptographic keys are exported.',
         ],
     )
-    capture_name = PROJECT + '-negative-capture-' + str(os.getpid())
+    capture_name = project + '-negative-capture-' + str(os.getpid())
     capture = None
     capture_file = None
     capture_log = None
@@ -243,10 +249,10 @@ def main():
                 raise AssertionError('missing or ambiguous fixture container ' + role)
             info = json.loads(run(['docker', 'inspect', identifier]).stdout)[0]
             labels = info['Config']['Labels']
-            if labels.get('com.docker.compose.project') != PROJECT or labels.get('com.docker.compose.service') != role:
+            if labels.get('com.docker.compose.project') != project or labels.get('com.docker.compose.service') != role:
                 raise AssertionError('container does not belong to isolated fixture')
             networks = info['NetworkSettings']['Networks']
-            if len(networks) != 1 or next(iter(networks)) != PROJECT + '_mcx':
+            if len(networks) != 1 or next(iter(networks)) != project + '_mcx':
                 raise AssertionError('fixture container has unexpected network scope')
             containers[role] = dict(
                 id=identifier, ip=next(iter(networks.values()))['IPAddress'], image=info['Config']['Image']

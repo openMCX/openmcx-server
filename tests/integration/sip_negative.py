@@ -9,7 +9,10 @@ SIP: REGISTER and PUBLISH must be challenged and a wrong digest password refused
 From does not match the authenticated identity is refused, a service authorisation PUBLISH with an invalid access token
 is answered 403 with warning 101 (TS 24.379 clause 7.3.3 step 6; for MCData, TS 24.282 clause 7.3.3), a forged in-dialog
 BYE must authenticate, and with --peer-config a CANCEL carrying another connection's transaction identifiers is refused
-(RFC 3261 section 9.2). HTTP: the CMS refuses a request without a bearer access token with 403 and challenges an invalid
+(RFC 3261 section 9.2). With --mcdata,
+SDS disposition notifications without a resource list (145) or for an unknown message (216) and FD requests without
+one Payload IE (210), with a payload that is not FILEURL (211) or without a target (205) are refused (TS 24.282 clauses
+12.2.3 and 10.2.4.4.2). HTTP: the CMS refuses a request without a bearer access token with 403 and challenges an invalid
 one with 401 (TS 24.482 annex A.2.3, RFC 6750; TS 33.180 annex B.10), its internal route is hidden, and the IdMS
 authorization endpoint accepts a PKCE request (TS 33.180 annex B.4.2.2) but refuses a wrong password.
 
@@ -17,7 +20,7 @@ Example: python3 sip_negative.py --config /config/client-a.json
 The temporary REGISTER Contact uses Expires: 0 and never removes another binding.
 No credential, token, SIP payload or digest is written to the result artifact.
 
-Specifications: TS 24.379 V19.7.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
+Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
 """
 
 import argparse
@@ -92,7 +95,7 @@ class SipProbe:
         self.last_request_headers = dict(field.split(": ", 1) for field in fields[1:])
         if authorization:
             fields.append(authorization)
-        payload = body.encode()
+        payload = body if isinstance(body, bytes) else body.encode()
         self.sock.sendall(("\r\n".join(fields) + f"\r\nContent-Length: {len(payload)}\r\n\r\n").encode() + payload)
         while True:
             while b"\r\n\r\n" not in self.buffer:
@@ -280,6 +283,99 @@ def main():
             check("mcdata_uncorrelated_notification_rejected", code, {403})
             warned = "216 unable to correlate the disposition notification" in headers.get("warning", "")
             check("mcdata_uncorrelated_notification_warning_216", warned, {True})
+
+            def fd_request(payloads, target=True):
+                """A one-to-one FD request over HTTP (TS 24.282 clause 10.2.4) whose FD SIGNALLING PAYLOAD carries the
+                Payload IEs given as (content type, data), to a resource list naming the user itself when target:
+                the final status and Warning."""
+                signalling = bytes([0x02]) + bytes(4) + bytes([7]) + secrets.token_bytes(32)
+                for content_type, data in payloads:
+                    value = bytes([content_type]) + data.encode()
+                    signalling += bytes([0x78]) + len(value).to_bytes(2, "big") + value
+                info = (
+                    '<mcdatainfo xmlns="urn:3gpp:ns:mcdataInfo:1.0"><mcdata-Params><request-type>one-to-one-fd'
+                    '</request-type><mcdata-client-id type="Normal"><mcdataString>'
+                    + escape(cfg["mcptt"]["client_id"])
+                    + "</mcdataString></mcdata-client-id></mcdata-Params></mcdatainfo>"
+                )
+                boundary = "probe-" + secrets.token_hex(12)
+                body = (
+                    f"--{boundary}\r\nContent-Type: application/vnd.3gpp.mcdata-info+xml\r\n\r\n{info}\r\n"
+                    f"--{boundary}\r\nContent-Type: application/vnd.3gpp.mcdata-signalling\r\n\r\n"
+                ).encode() + signalling + b"\r\n"
+                if target:
+                    entry = escape(cfg["mcdata"]["user_id"], {chr(34): "&quot;"})
+                    body += (
+                        f"--{boundary}\r\nContent-Type: application/resource-lists+xml\r\n\r\n"
+                        '<resource-lists xmlns="urn:ietf:params:xml:ns:resource-lists"><list>'
+                        f'<entry uri="{entry}"/></list></resource-lists>\r\n'
+                    ).encode()
+                body += f"--{boundary}--\r\n".encode()
+                uri = cfg["mcdata"]["service_uri"]
+                fields = {
+                    "Accept-Contact": '*;+g.3gpp.icsi-ref="urn%3Aurn-7%3A3gpp-service.ims.icsi.mcdata.fd"'
+                    ';require;explicit',
+                    "Content-Type": "multipart/mixed; boundary=" + boundary,
+                }
+                challenge = sip.request("MESSAGE", uri, fields, body)
+                valid = sip.digest("MESSAGE", uri, challenge)
+                return sip.request("MESSAGE", uri, fields, body, authorization=valid)
+
+            # TS 24.282 clause 10.2.4.4.2 steps 6 and 7a and clause 10.2.4.4.2 step 10a: 403 with warning 210 for
+            # no Payload IE and for two, 211 for a payload that is not FILEURL (content type 4), 205 for a one-to-one
+            # FD without the resource list naming the target.
+            url = "https://" + domain + "/probe/" + secrets.token_hex(8)
+            for name, payloads, target, warning in [
+                ("mcdata_fd_without_payload", [], True, "210 Only one File URL must be present in the FD request"),
+                ("mcdata_fd_two_payloads", [(4, url), (4, url)], True,
+                 "210 Only one File URL must be present in the FD request"),
+                ("mcdata_fd_payload_not_fileurl", [(1, "text")], True, "211 payload for an FD request is not FILEURL"),
+                ("mcdata_fd_without_target", [(4, url)], False,
+                 "205 unable to determine targeted user for one-to-one FD"),
+            ]:
+                code, headers = fd_request(payloads, target)
+                check(f"{name}_rejected", code, {403})
+                check(f"{name}_warning_{warning[:3]}", warning in headers.get("warning", ""), {True})
+
+            def mcdata_message(info, parts, icsi="sds"):
+                """A digest-authenticated MESSAGE to the MCData server with the mcdata-info params and the further
+                (Content-Type, bytes) parts, accepting the ICSI of icsi (None: no Accept-Contact): the final status
+                and Warning."""
+                boundary = "probe-" + secrets.token_hex(12)
+                body = (
+                    f"--{boundary}\r\nContent-Type: application/vnd.3gpp.mcdata-info+xml\r\n\r\n"
+                    f'<mcdatainfo xmlns="urn:3gpp:ns:mcdataInfo:1.0"><mcdata-Params>{info}<mcdata-client-id '
+                    f'type="Normal"><mcdataString>{escape(cfg["mcptt"]["client_id"])}</mcdataString>'
+                    "</mcdata-client-id></mcdata-Params></mcdatainfo>\r\n"
+                ).encode()
+                for content_type, data in parts:
+                    body += f"--{boundary}\r\nContent-Type: {content_type}\r\n\r\n".encode() + data + b"\r\n"
+                body += f"--{boundary}--\r\n".encode()
+                uri = cfg["mcdata"]["service_uri"]
+                fields = {"Content-Type": "multipart/mixed; boundary=" + boundary}
+                if icsi:
+                    fields["Accept-Contact"] = (
+                        f'*;+g.3gpp.icsi-ref="urn%3Aurn-7%3A3gpp-service.ims.icsi.mcdata.{icsi}";require;explicit'
+                    )
+                challenge = sip.request("MESSAGE", uri, fields, body)
+                valid = sip.digest("MESSAGE", uri, challenge)
+                return sip.request("MESSAGE", uri, fields, body, authorization=valid)
+
+            mcdata_domain = cfg["mcdata"]["user_id"].split("@", 1)[1]
+
+            # TS 24.282 clause 16.2.3.1 step 2: an emergency alert without the MCData ICSI in Accept-Contact: 403
+            # (Forbidden). To a group that does not exist, with the ICSI: 404 (Not Found) with warning 163. Clause
+            # 16.2.3.1 leaves this case open (no group document, clause 6.3.3); the server answers as clause 9.2.2.4.2
+            # does for a group that no longer exists.
+            group = escape(f"sip:mcdata-nosuch-group-{secrets.token_hex(4)}@{mcdata_domain}")
+            alert = (f'<mcdata-request-uri type="Normal"><mcdataURI>{group}</mcdataURI></mcdata-request-uri>'
+                     '<alert-ind type="Normal"><mcdataBoolean>true</mcdataBoolean></alert-ind>')
+            code, headers = mcdata_message(alert, [], icsi=None)
+            check("mcdata_alert_without_icsi_rejected", code, {403})
+            code, headers = mcdata_message(alert, [], icsi="sds")
+            check("mcdata_alert_unknown_group_rejected", code, {404})
+            warned = "163 the group identity indicated in the request does not exist" in headers.get("warning", "")
+            check("mcdata_alert_unknown_group_warning_163", warned, {True})
         core = cfg["sip"]["core_uri"]
         check(
             "sip_dialog_route_requires_authentication",

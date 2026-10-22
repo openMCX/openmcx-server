@@ -655,13 +655,15 @@ FdSignalling decode_fd_signalling(std::string_view bytes) {
       (iei >> 4 == iei_completion_request ? fd.completion_requested : fd.mandatory_download) = true;
       continue;
     }
+    // TS 24.282 clause 10.2.4.4.2 step 6: only one Payload IE (warning 210, which the server reads in the message).
+    if (iei == iei_payload && payload) invalid("an FD SIGNALLING PAYLOAD carries only one file URL");
     once(seen, iei);
     switch (iei) {
     case iei_in_reply_to: fd.in_reply_to = in.uuid(); break;
     case iei_application_id: fd.application_id = in.octet(); break;
     case iei_payload: {
       const auto value = in.tlv_e();
-      // TS 24.282 clause 10.2.1.2.1 steps 3 and 4: exactly one Payload IE, of content type FILEURL.
+      // TS 24.282 clause 10.2.1.2.1 steps 3 and 4 and clause 10.2.4.4.2 step 7a: of content type FILEURL.
       if (value.empty() || static_cast<std::uint8_t>(value[0]) != static_cast<std::uint8_t>(ContentType::FileUrl))
         invalid("an FD SIGNALLING PAYLOAD carries one FILEURL payload");
       fd.file_url = value.substr(1);

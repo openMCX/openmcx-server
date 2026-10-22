@@ -492,12 +492,14 @@ McServer::make_private_session(const SipMessage &message, const User &user, cons
   session->members = {user.id};
   session->members.insert(session->members.end(), reachable.begin(), reachable.end());
 
-  // Controlling function forwards the requested commencement mode (RFC 5373);
-  // a first-to-answer call always rings (TS 24.379 clause 11.1.1.4.1 step 3).
+  // The requested commencement mode (TS 24.379 clause 11.1.1.3.1.1 step 18): an authorised Priv-Answer-Mode of
+  // "Auto" is passed on, any other Priv-Answer-Mode is not (step 18 a), and otherwise the Answer-Mode as received
+  // (step 18 d). A first-to-answer call always rings (clause 11.1.1.4.1 step 3).
+  const bool forced = answer_mode_value(request.priv_answer_mode) == "Auto";
   if (first_to_answer)
     session->answer_headers.push_back({"Priv-Answer-Mode", "Manual"});
-  else if (!request.priv_answer_mode.empty())
-    session->answer_headers.push_back({"Priv-Answer-Mode", request.priv_answer_mode});
+  else if (forced)
+    session->answer_headers.push_back({"Priv-Answer-Mode", "Auto"});
   else if (!request.answer_mode.empty())
     session->answer_headers.push_back({"Answer-Mode", request.answer_mode});
   session->arbitrator = make_media_control(session->members, floor_options());
@@ -657,9 +659,10 @@ SipResponse McServer::private_invite(const SipMessage &message, const User &user
                                  {"invitees", callees.reachable},
                                  {"session_uri", session->uri},
                                  {"first_to_answer", first_to_answer},
-                                 {"answer_mode", first_to_answer                    ? "manual"
-                                                 : request.priv_answer_mode.empty() ? request.answer_mode
-                                                                                    : "force-auto"}});
+                                 {"answer_mode", first_to_answer ? "manual"
+                                                 : answer_mode_value(request.priv_answer_mode) == "Auto"
+                                                     ? "force-auto"
+                                                     : answer_mode_value(request.answer_mode)}});
   return response;
 }
 

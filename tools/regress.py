@@ -126,16 +126,18 @@ LABS = [
     ),
     # Raw requests from client-a's container: affiliation PUBLISH refusals and per-group outcome (TS 24.379 clause
     # 9.2.2.2.3, TS 24.282 clause 8.3.2.3, RFC 3903), and the digest, service authorisation (warning 101), CMS and
-    # IdMS refusals (sip_negative.py), session refresh by re-INVITE and the in-dialog affiliation status refresh.
+    # IdMS refusals (sip_negative.py), session refresh by re-INVITE, the in-dialog affiliation status refresh, and
+    # private call refusals (TS 24.379 clause 11.1.1.3.1.1, RFC 3261, RFC 5373; private_probe.py).
     lab(
         'negative',
         'single',
-        ['--private-call', '--mcdata'],
+        ['--private-call', '--mcdata', '--manual-only-caller'],
         [
             'affiliation_publish_scenario',
             'sip_negative_scenario',
             'reinvite_refresh_scenario',
             'affiliation_refresh_scenario',
+            'private_failure_scenario',
         ],
         ['mcptt', 'mcdata', 'failure'],
     ),
@@ -292,7 +294,14 @@ LABS = [
         ['common', 'mcdata'],
     ),
     lab('location', 'single', ['--priority', '--location'], ['location_scenario'], ['mcptt', 'location']),
-    lab('protected-prearranged', 'single', KEYS, ['prearranged_scenario'], ['mcptt', 'protected']),
+    # With TS 33.180 clauses 7.5.2 and 9.4.7: replayed and tampered SRTP media and SRTCP floor control are rejected.
+    lab(
+        'protected-prearranged',
+        'single',
+        KEYS,
+        ['prearranged_scenario', 'protected_negative_scenario'],
+        ['mcptt', 'protected'],
+    ),
     lab(
         'protected-private', 'single', ['--private-call'] + KEYS, ['protected_private_scenario'], ['mcptt', 'protected']
     ),

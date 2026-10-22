@@ -91,6 +91,17 @@ struct SipConfig {
 [[nodiscard]] std::string_view get_header(const std::vector<SipHeader> &headers, std::string_view name) noexcept;
 
 //------------------------------------------------------------------------------
+// RFC 5373 section 2: the answer-mode-value of an Answer-Mode or Priv-Answer-Mode header field value, without its
+// parameters ("Auto;require" is "Auto"); empty when the header field is absent. Values other than "Auto" and "Manual"
+// are to be ignored ("implementations MUST ignore unknown values").
+[[nodiscard]] inline std::string answer_mode_value(std::string_view field) {
+  field = field.substr(0, field.find(';'));
+  const auto first = field.find_first_not_of(" \t");
+  if (first == std::string_view::npos) return {};
+  return std::string(field.substr(first, field.find_last_not_of(" \t") - first + 1));
+}
+
+//------------------------------------------------------------------------------
 // RFC 3261 section 7.1: a received request as the application sees it, with its bodies and SDP offer.
 struct SipMessage {
   std::string method;

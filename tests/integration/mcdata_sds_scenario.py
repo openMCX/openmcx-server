@@ -1043,6 +1043,7 @@ def main():
             'EA-05 a preconfigured-use-only group is rejected with 168',
             '168',
         )
+        check('EA-05 the 168 rejection carries <alert-ind> false', alert_result('client-a').get('alert_ind') is False)
         alert(
             'client-a',
             f'mcdata-alert group=sip:{group_user}-alertonly@{domain}',

@@ -532,6 +532,20 @@ def add_functional_aliases(fixture, source):
 
 
 # ------------------------------------------------------------------------------
+def add_manual_only_caller(fixture):
+    """On top of --private-call, client-d may make private calls with manual commencement only: a call with automatic
+    commencement is refused with 403 and warning 125 (TS 24.379 clause 11.1.1.3.1.1 step 10). It stays unable to be
+    called."""
+    site_file = fixture / 'generated/site.json'
+    site = json.loads(site_file.read_text())
+    user_id = json.loads((fixture / 'generated/client-d.json').read_text())['mcptt']['user_id']
+    for user in site['users']:
+        if user['mcptt_id'] == user_id:
+            user['private_call'] = dict(allow=True, manual_commencement=True, any_target=True, callable=False)
+    site_file.write_text(json.dumps(site, indent=2) + '\n')
+
+
+# ------------------------------------------------------------------------------
 def add_private_services(fixture):
     """Private call services (TS 24.379 clauses 11.1.5 to 11.1.9) on top of --private-call:
     client-a may request call-backs, remotely initiated calls and transfers and
@@ -1811,6 +1825,11 @@ def main():
         help='With --private-call, use a 70 s private call timer so a call outlasts the SIP refresh point',
     )
     parser.add_argument(
+        '--manual-only-caller',
+        action='store_true',
+        help='With --private-call, client-d may make private calls with manual commencement only',
+    )
+    parser.add_argument(
         '--broadcast', action='store_true', help='Restrict broadcast group call initiation to client-a and client-b'
     )
     parser.add_argument(
@@ -1939,6 +1958,8 @@ def main():
         parser.error('choose a project different from the original openmcx lab')
     if args.private_refresh and not args.private_call:
         parser.error('--private-refresh requires --private-call')
+    if args.manual_only_caller and not args.private_call:
+        parser.error('--manual-only-caller requires --private-call')
     fixture = args.directory.resolve()
     if fixture.exists():
         parser.error(f'refusing to overwrite existing fixture {fixture}')
@@ -2118,6 +2139,8 @@ def main():
             path.write_text(json.dumps(cfg, indent=2) + '\n')
     if args.private_call:
         add_private_call_policy(fixture, args.private_refresh)
+    if args.manual_only_caller:
+        add_manual_only_caller(fixture)
     if args.chat:
         add_chat_group(fixture, source)
     if args.adhoc:

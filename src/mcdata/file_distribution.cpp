@@ -128,6 +128,9 @@ SipResponse DataServer::fd(const SipMessage &received, const User &sender, mcdat
       return reject(403, "210 Only one File URL must be present in the FD request", sender.id, "fd");
     throw;
   }
+  // TS 24.282 clause 10.2.4.4.2 step 6: an FD request over HTTP carries one Payload IE (a media plane FD has none).
+  if (request.file_url.empty())
+    return reject(403, "210 Only one File URL must be present in the FD request", sender.id, "fd");
   const auto policy = profile(sender.id).value("mcdata", Json::object());
   const bool group_request = info.request_type == "group-fd";
   const auto size = mcdata::metadata_size(request.metadata.value_or(std::string{})).value_or(0);

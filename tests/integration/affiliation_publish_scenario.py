@@ -17,6 +17,8 @@ scenario checks that
     one 200 (OK) (RFC 3903 section 6);
   - a service info without the client ID is answered 200 (OK): the client is the PIDF's tuple (TS 24.379 clause
     9.2.1.2 step 2, clause 9.2.2.2.3 step 10);
+  - a PUBLISH and a SUBSCRIBE naming client-b's ID are answered 403 (Forbidden) (TS 24.379 clauses 9.2.2.2.3 and
+    9.2.2.2.4 step 4, TS 24.282 clauses 8.3.2.3 and 8.3.2.4 step 4);
   - Expires 0 with no PIDF is answered 200 (OK) with Expires 0 and ends every affiliation of the client (TS 24.379
     clause 9.2.1.2 NOTE 2, TS 24.282 clause 8.2.2 NOTE 1); the member group is then published again;
   - a SUBSCRIBE out of any dialog with Expires 0, a fetch of the current state, is answered 200 (OK) with Expires 0
@@ -115,6 +117,9 @@ def main():
                  '--non-member', NON_MEMBER]
         probe += [] if tls else ['--disable-tls']
         probe += ['--mcdata'] if mcdata else []
+        other = json.loads((args.compose.resolve().parent / 'generated' / 'client-b.json').read_text())
+        probe += ['--others', json.dumps({service: other[service]['user_id'] for service in ('mcptt', 'mcdata')
+                                          if service in other})]
         run = subprocess.run(cli + ['exec', '-T', 'client-a'] + probe, capture_output=True, text=True, timeout=120)
         if run.returncode:
             raise AssertionError('affiliation probe: ' + (run.stderr.strip() or run.stdout.strip())[-2000:])
@@ -132,6 +137,8 @@ def main():
             expect(f'{service}: current SIP-If-Match -> 200', seen['current_etag'][0] == 200, seen['current_etag'])
             expect(f'{service}: no client ID in the service info -> 200', seen['no_client_id'][0] == 200,
                    seen['no_client_id'])
+            for name in ('other_user', 'subscribe_other_user'):
+                expect(f'{service}: {name} -> 403', seen[name][0] == 403, seen[name])
             code, headers = seen['expires_0_no_pidf']
             expect(f'{service}: Expires 0 without a PIDF -> 200 with Expires 0',
                    code == 200 and headers.get('expires') == '0', seen['expires_0_no_pidf'])

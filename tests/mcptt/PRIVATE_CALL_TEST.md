@@ -10,12 +10,12 @@ The single MCPTT server acts as both the originating participating function and 
 
 | Step | Behavior | Reference |
 |---|---|---|
-| Originating INVITE | The client sends an INVITE to the MCPTT service URI. It carries `mcptt-info` with `<session-type>private</session-type>` and the calling user, plus an `application/resource-lists+xml` body naming exactly one called MCPTT ID. It includes `Answer-Mode: Auto`/`Manual` or `Priv-Answer-Mode: Auto`. | 24.379 §11.1.1.2.1.1 steps 1–14 |
+| Originating INVITE | The client sends an INVITE to the MCPTT service URI. It carries `mcptt-info` with `<session-type>private</session-type>` and the calling user, plus an `application/resource-lists+xml` body naming exactly one called MCPTT ID. It includes `Answer-Mode: Auto`/`Manual` or `Priv-Answer-Mode: Auto`. The server ignores an answer-mode value other than `Auto` and `Manual`, and the header field parameters (`Auto;require` is `Auto`). | 24.379 §11.1.1.2.1.1 steps 1–14; RFC 5373 §2 |
 | Called party | A missing body, several entries, several lists, or the caller's own ID → 403 with warning `145 unable to determine called party`. | §11.1.1.3.1.1 steps 8–9, §11.1.1.4.2 steps 3–4 |
-| Authorization | The server reads the caller's private-call ruleset from the CMS (below). It rejects with 403 and warning 107, 125, 126, 143 or 144. An unregistered callee → 480. | §11.1.1.3.1.1 steps 10–11 |
+| Authorization | The server reads the caller's private-call ruleset from the CMS (below). It rejects with 403 and warning 107, 125 or 126 (on the `Answer-Mode`), 144, or 143 (on `Priv-Answer-Mode: Auto`), in that order. `Priv-Answer-Mode: Manual` needs no authorisation. An unregistered callee → 480. | §11.1.1.3.1.1 steps 10, 11 and 18 |
 | Called-party authorization | The server then reads the callee's ruleset. A callee marked `callable: false` → 403 `127 user not authorised to be called in private call`. A caller missing from the callee's `incoming_from` list (unless `incoming_any`) → 403 `159 user not authorised to be called by this originating user`. | §11.1.1.3.1.2 steps 8–9 |
-| Limits | `max_calls` private calls per user. A caller at the limit → 486 with warning `124`. A callee at the limit → 486. | §4.4.2 warning 124 |
-| Terminating INVITE | The server sends an INVITE to the callee with `mcptt-request-uri` = callee, the calling user, the forwarded `Answer-Mode`/`Priv-Answer-Mode`, and an `isfocus` Contact holding the private session URI. It has no `resource-lists` body. | §11.1.1.4.1 steps 1–5 |
+| Limits | `max_calls` private calls per user. A caller at the limit → 486 with warning `124`. A callee at the limit → 486. The clauses give the limit (N10, `<MaxCall>`) to the client (§11.1.1.2.1.2 step 1); the server applies its own. | §4.4.2 warning 124 |
+| Terminating INVITE | The server sends an INVITE to the callee with `mcptt-request-uri` = callee, the calling user, `Priv-Answer-Mode: Auto` when it was requested and authorised or else the `Answer-Mode` as received (a `Priv-Answer-Mode: Manual` is not passed on), and an `isfocus` Contact holding the private session URI. It has no `resource-lists` body. | §11.1.1.3.1.1 step 18, §11.1.1.4.1 steps 1–5 |
 | Commencement | Automatic mode answers with 200. Manual mode rings (180) until the user runs `answer`. `reject` → 480 with warning `110 user declined the call invitation`. `Priv-Answer-Mode: Auto` forces automatic mode even when the callee is set to manual. | §6.2.3.1.1, §6.2.3.2.1 |
 | Outcome relay | The caller gets 200 once the callee answers. The callee's 480/486/488/603 and its Warning are relayed. An unanswered call gets 408 at `setup_timeout_ms`, and the callee's leg is cancelled. | §11.1.1.4.1 |
 | Floor and media | One talker at a time over the two legs, with the same RTCP floor control and AMR-WB relay as group calls. No floor-priority negotiation. | 24.380 |
@@ -69,7 +69,11 @@ regression:
 ```bash
 tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =call-types
 tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =private-services
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =negative
 ```
+
+The `negative` lab runs PC-19: raw requests from client-a's container (`tests/integration/private_probe.py`) and
+client-d with `--manual-only-caller` (private calls with manual commencement only).
 
 `--private-call` gives each user a different ruleset, so every rejection branch can be reached. It sets `setup_timeout_ms=5000`, `max_calls=1` and `maximum_duration_ms=30000`. A lab prepared by hand with `--private-refresh` raises the private call timer to 70 s and inactivity to 120 s, so the PC-12 call outlasts the 45 s refresh point of the 90 s SIP session timer; `verify_private_call.py --require-refresh` then also checks the refresh.
 
@@ -78,7 +82,7 @@ tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =pr
 | client-a | All commencement modes, force auto answer and first-to-answer; `<PrivateCall>` = {b, c} |
 | client-b | Automatic and manual; any target; no force auto answer or first-to-answer |
 | client-c | Automatic only; any target; accepts incoming private calls only from a (`incoming_from`) |
-| client-d | No private-call authorization; `callable: false` |
+| client-d | No private-call authorization; `callable: false`. With `--manual-only-caller` (lab `negative`): manual commencement only, any target |
 
 Over debug TCP SIP the run also captures at the MCPTT server and checks the capture with
 `tests/integration/verify_private_call.py`, which reassembles TCP/5060 itself and does not need tshark.
@@ -105,8 +109,9 @@ The `--private-services` option adds client-d's forwarding on no answer to clien
 | PC-13 | SIP wire. Private calls: one `resource-lists` entry per originating INVITE; terminating INVITE identities and `isfocus` Contact; commencement headers forwarded; clear SDP; warnings 107/126/143/144/127/159, 408, 486 and 480; callee decline on the terminating leg; no conference SUBSCRIBE; BYE answered 200. Refresh (with `--require-refresh`): in-dialog refreshes on private dialogs answered 200 with `Session-Expires`. First-to-answer: two or more invitees, `Priv-Answer-Mode: Manual`, 183 before 200, `mcptt-called-party-id` names an invitee, unselected invitees cancelled, any loser BYE carries `not selected for call`, 480/153/156. Emergency: emergency-ind and Resource-Priority on setup, in-dialog upgrade and downgrade, 403 carrying the unchanged state, the INFO alert correction and warning 149 |
 | PC-14 | Floor and RTP decoding: all floor types decode; Audio SSRC fields validated |
 | PC-16 | First-to-answer: both invitees ring in forced manual mode while their local mode is automatic; the caller sees 183; the first answerer becomes the peer and gets speech, and the other is cancelled; either invitee may win; one decline leaves the other ringing, and all declining → 480; caller CANCEL clears every invitee; concurrent answers select exactly one invitee; an unlisted invitee is filtered out; 403/156, 403/107 and 403/153 |
-| PC-17 | Unit and service tests: `test_private_call` (ruleset branches, callee checks 127/159, first-to-answer 145/107/156/153 and filtering), `test_protocol` (`mcptt-called-party-id`, `release-reason`), Go `TestCMSServesCalleePrivateCallPolicy` |
+| PC-17 | Unit and service tests: `test_private_call` (ruleset branches, unknown answer-mode values ignored, callee checks 127/159, first-to-answer 145/107/156/153 and filtering), `test_protocol` (`mcptt-called-party-id`, `release-reason`), Go `TestCMSServesCalleePrivateCallPolicy` |
 | PC-18 | Emergency private call: authorised emergency call with alert (caller MEPC 3 / MEPP 2 / MPEA 3; callee MEPP 2 with the caller's alert); unauthorised cancellation rejected with MEPP restored; authorised cancellation of call and alert; in-dialog upgrade; release resets the states; unauthorised emergency calls rejected (no permission, recipient not preconfigured); an unauthorised alert withdrawn by SIP INFO (MPEA 1) while the emergency call proceeds |
+| PC-19 | `negative` lab (`private_failure_scenario.py`). An `Answer-Mode` value RFC 5373 does not define and `Priv-Answer-Mode: Manual` are not refused for the commencement mode: to client-d both get the target's 403 with warning 144, and client-d is not called. A BYE and a re-INVITE in a dialog the server does not have → 481. Client-d's automatic commencement call → 403 with warning 125. A further call of client-a while it is in its one private call → 486 with warning 124; the callee is not called and the call goes on |
 
 ### Private call services
 

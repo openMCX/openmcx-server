@@ -109,9 +109,10 @@ SipResponse DataServer::emergency_alert(const SipMessage &request, User &user, m
     return response;
   }
 
-  // TS 24.282 clause 6.3.7.2.1: preconfigured-use-only groups, then the user and group authorisation.
+  // TS 24.282 clause 6.3.7.2.1: preconfigured-use-only groups, then the user and group authorisation. Either refusal
+  // is of an unauthorised request, answered with <alert-ind> "false" (clause 16.2.3.1 step 4a-i).
   if (document->value("preconfigured_use_only", false))
-    return reject(403, "168 alert is not allowed on the preconfigured group", user.id, "emergency-alert");
+    return answer(403, "168 alert is not allowed on the preconfigured group", false);
   const bool group_allows = settings.is_object() && settings.value("allow_emergency_alert", false);
   const auto dedicated = policy.value("alert_groups", Json::array());
   const bool permitted = policy.value("emergency_alert", false) && (dedicated.empty() || listed(dedicated, group));

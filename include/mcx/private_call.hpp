@@ -7,6 +7,7 @@
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.484 V19.6.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), RFC 5373.
 #pragma once
+#include "mcx/sip.hpp"
 #include "mcx/warning.hpp"
 
 #include <nlohmann/json.hpp>
@@ -48,8 +49,10 @@ struct PrivateCallDecision {
 };
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 11.1.1.3.1.1 steps 9 to 11: the originating participating-function checks (single called party,
-// profile authorisation, commencement mode, target list). Not implemented: the transfer, forwarding and
+// TS 24.379 clause 11.1.1.3.1.1 steps 9 to 11 and 18 b): the originating participating-function checks (single
+// called party, profile authorisation, commencement mode, target list, forced automatic answer). An answer-mode value
+// other than "Auto" and "Manual" is ignored (RFC 5373 section 2: "implementations MUST ignore unknown values"), and
+// a Priv-Answer-Mode of "Manual" needs no authorisation (step 18 a). Not implemented: the transfer, forwarding and
 // functional-alias branches.
 inline PrivateCallDecision authorize_private_call(const nlohmann::json &policy, const PrivateCallRequest &request,
                                                   const ServiceProfile &service = mcptt_service) {
@@ -61,25 +64,19 @@ inline PrivateCallDecision authorize_private_call(const nlohmann::json &policy, 
   if (request.target.empty() || request.target == request.caller)
     return deny(403, warning_text(service, Warning::called_party_unknown));
   if (!flag("allow")) return deny(403, warning_text(service, Warning::private_call_not_authorised));
-  if (!request.priv_answer_mode.empty()) {
-    if (request.priv_answer_mode != "Auto")
-      return deny(400, warning_text(service, Warning::function_not_allowed, "invalid Priv-Answer-Mode"));
-    if (!flag("force_auto_answer")) return deny(403, warning_text(service, Warning::force_auto_answer_not_authorised));
-  } else if (request.answer_mode == "Auto") {
-    if (!flag("automatic_commencement"))
-      return deny(403, warning_text(service, Warning::automatic_commencement_not_authorised));
-  } else if (request.answer_mode == "Manual") {
-    if (!flag("manual_commencement"))
-      return deny(403, warning_text(service, Warning::manual_commencement_not_authorised));
-  } else if (!request.answer_mode.empty()) {
-    return deny(400, warning_text(service, Warning::function_not_allowed, "invalid Answer-Mode"));
-  }
+  const auto mode = answer_mode_value(request.answer_mode);
+  if (mode == "Auto" && !flag("automatic_commencement"))
+    return deny(403, warning_text(service, Warning::automatic_commencement_not_authorised));
+  if (mode == "Manual" && !flag("manual_commencement"))
+    return deny(403, warning_text(service, Warning::manual_commencement_not_authorised));
 
   std::vector<std::string> targets;
   if (policy.is_object() && policy.contains("targets")) targets = policy.at("targets").get<std::vector<std::string>>();
   if (!targets.empty() && !flag("any_target") &&
       std::find(targets.begin(), targets.end(), request.target) == targets.end())
     return deny(403, warning_text(service, Warning::callee_not_authorised));
+  if (answer_mode_value(request.priv_answer_mode) == "Auto" && !flag("force_auto_answer"))
+    return deny(403, warning_text(service, Warning::force_auto_answer_not_authorised));
   return {};
 }
 

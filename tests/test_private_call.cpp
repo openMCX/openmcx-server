@@ -89,9 +89,20 @@ int main() {
   check(warning_code(authorize_private_call({{"allow", true}, {"automatic_commencement", true}},
                                             {alice, bob, "Auto", "Auto"})) == "143",
         "force auto answer not checked");
-  const auto invalid_mode = authorize_private_call(full, {alice, bob, "Sometimes", ""});
-  check(invalid_mode.status == 400, "invalid Answer-Mode accepted");
-  check(authorize_private_call(full, {alice, bob, "", "Manual"}).status == 400, "invalid Priv-Answer-Mode accepted");
+  // RFC 5373 section 2: unknown values are ignored; TS 24.379 clause 11.1.1.3.1.1 step 18 a: Priv-Answer-Mode
+  // "Manual" needs no authorisation; the header field parameters are not part of the value.
+  check(authorize_private_call({{"allow", true}}, {alice, bob, "Sometimes", ""}).status == 0,
+        "unknown Answer-Mode refused");
+  check(authorize_private_call({{"allow", true}}, {alice, bob, "", "Manual"}).status == 0,
+        "Priv-Answer-Mode Manual refused");
+  check(authorize_private_call({{"allow", true}}, {alice, bob, "", "Sometimes"}).status == 0,
+        "unknown Priv-Answer-Mode refused");
+  check(warning_code(authorize_private_call({{"allow", true}}, {alice, bob, "Auto;require", ""})) == "125",
+        "Answer-Mode with a parameter not checked");
+  check(warning_code(authorize_private_call({{"allow", true}, {"manual_commencement", true}},
+                                            {alice, bob, "Manual", "Auto"})) == "143",
+        "Answer-Mode Manual skipped the force auto answer check");
+  check(answer_mode_value(" Auto ;require") == "Auto" && answer_mode_value("").empty(), "answer-mode value");
 
   // Called party determination.
   check(warning_code(authorize_private_call(full, {alice, alice, "Auto", ""})) == "145", "self call accepted");

@@ -68,7 +68,7 @@ Counts are checks within a scenario, not distinct calls.
 | PGC-14 | Protected queued-floor procedures | Protected media / debug SIP |
 | PGC-15 | Priority/emergency procedures with protected speech and floor | 4-client protected fixture / debug SIP |
 | PGC-16 | Protected rejection, CANCEL, setup timeout and session survival | Protected fixture / debug SIP |
-| PGC-17 | Live SRTP/SRTCP replay and tamper rejection; valid speech continues | Protected fixture / debug SIP |
+| PGC-17 | Live SRTP/SRTCP replay and tamper rejection; valid speech continues (`protected_negative_scenario.py`) | `protected-prearranged` lab / debug SIP and TLS |
 | PGC-18 | SAVP negotiation, CSK/GKTP exchanges and byte-identical encrypted relay | Protected capture |
 | PGC-19 | Accepted refresh transactions and conference notifications | Protected calls / debug SIP |
 | PGC-20 | Protected lifecycle, late entry, rejoin and concurrent groups | 4 clients / TLS |

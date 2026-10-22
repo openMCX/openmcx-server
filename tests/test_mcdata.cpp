@@ -191,6 +191,13 @@ int main() {
   rejects([&] { decode_fd_signalling(fd_bytes.substr(0, 38) + bytes({0x78, 0x00, 0x02, 0x01, 'x'})); },
           "FD payload that is not FILEURL");
   rejects([&] { decode_fd_signalling(fd_bytes + bytes({0x92})); }, "duplicated FD disposition request type");
+  // TS 24.282 clause 10.2.4.4.2 step 6: a second Payload IE is reported as such (warning 210), not as a duplicate.
+  try {
+    decode_fd_signalling(fd_bytes + bytes({0x78, 0x00, 0x02, 0x04, 'u'}));
+    check(false, "second FD Payload IE accepted");
+  } catch (const std::exception &error) {
+    check(std::string(error.what()).find("file URL") != std::string::npos, "second FD Payload IE not reported");
+  }
   rejects([&] { decode_fd_signalling(fd_bytes.substr(0, 38) + bytes({0x93, 0x78, 0x00, 0x02, 0x04, 'u'})); },
           "reserved FD disposition request type value");
 

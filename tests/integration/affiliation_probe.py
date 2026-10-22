@@ -16,6 +16,8 @@ to the MCPTT server and, with --mcdata, to the MCData server; the check is the s
   - SIP-If-Match with the entity tag of the 200: 200 (OK);
   - a service info without <mcptt-client-id> (<mcdata-client-id>): 200 (OK), the client being the PIDF's tuple
     (TS 24.379 clause 9.2.1.2 step 2, clause 9.2.2.2.3 step 10);
+  - a publication and a subscription naming another user's ID (--others) in the service info: 403 (Forbidden)
+    (TS 24.379 clauses 9.2.2.2.3 and 9.2.2.2.4 step 4; TS 24.282 clauses 8.3.2.3 and 8.3.2.4 step 4);
   - Expires 0 with the service info alone, no PIDF: 200 (OK) with Expires 0, the user no longer affiliated
     (TS 24.379 clause 9.2.1.2 NOTE 2; TS 24.282 clause 8.2.2 NOTE 1); then the member group published again;
   - last, to the MCPTT server: a SUBSCRIBE out of any dialog with Expires 0, a fetch of the current state (TS 24.379
@@ -73,8 +75,10 @@ def main():
     parser.add_argument('--member', required=True, help='a group the user is a member of')
     parser.add_argument('--non-member', required=True, help='a group the user is not a member of')
     parser.add_argument('--mcdata', action='store_true', help='probe the MCData server too')
+    parser.add_argument('--others', required=True, help='JSON {service: the ID of another user of the service}')
     args = parser.parse_args()
     cfg = json.loads(pathlib.Path(args.config).read_text())
+    others = json.loads(args.others)
     sip = SipProbe(cfg, args.disable_tls)
     outcomes = {}
     for service in ['mcptt'] + (['mcdata'] if args.mcdata else []):
@@ -103,6 +107,14 @@ def main():
         publish('unknown_etag', {'Expires': '4294967295', 'SIP-If-Match': 'never-issued-' + secrets.token_hex(6)})
         publish('current_etag', {'Expires': '4294967295', 'SIP-If-Match': initial[1].get('sip-etag', 'none')})
         publish('no_client_id', {'Expires': '4294967295'}, body(service, user, client, [args.member], client_id=False))
+        publish('other_user', {'Expires': '4294967295'}, body(service, others[service], client, [args.member]))
+        fields = {'Event': 'presence', 'Expires': '3600', 'Accept': 'application/pidf+xml',
+                  'Content-Type': INFO[service][0], 'P-Preferred-Service': 'urn:urn-7:3gpp-service.ims.icsi.' + service}
+        info = body(service, others[service], client, [], pidf=False)[1]
+        challenge = sip.request('SUBSCRIBE', uri, fields, info)
+        answer = (sip.request('SUBSCRIBE', uri, fields, info, authorization=sip.digest('SUBSCRIBE', uri, challenge))
+                  if challenge[0] in (401, 407) else challenge)
+        seen['subscribe_other_user'] = [answer[0], {}]
         publish('expires_0_no_pidf', {'Expires': '0'}, body(service, user, client, [], pidf=False))
         publish('restored', {'Expires': '4294967295'}, body(service, user, client, [args.member]))
     uri, user = cfg['mcptt']['service_uri'], cfg['mcptt']['user_id']
