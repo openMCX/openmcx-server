@@ -494,6 +494,7 @@ void McServer::forward_conference(ConferenceRelay &relay, const std::string &sta
     if (part.content_type == "application/conference-info+xml") {
       auto conference = parse_conference_info(part.body);
       if (!conference.session_uri.empty()) conference.session_uri = relay.alias;
+      conference.mcvideo = svc_.service == Service::mcvideo;
       part.body = conference_info_xml(conference);
     }
   const auto boundary = "mcx-" + random_id();

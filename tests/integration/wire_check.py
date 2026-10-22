@@ -36,6 +36,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 MCPTT = 'sip:mcptt@mcx.test'
 MCDATA = 'sip:mcdata@mcx.test'
+MCVIDEO = 'sip:mcvideo@mcx.test'
 
 
 # ------------------------------------------------------------------------------
@@ -100,6 +101,28 @@ def verifiers(scenario, flags):
         'mcdata_ipconn_scenario': ('mcdata-server', [['verify_mcdata_ipconn.py', '--service', MCDATA]]),
         'mcdata_protected_scenario': ('mcdata-server', [['verify_mcdata_protected.py', '--results', '{results}']]),
     }
+    # The MCVideo scenarios: verify_mcvideo.py checks what the MCVideo server sends in each, and that the scenario
+    # produced the signalling it is about.
+    expected = {
+        'mcvideo_affiliation_scenario': ['affiliation'],
+        'mcvideo_group_call_scenario': ['group', 'conference'],
+        'mcvideo_private_call_scenario': ['private'],
+        'mcvideo_emergency_scenario': ['emergency'],
+        'mcvideo_pull_push_scenario': [],
+        'mcvideo_ambient_scenario': [],
+        'mcvideo_adhoc_scenario': [],
+        'mcvideo_regroup_scenario': [],
+        'mcvideo_functional_alias_scenario': [],
+        'mcvideo_group_selection_scenario': [],
+        'mcvideo_location_scenario': [],
+        'mcvideo_protected_scenario': [],
+        'mcvideo_xml_scenario': [],
+    }
+    if scenario in expected:
+        command = ['verify_mcvideo.py', '--service', MCVIDEO]
+        for kind in expected[scenario]:
+            command += ['--expect', kind]
+        return 'mcvideo-server', [command]
     return table.get(scenario)
 
 

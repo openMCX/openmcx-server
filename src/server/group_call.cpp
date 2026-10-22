@@ -384,6 +384,7 @@ void McServer::notify_conference(const std::shared_ptr<Session> &session, bool e
     conference.group_id = session->group;
     conference.version = ++sub.version;
     conference.deleted = ending;
+    conference.mcvideo = svc_.service == Service::mcvideo;
     if (!ending)
       for (const auto &leg : session_legs(*session))
         if (leg->active)
@@ -397,9 +398,14 @@ void McServer::notify_conference(const std::shared_ptr<Session> &session, bool e
     const auto boundary = "mcx-" + random_id();
     const auto state = terminated ? std::string("terminated;reason=") + (expired ? "timeout" : "noresource")
                                   : "active;expires=" + std::to_string(sub.expires - std::time(nullptr));
+    // TS 24.379 clause 6.3.3.4 steps 1 to 4 (TS 24.281 clause 6.3.3.4): the controlling function's identity, the
+    // default Expires of RFC 4575 and the service's ICSI in a P-Preferred-Service header field.
+    const std::vector<SipHeader> headers = {{"P-Asserted-Identity", "<" + own_service_uri() + ">"},
+                                            {"Expires", "3600"},
+                                            {"P-Preferred-Service", svc_.icsi}};
     try {
       sip_.notify(sub.dialog, "conference", state, "multipart/mixed; boundary=" + boundary,
-                  multipart_body(parts, boundary), {}, [this, id = sub.user](const SipResponse &response) {
+                  multipart_body(parts, boundary), headers, [this, id = sub.user](const SipResponse &response) {
                     if (response.status_code >= 300)
                       event("conference_notify_rejected",
                             {{"user_id", id}, {"status", response.status_code}, {"reason", response.reason}});

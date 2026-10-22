@@ -64,4 +64,4 @@ The scenario makes 17 checks.
 | Service settings | Subscription to and notification of service settings (§7.2.4, §7.3.6) and PUBLISH for settings only (§7.3.4) are not exercised |
 | Affiliation variants | Negotiated mode (§8.2.1.4, §8.2.1.5), group dynamic data (§8.2.1.6), rules-based affiliation (§8.2.1.7), implicit affiliation (§8.2.2.2.15) and affiliation across servers (§8.2.2.2.6) are not exercised |
 | Security | The CSK upload and protected signalling of §7.2.2 steps 3-4 and §7.2.5 are tested in the [protected call tests](MCVIDEO_PROTECTED_TEST.md) and the [XML protection tests](MCVIDEO_XML_PROTECTION_TEST.md) |
-| Wire evidence | These tests check client and server state; the call tests check the SIP on the wire |
+| Wire evidence | The scenario checks client and server state; the wire verifier `verify_mcvideo.py --expect affiliation` checks the SUBSCRIBE body and the affiliation NOTIFYs on the wire (see the [MCVideo test index](../MCVIDEO_TEST.md#wire-verifier)) |

@@ -254,13 +254,15 @@ struct ConferenceUser {
 };
 
 //------------------------------------------------------------------------------
-// RFC 4575 with TS 24.379 clause 10.1.3.6.1.2: a conference-info document.
+// RFC 4575 with TS 24.379 clause 10.1.3.6.1.2 (TS 24.281 clause 9.2.3.6.1): a conference-info document.
 struct ConferenceInfo {
   // TS 24.379 uses group_id as conference-info@entity. session_uri is the
   // optional RFC 4575 conf-uris participation URI, not the entity attribute.
   std::string session_uri, group_id;
   std::uint32_t version = 0;
   bool full = true, deleted = false;
+  // An MCVideo document: its <functional-alias> is in the MCVideo extension namespace (TS 24.281 clause 9.2.3.6.1.2).
+  bool mcvideo = false;
   std::vector<ConferenceUser> users;
 };
 

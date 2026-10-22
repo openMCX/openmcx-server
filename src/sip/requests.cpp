@@ -256,14 +256,18 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
     add_core_route(data.get(), headers);
 
     // An MCPTT call declares the MCPTT service; a caller that names its own
-    // service, such as the MCData media plane, keeps its headers instead.
+    // service, such as the MCData media plane, keeps its headers instead. TS 24.379 clause 6.3.3.1.2 steps 2 to 4
+    // (TS 24.281 clause 6.3.3.1.2): one Accept-Contact header field with the service's media feature tag and one
+    // with its ICSI, each with "require" and "explicit".
     if (get_header(headers, "P-Preferred-Service").empty() && get_header(headers, "P-Asserted-Service").empty()) {
       add_header(data.get(),
                  {config.asserts_service ? "P-Asserted-Service" : "P-Preferred-Service", config.service->icsi});
+      add_header(data.get(), {"Accept-Contact", std::string("*;+") + config.service->feature_tag + ";require;explicit"});
       add_header(data.get(), {"Accept-Contact", std::string("*;+g.3gpp.icsi-ref=\"") + config.service->icsi_encoded +
-                                                    "\";+" + config.service->feature_tag + ";require;explicit"});
+                                                    "\";require;explicit"});
     }
     add_headers(data.get(), without_route(headers));
+    add_answer_headers(data.get(), config.invite_request_headers);
     require_success(pjsip_inv_send_msg(invite_session, data.release()), "send INVITE request");
   } catch (...) {
     if (invite_session != nullptr)

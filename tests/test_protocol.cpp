@@ -102,6 +102,20 @@ int main() {
   check(conference_copy.users[0].functional_alias == conference.users[0].functional_alias &&
             conference_copy.users[1].status == "disconnected",
         "conference endpoint data lost");
+  check(conference_xml.find("mcvideoConfInfo") == std::string::npos && !conference_copy.mcvideo,
+        "MCPTT conference uses the MCPTT extension namespace");
+  {
+    // TS 24.281 clause 9.2.3.6.1.2: an MCVideo conference-info document's <functional-alias> is in the MCVideo
+    // extension namespace.
+    auto video = conference;
+    video.mcvideo = true;
+    const auto video_xml = conference_info_xml(video);
+    const auto back = parse_conference_info(video_xml);
+    check(video_xml.find("urn:3gpp:ns:mcvideoConfInfo:1.0") != std::string::npos &&
+              video_xml.find("mcpttConfInfo") == std::string::npos && back.mcvideo &&
+              back.users[0].functional_alias == conference.users[0].functional_alias,
+          "MCVideo conference functional alias namespace");
+  }
   conference.full = false;
   check(!parse_conference_info(conference_info_xml(conference)).full, "partial conference state lost");
   {

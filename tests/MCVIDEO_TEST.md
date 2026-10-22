@@ -30,6 +30,26 @@ Architecture: [reference points](../docs/architecture/mcvideo-reference-points.m
 | [Service authorisation and affiliation](mcvideo/MCVIDEO_AFFILIATION_TEST.md) | Four clients authorise at `mcvideo-server` by PUBLISH and affiliate after their status subscription, beside MCPTT; 101 for a refused token, 403 for a non-member, a second group, de-affiliation (MV-AF-01 to MV-AF-07) |
 | [Shared core](mcvideo/MCVIDEO_SHARED_CORE_TEST.md) | Service profile, per-service warning tables, MCVideo SDP, the media plane control interface and the codec-aware relay, proven by unit tests; the `mcvideo-server` container runs beside the MCPTT server and the SIP core routes the MCVideo PSI to it, with no change to MCPTT behaviour (SC-01 to SC-08) |
 
+## Wire verifier
+
+The scenarios check the state that clients and servers report, plus some messages of their own procedure. The wire
+verifier `tests/integration/verify_mcvideo.py` reads the clear SIP captured at `mcvideo-server`, independently of the C++
+implementation, and checks what the server sends in every MCVideo scenario of a single-server debug TCP lab. The
+regression runs it through `tests/integration/wire_check.py` and reports it as `<scenario>/wire`. Over TLS and in split
+labs it is skipped.
+
+| Messages | Checks (TS 24.281 clauses) |
+|---|---|
+| Initial INVITE to a client | Focus Contact with `+g.3gpp.mcvideo`, the ICSI and `isfocus` (6.3.3.1.2 step 1); one Accept-Contact with `+g.3gpp.mcvideo` and one with the ICSI, both `require;explicit` (steps 2 and 4); the ICSI in P-Asserted-Service (step 3); `timer`, `tdialog` and `norefersub` in Supported (step 7, 6.3.2.2.3); Session-Expires without a refresher, or `uac` (6.3.2.2.3 step 2); the server's own P-Asserted-Identity (6.3.2.2.5.2 step 6, 6.3.2.2.6.2 step 7); Answer-Mode and Priv-Answer-Mode values; the mcvideo-info body with the invited user, and with the calling user and group (6.3.3.1.6 step 3) or, for a private call, the calling user only; an SDP offer with video, and transmission control with `mc_transmission_ssrc` when the caller offered it, at the server's addresses (6.3.3.1.1); in an emergency group call, Resource-Priority with `<emergency-ind>` (6.3.3.1.6 step 6) |
+| Answers to a client's INVITE | 200 (OK): `timer` in Require, Session-Expires with `refresher=uac` when the request named none, the server's identity, the focus Contact, `tdialog`, `norefersub`, `explicitsub` and `nosub` (6.3.2.1.4.2, 6.3.3.2.3.2); an SDP answer at the server with transmission control and `mc_transmission_ssrc` (6.3.3.2.1). Provisional answers: identity, focus Contact and `norefersub` (6.3.2.1.4.1, 6.3.3.2.3.1) |
+| Resource-Priority | Only the `mcpttp` namespace of RFC 8101, values 0 to 15 (6.2.8.1.16) |
+| Conference NOTIFY | The server's identity, Expires, the ICSI in P-Preferred-Service and an mcvideo-info body with the calling group and the subscriber (6.3.3.4); the group in `entity`, with extensions only in `urn:3gpp:ns:mcvideoConfInfo:1.0` (9.2.3.6.1.2) |
+| Affiliation | The client's SUBSCRIBE has an mcvideo-info body with `<mcvideo-request-uri>` (8.2.1.3 step 2); the server's NOTIFY has Subscription-State and a PIDF of affiliation elements in `urn:3gpp:ns:mcvideoPresInfo:1.0` (8.3.2.5, 8.4.1) |
+| Release and separation | No BYE repeated with another CSeq on one dialog direction (6.3.3.1.4); no MCPTT ICSI, feature tag or mcptt-info body in anything the server sends |
+
+The group call, private call, emergency and affiliation scenarios also require the signalling they are about (`--expect`).
+Transmission control messages and RTP are checked by the scenarios themselves (for example MV-GC-07).
+
 ## Not covered
 
 What the present edition does not include, and the known limits of what it implements, are in the

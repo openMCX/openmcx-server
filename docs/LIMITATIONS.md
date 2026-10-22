@@ -34,9 +34,20 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   serve them; the clients use annex D.2, and an interconnected system keeps its own KMS.
 - **Profile.** The default lab keeps media and floor protection off; the protected fixtures use an explicitly configured
   E.6 numeric wire profile that has not been qualified against an independent peer.
-- **Transport.** SIP uses mutually authenticated TLS, not a qualified TS 33.203 Gm profile, and the servers' Diameter
-  uses TLS rather than NDS/IP. The lab's common-service configuration shares client credentials between the services
-  and needs further secret isolation for production.
+- **SIP core access.** The SIP core challenges a client's REGISTER with SIP digest, and the clients answer with the
+  password from the Credential Service. Over 4G or 5G this is a deviation from 3GPP to be fixed: TS 33.180 clause 6.2.1
+  requires IMS AKA (TS 33.203) for SIP core access, also with a SIP core that is not an IMS, and TS 33.203 annexes N.1
+  and O.1.1 exclude SIP digest and TLS access security on access networks defined by 3GPP. That means AKA from the
+  USIM or ISIM, the security agreement and IPsec between client and SIP core; the Android app would need carrier
+  privileges to run AKA on the phone's SIM. On non-3GPP access (Wi-Fi, a control room, the labs) TS 33.180 allows SIP
+  digest with TLS (TS 33.203 annexes N and O; ETSI TS 103 765-2 clause 6.1.1 does the same for FRMCS on-board
+  applications), but OpenMCX departs from those annexes in three points: the challenge offers MD5 only, without
+  SHA-256, and without qop "auth" (annex N.2.1.1, TS 24.229 clause 5.4.1.2.1B); the 200 (OK) carries no Authentication-Info for the client to
+  authenticate the network (annex N.2.1.1); and the SIP core requests a client certificate, which annex O.2.1 forbids
+  (the client is authenticated by digest only).
+- **Transport.** SIP uses TLS 1.2 or later with client certificates (see SIP core access), not a qualified TS 33.203
+  Gm profile, and the servers' Diameter uses TLS rather than NDS/IP. The lab's common-service configuration shares
+  client credentials between the services and needs further secret isolation for production.
 
 ### Media and floor control
 

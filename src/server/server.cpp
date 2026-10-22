@@ -581,6 +581,10 @@ McServer::McServer(const ServiceProfile &service, Json cfg, bool disable_tls)
             // and 10.2.2.3.1.3): the 200 (OK) to a re-INVITE asserts the identity and supports "norefersub" and
             // "tdialog".
             config.reinvite_success_headers = {{"P-Asserted-Identity", identity}, {"Supported", "norefersub, tdialog"}};
+            // TS 24.379 clauses 6.3.2.2.3 steps 5 and 6, 6.3.2.2.5.2 step 6 and 6.3.2.2.6.2 step 7 (TS 24.281 the same
+            // clauses): an INVITE toward a client asserts the service's identity and supports "tdialog" and
+            // "norefersub". An INVITE relayed for a user to another MCPTT server keeps that user's identity.
+            config.invite_request_headers = {{"P-Asserted-Identity", identity}, {"Supported", "tdialog, norefersub"}};
             return config;
           }(),
           {[this](const SipMessage &message) { return incoming(message); },

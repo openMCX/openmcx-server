@@ -52,10 +52,13 @@ const char *affiliation_namespace(bool mcdata, bool mcvideo);
 // TS 24.379 annex F.7.2: the namespace of the regroup document.
 inline constexpr const char *regroup_ns = "urn:3gpp:ns:preconfiguredRegroup:1.0";
 
-// RFC 4575: the conference-info namespace, and the MCPTT extension of TS 24.379 clause 10.1.3.6.1.2.
+// RFC 4575: the conference-info namespace, the MCPTT extension of TS 24.379 clause 10.1.3.6.1.2 and the MCVideo
+// extension of TS 24.281 clause 9.2.3.6.1.2.
 inline constexpr const char *conference_ns = "urn:ietf:params:xml:ns:conference-info";
 
 inline constexpr const char *conference_mcptt_ns = "urn:3gpp:ns:mcpttConfInfo:1.0";
+
+inline constexpr const char *conference_mcvideo_ns = "urn:3gpp:ns:mcvideoConfInfo:1.0";
 
 // RFC 4826: the resource-lists namespace.
 inline constexpr const char *resource_lists_ns = "urn:ietf:params:xml:ns:resource-lists";

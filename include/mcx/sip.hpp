@@ -80,6 +80,10 @@ struct SipConfig {
   // 6.3.3.2.3, TS 24.281 clauses 6.3.2.1.4 and 6.3.3.2.3, TS 24.282 clause 6.3.7.1.23). Empty for a client.
   std::vector<SipHeader> invite_provisional_headers;
   std::vector<SipHeader> invite_success_headers;
+  // A server's own header fields of its initial INVITE requests: its P-Asserted-Identity, unless the request names
+  // one, and the "tdialog" and "norefersub" option tags of its Supported header field (TS 24.379 clauses 6.3.2.2.3,
+  // 6.3.2.2.5.2 and 6.3.2.2.6.2; TS 24.281 clauses 6.3.2.2.3, 6.3.2.2.5.2 and 6.3.2.2.6.2). Empty for a client.
+  std::vector<SipHeader> invite_request_headers;
   // A server's own header fields of its 200 (OK) to a re-INVITE: its P-Asserted-Identity and the "norefersub" and
   // "tdialog" option tags (TS 24.379 clauses 10.1.1.3.1.3, 10.1.1.4.7, 11.1.1.3.1.3; TS 24.281 clauses 9.2.1.3.1.3,
   // 9.2.1.4.7, 10.2.2.3.1.3). Empty for a client.

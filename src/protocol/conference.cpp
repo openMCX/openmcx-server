@@ -2,24 +2,27 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// Conference event package documents: conference-info with the MCPTT extension (functional alias).
+// Conference event package documents: conference-info with the MCPTT or MCVideo extension (functional alias).
 //
-// Specifications: RFC 4575, TS 24.379 V19.7.0 (Rel-19).
+// Specifications: RFC 4575, TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19).
 
 #include "protocol_internal.hpp"
 
 namespace mcx {
 
 //------------------------------------------------------------------------------
-// RFC 4575 with TS 24.379 clause 10.1.3.6.1.2: writes a conference-info document (full, partial or deleted) with
-// the participation URI, each user's endpoint and status, and the <functional-alias> extension.
+// RFC 4575 with TS 24.379 clause 10.1.3.6.1.2 (TS 24.281 clause 9.2.3.6.1.2 for MCVideo): writes a conference-info
+// document (full, partial or deleted) with the participation URI, each user's endpoint and status, and the
+// <functional-alias> extension.
 std::string conference_info_xml(const ConferenceInfo &info) {
   conference_uri(info.group_id);
   if (!info.session_uri.empty()) conference_uri(info.session_uri, true);
   if (info.deleted && !info.users.empty()) invalid("deleted conference contains users");
+  const std::string prefix = info.mcvideo ? "mcvideoConfInfo" : "mcpttConfInfo";
   std::string out = "<?xml version=\"1.0\"?><conference-info xmlns=\"" + std::string(conference_ns) +
-                    "\" xmlns:mcpttConfInfo=\"" + conference_mcptt_ns + "\" entity=\"" + xml_escape(info.group_id) +
-                    "\" version=\"" + std::to_string(info.version) + "\" state=\"" +
+                    "\" xmlns:" + prefix + "=\"" + (info.mcvideo ? conference_mcvideo_ns : conference_mcptt_ns) +
+                    "\" entity=\"" + xml_escape(info.group_id) + "\" version=\"" + std::to_string(info.version) +
+                    "\" state=\"" +
                     (info.deleted ? "deleted"
                      : info.full  ? "full"
                                   : "partial") +
@@ -45,8 +48,8 @@ std::string conference_info_xml(const ConferenceInfo &info) {
              "><endpoint entity=\"" + xml_escape(user.endpoint_uri) + "\"><status>" + user.status + "</status>";
       if (!user.functional_alias.empty()) {
         conference_uri(user.functional_alias);
-        out += "<mcpttConfInfo:functional-alias>" + xml_escape(user.functional_alias) +
-               "</mcpttConfInfo:functional-alias>";
+        out += "<" + prefix + ":functional-alias>" + xml_escape(user.functional_alias) + "</" + prefix +
+               ":functional-alias>";
       }
       out += "</endpoint></user>";
     }
@@ -59,8 +62,9 @@ std::string conference_info_xml(const ConferenceInfo &info) {
 }
 
 //------------------------------------------------------------------------------
-// RFC 4575 with TS 24.379 clause 10.1.3.6.1.2: reads a conference-info document: its state, the SIP participation
-// URI, and each user's endpoint, status and functional alias.
+// RFC 4575 with TS 24.379 clause 10.1.3.6.1.2 (TS 24.281 clause 9.2.3.6.1.2): reads a conference-info document: its
+// state, the SIP participation URI, and each user's endpoint, status and functional alias, in the MCPTT or the
+// MCVideo extension namespace.
 ConferenceInfo parse_conference_info(std::string_view xml) {
   auto doc = document(xml);
   auto root = xmlDocGetRootElement(doc.get());
@@ -115,6 +119,10 @@ ConferenceInfo parse_conference_info(std::string_view xml) {
       user.status = scalar(unique_child(endpoint, "status", conference_ns));
       conference_status(user.status);
       auto alias = unique_child(endpoint, "functional-alias", conference_mcptt_ns, false);
+      if (!alias) {
+        alias = unique_child(endpoint, "functional-alias", conference_mcvideo_ns, false);
+        if (alias) info.mcvideo = true;
+      }
       if (alias) {
         user.functional_alias = scalar(alias);
         conference_uri(user.functional_alias);
