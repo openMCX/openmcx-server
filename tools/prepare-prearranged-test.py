@@ -28,6 +28,8 @@ import uuid
 import lab_images
 
 ROOT = Path(__file__).resolve().parents[1]
+# The IPv4 host group and port of the --multicast lab's group speech (administratively scoped, RFC 2365).
+MULTICAST_HOST_GROUP = '239.10.0.1:40000'
 
 
 # ------------------------------------------------------------------------------
@@ -1261,6 +1263,22 @@ def add_rx(fixture):
     conf.write_text(conf.read_text() + f'{comment}\nConnectPeer = "mock-pcrf.{domain}" {{ {peer} }};\n')
 
 
+def add_multicast(fixture):
+    """IP multicast of the prearranged group's speech, an OpenMCX profile (include/mcx/multicast.hpp): the MCPTT
+    server sends it to one IPv4 host group for client-a, client-b and client-c, which join it, and by unicast to
+    client-d, which is not on the opt-in list and has no multicast block."""
+    opted_in = ['client-a', 'client-b', 'client-c']
+    configs = {role: json.loads((fixture / f'generated/{role}.json').read_text()) for role in opted_in}
+    groups = {configs['client-a']['mcptt']['group_id']: MULTICAST_HOST_GROUP}
+    for role, cfg in configs.items():
+        cfg['mcptt']['multicast'] = dict(groups=groups)
+        (fixture / f'generated/{role}.json').write_text(json.dumps(cfg, indent=2) + '\n')
+    server_file = fixture / 'generated/mcptt-server.json'
+    server = json.loads(server_file.read_text())
+    server['mcptt']['multicast'] = dict(users=[cfg['mcptt']['user_id'] for cfg in configs.values()], groups=groups)
+    server_file.write_text(json.dumps(server, indent=2) + '\n')
+
+
 def add_mock_pcrf(compose, fixture):
     """The mock PCRF (tests/integration/mock_pcrf.py, with the Python of the development image) and the Rx lab's
     network: a fixed subnet, client-d outside rx.ue_subnets."""
@@ -1875,6 +1893,11 @@ def main():
                         help='troubleshooting only: the SIP core writes its TLS session secrets to '
                         '/tmp/kamailio-tls-keylog.txt, so a capture can be decrypted')
     parser.add_argument('--floor-queue', action='store_true')
+    parser.add_argument(
+        '--multicast',
+        action='store_true',
+        help='IP multicast of the group call speech (an OpenMCX profile): client-a to client-c opted in, client-d unicast',
+    )
     parser.add_argument('--priority', action='store_true')
     parser.add_argument('--protected', action='store_true')
     parser.add_argument(
@@ -2154,6 +2177,8 @@ def main():
         cfg['sip']['session_expires'] = 90
         cfg['mcptt']['floor_queue'] = args.floor_queue
         path.write_text(json.dumps(cfg, indent=2) + '\n')
+    if args.multicast:
+        add_multicast(fixture)
     if args.priority or args.protected:
         site_path = fixture / 'generated/site.json'
         site = json.loads(site_path.read_text())

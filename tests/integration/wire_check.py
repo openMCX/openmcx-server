@@ -58,6 +58,7 @@ def verifiers(scenario, flags):
             [['verify_chat_call.py', '--service', MCPTT, '--chat-group', 'sip:operations-chat@mcx.test']],
         ),
         'adhoc_call_scenario': ('mcptt-server', [['verify_adhoc_call.py', '--service', MCPTT]]),
+        'multicast_scenario': ('mcptt-server', [['verify_multicast.py', '{results}']]),
         'remote_group_call_scenario': (
             'mcptt-server',
             [['verify_remote_group_call.py', '--service', MCPTT, '--group', 'sip:operations@mcx.test']],
