@@ -40,26 +40,27 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   that is not an IMS, and TS 33.203 annexes N.1 and O.1.1 exclude SIP digest and TLS access security on access networks
   defined by 3GPP. OpenMCX chooses the scheme per private user identity, as the HSS stores it (TS 29.228 clause 6.3.1
   step 4): an identity provisioned for IMS AKA registers through the P-CSCF with a software ISIM (K and OPc of its own,
-  MILENAGE, or the test algorithm of TS 34.108 clause 8.1.2 for a conformance test system), the security agreement
-  and IPsec ESP security associations in transport mode, SIP over TCP or UDP inside them (UDP: requests of 1300 bytes
-  or more over TCP, RFC 3261 section 18.1.1; no SIP outbound over UDP, which would need STUN keepalives); every other
-  identity uses SIP digest over TLS. IMS AKA is used by the Linux client inside the 5G UE of
-  [tutorial 3](../tutorials/end-to-end/03-mcx-over-oai-5g/README.md) and by the `aka` and `aka-udp` regression labs; the
-  SIP core makes
-  the vectors itself (Kamailio `ims_auth`, no HSS over Cx), offering AKAv2-SHA-256 and then AKAv1-MD5. Its SQN is kept
-  in memory: after a restart of the SIP core each UE resynchronises once (AUTS). Not done yet: emergency registration
-  (TS 24.229 clause 5.1.6); IPv6 (the IMS AKA path is tested on IPv4 only); a complete clean-up of the old security
-  associations after a re-registration (TS 33.203 clause 7.4); a lab that exercises a resynchronisation (AUTS) over
-  existing security associations, at a re-registration; the discovery of the P-CSCF (TS 24.229 clause 9.2.1: its address
-  is configured). The MCX Admin activation and the Credential Service issue digest credentials only (an identity
-  provisioned for IMS AKA gets none), so the clients that MCX Admin activates keep SIP digest over TLS, also where they
-  run on 3GPP access: the dispatcher inside the 5G or 4G UE of tutorials 3, 4 and 5 is a deviation from TS 33.180
-  clause 6.2.1. The Android app would need carrier privileges to run AKA on the phone's SIM. On non-3GPP access (Wi-Fi,
-  a control room, the labs) TS 33.180 allows SIP digest with TLS (TS 33.203 annexes N and O; ETSI TS 103 765-2
-  clause 6.1.1 does the same for FRMCS on-board applications), but OpenMCX departs from those annexes in three points:
-  the challenge offers MD5 only, without SHA-256, and without qop "auth" (annex N.2.1.1, TS 24.229 clause 5.4.1.2.1B);
-  the 200 (OK) carries no Authentication-Info for the client to authenticate the network (annex N.2.1.1); and the SIP
-  core requests a client certificate, which annex O.2.1 forbids (the client is authenticated by digest only).
+  MILENAGE, or the test algorithm of TS 34.108 clause 8.1.2 for a conformance test system), the security agreement and
+  IPsec ESP security associations in transport mode, SIP over TCP or UDP inside them (UDP: requests of 1300 bytes or
+  more over TCP, RFC 3261 section 18.1.1; no SIP outbound over UDP, which would need STUN keepalives); every other
+  identity uses SIP digest over TLS. IMS AKA is used by the Linux client inside the UE of [tutorials
+  3](../tutorials/end-to-end/03-mcx-over-oai-5g/README.md), [4](../tutorials/end-to-end/04-mcx-over-srsran-5g/README.md)
+  (5G) and [5](../tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/README.md) (4G) and by the `aka` and `aka-udp`
+  regression labs; the SIP core makes the vectors itself (Kamailio `ims_auth`, no HSS over Cx), offering AKAv2-SHA-256
+  and then AKAv1-MD5. Its SQN is kept in memory: after a restart of the SIP core each UE resynchronises once (AUTS). Not
+  done yet: emergency registration (TS 24.229 clause 5.1.6); IPv6 (the IMS AKA path is tested on IPv4 only); a complete
+  clean-up of the old security associations after a re-registration (TS 33.203 clause 7.4); a lab that exercises a
+  resynchronisation (AUTS) over existing security associations, at a re-registration; the discovery of the P-CSCF (TS
+  24.229 clause 9.2.1: its address is configured). The MCX Admin activation and the Credential Service issue digest
+  credentials only (an identity provisioned for IMS AKA gets none), so the clients that MCX Admin activates keep SIP
+  digest over TLS, also where they run on 3GPP access: the dispatcher inside the 5G or 4G UE of tutorials 3, 4 and 5 is
+  a deviation from TS 33.180 clause 6.2.1. The Android app would need carrier privileges to run AKA on the phone's SIM.
+  On non-3GPP access (Wi-Fi, a control room, the labs) TS 33.180 allows SIP digest with TLS (TS 33.203 annexes N and O;
+  ETSI TS 103 765-2 clause 6.1.1 does the same for FRMCS on-board applications), but OpenMCX departs from those annexes
+  in three points: the challenge offers MD5 only, without SHA-256, and without qop "auth" (annex N.2.1.1, TS 24.229
+  clause 5.4.1.2.1B); the 200 (OK) carries no Authentication-Info for the client to authenticate the network (annex
+  N.2.1.1); and the SIP core requests a client certificate, which annex O.2.1 forbids (the client is authenticated by
+  digest only).
 - **Transport.** SIP of the digest identities uses TLS 1.2 or later with client certificates (see SIP core access), not
   a qualified TS 33.203 Gm profile, and the servers' Diameter uses TLS rather than NDS/IP. The lab's common-service
   configuration shares client credentials between the services and needs further secret isolation for production. Every

@@ -156,10 +156,10 @@ and every call of the position go through the 5G user plane.
 ## 8. Look at the capture
 
 The reference capture [`captures/03-mcx-over-oai-5g-full.pcapng.gz`](captures/03-mcx-over-oai-5g-full.pcapng.gz)
-(0.7 MB, 4 833 frames) records a run of steps 4 to 7, made before the tutorial had the P-CSCF and the MC client of
-`client-d`: the system starting, the UE registering over the 5G core, the phones and the dispatcher signing in, a group
-call from the dispatcher with PTT, Bob talking back, and the hang-up. Wireshark opens the compressed file directly. The
-frame numbers below are those of the reference.
+(1.4 MB, 8 234 frames) records a run of steps 4 to 7: the system starting, the UE registering over the 5G core, the
+MC client of `client-d` registering with IMS AKA through the P-CSCF, the phones and the dispatcher signing in, a group
+call from the dispatcher with PTT, Bob talking back, the hang-up, and the phones' MC log-off. Wireshark opens the
+compressed file directly. The frame numbers below are those of the reference.
 
 It was captured on the two Docker networks, the 5G core's (`192.168.71.128/26`: N2, N3, N4, SBI and N5) and N6 with
 the OpenMCX system (`192.168.72.128/26`), and reduced by port so that every TCP segment of a kept stream stays:
@@ -168,15 +168,23 @@ the OpenMCX system (`192.168.72.128/26`), and reduced by port so that every TCP 
   NRF's registrations and heartbeats are left out);
 - SIP over TLS on 5061, **decrypted**: the file carries the TLS secrets of the SIP core (a pcapng decryption secrets
   block), so Wireshark shows the SIP messages without further setup;
+- the IMS AKA client's SIP: unprotected on 5060 until the 401, then inside **IPsec ESP** between the UE and the P-CSCF;
 - every UDP flow (speech and floor control) and ICMP.
 
 The databases, DNS, the encrypted HTTPS between the OpenMCX services and the simulated radio between the gNB and the
 UE (rfsimulator, TCP 4043) are left out.
 
-The dispatcher's packets appear more than once: inside GTP-U on N3 between the gNB (`192.168.71.140`) and the UPF
-(`192.168.71.134`), and on N6 after the UPF, once with `HOST_IP` (`192.168.90.88` in the reference) and once with
-the address of the SIP core or the MCPTT server behind it. The UE's address is `12.1.1.2`; the phones are on the
-Wi-Fi (`192.168.91.76` Alice, `192.168.88.177` Bob).
+To read the SIP inside ESP, give Wireshark the run's security associations: copy
+[`captures/03-mcx-over-oai-5g-full.esp_sa`](captures/03-mcx-over-oai-5g-full.esp_sa) to `~/.config/wireshark/esp_sa`
+(or import it in **Edit → Preferences → Protocols → ESP → ESP SAs**) and tick **Attempt to detect/decode encrypted ESP
+payloads** there. They are the keys of this throwaway run (CK and IK of one AKA challenge); a run of your own has
+others, in the client's debug log (lines `ESP SA`).
+
+The UE's packets appear more than once: inside GTP-U on N3 between the gNB (`192.168.71.140`) and the UPF
+(`192.168.71.134`), and on N6 after the UPF, once with `HOST_IP` (`192.168.179.39` in the reference) and once with
+the address of the SIP core or the MCPTT server behind it; the P-CSCF (`192.168.72.140`) reaches the UE without NAT.
+The UE's address is `12.1.1.2`; the phones are on the Wi-Fi (`192.168.179.40` Alice, `192.168.179.42` Bob). With
+**Edit → Preferences → Protocols → GTP** off (`--disable-protocol gtp`), only the N6 copies are read as TCP.
 
 Useful display filters:
 
@@ -187,39 +195,46 @@ Useful display filters:
 | `pfcp && !(pfcp.msg_type == 1 \|\| pfcp.msg_type == 2)` | N4 between the SMF and the UPF, without the heartbeats. |
 | `http2.headers.path contains "policyauthorization"` | N5: the MCPTT server's app session at the PCF (TS 29.514), and its deletion. |
 | `http2.headers.path contains "sm-policy" \|\| http2.headers.path contains "smpolicycontrol"` | N7: the PCF's policy for the PDU session and its update for the call. |
+| `sip && ip.addr == 192.168.72.140 && tcp.port == 5060` | IMS AKA: the unprotected REGISTER with Security-Client and the 401 with the AKA challenge and Security-Server. |
+| `esp && sip` | The IMS AKA client's SIP inside ESP (with the ESP SAs above): the protected REGISTER, PUBLISH, SUBSCRIBE, NOTIFY, MESSAGE. |
 | `sip && !gtp` | Every SIP message (once; without the GTP-U copies). **Telephony → SIP Flows** draws them. |
 | `rtcp.app.name == "MCPT" && !gtp` | Floor control (TS 24.380 clause 8.2). |
 | `rtp && !gtp` | Speech: AMR-WB. |
 
-What to look for, in the reference run:
+What to look for, in the reference run (frame numbers with GTP off):
 
-- **The 5G core and the UE** (frames 12 to 378): PFCP Association between the SMF and the UPF (12), NG Setup (18), the
-  UE's Registration request (22) with 5G-AKA through the AUSF, UDM and UDR, Security mode command (181), and the PDU
-  session for the DNN `mcptt`: the AMF asks the SMF (238), the SMF asks the PCF for the session's policy (286), sets
-  up the UPF (315) and sends the PDU session establishment accept through the AMF (342). The session's default QoS
-  flow is QFI 1, 5QI 69 (MC signalling).
-- **Sign-in and registration** (frames 545 to 1530): Alice's and Bob's phones (545, 827) and the dispatcher over 5G
-  (1516) register with the SIP core: REGISTER, the challenge, REGISTER again.
-- **The group call** (frames 1931 to 2005): the dispatcher's INVITE leaves the UE inside GTP-U (1931) and reaches the
-  SIP core on N6 (1933); after the `407` challenge it is sent again (1950, 1952) and forwarded to the MCPTT server
-  (1956), which invites Alice (1967) and Bob (1973). The server's `200` reaches the dispatcher (1985).
-- **QoS over N5** (frames 2015 to 2085): the MCPTT server, as application function, asks the PCF for the dispatcher's
-  media (2015: `POST /npcf-policyauthorization/v1/app-sessions` with the media components, speech, RTCP and floor
-  control, TS 29.514). The PCF turns them into a PCC rule with 5QI 65 and updates the SMF (2031). The SMF changes the
-  UPF's rules (2037) and adds a QoS flow to the PDU session (2062, 2067: PDU Session Resource Modify Request with
-  QFI 2, 5QI 65, ARP 3 and a guaranteed bit rate of 41 kbit/s each way), which the gNB accepts (2072).
-- **Floor control and speech** (frames 2179 to 4640): the dispatcher's Floor Request (2179) and Floor Granted (2180),
-  Floor Taken to the phones (2183, 2184), the dispatcher's speech, Floor Release (3595); then Bob's turn (3633 to
-  4640). Downlink, the speech and floor control the UPF sends the gNB for the dispatcher carry QFI 2 in their GTP-U
-  header (filter `gtp.ext_hdr.pdu_ses_con.qos_flow_id == 2`); the UE's uplink packets stay on QFI 1 in the reference
-  run.
-- **Hang-up** (from frame 4690): the dispatcher's BYE (4690, 4692, again after the challenge 4699, 4701) and the
-  server's BYEs to Alice and Bob (4706, 4710). The MCPTT server deletes the app session (4705), and the SMF releases
-  the QoS flow (4749, 4763: PDU Session Resource Modify Request, cause normal release).
+- **The 5G core and the UE** (frames 3 to 323): PFCP Association between the SMF and the UPF (3), NG Setup (9), the
+  UE's Registration request (13) with 5G-AKA through the AUSF, UDM and UDR, Security mode command (170), and the PDU
+  session establishment accept for the DNN `mcptt` (323). The session's default QoS flow is QFI 1, 5QI 69 (MC
+  signalling).
+- **IMS AKA of `client-d`** (frames 523 to 937): the unprotected REGISTER to the P-CSCF's port 5060 with
+  Security-Client (523); the 401 with an AKAv2-SHA-256 and an AKAv1-MD5 challenge and Security-Server (604); the first
+  ESP packets (611); the protected REGISTER inside ESP with Security-Verify and the AKA response (623) and its 200
+  (631); then the service authorisation PUBLISH (937) and the subscriptions, all inside ESP.
+- **Sign-in and registration with SIP digest** (frames 1751 to 3194): Alice's phone (1751), the dispatcher over 5G
+  (2267) and Bob's phone (3194) register with the SIP core: REGISTER, the challenge, REGISTER again.
+- **The group call** (frames 3360 to 3449): the dispatcher's INVITE (3360) and the `407` challenge (3365); the MCPTT
+  server invites the members, among them `client-d` through the P-CSCF, inside ESP (3405, answered `200` at 3415),
+  and answers the dispatcher with `200` (3449).
+- **QoS over N5** (frames 3439 to 3507): the MCPTT server, as application function, asks the PCF for the dispatcher's
+  media (3439: `POST /npcf-policyauthorization/v1/app-sessions` with the media components, speech, RTCP and floor
+  control, TS 29.514). The PCF turns them into a PCC rule with 5QI 65 and updates the SMF; the SMF adds a QoS flow to
+  the PDU session (3507: PDU Session Resource Modify Request with 5QI 65 and a guaranteed bit rate).
+- **Floor control and speech** (frames 3859 to 7806): the dispatcher's Floor Request (3859), its speech, then Bob's
+  turn, up to the last Floor Release (7806). Downlink, the speech and floor control the UPF sends the gNB for the
+  dispatcher carry the call's QFI in their GTP-U header (filter `gtp.ext_hdr.pdu_ses_con.qos_flow_id`).
+- **Hang-up** (from frame 7875): the dispatcher's BYE (7875); the MCPTT server deletes the app session (7889: `POST
+  .../app-sessions/2/delete`), and the SMF releases the QoS flow (7983: PDU Session Resource Modify Request, cause
+  normal release; the gNB's response 7996).
+- **MC log-off of the phones** (frames 8114 to 8207): Alice's phone logs off from MCVideo, MCData and MCPTT with a
+  PUBLISH with Expires 0 each (8114, 8121, 8127; TS 24.379 clause 7.2.1A NOTE 3, TS 24.281 and TS 24.282 alike), and
+  Bob's phone does the same (8197 to 8207). After the MC log-off, each phone sends a SIP de-REGISTER, a REGISTER with
+  Expires 0 (TS 24.229 clause 5.1.1.6): Alice's 8133, passed on to the three servers 8135 to 8142, and Bob's 8213.
 
-The access tokens of the IdMS travel in SIP for service authorisation, and the file holds the SIP core's TLS secrets.
-They belong to a throwaway system: its signing key and users no longer exist and the tokens expired after an hour.
-Treat a capture of your own system, and its TLS secrets, as secret.
+The access tokens of the IdMS travel in SIP for service authorisation, and the file holds the SIP core's TLS secrets
+(and the `.esp_sa` file the IPsec keys of `client-d`). They belong to a throwaway system: its signing key and users no
+longer exist and the tokens expired after an hour. Treat a capture of your own system, its TLS secrets and its ESP
+keys, as secret.
 
 ## 9. Stop or start over
 
@@ -267,7 +282,7 @@ The last command shows the security associations in use (TS 33.203 clause 7.1, t
 
 | 5.1 step | TS 37.579-1 | What the client does | Where to see it | Normative clauses |
 |---|---|---|---|---|
-| 1 | 5.4.2.3, 5.4.1B | The nr-UE registers with the 5GS (5G AKA, NAS security) and sets up the MCX PDU session on the DNN `mcptt`, whose default QoS flow has 5QI 69. | `docker logs openmcx-ue-route` (the UE's address); in a capture `nas-5gs` and `ngap.fiveQI == 69` (step 8, frames 22 to 342 of the reference). | TS 24.501, TS 23.501 table 5.7.4-1 |
+| 1 | 5.4.2.3, 5.4.1B | The nr-UE registers with the 5GS (5G AKA, NAS security) and sets up the MCX PDU session on the DNN `mcptt`, whose default QoS flow has 5QI 69. | `docker logs openmcx-ue-route` (the UE's address); in a capture `nas-5gs` and `ngap.fiveQI == 69` (step 8, frames 13 to 323 of the reference). | TS 24.501, TS 23.501 table 5.7.4-1 |
 | in parallel to 3-16 | table 5.3.2.4.1-1, path 3b1 | Initial REGISTER, unprotected, to the P-CSCF's port 5060 with Security-Client (`ipsec-3gpp`, `hmac-sha-1-96`, `aes-cbc`, its SPIs and ports) and sec-agree in Require and Proxy-Require; the 401 (Unauthorized) of the SIP core with an AKAv2-SHA-256 and an AKAv1-MD5 challenge, through the P-CSCF, which adds Security-Server and removes the ck and ik meant for it; the client checks AUTN (MAC, SQN), computes RES, CK and IK and sets up the temporary security associations; the protected REGISTER from port_uc to port_ps, with Security-Verify and the AKA response; the 200 (OK). The REGISTER does not wait for the access token, which goes in the PUBLISH (step 17). | `docker logs openmcx-ue-client 2>&1 \| grep -E 'SIP (->\|<-) .*REGISTER\|ESP SA'`; in a capture the first REGISTER and the 401 are readable on N6 (`tcp.port == 5060`), the rest is ESP (`esp`): Wireshark decrypts it with the keys of the `ESP SA` lines (Protocols, ESP, ESP SAs). | TS 24.229 clauses 5.1.1.2, 5.1.1.5, 5.2.2; TS 33.203 clauses 6.1, 7; TS 33.180 clauses 5.1.3.2.1, 6.2.1 |
 | 3-12 | table 5.3.2.3.1-1 steps 1-10 | Preconfigured initial UE configuration (step 1a); the OIDC authentication request to the IdMS; the HTML form with the fields `user` and `password` (table 5.3.2.3.2-5); the form posted to the IdMS's `/userauth`; the 302 (Found) with the authorization code; the token request; the ID, access and refresh tokens. | `docker logs openmcx-idms 2>&1 \| grep -E 'HTTP (GET\|POST) /(authorize\|userauth\|token)'`; the client's `oidc_authenticated` | TS 24.482 clause 6.2.1; TS 33.180 clause 5.1.2, annex B |
 | 13-16 | table 5.3.2.3.1-1 steps 11-14 | The KMS Initialize and KeyProvision requests with the access token, through the HTTP proxy, and the KMS's answers with the key material. The client provisions its keys at sign-in although the group `operations` is not protected (`security.kms_uri`, set by `setup/ue-client.py`); it makes no CSK then. | `docker logs openmcx-kms 2>&1 \| grep -E 'init\|keyprov'`; `key_management` in `config/artifacts/client-d/status.json` | TS 33.180 clause 5.3.3, annex D |

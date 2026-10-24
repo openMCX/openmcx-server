@@ -2,13 +2,14 @@
 # OpenMCX Licence Information : AGPL-3.0-or-later
 #
 
-"""Tutorial 3's addition to tutorial 1's configuration: the MC client in the 5G UE, which registers with IMS AKA.
+"""Tutorial 3's addition to tutorial 1's configuration (tutorials 4 and 5 use it too): the MC client in the UE, which
+registers with IMS AKA.
 
 The setup provisions the test user client-d for IMS AKA (IMS_AKA_ROLES, TS 33.180 clause 6.2.1: 3GPP access): a
 software ISIM with its own K and OPc, the private user identity client-d@mcx.test, its ims_subscription row in the
 SIP database and the P-CSCF pcscf (config/pcscf.cfg). This script turns the lab configuration of client-d into the
-one of the Linux client that runs in the nr-UE's network namespace (docker-compose-5g-mcx.yaml, ue-client), next to
-the dispatcher:
+one of the Linux client that runs in the UE's network namespace (ue-client: in the nr-UE of docker-compose-5g-mcx.yaml,
+srsUE in tutorial 4, the LTE UE in tutorial 5), next to the dispatcher:
 
 - SIP: through the P-CSCF at 192.168.72.140 on the N6 network, reached over the UE's PDU session (TS 24.229 clause
   5.1.1.2.2; the P-CSCF's address is preconfigured, not discovered, TS 24.229 clause 9.2.1); the client's address in
@@ -55,4 +56,4 @@ out.write_text(json.dumps(cfg, indent=2) + '\n')
 out.chmod(0o644)
 owner = CONFIG.stat()
 os.chown(out, owner.st_uid, owner.st_gid)
-print(f'IMS AKA: {ROLE} ({cfg["sip"]["identity"]}) is the MC client in the 5G UE, through the P-CSCF')
+print(f'IMS AKA: {ROLE} ({cfg["sip"]["identity"]}) is the MC client in the UE, through the P-CSCF')

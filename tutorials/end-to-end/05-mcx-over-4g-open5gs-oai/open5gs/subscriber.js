@@ -1,5 +1,6 @@
-// Tutorial 5: the OAI LTE UE's subscription (OAI CI USIM: IMSI 208960100000001), APN oai.ipv4 on QCI 9, and the PCC rule
-// with QCI 65 (MCPTT voice, GBR) that the PCRF uses for the AUDIO media component of an MCPTT AF session.
+// Tutorial 5: the OAI LTE UE's subscription (OAI CI USIM: IMSI 208960100000001), the MCX APN oai.ipv4 with its default
+// bearer on QCI 69 (MC signalling, TS 23.203 table 6.1.7; TS 37.579-1 clause 5.4.1B), and the PCC rule with QCI 65
+// (MCPTT voice, GBR) that the PCRF uses for the AUDIO media component of an MCPTT AF session.
 db.subscribers.deleteMany({ imsi: "208960100000001" });
 db.subscribers.insertOne({
   imsi: "208960100000001",
@@ -10,7 +11,7 @@ db.subscribers.insertOne({
     sst: 1, default_indicator: true,
     session: [{
       name: "oai.ipv4", type: 1,
-      qos: { index: 9, arp: { priority_level: 8, pre_emption_capability: 1, pre_emption_vulnerability: 1 } },
+      qos: { index: 69, arp: { priority_level: 8, pre_emption_capability: 1, pre_emption_vulnerability: 1 } },
       ambr: { downlink: { value: 1, unit: 3 }, uplink: { value: 1, unit: 3 } },
       pcc_rule: [{
         qos: {
