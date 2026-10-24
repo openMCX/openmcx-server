@@ -4,6 +4,14 @@ Release 1.0.0, 2026-10-15: the first release of the **standalone edition** of Op
 services (MCX) for an IP network. One MC system, on-network, with the three services MCPTT, MCData and MCVideo, their
 common services, a SIP core, the clients and MCX Admin, as containers that start on one computer.
 
+## Since 1.0.0 (main and the `develop` images)
+
+- **Access token scopes.** The CMS, GMS, LMS, KMS and the MCData content server, message store and notification server
+  check the scope of the access token (TS 33.180 clause 5.1.3.1 and table B.4.2.2-1). The clients of release 1.0.0
+  (the Linux client, the dispatcher and the Android app `openmcx-client-v1.apk`) do not ask for the configuration and
+  group management scopes, so they are refused by these servers: use the clients of the same images (`develop`) or
+  `openmcx-client-develop.apk`. The 1.0.0 images keep working together.
+
 ## What 1.0.0 provides
 
 - **MCPTT**: prearranged, chat, broadcast and ad hoc group calls with floor control and queueing; private calls in every

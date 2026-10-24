@@ -293,6 +293,74 @@ void address_map_and_pin() {
 }
 
 //------------------------------------------------------------------------------
+// TS 37.579-1 table 5.3.2.3.2-5 and HTML 4.01 section 17: the IdMS's user authentication form is read, its fields
+// filled and its action resolved: the form of the test view, the OpenMCX IdMS's form (hidden inputs, relative
+// action) and a third-party form (character references, cookies, an unchecked box, script); malformed or unfillable
+// forms are refused.
+void html_forms() {
+  const auto form = mcx::parse_html_form(
+      "<!DOCTYPE html>\n<html>\n<body>\n<form action=\"/idms/userauth\" method=\"post\">\nUsername: <input "
+      "type=\"text\" name=\"user\"><br>\nPassword: <input type=\"password\" name=\"password\"><button "
+      "type=\"submit\">Login</button>\n</form>\n\n</body>\n</html>");
+  if (!form || form->action != "/idms/userauth" || form->method != "post" || form->inputs.size() != 2)
+    throw std::runtime_error("the test view's form not read");
+  const auto fields = mcx::html_form_fields(*form, "alice", "s3cret&=");
+  if (fields != std::map<std::string, std::string>{{"user", "alice"}, {"password", "s3cret&="}})
+    throw std::runtime_error("the test view's form fields");
+  if (mcx::resolve_https_reference("https://idms.example.test:8443/authorize?client_id=x", form->action) !=
+      "https://idms.example.test:8443/idms/userauth")
+    throw std::runtime_error("absolute-path action");
+
+  const auto openmcx = mcx::parse_html_form(
+      "<form method=\"post\" action=\"login\"><input type=\"hidden\" name=\"request_id\" value=\"r&amp;1\"><input "
+      "type=\"hidden\" name=\"html\" value=\"1\"><label>User name<input name=\"username\" required autofocus>"
+      "</label><label>Password<input type=\"password\" name=\"password\" required></label><button "
+      "type=\"submit\">Sign in</button></form>");
+  if (!openmcx || mcx::html_form_fields(*openmcx, "bob", "pw") !=
+                      std::map<std::string, std::string>{
+                          {"request_id", "r&1"}, {"html", "1"}, {"username", "bob"}, {"password", "pw"}})
+    throw std::runtime_error("the OpenMCX IdMS form fields");
+  if (mcx::resolve_https_reference("https://idms.test/idms/authorize?x=1#f", "login") != "https://idms.test/idms/login")
+    throw std::runtime_error("relative-path action");
+
+  const auto third = mcx::parse_html_form(
+      "<html><head><script>if (a < b) { document.write('<form>'); }</script></head><body><!-- <form> -->"
+      "<FORM id=kc onsubmit=\"x()\" ACTION=\"https://kc.test/realms/mcx/login-actions/authenticate?session_code=a"
+      "&amp;execution=b\" METHOD=POST><input id=username name=username type=email value=\"\"/><input "
+      "id=password name=password type=password /><input type=checkbox name=rememberMe><input type=hidden "
+      "id=id-hidden-input name=credentialId value='c&#x41;&#66;'><input type=submit name=login value=Sign></FORM>");
+  if (!third || third->method != "post" ||
+      third->action != "https://kc.test/realms/mcx/login-actions/authenticate?session_code=a&execution=b" ||
+      mcx::html_form_fields(*third, "carol", "pw") !=
+          std::map<std::string, std::string>{{"username", "carol"}, {"password", "pw"}, {"credentialId", "cAB"}})
+    throw std::runtime_error("a third-party form");
+  if (mcx::parse_html_form("<html><body><p>no form</p></body></html>"))
+    throw std::runtime_error("a form found in a page without one");
+  if (mcx::resolve_https_reference("https://a.test/x/y", "") != "https://a.test/x/y" ||
+      mcx::resolve_https_reference("https://a.test/x/y", "?s=1") != "https://a.test/x/y?s=1" ||
+      mcx::resolve_https_reference("https://a.test/x/y", "//b.test/z") != "https://b.test/z" ||
+      mcx::resolve_https_reference("https://a.test", "z") != "https://a.test/z")
+    throw std::runtime_error("reference resolution");
+
+  expect_rejected("two forms", [] { mcx::parse_html_form("<form></form><form></form>"); });
+  expect_rejected("an unterminated form", [] { mcx::parse_html_form("<form action=x><input name=a>"); });
+  expect_rejected("an unterminated tag", [] { mcx::parse_html_form("<form action=\"x"); });
+  expect_rejected("a select control", [] { mcx::parse_html_form("<form><select name=s></select></form>"); });
+  expect_rejected("a file input", [] { mcx::parse_html_form("<form><input type=file name=f></form>"); });
+  expect_rejected("an invalid character reference", [] { mcx::parse_html_form("<form action=\"&#xZZ;\"></form>"); });
+  const auto two = mcx::parse_html_form("<form><input name=a><input name=b><input type=password name=p></form>");
+  expect_rejected("two user name inputs", [&] { mcx::html_form_fields(*two, "u", "p"); });
+  const auto none = mcx::parse_html_form("<form><input name=a></form>");
+  expect_rejected("no password input", [&] { mcx::html_form_fields(*none, "u", "p"); });
+  const auto twice =
+      mcx::parse_html_form("<form><input type=hidden name=a><input name=a><input type=password name=p></form>");
+  expect_rejected("a repeated control name", [&] { mcx::html_form_fields(*twice, "u", "p"); });
+  expect_rejected("an action of another scheme", [] { mcx::resolve_https_reference("https://a.test/", "http://b/"); });
+  expect_rejected("a javascript action", [] { mcx::resolve_https_reference("https://a.test/", "javascript:x()"); });
+  expect_rejected("a dot segment", [] { mcx::resolve_https_reference("https://a.test/x/", "../login"); });
+}
+
+//------------------------------------------------------------------------------
 // TS 33.180 clause 6.1.2 and annex B.11.1: clear HTTP is refused; a valid ID token returns its claims, and a token
 // without a subject or MCPTT ID, an empty identity binding, a wrong issuer, audience or nonce, an expired or not yet valid
 // lifetime, a changed signature, an encryption key or another key algorithm is refused.
@@ -301,6 +369,7 @@ int main() {
   expect_rejected("clear HTTP", [] { mcx::HttpClient("unused").request("GET", "http://localhost/"); });
   configured_timeout();
   address_map_and_pin();
+  html_forms();
 
   SigningKey key;
   const auto keys = key.jwks();

@@ -103,7 +103,7 @@ services:
   dispatcher:
     logging: *logging
     container_name: openmcx-dispatcher
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-develop}
     network_mode: service:srsue
     depends_on:
       ue-route:

@@ -146,6 +146,10 @@ def main():
         sys.exit('./config already holds a configuration: remove it to make a new system')
     OUT.mkdir(exist_ok=True)
 
+    # IMS AKA (TS 33.203; TS 33.180 clause 6.2.1, 3GPP access) for the test users IMS_AKA_ROLES names (tutorial 3:
+    # client-d, the MC client in the 5G UE); every other user keeps SIP digest over TLS.
+    aka_roles = os.environ.get('IMS_AKA_ROLES', '').replace(',', ' ').split()
+
     with tempfile.TemporaryDirectory() as tmp:
         lab = pathlib.Path(tmp) / 'lab'
         # The image names only matter for the generator's own compose file, which is not used here.
@@ -167,6 +171,7 @@ def main():
                 'openmcx-admin',
                 '--images',
                 'tutorial',
+                *[arg for role in aka_roles for arg in ('--aka-role', role)],
             ],
             check=True,
         )

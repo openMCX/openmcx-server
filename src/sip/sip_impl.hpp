@@ -14,7 +14,9 @@
 
 #pragma once
 
+#include "mcx/ims_aka.hpp"
 #include "mcx/sip.hpp"
+#include "mcx/xfrm.hpp"
 
 #include <openssl/rand.h>
 #include <pjlib-util.h>
@@ -218,6 +220,8 @@ struct SipEngine::Impl {
     // An incoming INVITE accepted without an SDP answer (deferred provisional).
     bool answer_sdp_pending = false;
     std::string response_contact;
+    // RFC 3261 section 12.1.1: the dialog was started with a SIPS URI, so this side's Contact is a SIPS URI too.
+    bool sips_contact = false;
     // Body for the BYE; kept when a CANCEL was sent, in case a 2xx crosses it.
     std::vector<BodyPart> bye_parts;
   };
@@ -243,6 +247,83 @@ struct SipEngine::Impl {
     pjsip_rx_data *subscribe = nullptr;
     SipMessage request;
   };
+
+  // TS 33.203 clause 7 and TS 24.229 clauses 5.1.1.2.2, 5.1.1.4.2, 5.1.1.5 and 5.1.1.6.2: the IMS AKA registration of
+  // a UE (SipConfig::aka), its own REGISTER transactions (not pjsip_regc, which would answer the 401 itself before the
+  // security associations exist) and its sets of security associations (ims_aka.cpp).
+  struct AkaSet {
+    std::uint16_t port_uc = 0, port_us = 0, port_pc = 0, port_ps = 0;
+    std::uint32_t spi_uc = 0, spi_us = 0, spi_pc = 0, spi_ps = 0;
+    std::string alg, ealg;
+    // IK_ESP and CK_ESP (TS 33.203 annex I).
+    std::vector<std::uint8_t> integrity_key, encryption_key;
+    // The Security-Server of the 401 that created the set, mirrored in Security-Verify (TS 24.229 clause 5.1.1.4.2 e).
+    std::string security_server;
+    std::vector<xfrm::SecurityAssociation> sas;
+    // The TCP connection from port_uc to port_ps (TS 33.203 clause 7.1, TCP case), held while the set exists.
+    pjsip_transport *connection = nullptr;
+    // The SIP level lifetime (TS 24.229 clause 5.1.1.5.1), monotonic milliseconds.
+    std::uint64_t expires_ms = 0;
+  };
+
+  // How a REGISTER of the AKA procedure is protected (TS 33.203 clause 7.4.1a).
+  enum class AkaRoute { unprotected, current, pending };
+
+  struct Aka {
+    std::unique_ptr<aka::SoftIsim> isim;
+    std::unique_ptr<xfrm::Xfrm> xfrm;
+    pjsip_tpfactory *unprotected_factory = nullptr;
+    pjsip_transport *unprotected_connection = nullptr;
+    // TS 33.203 clause 7.4.1a: the set in use, the temporary set of the authentication in progress, and the old set
+    // kept until the new one has carried a message from the P-CSCF and its transactions are over.
+    std::unique_ptr<AkaSet> current, pending, old;
+    // The Security-Client of the REGISTER in progress (TS 24.229 clause 5.1.1.5.1 step 4: repeated unchanged in the
+    // protected REGISTER) and the proposal it carries.
+    aka::SecMechanism offer;
+    std::string security_client;
+    std::string call_id, from_tag;
+    std::uint32_t cseq = 0;
+    std::string realm;
+    // TS 24.229 clause 5.1.1.4.2 a: the Authorization of the last successful authentication, repeated in later
+    // REGISTERs; and the one of the protected REGISTER in progress.
+    std::string authorization, pending_authorization, algorithm, pending_algorithm;
+    std::vector<std::string> service_routes, associated_uris;
+    // The registration asked for: its expiry, body and handler.
+    unsigned expires = 0;
+    std::string content_type, body;
+    SipResponseHandler handler;
+    bool busy = false;
+    AkaRoute route = AkaRoute::unprotected;
+    unsigned resyncs = 0, restarts = 0;
+    bool old_release_scheduled = false;
+    pj_timer_entry refresh_timer{}, pending_timer{}, old_timer{}, expiry_timer{};
+  };
+
+  std::unique_ptr<Aka> aka;
+
+  void aka_start(const pj_sockaddr &local, const pjsip_host_port &advertised);
+  void aka_stop() noexcept;
+  void aka_register(unsigned expires, std::string_view content_type, std::string_view body, SipResponseHandler handler);
+  void aka_send_register(AkaRoute route, bool new_offer, const std::string &authorization);
+  void aka_registration_result(pjsip_rx_data *data, int status, std::string_view reason);
+  void aka_challenge(pjsip_rx_data *data);
+  void aka_registered(pjsip_rx_data *data);
+  void aka_failed(const SipResponse &response);
+  void aka_finish(const SipResponse &response);
+  void aka_install(AkaSet &set);
+  void aka_delete(std::unique_ptr<AkaSet> &set) noexcept;
+  pjsip_transport *aka_connection(AkaSet &set);
+  void aka_use_current();
+  void aka_apply(pjsip_tx_data *data);
+  void aka_apply(pjsip_dialog *dialog);
+  [[nodiscard]] std::vector<std::string> aka_routes() const;
+  [[nodiscard]] bool aka_accept(pjsip_rx_data *data);
+  [[nodiscard]] aka::SecMechanism aka_new_offer() const;
+  void aka_schedule(pj_timer_entry &entry, std::uint64_t delay_ms, int id);
+  static void aka_register_complete(void *token, pjsip_event *event);
+  static void aka_timer(pj_timer_heap_t *heap, pj_timer_entry *entry);
+  static pj_bool_t aka_filter(pjsip_rx_data *data);
+  pjsip_module aka_module{};
 
   std::vector<std::string> pending_subscription_cleanup;
   // Sessions ended by our BYE keep our reference until that BYE's transaction
@@ -313,6 +394,12 @@ struct SipEngine::Impl {
   [[nodiscard]] std::string contact_uri() const { return "<" + contact_target() + ">" + service_tags(); }
 
   [[nodiscard]] std::string response_contact(const SipResponse &response) const;
+
+  [[nodiscard]] static std::string as_sips(std::string contact);
+
+  [[nodiscard]] bool sips_target(std::string_view request_uri) const;
+
+  [[nodiscard]] static bool sips_request(const pjsip_rx_data *data);
 
   static bool same_parts(const std::vector<BodyPart> &left, const std::vector<BodyPart> &right);
 

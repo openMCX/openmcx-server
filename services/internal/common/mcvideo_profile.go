@@ -472,7 +472,7 @@ func (svc *service) mcvideoProfileDocument(id string) ([]byte, int, int) {
 // CMSXCAPROOTURI/org.3gpp.mcvideo.user-profile/users/sip:MCVIDEOID/mcvideo-user-profile-INDEX.xml.
 func (svc *service) getMCVideoProfile(writer http.ResponseWriter, request *http.Request) {
 	claims, ok := svc.authenticateBearer(writer, request)
-	if !ok {
+	if !ok || !requireScope(writer, claims, scopeVideoConfig) {
 		return
 	}
 	id := request.PathValue("mcvideoID")

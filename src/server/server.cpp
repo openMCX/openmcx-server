@@ -598,7 +598,6 @@ McServer::McServer(const ServiceProfile &service, Json cfg, bool disable_tls)
            }}),
       core_address_(resolve_ipv4(cfg_.at("trusted_core"))) {
   session_service_ = cfg_.at(svc_.name).at("service_uri").get<std::string>();
-  if (!disable_tls && session_service_.starts_with("sip:")) session_service_.insert(3, "s");
   const auto &mcptt = cfg_.at(svc_.name);
   role_ = mcptt.value("role", "both");
   if (role_ != "both" && role_ != "participating" && role_ != "controlling")

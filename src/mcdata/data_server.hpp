@@ -131,8 +131,8 @@ class DataServer {
   Control control_;
   SipEngine sip_;
   std::string core_address_, service_uri_;
-  // TS 24.282 clause 6.3.7.1.23 step 5: the URI the MCData session identities are built on: the service URI, as
-  // sips: when the signalling is protected by TLS.
+  // TS 24.282 clause 6.3.7.1.23 step 5: the URI the MCData session identities are built on: the service URI (a sip:
+  // URI over TLS too, as IMS uses no SIPS, TS 24.229).
   std::string session_service_;
 
   //------------------------------------------------------------------------------

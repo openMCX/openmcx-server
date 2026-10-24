@@ -41,7 +41,7 @@ python3 tools/prepare-prearranged-test.py --directory artifacts/mcdata-status-la
 C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-mcdata-status -f artifacts/mcdata-status-lab/compose.json"
 $C up -d mcdata-server                      # start the capture before the clients authorise
 docker run -d --rm --name openmcx-mcdata-status-capture --network "container:$($C ps -q mcdata-server)" \
-  --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.1 \
+  --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.2 \
   sh -c "tcpdump -Z root -i eth0 -U --immediate-mode -s 0 -w /tmp/c.pcap 'tcp port 5060'"
 $C up -d
 python3 tests/integration/mcdata_status_scenario.py \

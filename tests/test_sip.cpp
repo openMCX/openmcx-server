@@ -111,9 +111,9 @@ void test_tls_and_identity_configuration_are_required() {
   trusted_server.username.clear();
   trusted_server.password.clear();
   mcx::SipEngine server_engine(trusted_server, {});
-  check(server_engine.contact_target() == "sips:mcptt-1@client.example.test:5061;transport=tls" &&
+  check(server_engine.contact_target() == "sip:mcptt-1@client.example.test:5061;transport=tls" &&
             !server_engine.running(),
-        "trusted server engine without digest credentials is accepted, with a sips: TLS Contact");
+        "trusted server engine without digest credentials is accepted, with a sip: TLS Contact (no SIPS, TS 24.229)");
 
   auto missing_password = config;
   missing_password.password.clear();
@@ -613,7 +613,7 @@ void run_call_server(const std::string &directory) {
       answer.status_code = 200;
       answer.local_media = call_media(42000);
       answer.contact_uri = std::getenv("OPENMCX_SIP_TEST_TCP") ? "sip:session@127.0.0.1:15061;transport=tcp"
-                                                               : "sips:session@127.0.0.1:15061";
+                                                               : "sip:session@127.0.0.1:15061;transport=tls";
       answer.focus = true;
       answer.parts = {{"application/test+xml", "<normal/>"}};
       engine.answer(pending, answer);
@@ -701,6 +701,8 @@ void run_call_client(const std::string &directory) {
   check(confirmed == 1, "outgoing call is confirmed before release");
   check(contact.find("session@") != std::string::npos && contact.find("isfocus") != std::string::npos,
         "deferred final answer advertises the public session Contact and focus role");
+  check(std::getenv("OPENMCX_SIP_TEST_TCP") ? contact.starts_with("<sip:") : contact.starts_with("<sips:"),
+        "the answer to a dialog started with a SIPS Request-URI has a SIPS Contact (RFC 3261 section 12.1.1)");
   int info_result = 0, message_result = 0;
   engine.request_in_dialog(dialog, "INFO", "application/test+xml", "<client/>", {},
                            [&](const mcx::SipResponse &response) { info_result = response.status_code; });

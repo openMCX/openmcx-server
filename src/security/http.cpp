@@ -5,8 +5,8 @@
 // HTTPS client and OpenID Connect user authentication of the IdM client: the authorization code grant with PKCE,
 // the refresh token grant and ID token validation of the MCX Connect profile.
 //
-// Specifications: TS 24.482 V19.1.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), RFC 6749, RFC 7636, OpenID Connect Core 1.0,
-// RFC 7515, RFC 7517, RFC 7518, RFC 7519, RFC 4648, RFC 3986.
+// Specifications: TS 24.482 V19.1.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), TS 37.579-1 V18.1.0 (Rel-18), RFC 6749,
+// RFC 7636, OpenID Connect Core 1.0, RFC 7515, RFC 7517, RFC 7518, RFC 7519, RFC 4648, RFC 3986, RFC 6265, HTML 4.01.
 #include "mcx/http.hpp"
 
 #include <curl/curl.h>
@@ -21,9 +21,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <initializer_list>
 #include <memory>
+#include <set>
 #include <stdexcept>
 
 namespace mcx {
@@ -74,8 +76,16 @@ size_t header(char *data, size_t size, size_t count, void *ctx) {
       auto value = line.substr(colon + 1);
       auto start = value.find_first_not_of(" \t");
       auto end = value.find_last_not_of("\r\n \t");
-      if (start != value.npos)
-        static_cast<HttpResponse *>(ctx)->headers[lower(line.substr(0, colon))] = value.substr(start, end - start + 1);
+      if (start != value.npos) {
+        auto &headers = static_cast<HttpResponse *>(ctx)->headers;
+        const auto name = lower(line.substr(0, colon));
+        auto field = value.substr(start, end - start + 1);
+        // RFC 6265 section 3: a response may set several cookies, one Set-Cookie field each.
+        if (name == "set-cookie" && headers.contains(name))
+          headers[name] += "\n" + field;
+        else
+          headers[name] = std::move(field);
+      }
     }
   } catch (...) {
     return 0;
@@ -567,24 +577,291 @@ json oidc_exchange_code(const HttpClient &http, const json &cfg, const std::stri
   return tokens;
 }
 
+namespace {
 //------------------------------------------------------------------------------
-// TS 24.482 clause 6.2.1 and TS 33.180 annex B.4.2 (clauses B.4.2.2 to B.4.2.5): the authorization request, the
-// username and password login on the OpenMCX IdMS (its scripted login, POST {issuer}/login), and the code exchange.
+// Helper: whether a character is HTML white space (HTML 4.01 section 9.1).
+bool html_space(char character) {
+  return character == ' ' || character == '\t' || character == '\n' || character == '\r' || character == '\f';
+}
+
+//------------------------------------------------------------------------------
+// Helper: an attribute value with its character references decoded (HTML 4.01 section 5.3): the numeric ones and
+// &amp; &lt; &gt; &quot; &apos;. Any other "&" stays as it is.
+std::string html_unescape(std::string_view text) {
+  std::string out;
+  for (std::size_t at = 0; at < text.size(); ++at) {
+    const auto semicolon = text[at] == '&' ? text.find(';', at) : std::string_view::npos;
+    if (semicolon == std::string_view::npos || semicolon - at > 10) {
+      out += text[at];
+      continue;
+    }
+    const auto name = text.substr(at + 1, semicolon - at - 1);
+    static const std::map<std::string_view, char> named{
+        {"amp", '&'}, {"lt", '<'}, {"gt", '>'}, {"quot", '"'}, {"apos", '\''}};
+    unsigned long code = 0;
+    if (const auto found = named.find(name); found != named.end()) {
+      out += found->second;
+    } else if (name.size() > 1 && name[0] == '#') {
+      const bool hex = name[1] == 'x' || name[1] == 'X';
+      const auto digits = std::string(name.substr(hex ? 2 : 1));
+      if (digits.empty() ||
+          digits.find_first_not_of(hex ? "0123456789abcdefABCDEF" : "0123456789") != std::string::npos)
+        throw std::runtime_error("invalid HTML character reference");
+      code = std::stoul(digits, nullptr, hex ? 16 : 10);
+      if (code == 0 || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF))
+        throw std::runtime_error("invalid HTML character reference");
+      // UTF-8 (RFC 3629 section 3).
+      if (code < 0x80) {
+        out += static_cast<char>(code);
+      } else if (code < 0x800) {
+        out += static_cast<char>(0xC0 | (code >> 6));
+        out += static_cast<char>(0x80 | (code & 0x3F));
+      } else if (code < 0x10000) {
+        out += static_cast<char>(0xE0 | (code >> 12));
+        out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (code & 0x3F));
+      } else {
+        out += static_cast<char>(0xF0 | (code >> 18));
+        out += static_cast<char>(0x80 | ((code >> 12) & 0x3F));
+        out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (code & 0x3F));
+      }
+    } else {
+      out += text[at];
+      continue;
+    }
+    at = semicolon;
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// Helper: one HTML start tag at `at` (its "<"): the lower-case element name and its attributes (lower-case names,
+// decoded values; a repeated attribute keeps its first value, HTML 4.01 section 3.2.2). `at` moves past the ">".
+std::pair<std::string, std::map<std::string, std::string>> html_tag(std::string_view html, std::size_t &at) {
+  std::size_t index = at + 1;
+  const auto word = [&] {
+    const auto start = index;
+    while (index < html.size() && !html_space(html[index]) && html[index] != '>' && html[index] != '/' &&
+           html[index] != '=')
+      ++index;
+    return lower(std::string(html.substr(start, index - start)));
+  };
+  const auto skip = [&] {
+    while (index < html.size() && (html_space(html[index]) || html[index] == '/')) ++index;
+  };
+  auto element = word();
+  std::map<std::string, std::string> attributes;
+  for (skip(); index < html.size() && html[index] != '>'; skip()) {
+    auto name = word();
+    if (name.empty()) throw std::runtime_error("invalid HTML attribute");
+    std::string value;
+    while (index < html.size() && html_space(html[index])) ++index;
+    if (index < html.size() && html[index] == '=') {
+      ++index;
+      while (index < html.size() && html_space(html[index])) ++index;
+      if (index < html.size() && (html[index] == '"' || html[index] == '\'')) {
+        const auto close = html.find(html[index], index + 1);
+        if (close == std::string_view::npos) throw std::runtime_error("unterminated HTML attribute value");
+        value = html_unescape(html.substr(index + 1, close - index - 1));
+        index = close + 1;
+      } else {
+        const auto start = index;
+        while (index < html.size() && !html_space(html[index]) && html[index] != '>') ++index;
+        value = html_unescape(html.substr(start, index - start));
+      }
+    }
+    attributes.emplace(std::move(name), std::move(value));
+  }
+  if (index >= html.size()) throw std::runtime_error("unterminated HTML tag");
+  at = index + 1;
+  return {std::move(element), std::move(attributes)};
+}
+} // namespace
+
+//------------------------------------------------------------------------------
+// HTML 4.01 section 17: the one form of an IdMS page and the inputs it submits. Comments are skipped; the controls
+// this client cannot fill refuse the page.
+std::optional<HtmlForm> parse_html_form(std::string_view html) {
+  std::optional<HtmlForm> found;
+  bool inside = false;
+  for (std::size_t at = html.find('<'); at != std::string_view::npos; at = html.find('<', at)) {
+    if (html.substr(at, 4) == "<!--") {
+      const auto end = html.find("-->", at + 4);
+      if (end == std::string_view::npos) throw std::runtime_error("unterminated HTML comment");
+      at = end + 3;
+      continue;
+    }
+    if (at + 1 >= html.size() || !(std::isalpha(static_cast<unsigned char>(html[at + 1])) || html[at + 1] == '/')) {
+      ++at;
+      continue;
+    }
+    if (html[at + 1] == '/') {
+      const auto end = html.find('>', at);
+      if (end == std::string_view::npos) throw std::runtime_error("unterminated HTML tag");
+      auto name = lower(std::string(html.substr(at + 2, end - at - 2)));
+      name.erase(std::find_if(name.begin(), name.end(), [](char character) { return html_space(character); }),
+                 name.end());
+      if (name == "form") inside = false;
+      at = end + 1;
+      continue;
+    }
+    auto [element, attributes] = html_tag(html, at);
+    // HTML 4.01 section 6.2: script and style content is not markup.
+    if (element == "script" || element == "style") {
+      const auto lowered = lower(std::string(html.substr(at)));
+      const auto end = lowered.find("</" + element);
+      if (end == std::string::npos) throw std::runtime_error("unterminated HTML " + element);
+      at += end;
+      continue;
+    }
+    if (element == "form") {
+      if (found || inside) throw std::runtime_error("more than one HTML form");
+      found = HtmlForm{attributes["action"], lower(attributes.contains("method") ? attributes["method"] : "get"), {}};
+      inside = true;
+    } else if (inside && (element == "select" || element == "textarea")) {
+      throw std::runtime_error("unsupported HTML form control: " + element);
+    } else if (inside && element == "input") {
+      const auto type = lower(attributes.contains("type") ? attributes["type"] : "text");
+      if (type == "submit" || type == "button" || type == "reset" || type == "image") continue;
+      static const std::set<std::string> supported{"text", "email", "password", "hidden", "checkbox", "radio"};
+      if (!supported.contains(type)) throw std::runtime_error("unsupported HTML input type: " + type);
+      // HTML 4.01 section 17.13.2: an unnamed, disabled or unchecked control is not submitted.
+      if (attributes["name"].empty() || attributes.contains("disabled")) continue;
+      if ((type == "checkbox" || type == "radio") && !attributes.contains("checked")) continue;
+      if ((type == "checkbox" || type == "radio") && !attributes.contains("value")) attributes["value"] = "on";
+      found->inputs.push_back({attributes["name"], type, attributes["value"]});
+    }
+  }
+  if (inside) throw std::runtime_error("unterminated HTML form");
+  return found;
+}
+
+//------------------------------------------------------------------------------
+// HTML 4.01 section 17.13.3 and TS 37.579-1 table 5.5.4.3-1 (condition USERAUTH): the hidden and checked inputs as
+// they are, the user name in the one text or email input, the password in the one password input.
+std::map<std::string, std::string> html_form_fields(const HtmlForm &form, const std::string &user,
+                                                    const std::string &password) {
+  std::map<std::string, std::string> fields;
+  int users = 0, passwords = 0;
+  for (const auto &input : form.inputs) {
+    if (fields.contains(input.name)) throw std::runtime_error("HTML form control name repeated: " + input.name);
+    if (input.type == "password") {
+      ++passwords;
+      fields[input.name] = password;
+    } else if (input.type == "text" || input.type == "email") {
+      ++users;
+      fields[input.name] = user;
+    } else {
+      fields[input.name] = input.value;
+    }
+  }
+  if (users != 1 || passwords != 1)
+    throw std::runtime_error("the IdMS form has no single user name and password input");
+  return fields;
+}
+
+//------------------------------------------------------------------------------
+// RFC 3986 section 5.2.2 (strict parser) for the references a form action uses; the base is an https URI.
+std::string resolve_https_reference(const std::string &base, const std::string &reference) {
+  if (!base.starts_with("https://")) throw std::invalid_argument("HTTPS base required");
+  auto target = reference.substr(0, reference.find('#'));
+  const auto authority_end = base.find_first_of("/?#", 8);
+  const auto origin = base.substr(0, authority_end);
+  auto path_and_query = authority_end == std::string::npos ? std::string("/") : base.substr(authority_end);
+  path_and_query = path_and_query.substr(0, path_and_query.find('#'));
+  const auto path = path_and_query.substr(0, path_and_query.find('?'));
+  std::string resolved;
+  if (target.find_first_of(" \t\r\n\\") != std::string::npos) throw std::runtime_error("invalid form action");
+  if (target.empty())
+    resolved = origin + path_and_query;
+  else if (lower(target).starts_with("https://"))
+    resolved = target;
+  else if (target.starts_with("//"))
+    resolved = "https:" + target;
+  else if (const auto colon = target.find(':'); colon != std::string::npos && colon < target.find_first_of("/?"))
+    throw std::runtime_error("form action of another scheme");
+  else if (target.starts_with("/"))
+    resolved = origin + target;
+  else if (target.starts_with("?"))
+    resolved = origin + path + target;
+  else
+    resolved = origin + path.substr(0, path.rfind('/') + 1) + target;
+  // Dot segments (RFC 3986 section 5.2.4) are refused rather than removed.
+  const auto resolved_path = resolved.substr(0, resolved.find('?'));
+  for (std::size_t at = resolved_path.find("/.", 8); at != std::string::npos; at = resolved_path.find("/.", at + 1)) {
+    const auto rest = resolved_path.substr(at + 1);
+    if (rest == "." || rest == ".." || rest.starts_with("./") || rest.starts_with("../"))
+      throw std::runtime_error("dot segment in form action");
+  }
+  return resolved;
+}
+
+namespace {
+//------------------------------------------------------------------------------
+// Helper: RFC 6265 section 5.4: the Cookie header field of the next request from the Set-Cookie fields of a response
+// (the name=value of each); empty when it set none. The IdMS may keep the authentication request in a cookie.
+std::string cookie_header(const HttpResponse &response) {
+  const auto found = response.headers.find("set-cookie");
+  if (found == response.headers.end()) return {};
+  std::string cookies;
+  std::size_t start = 0;
+  while (start <= found->second.size()) {
+    const auto end = std::min(found->second.find('\n', start), found->second.size());
+    const auto line = found->second.substr(start, end - start);
+    const auto pair = line.substr(0, line.find(';'));
+    if (pair.find('=') != std::string::npos && pair.find_first_of("\r\n") == std::string::npos) {
+      if (!cookies.empty()) cookies += "; ";
+      cookies += pair;
+    }
+    start = end + 1;
+  }
+  return cookies;
+}
+} // namespace
+
+//------------------------------------------------------------------------------
+// TS 24.482 clause 6.2.1 and TS 33.180 annex B.4.2 (clauses B.4.2.2 to B.4.2.5), with the test view of TS 37.579-1
+// table 5.3.2.3.1-1 steps 3a1 to 9: the OpenID Connect Authentication Request (an HTTP GET), the IdMS's HTML page
+// with the user authentication form (table 5.3.2.3.2-5), the form posted to its action with the user name and
+// password (table 5.5.4.3-1, condition USERAUTH) and the cookies the page set, the 302 (Found) to the redirect URI
+// with the authorization code, and the code exchange. An IdMS that offers no form but the OpenMCX request ID (its
+// scripted login of OpenMCX 1.0.0) is answered with POST {issuer}/login.
 json oidc_login(const HttpClient &http, const json &cfg) {
   const std::string issuer = cfg.at("issuer"), redirect = cfg.at("redirect_uri");
   const auto request = oidc_authorization_request(http, cfg);
-  const std::string state = request.at("state");
-  auto authorization = http.request("GET", request.at("url")).json();
+  const std::string state = request.at("state"), url = request.at("url");
+  const std::string user = cfg.at("username"), password = cfg.at("password");
+  const auto page = http.request("GET", url, {}, {{"Accept", "text/html, application/json;q=0.5"}});
+  const auto type = lower(page.headers.contains("content-type") ? page.headers.at("content-type") : "");
 
-  auto login = http.request("POST", issuer + "/login",
-                            form({{"request_id", authorization.at("request_id")},
-                                  {"username", cfg.at("username")},
-                                  {"password", cfg.at("password")}}),
-                            {{"Content-Type", "application/x-www-form-urlencoded"}});
-  if (login.status != 302) throw std::runtime_error("IdMS user authentication failed");
+  HttpResponse login;
+  if (page.status == 200 && type.starts_with("text/html")) {
+    const auto found = parse_html_form(page.body);
+    if (!found) throw std::runtime_error("the IdMS page has no user authentication form");
+    // A GET form would put the password in the URI.
+    if (found->method != "post") throw std::runtime_error("the IdMS user authentication form is not a POST");
+    std::map<std::string, std::string> headers{{"Content-Type", "application/x-www-form-urlencoded"}};
+    if (const auto cookies = cookie_header(page); !cookies.empty()) headers["Cookie"] = cookies;
+    login = http.request("POST", resolve_https_reference(url, found->action),
+                         form(html_form_fields(*found, user, password)), headers);
+  } else {
+    const auto authorization = page.json();
+    if (!authorization.contains("request_id"))
+      throw std::runtime_error("the IdMS offers neither a user authentication form nor a request ID");
+    login =
+        http.request("POST", issuer + "/login",
+                     form({{"request_id", authorization.at("request_id")}, {"username", user}, {"password", password}}),
+                     {{"Content-Type", "application/x-www-form-urlencoded"}});
+  }
+  if (login.status != 302 || !login.headers.contains("location"))
+    throw std::runtime_error("IdMS user authentication failed");
   auto location = login.headers.at("location");
   if (!location.starts_with(redirect + "?") || query_value(location, "state") != state)
     throw std::runtime_error("OIDC redirect or state mismatch");
+  // RFC 6749 section 4.1.2.1: the IdMS refused the user (access_denied, for example).
+  if (!query_value(location, "error").empty())
+    throw std::runtime_error("IdMS user authentication failed: " + query_value(location, "error"));
   return oidc_exchange_code(http, cfg, query_value(location, "code"), request.at("code_verifier"), request.at("nonce"));
 }
 

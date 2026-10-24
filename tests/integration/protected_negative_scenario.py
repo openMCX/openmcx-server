@@ -174,7 +174,7 @@ def main():
     parser.add_argument('--artifacts', type=Path)
     parser.add_argument('--project', default=PROJECT)
     parser.add_argument('--tshark', default=os.environ.get('MCX_TSHARK') or shutil.which('tshark'))
-    parser.add_argument('--capture-image', default='openmcx-dev:0.1')
+    parser.add_argument('--capture-image', default='openmcx-dev:0.2')
     parser.add_argument('--self-test', action='store_true')
     args = parser.parse_args()
     if args.self_test:

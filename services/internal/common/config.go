@@ -67,6 +67,9 @@ type Config struct {
 	MCDataService     MCDataServiceConfig `json:"mcdata_service,omitempty"`
 	// The service configuration documents of the organisation (TS 24.484 clauses 8.4, 9.4 and 10.4).
 	ServiceConfig ServiceConfiguration `json:"service_config,omitempty"`
+	// The master MCPTT UE configuration document of the organisation (TS 24.484 clause 8.2.1); its defaults when
+	// absent (ue_config.go).
+	UEConfig *MCPTTUEConfig `json:"ue_config,omitempty"`
 	// The public service identity of the MCVideo server, which the KMS provisions for
 	// the CSKs of MCVideo transmission control (TS 33.180 clause 9.4, TS 24.281 clause 4.7).
 	MCVideoService MCVideoServiceConfig `json:"mcvideo_service,omitempty"`
@@ -150,6 +153,9 @@ type User struct {
 	ConfigManagement bool `json:"config_management,omitempty"`
 	// "user-profile-index" of the user's profile (TS 24.484 clause 8.3.2.1); 1 when absent.
 	ProfileIndex int `json:"profile_index,omitempty"`
+	// The instance IDs (TS 23.003 clause 13.8) of the user's MCPTT UEs, each with its MCPTT UE configuration
+	// document in the user's directory (TS 24.484 clause 8.2.1).
+	UEs []string `json:"ues,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -514,6 +520,9 @@ func (cfg Config) Validate() error {
 	if err := cfg.ServiceConfig.Validate(); err != nil {
 		return err
 	}
+	if err := cfg.UEConfig.validate(); err != nil {
+		return err
+	}
 	if len(cfg.OAuthRedirectURIs) == 0 {
 		return errors.New("oauth_redirect_uris must contain a registered redirect URI")
 	}
@@ -528,6 +537,11 @@ func (cfg Config) Validate() error {
 	for _, user := range cfg.Users {
 		if user.Username == "" || user.Password == "" || user.MCID == "" || user.MCPTTID == "" || user.SIPURI == "" || user.ClientID == "" {
 			return errors.New("each user requires username, password, mc_id, mcptt_id, sip_uri and client_id")
+		}
+		for _, id := range user.UEs {
+			if !validInstanceID(id) {
+				return fmt.Errorf("user %s: invalid UE instance ID %q", user.Username, id)
+			}
 		}
 		if users[user.Username] || mcpttIDs[user.MCPTTID] {
 			return errors.New("duplicate username or mcptt_id")

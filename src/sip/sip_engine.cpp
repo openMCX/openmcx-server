@@ -70,6 +70,7 @@ void SipEngine::set_body_filters(SipBodyFilter outgoing, SipBodyFilter incoming)
 // authorisation document) on the existing registration.
 void SipEngine::register_account(unsigned expires, std::string_view content_type, std::string_view body,
                                  SipResponseHandler handler) {
+  if (impl_->aka) return impl_->aka_register(expires, content_type, body, std::move(handler));
   if (impl_->registration == nullptr) {
     throw std::logic_error("a REGISTER with a body follows the initial registration");
   }
@@ -88,6 +89,11 @@ void SipEngine::register_account(unsigned expires, std::string_view content_type
 // outbound proxy.
 void SipEngine::register_account(unsigned expires, SipResponseHandler handler) {
   impl_->ensure_started();
+  // TS 24.229 clauses 5.1.1.2.2 and 5.1.1.4.2: IMS AKA has its own REGISTER procedure (ims_aka.cpp).
+  if (impl_->aka) {
+    if (expires == 0) throw std::invalid_argument("SIP registration expiry must be nonzero");
+    return impl_->aka_register(expires, {}, {}, std::move(handler));
+  }
   if (!has_credentials(impl_->config)) {
     throw std::invalid_argument("SIP REGISTER requires digest credentials");
   }
@@ -111,7 +117,8 @@ void SipEngine::register_account(unsigned expires, SipResponseHandler handler) {
                                    ? impl_->contact_uri()
                                    : "<" + impl_->contact_target() + ">" + impl_->config.registration_features) +
                               (instance.empty() ? "" : ";+sip.instance=\"<" + instance + ">\";reg-id=1");
-    auto contact = pj_view(contact_text);
+    const auto register_contact = impl_->sips_target(registrar) ? Impl::as_sips(contact_text) : contact_text;
+    auto contact = pj_view(register_contact);
     require_success(pjsip_regc_init(impl_->registration, &server, &identity, &identity, 1, &contact, expires),
                     "initialize SIP registration");
 
@@ -152,6 +159,8 @@ void SipEngine::register_account(unsigned expires, SipResponseHandler handler) {
 // RFC 3261 section 10.2.2: removes the registration of this engine's Contact (Expires 0, TS 24.229 clause 5.1.1.6
 // for a UE): the registration is no longer refreshed until register_account.
 void SipEngine::unregister_account(SipResponseHandler handler) {
+  // TS 24.229 clause 5.1.1.6.2: the IMS AKA deregistration, protected by the set in use; its 200 removes the SAs.
+  if (impl_->aka) return impl_->aka_register(0, {}, {}, std::move(handler));
   if (impl_->registration == nullptr) throw std::logic_error("no SIP registration to remove");
   impl_->registration_handler = std::move(handler);
   pjsip_tx_data *data = nullptr;
@@ -246,7 +255,9 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
   auto &entry = *found->second;
   auto *invite = entry.invite;
   if (invite->role != PJSIP_ROLE_UAS) throw std::invalid_argument("only an incoming INVITE can be answered");
-  if (!response.contact_uri.empty() || response.focus) entry.response_contact = impl_->response_contact(response);
+  if (!response.contact_uri.empty() || response.focus)
+    entry.response_contact =
+        entry.sips_contact ? Impl::as_sips(impl_->response_contact(response)) : impl_->response_contact(response);
 
   const pjmedia_sdp_session *sdp = nullptr;
   if (entry.answer_sdp_pending && response.status_code >= 200 && response.status_code < 300) {

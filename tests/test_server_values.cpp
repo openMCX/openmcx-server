@@ -3,9 +3,10 @@
 //
 
 // The request values of the MCPTT, MCVideo and MCData servers (src/server/request_values.hpp): the Expires header
-// field, percent-decoding of URI components and the outcome rule of an implicit affiliation.
+// field, percent-decoding of URI components, the outcome rule of an implicit affiliation and the configuration
+// management documents of a subscription's resource list.
 //
-// Specifications: RFC 3261, RFC 3986, TS 24.379 V19.7.0 (Rel-19).
+// Specifications: RFC 3261, RFC 3986, RFC 5875, TS 24.379 V19.7.0 (Rel-19), TS 24.484 V19.6.0 (Rel-19).
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -58,10 +59,33 @@ static void Clause_9_2_2_3_11_ImplicitAffiliationCancellation() {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.484 clause 6.3.13.3.2.2 step e and TS 37.579-1 table 5.3.2.6.1-1: the entries of one configuration
+// subscription name the UE configuration, user profile and service configuration documents, by AUID, XUI and name;
+// anything else (another AUID, a node selector, a collection, a bad escape) names none.
+static void Clause_6_3_13_3_2_2_ConfigurationDocuments() {
+  const auto ue = config_document_reference("org.3gpp.mcptt.ue-config/users/sip%3Aalice%40example.org/"
+                                            "urn%3Auuid%3A6e8bc430-9c3a-11d9-9669-0800200c9a66");
+  assert(ue && ue->auid == "org.3gpp.mcptt.ue-config" && ue->xui == "sip:alice@example.org" &&
+         ue->document == "urn:uuid:6e8bc430-9c3a-11d9-9669-0800200c9a66");
+  const auto profile = config_document_reference(
+      "xcap-root/org.3gpp.mcptt.user-profile/users/sip:alice@example.org/mcptt-user-profile-1.xml");
+  assert(profile && profile->auid == "org.3gpp.mcptt.user-profile" && profile->document == "mcptt-user-profile-1.xml");
+  const auto service = config_document_reference("org.3gpp.mcptt.service-config/global/service-config.xml");
+  assert(service && service->xui.empty() && service->document == "service-config.xml");
+  assert(!config_document_reference("org.openmobilealliance.groups/global/byGroupID/sip:g@example.org"));
+  assert(!config_document_reference("org.3gpp.mcptt.user-profile/users/sip:a@example.org/p.xml/~~/x"));
+  assert(!config_document_reference("org.3gpp.mcptt.ue-config/users/sip:a@example.org/"));
+  assert(!config_document_reference("org.3gpp.mcptt.ue-config/users/sip%zz/doc"));
+  assert(!config_document_reference("xorg.3gpp.mcptt.service-config/global/service-config.xml"));
+  assert(!config_document_reference("org.3gpp.mcptt.service-config/other/service-config.xml"));
+}
+
+//------------------------------------------------------------------------------
 int main() {
   Section_20_19_Expires();
   Section_2_1_PercentDecoding();
   Clause_9_2_2_3_11_ImplicitAffiliationCancellation();
+  Clause_6_3_13_3_2_2_ConfigurationDocuments();
   std::cout << "server request values: all checks passed\n";
   return 0;
 }

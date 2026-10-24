@@ -10,7 +10,7 @@
 # the refresh token grant (annex B.5) and never hold a password. Runs on the lab's network, after Keycloak and before
 # the clients:
 #
-#   docker run --rm --network <project>_mcx -v <lab>:<lab> -v $PWD/tools:/tools openmcx-dev:0.1 \
+#   docker run --rm --network <project>_mcx -v <lab>:<lab> -v $PWD/tools:/tools openmcx-dev:0.2 \
 #     python3 /tools/keycloak-sign-in.py <lab> [client ...]
 #
 # Specifications: TS 33.180 V19.4.0 (Rel-19), RFC 6749, RFC 7636, OpenID Connect Core 1.0.
@@ -64,6 +64,9 @@ def scope(cfg):
             ]
             if 'security' in cfg:
                 words.append(f'3gpp:mc:{service}_key_management_service')
+    # The location management server's scope, for a client that uses one (endpoints.lms).
+    if 'lms' in cfg.get('endpoints', {}):
+        words.append('3gpp:mc:location_management_service')
     return ' '.join(words)
 
 

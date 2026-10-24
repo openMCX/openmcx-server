@@ -195,6 +195,9 @@ var (
 	mcpttServiceConfigSchema   = serviceConfigSchema("MCPTT service configuration", mcpttServiceConfigNS, "mcptt-service-config.xsd")
 	mcvideoServiceConfigSchema = serviceConfigSchema("MCVideo service configuration", mcvideoServiceConfigNS, "mcvideo-service-config.xsd")
 	mcdataServiceConfigSchema  = serviceConfigSchema("MCData service configuration", mcdataServiceConfigNS, "mcdata-service-config.xsd")
+	// TS 24.484 clause 8.2.2.3.
+	mcpttUEConfigSchema = &documentSchema{name: "MCPTT UE configuration", root: xml.Name{Space: mcpttUEConfigNS, Local: "mcptt-UE-configuration"},
+		imports: []schemaImport{{"http://www.w3.org/XML/1998/namespace", "xml.xsd"}, {mcpttUEConfigNS, "mcptt-ue-config.xsd"}}}
 	// TS 24.484 clause 9.3.2.3.
 	mcvideoProfileSchema = &documentSchema{name: "MCVideo user profile", root: xml.Name{Space: mcvideoProfileNS, Local: "mcvideo-user-profile"},
 		imports: []schemaImport{

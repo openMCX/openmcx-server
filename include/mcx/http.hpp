@@ -10,13 +10,16 @@
 #include <nlohmann/json.hpp>
 
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace mcx {
 //------------------------------------------------------------------------------
-// TS 24.482 annex A.2.1.2: the response to an HTTP request: status code, body and header fields (by lower-case name).
+// TS 24.482 annex A.2.1.2: the response to an HTTP request: status code, body and header fields (by lower-case name;
+// the Set-Cookie fields of one response, RFC 6265 section 3, one per line).
 struct HttpResponse {
   long status = 0;
   std::string body;
@@ -96,6 +99,39 @@ nlohmann::json oidc_authorization_request(const HttpClient &http, const nlohmann
 // the "refresh_token".
 nlohmann::json oidc_exchange_code(const HttpClient &http, const nlohmann::json &cfg, const std::string &code,
                                   const std::string &code_verifier, const std::string &nonce);
+
+//------------------------------------------------------------------------------
+// HTML 4.01 section 17 (TS 37.579-1 table 5.3.2.3.2-5): the controls of the IdMS's user authentication form that are
+// submitted: <input> elements of type text, email, password, hidden, checkbox or radio (the last two only when
+// checked), with their names and values.
+struct HtmlFormInput {
+  std::string name, type, value;
+};
+
+// HTML 4.01 section 17.3: a form's action (as written, unresolved), its method (lower case) and its inputs.
+struct HtmlForm {
+  std::string action, method;
+  std::vector<HtmlFormInput> inputs;
+};
+
+//------------------------------------------------------------------------------
+// HTML 4.01 section 17: the one form of an HTML page, or nullopt when the page has none. Strict: a page with more
+// than one form, a form with a control this client cannot fill (select, textarea, file and other input types) or an
+// unterminated tag is refused (std::runtime_error).
+std::optional<HtmlForm> parse_html_form(std::string_view html);
+
+//------------------------------------------------------------------------------
+// HTML 4.01 section 17.13.3 and TS 37.579-1 table 5.5.4.3-1 (condition USERAUTH): the fields the user authentication
+// form submits: the hidden (and checked) inputs with their values, the user name in the form's one text or email
+// input and the password in its one password input. A form without exactly one of each is refused.
+std::map<std::string, std::string> html_form_fields(const HtmlForm &form, const std::string &user,
+                                                    const std::string &password);
+
+//------------------------------------------------------------------------------
+// RFC 3986 section 5.2: the https target URI of a form action relative to the page's URI (an absolute https URI, a
+// network-path, absolute-path, query or relative-path reference; the fragment dropped). Refused: another scheme and
+// dot segments.
+std::string resolve_https_reference(const std::string &base, const std::string &reference);
 
 //------------------------------------------------------------------------------
 // TS 24.482 clause 6.2.1 and TS 33.180 annex B.4.2: the authorization code grant with the user's password; the result

@@ -43,6 +43,11 @@ std::vector<SipHeader> SipEngine::Impl::without_route(const std::vector<SipHeade
 // peering) replaces the core route.
 void SipEngine::Impl::add_core_route(pjsip_tx_data *data, const std::vector<SipHeader> &headers) const {
   if (!get_header(headers, "Route").empty()) return;
+  // TS 24.229 clause 5.1.2A.1.1: with IMS AKA, the P-CSCF URI with its protected server port and the Service-Route.
+  if (aka) {
+    for (const auto &route : aka_routes()) add_header(data, {"Route", route});
+    return;
+  }
   add_header(data, {"Route", core_route()});
 }
 
@@ -73,7 +78,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
   auto target = pj_view(request_uri);
   auto from = pj_view(config.identity);
   auto to = pj_view(request_uri);
-  const auto contact_text = contact_uri();
+  const auto contact_text = sips_target(request_uri) ? as_sips(contact_uri()) : contact_uri();
   auto contact = pj_view(contact_text);
 
   pjsip_tx_data *created = nullptr;
@@ -87,6 +92,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
 
   add_core_route(data.get(), headers);
   add_headers(data.get(), headers);
+  aka_apply(data.get());
 
   auto token = make_token(std::move(handler));
   initialize_auth(*token);
@@ -108,7 +114,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
   ensure_started();
 
   auto local = pj_view(config.identity);
-  const auto contact_text = contact_uri();
+  const auto contact_text = sips_target(request_uri) ? as_sips(contact_uri()) : contact_uri();
   auto contact = pj_view(contact_text);
   auto remote = pj_view(request_uri);
   pjsip_dialog *sip_dialog = nullptr;
@@ -126,6 +132,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
     require_success(pjsip_dlg_add_usage(sip_dialog, &module, entry.get()), "attach SUBSCRIBE dialog usage");
     if (const auto explicit_route = get_header(headers, "Route"); !explicit_route.empty())
       pin_dialog_route(sip_dialog, explicit_route);
+    aka_apply(sip_dialog);
 
     if (has_credentials(config)) {
       pjsip_cred_info credential{};
@@ -205,7 +212,8 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
   ensure_started();
   auto local = pj_view(config.identity);
   const auto override_contact = get_header(headers, "Contact");
-  const auto contact_text = override_contact.empty() ? contact_uri() : std::string(override_contact);
+  auto contact_text = override_contact.empty() ? contact_uri() : std::string(override_contact);
+  if (sips_target(request_uri)) contact_text = as_sips(contact_text);
   auto contact = pj_view(contact_text);
   auto remote = pj_view(request_uri);
   pjsip_dialog *sip_dialog = nullptr;
@@ -239,6 +247,7 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
     require_success(pjsip_timer_init_session(invite_session, &timer), "configure outgoing session timer");
     const auto explicit_route = get_header(headers, "Route");
     if (!explicit_route.empty()) pin_dialog_route(sip_dialog, explicit_route);
+    aka_apply(sip_dialog);
 
     auto entry = std::make_unique<Dialog>();
     entry->id = id;
@@ -262,7 +271,8 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
     if (get_header(headers, "P-Preferred-Service").empty() && get_header(headers, "P-Asserted-Service").empty()) {
       add_header(data.get(),
                  {config.asserts_service ? "P-Asserted-Service" : "P-Preferred-Service", config.service->icsi});
-      add_header(data.get(), {"Accept-Contact", std::string("*;+") + config.service->feature_tag + ";require;explicit"});
+      add_header(data.get(),
+                 {"Accept-Contact", std::string("*;+") + config.service->feature_tag + ";require;explicit"});
       add_header(data.get(), {"Accept-Contact", std::string("*;+g.3gpp.icsi-ref=\"") + config.service->icsi_encoded +
                                                     "\";require;explicit"});
     }

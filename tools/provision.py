@@ -10,14 +10,16 @@ TLS certificate per role, the OIDC signing key, site.json for the identity manag
 management and configuration management servers (users with their MC ID, MCPTT ID, MCData ID and
 MCVideo ID, the lab group, the service endpoints), the configuration of every MCPTT, MCData and
 MCVideo server and of every client, the Diameter peer configuration of MCPTT-2, the SIP database
-with digest hashes and the Kamailio routing of the SIP core.
+with digest hashes and the IMS AKA subscriptions, the Kamailio routing of the SIP core and, when a
+user is provisioned for IMS AKA ("auth": "aka"), the configuration of the P-CSCF.
 
 Lab provisioning only: the identities follow TS 23.280 clause 8.1, the public service identities
 TS 24.282 clause 4.2.1 and TS 24.281 clause 4.2, the MCData configuration TS 24.484 clauses 10.3
-and 10.4, the MCVideo server roles (participating, controlling) TS 24.281 clause 6.3.
+and 10.4, the MCPTT UE (instance ID) of every client TS 24.484 clause 8.2.1A, the MCVideo server roles (participating, controlling) TS 24.281 clause 6.3.
 
 Specifications: TS 23.280 V19.10.1, TS 24.281 V19.6.0, TS 24.282 V19.7.0, TS 24.482 V19.1.0,
-TS 24.484 V19.6.0 (all Rel-19); TS 33.210; RFC 6733, RFC 2617.
+TS 24.484 V19.6.0, TS 29.228 V19.2.0, TS 33.203 V19.1.0, TS 33.180 V19.4.0 (all Rel-19); TS 33.210;
+TS 35.206; RFC 6733, RFC 2617.
 """
 
 import argparse
@@ -31,6 +33,8 @@ import subprocess
 import uuid
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+# The protected server port of an IMS AKA client (TS 33.203 clause 7.1: not 5060 or 5061).
+AKA_PROTECTED_SERVER_PORT = 5064
 
 
 # ------------------------------------------------------------------------------
@@ -193,6 +197,18 @@ def main():
     ]:
         if not re.fullmatch(r"[a-zA-Z0-9_.-]+", value):
             raise ValueError("Lab domain and local identifiers must use letters, digits, dots, underscores or hyphens")
+    # The authentication scheme of each user's private user identity (TS 29.228 clause 6.3.1 step 4): SIP digest
+    # over TLS unless "auth" is "aka", IMS AKA through the P-CSCF (TS 33.203; TS 33.180 clause 6.2.1 for 3GPP access).
+    for source_user in source["users"]:
+        if source_user.get("auth", "digest") not in ("digest", "aka"):
+            raise ValueError(f"user {source_user['role']}: auth must be digest or aka")
+    # IMS AKA identities that no client uses ("aka_probes"), for the refusal and challenge checks of a lab
+    # (tests/integration/aka_negative.py), so that those never touch a client's registration.
+    probes = list(source.get("aka_probes", []))
+    for probe in probes:
+        if not re.fullmatch(r"[a-zA-Z0-9_.-]+", probe):
+            raise ValueError(f"aka_probes: invalid identity {probe}")
+    aka = bool(probes) or any(source_user.get("auth") == "aka" for source_user in source["users"])
     out = args.output.resolve()
     if out.exists():
         raise SystemExit(f"Refusing to overwrite {out}; use existing configuration or choose --output")
@@ -250,6 +266,7 @@ def main():
         ]
         + [source_user["role"] for source_user in source["users"]]
         + list(source.get("extra_roles", []))
+        + (["pcscf"] if aka else [])
     )
     for role in roles:
         # Use the EC core leaf qualified by repeated outbound mutual TLS tests.
@@ -325,6 +342,26 @@ def main():
         }
         for source_user in source["users"]
     ]
+    # IMS AKA (decisions D4, D5): a software ISIM per user with random K and OPc (TS 35.206; OP is not kept) and the
+    # AMF of the subscription (TS 33.102 annex H), and the private user identity <user>@<domain> (TS 23.003
+    # clause 13.3, the ISIM case of TS 37.579-1 table 5.5.2.13-1). Such a user has no SIP digest password. The keys
+    # go to the user's client and the SIP database only, not into site.json.
+    isims = {}
+    for user, entry in zip(users, source["users"]):
+        if entry.get("auth") == "aka":
+            isims[user["username"]] = {
+                "impi": f"{entry['username']}@{domain}",
+                "k": secrets.token_hex(16),
+                "opc": secrets.token_hex(16),
+                "amf": entry.get("amf", "8000"),
+            }
+            if not re.fullmatch(r"[0-9a-f]{4}", isims[user["username"]]["amf"]):
+                raise ValueError(f"user {entry['role']}: amf must be 4 hex digits")
+            user["sip_password"] = ""
+    probe_isims = {
+        probe: {"impi": f"{probe}@{domain}", "k": secrets.token_hex(16), "opc": secrets.token_hex(16), "amf": "8000"}
+        for probe in probes
+    }
     # Optional TS 24.484 private-call ruleset per user; targets name local MCPTT users.
     for user, entry in zip(users, source["users"]):
         if "private_call" in entry:
@@ -346,6 +383,9 @@ def main():
         )
         # A distinct MCVideo ID per user (TS 23.280 clause 8.1.2, TS 24.281 clause 4.2).
         user["mcvideo_id"] = f"sip:{entry['username']}.mcvideo@{domain}"
+        # The user's one MCPTT UE (its client container) by its instance ID (TS 23.003 clause 13.8, a UUID URN for a
+        # UE without an IMEI): the CMS serves its MCPTT UE configuration document (TS 24.484 clause 8.2.1A).
+        user["ues"] = [f"urn:uuid:{uuid.uuid4()}"]
     site = {
         "domain": domain,
         "service_uri": service,
@@ -520,12 +560,25 @@ TLS_CA = "/config/tls/ca.crt";
         else:
             user = users[[source_user["role"] for source_user in source["users"]].index(role)]
             cfg["sip"].update(identity=user["sip_uri"], username=user["username"], password=user["sip_password"])
+            if user["username"] in isims:
+                # IMS AKA through the P-CSCF (TS 24.229 clause 5.1.1.2.2): the ISIM's keys, and the P-CSCF's address
+                # and unprotected port, preconfigured (decision D9; not discovered, TS 24.229 clause 9.2.1).
+                # sip.port is the UE's protected server port port_us, other than 5060, 5061 and the unprotected port
+                # (TS 33.203 clause 7.1); requests to the UE come from the P-CSCF, its trusted core.
+                cfg["sip"].update(
+                    auth="aka",
+                    isim=dict(isims[user["username"]]),
+                    pcscf={"address": "pcscf", "port": 5060},
+                    port=AKA_PROTECTED_SERVER_PORT,
+                )
             cfg.update(
                 mcptt={
                     "user_id": user["mcptt_id"],
                     "client_id": user["client_id"],
                     "service_uri": service,
                     "group_id": group,
+                    # TS 24.484 clause 8.2.1A: the MCSUEID of the UE configuration document's XCAP URI.
+                    "ue_instance_id": user["ues"][0],
                 },
                 oauth={
                     "issuer": site["issuer"],
@@ -554,6 +607,8 @@ TLS_CA = "/config/tls/ca.crt";
                 },
                 msgstore={"store": "mcdata"},
             )
+            if user["username"] in isims:
+                cfg["trusted_core"] = "pcscf"
         save(f"{role}.json", cfg)
         (ROOT / "artifacts" / role).mkdir(parents=True, exist_ok=True)
     # The MCVideo server: the openmcx-mcvideo-server executable, on the same core as the
@@ -609,12 +664,23 @@ TLS_CA = "/config/tls/ca.crt";
     save("mysql-password", dbpassword)
     save("mysql-root-password", secrets.token_hex(24))
     sql = "CREATE TABLE version (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, table_name VARCHAR(32) UNIQUE NOT NULL, table_version INT UNSIGNED NOT NULL);\nINSERT INTO version(table_name,table_version) VALUES ('subscriber',7);\nCREATE TABLE subscriber (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, username VARCHAR(64) NOT NULL, domain VARCHAR(64) NOT NULL, password VARCHAR(64) NOT NULL, ha1 VARCHAR(128) NOT NULL DEFAULT '', ha1b VARCHAR(128) NOT NULL DEFAULT '', UNIQUE(username,domain));\n"
+    # The per-IMPI subscription (TS 29.228 clause 6.3.1 step 4): its public user identity, its authentication scheme
+    # and, for IMS AKA, the K, OPc and AMF of the vectors (TS 33.102 clause 6.3.2). Identities not listed use SIP
+    # digest from the subscriber table.
+    sql += "CREATE TABLE ims_subscription (impi VARCHAR(128) PRIMARY KEY, impu VARCHAR(128) NOT NULL, domain VARCHAR(64) NOT NULL, auth_scheme ENUM('aka','digest') NOT NULL, k BINARY(16) NULL, opc BINARY(16) NULL, amf BINARY(2) NULL, KEY (impu));\n"
     for user in users:
+        if user["username"] in isims:
+            isim = isims[user["username"]]
+            sql += f"INSERT INTO ims_subscription(impi,impu,domain,auth_scheme,k,opc,amf) VALUES ('{isim['impi']}','{user['sip_uri']}','{domain}','aka',UNHEX('{isim['k']}'),UNHEX('{isim['opc']}'),UNHEX('{isim['amf']}'));\n"
+            continue
         # Digest hashes only (RFC 2617 section 3.2.2.2), the realm being the domain; the SIP
         # password stays in the client's configuration.
         ha1 = hashlib.md5(f"{user['username']}:{domain}:{user['sip_password']}".encode()).hexdigest()
         ha1b = hashlib.md5(f"{user['username']}@{domain}:{domain}:{user['sip_password']}".encode()).hexdigest()
         sql += f"INSERT INTO subscriber(username,domain,password,ha1,ha1b) VALUES ('{user['username']}','{domain}','','{ha1}','{ha1b}');\n"
+    for probe, isim in probe_isims.items():
+        sql += f"INSERT INTO ims_subscription(impi,impu,domain,auth_scheme,k,opc,amf) VALUES ('{isim['impi']}','sip:{probe}@{domain}','{domain}','aka',UNHEX('{isim['k']}'),UNHEX('{isim['opc']}'),UNHEX('{isim['amf']}'));\n"
+        save(f"aka-probe-{probe}.json", {"identity": f"sip:{probe}@{domain}", "isim": isim})
     save("sip-db.sql", sql)
     # MySQL drops privileges before reading this bind-mounted initialization file.
     # The containing generated directory remains mode 0700 on the host.
@@ -637,7 +703,20 @@ TLS_CA = "/config/tls/ca.crt";
     # secrets (docs/USAGE.md section 7). An explicit switch of its own: no log level turns it on.
     if source.get("sip_core", {}).get("tls_keylog") is True:
         template = "#!define TLS_KEYLOG\n" + template
+    # The S-CSCF procedures of IMS AKA, only in a lab with an IMS AKA identity.
+    if aka:
+        template = "#!define WITH_AKA\n" + template
     save("kamailio.cfg", template)
+    if aka:
+        # The P-CSCF: two pairs of protected ports per IMS AKA user, room for a re-registration's new security
+        # associations (TS 33.203 clause 7.4); TLS to the SIP core with its own certificate.
+        pcscf = (ROOT / "docker/pcscf.cfg").read_text()
+        pcscf = pcscf.replace("@IPSEC_MAX_CONN@", str(2 * len(isims) + 2))
+        save("pcscf.cfg", pcscf)
+        save(
+            "pcscf-tls.cfg",
+            "[server:default]\nmethod = TLSv1.2+\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/pcscf.key\ncertificate = /config/tls/pcscf.crt\nca_list = /config/tls/ca.crt\n[client:default]\nmethod = TLSv1.2+\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/pcscf.key\ncertificate = /config/tls/pcscf.crt\nca_list = /config/tls/ca.crt\n",
+        )
     save(
         "tls.cfg",
         "[server:default]\nmethod = TLSv1.2+\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/sip-core.key\ncertificate = /config/tls/sip-core.crt\nca_list = /config/tls/ca.crt\n[client:default]\nmethod = TLSv1.2+\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/sip-core.key\ncertificate = /config/tls/sip-core.crt\nca_list = /config/tls/ca.crt\n",

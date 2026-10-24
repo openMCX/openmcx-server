@@ -379,10 +379,21 @@ func (svc *service) serviceConfigDocument(auid string) ([]byte, string, *documen
 }
 
 // ------------------------------------------------------------------------------
+// TS 33.180 table B.4.2.2-1: the configuration management scope of each service configuration document's MC
+// service.
+var serviceConfigScopes = map[string]string{"org.3gpp.mcptt.service-config": scopePTTConfig,
+	"org.3gpp.mcvideo.service-config": scopeVideoConfig, "org.3gpp.mcdata.service-config": scopeDataConfig}
+
+// ------------------------------------------------------------------------------
 // TS 24.484 clauses 8.4.2.8, 8.4.2.9 and 6.3.3.3: getServiceConfig: every authenticated MC service user reads the
-// service configuration document (read-only) at CMSXCAPROOTURI/<AUID>/global/service-config.xml.
+// service configuration document (read-only) at CMSXCAPROOTURI/<AUID>/global/service-config.xml, under the
+// configuration management scope of the document's MC service (TS 33.180 clause 5.1.3.1).
 func (svc *service) getServiceConfig(writer http.ResponseWriter, request *http.Request) {
-	if _, ok := svc.authenticateBearer(writer, request); !ok {
+	claims, ok := svc.authenticateBearer(writer, request)
+	if !ok {
+		return
+	}
+	if scope, known := serviceConfigScopes[request.PathValue("auid")]; known && !requireScope(writer, claims, scope) {
 		return
 	}
 	raw, mime, _, ok := svc.serviceConfigDocument(request.PathValue("auid"))

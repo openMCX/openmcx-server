@@ -255,7 +255,8 @@ void SipEngine::Impl::accept_subscription(pjsip_rx_data *data, const SipMessage 
     throw std::invalid_argument("SIP Call-ID collision");
   }
 
-  const auto contact_text = contact_uri();
+  const bool sips = sips_request(data);
+  const auto contact_text = sips ? as_sips(contact_uri()) : contact_uri();
   auto contact = pj_view(contact_text);
   pjsip_dialog *sip_dialog = nullptr;
   require_success(pjsip_dlg_create_uas_and_inc_lock(pjsip_ua_instance(), data, &contact, &sip_dialog),
@@ -266,9 +267,11 @@ void SipEngine::Impl::accept_subscription(pjsip_rx_data *data, const SipMessage 
     auto entry = std::make_unique<Dialog>();
     entry->id = request.dialog_id;
     entry->dialog = sip_dialog;
+    entry->sips_contact = sips;
     require_success(pjsip_dlg_add_usage(sip_dialog, &module, entry.get()), "attach SUBSCRIBE dialog usage");
     require_success(pjsip_dlg_inc_session(sip_dialog, &module), "retain SUBSCRIBE dialog");
     session = true;
+    aka_apply(sip_dialog);
     dialogs[request.dialog_id] = std::move(entry);
     send_response(data, response, sip_dialog);
   } catch (...) {
@@ -304,7 +307,8 @@ void SipEngine::Impl::take_session_refresh(pjsip_rx_data *data) {
     throw std::invalid_argument("SIP Call-ID collision");
   }
 
-  auto contact_text = response_contact(response);
+  const bool sips = sips_request(data);
+  auto contact_text = sips ? as_sips(response_contact(response)) : response_contact(response);
   auto contact = pj_view(contact_text);
   pjsip_dialog *sip_dialog = nullptr;
   require_success(pjsip_dlg_create_uas_and_inc_lock(pjsip_ua_instance(), data, &contact, &sip_dialog),
@@ -312,6 +316,7 @@ void SipEngine::Impl::take_session_refresh(pjsip_rx_data *data) {
   pjsip_inv_session *invite = nullptr;
   try {
     if (!response.peer_route.empty()) pin_dialog_route(sip_dialog, response.peer_route);
+    aka_apply(sip_dialog);
     // An incoming dialog still originates BYE/UPDATE through the core;
     // these requests must answer the same proxy digest challenges.
     if (has_credentials(config)) {
@@ -363,6 +368,7 @@ void SipEngine::Impl::take_session_refresh(pjsip_rx_data *data) {
     entry->final_answer = response.status_code >= 200;
     entry->answer_sdp_pending = local_sdp == nullptr;
     entry->response_contact = contact_text;
+    entry->sips_contact = sips;
     if (response.status_code >= 200 && response.status_code < 300) entry->pending_ack_cseq = data->msg_info.cseq->cseq;
     invite->mod_data[module.id] = entry.get();
     dialogs[entry->id] = std::move(entry);

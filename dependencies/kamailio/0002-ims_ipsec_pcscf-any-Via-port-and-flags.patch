@@ -1,0 +1,233 @@
+From f3d50a60facbc0ebdcc214d70719897198974cfb Mon Sep 17 00:00:00 2001
+From: OpenMCX <noreply@openmcx.invalid>
+Date: Fri, 23 Oct 2026 10:16:24 +0200
+Subject: [PATCH] ims_ipsec_pcscf, ims_usrloc_pcscf: initial REGISTER with any
+ Via port; flags above 127
+
+ims_ipsec_pcscf took a registration for an initial one (security
+associations swapped into the pending contact, expiry callback registered)
+only when the UE's Via port was 5060, and ims_usrloc_pcscf looked for the
+pending contacts of a registration only under Via port 5060. The Via port of
+an initial REGISTER is any value (TS 37.579-1 table 5.5.2.13-1, TS 24.229
+clause 5.1.1.2.2): with another port the temporary security associations
+were never deleted (TS 33.203 clause 7.4), and the established ones would be
+deleted when the pending contact expired.
+
+- ipsec_create(): an initial registration is one whose REGISTER arrived on
+  an unprotected port (TS 24.229 clause 5.2.2.2 item 2); the expiry callback
+  is registered once; an earlier temporary set of the same pending
+  registration, never taken into use, is deleted when a new challenge
+  replaces it (TS 24.229 clause 5.2.2.2, 401 item 1).
+- unreg_pending_contacts_cb(): the pending contacts are searched in every
+  slot, matched by host and security parameters, not by port 5060.
+
+- w_create(), w_forward(): the flags parameter is read as the unsigned int
+  the fixup stores, not as its first (signed) byte: flags above 127 set
+  every high flag (e.g. 129 turned into 0xffffff81, with
+  IPSEC_FORWARD_USEVIA taking the transport of the next hop).
+
+The modified files carry a notice of the change (GPL-2.0 section 2(a)).
+---
+ src/modules/ims_ipsec_pcscf/cmd.c             | 38 ++++++++++++++++---
+ .../ims_ipsec_pcscf/ims_ipsec_pcscf_mod.c     |  7 +++-
+ src/modules/ims_usrloc_pcscf/udomain.c        | 23 +++++------
+ 3 files changed, 50 insertions(+), 18 deletions(-)
+
+diff --git a/src/modules/ims_ipsec_pcscf/cmd.c b/src/modules/ims_ipsec_pcscf/cmd.c
+index 629445c..dc66a5f 100644
+--- a/src/modules/ims_ipsec_pcscf/cmd.c
++++ b/src/modules/ims_ipsec_pcscf/cmd.c
+@@ -1,4 +1,9 @@
+ /*
++ * Modified by OpenMCX on 2026-10-23 (GPL-2.0 section 2(a)): an initial registration
++ * is told by the unprotected port its REGISTER arrived on, not by the UE's Via port
++ * 5060; the earlier temporary set of a pending registration is deleted when a new
++ * challenge replaces it; the expiry callback is registered once.
++ *
+  * Copyright (C) 2012 Smile Communications, jason.penton@smilecoms.com
+  * Copyright (C) 2012 Smile Communications, richard.good@smilecoms.com
+  * Copyright (C) 2019 Aleksandar Yosifov
+@@ -64,6 +69,9 @@
+ extern str ipsec_listen_addr;
+ extern str ipsec_listen_addr6;
+ extern int ipsec_reuse_server_port;
++extern int ipsec_client_port;
++extern int ipsec_server_port;
++extern int ipsec_max_connections;
+ extern ip_addr_t ipsec_listen_ip_addr;
+ extern ip_addr_t ipsec_listen_ip_addr6;
+ 
+@@ -851,6 +859,15 @@ static void free_ipsec_data(ipsec_t *p)
+ 	shm_free(p);
+ }
+ 
++/* whether a port is one of the protected client or server ports */
++static int ipsec_protected_port(unsigned short port)
++{
++	return (port >= ipsec_client_port
++				   && port < ipsec_client_port + ipsec_max_connections)
++		   || (port >= ipsec_server_port
++				   && port < ipsec_server_port + ipsec_max_connections);
++}
++
+ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+ {
+ 	pcontact_t *pcontact = NULL;
+@@ -866,6 +883,9 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+ 	// registration); if it stays 0 that ipsec_t was only used to build the
+ 	// tunnel and must be freed before returning, otherwise it leaks
+ 	int ipsec_swapped = 0;
++	// TS 24.229 clause 5.2.2.2 item 2: an initial registration's REGISTER is
++	// received unprotected; the UE's Via port may be any value
++	int initial = 0;
+ 
+ 	if(m->first_line.type == SIP_REPLY) {
+ 		t = tmb.t_gett();
+@@ -912,10 +932,10 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+ 	// Parse security parameters from the REGISTER request and get some data for the new tunnels
+ 	req_sec_params = cscf_get_security(req);
+ 
++	initial = !ipsec_protected_port(req->rcv.dst_port);
++
+ 	// Update contacts only for initial registration, for re-registration the existing contacts shouldn't be updated.
+-	if(ci.via_port == SIP_PORT
+-			|| (pcontact->security_temp->data.ipsec->port_ps == 0
+-					&& pcontact->security_temp->data.ipsec->port_pc == 0)) {
++	if(initial) {
+ 		LM_DBG("Registration for contact with AOR [%.*s], VIA [%d://%.*s:%d], "
+ 			   "received_host [%d://%.*s:%d]\n",
+ 				ci.aor.len, ci.aor.s, ci.via_prot, ci.via_host.len,
+@@ -955,7 +975,7 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+ 		goto cleanup;
+ 	}
+ 
+-	if(ci.via_port == SIP_PORT) {
++	if(initial) {
+ 		if(req_sec_params != NULL) {
+ 			ipsec_t *old_ipsec = pcontact->security_temp->data.ipsec;
+ 			pcontact->security_temp->data.ipsec = s;
+@@ -966,6 +986,14 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+ 			// stored by save_pending() (or a prior ipsec_create()) and was
+ 			// previously orphaned on every registration
+ 			if(old_ipsec && old_ipsec != s) {
++				// TS 24.229 clause 5.2.2.2 (401 item 1): an earlier temporary
++				// set of this pending registration, never taken into use (its
++				// expiry callback still here), is deleted
++				if((old_ipsec->port_ps || old_ipsec->port_pc)
++						&& ul.is_ulcb_registered(pcontact, ipsec_on_expire)) {
++					destroy_ipsec_tunnel(
++							ci.received_host, old_ipsec, ci.received_port);
++				}
+ 				free_ipsec_data(old_ipsec);
+ 			}
+ 		}
+@@ -995,7 +1023,7 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+ 		goto cleanup;
+ 	}
+ 
+-	if(ci.via_port == SIP_PORT) {
++	if(initial && !ul.is_ulcb_registered(pcontact, ipsec_on_expire)) {
+ 		if(ul.register_ulcb(pcontact,
+ 				   PCSCF_CONTACT_EXPIRE | PCSCF_CONTACT_DELETE, ipsec_on_expire,
+ 				   (void *)&pcontact->received_port)
+diff --git a/src/modules/ims_ipsec_pcscf/ims_ipsec_pcscf_mod.c b/src/modules/ims_ipsec_pcscf/ims_ipsec_pcscf_mod.c
+index 0f1700a..34b146a 100644
+--- a/src/modules/ims_ipsec_pcscf/ims_ipsec_pcscf_mod.c
++++ b/src/modules/ims_ipsec_pcscf/ims_ipsec_pcscf_mod.c
+@@ -1,4 +1,7 @@
+ /*
++ * Modified by OpenMCX on 2026-10-23 (GPL-2.0 section 2(a)): the flags of
++ * ipsec_create() and ipsec_forward() read as the unsigned int the fixup stores.
++ *
+  * IMS IPSEC PCSCF module
+  *
+  * Copyright (C) 2018 Tsvetomir Dimitrov
+@@ -530,7 +533,7 @@ static int unregister_fixup_free(void **param, int param_no)
+ static int w_create(struct sip_msg *_m, char *_d, char *_cflags)
+ {
+ 	if(_cflags) {
+-		return ipsec_create(_m, (udomain_t *)_d, ((int)(*_cflags)));
++		return ipsec_create(_m, (udomain_t *)_d, ((int)(*(unsigned int *)_cflags)));
+ 	}
+ 	return ipsec_create(_m, (udomain_t *)_d, 0);
+ }
+@@ -538,7 +541,7 @@ static int w_create(struct sip_msg *_m, char *_d, char *_cflags)
+ static int w_forward(struct sip_msg *_m, char *_d, char *_cflags)
+ {
+ 	if(_cflags) {
+-		return ipsec_forward(_m, (udomain_t *)_d, ((int)(*_cflags)));
++		return ipsec_forward(_m, (udomain_t *)_d, ((int)(*(unsigned int *)_cflags)));
+ 	}
+ 	return ipsec_forward(_m, (udomain_t *)_d, 0);
+ }
+diff --git a/src/modules/ims_usrloc_pcscf/udomain.c b/src/modules/ims_usrloc_pcscf/udomain.c
+index 0da67ec..fd3d2f4 100644
+--- a/src/modules/ims_usrloc_pcscf/udomain.c
++++ b/src/modules/ims_usrloc_pcscf/udomain.c
+@@ -1,6 +1,10 @@
+ /*
+  * $Id$
+  *
++ * Modified by OpenMCX on 2026-10-23 (GPL-2.0 section 2(a)): the pending contacts of a
++ * registration are found whatever the UE's Via port of its initial REGISTER (not
++ * only 5060).
++ *
+  * Copyright (C) 2012 Smile Communications, jason.penton@smilecoms.com
+  * Copyright (C) 2012 Smile Communications, richard.good@smilecoms.com
+  * Copyright (C) 2019 Aleksandar Yosifov
+@@ -825,7 +829,7 @@ int unreg_pending_contacts_cb(udomain_t *_d, pcontact_t *_c, int type)
+ {
+ 	pcontact_t *c;
+ 	pcontact_info_t contact_info;
+-	unsigned int aorhash, sl, i;
++	unsigned int sl, i;
+ 
+ 	contact_info.via_host = _c->via_host;
+ 	contact_info.via_port = SIP_PORT;
+@@ -838,20 +842,17 @@ int unreg_pending_contacts_cb(udomain_t *_d, pcontact_t *_c, int type)
+ 			contact_info.via_host.s, contact_info.via_port,
+ 			reg_state_to_string(contact_info.reg_state));
+ 
+-	aorhash = get_aor_hash(_d, &contact_info.via_host, contact_info.via_port,
+-			contact_info.via_prot);
+-	sl = aorhash & (_d->size - 1);
+-
+-	LM_DBG("get_pcontact slot is [%d]\n", sl);
++	/* the initial REGISTER's Via port is any value (TS 37.579-1 table
++	 * 5.5.2.13-1): every slot is searched, the security parameters decide */
++	for(sl = 0; sl < _d->size; sl++) {
+ 	c = _d->table[sl].first;
+-
+-	for(i = 0; i < _d->table[sl].n; i++) {
++	for(i = 0; c && i < _d->table[sl].n; i++) {
+ 		LM_DBG("comparing contact with aorhash [%u], aor [%.*s]\n", c->aorhash,
+ 				c->aor.len, c->aor.s);
+ 		LM_DBG("contact host [%.*s:%d]\n", c->contact_host.len,
+ 				c->contact_host.s, c->contact_port);
+ 
+-		if(c->aorhash == aorhash) {
++		if(c != _c) {
+ 			ip_addr_t c_ip_addr;
+ 			ip_addr_t ci_ip_addr;
+ 
+@@ -870,8 +871,7 @@ int unreg_pending_contacts_cb(udomain_t *_d, pcontact_t *_c, int type)
+ 			}
+ 
+ 			// compare 'contact->contact host' and 'contact info->via host'
+-			if(ip_addr_cmp(&c_ip_addr, &ci_ip_addr)
+-					&& (c->contact_port == contact_info.via_port)) {
++			if(ip_addr_cmp(&c_ip_addr, &ci_ip_addr)) {
+ 				LM_DBG("found contact with URI [%.*s]\n", c->aor.len, c->aor.s);
+ 
+ 				// finally check state being searched for
+@@ -948,6 +948,7 @@ int unreg_pending_contacts_cb(udomain_t *_d, pcontact_t *_c, int type)
+ 		}
+ 		c = c->next;
+ 	}
++	}
+ 
+ 	return 0;
+ }
+-- 
+2.53.0
+

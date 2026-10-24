@@ -141,7 +141,7 @@ def main():
                     'ALL',
                     '--cap-add',
                     'NET_RAW',
-                    'openmcx-dev:0.1',
+                    'openmcx-dev:0.2',
                     'tcpdump',
                     '-Z',
                     'root',

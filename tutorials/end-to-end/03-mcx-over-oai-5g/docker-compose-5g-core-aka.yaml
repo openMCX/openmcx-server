@@ -1,0 +1,18 @@
+# OpenMCX: tutorial 3's changes to the shared services of docker-compose-5g-core.yaml (tutorial 4 includes that file
+# without them), merged into it by docker-compose-5g-mcx.yaml's include.
+#
+# The setup provisions the test user client-d for IMS AKA (TS 33.203; TS 33.180 clause 6.2.1, 3GPP access): its
+# software ISIM keys, its ims_subscription row in the SIP database (the S-CSCF procedures of the SIP core) and the
+# P-CSCF's configuration; setup/ue-client.py makes the configuration of the MC client in the 5G UE from it.
+
+services:
+  setup:
+    environment:
+      IMS_AKA_ROLES: client-d
+    volumes:
+    - ./setup/ue-client.py:/tutorial3/ue-client.py:ro
+    entrypoint:
+    - sh
+    - -c
+    - python3 /opt/tutorials/configure.py && python3 /tutorial3/pcf.py && python3 /tutorial3/location.py && python3
+      /tutorial3/ue-client.py

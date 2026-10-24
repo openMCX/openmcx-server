@@ -46,7 +46,8 @@ verifier = secrets.token_urlsafe(48)
 challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
 state = secrets.token_hex(8)
 query = urllib.parse.urlencode({"response_type": "code", "client_id": oauth["client_id"], "redirect_uri": oauth["redirect_uri"],
-    "scope": "openid 3gpp:mc:ptt_service", "state": state, "nonce": secrets.token_hex(8), "code_challenge": challenge,
+    "scope": "openid 3gpp:mc:ptt_service 3gpp:mc:ptt_config_management_service 3gpp:mc:ptt_group_management_service",
+    "state": state, "nonce": secrets.token_hex(8), "code_challenge": challenge,
     "code_challenge_method": "S256"})
 request_id = json.loads(call("GET", oauth["issuer"] + "/authorize?" + query)[4])["request_id"]
 form = {"Content-Type": "application/x-www-form-urlencoded"}

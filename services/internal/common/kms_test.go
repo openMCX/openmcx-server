@@ -106,6 +106,17 @@ func TestKMSAuthorizesIdentityAndPersistsAuthority(test *testing.T) {
 			test.Fatalf("%s got%d want%d", path, rr.Code, want)
 		}
 	}
+	// TS 33.180 clause 5.1.3.1: the MCData ID under the MCData KMS scope alone; the MCPTT ID's key material and
+	// not without the MCPTT KMS scope.
+	claims.Scope = "openid 3gpp:mc:data_key_management_service"
+	dataOnly, _ := signToken(claims, key)
+	for path, want := range map[string]int{data: 200, "/keymanagement/identity/v1/keyprov": 403, "/keymanagement/identity/v1/init": 200} {
+		rr = httptest.NewRecorder()
+		handler.ServeHTTP(rr, bearerRequest(http.MethodPost, path, dataOnly, nil))
+		if rr.Code != want {
+			test.Fatalf("data scope only: %s got%d want%d", path, rr.Code, want)
+		}
+	}
 	// TS 24.281 clause 4.7: the MCVideo ID only under the MCVideo KMS scope, and only the
 	// token's own; the MCData scope does not provision it.
 	video := "/keymanagement/identity/v1/keyprov/sip%3Aalice.mcvideo%40mcx.test"

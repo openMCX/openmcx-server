@@ -27,9 +27,12 @@ COPY docker/fetch /usr/local/bin/fetch
 RUN fetch "$GO_FILE" "$GO_URL" "$GO_SHA256" /tmp/go.tar.gz \
     && tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
 ENV PATH="/usr/local/go/bin:/opt/pjsip/bin:${PATH}"
+# OpenMCX's pjproject patches (dependencies/pjproject/README.md): the TCP client port of IMS AKA (TS 33.203 7.1).
+COPY dependencies/pjproject/0001-tcp-client-port.patch /tmp/pjproject-patches/
 RUN fetch "$PJSIP_FILE" "$PJSIP_URL" "$PJSIP_SHA256" /tmp/pjproject.tar.gz \
     && mkdir /tmp/pjproject && tar -xzf /tmp/pjproject.tar.gz -C /tmp/pjproject --strip-components=1 \
     && cd /tmp/pjproject \
+    && for p in /tmp/pjproject-patches/*.patch; do patch -p1 --forward < "$p" || exit 1; done \
     && printf '/* SIP over TCP carries access tokens, MIKEY-SAKKE I_MESSAGEs and XML bodies */\n#define PJSIP_MAX_PKT_LEN 16000\n' \
        > pjlib/include/pj/config_site.h \
     && ./configure --prefix=/opt/pjsip --disable-video --disable-sound --disable-libyuv \
@@ -37,7 +40,7 @@ RUN fetch "$PJSIP_FILE" "$PJSIP_URL" "$PJSIP_SHA256" /tmp/pjproject.tar.gz \
        --disable-ilbc-codec --disable-g7221-codec --with-external-srtp CFLAGS='-fPIC' CXXFLAGS='-fPIC' \
     && grep -q "guid_uuid.o" pjlib/build/os-auto.mak \
     && make dep && make -j4 && make install \
-    && rm -rf /tmp/pjproject /tmp/pjproject.tar.gz
+    && rm -rf /tmp/pjproject /tmp/pjproject.tar.gz /tmp/pjproject-patches
 ENV PKG_CONFIG_PATH="/opt/pjsip/lib/pkgconfig"
 RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UBUNTU" dev-autotools) \
     && rm -rf /var/lib/apt/lists/*

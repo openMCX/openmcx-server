@@ -49,9 +49,8 @@ const std::string *McServer::regroup_part(const SipMessage &message) const {
 // MESSAGE request to another MCPTT function, with the P-Asserted-Identity set to this function's public service
 // identity.
 std::vector<SipHeader> McServer::function_headers(const std::string &peer) const {
-  // The function asserts its public service identity (sip:), as every server
-  // checks an asserted identity; session_service_ is the sips: form that its
-  // session URIs take over TLS.
+  // The function asserts its public service identity, as every server checks an
+  // asserted identity.
   return route_to(peer, {{"P-Asserted-Identity", "<" + own_service_uri() + ">"}, {"P-Asserted-Service", svc_.icsi}});
 }
 

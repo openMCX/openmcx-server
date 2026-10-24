@@ -15,6 +15,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -26,6 +28,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 // ------------------------------------------------------------------------------
@@ -49,6 +53,9 @@ func TestCredentialService(test *testing.T) {
 	for _, stmt := range []string{"CREATE DATABASE " + name,
 		"CREATE TABLE " + name + ".subscriber (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, username VARCHAR(64) NOT NULL, domain VARCHAR(64) NOT NULL, password VARCHAR(64) NOT NULL, ha1 VARCHAR(128) NOT NULL DEFAULT '', ha1b VARCHAR(128) NOT NULL DEFAULT '', UNIQUE(username,domain))",
 		"CREATE TABLE " + name + ".subscriber_suspended LIKE " + name + ".subscriber",
+		"CREATE TABLE " + name + ".ims_subscription (impi VARCHAR(128) PRIMARY KEY, impu VARCHAR(128) NOT NULL, domain VARCHAR(64) NOT NULL, " +
+			"auth_scheme ENUM('aka','digest') NOT NULL, k BINARY(16) NULL, opc BINARY(16) NULL, amf BINARY(2) NULL)",
+		"INSERT INTO " + name + ".ims_subscription VALUES ('bob@mcx.test', 'sip:bob@mcx.test', 'mcx.test', 'aka', UNHEX('000102030405060708090a0b0c0d0e0f'), UNHEX('000102030405060708090a0b0c0d0e0f'), UNHEX('8000'))",
 		"CREATE TABLE " + name + ".client_certificates (serial VARCHAR(64) PRIMARY KEY, username VARCHAR(64) NOT NULL, domain VARCHAR(64) NOT NULL, " +
 			"client_id VARCHAR(255) NOT NULL, not_after DATETIME NOT NULL, issued_at DATETIME NOT NULL, revoked_at DATETIME NULL)"} {
 		if _, err := root.Exec(stmt); err != nil {
@@ -60,6 +67,7 @@ func TestCredentialService(test *testing.T) {
 	_ = os.WriteFile(dsnFile, []byte(strings.Replace(dsn, ")/", ")/"+name, 1)), 0o600)
 	cfg := testConfig()
 	cfg.Users[0].SIPURI = "sip:alice@mcx.test" // the lab's form: the SIP core's domain
+	cfg.Users[1].SIPURI = "sip:bob@mcx.test"   // provisioned for IMS AKA in ims_subscription
 	cfg.Credentials = &CredentialsConfig{MySQLDSNFile: dsnFile}
 	key := testKey(test)
 	handler, err := NewHandler(RoleCredentials, cfg, key, test.TempDir(), WithClock(func() time.Time { return testNow }), WithContext(test.Context()))
@@ -101,6 +109,15 @@ func TestCredentialService(test *testing.T) {
 		test.Fatal("a new credential did not replace the old")
 	}
 	cred = again
+	// TS 33.180 clause 6.2.1: an identity provisioned for IMS AKA gets no digest credential.
+	if code, out := issue(tokenFor(test, cfg, key, "bob", testNow, cfg.ServerClientID)); code != http.StatusForbidden || out["error"] != "aka_identity" {
+		test.Fatalf("an AKA identity: %d %v", code, out)
+	}
+	var bobRows int
+	_ = db.QueryRow("SELECT COUNT(*) FROM subscriber WHERE username = 'bob'").Scan(&bobRows)
+	if bobRows != 0 {
+		test.Fatal("a digest credential was stored for an AKA identity")
+	}
 	change := func(action, user, pw string) int {
 		req := httptest.NewRequest(http.MethodPost, "/internal/sip-credentials/alice/"+action, nil)
 		req.SetBasicAuth(user, pw)
@@ -241,6 +258,22 @@ func TestCredentialService(test *testing.T) {
 	}
 	if count := reloads.Load(); count < 2 {
 		test.Fatalf("the SIP core was asked to reload %d times", count)
+	}
+}
+
+// ------------------------------------------------------------------------------
+// TS 29.228 clause 6.3.1 step 4: a SIP database without the ims_subscription table, or one that does not grant it to
+// the Credential Service, holds no IMS AKA subscription; any other database error is not taken for that.
+func TestNoSubscriptionTable(test *testing.T) {
+	for _, number := range []uint16{1146, 1142} {
+		if !noSubscriptionTable(fmt.Errorf("query: %w", &mysql.MySQLError{Number: number})) {
+			test.Fatalf("MySQL error %d is not taken for a missing table", number)
+		}
+	}
+	for _, err := range []error{nil, &mysql.MySQLError{Number: 1045}, errors.New("connection refused")} {
+		if noSubscriptionTable(err) {
+			test.Fatalf("%v is taken for a missing table", err)
+		}
 	}
 }
 

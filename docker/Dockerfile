@@ -13,7 +13,7 @@
 # image is Ubuntu with only its program's run-time packages and the program stripped of its debug information (the
 # machine code is the same -O2 build), plus curl and Python for the lab's health checks.
 
-ARG DEV_IMAGE=openmcx-dev:0.1
+ARG DEV_IMAGE=openmcx-dev:0.2
 ARG RUNTIME_BASE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
 # The Ubuntu release of RUNTIME_BASE and of the development image; its package names are in docker/packages.
 ARG UBUNTU=24.04
@@ -25,6 +25,7 @@ COPY services /services
 RUN cd /services && go test ./... && go build -trimpath -o /install/bin/mcx-common ./cmd/mcx-common \
     && go build -trimpath -o /install/bin/mcx-http-proxy ./cmd/mcx-http-proxy
 COPY CMakeLists.txt /src/CMakeLists.txt
+COPY dependencies/hostap /src/dependencies/hostap
 COPY include /src/include
 COPY src /src/src
 COPY tests /src/tests
@@ -47,6 +48,8 @@ COPY tools/healthcheck.py /healthcheck.py
 WORKDIR /workspace
 # The licence of OpenMCX and the third-party notices, in every image (NOTICE lists the sources).
 COPY LICENSE NOTICE /usr/share/doc/openmcx/
+# hostap's licence (BSD), which its MILENAGE (dependencies/hostap) in the SIP library asks binaries to carry.
+COPY dependencies/hostap/README /usr/share/doc/openmcx/hostap-README
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.source="https://github.com/openMCX/openmcx-server"
 

@@ -3,7 +3,10 @@
 Tutorial 1's system and phones, plus a 5G network: the OAI 5G core, the OAI gNB and one nr-UE connected by the
 rfsimulator (a simulated radio, no radio hardware). The dispatcher position runs inside the nr-UE, so all its traffic
 crosses the 5G radio and core. When it calls, the MCPTT server asks the 5G core, over **N5**, for the QoS of
-mission-critical voice: the core sets up a dedicated QoS flow (**5QI 65**) for the dispatcher's speech.
+mission-critical voice: the core sets up a dedicated QoS flow (**5QI 65**) for the dispatcher's speech. A second MC
+client in the nr-UE, the Linux client of the test user `client-d`, registers with **IMS AKA** through a P-CSCF, over
+IPsec, and walks through test 5.1 of TS 37.579-2 at each start ([Walk-through of TS 37.579-2 test
+5.1](#walk-through-of-ts-37579-2-test-51)).
 
 <p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 3: the phones reach the OpenMCX system over the Wi-Fi; the dispatcher runs inside the nr-UE and reaches it over the rfsim radio, the gNB, the UPF (N3, N6) of the OAI 5G core; the MCPTT server asks the PCF for MCPTT QoS over N5"></p>
 
@@ -18,8 +21,8 @@ its address from the pool `12.1.1.0/24` (the dispatcher's UE: `12.1.1.2`).
 
 - **Tutorial 1 done once**: the phones have the app, and you know the steps in MCX Admin. Tutorial 1's system must be
   **stopped**: tutorial 3 runs its own system with the same ports.
-- **A Linux computer** with Docker and Docker Compose v2, about 8 CPU cores free (the rfsimulator's gNB and UE keep
-  several cores busy) and **sudo** (step 3).
+- **A Linux computer** with Docker and Docker Compose v2 (2.24 or later), about 8 CPU cores free (the rfsimulator's gNB
+  and UE keep several cores busy) and **sudo** (step 3).
 - **The OAI 5G core and RAN images**, from Docker Hub: OAI's own, and its AMF, PCF, SMF and UPF v2.2.1 with changes
   for N5 (`openmcx/oai-{amf,pcf,smf,upf}:mcx-n5`): the PCF turns an AF's media components into a PCC rule with 5QI 65,
   the SMF modifies the PDU session for it (a new QoS flow), and the UPF keeps the flow's packet rules. When the RAN
@@ -29,10 +32,15 @@ its address from the pool `12.1.1.0/24` (the dispatcher's UE: `12.1.1.2`).
 
   The OAI 5G core is under the Collaborative Standards Software License v1.0: its patent license covers study,
   testing and research only ([`oai/cn5g/NOTICE`](oai/cn5g/NOTICE)).
-- Nothing to compile: the tutorial uses **prebuilt images from Docker Hub**, OpenMCX's (`openmcx/openmcx-*:1.0.0`, as
-  in tutorial 1) and OAI's. To build the OpenMCX images yourself, see
-  [tutorial 1's Images](../01-mcx-over-wlan-android/README.md#images) and [Building OpenMCX](../../../docs/BUILD.md);
-  for the three OAI images, [`oai/cn5g/`](oai/cn5g/README.md).
+- **Two Android phones** on the same Wi-Fi as in tutorial 1, with the OpenMCX app from the `develop` build
+  ([`android/apk/openmcx-client-develop.apk`](https://github.com/openMCX/openmcx-client/tree/main/android/apk)): the
+  servers of the `develop` images check the scopes of the access token, which the app of release 1.0.0 does not ask for.
+- **IPsec in the kernel** for IMS AKA: the modules `xfrm_user`, `esp4` and `authenc` (step 3 loads them), with the
+  HMAC-SHA-1 and AES-CBC algorithms, as in the kernels of the common Linux distributions.
+- Nothing to compile: the tutorial uses **prebuilt images from Docker Hub**, OpenMCX's `develop` images
+  (`openmcx/openmcx-*:develop`, the main branch: IMS AKA needs a version after 1.0.0) and OAI's. To build the OpenMCX
+  images yourself, see [tutorial 1's Images](../01-mcx-over-wlan-android/README.md#images) and [Building
+  OpenMCX](../../../docs/BUILD.md); for the three OAI images, [`oai/cn5g/`](oai/cn5g/README.md).
 
 ## 1. Set the computer's address
 
@@ -50,7 +58,11 @@ docker compose -f docker-compose-5g-mcx.yaml run --rm setup
 ```
 
 As in tutorial 1 (a new system in `./config`), plus the MCPTT server's N5 settings: the PCF's address on the 5G core
-network and the UE pool 12.1.1.0/24.
+network and the UE pool 12.1.1.0/24, and a location reporting configuration in the MCPTT, MCVideo and MCData servers,
+which they send each client in a SIP MESSAGE once it is authorised. The test user `client-d` is provisioned for IMS
+AKA: a software ISIM with keys of its own (K, OPc) and the private user identity `client-d@mcx.test`, in its MC
+client's configuration (`config/ue-client.json`) and in the SIP database, and the P-CSCF's configuration
+(`config/pcscf.cfg`); the SIP core is then the S-CSCF of that identity. Every other user keeps SIP digest over TLS.
 
 ## 3. Connect this computer to the UE pool
 
@@ -65,9 +77,13 @@ The dispatcher reaches the system at `HOST_IP`, as the phones do. Two settings o
 - **SNAT** for packets from the N6 network `192.168.72.128/26` to the UE pool: they leave from `HOST_IP`, so the UE
   sees one address both ways and the 5G core's packet filters (`permit out 17 from HOST_IP ...`) match the speech.
 
-The three addresses are fixed in `host-network.sh` and match the 5G core's configuration (`oai/mcx_core_config.yaml`,
-the networks in `docker-compose-5g-core.yaml`): change them only together. `sudo ./host-network.sh remove` undoes both
-(step 9).
+The P-CSCF (`192.168.72.140`, on the N6 network) is left out of the SNAT: it reaches the UE through the UPF itself,
+with its own address, which its IPsec security associations with the UE are bound to. The script also loads the
+kernel's IPsec modules (`xfrm_user`, `esp4`, `authenc`) if they are not loaded yet.
+
+The addresses are fixed in `host-network.sh` and match the 5G core's configuration (`oai/mcx_core_config.yaml`,
+the networks in `docker-compose-5g-core.yaml`): change them only together. `sudo ./host-network.sh remove` undoes the
+route and the NAT rules (step 9).
 
 ## 4. Start the system
 
@@ -76,11 +92,12 @@ docker compose -f docker-compose-5g-mcx.yaml up -d
 docker compose -f docker-compose-5g-mcx.yaml ps --format 'table {{.Name}}\t{{.Status}}'
 ```
 
-After about two minutes all 30 services are `(healthy)`: the OpenMCX system, the 5G core, the gNB, the nr-UE,
-`ue-route` and the dispatcher. `openmcx-ue-route` shows the UE's address:
+After about two minutes all 33 services are `(healthy)`: the OpenMCX system, the P-CSCF (`pcscf` and `pcscf-route`),
+the 5G core, the gNB, the nr-UE, `ue-route`, the dispatcher and the MC client of `client-d` (`ue-client`), which is
+healthy once it has signed in, registered with IMS AKA and been authorised. `openmcx-ue-route` shows the UE's address:
 
 ```bash
-docker logs openmcx-ue-route        # UE address 12.1.1.2, HOST_IP through oaitun_ue1
+docker logs openmcx-ue-route        # UE address 12.1.1.2, HOST_IP and the P-CSCF 192.168.72.140 through oaitun_ue1
 ```
 
 ## 5. Users and phones
@@ -138,11 +155,11 @@ and every call of the position go through the 5G user plane.
 
 ## 8. Look at the capture
 
-The reference capture [`captures/03-mcx-over-oai-5g-full.pcapng.gz`](captures/03-mcx-over-oai-5g-full.pcapng.gz) (0.7 MB, 4 833
-frames) records a run of steps 4 to 7: the system
-starting, the UE registering over the 5G core, the phones and the dispatcher signing in, a group call from the
-dispatcher with PTT, Bob talking back, and the hang-up. Wireshark opens the compressed file directly. The frame
-numbers below are those of the reference.
+The reference capture [`captures/03-mcx-over-oai-5g-full.pcapng.gz`](captures/03-mcx-over-oai-5g-full.pcapng.gz)
+(0.7 MB, 4 833 frames) records a run of steps 4 to 7, made before the tutorial had the P-CSCF and the MC client of
+`client-d`: the system starting, the UE registering over the 5G core, the phones and the dispatcher signing in, a group
+call from the dispatcher with PTT, Bob talking back, and the hang-up. Wireshark opens the compressed file directly. The
+frame numbers below are those of the reference.
 
 It was captured on the two Docker networks, the 5G core's (`192.168.71.128/26`: N2, N3, N4, SBI and N5) and N6 with
 the OpenMCX system (`192.168.72.128/26`), and reduced by port so that every TCP segment of a kept stream stays:
@@ -216,19 +233,98 @@ rm -rf config                                            # with down -v: start o
 After `down`, `docker compose -f docker-compose-5g-mcx.yaml up -d` starts the same system again, users and phones
 included; then run `sudo ./host-network.sh add` again (step 3): its route goes with the network `down` removes.
 
+## Walk-through of TS 37.579-2 test 5.1
+
+Test 5.1 of TS 37.579-2 V18.1.0 ("Configuration / Authentication / User Authorisation / UE Configuration / User
+Profile / Key Generation", table 5.1.3.2-1) checks what an MC client does from switch-on to service: the 5GS
+registration of the UE, the MC user's sign-in, the SIP registration with IMS AKA, the service authorisation and the
+configuration and group management subscriptions, with the procedures of TS 37.579-1 V18.1.0. Here it is a
+walk-through, not a conformance test: there is no TTCN-3 test suite (TS 37.579-5), no validated system simulator and
+no radio. The OAI 5G core and RAN and the OpenMCX system take the system simulator's place; the implementation under
+test is the MC client of `client-d` in the nr-UE (`openmcx-ue-client`).
+
+It runs by itself at every start of the system (step 4): the client is preconfigured with the initial UE
+configuration (table 5.3.2.3.1-1 step 1a, the data of table 5.5.8.1-1: the IdMS's endpoints, the HTTP proxy, the
+P-CSCF, the identities) and with the user name and password (NOTE 1 of that table: stored on the UE). Nothing to do
+in MCX Admin. To see every step, switch the debug log on before the start (`MCX_LOG=debug` in `.env`, then
+`docker compose -f docker-compose-5g-mcx.yaml up -d`): the SIP messages and the HTTP requests are then in the logs. The
+debug log of `openmcx-ue-client` also holds the keys of its IPsec security associations (lines `ESP SA`), so that
+Wireshark can decrypt its SIP: treat it as secret. To run the test again, stop the system and start it again (step 9,
+`down` without `-v`, `sudo ./host-network.sh add`, `up -d`).
+
+The client is healthy when it is authorised:
+
+```bash
+docker compose -f docker-compose-5g-mcx.yaml ps ue-client     # (healthy)
+docker logs openmcx-ue-client 2>&1 | grep -E '"event":"(sip_registered|oidc_authenticated|signed_in|service_authorized|configuration_subscribed|group_documents_subscribed|group_document_notified|location_configuration_received)"'
+python3 -c 'import json; print(json.dumps(json.load(open("config/artifacts/client-d/status.json"))["sip_security"], indent=1))'
+```
+
+The last command shows the security associations in use (TS 33.203 clause 7.1, the SA_table): `ims-aka`,
+`ipsec-3gpp`, `hmac-sha-1-96` and `aes-cbc`, the SPIs and protected ports of the UE (`spi_uc`, `spi_us`, `port_uc`,
+`port_us` 5064) and of the P-CSCF (`port_pc` and `port_ps`, from 5100 and 6100), and the public user identity of the
+200 (OK)'s P-Associated-URI. Step by step:
+
+| 5.1 step | TS 37.579-1 | What the client does | Where to see it | Normative clauses |
+|---|---|---|---|---|
+| 1 | 5.4.2.3, 5.4.1B | The nr-UE registers with the 5GS (5G AKA, NAS security) and sets up the MCX PDU session on the DNN `mcptt`, whose default QoS flow has 5QI 69. | `docker logs openmcx-ue-route` (the UE's address); in a capture `nas-5gs` and `ngap.fiveQI == 69` (step 8, frames 22 to 342 of the reference). | TS 24.501, TS 23.501 table 5.7.4-1 |
+| in parallel to 3-16 | table 5.3.2.4.1-1, path 3b1 | Initial REGISTER, unprotected, to the P-CSCF's port 5060 with Security-Client (`ipsec-3gpp`, `hmac-sha-1-96`, `aes-cbc`, its SPIs and ports) and sec-agree in Require and Proxy-Require; the 401 (Unauthorized) of the SIP core with an AKAv2-SHA-256 and an AKAv1-MD5 challenge, through the P-CSCF, which adds Security-Server and removes the ck and ik meant for it; the client checks AUTN (MAC, SQN), computes RES, CK and IK and sets up the temporary security associations; the protected REGISTER from port_uc to port_ps, with Security-Verify and the AKA response; the 200 (OK). The REGISTER does not wait for the access token, which goes in the PUBLISH (step 17). | `docker logs openmcx-ue-client 2>&1 \| grep -E 'SIP (->\|<-) .*REGISTER\|ESP SA'`; in a capture the first REGISTER and the 401 are readable on N6 (`tcp.port == 5060`), the rest is ESP (`esp`): Wireshark decrypts it with the keys of the `ESP SA` lines (Protocols, ESP, ESP SAs). | TS 24.229 clauses 5.1.1.2, 5.1.1.5, 5.2.2; TS 33.203 clauses 6.1, 7; TS 33.180 clauses 5.1.3.2.1, 6.2.1 |
+| 3-12 | table 5.3.2.3.1-1 steps 1-10 | Preconfigured initial UE configuration (step 1a); the OIDC authentication request to the IdMS; the HTML form with the fields `user` and `password` (table 5.3.2.3.2-5); the form posted to the IdMS's `/userauth`; the 302 (Found) with the authorization code; the token request; the ID, access and refresh tokens. | `docker logs openmcx-idms 2>&1 \| grep -E 'HTTP (GET\|POST) /(authorize\|userauth\|token)'`; the client's `oidc_authenticated` | TS 24.482 clause 6.2.1; TS 33.180 clause 5.1.2, annex B |
+| 13-16 | table 5.3.2.3.1-1 steps 11-14 | Not in this tutorial: the KMS initialisation and key provisioning. The group `operations` is not protected, and the client asks the KMS for its key material only for end-to-end protection. | - | TS 33.180 clause 5.3.3, annex D |
+| 17 | table 5.3.2.5.1-1, path 1b1 | PUBLISH to the MCPTT server with the access token (service authorisation) and the PoC settings with the user profile index; 200 (OK). | `docker logs openmcx-ue-client 2>&1 \| grep -E 'SIP (->\|<-) .*PUBLISH'`; `service_authorized` | TS 24.379 clause 7.2.1; TS 33.180 clause 5.1.3.2.3 |
+| 18 | table 5.3.2.6.1-1 | One SUBSCRIBE with the access token and a resource list of the MCPTT UE configuration, user profile and service configuration documents; the NOTIFY with their XCAP URIs; the GETs of the documents. | `configuration_subscribed` (the three documents), `document_retrieved` | TS 24.484 clauses 6.3.13.3.2.2, 8.2 |
+| 19 | table 5.3.2.7.1-1, path 1b1 | SUBSCRIBE to the group document of `operations`; NOTIFY; the GET of the document. The GKTP subscription for the GMK (optional, table 5.3.2.7.1-2) is not made: the group is not protected. | `group_documents_subscribed`, `group_document_notified`, `document_retrieved` | TS 24.481 clause 6.3.13.2.1 |
+| (main procedure 6-7) | table 5.3.2.2.1-1 | The MCPTT, MCVideo and MCData servers' MESSAGE configuring location reporting (configured in step 2); the client's 200 (OK). | `location_configuration_received` | TS 24.379 clause 13.2.2 |
+
+Where the walk-through departs from the test:
+
+- **Steps 13 to 16** (KMS) are left out, as above: a run with the group protected (end-to-end security of TS 33.180)
+  would include them.
+- **The order of the documents**: the client reads its user profile and the group document when it signs in, before
+  it subscribes to them; TS 37.579-1 shows the GETs after the NOTIFYs (table 5.3.2.6.1-1 steps 5 to 10, table
+  5.3.2.7.1-1 step 5).
+- **The challenge**: the SIP core offers AKAv2-SHA-256 before AKAv1-MD5 (TS 33.203 clause 6.1.1) and the client
+  answers the first; the 401 of TS 37.579-1 table 5.3.2.4.1-1 carries AKAv1-MD5, which the client also supports.
+- **The radio**: the rfsimulator carries the 5QI of the QoS flows in NGAP and NAS but does not enforce it.
+
 ## How it is put together
 
-- **Two compose files**: `docker-compose-5g-core.yaml` has tutorial 1's OpenMCX services, unchanged, on the 5G core's
+- **Three compose files**: `docker-compose-5g-core.yaml` has tutorial 1's OpenMCX services, unchanged, on the 5G core's
   **N6 network** (`openmcx-5g-n6`, 192.168.72.128/26) and the OAI 5G core on the **core network** (`openmcx-5g-core`,
   192.168.71.128/26); [tutorial 4](../04-mcx-over-srsran-5g/README.md) uses it too. `docker-compose-5g-mcx.yaml`
-  includes it and adds the gNB and the nr-UE (IMSI 208990100001100, DNN `mcptt`), the dispatcher in the nr-UE's
-  network namespace and `ue-route`, which routes `HOST_IP` through the UE's tunnel (`oaitun_ue1`) once its PDU
-  session is up. The OAI configuration is in `oai/`, the N5 patches of the AMF, PCF, SMF and UPF in `oai/cn5g/`.
+  includes it, with tutorial 3's change to its setup (`docker-compose-5g-core-aka.yaml`: the IMS AKA user), and adds the
+  gNB and the nr-UE (IMSI 208990100001100, DNN `mcptt`), the dispatcher and the MC client of `client-d` in the nr-UE's
+  network namespace, `ue-route`, which routes `HOST_IP` and the P-CSCF through the UE's tunnel (`oaitun_ue1`) once its
+  PDU session is up, and the P-CSCF. The OAI configuration is in `oai/`, the N5 patches of the AMF, PCF, SMF and UPF in
+  `oai/cn5g/`.
 - **N5**: the MCPTT server is also on the core network (192.168.71.141). With the `pcf` block that the setup adds
   (`setup/pcf.py`), it creates an `Npcf_PolicyAuthorization` app session (TS 29.514) for each call leg of a UE in
   12.1.1.0/24: the leg's speech, RTCP and floor control flows, its bandwidth and priority. The PCF makes a PCC rule
   (5QI 65), the SMF a QoS flow on the UE's PDU session (TS 23.502 4.3.3.2), the UPF its packet rules. Without the
   `pcf` block, as in tutorials 1 and 2, the server never contacts a PCF.
+- **The MCX PDU session**: the nr-UE sets up one PDU session, on the DNN `mcptt`, right after its registration; all
+  the dispatcher's traffic (SIP, HTTP, speech and floor control) uses it. Its default QoS flow has 5QI 69 (MC
+  signalling, TS 23.501 table 5.7.4-1), the MCX PDU session of TS 37.579-1 clause 5.4.1B: from the subscription
+  in the UDR (`oai/oai_db.sql`) and the PCF's policy for the DNN (`oai/policies/`), whose match-all PCC rule becomes
+  the default QoS rule with precedence 255 (TS 24.501 clause 6.2.5.1.1.2). The calls' QoS flows (5QI 65) are added
+  to this session. There is no internet or IMS PDU session: the dispatcher and the MC client of `client-d` need
+  neither.
+- **Location**: the setup adds (`setup/location.py`) the location reporting configuration of TS 37.579-1 tables
+  5.5.3.4.2-1 to 5.5.3.4.2-3 to the MCPTT, MCVideo and MCData servers: upon service authorisation each sends the
+  client a SIP MESSAGE (TS 24.379 clause 13.2.2) asking for the serving and neighbouring cells, the MBMS and MBSFN
+  areas and the coordinates, at most every 10 s (5 s in an emergency), with no triggering criteria. The phones and
+  the dispatcher answer `200` and send no report on their own.
+- **IMS AKA** (TS 33.203; TS 33.180 clause 6.2.1 for 3GPP access): the SIP core chooses the scheme by the private
+  user identity, as an HSS stores it (TS 29.228 clause 6.3.1 step 4): `client-d@mcx.test` has an IMS AKA
+  subscription (K, OPc, AMF) in the SIP database, every other identity a digest password. The SIP core makes the
+  authentication vectors itself (Kamailio `ims_auth`, MILENAGE, no HSS). The P-CSCF (`pcscf`, the SIP core's Kamailio
+  image with `docker/pcscf.cfg`) is on the N6 network at 192.168.72.140, where the UE reaches it through the UPF without
+  NAT: ESP cannot cross Docker's port publishing. It has `NET_ADMIN` for its security associations, and `pcscf-route`
+  gives it the route to the UE pool through the UPF. The MC client (`ue-client`, `setup/ue-client.py`) is the Linux
+  client in the nr-UE's network namespace, with `NET_ADMIN` for its security associations there; it reaches the
+  P-CSCF at a configured address (TS 24.229 clause 9.2.1 allows that instead of discovery) and the IdMS, HTTP proxy
+  and KMS at `HOST_IP`. SIP runs over TCP inside the security associations; the P-CSCF reaches the SIP core over TLS
+  with its own certificate, and checks the SDP addresses of its UEs as the SIP core does those of the other clients.
 - **The dispatcher** is the image and settings of tutorial 2, with its address the UE's. The UE's address can change
   when the UE or the core restarts; the dispatcher then updates its activated accounts at start.
 - **Routing**: the UPF sends a UE's packets for `HOST_IP` out of the core network (its default route), so they reach

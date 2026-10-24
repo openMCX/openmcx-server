@@ -73,9 +73,9 @@ func (svc *service) routesGMS(mux *http.ServeMux) {
 }
 
 // ------------------------------------------------------------------------------
-// TS 24.484 clause 7.4.2.2, clause 8.3.2.2, clause 9.3.2.2 and clause 10.3.2.2: the CMS routes of the location user
-// configuration data documents and the MCPTT, MCVideo and MCData user profile documents
-// (application unique IDs) and the internal user routes.
+// TS 24.484 clause 7.4.2.2, clause 8.2.2.2, clause 8.3.2.2, clause 9.3.2.2 and clause 10.3.2.2: the CMS routes of
+// the location user configuration data documents, the MCPTT UE configuration documents and the MCPTT, MCVideo and
+// MCData user profile documents (application unique IDs) and the internal user routes.
 func (svc *service) routesCMS(mux *http.ServeMux) {
 	// The AUID "org.3gpp.mcptt.user-profile" (TS 24.484 clause 8.3.2.2) and the document
 	// mcptt-user-profile-<index>.xml (clause 8.3.1A).
@@ -90,6 +90,10 @@ func (svc *service) routesCMS(mux *http.ServeMux) {
 	mux.HandleFunc("GET /xcap-root/{auid}/global/{document}", svc.getServiceConfig)
 	mux.HandleFunc("GET /internal/service-config", svc.getInternalServiceConfig)
 	mux.HandleFunc("GET /xcap-root/"+locationConfigAUID+"/users/{serviceID}/{document}", svc.getLocationConfig)
+	// TS 24.484 clause 8.2.1A: the MCPTT UE configuration document of a user's UE.
+	mux.HandleFunc("GET /xcap-root/"+mcpttUEConfigAUID+"/users/{mcpttID}/{document}", svc.getMCPTTUEConfig)
+	// TS 24.484 clause 6.3.13.3.2.2 step e: the entity tags of the documents of a configuration subscription.
+	mux.HandleFunc("GET /internal/configuration-document", svc.getInternalConfigurationDocument)
 }
 
 // ------------------------------------------------------------------------------
@@ -112,7 +116,84 @@ func (svc *service) authenticateBearer(writer http.ResponseWriter, request *http
 		bearerDenied(writer)
 		return TokenClaims{}, false
 	}
+	// TS 33.180 clause 5.1.3.1: the access token is scoped for the service it is presented to.
+	if scopes := roleScopes(svc.role); len(scopes) > 0 && !hasScope(claims, scopes...) {
+		insufficientScope(writer, scopes...)
+		return TokenClaims{}, false
+	}
 	return claims, true
+}
+
+// Scope values of TS 33.180 table B.4.2.2-1.
+const (
+	scopePTTConfig   = "3gpp:mc:ptt_config_management_service"
+	scopeVideoConfig = "3gpp:mc:video_config_management_service"
+	scopeDataConfig  = "3gpp:mc:data_config_management_service"
+	scopeLocation    = "3gpp:mc:location_management_service"
+	scopeDataService = "3gpp:mc:data_service"
+	scopePTTKeys     = "3gpp:mc:ptt_key_management_service"
+	scopeDataKeys    = "3gpp:mc:data_key_management_service"
+	scopeVideoKeys   = "3gpp:mc:video_key_management_service"
+)
+
+// ------------------------------------------------------------------------------
+// TS 33.180 clause 5.1.3.1 and table B.4.2.2-1: the scopes of which an access token presented to a role carries at
+// least one: the CMS a configuration management scope and the GMS a group management scope, of any MC service (the
+// documents of each MC service are checked further where they are served, requireScope); the location management
+// server the location management scope; the KMS a key management scope (kmsProvision checks the one of each MC
+// service ID); and the MCData content server, message store (TS 33.180 clause 8.6.0, "appropriately scoped access
+// token for MCData") and notification server the MCData service scope. The Credential Service (not 3GPP) needs none.
+func roleScopes(role Role) []string {
+	switch role {
+	case RoleCMS:
+		return []string{scopePTTConfig, scopeVideoConfig, scopeDataConfig}
+	case RoleGMS:
+		return []string{"3gpp:mc:ptt_group_management_service", "3gpp:mc:video_group_management_service",
+			"3gpp:mc:data_group_management_service"}
+	case RoleLMS:
+		return []string{scopeLocation}
+	case RoleKMS:
+		return []string{scopePTTKeys, scopeDataKeys, scopeVideoKeys}
+	case RoleContent, RoleMsgStore, RoleNotification:
+		return []string{scopeDataService}
+	}
+	return nil
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the access token's scope contains one of the scopes.
+func hasScope(claims TokenClaims, scopes ...string) bool {
+	for _, scope := range scopes {
+		if containsWord(claims.Scope, scope) {
+			return true
+		}
+	}
+	return false
+}
+
+// ------------------------------------------------------------------------------
+// TS 33.180 clause 5.1.3.1: requireScope: a document of one MC service is served under that service's scope only
+// (TS 33.180 clause 5.1.3.1: "This configuration management authorisation may be repeated for each CM service");
+// otherwise answers as insufficientScope.
+func requireScope(writer http.ResponseWriter, claims TokenClaims, scope string) bool {
+	if containsWord(claims.Scope, scope) {
+		return true
+	}
+	insufficientScope(writer, scope)
+	return false
+}
+
+// ------------------------------------------------------------------------------
+// RFC 6750 sections 3 and 3.1: a valid access token without the scope the resource requires is answered 403 with the
+// error code insufficient_scope in the WWW-Authenticate challenge, with the scope attribute when one scope is required
+// (the attribute lists scopes all required, not alternatives).
+func insufficientScope(writer http.ResponseWriter, scopes ...string) {
+	challenge := `Bearer realm="mcx-common", error="insufficient_scope"`
+	if len(scopes) == 1 {
+		challenge += `, scope="` + scopes[0] + `"`
+	}
+	writer.Header().Set("WWW-Authenticate", challenge)
+	writeJSON(writer, http.StatusForbidden, map[string]string{"error": "insufficient_scope"})
 }
 
 // ------------------------------------------------------------------------------
@@ -201,7 +282,7 @@ func mediaType(value string) string {
 // and a configuration manager may read it (access permissions of TS 24.484 clause 8.3.2.11).
 func (svc *service) getUserProfile(writer http.ResponseWriter, request *http.Request) {
 	claims, ok := svc.authenticateBearer(writer, request)
-	if !ok {
+	if !ok || !requireScope(writer, claims, scopePTTConfig) {
 		return
 	}
 	id := request.PathValue("mcpttID")
@@ -258,7 +339,7 @@ func (svc *service) configManager(id string) bool {
 // for the same MCPTT ID, at its document name; the servers then enforce the rights it grants (effectiveUser).
 func (svc *service) putUserProfile(writer http.ResponseWriter, request *http.Request) {
 	claims, ok := svc.authenticateBearer(writer, request)
-	if !ok {
+	if !ok || !requireScope(writer, claims, scopePTTConfig) {
 		return
 	}
 	id := request.PathValue("mcpttID")

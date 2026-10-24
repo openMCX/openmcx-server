@@ -17,6 +17,10 @@ source archives are fetched from the listed upstream and verified by SHA-256):
 
   wolfSSL 5.8.2            GPL-3.0-or-later         https://github.com/wolfSSL/wolfssl
   pjproject (PJSIP) 2.17   GPL-2.0-or-later         https://github.com/pjsip/pjproject
+                           with OpenMCX's patch in dependencies/pjproject (the IMS AKA TCP client port)
+  hostap MILENAGE (src/crypto/milenage.c and .h of hostap_2_11, unmodified, in dependencies/hostap)
+                           BSD-3-Clause             https://w1.fi/hostap/
+                           Copyright (c) 2006-2007 Jouni Malinen; the licence text is dependencies/hostap/README.
   freeDiameter             BSD-3-Clause             https://github.com/freeDiameter/freeDiameter
   libsrtp2                 BSD-3-Clause             https://github.com/cisco/libsrtp
   OpenH264                 BSD-2-Clause             https://github.com/cisco/openh264

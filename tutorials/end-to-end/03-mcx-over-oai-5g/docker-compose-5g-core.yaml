@@ -15,7 +15,7 @@ services:
   setup:
     logging: *logging
     container_name: openmcx-setup
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-setup:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-setup:${OPENMCX_TAG:-develop}
     profiles:
     - setup
     environment:
@@ -24,10 +24,11 @@ services:
     volumes:
     - .:/work
     - ./setup/pcf.py:/tutorial3/pcf.py:ro
+    - ./setup/location.py:/tutorial3/location.py:ro
     entrypoint:
     - sh
     - -c
-    - python3 /opt/tutorials/configure.py && python3 /tutorial3/pcf.py
+    - python3 /opt/tutorials/configure.py && python3 /tutorial3/pcf.py && python3 /tutorial3/location.py
   sip-db:
     logging: *logging
     container_name: openmcx-sip-db
@@ -54,7 +55,7 @@ services:
   sip-core:
     logging: *logging
     container_name: openmcx-sip-core
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-kamailio:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-kamailio:${OPENMCX_TAG:-develop}
     command:
     - -DD
     - -E
@@ -87,7 +88,7 @@ services:
   idms:
     logging: *logging
     container_name: openmcx-idms
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/mcx-common
     command:
@@ -135,7 +136,7 @@ services:
   gms:
     logging: *logging
     container_name: openmcx-gms
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/mcx-common
     command:
@@ -181,7 +182,7 @@ services:
   cms:
     logging: *logging
     container_name: openmcx-cms
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/mcx-common
     command:
@@ -227,7 +228,7 @@ services:
   kms:
     logging: *logging
     container_name: openmcx-kms
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/mcx-common
     command:
@@ -275,7 +276,7 @@ services:
   lms:
     logging: *logging
     container_name: openmcx-lms
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/mcx-common
     command:
@@ -321,7 +322,7 @@ services:
   credentials:
     logging: *logging
     container_name: openmcx-credentials
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/mcx-common
     command:
@@ -375,7 +376,7 @@ services:
   content-server:
     logging: *logging
     container_name: openmcx-content-server
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/mcx-common
     command:
@@ -421,7 +422,7 @@ services:
   message-store:
     logging: *logging
     container_name: openmcx-message-store
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/mcx-common
     command:
@@ -467,7 +468,7 @@ services:
   notification-server:
     logging: *logging
     container_name: openmcx-notification-server
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-common:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/mcx-common
     command:
@@ -511,7 +512,7 @@ services:
   http-proxy:
     logging: *logging
     container_name: openmcx-http-proxy
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-http-proxy:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-http-proxy:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/mcx-http-proxy
     command:
@@ -564,7 +565,7 @@ services:
   mcx-user-db:
     logging: *logging
     container_name: openmcx-mcx-user-db
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-user-db:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-user-db:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/mcx-user-db
     command:
@@ -599,7 +600,7 @@ services:
   mcptt-server:
     logging: *logging
     container_name: openmcx-mcptt-server
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcptt-server:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcptt-server:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/openmcx-mcptt-server
     command:
@@ -650,7 +651,7 @@ services:
   mcdata-server:
     logging: *logging
     container_name: openmcx-mcdata-server
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcdata-server:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcdata-server:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/openmcx-mcdata-server
     command:
@@ -692,7 +693,7 @@ services:
   mcvideo-server:
     logging: *logging
     container_name: openmcx-mcvideo-server
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcvideo-server:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-mcvideo-server:${OPENMCX_TAG:-develop}
     entrypoint:
     - /usr/local/bin/openmcx-mcvideo-server
     command:
@@ -736,7 +737,7 @@ services:
   mcxadmin:
     logging: *logging
     container_name: openmcx-mcxadmin
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-admin:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-admin:${OPENMCX_TAG:-develop}
     command:
     - --config
     - /config/mcxadmin.json

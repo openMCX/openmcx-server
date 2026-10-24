@@ -6,7 +6,7 @@
 // and suspended, resumed or retired on MCX Admin's request (OpenMCX's own MCX Admin integration, not a 3GPP
 // procedure).
 //
-// Specifications: RFC 2617, RFC 6750.
+// Specifications: TS 29.228 V19.2.0, TS 33.180 V19.4.0 (Rel-19); RFC 2617, RFC 6750.
 package common
 
 import (
@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 )
 
 // The Credential Service: it owns the
@@ -119,6 +119,20 @@ func (svc *service) issueSIPCredential(writer http.ResponseWriter, request *http
 		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "no_sip_identity"})
 		return
 	}
+	// TS 33.180 clause 6.2.1 and TS 29.228 clause 6.3.1 step 4: an identity provisioned for IMS AKA authenticates
+	// with IMS AKA only; a digest credential issued for it would let a holder of the access token fall back to SIP
+	// digest.
+	aka, err := svc.creds.akaIdentity(request.Context(), claims.SIPURI, username+"@"+domain)
+	if err != nil {
+		svc.logEvent("sip_credential_failed", map[string]any{"user": username, "error": err.Error()})
+		writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": "store_unavailable"})
+		return
+	}
+	if aka {
+		svc.logEvent("sip_credential_refused", map[string]any{"user": username, "reason": "aka_identity"})
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "aka_identity"})
+		return
+	}
 	secret := make([]byte, 20)
 	if _, err := rand.Read(secret); err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "server_error"})
@@ -132,6 +146,29 @@ func (svc *service) issueSIPCredential(writer http.ResponseWriter, request *http
 	}
 	svc.logEvent("sip_credential_issued", map[string]any{"user": username})
 	writeJSON(writer, http.StatusOK, map[string]string{"username": username, "domain": domain, "identity": claims.SIPURI, "password": password})
+}
+
+// ------------------------------------------------------------------------------
+// TS 29.228 clause 6.3.1 step 4: whether the SIP database holds an IMS AKA subscription for the public user
+// identity or the private user identity (the SIP core's ims_subscription table, tools/provision.py). A database
+// without that table, or one that does not let this service read it, holds no AKA subscription for it: the SIP
+// core refuses digest for an AKA identity itself as well.
+func (store *credentialStore) akaIdentity(ctx context.Context, impu, impi string) (bool, error) {
+	var rows int
+	err := store.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM ims_subscription WHERE auth_scheme = 'aka' AND (impu = ? OR impi = ?)`, impu, impi).Scan(&rows)
+	if noSubscriptionTable(err) {
+		return false, nil
+	}
+	return rows > 0, err
+}
+
+// ------------------------------------------------------------------------------
+// Helper: whether a MySQL error says that the ims_subscription table does not exist (1146) or is not granted to
+// this service's database user (1142), as in a deployment without IMS AKA subscriptions.
+func noSubscriptionTable(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	return errors.As(err, &mysqlErr) && (mysqlErr.Number == 1146 || mysqlErr.Number == 1142)
 }
 
 // ------------------------------------------------------------------------------

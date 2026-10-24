@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -364,34 +365,98 @@ func TestAuthorizationStateBoundedAndExpired(test *testing.T) {
 }
 
 // ------------------------------------------------------------------------------
-// A browser (the MCX Admin console) gets the IdMS's sign-in form, not framable, and a failed sign-in from it goes
-// back to the client with error=access_denied and the state (RFC 6749 section 4.1.2.1).
-func TestBrowserSignInForm(test *testing.T) {
-	handler := newTestHandler(test, RoleIDMS, testConfig(), testKey(test))
+// Helper: the HTML form of an Authentication Request by GET or POST from a client accepting text/html; returns
+// the page.
+func signInFormPage(test *testing.T, handler http.Handler, method string, state string) string {
+	test.Helper()
 	digest := sha256.Sum256([]byte("correct-horse-battery-staple-verifier-1234567890"))
 	query := url.Values{
 		"response_type": {"code"}, "client_id": {"mcx-client"}, "redirect_uri": {"http://127.0.0.1:19000/callback"},
-		"scope": {"openid"}, "state": {"st"}, "nonce": {"n"},
+		"scope": {"openid"}, "state": {state}, "nonce": {"n"}, "acr_values": {"3gpp:acr:password"},
 		"code_challenge": {base64.RawURLEncoding.EncodeToString(digest[:])}, "code_challenge_method": {"S256"},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/authorize?"+query.Encode(), nil)
+	if method == http.MethodPost {
+		req = formRequest(http.MethodPost, "/authorize", query)
+	}
 	req.Header.Set("Accept", "text/html,application/xhtml+xml")
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
-	page := rr.Body.String()
 	if rr.Code != http.StatusOK || !strings.HasPrefix(rr.Header().Get("Content-Type"), "text/html") ||
-		!strings.Contains(page, `name="request_id"`) || rr.Header().Get("X-Frame-Options") != "DENY" {
-		test.Fatalf("form %d %s", rr.Code, page)
+		rr.Header().Get("X-Frame-Options") != "DENY" {
+		test.Fatalf("form %d %s", rr.Code, rr.Body.String())
 	}
-	start := strings.Index(page, `name="request_id" value="`) + len(`name="request_id" value="`)
-	requestID := page[start : start+strings.Index(page[start:], `"`)]
-	rr = httptest.NewRecorder()
-	handler.ServeHTTP(rr, formRequest(http.MethodPost, "/login", url.Values{"request_id": {requestID}, "username": {"alice"},
-		"password": {"wrong"}, "html": {"1"}}))
+	return rr.Body.String()
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the action URI of the page's form.
+func formAction(test *testing.T, page string) string {
+	test.Helper()
+	const marker = `<form action="`
+	start := strings.Index(page, marker)
+	if start < 0 {
+		test.Fatalf("no form: %s", page)
+	}
+	start += len(marker)
+	return html.UnescapeString(page[start : start+strings.Index(page[start:], `"`)])
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.482 clause 6.2.1 and TS 37.579-1 table 5.3.2.3.1-1 steps 3a1/3b1 to 7: the Authentication Request (by GET
+// or POST) is answered with the HTML form of table 5.3.2.3.2-5 (method post, inputs user and password, the IdMS's
+// own action); the POST of the form with only those inputs gives the 302 with the code and state, which redeems.
+func TestHTMLFormSignIn(test *testing.T) {
+	handler := newTestHandler(test, RoleIDMS, testConfig(), testKey(test))
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		page := signInFormPage(test, handler, method, "st-"+method)
+		for _, want := range []string{`method="post"`, `type="text" name="user"`, `type="password" name="password"`} {
+			if !strings.Contains(page, want) {
+				test.Fatalf("%s: form without %s: %s", method, want, page)
+			}
+		}
+		action := formAction(test, page)
+		if !strings.HasPrefix(action, userAuthPath+"?") || strings.Contains(page, `type="hidden"`) {
+			test.Fatalf("%s: form action %q", method, action)
+		}
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, formRequest(http.MethodPost, action, url.Values{"user": {"alice"}, "password": {"alice-password"}}))
+		location, _ := url.Parse(rr.Header().Get("Location"))
+		if rr.Code != http.StatusFound || location.Query().Get("state") != "st-"+method || location.Query().Get("code") == "" ||
+			!strings.HasPrefix(location.String(), "http://127.0.0.1:19000/callback?") {
+			test.Fatalf("%s: form sign-in %d %s", method, rr.Code, rr.Header().Get("Location"))
+		}
+		if status, body := redeem(test, handler, location.Query().Get("code"), "correct-horse-battery-staple-verifier-1234567890",
+			"http://127.0.0.1:19000/callback"); status != http.StatusOK {
+			test.Fatalf("%s: code from the form not redeemed: %d %s", method, status, body)
+		}
+		// The request is used up: the same form cannot sign in again.
+		rr = httptest.NewRecorder()
+		handler.ServeHTTP(rr, formRequest(http.MethodPost, action, url.Values{"user": {"alice"}, "password": {"alice-password"}}))
+		if rr.Code != http.StatusBadRequest {
+			test.Fatalf("%s: replayed form %d", method, rr.Code)
+		}
+	}
+}
+
+// ------------------------------------------------------------------------------
+// A failed sign-in by the form goes back to the client with error=access_denied and the state (RFC 6749 section
+// 4.1.2.1); the form of an IdMS whose issuer has a path posts below that path.
+func TestBrowserSignInForm(test *testing.T) {
+	handler := newTestHandler(test, RoleIDMS, testConfig(), testKey(test))
+	action := formAction(test, signInFormPage(test, handler, http.MethodGet, "st"))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, formRequest(http.MethodPost, action, url.Values{"user": {"alice"}, "password": {"wrong"}}))
 	location, _ := url.Parse(rr.Header().Get("Location"))
 	if rr.Code != http.StatusFound || location.Query().Get("error") != "access_denied" || location.Query().Get("state") != "st" ||
 		location.Query().Get("code") != "" {
 		test.Fatalf("failed browser sign-in: %d %s", rr.Code, rr.Header().Get("Location"))
+	}
+	cfg := testConfig()
+	cfg.Issuer = "https://mcx.test/idms"
+	prefixed := newTestHandler(test, RoleIDMS, cfg, testKey(test))
+	if action := formAction(test, signInFormPage(test, prefixed, http.MethodGet, "st")); !strings.HasPrefix(action, "/idms"+userAuthPath+"?") {
+		test.Fatalf("form action below the issuer path: %q", action)
 	}
 }
 

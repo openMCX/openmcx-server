@@ -183,6 +183,9 @@ func (svc *service) routes(mux *http.ServeMux) error {
 		if err := svc.checkServiceConfigDocuments(); err != nil {
 			return err
 		}
+		if err := svc.checkMCPTTUEConfigDocuments(); err != nil {
+			return err
+		}
 		svc.routesCMS(mux)
 	case RoleLMS:
 		if err := svc.loadLocations(); err != nil {

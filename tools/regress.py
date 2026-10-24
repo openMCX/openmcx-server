@@ -7,7 +7,7 @@
 # procedure; the comments of the matrix name the clauses each lab exercises.
 #
 # Specifications: TS 24.281 V19.6.0, TS 24.379 V19.7.0, TS 24.481 V19.3.0, TS 24.484 V19.6.0,
-# TS 33.180 V19.4.0 (all Rel-19); RFC 3903, RFC 4825, RFC 5626.
+# TS 33.180 V19.4.0, TS 24.229 V19.7.0, TS 33.203 V19.1.0 (all Rel-19); RFC 3903, RFC 4825, RFC 5626.
 """Run the lab regression matrix: prepare each lab, run its scenarios, tear it down.
 
 Each lab is a separate Docker Compose project, so labs run in parallel (--jobs);
@@ -367,6 +367,18 @@ LABS = [
         ['mcdata', 'location', 'protected'],
     ),
     lab('msgstore', 'single', ['--mcdata', '--msgstore'], ['mcdata_msgstore_scenario'], ['mcdata']),
+    # IMS AKA (TS 33.203 clauses 6 and 7, TS 24.229 clauses 5.1.1.2.2, 5.2.2.2 and 5.4.1.2): client-a and client-b
+    # register through the P-CSCF over IPsec (NET_ADMIN; the host's xfrm_user, esp4, authenc, hmac(sha1) and
+    # cbc(aes) kernel modules), client-c and client-d keep SIP digest. A group call, private calls and SDS to and from
+    # the AKA UEs (requests to them through the P-CSCF's security associations), and the refusals of
+    # aka_negative_scenario (421 without sec-agree, digest through the P-CSCF and AKA identities over digest, 403).
+    lab(
+        'aka',
+        'single',
+        ['--aka', '--private-call', '--mcdata'],
+        ['aka_negative_scenario', 'prearranged_scenario', 'private_call_scenario', 'mcdata_sds_scenario'],
+        ['aka', 'common'],
+    ),
 ]
 
 print_lock = threading.Lock()

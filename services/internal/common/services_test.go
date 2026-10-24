@@ -23,7 +23,8 @@ import (
 // The scope of the test access tokens: all MC services (TS 33.180 table B.4.2.2-1).
 const testScope = "openid 3gpp:mc:ptt_service 3gpp:mc:data_service 3gpp:mc:video_service " +
 	"3gpp:mc:ptt_key_management_service 3gpp:mc:data_key_management_service 3gpp:mc:video_key_management_service " +
-	"3gpp:mc:ptt_config_management_service 3gpp:mc:ptt_group_management_service"
+	"3gpp:mc:ptt_config_management_service 3gpp:mc:data_config_management_service " +
+	"3gpp:mc:video_config_management_service 3gpp:mc:ptt_group_management_service 3gpp:mc:location_management_service"
 
 // ------------------------------------------------------------------------------
 // Helper: a signed access token of a configured user for an audience, issued at the given time.

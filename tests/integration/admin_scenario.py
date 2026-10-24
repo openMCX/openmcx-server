@@ -115,10 +115,10 @@ def main():
         return json.loads(run.stdout.strip().splitlines()[-1])
 
     # ------------------------------------------------------------------------------
-    def login(role):
-        """Sign the role's user in at IdMS (admin_helper.py login)."""
+    def login(role, scope='openid'):
+        """Sign the role's user in at IdMS with the scope (admin_helper.py login)."""
         oauth = clients[role]['oauth']
-        return helper('login', oauth['username'], oauth['password'], oauth['client_id'], oauth['redirect_uri'])
+        return helper('login', oauth['username'], oauth['password'], oauth['client_id'], oauth['redirect_uri'], scope)
 
     # ------------------------------------------------------------------------------
     def status(role):
@@ -696,9 +696,11 @@ def main():
         check('ADM-11 alice is given group management in MCX Admin', granted['status'] == 200, granted)
         d_id = json.loads((generated / 'client-d.json').read_text())['mcptt']['user_id']
         entry = quote(f'group/list-service/list/entry[@uri="{d_id}"]', safe='')
+        # The GMS takes only a token with a group management scope (TS 33.180 table B.4.2.2-1).
+        gms_token = login('client-a', 'openid 3gpp:mc:ptt_group_management_service')['token']
         removed = helper(
             'xcap',
-            token,
+            gms_token,
             'DELETE',
             f'https://gms:8443/xcap-root/org.openmobilealliance.groups/global/byGroupID/{quote(ops, safe="")}/~~/{entry}',
         )

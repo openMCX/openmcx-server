@@ -49,15 +49,19 @@ Json load_config(const std::string &path, bool disable_tls) {
   set_log_level(parse_log_level(environment && *environment ? environment : cfg.value("log_level", "info")));
   for (auto field : {"control_fifo", "status_file"}) required(cfg, field);
   auto &sip = cfg.at("sip");
-  for (auto field : {"listen", "advertise", "core_uri", "identity"}) required(sip, field);
+  // TS 33.203 (sip.auth "aka"): IPsec instead of TLS on the SIP hop, so no SIP core URI over TLS and no client
+  // certificate; the CA file stays, for HTTPS to the common services.
+  const bool aka = sip.value("auth", "digest") == "aka";
+  for (auto field : {"listen", "advertise", "identity"}) required(sip, field);
+  if (!aka) required(sip, "core_uri");
   auto &tls = cfg.at("tls");
   for (auto field : {"ca_file", "cert_file", "key_file"}) {
-    if (disable_tls && std::string_view(field) != "ca_file") continue;
+    if ((disable_tls || aka) && std::string_view(field) != "ca_file") continue;
     required(tls, field);
     if (!std::filesystem::is_regular_file(tls.at(field).get<std::string>()))
       throw std::runtime_error("TLS file unavailable");
   }
-  if (!sip.at("core_uri").get<std::string>().ends_with(";transport=tls"))
+  if (!aka && !sip.at("core_uri").get<std::string>().ends_with(";transport=tls"))
     throw std::runtime_error("TLS SIP core URI required");
   unsigned sipport = sip.at("port");
   if (!sipport || sipport > 65535) throw std::runtime_error("invalid SIP port");
@@ -82,11 +86,40 @@ SipConfig sip_config(const Json &cfg, bool disable_tls) {
   config.listen_address = sip.at("listen");
   config.advertise_address = sip.at("advertise");
   config.listen_port = sip.at("port");
-  config.core_uri = sip.at("core_uri");
   config.identity = sip.at("identity");
+  config.session_expires = sip.value("session_expires", 1800u);
+  // TS 33.203 and TS 24.229 clause 5.1.1.2.2: sip.auth "aka": the ISIM (sip.isim: impi, k, opc, amf, and optionally
+  // sqn_file) and the preconfigured P-CSCF (sip.pcscf: address, port); sip.port is the protected server port port_us.
+  // The SAs bind IP addresses, so names are resolved here.
+  if (sip.value("auth", "digest") == "aka") {
+    const auto &isim = sip.at("isim");
+    const auto &pcscf = sip.at("pcscf");
+    config.tls.enabled = false;
+    config.tls.ca_file = tls.at("ca_file");
+    config.aka.enabled = true;
+    config.aka.impi = isim.at("impi");
+    config.aka.k = isim.at("k");
+    config.aka.opc = isim.at("opc");
+    config.aka.amf = isim.value("amf", "8000");
+    config.aka.sqn_file = isim.value("sqn_file", "");
+    const auto numeric = [](const std::string &host) {
+      unsigned char address[16];
+      return inet_pton(host.find(':') != std::string::npos ? AF_INET6 : AF_INET, host.c_str(), address) == 1
+                 ? host
+                 : resolve_ipv4(host);
+    };
+    config.aka.pcscf_address = numeric(pcscf.at("address").get<std::string>());
+    const unsigned pcscf_port = pcscf.value("port", 5060u), unprotected = sip.value("unprotected_port", 5060u);
+    if (!pcscf_port || pcscf_port > 65535 || !unprotected || unprotected > 65535)
+      throw std::invalid_argument("invalid P-CSCF or unprotected SIP port");
+    config.aka.pcscf_port = static_cast<std::uint16_t>(pcscf_port);
+    config.aka.unprotected_port = static_cast<std::uint16_t>(unprotected);
+    config.advertise_address = numeric(config.advertise_address);
+    return config;
+  }
+  config.core_uri = sip.at("core_uri");
   config.username = sip.value("username", "");
   config.password = sip.value("password", "");
-  config.session_expires = sip.value("session_expires", 1800u);
   config.tls.ca_file = tls.at("ca_file");
   config.tls.enabled = !disable_tls;
   if (disable_tls) {

@@ -304,7 +304,7 @@ func (svc *service) mcdataProfileDocument(id string) ([]byte, int, int) {
 // CMSXCAPROOTURI/org.3gpp.mcdata.user-profile/users/sip:MCDATAID/mcdata-user-profile-INDEX.xml.
 func (svc *service) getMCDataProfile(writer http.ResponseWriter, request *http.Request) {
 	claims, ok := svc.authenticateBearer(writer, request)
-	if !ok {
+	if !ok || !requireScope(writer, claims, scopeDataConfig) {
 		return
 	}
 	id := request.PathValue("mcdataID")

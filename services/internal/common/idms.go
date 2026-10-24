@@ -37,6 +37,10 @@ func (svc *service) routesIDMS(mux *http.ServeMux) {
 	mux.HandleFunc("GET /.well-known/openid-configuration", svc.discovery)
 	mux.HandleFunc("GET /jwks", svc.jwks)
 	mux.HandleFunc("GET /authorize", svc.authorize)
+	// OpenID Connect Core 1.0 section 3.1.2.1: the authentication request by GET or POST (TS 37.579-1 table
+	// 5.3.2.3.1-1 steps 3a1 and 3b1).
+	mux.HandleFunc("POST /authorize", svc.authorize)
+	mux.HandleFunc("POST "+userAuthPath, svc.userAuth)
 	mux.HandleFunc("POST /login", svc.login)
 	mux.HandleFunc("POST /token", svc.token)
 	mux.HandleFunc("POST /introspect", svc.introspect)
@@ -96,11 +100,17 @@ func (svc *service) sweepAuthorizationState() {
 	}
 }
 
+// The IdMS's user authentication endpoint, the action of its HTML sign-in form (TS 37.579-1 table 5.3.2.3.2-5:
+// tsc_MCX_IdMS_userauth_UriPath), below the issuer's path.
+const userAuthPath = "/userauth"
+
 // ------------------------------------------------------------------------------
 // TS 24.482 clause 6.3.1 and TS 33.180 annex B.4.2.2: validates an OIDC Authentication Request (the parameters of
 // table B.4.2.2-1: response_type code, the registered client and redirect URI, the openid scope, state, acr_values
-// and an S256 code challenge, RFC 7636 section 4.3) and keeps it for five minutes; a browser gets the sign-in form,
-// a native client the request ID.
+// and an S256 code challenge, RFC 7636 section 4.3), sent by GET (query) or POST (form body, OpenID Connect Core 1.0
+// section 3.1.2.1), and keeps it for five minutes. TS 24.482 clause 6.2.1 and TS 37.579-1 table 5.3.2.3.2-5: a
+// client accepting text/html gets the HTML form requesting the user name and password (inputs "user" and
+// "password", posted to userAuthPath); another (the OpenMCX native clients) gets the request ID for POST /login.
 //
 // The nonce is optional (OpenID Connect Core 1.0 section 3.1.2.1, and not in table B.4.2.2-1); when given, the ID
 // token repeats it. acr_values is a voluntary claim request (OpenID Connect Core 1.0 section 3.1.2.1): the
@@ -108,8 +118,12 @@ func (svc *service) sweepAuthorizationState() {
 // Deviation from TS 33.180 table B.4.2.2-1 (acr_values REQUIRED): a request without acr_values is accepted, as
 // from the Android client of OpenMCX 1.0.0, which did not send it (the OpenMCX clients send it now).
 func (svc *service) authorize(writer http.ResponseWriter, request *http.Request) {
-	query := request.URL.Query()
-	if len(request.URL.RawQuery) > 8192 || len(query.Get("state")) > maxAuthorizationParameter ||
+	if len(request.URL.RawQuery) > 8192 || parseForm(writer, request) != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+		return
+	}
+	query := request.Form
+	if len(query.Get("state")) > maxAuthorizationParameter ||
 		len(query.Get("nonce")) > maxAuthorizationParameter || len(query.Get("acr_values")) > maxAuthorizationParameter ||
 		query.Get("response_type") != "code" || query.Get("client_id") != svc.cfg.OAuthClientID ||
 		!svc.cfg.redirectAllowed(query.Get("redirect_uri")) || !containsWord(query.Get("scope"), "openid") ||
@@ -132,17 +146,27 @@ func (svc *service) authorize(writer http.ResponseWriter, request *http.Request)
 	svc.requests[id] = authorizationRequest{ClientID: query.Get("client_id"), RedirectURI: query.Get("redirect_uri"), State: query.Get("state"), Nonce: query.Get("nonce"), Challenge: query.Get("code_challenge"), Scope: query.Get("scope"), Expires: svc.now().Add(5 * time.Minute)}
 	svc.mu.Unlock()
 	if wantsHTML(request) {
-		// A browser (the MCX Admin console): the IdMS's own sign-in form, which posts
-		// to /login. Native clients get the request ID as before.
+		// A browser (the MCX Admin console) or a client reading the form: the request ID travels in the form's
+		// action URI, which a form POST keeps (the form itself has the user and password inputs only).
 		setPageHeaders(writer)
-		_ = signInPage.Execute(writer, map[string]string{"RequestID": id})
+		_ = signInPage.Execute(writer, map[string]string{"Action": svc.issuerPath() + userAuthPath + "?" + url.Values{"request_id": {id}}.Encode()})
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]string{"request_id": id})
 }
 
 // ------------------------------------------------------------------------------
-// Helper: wantsHTML: the request comes from a browser navigation.
+// Helper: the path of the issuer URL (empty for an IdMS at the root of its origin), under which its endpoints are.
+func (svc *service) issuerPath() string {
+	issuer, err := url.Parse(svc.cfg.Issuer)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSuffix(issuer.Path, "/")
+}
+
+// ------------------------------------------------------------------------------
+// Helper: wantsHTML: the request comes from a browser navigation or a client that reads the HTML form.
 func wantsHTML(request *http.Request) bool {
 	return strings.Contains(request.Header.Get("Accept"), "text/html")
 }
@@ -164,20 +188,40 @@ var signInPage = template.Must(template.New("signin").Parse(`<!doctype html>
 input{display:block;width:100%;box-sizing:border-box;margin:.3rem 0 1rem;padding:.55rem;font:inherit}
 button{padding:.55rem 1.1rem;font:inherit;background:#c2530f;color:#fff;border:0;border-radius:6px}</style></head>
 <body><p><span class="logo">OpenMCX</span></p><h1>Sign in</h1>
-<form method="post" action="login"><input type="hidden" name="request_id" value="{{.RequestID}}"><input type="hidden" name="html" value="1">
-<label>User name<input name="username" autocomplete="username" required autofocus></label>
-<label>Password<input type="password" name="password" autocomplete="current-password" required></label>
-<button type="submit">Sign in</button></form></body></html>`))
+<form action="{{.Action}}" method="post">
+<label>Username: <input type="text" name="user" autocomplete="username" required autofocus></label>
+<label>Password: <input type="password" name="password" autocomplete="current-password" required></label>
+<button type="submit">Login</button></form></body></html>`))
 
 // ------------------------------------------------------------------------------
-// TS 24.482 clause 6.3.1 and TS 33.180 annex B.4.2.3: authenticates the MC service user with username and password
-// and answers with an HTTP 302 (Found) to the redirect URI carrying the authorization code (valid for one minute)
-// and the state.
+// TS 24.482 clause 6.2.1 and TS 37.579-1 table 5.3.2.3.1-1 steps 6 and 7: the POST of the HTML sign-in form (the
+// inputs "user" and "password", table 5.3.2.3.2-6; the request ID in the action URI); answered as /login answers a
+// browser.
+func (svc *service) userAuth(writer http.ResponseWriter, request *http.Request) {
+	if err := parseForm(writer, request); err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+		return
+	}
+	svc.signIn(writer, request, request.Form.Get("user"), request.Form.Get("password"), true)
+}
+
+// ------------------------------------------------------------------------------
+// Not 3GPP (OpenMCX native clients): the sign-in of the request ID the authorization endpoint answered with, with
+// the fields request_id, username and password; html=1 marks a browser of an earlier sign-in page.
 func (svc *service) login(writer http.ResponseWriter, request *http.Request) {
 	if err := parseForm(writer, request); err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
 		return
 	}
+	svc.signIn(writer, request, request.Form.Get("username"), request.Form.Get("password"), request.Form.Get("html") == "1")
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.482 clause 6.3.1 and TS 33.180 annex B.4.2.3: authenticates the MC service user of the pending request
+// (request_id) with user name and password and answers with an HTTP 302 (Found) to the redirect URI carrying the
+// authorization code (valid for one minute) and the state; a refused browser sign-in goes back to the redirect URI
+// with the error (RFC 6749 section 4.1.2.1), a native client gets 401.
+func (svc *service) signIn(writer http.ResponseWriter, request *http.Request, username, password string, browser bool) {
 	svc.mu.Lock()
 	pending, ok := svc.requests[request.Form.Get("request_id")]
 	if ok {
@@ -190,13 +234,13 @@ func (svc *service) login(writer http.ResponseWriter, request *http.Request) {
 	}
 	var user User
 	if svc.cfg.AdminAccounts != nil {
-		user, ok = svc.adminLogin(request, request.Form.Get("username"), request.Form.Get("password"))
+		user, ok = svc.adminLogin(request, username, password)
 	} else {
-		user, ok = svc.cfg.userByName(request.Form.Get("username"))
-		ok = ok && checkPassword(user.Password, request.Form.Get("password"))
+		user, ok = svc.cfg.userByName(username)
+		ok = ok && checkPassword(user.Password, password)
 	}
 	if !ok {
-		if request.Form.Get("html") == "1" {
+		if browser {
 			// RFC 6749 section 4.1.2.1: the browser goes back to the client with the error.
 			redirect, _ := url.Parse(pending.RedirectURI)
 			query := redirect.Query()

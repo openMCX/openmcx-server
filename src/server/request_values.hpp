@@ -5,10 +5,11 @@
 // Values the server procedures read from a SIP request, parsed without throwing: the Expires header field
 // (RFC 3261 section 20.19) and percent-encoded URI components (RFC 3986 section 2.1). A malformed value gives
 // std::nullopt, so that the procedure answers 400 instead of failing with an exception. Also the outcome rule of
-// an implicit affiliation (TS 24.379 clause 9.2.2.3.11). Used by the MCPTT and MCVideo servers (McServer) and the
+// an implicit affiliation (TS 24.379 clause 9.2.2.3.11) and the configuration management documents a subscription's
+// resource list names (TS 24.484 clause 6.3.13.3.2.2). Used by the MCPTT and MCVideo servers (McServer) and the
 // MCData server (DataServer); free of server state, so that the unit tests reach them.
 //
-// Specifications: RFC 3261, RFC 3986, TS 24.379 V19.7.0 (Rel-19).
+// Specifications: RFC 3261, RFC 3986, RFC 5875, TS 24.379 V19.7.0 (Rel-19), TS 24.484 V19.6.0 (Rel-19).
 #pragma once
 
 #include <cstddef>
@@ -65,6 +66,63 @@ inline std::optional<std::string> percent_decode(std::string_view text) {
     index += escape_length - 1;
   }
   return decoded;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 6.3.13.3.2.2 step e with RFC 5875: a configuration management document an <entry> of a
+// configuration subscription's resource list names: its AUID, its XUI (empty for a document of the global tree) and
+// its name, percent-decoded.
+struct ConfigDocument {
+  std::string auid, xui, document;
+};
+
+//------------------------------------------------------------------------------
+// TS 24.484 clauses 7.4.2.2, 8.2.2.2, 8.3.2.2, 8.4.2.2, 9.2.2.2, 9.3.2.2, 9.4.2.2, 10.2.2.2, 10.3.2.2 and 10.4.2.2:
+// the AUIDs of the configuration management documents (clause 6.3.13.3.2.2 step e: "an application usage
+// identifying a configuration management document").
+inline bool config_auid(std::string_view auid) {
+  for (const std::string_view known :
+       {"org.3gpp.mcs.location-user-config", "org.3gpp.mcptt.ue-config", "org.3gpp.mcptt.user-profile",
+        "org.3gpp.mcptt.service-config", "org.3gpp.mcvideo.ue-config", "org.3gpp.mcvideo.user-profile",
+        "org.3gpp.mcvideo.service-config", "org.3gpp.mcdata.ue-config", "org.3gpp.mcdata.user-profile",
+        "org.3gpp.mcdata.service-config"})
+    if (auid == known) return true;
+  return false;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 6.3.13.3.2.2 step e with RFC 5875 section 4: the document a resource list entry names, as
+// "<AUID>/users/<XUI>/<document>" or "<AUID>/global/<document>" (relative to the XCAP root; a path before the AUID
+// is passed over); std::nullopt for an entry that names no whole configuration management document (another AUID, a
+// node selector, a collection, a malformed percent-encoding).
+inline std::optional<ConfigDocument> config_document_reference(std::string_view entry) {
+  const auto at = entry.find("org.3gpp.");
+  if (at == std::string_view::npos || (at > 0 && entry[at - 1] != '/')) return std::nullopt;
+  entry = entry.substr(at);
+  const auto slash = entry.find('/');
+  if (slash == std::string_view::npos || !config_auid(entry.substr(0, slash))) return std::nullopt;
+  ConfigDocument out{std::string(entry.substr(0, slash)), {}, {}};
+  auto rest = entry.substr(slash + 1);
+  constexpr std::string_view global = "global/", users = "users/";
+  std::string_view xui;
+  if (rest.substr(0, global.size()) == global) {
+    rest = rest.substr(global.size());
+  } else if (rest.substr(0, users.size()) == users) {
+    rest = rest.substr(users.size());
+    const auto end = rest.find('/');
+    if (end == std::string_view::npos || end == 0) return std::nullopt;
+    xui = rest.substr(0, end);
+    rest = rest.substr(end + 1);
+  } else {
+    return std::nullopt;
+  }
+  if (rest.empty() || rest.find('/') != std::string_view::npos) return std::nullopt;
+  const auto document = percent_decode(rest);
+  const auto user = percent_decode(xui);
+  if (!document || document->empty() || !user || (!xui.empty() && user->empty())) return std::nullopt;
+  out.xui = *user;
+  out.document = *document;
+  return out;
 }
 
 //------------------------------------------------------------------------------

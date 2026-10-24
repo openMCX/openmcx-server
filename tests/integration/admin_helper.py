@@ -24,6 +24,7 @@ Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.482 V19.1.0 (Rel-19), TS 24.48
 
 import base64
 import hashlib
+import html
 import json
 import secrets
 import ssl
@@ -63,9 +64,9 @@ def request(method, url, data=None, headers=None):
 
 
 # ------------------------------------------------------------------------------
-def login(user, password, client_id, redirect_uri):
+def login(user, password, client_id, redirect_uri, scope='openid'):
     """Sign in at IdMS with the authorisation code flow and PKCE (TS 33.180 annex B.4.2.2 to B.4.2.5):
-    authorize, post the user's credentials, then exchange the code for an access token."""
+    authorize with the scope, post the user's credentials, then exchange the code for an access token."""
     verifier = secrets.token_urlsafe(48)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
     query = urllib.parse.urlencode(
@@ -73,7 +74,7 @@ def login(user, password, client_id, redirect_uri):
             response_type='code',
             client_id=client_id,
             redirect_uri=redirect_uri,
-            scope='openid',
+            scope=scope,
             state='s1',
             nonce='n1',
             code_challenge=challenge,
@@ -183,11 +184,11 @@ def console_sign_in(user, password):
     start = browse('GET', ADMIN + '/ui/login')
     login_cookie = start['cookies'].get('mcxadmin_login', {}).get('value', '')
     form = browse('GET', start['location'])
-    marker = 'name="request_id" value="'
-    request_id = form['body'].split(marker, 1)[1].split('"', 1)[0] if marker in form['body'] else ''
-    posted = browse(
-        'POST', IDMS + '/login', data=dict(request_id=request_id, username=user, password=password, html='1')
-    )
+    # TS 37.579-1 table 5.3.2.3.2-5: the form's action URI (it carries the request) and its inputs user and password.
+    marker = '<form action="'
+    action = html.unescape(form['body'].split(marker, 1)[1].split('"', 1)[0]) if marker in form['body'] else ''
+    request_id = 'request_id=' in action
+    posted = browse('POST', urllib.parse.urljoin(start['location'], action), data=dict(user=user, password=password))
     back = (
         browse('GET', posted['location'], cookies={'mcxadmin_login': login_cookie})
         if posted['location'].startswith(ADMIN)

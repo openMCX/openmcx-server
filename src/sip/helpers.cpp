@@ -8,6 +8,7 @@
 
 #include "sip_impl.hpp"
 
+#include <arpa/inet.h>
 #include <sstream>
 
 namespace mcx {
@@ -197,12 +198,49 @@ void require_success(pj_status_t status, std::string_view operation) {
   return message != nullptr && message->body != nullptr ? print_media_type(message->body->content_type) : std::string{};
 }
 
+namespace {
+//------------------------------------------------------------------------------
+// Helper: whether text is a numeric IPv4 or IPv6 address.
+bool numeric_address(const std::string &text) {
+  unsigned char address[16];
+  return inet_pton(text.find(':') != std::string::npos ? AF_INET6 : AF_INET, text.c_str(), address) == 1;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.203 clause 7.1 and TS 24.229 clause 5.1.1.2.2: an IMS AKA configuration: no TLS (IPsec protects the hop),
+// no digest password, the ISIM's private user identity and keys, a numeric P-CSCF address (the SAs bind IP
+// addresses) and a numeric own address (Via and Contact name the address bound to the SAs, NOTE 1), and a protected
+// server port other than 5060 and 5061 and the unprotected port ("The ports port_us and port_uc are different from the
+// standard SIP ports 5060 and 5061").
+void validate_aka_config(const SipConfig &config) {
+  const auto &aka = config.aka;
+  if (config.tls.enabled || !config.password.empty())
+    throw std::invalid_argument("IMS AKA replaces TLS and the digest password of the SIP hop");
+  if (config.listen_address.empty() || config.identity.empty() || aka.impi.empty() || aka.pcscf_port == 0 ||
+      aka.unprotected_port == 0)
+    throw std::invalid_argument("IMS AKA configuration is incomplete (sip.isim.impi, sip.pcscf)");
+  if (!numeric_address(config.advertise_address) || !numeric_address(aka.pcscf_address))
+    throw std::invalid_argument("IMS AKA needs numeric addresses of the UE and the P-CSCF");
+  if (config.listen_port == 0 || config.listen_port == 5060 || config.listen_port == 5061 ||
+      config.listen_port == aka.unprotected_port)
+    throw std::invalid_argument("the IMS AKA protected server port must not be 5060, 5061 or the unprotected port");
+  if (aka.impi.find_first_of("\"\r\n") != std::string::npos) throw std::invalid_argument("invalid IMPI");
+  (void)aka::key_from_hex(aka.k);
+  (void)aka::key_from_hex(aka.opc);
+  (void)aka::amf_from_hex(aka.amf);
+  const auto identity = ascii_lower(config.identity);
+  if (!identity.starts_with("sip:")) throw std::invalid_argument("SIP identity must be a sip: URI");
+  (void)identity_user(config.identity);
+}
+} // namespace
+
 //------------------------------------------------------------------------------
 // RFC 4028 section 4 and RFC 3261 section 26.2: checks the SIP configuration: session expiry of at least
 // 90 seconds (the Min-SE floor), mandatory peer certificate verification, SIPS or TLS core URI (explicit TCP
 // only for debug), a SIP URI identity and complete TLS material.
 void validate_config(const SipConfig &config) {
   if (config.session_expires < 90) throw std::invalid_argument("SIP session expiry must be at least 90 seconds");
+  if (config.aka.enabled) return validate_aka_config(config);
   if (config.tls.enabled && !config.tls.verify_server) {
     throw std::invalid_argument("SIP peer certificate verification is mandatory");
   }

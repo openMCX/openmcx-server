@@ -2,15 +2,21 @@
 # OpenMCX Licence Information : AGPL-3.0-or-later
 #
 
-# The SIP core: upstream Kamailio 6.1.4, unmodified, with the tls, auth_db, db_mysql and http_client modules. Built on
-# the development image, run on a slim Ubuntu image with only Kamailio's run-time libraries (docker/packages).
+# The SIP core and the P-CSCF of IMS AKA (docker/pcscf.cfg): upstream Kamailio 6.1.4 with the tls, auth_db, db_mysql
+# and http_client modules, and the IMS modules of IMS AKA (TS 33.203): ims_auth (AKA vectors made locally from K,
+# OPc and AMF, through gcrypt; cdp and cdp_avp only for its build), ims_ipsec_pcscf, ims_registrar_pcscf and
+# ims_usrloc_pcscf. Two pinned changes, dependencies/kamailio (ims_auth: the locally made IMS AKA vectors and HTTP
+# Digest AKAv2-SHA-256; ims_ipsec_pcscf and ims_usrloc_pcscf: initial registrations with any Via port), each checked
+# against its SHA-256 and applied to the verified source. Built on the development
+# image, run on a slim Ubuntu image with only Kamailio's run-time libraries (docker/packages).
 #
-#   docker build -t openmcx-kamailio:6.1.4-2 -f docker/Dockerfile.kamailio .
+#   docker build -t openmcx-kamailio:6.1.4-3 -f docker/Dockerfile.kamailio .
 #
 # Kamailio is GPL-2.0 (its tls module ISC). The image carries the licence (/usr/share/doc/kamailio/COPYING) and the
-# exact source it was built from (/usr/src/kamailio-6.1.4.tar.gz, pinned in dependencies/lock.json).
+# exact source it was built from (/usr/src/kamailio-6.1.4.tar.gz, pinned in dependencies/lock.json) and the patch
+# applied to it (/usr/src/kamailio-patches).
 
-ARG DEV_IMAGE=openmcx-dev:0.1
+ARG DEV_IMAGE=openmcx-dev:0.2
 ARG RUNTIME_BASE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
 ARG UBUNTU=24.04
 
@@ -20,11 +26,25 @@ ARG DEPS_MIRROR=
 ARG KAMAILIO_FILE=kamailio-6.1.4.tar.gz
 ARG KAMAILIO_URL=https://github.com/kamailio/kamailio/archive/refs/tags/6.1.4.tar.gz
 ARG KAMAILIO_SHA256=d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6
+ARG UBUNTU
+ARG KAMAILIO_PATCH=0001-ims_auth-local-vectors-and-AKAv2-SHA-256.patch
+ARG KAMAILIO_PATCH_SHA256=abd536c6e7c8bfbac3e9c1b4fa18d3852c177c8d2d3e87471852529e7d2b169f
 COPY docker/fetch /usr/local/bin/fetch
+ARG KAMAILIO_PATCH2=0002-ims_ipsec_pcscf-any-Via-port-and-flags.patch
+ARG KAMAILIO_PATCH2_SHA256=1090846a2ba9a2b408a00d1238be2986bcc7d290188c57ee362535e210507d32
+COPY dependencies/kamailio/${KAMAILIO_PATCH} dependencies/kamailio/${KAMAILIO_PATCH2} /src/kamailio-patches/
+COPY docker/packages /usr/local/bin/packages
+# The IMS modules' build libraries the development image lacks (libmnl for ims_ipsec_pcscf).
+RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UBUNTU" kamailio-dev) \
+    && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /src && fetch "$KAMAILIO_FILE" "$KAMAILIO_URL" "$KAMAILIO_SHA256" /src/$KAMAILIO_FILE \
  && mkdir /tmp/kamailio && tar -xf /src/$KAMAILIO_FILE -C /tmp/kamailio --strip-components=1 \
  && cd /tmp/kamailio \
- && make cfg prefix=/opt/kamailio include_modules="tls auth_db db_mysql http_client" \
+ && echo "$KAMAILIO_PATCH_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH" | sha256sum -c - \
+ && echo "$KAMAILIO_PATCH2_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH2" | sha256sum -c - \
+ && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH \
+ && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH2 \
+ && make cfg prefix=/opt/kamailio include_modules="tls auth_db db_mysql http_client ims_auth ims_ipsec_pcscf ims_registrar_pcscf ims_usrloc_pcscf cdp cdp_avp gcrypt" \
  && make -j4 all && make install \
  && mkdir -p /install/doc && cp COPYING /install/doc/COPYING \
  && rm -rf /tmp/kamailio
@@ -39,6 +59,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UB
 COPY --from=build /opt/kamailio /opt/kamailio
 COPY --from=build /install/doc/COPYING /usr/share/doc/kamailio/COPYING
 COPY --from=build /src/${KAMAILIO_FILE} /usr/src/${KAMAILIO_FILE}
+COPY --from=build /src/kamailio-patches /usr/src/kamailio-patches
 LABEL org.opencontainers.image.title="openmcx-kamailio" \
       org.opencontainers.image.version="6.1.4" \
       org.opencontainers.image.licenses="GPL-2.0-only AND ISC" \

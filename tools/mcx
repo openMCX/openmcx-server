@@ -12,8 +12,8 @@ case "${1:-help}" in
   provision) shift; exec python3 tools/provision.py "$@" ;;
   build)
     python3 tools/fetch-dependencies.py
-    docker build -t openmcx-dev:0.1 -f docker/Dockerfile.dev .
-    docker build -t openmcx-kamailio:6.1.4-2 -f docker/Dockerfile.kamailio .
+    docker build -t openmcx-dev:0.2 -f docker/Dockerfile.dev .
+    docker build -t openmcx-kamailio:6.1.4-3 -f docker/Dockerfile.kamailio .
     docker build -t openmcx-sipdb:8.0-1 -f docker/Dockerfile.sipdb .
     docker build -t openmcx:0.1 -f docker/Dockerfile .
     # mcx-client lives in the openmcx-client repository (directory linux/), checked out beside this one.
@@ -31,11 +31,11 @@ case "${1:-help}" in
   down) exec "$MCX_COMPOSE" -f docker/compose/compose.yaml down -v --remove-orphans ;;
   speech)
     mkdir -p artifacts/speech
-    docker run --rm --user "$(id -u):$(id -g)" -v "$MCX_ROOT/artifacts/speech:/speech" openmcx-dev:0.1 bash -lc 'espeak-ng -s 135 -w /tmp/alpha.wav "Alpha calling Bravo. Mission critical voice test. Radio check one two three." && ffmpeg -v error -y -i /tmp/alpha.wav -ar 16000 -ac 1 /speech/alpha.wav && espeak-ng -s 135 -w /tmp/bravo.wav "Bravo responding to Alpha. Your transmission is received. Radio check four five six." && ffmpeg -v error -y -i /tmp/bravo.wav -ar 16000 -ac 1 /speech/bravo.wav'
+    docker run --rm --user "$(id -u):$(id -g)" -v "$MCX_ROOT/artifacts/speech:/speech" openmcx-dev:0.2 bash -lc 'espeak-ng -s 135 -w /tmp/alpha.wav "Alpha calling Bravo. Mission critical voice test. Radio check one two three." && ffmpeg -v error -y -i /tmp/alpha.wav -ar 16000 -ac 1 /speech/alpha.wav && espeak-ng -s 135 -w /tmp/bravo.wav "Bravo responding to Alpha. Your transmission is received. Radio check four five six." && ffmpeg -v error -y -i /tmp/bravo.wav -ar 16000 -ac 1 /speech/bravo.wav'
     ;;
   test)
-    docker run --rm --user "$(id -u):$(id -g)" -v "$MCX_ROOT:/workspace" openmcx-dev:0.1 bash -lc 'cmake -S . -B build && cmake --build build -j4 && ctest --test-dir build --output-on-failure'
-    docker run --rm --user "$(id -u):$(id -g)" -e GOCACHE=/tmp/go-cache -e GOPATH=/tmp/go -v "$MCX_ROOT:/workspace" -w /workspace/services openmcx-dev:0.1 go test ./...
+    docker run --rm --user "$(id -u):$(id -g)" -v "$MCX_ROOT:/workspace" openmcx-dev:0.2 bash -lc 'cmake -S . -B build && cmake --build build -j4 && ctest --test-dir build --output-on-failure'
+    docker run --rm --user "$(id -u):$(id -g)" -e GOCACHE=/tmp/go-cache -e GOPATH=/tmp/go -v "$MCX_ROOT:/workspace" -w /workspace/services openmcx-dev:0.2 go test ./...
     ;;
   compose) shift; exec "$MCX_COMPOSE" -f docker/compose/compose.yaml "$@" ;;
   *) echo 'Usage: tools/mcx fetch|provision|build|speech|up|down|test|compose [arguments]' ;;

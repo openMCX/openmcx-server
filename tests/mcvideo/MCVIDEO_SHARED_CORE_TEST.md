@@ -36,7 +36,7 @@ tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =sm
 The unit tests, in the development image:
 
 ```bash
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" -w /workspace openmcx-dev:0.1 \
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" -w /workspace openmcx-dev:0.2 \
   bash -lc 'cmake -S . -B build-mcvideo && cmake --build build-mcvideo -j"$(nproc)" && ctest --test-dir build-mcvideo'
 ```
 

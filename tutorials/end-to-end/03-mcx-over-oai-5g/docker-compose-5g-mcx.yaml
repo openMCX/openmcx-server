@@ -4,20 +4,26 @@
 # UPF; the PCF, SMF and UPF patched for N5, see oai/cn5g/), the OAI gNB and one nr-UE over the
 # rfsimulator, and a dispatcher position inside the nr-UE: its traffic crosses the 5G user plane. The phones stay on
 # the Wi-Fi (HOST_IP), as in tutorial 1. The MCPTT server asks the PCF for MCPTT QoS over N5 for the dispatcher's
-# calls (5QI 65 for its speech).
+# calls (5QI 65 for its speech). A second MC client in the nr-UE, the Linux client of the test user client-d
+# (ue-client), registers with IMS AKA through the P-CSCF (pcscf, IPsec ESP over the 5G user plane; TS 33.203); the
+# dispatcher and the phones keep SIP digest over TLS (non-3GPP access, TS 33.180 clause 6.2.1).
 #
 #   cp .env.example .env                                             then set HOST_IP in .env
 #   sudo ./host-network.sh add                                       the route to the UE pool, once
 #   docker compose -f docker-compose-5g-mcx.yaml run --rm setup      once: writes ./config
-#   docker compose -f docker-compose-5g-mcx.yaml up -d
+#   docker compose -f docker-compose-5g-mcx.yaml up -d                (the host needs the xfrm_user, esp4, authenc,
+#                                                                      hmac(sha1) and cbc(aes) kernel modules)
 #   open https://HOST_IP:8446/ (MCX Admin) and http://localhost:8080/ (the dispatcher)
 #
 # Networks: openmcx-5g-core 192.168.71.128/26 (N2, N3, N4, SBI, N5), openmcx-5g-n6 192.168.72.128/26 (N6 and the
-# OpenMCX system); the UE pool 12.1.1.0/24 (DNN mcptt).
+# OpenMCX system, the P-CSCF at 192.168.72.140); the UE pool 12.1.1.0/24 (DNN mcptt).
 
 name: openmcx-5g
 include:
-- docker-compose-5g-core.yaml
+# The shared services, with tutorial 3's changes to them (docker-compose-5g-core-aka.yaml).
+- path:
+  - docker-compose-5g-core.yaml
+  - docker-compose-5g-core-aka.yaml
 x-logging: &logging
   driver: json-file
   options:
@@ -72,6 +78,7 @@ services:
     - 127.0.0.1:8080:8080
     extra_hosts:
     - sip-core:${HOST_IP:?set HOST_IP in .env}
+    - pcscf:192.168.72.140
     networks:
       public:
         ipv4_address: 192.168.71.150
@@ -98,8 +105,9 @@ services:
     - bash
     - -c
     - until ip -4 -o addr show oaitun_ue1 2>/dev/null | grep -q inet; do sleep 1; done; ip route replace "$$HOST_IP"/32 dev
-      oaitun_ue1; ip -4 -o addr show oaitun_ue1 | awk '{print $$4}' | cut -d/ -f1 > /ue/ip; echo "UE address $$(cat /ue/ip),
-      $$HOST_IP through oaitun_ue1"; sleep infinity
+      oaitun_ue1; ip route replace 192.168.72.140/32 dev oaitun_ue1; ip -4 -o addr show oaitun_ue1 | awk '{print $$4}' | cut
+      -d/ -f1 > /ue/ip; echo "UE address $$(cat /ue/ip), $$HOST_IP and the P-CSCF 192.168.72.140 through oaitun_ue1"; sleep
+      infinity
     volumes:
     - ue:/ue
     healthcheck:
@@ -114,7 +122,7 @@ services:
   dispatcher:
     logging: *logging
     container_name: openmcx-dispatcher
-    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-1.0.0}
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-dispatcher:${OPENMCX_TAG:-develop}
     network_mode: service:oai-nr-ue
     depends_on:
       ue-route:
@@ -146,6 +154,123 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
+  # The P-CSCF of IMS AKA (docker/pcscf.cfg; TS 24.229 clause 5.2, TS 33.203 clause 7): the UE's initial REGISTER on
+  # port 5060, then the IPsec ESP security associations with the UE (transport mode; NET_ADMIN, bound to PCSCF_IP), and
+  # TLS to the SIP core with its own certificate. On the N6 network, reached by the UE through the UPF without NAT
+  # (ESP does not cross Docker's port publishing); it examines its UEs' SDP as the SIP core does the others'.
+  pcscf:
+    logging: *logging
+    container_name: openmcx-pcscf
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-kamailio:${OPENMCX_TAG:-develop}
+    cap_add:
+    - NET_ADMIN
+    environment:
+      PCSCF_IP: 192.168.72.140
+    command:
+    - -DD
+    - -E
+    - -A
+    - CLIENT_SDP_CHECK
+    - -f
+    - /config/pcscf.cfg
+    volumes:
+    - ./config/pcscf.cfg:/config/pcscf.cfg:ro
+    - ./config/pcscf-tls.cfg:/config/pcscf-tls.cfg:ro
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/tls/pcscf.crt:/config/tls/pcscf.crt:ro
+    - ./config/tls/pcscf.key:/config/tls/pcscf.key:ro
+    depends_on:
+      sip-core:
+        condition: service_healthy
+    networks:
+      default:
+        ipv4_address: 192.168.72.140
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - nc -z 127.0.0.1 5060
+      timeout: 3s
+      interval: 3s
+      retries: 30
+      start_period: 10s
+  # The P-CSCF's route to the UE pool through the UPF's N6 address (the Kamailio image has no ip command).
+  pcscf-route:
+    logging: *logging
+    container_name: openmcx-pcscf-route
+    image: oaisoftwarealliance/oai-nr-ue:${RAN_TAG:-2026.w39}
+    network_mode: service:pcscf
+    cap_drop:
+    - ALL
+    cap_add:
+    - NET_ADMIN
+    depends_on:
+    - pcscf
+    entrypoint:
+    - bash
+    - -c
+    - ip route replace 12.1.1.0/24 via 192.168.72.134 && echo "UE pool 12.1.1.0/24 via the UPF 192.168.72.134" && sleep
+      infinity
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - ip route show 12.1.1.0/24 | grep -q 192.168.72.134
+      interval: 3s
+      timeout: 2s
+      retries: 20
+  # The MC client in the 5G UE (the Linux client, test user client-d; setup/ue-client.py): IMS AKA with its software
+  # ISIM through the P-CSCF, its security associations in the nr-UE's network namespace (NET_ADMIN); the OIDC
+  # sign-in, the HTTP proxy and the KMS at HOST_IP, as for the dispatcher. TS 37.579-2 test 5.1 (README).
+  ue-client:
+    logging: *logging
+    container_name: openmcx-ue-client
+    image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-client:${OPENMCX_TAG:-develop}
+    network_mode: service:oai-nr-ue
+    cap_add:
+    - NET_ADMIN
+    depends_on:
+      ue-route:
+        condition: service_healthy
+      pcscf-route:
+        condition: service_healthy
+      pcscf:
+        condition: service_healthy
+      http-proxy:
+        condition: service_healthy
+      mcptt-server:
+        condition: service_healthy
+      mcdata-server:
+        condition: service_healthy
+      mcvideo-server:
+        condition: service_healthy
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
+    entrypoint:
+    - sh
+    - -c
+    - sed "s/UE_IP/$$(cat /ue/ip)/g" /config/ue-client.json.in > /run/mcx/ue-client.json && exec /usr/local/bin/mcx-client
+      --config /run/mcx/ue-client.json
+    volumes:
+    - ./config/ue-client.json:/config/ue-client.json.in:ro
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/tls/client-d.crt:/config/tls/client-d.crt:ro
+    - ./config/tls/client-d.key:/config/tls/client-d.key:ro
+    - ./config/artifacts:/artifacts
+    - ue:/ue:ro
+    tmpfs:
+    - /run/mcx
+    init: true
+    healthcheck:
+      test:
+      - CMD
+      - python3
+      - /healthcheck.py
+      - /artifacts/client-d/status.json
+      - authorized
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 10s
     restart: unless-stopped
 volumes:
   ue: null

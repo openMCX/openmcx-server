@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Source: ETSI TS 124 484 V19.6.0 (2026-07), the MCPTT UE configuration document schema (clause 8.2.2.3).
+     Taken from the 3GPP/ETSI specification (clause cited above). The page headers and footers were removed and
+     the lines the page width wrapped inside attribute values were joined; the schema text is otherwise unchanged. -->
+<xs:schema xmlns:mcpttuep="urn:3gpp:mcptt:mcpttUEConfig:1.0"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  targetNamespace="urn:3gpp:mcptt:mcpttUEConfig:1.0"
+  elementFormDefault="qualified" attributeFormDefault="unqualified">
+  <xs:import namespace="http://www.w3.org/XML/1998/namespace"
+    schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+  <xs:element name="mcptt-UE-configuration">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+          <xs:element name="mcptt-UE-id" type="mcpttuep:MCPTTUEIDType"/>
+          <xs:element name="name" type="mcpttuep:NameType"/>
+        </xs:choice>
+        <xs:element name="common" type="mcpttuep:CommonType"/>
+        <xs:element name="on-network" type="mcpttuep:On-networkType"/>
+        <xs:element name="anyExt" type="mcpttuep:anyExtType" minOccurs="0"/>
+        <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="domain" type="xs:anyURI" use="required"/>
+      <xs:attribute name="XUI-URI" type="xs:anyURI"/>
+      <xs:attribute name="Instance-ID-URN" type="xs:anyURI"/>
+      <xs:anyAttribute namespace="##any" processContents="lax"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:complexType name="NameType">
+    <xs:simpleContent>
+      <xs:extension base="xs:token">
+        <xs:attribute ref="xml:lang"/>
+        <xs:attributeGroup ref="mcpttuep:IndexType"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+  <xs:complexType name="MCPTTUEIDType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="Instance-ID-URN" type="xs:anyURI"/>
+      <xs:element name="IMEI-range" type="mcpttuep:IMEI-rangeType"/>
+      <xs:element name="anyExt" type="mcpttuep:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax"/>
+    </xs:choice>
+    <xs:attributeGroup ref="mcpttuep:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="IMEI-rangeType">
+    <xs:sequence>
+      <xs:element name="TAC" type="mcpttuep:tacType"/>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element name="SNR" type="mcpttuep:snrType"/>
+        <xs:element name="SNR-range" type="mcpttuep:SNR-rangeType"/>
+      </xs:choice>
+      <xs:element name="anyExt" type="mcpttuep:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcpttuep:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="SNR-rangeType">
+    <xs:sequence>
+      <xs:element name="Low-SNR" type="mcpttuep:snrType"/>
+      <xs:element name="High-SNR" type="mcpttuep:snrType"/>
+      <xs:element name="anyExt" type="mcpttuep:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcpttuep:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:simpleType name="tac-baseType">
+      <xs:restriction base="xs:decimal">
+        <xs:totalDigits value="8"/>
+      </xs:restriction>
+  </xs:simpleType>
+  <xs:complexType name="tacType">
+    <xs:simpleContent>
+      <xs:extension base="mcpttuep:tac-baseType">
+        <xs:attributeGroup ref="mcpttuep:IndexType"/>
+        <xs:anyAttribute namespace="##any" processContents="lax"/>
+    </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+  <xs:simpleType name="snr-baseType">
+    <xs:restriction base="xs:decimal">
+      <xs:totalDigits value="6"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:complexType name="snrType">
+    <xs:simpleContent>
+      <xs:extension base="mcpttuep:snr-baseType">
+        <xs:attributeGroup ref="mcpttuep:IndexType"/>
+        <xs:anyAttribute namespace="##any" processContents="lax"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+  <xs:complexType name="CommonType">
+    <xs:sequence>
+      <xs:element name="private-call">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="Max-Simul-Call-N10" type="xs:positiveInteger"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="MCPTT-Group-Call">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="Max-Simul-Call-N4" type="xs:positiveInteger"/>
+            <xs:element name="Max-Simul-Trans-N5" type="xs:positiveInteger"/>
+            <xs:element name="Prioritized-MCPTT-Group">
+              <xs:complexType>
+                <xs:sequence>
+                  <xs:element name="MCPTT-Group-Priority" maxOccurs="unbounded">
+                    <xs:complexType>
+                      <xs:sequence>
+                        <xs:element name="MCPTT-Group-ID" type="xs:anyURI"/>
+                        <xs:element name="group-priority-hierarchy" type="xs:nonNegativeInteger"/>
+                      </xs:sequence>
+                      <xs:attributeGroup ref="mcpttuep:IndexType"/>
+                      <xs:anyAttribute namespace="##any" processContents="lax"/>
+                    </xs:complexType>
+                  </xs:element>
+                </xs:sequence>
+              </xs:complexType>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="anyExt" type="mcpttuep:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcpttuep:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="On-networkType">
+    <xs:sequence>
+      <xs:element name="IPv6Preferred" type="xs:boolean"/>
+      <xs:element name="Relay-Service" type="xs:boolean"/>
+      <xs:element name="Relayed-MCPTT-Group" type="mcpttuep:Relayed-MCPTT-GroupType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="anyExt" type="mcpttuep:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcpttuep:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:complexType name="Relayed-MCPTT-GroupType">
+    <xs:sequence>
+      <xs:element name="MCPTT-Group-ID" type="xs:anyURI"/>
+      <xs:element name="Relay-Service-Code" type="xs:string"/>
+      <xs:element name="anyExt" type="mcpttuep:anyExtType" minOccurs="0"/>
+      <xs:any namespace="##other" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attributeGroup ref="mcpttuep:IndexType"/>
+    <xs:anyAttribute namespace="##any" processContents="lax"/>
+  </xs:complexType>
+  <xs:attributeGroup name="IndexType">
+    <xs:attribute name="index" type="xs:token"/>
+  </xs:attributeGroup>
+  <xs:complexType name="anyExtType">
+    <xs:sequence>
+      <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>

@@ -1181,13 +1181,15 @@ protected:
 
   // ---- Configuration management document subscriptions (configuration.cpp): TS 24.484 clause 6.3.13 ----
   // This server is also the SIP front of the CMS: its PSI serves as the PSI for
-  // performing the CMS's subscription proxy function. A user subscribes to its own
-  // user profile document, whose entity tag is read from the CMS.
+  // performing the CMS's subscription proxy function. A user subscribes to several
+  // configuration management documents at once (its UE configuration and user profile
+  // documents, the service configuration), whose entity tags are read from the CMS.
   //------------------------------------------------------------------------------
-  // A user's subscription to its user profile document (TS 24.484 clause 6.3.13.3.2.2).
+  // A user's subscription to configuration management documents (TS 24.484 clause 6.3.13.3.2.2).
   struct ConfigSubscription {
     std::string subscriber;
-    std::map<std::string, std::string> etags; // MCPTT ID of the profile -> entity tag last notified
+    // AUID, XUI and document name of each followed document -> entity tag last notified.
+    std::map<std::tuple<std::string, std::string, std::string>, std::string> etags;
     std::int64_t expires = 0;
     bool pending = false, initial = true;
     std::uint64_t next_poll = 0;
@@ -1195,12 +1197,17 @@ protected:
 
   std::map<std::string, ConfigSubscription> config_subscriptions_;
   Counters configsub_counters_{"subscriptions", "notifies", "refused"};
-  static constexpr const char *profile_auid = "org.3gpp.mcptt.user-profile/users/";
+  // The documents one configuration subscription follows at most.
+  static constexpr std::size_t max_config_documents = 8;
 
-  static std::vector<std::string> subscribed_profiles(const std::string &list);
+  static std::vector<ConfigDocument> subscribed_configuration(const std::string &list);
+
+  std::map<std::tuple<std::string, std::string, std::string>, std::string>
+  followed_configuration(const std::string &identity, const std::vector<ConfigDocument> &documents,
+                         const ConfigSubscription *current);
 
   SipResponse config_subscribe(const SipMessage &message, const std::string &identity,
-                               const std::vector<std::string> &ids);
+                               const std::vector<ConfigDocument> &documents);
 
   void notify_configuration(const std::string &dialog);
 
@@ -1498,6 +1505,9 @@ protected:
   [[nodiscard]] std::optional<SipResponse> plain_reinvite(const SipMessage &message, const User &user);
   // TS 24.379 clause 7.3.2: service authorisation by third-party REGISTER.
   void third_party_register(const SipMessage &message, SipResponse &response);
+  // TS 24.379 clause 7.2.1 with clause 6.6.1.4: open the bodies of a client's REGISTER that uploads no CSK with the
+  // CSK held for the public user identity.
+  bool open_register_parts(const std::string &identity, std::vector<BodyPart> &parts, SipResponse &response);
   // TS 24.379 clause 6.6.2: accept the uploaded CSK and open the protected parts with it.
   bool open_with_uploaded_csk(const SipMessage &message, SipMessage &opened,
                               std::optional<keying::KeyMessage> &uploaded, std::string &uploader,

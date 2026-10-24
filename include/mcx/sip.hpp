@@ -42,6 +42,35 @@ struct SipHeader {
 };
 
 //------------------------------------------------------------------------------
+// TS 33.203 and TS 24.229 clause 5.1.1.2.2: IMS AKA as the security mechanism of a UE (3GPP access, TS 33.180 clause
+// 6.2.1): the ISIM's private user identity and keys, and the P-CSCF the UE is preconfigured with (TS 24.229 clause
+// 5.1.1.2.1: the unprotected REGISTER goes to its unprotected port). The SIP signalling then runs over TCP inside
+// IPsec ESP security associations (TS 33.203 clause 7) instead of TLS and digest; listen_port is the protected server
+// port port_us, which stays fixed (TS 33.203 clause 7.1 NOTE 10).
+struct SipImsAkaConfig {
+  bool enabled = false;
+  std::string impi;                 // the private user identity, the username of the Authorization header field
+  std::string k, opc, amf = "8000"; // hexadecimal: K and OPc (32 digits), AMF (4 digits) of the ISIM
+  std::string sqn_file;             // where the ISIM keeps its sequence numbers (TS 33.102 annex C.2)
+  std::string pcscf_address;        // numeric IPv4 or IPv6 address
+  std::uint16_t pcscf_port = 5060;
+  // The UE's own port of the unprotected REGISTER (its Via sent-by and Contact).
+  std::uint16_t unprotected_port = 5060;
+};
+
+//------------------------------------------------------------------------------
+// TS 33.203 clause 7.1 rule 5: the SA_table of the UE's security associations in use, for the status of a client.
+struct SipSecurityStatus {
+  std::string mechanism; // "ipsec-3gpp"
+  std::string alg, ealg;
+  std::uint16_t port_uc = 0, port_us = 0, port_pc = 0, port_ps = 0;
+  std::uint32_t spi_uc = 0, spi_us = 0, spi_pc = 0, spi_ps = 0;
+  // TS 24.229 clause 5.1.1.2.1: the P-Associated-URI and Service-Route of the last 200 (OK) to a REGISTER.
+  std::vector<std::string> associated_uris, service_routes;
+  std::string algorithm; // the HTTP Digest AKA algorithm of the last authentication
+};
+
+//------------------------------------------------------------------------------
 // Helper: the configuration of a SIP endpoint, its registration, session timer and MC service.
 struct SipConfig {
   std::string listen_address;
@@ -52,6 +81,8 @@ struct SipConfig {
   std::string username;
   std::string password;
   SipTlsConfig tls;
+  // IMS AKA instead of digest (with TLS disabled); username and password stay empty.
+  SipImsAkaConfig aka;
   unsigned session_expires = 1800;
   // The MC service this endpoint declares in its Contact and, unless the
   // caller names another, in the P-Preferred-Service of an INVITE.
@@ -273,6 +304,8 @@ public:
   // the transport in use describes it. A Contact override must build on it, since
   // it becomes the remote target of the dialog for in-dialog requests.
   [[nodiscard]] std::string contact_target() const;
+  // TS 33.203 clause 7.1: the security associations of an IMS AKA registration, or none (digest, not registered).
+  [[nodiscard]] std::optional<SipSecurityStatus> security_status() const;
 
   // End an established call or cancel a pending call. Repeated ends are harmless.
   // A single application part becomes the BYE body; a CANCEL carries none.

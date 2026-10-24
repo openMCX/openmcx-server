@@ -6,12 +6,15 @@
 # OpenMCX Unit Test Tutorial 20: the steps of README.md, one after the other, each checked before the next.
 # Usage: ./run.sh            (the system must be up: docker compose up -d --wait)
 # Writes captures/20-admin-activation-token-refresh-run.pcap.gz (captures/20-admin-activation-token-refresh-full.pcap.gz
-# is the reference run of README.md). Set COMPOSE to another command than "docker compose" if needed. It runs once per
-# system: erin's activation URL works only once (README.md, step 5, to start over).
+# is the reference run of README.md). Set COMPOSE to another command than "docker compose" if needed, and OVERRIDE to a
+# second compose file (other images, for example) that every docker compose command of the script takes after
+# docker-compose.yaml. It runs once per system: erin's activation URL works only once (README.md, step 5, to start
+# over).
 set -euo pipefail
 cd "$(dirname "$0")"
 read -r -a DC <<<"${COMPOSE:-docker compose}"
 DC+=(-f docker-compose.yaml)
+if [ -n "${OVERRIDE:-}" ]; then DC+=(-f "$OVERRIDE"); fi
 CAPTURE=20-admin-activation-token-refresh-full.pcap   # in the capture container
 OUT=captures/20-admin-activation-token-refresh-run.pcap.gz
 ALICE=sip:alice.mcptt@mcx.test

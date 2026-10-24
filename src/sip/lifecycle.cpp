@@ -191,7 +191,10 @@ void SipEngine::Impl::start() {
     pjsip_host_port advertised{};
     advertised.host = pj_view(config.advertise_address);
     advertised.port = config.listen_port;
-    if (config.tls.enabled) {
+    if (config.aka.enabled) {
+      // TS 33.203 clause 7: IMS AKA, its TCP transports and security associations (ims_aka.cpp).
+      aka_start(local, advertised);
+    } else if (config.tls.enabled) {
       require_success(pjsip_tls_transport_start2(endpoint, &tls, &local, &advertised, 1, &tls_factory),
                       "start SIP TLS transport");
     } else {
@@ -206,9 +209,11 @@ void SipEngine::Impl::start() {
 }
 
 //------------------------------------------------------------------------------
-// Helper: releases pending responses, the registration and the dialogs, then destroys the endpoint, pool cache
-// and pjlib; safe after a partial start.
+// Helper: releases the IMS AKA state, pending responses, the registration and the dialogs, then destroys the
+// endpoint, pool cache and pjlib; safe after a partial start.
 void SipEngine::Impl::stop() noexcept {
+  // The IMS AKA security associations, their connections and timers go first, while the endpoint exists.
+  aka_stop();
   for (const auto &response : pending_responses) {
     if (response.data != nullptr) {
       pjsip_tx_data_dec_ref(response.data);

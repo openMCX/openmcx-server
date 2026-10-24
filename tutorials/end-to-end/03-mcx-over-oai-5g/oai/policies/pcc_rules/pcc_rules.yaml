@@ -1,11 +1,16 @@
 # SPDX-License-Identifier: LicenseRef-CSSL-1.0
 # rfsim5g-mcx: PCC rules referenced by policy_decisions.
 
+# The MCX PDU session's default QoS flow (TS 37.579-1 clause 5.4.1B, 5QI 69). The SMF turns its match-all filter
+# into the default QoS rule of the PDU SESSION ESTABLISHMENT ACCEPT, with this precedence: TS 24.501 clause
+# 6.2.5.1.1.2 gives a default QoS rule with a match-all packet filter the highest precedence value, 255 as in the
+# reference QoS rule #10 of TS 38.508-1 clause 4.8.2.1 that TS 37.579-1 clause 5.4.2.3.4 applies. The PCF numbers
+# the N5 rules of the calls from 10 up (the default precedence_base of its mcx_qos section), below it.
 non-gbr-rule-5qi-69:
   flowInfos:
     - flowDescription: permit out ip from any to assigned
       packetFilterUsage: true
-  precedence: 25
+  precedence: 255
   refQosData:
     - non-gbr-qos-5qi-69
 

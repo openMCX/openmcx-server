@@ -72,6 +72,34 @@ if(BUILD_TESTING)
     endforeach()
 endif()
 
+# IMS AKA in the UE (TS 33.203): the software ISIM on hostap's MILENAGE, vendored unmodified in dependencies/hostap
+# (README.md there) and checked here against its pinned SHA-256. The IPsec SAs over XFRM (src/security/xfrm.cpp) are
+# part of mcx_sip, which uses them.
+foreach(vendored "milenage.c=67065ba6346dffe80fe50929f44ac15f81e49f2e02044b12249b0743e725ef4c"
+                 "milenage.h=2bf1176fcd1d82f292f53a802df5af48e86c194c8d7ee586c596f8f2324b8e50")
+    string(REPLACE "=" ";" vendored "${vendored}")
+    list(GET vendored 0 vendored_file)
+    list(GET vendored 1 vendored_sha256)
+    file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/hostap/${vendored_file}" actual_sha256)
+    if(NOT actual_sha256 STREQUAL vendored_sha256)
+        message(FATAL_ERROR "dependencies/hostap/${vendored_file} is not the pinned hostap file (SHA-256 ${actual_sha256})")
+    endif()
+endforeach()
+add_library(mcx_ims_aka src/security/ims_aka.cpp src/security/hostap_aes.cpp dependencies/hostap/milenage.c)
+target_include_directories(mcx_ims_aka PUBLIC include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/security ${CMAKE_CURRENT_SOURCE_DIR}/src/security/hostap
+    ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/hostap)
+target_link_libraries(mcx_ims_aka PUBLIC OpenSSL::Crypto)
+target_compile_options(mcx_ims_aka PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra -Wpedantic>)
+set_target_properties(mcx_ims_aka PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(BUILD_TESTING)
+    add_executable(test_ims_aka tests/test_ims_aka.cpp)
+    target_include_directories(test_ims_aka PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/security ${CMAKE_CURRENT_SOURCE_DIR}/src/security/hostap
+        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/hostap)
+    target_link_libraries(test_ims_aka PRIVATE mcx_ims_aka)
+    add_test(NAME ims_aka COMMAND test_ims_aka)
+endif()
+
 # N5: the MC service server in the 5GC AF role (TS 29.514 Npcf_PolicyAuthorization), used by the MCPTT and MCVideo
 # servers only with a "pcf" block in their configuration.
 add_library(mcx_af src/common/af.cpp src/common/h2.cpp)
@@ -108,8 +136,8 @@ if(BUILD_TESTING)
     set_tests_properties(rx PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
-    add_library(mcx_sip src/sip/helpers.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp src/sip/messages.cpp src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp src/common/runtime.cpp src/security/key_client.cpp)
-    target_link_libraries(mcx_sip PUBLIC mcx_core mcx_keying)
+    add_library(mcx_sip src/sip/helpers.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp src/sip/messages.cpp src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp src/sip/ims_aka.cpp src/common/runtime.cpp src/security/key_client.cpp src/security/xfrm.cpp)
+    target_link_libraries(mcx_sip PUBLIC mcx_core mcx_keying mcx_ims_aka)
     target_compile_options(mcx_sip PRIVATE -Wall -Wextra -Wpedantic)
     # The service parts shared by the MCPTT and MCVideo core and the MCData server:
     # each reaches its server through a small host interface, called per request.
@@ -221,6 +249,18 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         add_executable(test_runtime tests/test_runtime.cpp)
         target_link_libraries(test_runtime PRIVATE mcx_sip)
         add_test(NAME runtime_identity COMMAND test_runtime)
+        # TS 33.203 clauses 6.3 and 7.1: the IMS AKA UE's ESP SAs and policies over NETLINK_XFRM (src/security/xfrm.cpp);
+        # without CAP_NET_ADMIN the test checks the refusal only.
+        add_executable(test_xfrm tests/test_xfrm.cpp)
+        target_link_libraries(test_xfrm PRIVATE mcx_sip)
+        add_test(NAME xfrm COMMAND test_xfrm)
+        # TS 24.229 clause 5.1.1 and TS 33.203 clause 7: the IMS AKA UE against the raw P-CSCF of
+        # tests/run_ims_aka.py, over ESP (needs CAP_NET_ADMIN in its own network namespace; skipped without).
+        add_executable(test_ims_aka_sip tests/test_ims_aka_sip.cpp)
+        target_link_libraries(test_ims_aka_sip PRIVATE mcx_sip)
+        add_test(NAME ims_aka_sip COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_ims_aka.py
+                 $<TARGET_FILE:test_ims_aka_sip>)
+        set_tests_properties(ims_aka_sip PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
     endif()
     install(TARGETS openmcx-mcptt-server openmcx-mcvideo-server openmcx-mcdata-server mcx-user-db mcx-keytool RUNTIME DESTINATION bin)
 endif()

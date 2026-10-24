@@ -12,12 +12,13 @@
 namespace mcx {
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 8.1.1.8: the bare Contact URI of this endpoint, as the transport in use describes it (sips: and
-// transport=tls, or sip: and transport=tcp for debug), with ;ob for an RFC 5626 outbound client (section 5.4).
+// RFC 3261 section 8.1.1.8: the bare Contact URI of this endpoint, a sip: URI with the transport in use
+// (transport=tls, or transport=tcp for debug), with ;ob for an RFC 5626 outbound client (section 5.4). IMS uses no
+// SIPS (TS 24.229): TLS protects the hop, and a SIPS Contact is only sent where RFC 3261 requires it (as_sips).
 [[nodiscard]] std::string SipEngine::Impl::contact_target() const {
-  return std::string(config.tls.enabled ? "sips:" : "sip:") + identity_user(config.identity) + "@" +
-         config.advertise_address + ":" + std::to_string(config.listen_port) +
-         (config.tls.enabled ? ";transport=tls" : ";transport=tcp") + (config.outbound_instance.empty() ? "" : ";ob");
+  return "sip:" + identity_user(config.identity) + "@" + config.advertise_address + ":" +
+         std::to_string(config.listen_port) + (config.tls.enabled ? ";transport=tls" : ";transport=tcp") +
+         (config.outbound_instance.empty() ? "" : ";ob");
 }
 
 //------------------------------------------------------------------------------
@@ -48,6 +49,35 @@ namespace mcx {
   }
   if (response.focus) contact += ";isfocus";
   return contact;
+}
+
+//------------------------------------------------------------------------------
+// RFC 3261 sections 8.1.1.8 and 12.1.1: a Contact header field value with its sip: URI made a SIPS URI, for a
+// request to a SIPS target and for the answer to a request that started a dialog with one.
+[[nodiscard]] std::string SipEngine::Impl::as_sips(std::string contact) {
+  const auto at = contact.starts_with('<') ? 1U : 0U;
+  if (contact.compare(at, 4, "sip:") == 0) contact.insert(at + 3, "s");
+  return contact;
+}
+
+//------------------------------------------------------------------------------
+// RFC 3261 section 8.1.1.8: whether a request to this Request-URI, routed through the SIP core (the top Route),
+// carries a SIPS URI that the Contact must then match.
+[[nodiscard]] bool SipEngine::Impl::sips_target(std::string_view request_uri) const {
+  return ascii_lower(std::string(request_uri)).starts_with("sips:") ||
+         ascii_lower(config.core_uri).starts_with("sips:");
+}
+
+//------------------------------------------------------------------------------
+// RFC 3261 section 12.1.1: whether a request that starts a dialog has a SIPS URI in its Request-URI, in its top
+// Record-Route or, without Record-Route, in its Contact.
+[[nodiscard]] bool SipEngine::Impl::sips_request(const pjsip_rx_data *data) {
+  const auto *msg = data->msg_info.msg;
+  if (PJSIP_URI_SCHEME_IS_SIPS(msg->line.req.uri)) return true;
+  if (const auto *route = data->msg_info.record_route; route != nullptr)
+    return PJSIP_URI_SCHEME_IS_SIPS(route->name_addr.uri);
+  const auto *contact = static_cast<const pjsip_contact_hdr *>(pjsip_msg_find_hdr(msg, PJSIP_H_CONTACT, nullptr));
+  return contact != nullptr && contact->uri != nullptr && PJSIP_URI_SCHEME_IS_SIPS(contact->uri);
 }
 
 //------------------------------------------------------------------------------

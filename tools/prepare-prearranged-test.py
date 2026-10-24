@@ -1224,7 +1224,7 @@ def add_mock_pcf(compose, fixture):
     """The mock PCF: tests/integration/mock_pcf.go, run with the Go toolchain of the development image."""
     server = compose['services']['mcptt-server']
     compose['services']['mock-pcf'] = {
-        'image': 'openmcx-dev:0.1',
+        'image': 'openmcx-dev:0.2',
         'init': True,
         'entrypoint': ['go', 'run', '/mock/mock_pcf.go'],
         'command': ['-listen', ':8080', '-record', '/artifacts/mock-pcf/requests.jsonl'],
@@ -1267,7 +1267,7 @@ def add_mock_pcrf(compose, fixture):
     domain = json.loads((fixture / 'generated/site.json').read_text())['domain']
     server = compose['services']['mcptt-server']
     compose['services']['mock-pcrf'] = {
-        'image': 'openmcx-dev:0.1',
+        'image': 'openmcx-dev:0.2',
         'init': True,
         'entrypoint': ['python3', '/mock/mock_pcrf.py'],
         'command': ['--identity', f'mock-pcrf.{domain}', '--realm', domain, '--record',
@@ -1372,6 +1372,8 @@ def add_admin(fixture, compose, args):
         f"CREATE USER 'credentials'@'%' IDENTIFIED BY '{credentials_password}';\n"
         "GRANT SELECT, INSERT, UPDATE, DELETE ON mcx.subscriber TO 'credentials'@'%';\n"
         "GRANT SELECT, INSERT, UPDATE, DELETE ON mcx.subscriber_suspended TO 'credentials'@'%';\n"
+        # TS 33.180 clause 6.2.1: the Credential Service issues no digest credential for an IMS AKA identity.
+        "GRANT SELECT ON mcx.ims_subscription TO 'credentials'@'%';\n"
         "CREATE TABLE mcx.client_certificates (serial VARCHAR(64) PRIMARY KEY, username VARCHAR(64) NOT NULL, "
         "domain VARCHAR(64) NOT NULL, client_id VARCHAR(255) NOT NULL, not_after DATETIME NOT NULL, "
         "issued_at DATETIME NOT NULL, revoked_at DATETIME NULL, KEY (username, domain));\n"
@@ -1787,6 +1789,40 @@ def add_keycloak(fixture, compose, args):
 
 
 # ------------------------------------------------------------------------------
+def add_pcscf(compose, args, roles):
+    """IMS AKA (TS 33.203 clauses 6 and 7, TS 24.229 clause 5.2.2): the P-CSCF pcscf (docker/pcscf.cfg, the SIP
+    core's Kamailio image) in front of the SIP core, and the clients of roles, which register through it. The
+    P-CSCF and those clients set up IPsec security associations in their own network namespaces, so they need
+    NET_ADMIN; the host must provide the xfrm_user, esp4, authenc, hmac(sha1) and cbc(aes) kernel modules. The
+    P-CSCF binds the associations to its container address (PCSCF_IP)."""
+    core = compose['services']['sip-core']
+    generated = ROOT / 'config/generated'
+    mounts = [('pcscf.cfg', '/config/pcscf.cfg'), ('tls/ca.crt', '/config/tls/ca.crt'),
+              ('tls/pcscf.crt', '/config/tls/pcscf.crt'), ('tls/pcscf.key', '/config/tls/pcscf.key')]
+    if not args.debug_sip:
+        mounts.append(('pcscf-tls.cfg', '/config/pcscf-tls.cfg'))
+    defines = '-A SIP_DEBUG_NO_TLS ' if args.debug_sip else ''
+    compose['services']['pcscf'] = {
+        'image': core['image'],
+        'cap_add': ['NET_ADMIN'],
+        'depends_on': {'sip-core': {'condition': 'service_healthy'}},
+        'entrypoint': ['/bin/sh', '-c'],
+        'command': [
+            'PCSCF_IP="$${PCSCF_IP:-$$(hostname -i | cut -d " " -f 1)}" exec /opt/kamailio/sbin/kamailio -DD -E '
+            + defines + '-f /config/pcscf.cfg'
+        ],
+        'volumes': [dict(type='bind', source=str(generated / source), target=target, read_only=True)
+                    for source, target in mounts],
+        'networks': copy.deepcopy(core['networks']),
+        'healthcheck': {**core['healthcheck'], 'test': ['CMD-SHELL', 'nc -z 127.0.0.1 5060']},
+    }
+    for role in roles:
+        client = compose['services'][role]
+        client.setdefault('cap_add', []).append('NET_ADMIN')
+        client['depends_on']['pcscf'] = {'condition': 'service_healthy'}
+
+
+# ------------------------------------------------------------------------------
 def main():
     """Parse the command line, provision the lab, apply the flags and write compose.json."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -1926,6 +1962,19 @@ def main():
     )
     parser.add_argument('--admin-image', help='the MCX Admin image (built from the openmcx-admin repository)')
     parser.add_argument(
+        '--aka',
+        action='store_true',
+        help='IMS AKA (TS 33.203): client-a and client-b register with IMS AKA through the P-CSCF pcscf (IPsec, '
+        'needs NET_ADMIN and the host\'s xfrm/esp kernel modules); client-c and client-d keep SIP digest',
+    )
+    parser.add_argument(
+        '--aka-role',
+        action='append',
+        choices=['client-a', 'client-b', 'client-c', 'client-d'],
+        help='IMS AKA (TS 33.203) for this client only, through the P-CSCF pcscf; repeatable, instead of --aka\'s '
+        'client-a and client-b, and also with --admin (a tutorial\'s UE on 3GPP access, TS 33.180 clause 6.2.1)',
+    )
+    parser.add_argument(
         '--keycloak',
         metavar='IMAGE',
         help='Keycloak (this image) as IdMS instead of OpenMCX\'s (TS 33.180 annex B)',
@@ -1979,6 +2028,20 @@ def main():
     for role in ['client-c', 'client-d']:
         # Fixture identities derive from the new role and configured domain.
         source['users'].append(dict(role=role, username=role, mcptt_user=role + '.mcptt'))
+    if args.aka:
+        if args.split or args.admin or args.keycloak or args.aka_role:
+            parser.error('--aka runs on a combined server without --admin, --keycloak or --aka-role')
+        # An IMS AKA identity of no client, for aka_negative_scenario's challenge and refusal checks.
+        source['aka_probes'] = ['aka-probe']
+    if args.aka_role and (args.split or args.keycloak):
+        parser.error('--aka-role runs on a combined server without --keycloak')
+    if args.aka_role and args.admin and 'client-c' in args.aka_role:
+        # add_admin makes MCX Admin's activated device (client-e) from client-c's local settings.
+        parser.error('--aka-role client-c excludes --admin: client-c is the template of the activated device')
+    aka_roles = sorted(set(args.aka_role or [])) or (['client-a', 'client-b'] if args.aka else [])
+    for user in source['users']:
+        if user['role'] in aka_roles:
+            user['auth'] = 'aka'
     if args.split:
         source['servers'] = [
             dict(name='mcptt-server', role='controlling'),
@@ -2010,6 +2073,7 @@ def main():
     # even its mkdir operations from the original lab's artifacts.
     shutil.copyfile(ROOT / 'tools/provision.py', fixture / 'tools/provision.py')
     shutil.copyfile(ROOT / 'docker/kamailio.cfg', fixture / 'docker/kamailio.cfg')
+    shutil.copyfile(ROOT / 'docker/pcscf.cfg', fixture / 'docker/pcscf.cfg')
     (fixture / 'lab.json').write_text(json.dumps(source, indent=2) + '\n')
     subprocess.run(
         [
@@ -2287,6 +2351,8 @@ def main():
     for role in ['client-a', 'client-b', 'client-c', 'client-d']:
         for name in servers + video_servers[1:]:
             compose['services'][role]['depends_on'][name] = {'condition': 'service_healthy'}
+    if aka_roles:
+        add_pcscf(compose, args, aka_roles)
     for service in compose['services'].values():
         for mount in service.get('volumes', []):
             if mount['type'] != 'bind':

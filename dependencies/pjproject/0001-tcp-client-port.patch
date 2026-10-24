@@ -1,0 +1,85 @@
+OpenMCX patch to pjproject 2.17 (dependencies/pjproject/README.md): outgoing TCP connections of a listener
+bind to a set local port, the IMS AKA protected client port port_uc of TS 33.203 clause 7.1.
+Applied by docker/Dockerfile.dev and docker/Dockerfile.centos with: patch -p1 < 0001-tcp-client-port.patch
+
+--- a/pjsip/include/pjsip/sip_transport_tcp.h
++++ b/pjsip/include/pjsip/sip_transport_tcp.h
+@@ -237,6 +237,25 @@
+ PJ_DECL(pj_sock_t) pjsip_tcp_transport_get_socket(pjsip_transport *transport);
+ 
+ /**
++ * OpenMCX: set the local port that new outgoing connections of a TCP listener
++ * bind to, such as the protected client port port_uc of an IMS AKA UE
++ * (3GPP TS 33.203 clause 7.1: the UE sets up its TCP connection from port_uc
++ * to the P-CSCF's port_ps). Zero, the default, lets the system choose the
++ * port. Existing connections are not changed.
++ *
++ * @param factory   The TCP listener.
++ * @param port      The local port, or zero.
++ *
++ * @return          PJ_SUCCESS, or PJ_EINVAL when the factory is not a TCP
++ *                  listener.
++ */
++PJ_DECL(pj_status_t) pjsip_tcp_transport_set_client_port(pjsip_tpfactory *factory,
++                                                         pj_uint16_t port);
++
++/** OpenMCX: pjsip_tcp_transport_set_client_port() is available. */
++#define PJSIP_TCP_TRANSPORT_HAS_CLIENT_PORT 1
++
++/**
+  * Start the TCP listener, if the listener is not started yet. This is useful
+  * to start the listener manually, if listener was not started when 
+  * PJSIP_TCP_TRANSPORT_DONT_CREATE_LISTENER is set to 0. 
+--- a/pjsip/src/pjsip/sip_transport_tcp.c
++++ b/pjsip/src/pjsip/sip_transport_tcp.c
+@@ -63,6 +63,7 @@
+     pj_bool_t                reuse_addr;        
+     unsigned                 async_cnt;    
+     unsigned                 initial_timeout;
++    pj_uint16_t              client_port;
+ 
+     /* Group lock to be used by TCP listener and ioqueue key */
+     pj_grp_lock_t           *grp_lock;
+@@ -1026,10 +1027,22 @@
+         }
+     }
+ 
+-    /* Bind to listener's address and any port */
++    /* Bind to listener's address and any port, or the client port set by
++     * pjsip_tcp_transport_set_client_port() (reusable at once, as the port of
++     * a connection that was just closed).
++     */
+     pj_bzero(&local_addr, sizeof(local_addr));
+     pj_sockaddr_cp(&local_addr, &listener->bound_addr);
+-    pj_sockaddr_set_port(&local_addr, 0);
++    pj_sockaddr_set_port(&local_addr, listener->client_port);
++    if (listener->client_port != 0) {
++        int enabled = 1;
++        status = pj_sock_setsockopt(sock, pj_SOL_SOCKET(), pj_SO_REUSEADDR(),
++                                    &enabled, sizeof(enabled));
++        if (status != PJ_SUCCESS) {
++            pj_sock_close(sock);
++            return status;
++        }
++    }
+ 
+     status = pj_sock_bind(sock, &local_addr,
+                           pj_sockaddr_get_len(&local_addr));
+@@ -1647,6 +1660,17 @@
+ }
+ 
+ 
++PJ_DEF(pj_status_t) pjsip_tcp_transport_set_client_port(pjsip_tpfactory *factory,
++                                                        pj_uint16_t port)
++{
++    PJ_ASSERT_RETURN(factory &&
++                     factory->create_transport == &lis_create_transport,
++                     PJ_EINVAL);
++    ((struct tcp_listener*)factory)->client_port = port;
++    return PJ_SUCCESS;
++}
++
++
+ PJ_DEF(pj_status_t) pjsip_tcp_transport_lis_start(pjsip_tpfactory *factory,
+                                                  const pj_sockaddr *local,
+                                                  const pjsip_host_port *a_name)

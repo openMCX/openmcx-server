@@ -182,12 +182,17 @@ func (svc *service) kmsProvision(writer http.ResponseWriter, request *http.Reque
 			return
 		}
 	} else {
+		// authenticateBearer: a key management scope of any MC service (TS 33.180 clause 5.1.3.1: "This key
+		// management authorisation may be repeated for each KM service the user is authorised to use").
 		claims, ok := svc.authenticateBearer(writer, request)
 		if !ok {
 			return
 		}
-		if !containsWord(claims.Scope, "3gpp:mc:ptt_key_management_service") {
-			writeJSON(writer, http.StatusForbidden, map[string]string{"error": "insufficient_scope"})
+		id := request.PathValue("identity")
+		// Key material for the MCPTT ID (a KeyProvision request naming no other identity) under the MCPTT KMS scope
+		// only (TS 33.180 annex B.4.2.2); KMS Initialize and CertCache under any key management scope.
+		if operation == "keyprov" && (id == "" || id == claims.MCPTTID) && !containsWord(claims.Scope, scopePTTKeys) {
+			insufficientScope(writer, scopePTTKeys)
 			return
 		}
 		current, exists := svc.siteUser("mcptt_id", claims.MCPTTID)
@@ -197,14 +202,14 @@ func (svc *service) kmsProvision(writer http.ResponseWriter, request *http.Reque
 			return
 		}
 		user = claims.MCPTTID
-		if id := request.PathValue("identity"); id != "" && id != user {
+		if id != "" && id != user {
 			// TS 33.180 clause 5.3 and TS 24.282 clause 6.6: key material for the user's MCData ID,
 			// which signs and receives MCData PCKs, under the MCData KMS scope; and
 			// (TS 24.281 clause 4.7) for its MCVideo ID under the MCVideo KMS scope.
 			data := claims.MCDataID != "" && id == claims.MCDataID && current.MCDataID == claims.MCDataID &&
-				containsWord(claims.Scope, "3gpp:mc:data_key_management_service")
+				containsWord(claims.Scope, scopeDataKeys)
 			video := claims.MCVideoID != "" && id == claims.MCVideoID && current.MCVideoID == claims.MCVideoID &&
-				containsWord(claims.Scope, "3gpp:mc:video_key_management_service")
+				containsWord(claims.Scope, scopeVideoKeys)
 			if !data && !video {
 				writeJSON(writer, http.StatusForbidden, map[string]string{"error": "forbidden_identity"})
 				return

@@ -316,6 +316,14 @@ void McServer::third_party_register(const SipMessage &message, SipResponse &resp
     response.headers = {{"Expires", expires.empty() ? "3600" : expires}};
     return;
   }
+  // TS 24.379 clause 7.2.1 (TS 24.281 clause 7.2.1) with clause 6.6.1.4: under confidentiality or integrity
+  // protection the REGISTER's access token and client ID are encrypted and its mcptt-info signed with the CSK. A
+  // REGISTER that uploads the CSK is opened with it (service_authorization); one that uploads none, a renewal of the
+  // authorisation, is opened with the CSK this server holds for the public user identity. The bodies of the
+  // client's REGISTER reach the server inside the message/sip body, past the SIP body filters.
+  if (std::none_of(parts.begin(), parts.end(),
+                   [](const auto &part) { return part.content_type == "application/mikey"; }))
+    if (!open_register_parts(identity, parts, response)) return;
   SipMessage inner = message;
   inner.method = "PUBLISH";
   inner.from_uri = identity;
@@ -332,6 +340,36 @@ void McServer::third_party_register(const SipMessage &message, SipResponse &resp
   // A REGISTER has no entity tag (RFC 3903 is for PUBLISH); the expiry is the registration's.
   response.headers = {{"Expires", expires.empty() ? "3600" : expires}};
   event("service_authorized_by_register", {{"user", identity}});
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 6.6.1.4 for the bodies of a client's REGISTER without a CSK upload: the signatures verified
+// (clause 6.6.3.4.2) and the protected content decrypted (clause 6.6.2.4.2) with the CSK held for the public user
+// identity. Returns false when the REGISTER is refused in `response` (403 with Warning 139 or 140).
+bool McServer::open_register_parts(const std::string &identity, std::vector<BodyPart> &parts, SipResponse &response) {
+  const auto key = user_xml_key(identity);
+  try {
+    parts = verify_parts(std::move(parts), key);
+  } catch (const std::exception &) {
+    response.status_code = 403;
+    response.headers = {{"Warning", warning_value(warn(Warning::integrity_check_failed))}};
+    return false;
+  }
+  for (auto &part : parts) {
+    if (!mcptt_xml_part(part.content_type) || !xmlsec::is_protected(part.body)) continue;
+    try {
+      const auto id = xmlsec::key_id(part.body);
+      if (!key || !id || *id != key->id) throw std::runtime_error("no XPK for the protected content");
+      part.body = xmlsec::decrypt(part.body, *key);
+      ++xml_decrypted_;
+    } catch (const std::exception &) {
+      ++xml_refused_;
+      response.status_code = 403;
+      response.headers = {{"Warning", warning_value(warn(Warning::decrypt_failed))}};
+      return false;
+    }
+  }
+  return true;
 }
 
 //------------------------------------------------------------------------------
@@ -534,8 +572,8 @@ bool McServer::client_document_subscribe(const SipMessage &message, const User &
   for (const auto &part : message.parts) {
     if (part.content_type != resource_lists_mime) continue;
     const auto groups = subscribed_groups(part.body);
-    const auto profiles = groups.empty() ? subscribed_profiles(part.body) : std::vector<std::string>{};
-    if (groups.empty() && profiles.empty()) continue;
+    const auto configuration = groups.empty() ? subscribed_configuration(part.body) : std::vector<ConfigDocument>{};
+    if (groups.empty() && configuration.empty()) continue;
     // TS 24.481 clause 6.3.13.3.2.2 step c and TS 24.484 clause 6.3.13.3.2.2 step c: the identity is that of the
     // access token.
     const auto claims = tokens_.verify(message_info(message, svc_).access_token, svc_);
@@ -543,7 +581,8 @@ bool McServer::client_document_subscribe(const SipMessage &message, const User &
       response.status_code = 403;
       return true;
     }
-    response = groups.empty() ? config_subscribe(message, user.id, profiles) : doc_subscribe(message, user.id, groups);
+    response =
+        groups.empty() ? config_subscribe(message, user.id, configuration) : doc_subscribe(message, user.id, groups);
     return true;
   }
   return false;
@@ -607,8 +646,22 @@ bool McServer::refresh_document_subscription(const SipMessage &message, SipRespo
     if (*expires != 0) sub.initial = true;
     schedule([this, id = message.dialog_id] { notify_documents(id); });
   } else {
-    configuration->second.expires = until;
-    if (*expires != 0) configuration->second.initial = true;
+    // TS 24.484 clause 6.3.13.3.2.2 (re-SUBSCRIBE): a resource list is the modified list of documents, checked as at
+    // the initial SUBSCRIBE (followed_configuration); 403 when none of them may be followed.
+    auto &sub = configuration->second;
+    for (const auto &part : message.parts)
+      if (part.content_type == resource_lists_mime && *expires != 0) {
+        const auto documents = subscribed_configuration(part.body);
+        auto etags =
+            documents.empty() ? decltype(sub.etags){} : followed_configuration(sub.subscriber, documents, &sub);
+        if (documents.empty() || etags.empty()) {
+          response.status_code = documents.empty() ? 400 : 403;
+          return true;
+        }
+        sub.etags = std::move(etags);
+      }
+    sub.expires = until;
+    if (*expires != 0) sub.initial = true;
     schedule([this, id = message.dialog_id] { notify_configuration(id); });
   }
   // RFC 6665 section 4.2.1.1: the 200 (OK) carries the duration granted.

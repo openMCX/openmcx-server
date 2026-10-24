@@ -91,6 +91,26 @@ int main() {
     throw std::runtime_error("SIP debug transport selection failed");
   cfg["sip"]["debug_port"] = 70000;
   rejects([&] { mcx::sip_config(cfg, true); }, "a debug port above 65535");
+  // TS 33.203 (sip.auth "aka"): the ISIM and P-CSCF settings, no TLS, names resolved; the engine accepts it.
+  mcx::Json aka = cfg;
+  aka["sip"]["auth"] = "aka";
+  aka["sip"]["advertise"] = "127.0.0.1";
+  aka["sip"]["port"] = 31900;
+  aka["sip"]["isim"] = {{"impi", "a@example.test"},
+                        {"k", "465b5ce8b199b49faa5f0a2ee238a6bc"},
+                        {"opc", "cd63cb71954a9f4e48a5994e37a02baf"},
+                        {"amf", "8000"}};
+  aka["sip"]["pcscf"] = {{"address", "localhost"}, {"port", 5060}};
+  const auto ims = mcx::sip_config(aka);
+  if (!ims.aka.enabled || ims.tls.enabled || ims.aka.pcscf_address != "127.0.0.1" || ims.aka.pcscf_port != 5060 ||
+      ims.aka.impi != "a@example.test" || ims.aka.unprotected_port != 5060)
+    throw std::runtime_error("IMS AKA configuration not taken");
+  { mcx::SipEngine accepted(ims); }
+  aka["sip"]["port"] = 5060;
+  rejects([&] { mcx::SipEngine engine(mcx::sip_config(aka)); }, "an IMS AKA protected server port 5060");
+  aka["sip"]["port"] = 31900;
+  aka["sip"]["isim"]["k"] = "465b";
+  rejects([&] { mcx::SipEngine engine(mcx::sip_config(aka)); }, "a short ISIM key");
   mcx::SipMessage message;
   message.headers = {{"P-Asserted-Identity", "<sip:alpha@example.test>"}};
   if (mcx::asserted_identity(message) != "sip:alpha@example.test") throw std::runtime_error("trusted identity lost");

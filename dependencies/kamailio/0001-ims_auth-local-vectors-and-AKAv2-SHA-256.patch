@@ -1,0 +1,534 @@
+From d6bd65a09082658f7a782679083f0953d5816826 Mon Sep 17 00:00:00 2001
+From: OpenMCX <noreply@openmcx.invalid>
+Date: Fri, 23 Oct 2026 09:22:41 +0200
+Subject: [PATCH] ims_auth: usable local IMS AKA vectors (av_mode=1), and HTTP
+ Digest AKAv2-SHA-256
+
+Kamailio 6.1.4 ims_auth with av_mode=1 (the S-CSCF makes the vectors from K,
+OPc and AMF set by ims_auth_data_set(), Milenage TS 35.206) cannot complete an
+IMS AKA registration (TS 33.203 clause 6.1, TS 24.229 clause 5.4.1.2):
+
+1. new_auth_userdata() leaves the record (its SQN, expiry, hash) uninitialised.
+2. The SQN went up by 1 over all 48 bits after the vector was made, so the
+   first vector of a user carried SEQ 0 and only IND moved; now each vector
+   gets a fresh SQN before it is made: SEQ + 1 and the next IND (5 bits)
+   (TS 33.102 annex C.1.1.2, C.1.2).
+3. With that, a resynchronisation sets the SQN to SQN_MS and the next vector
+   has SEQ_MS + 1 instead of repeating SQN_MS.
+4. MAC-S of AUTS is checked with the all-zero AMF (TS 33.102 clause 6.3.3),
+   not the subscriber's AMF, and with the RAND decoded from the vector's
+   base64 nonce (it took the first 16 characters of the base64 text).
+6. ims_auth_hexbin() stored a byte whenever the accumulated value was odd
+   ("r % 2") instead of after every second digit ("i % 2").
+7. ims_auth_data_set() marked OPc as given when it was empty.
+8. get_auth_vector() did not link a new local vector into an empty list and
+   did not return its hash slot.
+9. ims_auth_data_set() returned 0 on success, which ends the script.
+10. Two challenges in a row could carry the same RAND; RAND now comes from
+    getrandom() for every vector (TS 33.102 clause 6.3.2).
+
+And (5) HTTP Digest AKAv2 with SHA-256, which TS 33.203 clause 6.1.1 requires
+the S-CSCF to offer before AKAv1-MD5: with the new parameter aka_v2_sha256=1
+the 401 carries a WWW-Authenticate with algorithm=AKAv2-SHA-256 and then the
+AKAv1-MD5 one, for the same vector; the response is checked with the algorithm
+the Authorization names (TS 24.229 clause 5.4.1.2.2 step 3 b): password
+base64(HMAC-SHA-256(RES || IK || CK, "http-digest-akav2-password")) (RFC 4169
+section 3) and the SHA-256 digest of RFC 7616 section 3.4.1. No
+Authentication-Info is added for AKAv2-SHA-256.
+
+The modified files carry a notice of the change (GPL-2.0 section 2(a)).
+---
+ src/modules/ims_auth/auth_vector.c  |  37 +++++--
+ src/modules/ims_auth/authorize.c    | 161 ++++++++++++++++++++++++++--
+ src/modules/ims_auth/ims_auth_mod.c |  10 +-
+ src/modules/ims_auth/milenage.c     |   8 ++
+ src/modules/ims_auth/utils.c        |   4 +-
+ src/modules/ims_auth/utils.h        |   2 +-
+ 6 files changed, 199 insertions(+), 23 deletions(-)
+
+diff --git a/src/modules/ims_auth/auth_vector.c b/src/modules/ims_auth/auth_vector.c
+index 26acf36..e3b3251 100644
+--- a/src/modules/ims_auth/auth_vector.c
++++ b/src/modules/ims_auth/auth_vector.c
+@@ -1,4 +1,8 @@
+ /*
++ * Modified by OpenMCX on 2026-10-23 (GPL-2.0 section 2(a)): a fresh SQN per vector
++ * (SEQ and IND, TS 33.102 annex C.1.1.2 and C.1.2), and the resynchronisation's RAND
++ * decoded from the nonce and its MAC-S with the all-zero AMF (TS 33.102 clause 6.3.3).
++ *
+  * Copyright (C) 2024 Dragos Vingarzan (neatpath.net)
+  *
+  * This file is part of Kamailio, a free SIP server.
+@@ -23,6 +27,7 @@
+ #include "auth_vector.h"
+ 
+ #include "milenage.h"
++#include "conversion.h"
+ 
+ #include "../../core/mem/shm_mem.h"
+ 
+@@ -86,11 +91,13 @@ int auth_vector_resync_local(uint8_t sqnMSout[6], auth_vector *av,
+ 		uint8_t amf[2])
+ {
+ 	uint8_t rand[16];
++	uint8_t authenticate[64];
+ 	uint8_t op_c[16];
+ 	uint8_t ak[6];
+ 	uint8_t sqnMS[6];
+ 	uint8_t mac_s[8];
+ 	uint8_t xmac_s[8];
++	uint8_t amf_star[2] = {0, 0};
+ 
+ 	int i = 0;
+ 
+@@ -100,13 +107,16 @@ int auth_vector_resync_local(uint8_t sqnMSout[6], auth_vector *av,
+ 		return -1;
+ 	}
+ 
+-	// Extract RAND from the sent authenticate
+-	if(av->authenticate.len < 16 + 6 + 2 + 8) {
++	// Extract RAND from the sent authenticate, the base64 nonce of RAND || AUTN
++	if(av->authenticate.len > 4 * sizeof(authenticate) / 3
++			|| base64_to_bin(av->authenticate.s, av->authenticate.len,
++					   (char *)authenticate)
++					   < 16 + 6 + 2 + 8) {
+ 		LM_ERR("auth_vector authenticate len %d is too short\n",
+ 				av->authenticate.len);
+ 		return -1;
+ 	}
+-	memcpy(rand, av->authenticate.s, 16);
++	memcpy(rand, authenticate, 16);
+ 
+ 	// Compute OPc from K and OP, if not already provided
+ 	if(opIsOPc == 0)
+@@ -123,7 +133,7 @@ int auth_vector_resync_local(uint8_t sqnMSout[6], auth_vector *av,
+ 	memcpy(mac_s, auts + 6, 8);
+ 
+ 	// Compute XMAC-S
+-	f1star(xmac_s, k, op_c, rand, sqnMS, amf);
++	f1star(xmac_s, k, op_c, rand, sqnMS, amf_star);
+ 
+ 	// Check if MAC-S == XMAC-S
+ 	if(memcmp(mac_s, xmac_s, 8) != 0) {
+@@ -137,15 +147,20 @@ int auth_vector_resync_local(uint8_t sqnMSout[6], auth_vector *av,
+ 	return 0;
+ }
+ 
++// The next fresh SQN = SEQ || IND (5-bit IND): SEQ + 1 and the next IND
++// (TS 33.102 annex C.1.1.2 and C.1.2), so that each vector is fresh for the USIM.
+ void sqn_increment(uint8_t sqn[6])
+ {
+-	int i = 0;
++	uint64_t value = 0;
++	uint64_t seq, ind;
++	int i;
++	for(i = 0; i < 6; i++)
++		value = (value << 8) | sqn[i];
++	seq = ((value >> 5) + 1) & ((1ULL << 43) - 1);
++	ind = ((value & 0x1F) + 1) & 0x1F;
++	value = (seq << 5) | ind;
+ 	for(i = 5; i >= 0; i--) {
+-		if(sqn[i] == 0xFF) {
+-			sqn[i] = 0;
+-		} else {
+-			sqn[i]++;
+-			return;
+-		}
++		sqn[i] = value & 0xFF;
++		value >>= 8;
+ 	}
+ }
+diff --git a/src/modules/ims_auth/authorize.c b/src/modules/ims_auth/authorize.c
+index 6fa9937..a97a9bc 100644
+--- a/src/modules/ims_auth/authorize.c
++++ b/src/modules/ims_auth/authorize.c
+@@ -1,4 +1,10 @@
+ /*
++ * Modified by OpenMCX on 2026-10-23 (GPL-2.0 section 2(a)): IMS AKA vectors made
++ * locally (av_mode=1) - hex key parsing, the OPc flag, the first vector linked with
++ * its hash slot, a zeroed user record, a return value that keeps the script running;
++ * and HTTP Digest AKAv2 with SHA-256 (RFC 4169, RFC 7616) offered before AKAv1-MD5
++ * (aka_v2_sha256 parameter).
++ *
+  * Copyright (C) 2012 Smile Communications, jason.penton@smilecoms.com
+  * Copyright (C) 2012 Smile Communications, richard.good@smilecoms.com
+  *
+@@ -59,6 +65,7 @@
+ #include "../../core/mod_fix.h"
+ #include "../../core/mem/mem.h"
+ #include "../../core/rand/kam_rand.h"
++#include "../../core/crypto/sha256.h"
+ #include "../cdp/diameter.h"
+ #include "../cdp/diameter_ims_code_result.h"
+ 
+@@ -110,6 +117,7 @@ extern str scscf_name_str;
+ extern int ignore_failed_auth;
+ extern int av_check_only_impu;
+ extern int ims_auth_av_mode;
++extern int aka_v2_sha256;
+ 
+ auth_hash_slot_t *auth_data; /**< Authentication vector hash table */
+ static int act_auth_data_hash_size =
+@@ -132,6 +140,14 @@ str algorithm_types[] = {{"unknown", 7}, {"AKAv1-MD5", 9}, {"AKAv2-MD5", 9},
+ 		{"3GPP-Digest", 11}, {"TISPAN-HTTP_DIGEST_MD5", 22},
+ 		{"NASS-Bundled", 12}, {0, 0}};
+ 
++static str S_AKAv2_SHA256 = {"AKAv2-SHA-256", 13};
++static int pack_challenge_aka(struct sip_msg *msg, str *auth_prefix, str realm,
++		auth_vector *av, str *algorithm, char *ck, int ck_len, char *ik,
++		int ik_len, str qop);
++static void calc_akav2_sha256_response(str *username, str *realm,
++		auth_vector *av, str *nonce, str *nc, str *cnonce, str *qop,
++		int auth_int, str *method, str *uri, str *body, char *expected);
++
+ str auth_scheme_types[] = {{"unknown", 7}, {"Digest-AKAv1-MD5", 16},
+ 		{"Digest-AKAv2-MD5", 16}, {"Early-IMS-Security", 18},
+ 		{"Digest-MD5", 10}, {"Digest", 6}, {"SIP Digest", 10},
+@@ -178,7 +194,7 @@ static inline int ims_auth_hexbin(
+ 			LM_ERR("invalid char in hex value (%s)\n", fname);
+ 			return -1;
+ 		}
+-		if((r % 2) == 1) {
++		if((i % 2) == 1) {
+ 			obin[j] = r;
+ 			r = 0;
+ 			j++;
+@@ -203,7 +219,7 @@ int ims_auth_data_set(str *pk, str *pop, str *pop_c, str *pamf)
+ 	if(ret < 0) {
+ 		return -1;
+ 	}
+-	if(ret == 1) {
++	if(ret == 0) {
+ 		_ims_auth_data.flags |= IMS_AUTH_FLAG_OPC_SET;
+ 	}
+ 
+@@ -907,8 +923,10 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
+ 	unsigned int aud_hash = 0;
+ 	str realm;
+ 	str private_identity, public_identity, username;
+-	str nonce, response16, nc, cnonce, qop_str = {0, 0}, auts = {0, 0}, body,
+-									   *next_nonce = &empty_s;
++	str nonce, response16, nc, cnonce, qop_str = {0, 0}, auts = {0, 0}, body = {0, 0},
++									   *next_nonce = &empty_s, alg = {0, 0};
++	char expected_v2[65];
++	int akav2 = 0;
+ 	enum qop_type qop = QOP_UNSPEC;
+ 	str uri = {0, 0};
+ 	HASHHEX expected, ha1, hbody = {0}, rspauth;
+@@ -967,7 +985,7 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
+ 	}
+ 
+ 	if(!get_nonce_response(msg, &username, realm, &nonce, &response16, &qop,
+-			   &qop_str, &nc, &cnonce, &uri, is_proxy_auth)
++			   &qop_str, &nc, &cnonce, &uri, &alg, is_proxy_auth)
+ 			|| !nonce.len || !response16.len) {
+ 		LM_DBG("Nonce or response missing: nonce len [%i], response16 "
+ 			   "len[%i]\n",
+@@ -979,6 +997,9 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
+ 		body = ims_get_body(msg);
+ 		calc_H(&body, hbody);
+ 	}
++	/* the algorithm the Authorization names (TS 24.229 clause 5.4.1.2.2 step 3 b) */
++	akav2 = aka_v2_sha256 && alg.len == S_AKAv2_SHA256.len
++			&& strncasecmp(alg.s, S_AKAv2_SHA256.s, alg.len) == 0;
+ 
+ 	/* first, look for an already used vector (if nonce reuse is enabled) */
+ 	if(max_nonce_reuse > 0) {
+@@ -1061,6 +1082,15 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
+ 
+ 	switch(av->type) {
+ 		case AUTH_AKAV1_MD5:
++			if(akav2) {
++				calc_akav2_sha256_response(&username, &realm, av, &nonce, &nc,
++						&cnonce, &qop_str, qop == QOP_AUTHINT,
++						&msg->first_line.u.request.method, &uri, &body,
++						expected_v2);
++				expected_len = 64;
++				break;
++			}
++			/* fall through */
+ 		case AUTH_AKAV2_MD5:
+ 		case AUTH_MD5:
+ 			calc_HA1(HA_MD5, &username /*&private_identity*/, &realm,
+@@ -1096,7 +1126,9 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
+ 	expires = cscf_get_max_expires(msg, 0);
+ 
+ 	if(response16.len == expected_len
+-			&& strncasecmp(response16.s, expected, response16.len) == 0) {
++			&& strncasecmp(response16.s, akav2 ? expected_v2 : expected,
++					   response16.len)
++					   == 0) {
+ 		if(max_nonce_reuse > 0 && av->status == AUTH_VECTOR_SENT) {
+ 			/* first use of a reusable vector */
+ 			/* set the vector's new timeout */
+@@ -1152,7 +1184,7 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
+ 		}
+ 		ret = AUTH_OK;
+ 
+-		if(add_authinfo_hdr
++		if(add_authinfo_hdr && !akav2
+ 				&& expires != 0 /* don't add auth. info if de-registration */) {
+ 			/* calculate rspauth */
+ 			calc_response(ha1, &nonce, &nc, &cnonce, &qop_str,
+@@ -1296,6 +1328,7 @@ auth_vector *get_auth_vector(str private_identity, str public_identity,
+ 		av = av->next;
+ 	}
+ 	if(ims_auth_av_mode == 1 && status == AUTH_VECTOR_UNUSED) {
++		sqn_increment(aud->sqn);
+ 		if(_ims_auth_data.flags & IMS_AUTH_FLAG_OPC_SET) {
+ 			av = auth_vector_make_local(_ims_auth_data.k, _ims_auth_data.op_c,
+ 					1, _ims_auth_data.amf, aud->sqn);
+@@ -1304,12 +1337,14 @@ auth_vector *get_auth_vector(str private_identity, str public_identity,
+ 					_ims_auth_data.amf, aud->sqn);
+ 		}
+ 		if(av) {
+-			sqn_increment(aud->sqn);
+ 			av->next = aud->head;
+ 			if(aud->head) {
+ 				aud->head->prev = av;
+-				aud->head = av;
++			} else {
++				aud->tail = av;
+ 			}
++			aud->head = av;
++			*hash = aud->hash;
+ 			return av;
+ 		}
+ 	}
+@@ -1596,6 +1631,7 @@ auth_userdata *new_auth_userdata(str private_identity, str public_identity)
+ 		LM_ERR("error allocating mem\n");
+ 		goto done;
+ 	}
++	memset(x, 0, sizeof(auth_userdata));
+ 
+ 	x->private_identity.len = private_identity.len;
+ 	x->private_identity.s = shm_malloc(private_identity.len);
+@@ -1851,6 +1887,11 @@ int pack_challenge(
+ 			/* AKA */
+ 			ck_len = bin_to_base16(av->ck.s, 16, ck);
+ 			ik_len = bin_to_base16(av->ik.s, 16, ik);
++			if(aka_v2_sha256 && av->type == AUTH_AKAV1_MD5
++					&& !pack_challenge_aka(msg, auth_prefix, realm, av,
++							&S_AKAv2_SHA256, ck, ck_len, ik, ik_len, qop)) {
++				goto error;
++			}
+ 			x.len = S_Authorization_AKA.len + auth_prefix->len + realm.len
+ 					+ av->authenticate.len + algorithm_types[av->type].len
+ 					+ ck_len + ik_len + qop.len;
+@@ -1910,6 +1951,108 @@ error:
+ 	return 0;
+ }
+ 
++/**
++ * Adds a WWW-Authenticate header field of the vector with the given algorithm: TS 33.203
++ * clause 6.1.1, the S-CSCF offers "AKAv2-SHA-256" first, then "AKAv1-MD5", with one
++ * vector (the same nonce).
++ */
++static int pack_challenge_aka(struct sip_msg *msg, str *auth_prefix, str realm,
++		auth_vector *av, str *algorithm, char *ck, int ck_len, char *ik,
++		int ik_len, str qop)
++{
++	str x = {0, 0};
++
++	x.len = S_Authorization_AKA.len + auth_prefix->len + realm.len
++			+ av->authenticate.len + algorithm->len + ck_len + ik_len + qop.len;
++	x.s = pkg_malloc(x.len);
++	if(!x.s) {
++		LM_ERR("Error allocating %d bytes\n", x.len);
++		return 0;
++	}
++	sprintf(x.s, S_Authorization_AKA.s, auth_prefix->len, auth_prefix->s,
++			realm.len, realm.s, av->authenticate.len, av->authenticate.s,
++			algorithm->len, algorithm->s, ck_len, ck, ik_len, ik, qop.len, qop.s);
++	x.len = strlen(x.s);
++	if(ims_add_header_rpl(msg, &x)) {
++		pkg_free(x.s);
++		return 1;
++	}
++	pkg_free(x.s);
++	return 0;
++}
++
++/**
++ * HTTP Digest AKAv2 with SHA-256 (RFC 4169 section 3, TS 33.203 clause 6.1.1): the
++ * password is base64(HMAC-SHA-256(RES || IK || CK, "http-digest-akav2-password")) and
++ * the response the SHA-256 digest of RFC 7616 section 3.4.1 (qop "auth" or
++ * "auth-int"), as lower-case hex in expected (65 bytes).
++ */
++static void calc_akav2_sha256_response(str *username, str *realm,
++		auth_vector *av, str *nonce, str *nc, str *cnonce, str *qop,
++		int auth_int, str *method, str *uri, str *body, char *expected)
++{
++	static const char label[] = "http-digest-akav2-password";
++	unsigned char key[64], pad[64], inner[32], digest[32];
++	char password[48], ha1[65], ha2[65], hbody[65];
++	SHA256_CTX ctx;
++	int key_len = 0, password_len, i;
++
++	/* HMAC-SHA-256 (RFC 2104) keyed with RES || IK || CK */
++	memset(key, 0, sizeof(key));
++	memcpy(key, av->authorization.s, av->authorization.len);
++	key_len = av->authorization.len;
++	memcpy(key + key_len, av->ik.s, 16);
++	memcpy(key + key_len + 16, av->ck.s, 16);
++	for(i = 0; i < 64; i++)
++		pad[i] = key[i] ^ 0x36;
++	sr_SHA256_Init(&ctx);
++	sr_SHA256_Update(&ctx, pad, 64);
++	sr_SHA256_Update(&ctx, (const uint8_t *)label, sizeof(label) - 1);
++	sr_SHA256_Final(inner, &ctx);
++	for(i = 0; i < 64; i++)
++		pad[i] = key[i] ^ 0x5c;
++	sr_SHA256_Init(&ctx);
++	sr_SHA256_Update(&ctx, pad, 64);
++	sr_SHA256_Update(&ctx, inner, 32);
++	sr_SHA256_Final(digest, &ctx);
++	password_len = bin_to_base64((char *)digest, 32, password);
++
++#define AKAV2_SHA256(out, ...)                                              \
++	do {                                                                    \
++		str parts[] = {__VA_ARGS__};                                        \
++		unsigned int p;                                                     \
++		sr_SHA256_Init(&ctx);                                               \
++		for(p = 0; p < sizeof(parts) / sizeof(parts[0]); p++) {             \
++			if(p)                                                           \
++				sr_SHA256_Update(&ctx, (const uint8_t *)":", 1);            \
++			sr_SHA256_Update(                                               \
++					&ctx, (const uint8_t *)parts[p].s, parts[p].len);       \
++		}                                                                   \
++		sr_SHA256_Final(digest, &ctx);                                      \
++		bin_to_base16((char *)digest, 32, out);                             \
++		out[64] = '\0';                                                     \
++	} while(0)
++
++	AKAV2_SHA256(ha1, *username, *realm, ((str){password, password_len}));
++	if(auth_int) {
++		sr_SHA256_Init(&ctx);
++		sr_SHA256_Update(&ctx, (const uint8_t *)body->s, body->len);
++		sr_SHA256_Final(digest, &ctx);
++		bin_to_base16((char *)digest, 32, hbody);
++		hbody[64] = '\0';
++		AKAV2_SHA256(ha2, *method, *uri, ((str){hbody, 64}));
++	} else {
++		AKAV2_SHA256(ha2, *method, *uri);
++	}
++	if(qop->len) {
++		AKAV2_SHA256(expected, ((str){ha1, 64}), *nonce, *nc, *cnonce, *qop,
++				((str){ha2, 64}));
++	} else {
++		AKAV2_SHA256(expected, ((str){ha1, 64}), *nonce, ((str){ha2, 64}));
++	}
++#undef AKAV2_SHA256
++}
++
+ /**
+  * Adds the Authentication-Info header for, based on the credentials sent by a successful REGISTER.
+  * @param msg - SIP message to add the header to
+diff --git a/src/modules/ims_auth/ims_auth_mod.c b/src/modules/ims_auth/ims_auth_mod.c
+index fe913e9..c749dcf 100644
+--- a/src/modules/ims_auth/ims_auth_mod.c
++++ b/src/modules/ims_auth/ims_auth_mod.c
+@@ -1,4 +1,7 @@
+ /*
++ * Modified by OpenMCX on 2026-10-23 (GPL-2.0 section 2(a)): the aka_v2_sha256
++ * parameter, and ims_auth_data_set() returning 1 on success.
++ *
+  * Copyright (C) 2012 Smile Communications, jason.penton@smilecoms.com
+  * Copyright (C) 2012 Smile Communications, richard.good@smilecoms.com
+  *
+@@ -140,6 +143,9 @@ int ignore_failed_auth = 0;
+ /* authentication vectors mode: 0 - diameter/hss; 1 - local */
+ int ims_auth_av_mode = 0;
+ 
++/* 1: offer HTTP Digest AKAv2-SHA-256 before AKAv1-MD5 (TS 33.203 clause 6.1.1) */
++int aka_v2_sha256 = 0;
++
+ static int w_ims_auth_data_set(
+ 		sip_msg_t *msg, char *_k, char *_op, char *_op_c, char *_amf);
+ static int w_ims_auth_data_reset(sip_msg_t *msg, char *_p1, char *_p2);
+@@ -182,6 +188,7 @@ static param_export_t params[] = {{"name", PARAM_STR, &scscf_name_str},
+ 	{"av_request_at_once", PARAM_INT, &av_request_at_once},
+ 	{"av_request_at_sync", PARAM_INT, &av_request_at_sync},
+ 	{"av_mode", PARAM_INT, &ims_auth_av_mode},
++	{"aka_v2_sha256", PARAM_INT, &aka_v2_sha256},
+ 	{"registration_default_algorithm", PARAM_STR, &registration_default_algorithm},
+ 	{"registration_qop", PARAM_STR, &registration_qop},
+ 	{"invite_qop", PARAM_STR, &invite_qop},
+@@ -427,7 +434,8 @@ static int w_ims_auth_data_set(
+ 	}
+ 
+ 
+-	return ims_auth_data_set(&k, &op, &op_c, &amf);
++	/* 0 would end the script: 1 on success, -1 on error */
++	return ims_auth_data_set(&k, &op, &op_c, &amf) == 0 ? 1 : -1;
+ }
+ 
+ static int w_ims_auth_data_reset(sip_msg_t *msg, char *_p1, char *_p2)
+diff --git a/src/modules/ims_auth/milenage.c b/src/modules/ims_auth/milenage.c
+index da8e9fb..f713445 100644
+--- a/src/modules/ims_auth/milenage.c
++++ b/src/modules/ims_auth/milenage.c
+@@ -1,3 +1,7 @@
++/*
++ * Modified by OpenMCX on 2026-10-23 (GPL-2.0 section 2(a)): RAND from the kernel's
++ * random source, a fresh one per vector (TS 33.102 clause 6.3.2).
++ */
+ /*-------------------------------------------------------------------
+  *          Example algorithms f1, f1*, f2, f3, f4, f5, f5*
+  *-------------------------------------------------------------------
+@@ -18,6 +22,7 @@
+ #include "milenage.h"
+ 
+ #include <stdint.h>
++#include <sys/random.h>
+ 
+ #include "../../core/dprint.h"
+ #include "../../core/rand/cryptorand.h"
+@@ -61,6 +66,9 @@ void ComputeOPc(uint8_t op_c[16], uint8_t k[16], uint8_t op[16])
+  *-----------------------------------------------------------------*/
+ void f0(uint8_t rand[16])
+ {
++	/* TS 33.102 clause 6.3.2: a fresh, unpredictable RAND for every vector */
++	if(getrandom(rand, 16, 0) == 16)
++		return;
+ 	uint32_t u32 = cryptorand();
+ 	memcpy(rand, &u32, 4);
+ 	u32 = cryptorand();
+diff --git a/src/modules/ims_auth/utils.c b/src/modules/ims_auth/utils.c
+index 848ae98..0a5d92b 100644
+--- a/src/modules/ims_auth/utils.c
++++ b/src/modules/ims_auth/utils.c
+@@ -154,7 +154,7 @@ int ims_find_credentials(struct sip_msg *_m, str *_realm, hdr_types_t _hftype,
+  */
+ int get_nonce_response(struct sip_msg *msg, str *username, str realm,
+ 		str *nonce, str *response, enum qop_type *qop, str *qop_str, str *nc,
+-		str *cnonce, str *uri, int is_proxy_auth)
++		str *cnonce, str *uri, str *alg, int is_proxy_auth)
+ {
+ 	struct hdr_field *h = 0;
+ 	int ret;
+@@ -199,6 +199,8 @@ int get_nonce_response(struct sip_msg *msg, str *username, str realm,
+ 			*uri = ((auth_body_t *)h->parsed)->digest.uri;
+ 		if(username)
+ 			*username = ((auth_body_t *)h->parsed)->digest.username.whole;
++		if(alg)
++			*alg = ((auth_body_t *)h->parsed)->digest.alg.alg_str;
+ 	}
+ 	LM_DBG("Found nonce response\n");
+ 	return 1;
+diff --git a/src/modules/ims_auth/utils.h b/src/modules/ims_auth/utils.h
+index 0773e4c..2050fea 100644
+--- a/src/modules/ims_auth/utils.h
++++ b/src/modules/ims_auth/utils.h
+@@ -56,7 +56,7 @@
+ 
+ int get_nonce_response(struct sip_msg *msg, str *username, str realm,
+ 		str *nonce, str *response, enum qop_type *qop, str *qop_str, str *nc,
+-		str *cnonce, str *uri, int is_proxy_auth);
++		str *cnonce, str *uri, str *alg, int is_proxy_auth);
+ str ims_get_body(struct sip_msg *msg);
+ str ims_get_auts(struct sip_msg *msg, str realm, int is_proxy_auth);
+ str ims_get_nonce(struct sip_msg *msg, str realm);
+-- 
+2.53.0
+
