@@ -46,7 +46,7 @@ python3 tools/prepare-prearranged-test.py --directory artifacts/mcdata-ipconn-la
 C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-mcdata-ipconn -f artifacts/mcdata-ipconn-lab/compose.json"
 $C up -d mcdata-server                      # start the capture before the clients authorise
 docker run -d --rm --name openmcx-mcdata-ipconn-capture --network "container:$($C ps -q mcdata-server)" \
-  --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.2 \
+  --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.3 \
   sh -c "tcpdump -Z root -i eth0 -U --immediate-mode -s 0 -w /tmp/c.pcap 'tcp port 5060 or (udp and not port 53)'"
 $C up -d
 python3 tests/integration/mcdata_ipconn_scenario.py \

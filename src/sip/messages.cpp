@@ -17,7 +17,10 @@ namespace mcx {
 // SIPS (TS 24.229): TLS protects the hop, and a SIPS Contact is only sent where RFC 3261 requires it (as_sips).
 [[nodiscard]] std::string SipEngine::Impl::contact_target() const {
   return "sip:" + identity_user(config.identity) + "@" + config.advertise_address + ":" +
-         std::to_string(config.listen_port) + (config.tls.enabled ? ";transport=tls" : ";transport=tcp") +
+         std::to_string(config.listen_port) +
+         (config.tls.enabled ? ";transport=tls"
+          : config.aka.udp   ? ";transport=udp"
+                             : ";transport=tcp") +
          (config.outbound_instance.empty() ? "" : ";ob");
 }
 

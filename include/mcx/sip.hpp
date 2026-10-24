@@ -44,9 +44,9 @@ struct SipHeader {
 //------------------------------------------------------------------------------
 // TS 33.203 and TS 24.229 clause 5.1.1.2.2: IMS AKA as the security mechanism of a UE (3GPP access, TS 33.180 clause
 // 6.2.1): the ISIM's private user identity and keys, and the P-CSCF the UE is preconfigured with (TS 24.229 clause
-// 5.1.1.2.1: the unprotected REGISTER goes to its unprotected port). The SIP signalling then runs over TCP inside
-// IPsec ESP security associations (TS 33.203 clause 7) instead of TLS and digest; listen_port is the protected server
-// port port_us, which stays fixed (TS 33.203 clause 7.1 NOTE 10).
+// 5.1.1.2.1: the unprotected REGISTER goes to its unprotected port). The SIP signalling then runs over TCP, or UDP,
+// inside IPsec ESP security associations (TS 33.203 clause 7) instead of TLS and digest; listen_port is the protected
+// server port port_us, which stays fixed (TS 33.203 clause 7.1 NOTE 10).
 struct SipImsAkaConfig {
   bool enabled = false;
   std::string impi;                 // the private user identity, the username of the Authorization header field
@@ -60,6 +60,10 @@ struct SipImsAkaConfig {
   // res_length bytes, for a test system's challenges.
   std::string algorithm = "milenage";
   unsigned res_length = 16;
+  // TS 24.229 clause 4.2A and RFC 3261 clause 18: SIP over UDP (TS 33.203 clause 7.1, UDP case: requests and
+  // responses from port_uc to port_ps, everything received on port_us), requests of 1300 bytes or more over TCP from
+  // port_uc; false: SIP over TCP.
+  bool udp = false;
 };
 
 //------------------------------------------------------------------------------

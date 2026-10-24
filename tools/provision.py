@@ -571,6 +571,9 @@ TLS_CA = "/config/tls/ca.crt";
                     pcscf={"address": "pcscf", "port": 5060},
                     port=AKA_PROTECTED_SERVER_PORT,
                 )
+                # TS 24.229 clause 4.2A: SIP over UDP towards the P-CSCF when the lab asks for it ("aka_transport").
+                if source.get("aka_transport", "tcp") == "udp":
+                    cfg["sip"]["transport"] = "udp"
             cfg.update(
                 mcptt={
                     "user_id": user["mcptt_id"],

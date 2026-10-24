@@ -1224,7 +1224,7 @@ def add_mock_pcf(compose, fixture):
     """The mock PCF: tests/integration/mock_pcf.go, run with the Go toolchain of the development image."""
     server = compose['services']['mcptt-server']
     compose['services']['mock-pcf'] = {
-        'image': 'openmcx-dev:0.2',
+        'image': 'openmcx-dev:0.3',
         'init': True,
         'entrypoint': ['go', 'run', '/mock/mock_pcf.go'],
         'command': ['-listen', ':8080', '-record', '/artifacts/mock-pcf/requests.jsonl'],
@@ -1267,7 +1267,7 @@ def add_mock_pcrf(compose, fixture):
     domain = json.loads((fixture / 'generated/site.json').read_text())['domain']
     server = compose['services']['mcptt-server']
     compose['services']['mock-pcrf'] = {
-        'image': 'openmcx-dev:0.2',
+        'image': 'openmcx-dev:0.3',
         'init': True,
         'entrypoint': ['python3', '/mock/mock_pcrf.py'],
         'command': ['--identity', f'mock-pcrf.{domain}', '--realm', domain, '--record',
@@ -1975,6 +1975,13 @@ def main():
         'client-a and client-b, and also with --admin (a tutorial\'s UE on 3GPP access, TS 33.180 clause 6.2.1)',
     )
     parser.add_argument(
+        '--aka-transport',
+        choices=['tcp', 'udp'],
+        default='tcp',
+        help='the IMS AKA clients\' SIP transport towards the P-CSCF (TS 24.229 clause 4.2A, TS 33.203 clause 7.1): '
+        'TCP (default) or UDP, with requests of 1300 bytes or more over TCP (RFC 3261 section 18.1.1)',
+    )
+    parser.add_argument(
         '--keycloak',
         metavar='IMAGE',
         help='Keycloak (this image) as IdMS instead of OpenMCX\'s (TS 33.180 annex B)',
@@ -2039,6 +2046,10 @@ def main():
         # add_admin makes MCX Admin's activated device (client-e) from client-c's local settings.
         parser.error('--aka-role client-c excludes --admin: client-c is the template of the activated device')
     aka_roles = sorted(set(args.aka_role or [])) or (['client-a', 'client-b'] if args.aka else [])
+    if args.aka_transport != 'tcp':
+        if not aka_roles:
+            parser.error('--aka-transport needs --aka or --aka-role')
+        source['aka_transport'] = args.aka_transport
     for user in source['users']:
         if user['role'] in aka_roles:
             user['auth'] = 'aka'

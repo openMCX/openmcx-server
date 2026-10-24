@@ -231,6 +231,9 @@ void validate_aka_config(const SipConfig &config) {
     throw std::invalid_argument("unknown ISIM algorithm (milenage or test)");
   if (aka.algorithm == "milenage" || !aka.opc.empty()) (void)aka::key_from_hex(aka.opc);
   if (aka.res_length < 4 || aka.res_length > 16) throw std::invalid_argument("ISIM RES length must be 4 to 16 bytes");
+  // RFC 5626 section 4.4.2: a flow over UDP is kept alive with STUN, which this engine does not send.
+  if (aka.udp && !config.outbound_instance.empty())
+    throw std::invalid_argument("SIP outbound (RFC 5626) over UDP is not supported: no STUN keepalives");
   (void)aka::amf_from_hex(aka.amf);
   const auto identity = ascii_lower(config.identity);
   if (!identity.starts_with("sip:")) throw std::invalid_argument("SIP identity must be a sip: URI");

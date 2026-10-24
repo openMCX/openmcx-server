@@ -38,9 +38,12 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   that is not an IMS, and TS 33.203 annexes N.1 and O.1.1 exclude SIP digest and TLS access security on access networks
   defined by 3GPP. OpenMCX chooses the scheme per private user identity, as the HSS stores it (TS 29.228 clause 6.3.1
   step 4): an identity provisioned for IMS AKA registers through the P-CSCF with a software ISIM (K and OPc of its own,
-  MILENAGE), the security agreement and IPsec ESP security associations in transport mode, SIP over TCP inside them;
-  every other identity uses SIP digest over TLS. IMS AKA is used by the Linux client inside the 5G UE of
-  [tutorial 3](../tutorials/end-to-end/03-mcx-over-oai-5g/README.md) and by the `aka` regression lab; the SIP core makes
+  MILENAGE, or the test algorithm of TS 34.108 clause 8.1.2 for a conformance test system), the security agreement
+  and IPsec ESP security associations in transport mode, SIP over TCP or UDP inside them (UDP: requests of 1300 bytes
+  or more over TCP, RFC 3261 section 18.1.1; no SIP outbound over UDP, which would need STUN keepalives); every other
+  identity uses SIP digest over TLS. IMS AKA is used by the Linux client inside the 5G UE of
+  [tutorial 3](../tutorials/end-to-end/03-mcx-over-oai-5g/README.md) and by the `aka` and `aka-udp` regression labs; the
+  SIP core makes
   the vectors itself (Kamailio `ims_auth`, no HSS over Cx), offering AKAv2-SHA-256 and then AKAv1-MD5. Its SQN is kept
   in memory: after a restart of the SIP core each UE resynchronises once (AUTS). Not done yet: emergency registration
   (TS 24.229 clause 5.1.6); IPv6 (the IMS AKA path is tested on IPv4 only); a complete clean-up of the old security

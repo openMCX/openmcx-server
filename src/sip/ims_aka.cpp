@@ -4,13 +4,15 @@
 
 // IMS AKA registration of SipEngine::Impl (SipConfig::aka): the UE's own REGISTER transactions with sec-agree
 // (RFC 3329), the authentication by the software ISIM (include/mcx/ims_aka.hpp), its sets of IPsec security
-// associations over XFRM (include/mcx/xfrm.hpp) and the SIP signalling over TCP inside them: requests from the
+// associations over XFRM (include/mcx/xfrm.hpp) and the SIP signalling inside them, over TCP (requests from the
 // protected client port port_uc to the P-CSCF's protected server port port_ps, requests of the P-CSCF accepted on the
-// protected server port port_us (TS 33.203 clause 7.1).
+// protected server port port_us) or over UDP (requests and responses from port_uc to port_ps, everything received on
+// port_us; requests of 1300 bytes or more, and the requests of a dialog whose route set names TCP, over TCP), TS 33.203
+// clause 7.1, TS 24.229 clause 4.2A.
 //
 // Specifications: TS 24.229 V19.7.0 (Rel-19) clauses 5.1.1.2, 5.1.1.4, 5.1.1.5, 5.1.1.6 and 5.1.2A.1,
 // TS 33.203 V19.1.0 (Rel-19) clauses 6.1, 6.3, 7.1 to 7.4 and annexes H and I, TS 33.102 V19.1.0 (Rel-19),
-// RFC 3261, RFC 3310, RFC 3329, RFC 4169.
+// RFC 3261 (clause 18), RFC 3310, RFC 3329, RFC 4169.
 
 #include "mcx/runtime.hpp"
 #include "sip_impl.hpp"
@@ -46,11 +48,11 @@ std::uint32_t random_u32() {
 }
 
 //------------------------------------------------------------------------------
-// Helper: whether a TCP port of the address can be bound now (a port the system or another program uses cannot be
-// a protected client port).
-bool tcp_port_free(const std::string &address, std::uint16_t port) {
+// Helper: whether a TCP (or UDP) port of the address can be bound now (a port the system or another program uses
+// cannot be a protected client port).
+bool port_free(const std::string &address, std::uint16_t port, int type = SOCK_STREAM) {
   const bool v6 = address.find(':') != std::string::npos;
-  const int fd = ::socket(v6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
+  const int fd = ::socket(v6 ? AF_INET6 : AF_INET, type, 0);
   if (fd < 0) return false;
   int enabled = 1;
   (void)::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled));
@@ -140,6 +142,19 @@ pjsip_tpselector transport_selector(pjsip_transport *transport) {
 }
 
 //------------------------------------------------------------------------------
+// Helper: a UDP transport bound to the address and port, published with the advertised address and a port for Via.
+pjsip_transport *start_udp(pjsip_endpoint *endpoint, const pj_sockaddr &local, std::uint16_t port,
+                           const pjsip_host_port &advertised, std::uint16_t published_port, const char *what) {
+  pj_sockaddr bound = local;
+  pj_sockaddr_set_port(&bound, port);
+  pjsip_host_port name = advertised;
+  name.port = published_port;
+  pjsip_transport *transport = nullptr;
+  require_success(pjsip_udp_transport_start(endpoint, &bound.ipv4, &name, 1, &transport), what);
+  return transport;
+}
+
+//------------------------------------------------------------------------------
 // Helper: the numeric address and port as a pjlib socket address.
 pj_sockaddr socket_address(const std::string &address, std::uint16_t port) {
   pj_sockaddr out{};
@@ -178,6 +193,22 @@ void SipEngine::Impl::aka_start(const pj_sockaddr &local, const pjsip_host_port 
   require_success(
       pjsip_tcp_transport_start2(endpoint, &unprotected.ipv4, &unprotected_name, 1, &aka->unprotected_factory),
       "start the IMS AKA unprotected SIP TCP transport");
+  if (config.aka.udp) {
+#ifndef PJSIP_HAS_UDP_TO_TCP_CALLBACK
+    throw std::runtime_error("IMS AKA over UDP needs pjproject with dependencies/pjproject/0002-udp-to-tcp.patch "
+                             "(development image 0.3)");
+#else
+    // TS 33.203 clause 7.1, UDP case: port_us receives; what pjsip sends on it (responses to the P-CSCF's requests)
+    // leaves from port_uc of the set in use (aka_udp_send). RFC 3261 section 18.1.1: large requests over TCP.
+    aka->udp_us = start_udp(endpoint, local, config.listen_port, advertised, config.listen_port,
+                            "start the IMS AKA protected SIP UDP transport");
+    aka->udp_us_send = aka->udp_us->send_msg;
+    aka->udp_us->send_msg = &Impl::aka_udp_send;
+    aka->udp_unprotected = start_udp(endpoint, local, config.aka.unprotected_port, advertised,
+                                     config.aka.unprotected_port, "start the IMS AKA unprotected SIP UDP transport");
+    pjsip_set_udp_to_tcp_callback(&Impl::aka_udp_to_tcp);
+#endif
+  }
   aka_module.name = pj_view("mod-openmcx-ims-aka");
   aka_module.id = -1;
   // After the SIP message log, before the transaction layer.
@@ -203,6 +234,12 @@ void SipEngine::Impl::aka_stop() noexcept {
   aka_delete(aka->old);
   aka_delete(aka->current);
   if (aka->unprotected_connection != nullptr) (void)pjsip_transport_dec_ref(aka->unprotected_connection);
+#ifdef PJSIP_HAS_UDP_TO_TCP_CALLBACK
+  if (aka->udp_us != nullptr) {
+    pjsip_set_udp_to_tcp_callback(nullptr);
+    aka->udp_us->send_msg = aka->udp_us_send;
+  }
+#endif
   aka.reset();
 }
 
@@ -233,7 +270,9 @@ aka::SecMechanism SipEngine::Impl::aka_new_offer() const {
   }
   for (int attempt = 0; attempt < 200 && !offer.port_c; ++attempt) {
     const auto port = static_cast<std::uint16_t>(20000 + random_u32() % 40000);
-    if (!ports.contains(port) && tcp_port_free(config.listen_address, port)) offer.port_c = port;
+    if (!ports.contains(port) && port_free(config.listen_address, port) &&
+        (!config.aka.udp || port_free(config.listen_address, port, SOCK_DGRAM)))
+      offer.port_c = port;
   }
   if (!offer.port_c) throw std::runtime_error("IMS AKA: no free protected client port");
   offer.port_s = config.listen_port;
@@ -295,7 +334,8 @@ void SipEngine::Impl::aka_send_register(AkaRoute route, bool new_offer, const st
     throw std::invalid_argument("invalid SIP outbound instance");
   const auto target_uri = route == AkaRoute::unprotected
                               ? "sip:" + identity_user(config.identity) + "@" + uri_host(config.advertise_address) +
-                                    ":" + std::to_string(config.aka.unprotected_port) + ";transport=tcp" +
+                                    ":" + std::to_string(config.aka.unprotected_port) +
+                                    (config.aka.udp ? ";transport=udp" : ";transport=tcp") +
                                     (instance.empty() ? "" : ";ob")
                               : contact_target();
   const auto contact_text = "<" + target_uri + ">" +
@@ -327,33 +367,20 @@ void SipEngine::Impl::aka_send_register(AkaRoute route, bool new_offer, const st
   add_raw_header(data.get(), "Supported", "path");
   if (!aka->content_type.empty()) data->msg->body = make_text_body(data->pool, aka->content_type, aka->body);
 
-  // The P-CSCF's unprotected port, or its protected server port port_ps over the set's connection from port_uc.
+  // The P-CSCF's unprotected port, or its protected server port port_ps from port_uc: over the set's connection, or
+  // its UDP transport (a large REGISTER still goes over the connection, RFC 3261 section 18.1.1, aka_udp_to_tcp).
   pjsip_transport *connection = nullptr;
   std::uint16_t port = config.aka.pcscf_port;
   if (set != nullptr) {
-    connection = aka_connection(*set);
+    connection = aka_request_transport(*set);
     port = set->port_ps;
   } else {
-    if (aka->unprotected_connection == nullptr || aka->unprotected_connection->is_shutdown ||
-        aka->unprotected_connection->is_destroying) {
-      if (aka->unprotected_connection != nullptr) (void)pjsip_transport_dec_ref(aka->unprotected_connection);
-      aka->unprotected_connection = nullptr;
-      const auto destination = socket_address(config.aka.pcscf_address, config.aka.pcscf_port);
-      pjsip_tpselector selector{};
-      selector.type = PJSIP_TPSELECTOR_LISTENER;
-      selector.u.listener = aka->unprotected_factory;
-      selector.disable_connection_reuse = PJ_TRUE;
-      require_success(pjsip_endpt_acquire_transport2(endpoint, PJSIP_TRANSPORT_TCP, &destination,
-                                                     pj_sockaddr_get_len(&destination), &selector, nullptr,
-                                                     &aka->unprotected_connection),
-                      "connect to the P-CSCF");
-    }
-    connection = aka->unprotected_connection;
+    connection = config.aka.udp ? aka->udp_unprotected : aka_unprotected_connection();
   }
   const auto destination = socket_address(config.aka.pcscf_address, port);
   data->dest_info.addr.count = 1;
   data->dest_info.cur_addr = 0;
-  data->dest_info.addr.entry[0].type = PJSIP_TRANSPORT_TCP;
+  data->dest_info.addr.entry[0].type = config.aka.udp ? PJSIP_TRANSPORT_UDP : PJSIP_TRANSPORT_TCP;
   data->dest_info.addr.entry[0].priority = 0;
   data->dest_info.addr.entry[0].weight = 0;
   pj_memcpy(&data->dest_info.addr.entry[0].addr, &destination, sizeof(destination));
@@ -392,6 +419,74 @@ pjsip_transport *SipEngine::Impl::aka_connection(AkaSet &set) {
 }
 
 //------------------------------------------------------------------------------
+// Helper: the TCP connection to the P-CSCF's unprotected port, from the unprotected port (TS 24.229 clause 5.1.1.2.1),
+// set up when it is missing or closed.
+pjsip_transport *SipEngine::Impl::aka_unprotected_connection() {
+  if (aka->unprotected_connection != nullptr && !aka->unprotected_connection->is_shutdown &&
+      !aka->unprotected_connection->is_destroying)
+    return aka->unprotected_connection;
+  if (aka->unprotected_connection != nullptr) (void)pjsip_transport_dec_ref(aka->unprotected_connection);
+  aka->unprotected_connection = nullptr;
+  const auto destination = socket_address(config.aka.pcscf_address, config.aka.pcscf_port);
+  pjsip_tpselector selector{};
+  selector.type = PJSIP_TPSELECTOR_LISTENER;
+  selector.u.listener = aka->unprotected_factory;
+  selector.disable_connection_reuse = PJ_TRUE;
+  require_success(pjsip_endpt_acquire_transport2(endpoint, PJSIP_TRANSPORT_TCP, &destination,
+                                                 pj_sockaddr_get_len(&destination), &selector, nullptr,
+                                                 &aka->unprotected_connection),
+                  "connect to the P-CSCF");
+  return aka->unprotected_connection;
+}
+
+//------------------------------------------------------------------------------
+// Helper: the transport the requests of a set are pinned to: its UDP transport on port_uc, or its TCP connection.
+pjsip_transport *SipEngine::Impl::aka_request_transport(AkaSet &set) {
+  return config.aka.udp ? set.udp : aka_connection(set);
+}
+
+//------------------------------------------------------------------------------
+// TS 33.203 clause 7.1, UDP case: "The UE sends requests and responses protected with ESP on the port port_uc": a
+// message pjsip sends on port_us (a response to a request of the P-CSCF) goes out on the UDP transport of port_uc of
+// the set in use, to port_ps. Without a set nothing is sent there (rule 4: no unprotected messages on these ports).
+pj_status_t SipEngine::Impl::aka_udp_send(pjsip_transport * /*transport*/, pjsip_tx_data *data,
+                                          const pj_sockaddr_t * /*remote*/, int /*remote_length*/, void *token,
+                                          pjsip_transport_callback callback) {
+  auto *owner = active.load();
+  if (owner == nullptr || !owner->aka || !owner->aka->current || owner->aka->current->udp == nullptr)
+    return PJSIP_ETPNOTAVAIL;
+  auto *udp = owner->aka->current->udp;
+  pj_sockaddr destination{};
+  try {
+    destination = socket_address(owner->config.aka.pcscf_address, owner->aka->current->port_ps);
+  } catch (const std::exception &) {
+    return PJ_EINVAL;
+  }
+  return udp->send_msg(udp, data, &destination, pj_sockaddr_get_len(&destination), token, callback);
+}
+
+//------------------------------------------------------------------------------
+// A request pinned to the UDP transport of a set that goes over TCP, because it has 1300 bytes or more (RFC 3261
+// section 18.1.1, TS 24.229 clause 4.2A) or because its dialog's route set names TCP (the P-CSCF's Record-Route of an
+// INVITE that went over TCP): over the set's TCP connection from port_uc to port_ps; one pinned to the unprotected UDP
+// transport over the unprotected connection (pjsip_set_udp_to_tcp_callback, dependencies/pjproject/0002).
+pjsip_transport *SipEngine::Impl::aka_udp_to_tcp(pjsip_tx_data *data) {
+  auto *owner = active.load();
+  if (owner == nullptr || !owner->aka || data == nullptr) return nullptr;
+  const auto *pinned = data->tp_sel.u.transport;
+  pjsip_transport *reliable = nullptr;
+  guarded(owner, [&] {
+    if (pinned == owner->aka->udp_unprotected) {
+      reliable = owner->aka_unprotected_connection();
+      return;
+    }
+    for (auto *set : {owner->aka->current.get(), owner->aka->pending.get(), owner->aka->old.get()})
+      if (set != nullptr && set->udp == pinned) reliable = owner->aka_connection(*set);
+  });
+  return reliable;
+}
+
+//------------------------------------------------------------------------------
 // TS 33.203 clause 7.1 and annex I: the four SAs of a set, ESP in transport mode: UE port_uc to P-CSCF port_ps
 // (SPI spi_ps) and UE port_us to P-CSCF port_pc (spi_pc) outbound, P-CSCF port_ps to UE port_uc (spi_uc) and P-CSCF
 // port_pc to UE port_us (spi_us) inbound; IK_ESP and CK_ESP of annex I. Installed all or none.
@@ -423,6 +518,15 @@ void SipEngine::Impl::aka_install(AkaSet &set) {
       aka->xfrm->add(sa);
       set.sas.push_back(sa);
     }
+    if (config.aka.udp) {
+      pj_sockaddr local{};
+      auto listen = pj_view(config.listen_address);
+      require_success(pj_sockaddr_init(pj_AF_INET(), &local, &listen, 0), "parse SIP listen address");
+      pjsip_host_port advertised{};
+      advertised.host = pj_view(config.advertise_address);
+      set.udp = start_udp(endpoint, local, set.port_uc, advertised, set.port_us,
+                          "start the UDP transport of the protected client port");
+    }
   } catch (...) {
     for (const auto &sa : set.sas) aka->xfrm->remove(sa);
     set.sas.clear();
@@ -438,6 +542,7 @@ void SipEngine::Impl::aka_delete(std::unique_ptr<AkaSet> &set) noexcept {
   if (aka && aka->xfrm)
     for (const auto &sa : set->sas) aka->xfrm->remove(sa);
   if (set->connection != nullptr) (void)pjsip_transport_dec_ref(set->connection);
+  if (set->udp != nullptr) (void)pjsip_transport_shutdown(set->udp);
   set.reset();
 }
 
@@ -742,7 +847,7 @@ void SipEngine::Impl::aka_use_current() {
 void SipEngine::Impl::aka_apply(pjsip_tx_data *data) {
   if (!aka) return;
   if (!aka->current) throw std::runtime_error("IMS AKA: not registered, no security associations (TS 33.203 7.4.1a)");
-  const auto selector = transport_selector(aka_connection(*aka->current));
+  const auto selector = transport_selector(aka_request_transport(*aka->current));
   require_success(pjsip_tx_data_set_transport(data, &selector), "select the protected connection");
 }
 
@@ -751,7 +856,7 @@ void SipEngine::Impl::aka_apply(pjsip_tx_data *data) {
 void SipEngine::Impl::aka_apply(pjsip_dialog *dialog) {
   if (!aka) return;
   if (!aka->current) throw std::runtime_error("IMS AKA: not registered, no security associations (TS 33.203 7.4.1a)");
-  const auto selector = transport_selector(aka_connection(*aka->current));
+  const auto selector = transport_selector(aka_request_transport(*aka->current));
   require_success(pjsip_dlg_set_transport(dialog, &selector), "select the dialog's protected connection");
 }
 
@@ -762,7 +867,7 @@ std::vector<std::string> SipEngine::Impl::aka_routes() const {
   std::vector<std::string> routes;
   if (aka->current)
     routes.push_back("<sip:" + uri_host(config.aka.pcscf_address) + ":" + std::to_string(aka->current->port_ps) +
-                     ";lr;transport=tcp>");
+                     (config.aka.udp ? ";lr;transport=udp>" : ";lr;transport=tcp>"));
   routes.insert(routes.end(), aka->service_routes.begin(), aka->service_routes.end());
   return routes;
 }

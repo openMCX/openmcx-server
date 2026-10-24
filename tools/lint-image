@@ -3,7 +3,7 @@
 # OpenMCX Licence Information : AGPL-3.0-or-later
 #
 
-# Build openmcx-lint:0.1, the formatting and lint tools (docker/Dockerfile.lint), on openmcx-dev:0.2.
+# Build openmcx-lint:0.1, the formatting and lint tools (docker/Dockerfile.lint), on openmcx-dev:0.3.
 # The pinned golangci-lint and ruff archives are fetched and verified by the build itself.
 set -euo pipefail
 cd "$(dirname "$0")/.."

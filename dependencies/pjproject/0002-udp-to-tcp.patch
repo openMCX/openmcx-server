@@ -1,0 +1,110 @@
+OpenMCX patch to pjproject 2.17 (dependencies/pjproject/README.md): a request the application pinned to a UDP
+transport that has to go over TCP (RFC 3261 section 18.1.1 size switch, or a TCP next hop of the route set) goes over
+a TCP transport the application names, the connection from the IMS AKA protected client port port_uc (TS 33.203
+clause 7.1, TS 24.229 clause 4.2A). Applied by docker/Dockerfile.dev and docker/Dockerfile.centos with:
+patch -p1 < 0002-udp-to-tcp.patch
+
+diff -ru a/pjsip/include/pjsip/sip_util.h b/pjsip/include/pjsip/sip_util.h
+--- a/pjsip/include/pjsip/sip_util.h	2026-10-24 11:13:50.778478880 +0200
++++ b/pjsip/include/pjsip/sip_util.h	2026-10-24 12:07:41.734715642 +0200
+@@ -503,6 +503,25 @@
+                                     pj_bool_t *cont);
+ 
+ /**
++ * OpenMCX: the callback for a request that the application pinned to a UDP
++ * transport (tdata->tp_sel of type PJSIP_TPSELECTOR_TRANSPORT) but that has to
++ * go over TCP: because it reaches the UDP size threshold (RFC 3261 section
++ * 18.1.1), or because its next hop names TCP (a route set entry with
++ * transport=tcp, RFC 3261 section 12.2.1.1). The callback may name the TCP
++ * transport it goes over instead, such as the TCP connection of the same IMS
++ * AKA security association set (3GPP TS 33.203 clause 7.1, TS 24.229 clause
++ * 4.2A). NULL keeps the pinned UDP transport.
++ */
++typedef pjsip_transport *(*pjsip_udp_to_tcp_cb)(pjsip_tx_data *tdata);
++
++/**
++ * OpenMCX: set (or, with NULL, clear) the callback above.
++ */
++PJ_DECL(void) pjsip_set_udp_to_tcp_callback(pjsip_udp_to_tcp_cb cb);
++
++#define PJSIP_HAS_UDP_TO_TCP_CALLBACK 1
++
++/**
+  * Send outgoing request statelessly The function will take care of which 
+  * destination and transport to use based on the information in the message,
+  * taking care of URI in the request line and Route header.
+diff -ru a/pjsip/src/pjsip/sip_util.c b/pjsip/src/pjsip/sip_util.c
+--- a/pjsip/src/pjsip/sip_util.c	2026-10-24 11:13:50.779822491 +0200
++++ b/pjsip/src/pjsip/sip_util.c	2026-10-24 13:26:15.258878879 +0200
+@@ -928,6 +928,16 @@
+  * used here follows the guidelines on sending the request in RFC 3261
+  * chapter 8.1.2.
+  */
++/* OpenMCX: the callback for requests pinned to a UDP transport that go over
++ * TCP (pjsip_set_udp_to_tcp_callback()).
++ */
++static pjsip_udp_to_tcp_cb udp_to_tcp;
++
++PJ_DEF(void) pjsip_set_udp_to_tcp_callback(pjsip_udp_to_tcp_cb cb)
++{
++    udp_to_tcp = cb;
++}
++
+ PJ_DEF(pj_status_t) pjsip_process_route_set(pjsip_tx_data *tdata,
+                                             pjsip_host_info *dest_info )
+ {
+@@ -1040,15 +1050,24 @@
+         /* Check if the transport selector type is compatible with
+          * the destination type.
+          */
+-        if (dest_info->type != PJSIP_TRANSPORT_UNSPECIFIED &&
++        if (udp_to_tcp &&
++            (tp_type & ~PJSIP_TRANSPORT_IPV6) == PJSIP_TRANSPORT_UDP &&
++            (dest_info->type & ~PJSIP_TRANSPORT_IPV6) == PJSIP_TRANSPORT_TCP)
++        {
++            /* OpenMCX: a request pinned to a UDP transport whose next hop
++             * names TCP keeps the TCP destination; the resolver callback
++             * names its TCP transport (pjsip_set_udp_to_tcp_callback()).
++             */
++        } else if (dest_info->type != PJSIP_TRANSPORT_UNSPECIFIED &&
+             ((dest_info->type | PJSIP_TRANSPORT_IPV6) !=
+              (tp_type | PJSIP_TRANSPORT_IPV6)))
+         {
+             PJ_LOG(4,(THIS_FILE, "Unsuitable transport selected to "
+                                  "reach destination"));
+             return PJSIP_ETPNOTSUITABLE;
++        } else {
++            dest_info->type = tp_type;
+         }
+-        dest_info->type = tp_type;
+     }
+ 
+     /* If target URI is different than request URI, replace 
+@@ -1429,6 +1448,27 @@
+         }
+     }
+ 
++    /* OpenMCX: a request pinned to a UDP transport whose first destination
++     * is TCP (the switch above, or a TCP next hop) goes over the TCP
++     * transport the application names for it.
++     */
++    if (udp_to_tcp && tdata->msg->type == PJSIP_REQUEST_MSG &&
++        tdata->tp_sel.type == PJSIP_TPSELECTOR_TRANSPORT &&
++        tdata->tp_sel.u.transport &&
++        tdata->tp_sel.u.transport->key.type == PJSIP_TRANSPORT_UDP &&
++        tdata->dest_info.addr.count > 0 &&
++        tdata->dest_info.addr.entry[0].type == PJSIP_TRANSPORT_TCP)
++    {
++        pjsip_transport *reliable = (*udp_to_tcp)(tdata);
++        if (reliable) {
++            pjsip_tpselector sel;
++            pj_bzero(&sel, sizeof(sel));
++            sel.type = PJSIP_TPSELECTOR_TRANSPORT;
++            sel.u.transport = reliable;
++            pjsip_tx_data_set_transport(tdata, &sel);
++        }
++    }
++
+     if (tdata->tp_sel.type == PJSIP_TPSELECTOR_IP_VER) {
+         PJ_LOG(5, (THIS_FILE, "Resorting target addresses based on "
+                    "%s preference",

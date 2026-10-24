@@ -37,7 +37,7 @@ trap cleanup_capture EXIT
 # permissions or additional filesystem capabilities are needed in the container.
 docker run --rm --name "$MCX_CAPTURE_CONTAINER" \
   --network "container:$MCX_SERVER_CONTAINER" --cap-drop ALL --cap-add NET_RAW \
-  openmcx-dev:0.2 tcpdump -Z root -i eth0 -U -s 0 -w - '(udp and not port 53) or sctp or tcp port 5061 or tcp port 5060' \
+  openmcx-dev:0.3 tcpdump -Z root -i eth0 -U -s 0 -w - '(udp and not port 53) or sctp or tcp port 5061 or tcp port 5060' \
   > "artifacts/integration/$MCX_TRACE_NAME.pcap" 2> artifacts/integration/capture.log &
 MCX_CAPTURE_PID=$!
 for attempt in $(seq 1 50); do
@@ -53,7 +53,7 @@ for role in ('client-a','client-b','mcptt-server'):
 CHECK
   docker run --rm --name "$MCX_SIP_CAPTURE_CONTAINER" \
     --network "container:$(tools/mcx compose ps -q sip-core)" --cap-drop ALL --cap-add NET_RAW \
-    openmcx-dev:0.2 tcpdump -Z root -i eth0 -U -s 0 -w - 'tcp port 5060' \
+    openmcx-dev:0.3 tcpdump -Z root -i eth0 -U -s 0 -w - 'tcp port 5060' \
     > artifacts/integration/sip-debug.pcap 2> artifacts/integration/sip-debug-capture.log &
   MCX_SIP_CAPTURE_PID=$!
   for attempt in $(seq 1 50); do

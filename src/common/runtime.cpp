@@ -107,6 +107,10 @@ SipConfig sip_config(const Json &cfg, bool disable_tls) {
     if (config.aka.res_length < 4 || config.aka.res_length > 16)
       throw std::invalid_argument("sip.isim.res_length must be 4 to 16 bytes");
     config.aka.amf = isim.value("amf", "8000");
+    // TS 24.229 clause 4.2A: sip.transport "tcp" (default) or "udp" towards the P-CSCF.
+    const auto transport = sip.value("transport", "tcp");
+    if (transport != "tcp" && transport != "udp") throw std::invalid_argument("sip.transport must be tcp or udp");
+    config.aka.udp = transport == "udp";
     config.aka.sqn_file = isim.value("sqn_file", "");
     const auto numeric = [](const std::string &host) {
       unsigned char address[16];

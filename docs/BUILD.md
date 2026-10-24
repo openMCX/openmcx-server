@@ -6,7 +6,7 @@ listed in `docs/IMAGES.md`.
 ## 1. Development image (once, and when a pinned dependency changes)
 
 ```sh
-docker build -t openmcx-dev:0.2 -f docker/Dockerfile.dev .
+docker build -t openmcx-dev:0.3 -f docker/Dockerfile.dev .
 ```
 
 Ubuntu 24.04 with the compilers and the libraries the programs link, plus pjsip, wolfSSL and Go built from pinned
@@ -44,7 +44,7 @@ so building every target compiles once.
 Ubuntu 24.04 is the default; 26.04 is supported too:
 
 ```sh
-tools/build-images --ubuntu 26.04 0.1-u2604   # builds openmcx-dev:0.2-ubuntu26.04 first when missing
+tools/build-images --ubuntu 26.04 0.1-u2604   # builds openmcx-dev:0.3-ubuntu26.04 first when missing
 ```
 
 The pinned base image of each release is in `dependencies/lock.json` (`base_images`; `base_image` is the default,
@@ -54,10 +54,10 @@ version); `docker/packages <release> <part>` lists them for both Dockerfiles. pj
 fetched from the same pinned sources on both. By hand:
 
 ```sh
-docker build -t openmcx-dev:0.2-ubuntu26.04 -f docker/Dockerfile.dev \
+docker build -t openmcx-dev:0.3-ubuntu26.04 -f docker/Dockerfile.dev \
   --build-arg BASE_IMAGE=<base_images 26.04> --build-arg UBUNTU=26.04 .
 docker build --target openmcx-mcptt-server -t openmcx-mcptt-server:0.1-u2604 -f docker/Dockerfile \
-  --build-arg DEV_IMAGE=openmcx-dev:0.2-ubuntu26.04 --build-arg RUNTIME_BASE=<base_images 26.04> \
+  --build-arg DEV_IMAGE=openmcx-dev:0.3-ubuntu26.04 --build-arg RUNTIME_BASE=<base_images 26.04> \
   --build-arg UBUNTU=26.04 .
 ```
 

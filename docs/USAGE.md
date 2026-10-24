@@ -136,7 +136,7 @@ python3 tools/prepare-prearranged-test.py --directory <lab> --project kc --priva
   --images <tag> --client-image openmcx-client:<tag> --keycloak quay.io/keycloak/keycloak:26.3.3
 C=".cache/deps/docker-compose-linux-x86_64 -p kc -f <lab>/compose.json"
 $C up -d --wait idms
-docker run --rm -u "$(id -u):$(id -g)" --network kc_mcx -v <lab>:<lab> -v "$PWD/tools:/tools:ro" openmcx-dev:0.2 \
+docker run --rm -u "$(id -u):$(id -g)" --network kc_mcx -v <lab>:<lab> -v "$PWD/tools:/tools:ro" openmcx-dev:0.3 \
   python3 /tools/keycloak-sign-in.py <lab>
 $C up -d --wait
 ```

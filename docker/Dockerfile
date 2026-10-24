@@ -13,7 +13,7 @@
 # image is Ubuntu with only its program's run-time packages and the program stripped of its debug information (the
 # machine code is the same -O2 build), plus curl and Python for the lab's health checks.
 
-ARG DEV_IMAGE=openmcx-dev:0.2
+ARG DEV_IMAGE=openmcx-dev:0.3
 ARG RUNTIME_BASE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
 # The Ubuntu release of RUNTIME_BASE and of the development image; its package names are in docker/packages.
 ARG UBUNTU=24.04

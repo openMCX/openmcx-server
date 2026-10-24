@@ -379,6 +379,15 @@ LABS = [
         ['aka_negative_scenario', 'prearranged_scenario', 'private_call_scenario', 'mcdata_sds_scenario'],
         ['aka', 'common'],
     ),
+    # The same over UDP (TS 24.229 clause 4.2A, TS 33.203 clause 7.1 UDP case): the AKA UEs send from port_uc to
+    # port_ps over UDP, requests of 1300 bytes or more (INVITEs with their bodies) over TCP (RFC 3261 section 18.1.1).
+    lab(
+        'aka-udp',
+        'single',
+        ['--aka', '--aka-transport', 'udp', '--private-call', '--mcdata'],
+        ['aka_negative_scenario', 'prearranged_scenario', 'private_call_scenario', 'mcdata_sds_scenario'],
+        ['aka', 'common'],
+    ),
 ]
 
 print_lock = threading.Lock()

@@ -67,7 +67,7 @@ int network(int argc, char **argv) {
 
 //------------------------------------------------------------------------------
 // The UE: alice@example.org at 127.0.0.1, protected server port 31900, P-CSCF 127.0.0.2:5060.
-int ue(const std::string &sqn_file, const std::string &k, const std::string &opc) {
+int ue(const std::string &sqn_file, const std::string &k, const std::string &opc, bool udp = false) {
   // MCX_LOG=debug: the SIP message log and the ESP keys on stderr.
   if (const char *level = std::getenv("MCX_LOG"); level != nullptr) set_log_level(parse_log_level(level));
   SipConfig config;
@@ -87,6 +87,8 @@ int ue(const std::string &sqn_file, const std::string &k, const std::string &opc
     config.aka.opc = opc;
   config.aka.sqn_file = sqn_file;
   config.aka.pcscf_address = "127.0.0.2";
+  // TS 24.229 clause 4.2A: SIP over UDP; a second MESSAGE of more than 1300 bytes goes over TCP (RFC 3261 18.1.1).
+  config.aka.udp = udp;
   bool deregister = false, done = false;
   int exit_code = 1;
   SipCallbacks callbacks;
@@ -99,7 +101,20 @@ int ue(const std::string &sqn_file, const std::string &k, const std::string &opc
     return response;
   };
   callbacks.on_error = [](std::string_view error) { std::cout << "error " << error << std::endl; };
+  SipEngine *calling = nullptr;
+  // Over UDP: the INVITE's dialog, whose route set names TCP (the P-CSCF's Record-Route of an INVITE that went over
+  // TCP), sends its ACK and BYE over the connection from port_uc (dependencies/pjproject/0002-udp-to-tcp.patch).
+  callbacks.on_call_state = [&](std::string_view dialog, SipCallState state, int code) {
+    std::cout << "call " << (state == SipCallState::confirmed      ? "confirmed"
+                             : state == SipCallState::disconnected ? "disconnected"
+                                                                   : "early")
+              << ' ' << code << std::endl;
+    if (state == SipCallState::confirmed && calling != nullptr)
+      calling->bye(std::string(dialog),
+                   [](const SipResponse &answer) { std::cout << "bye answered " << answer.status_code << std::endl; });
+  };
   SipEngine engine(config, callbacks);
+  calling = &engine;
   engine.start();
   engine.register_account(3600, [&](const SipResponse &response) {
     std::cout << "registered " << response.status_code << ' ' << response.reason << std::endl;
@@ -114,8 +129,18 @@ int ue(const std::string &sqn_file, const std::string &k, const std::string &opc
                                std::to_string(status->port_ps)
                          : std::string("none"))
               << std::endl;
-    engine.request("MESSAGE", "sip:bob@example.org", "text/plain", "hello", {}, [](const SipResponse &answer) {
+    engine.request("MESSAGE", "sip:bob@example.org", "text/plain", "hello", {}, [&, udp](const SipResponse &answer) {
       std::cout << "message answered " << answer.status_code << std::endl;
+      if (!udp) return;
+      engine.request(
+          "MESSAGE", "sip:bob@example.org", "text/plain", std::string(1500, 'x'), {},
+          [&](const SipResponse &large) {
+            std::cout << "large answered " << large.status_code << std::endl;
+            (void)engine.invite_sdp("sip:bob@example.org",
+                                    "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\n"
+                                    "m=audio 40000 RTP/AVP 96\r\na=rtpmap:96 AMR-WB/16000\r\n",
+                                    {{"text/plain", std::string(1400, 'y')}});
+          });
     });
   });
   const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(40);
@@ -139,6 +164,8 @@ int ue(const std::string &sqn_file, const std::string &k, const std::string &opc
 int main(int argc, char **argv) {
   try {
     if (argc >= 2 && std::string(argv[1]) == "ue" && argc == 5) return ue(argv[2], argv[3], argv[4]);
+    if (argc >= 2 && std::string(argv[1]) == "ue" && argc == 6 && std::string(argv[5]) == "udp")
+      return ue(argv[2], argv[3], argv[4], true);
     if (argc >= 6) return network(argc, argv);
   } catch (const std::exception &error) {
     std::cout << "error " << error.what() << std::endl;

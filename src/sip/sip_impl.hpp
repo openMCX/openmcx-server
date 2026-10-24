@@ -262,6 +262,9 @@ struct SipEngine::Impl {
     std::vector<xfrm::SecurityAssociation> sas;
     // The TCP connection from port_uc to port_ps (TS 33.203 clause 7.1, TCP case), held while the set exists.
     pjsip_transport *connection = nullptr;
+    // Over UDP: the UDP transport bound to port_uc that every request and response of the set leaves from (TS 33.203
+    // clause 7.1, UDP case), published with port_us for Via.
+    pjsip_transport *udp = nullptr;
     // The SIP level lifetime (TS 24.229 clause 5.1.1.5.1), monotonic milliseconds.
     std::uint64_t expires_ms = 0;
   };
@@ -274,6 +277,11 @@ struct SipEngine::Impl {
     std::unique_ptr<xfrm::Xfrm> xfrm;
     pjsip_tpfactory *unprotected_factory = nullptr;
     pjsip_transport *unprotected_connection = nullptr;
+    // Over UDP: the transports on port_us (receiving; its sends go out from port_uc of the set in use) and on the
+    // unprotected port, and pjsip's send function of the first.
+    pjsip_transport *udp_us = nullptr, *udp_unprotected = nullptr;
+    pj_status_t (*udp_us_send)(pjsip_transport *, pjsip_tx_data *, const pj_sockaddr_t *, int, void *,
+                               pjsip_transport_callback) = nullptr;
     // TS 33.203 clause 7.4.1a: the set in use, the temporary set of the authentication in progress, and the old set
     // kept until the new one has carried a message from the P-CSCF and its transactions are over.
     std::unique_ptr<AkaSet> current, pending, old;
@@ -313,6 +321,11 @@ struct SipEngine::Impl {
   void aka_install(AkaSet &set);
   void aka_delete(std::unique_ptr<AkaSet> &set) noexcept;
   pjsip_transport *aka_connection(AkaSet &set);
+  pjsip_transport *aka_unprotected_connection();
+  pjsip_transport *aka_request_transport(AkaSet &set);
+  static pj_status_t aka_udp_send(pjsip_transport *transport, pjsip_tx_data *data, const pj_sockaddr_t *remote,
+                                  int remote_length, void *token, pjsip_transport_callback callback);
+  static pjsip_transport *aka_udp_to_tcp(pjsip_tx_data *data);
   void aka_use_current();
   void aka_apply(pjsip_tx_data *data);
   void aka_apply(pjsip_dialog *dialog);

@@ -23,7 +23,11 @@ preloaded Route, a MESSAGE of the P-CSCF from port_pc to port_us, an unprotected
 ESP counters, and the deregistration that removes every SA. (2) a restarted UE with the same SQN file and a replayed
 SQN: AUTS, resynchronisation, AKAv1-MD5 this time, registration; then a refresh over the set, a new challenge,
 a new set (new port_uc and port_pc) taking over, and the old set deleted 32 s after the first P-CSCF message on it. (3) a wrong key: MAC failure, empty response, 403,
-no SA left. (4) the UE's ISIM on the test algorithm of TS 34.108 clause 8.1.2 (vectors computed here): AMF_RESYNCH
+no SA left. (5, below 4 in the file) SIP over UDP (TS 24.229 clause 4.2A, TS 33.203 clause 7.1 UDP case): the
+unprotected REGISTER over UDP with rport, the protected REGISTER from port_uc to port_ps, a MESSAGE over UDP, a
+MESSAGE of more than 1300 bytes over TCP from port_uc (RFC 3261 section 18.1.1), a large INVITE whose 200
+Record-Routes over TCP with its ACK and BYE over that connection, the 200 to a request of the P-CSCF
+on port_us sent from port_uc to port_ps, and the deregistration. (4) the UE's ISIM on the test algorithm of TS 34.108 clause 8.1.2 (vectors computed here): AMF_RESYNCH
 answered with its AUTS (clause 8.1.2.3.3), then an AKAv1-MD5 challenge answered with the 16-byte RES, registration
 over the set, a MESSAGE and the deregistration.
 
@@ -106,6 +110,51 @@ class SipWire:
 
 
 # ------------------------------------------------------------------------------
+class DatagramWire:
+    """A minimal SIP peer on one UDP socket: whole SIP messages, each in one datagram, sent to a peer address."""
+
+    # ------------------------------------------------------------------------------
+    def __init__(self, sock, peer=None, timeout=10):
+        """Wrap the socket; replies go to peer, or to the source of the last message."""
+        self.sock = sock
+        self.peer = peer
+        self.source = None
+        self.sock.settimeout(timeout)
+
+    # ------------------------------------------------------------------------------
+    def receive(self):
+        """One SIP message as SipWire.receive; its source address is kept in source."""
+        data, self.source = self.sock.recvfrom(65536)
+        header, _, body = data.partition(b"\r\n\r\n")
+        lines = header.decode().split("\r\n")
+        fields = {}
+        for line in lines[1:]:
+            key, value = line.split(":", 1)
+            fields.setdefault(key.strip().lower(), []).append(value.strip())
+        return lines[0], fields, body.decode()
+
+    # ------------------------------------------------------------------------------
+    def send(self, text, peer=None):
+        """Send one SIP message (CRLF line ends, Content-Length added)."""
+        head, _, body = text.partition("\n\n")
+        message = (
+            "\r\n".join(head.split("\n"))
+            + f"\r\nContent-Length: {len(body)}\r\n\r\n"
+            + body
+        )
+        self.sock.sendto(message.encode(), peer or self.peer or self.source)
+
+
+# ------------------------------------------------------------------------------
+def udp_socket(port):
+    """A UDP socket of the P-CSCF bound to the port."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((PCSCF, port))
+    return sock
+
+
+# ------------------------------------------------------------------------------
 def response_to(request, code, reason, extra=""):
     """A response with Via, From, To (tagged), Call-ID and CSeq of the request (RFC 3261 section 8.2.6.2)."""
     fields = request[1]
@@ -174,7 +223,7 @@ def xfrm(*arguments):
 
 
 # ------------------------------------------------------------------------------
-def pcscf_policies(client, add=True, port_ps=PORT_PS, port_pc=PORT_PC):
+def pcscf_policies(client, add=True, port_ps=PORT_PS, port_pc=PORT_PC, proto="tcp"):
     """The P-CSCF's outbound policies towards the UE (port_ps to port_uc with spi_uc, port_pc to port_us with
     spi_us), on the SAs the UE installed; or their removal."""
     for sport, dport, spi in (
@@ -187,7 +236,7 @@ def pcscf_policies(client, add=True, port_ps=PORT_PS, port_pc=PORT_PC):
             "dst",
             f"{UE}/32",
             "proto",
-            "tcp",
+            proto,
             "sport",
             str(sport),
             "dport",
@@ -250,11 +299,11 @@ def challenge(wire, request, binary, sqn, rand, server, k=K):
 
 
 # ------------------------------------------------------------------------------
-def start_ue(binary, sqn_file, k=K, opc=OPC):
-    """Start the UE role (opc "test": the TS 34.108 test algorithm); returns the process."""
+def start_ue(binary, sqn_file, k=K, opc=OPC, udp=False):
+    """Start the UE role (opc "test": the TS 34.108 test algorithm; udp: SIP over UDP); returns the process."""
     env = dict(os.environ, MCX_LOG=os.environ.get("MCX_LOG", "info"))
     return subprocess.Popen(
-        [binary, "ue", sqn_file, k, opc],
+        [binary, "ue", sqn_file, k, opc] + (["udp"] if udp else []),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -847,6 +896,189 @@ def scenario_test_algorithm(binary, listener, protected_listener, sqn_file):
 
 
 # ------------------------------------------------------------------------------
+def scenario_udp(binary, protected_listener, sqn_file):
+    """Scenario 5: SIP over UDP (see the module text)."""
+    unprotected, ps, pc = udp_socket(5060), udp_socket(PORT_PS), udp_socket(PORT_PC)
+    process = start_ue(binary, sqn_file, udp=True)
+    client = None
+    connection = None
+    try:
+        wire = DatagramWire(unprotected)
+        request = wire.receive()
+        fields = request[1]
+        check(
+            wire.source == (UE, 5060),
+            f"unprotected REGISTER from UE:5060, not {wire.source}",
+        )
+        check(
+            fields["via"][0].startswith(f"SIP/2.0/UDP {UE}:5060")
+            and ";rport" in fields["via"][0],
+            f"Via over UDP with rport (TS 24.229 clause 5.1.1.2.1 d): {fields['via'][0]}",
+        )
+        check(
+            f"@{UE}:5060;transport=udp" in fields["contact"][0], "Contact transport=udp"
+        )
+        client = {
+            name: int(value)
+            for name, value in parameters(fields["security-client"][0]).items()
+            if name in ("spi-c", "spi-s", "port-c", "port-s")
+        }
+        server = (
+            f"ipsec-3gpp;alg=hmac-sha-1-96;ealg=aes-cbc;spi-c={SPI_PC};spi-s={SPI_PS};"
+            f"port-c={PORT_PC};port-s={PORT_PS}"
+        )
+        nonce, res, ck, ik = challenge(
+            wire, request, binary, "000000000200", os.urandom(16), server
+        )
+        pcscf_policies(client, proto="udp")
+        pcscf_policies(client, proto="tcp")
+
+        # TS 33.203 clause 7.1, UDP case: the UE sends from port_uc to port_ps, the P-CSCF from port_pc to port_us.
+        protected = DatagramWire(ps)
+        second = protected.receive()
+        check(
+            protected.source == (UE, client["port-c"]),
+            f"protected REGISTER from port_uc, not {protected.source}",
+        )
+        check(
+            second[1]["via"][0].startswith(f"SIP/2.0/UDP {UE}:{PORT_US}")
+            and f"@{UE}:{PORT_US};transport=udp" in second[1]["contact"][0],
+            f"Via and Contact on port_us over UDP: {second[1]['via'][0]} {second[1]['contact'][0]}",
+        )
+        authorization = parameters(second[1]["authorization"][0])
+        password = base64.b64encode(
+            hmac.new(
+                res + ik + ck, b"http-digest-akav2-password", hashlib.sha256
+            ).digest()
+        )
+        check(
+            authorization["response"]
+            == digest("AKAv2-SHA-256", password, nonce, authorization),
+            "AKAv2-SHA-256 response",
+        )
+        to_ue = DatagramWire(pc, peer=(UE, PORT_US))
+        expires = second[1]["expires"][0]
+        to_ue.send(
+            response_to(
+                second,
+                200,
+                "OK",
+                f"Contact: {second[1]['contact'][0]};expires={expires}\n"
+                f"Service-Route: <sip:orig@scscf.{REALM};lr>\nP-Associated-URI: <sip:alice@{REALM}>",
+            )
+        )
+        check("hmac-sha-1-96 aes-cbc" in wait_line(process, "sa "), "SA set in use")
+        message = protected.receive()
+        check(
+            message[0].startswith("MESSAGE sip:bob@example.org")
+            and protected.source == (UE, client["port-c"]),
+            f"MESSAGE over UDP from port_uc: {message[0]} from {protected.source}",
+        )
+        routes = [
+            route.strip() for value in message[1]["route"] for route in value.split(",")
+        ]
+        check(
+            routes[0].startswith(f"<sip:{PCSCF}:{PORT_PS};")
+            and "transport=udp" in routes[0],
+            f"Route {routes}",
+        )
+        to_ue.send(response_to(message, 200, "OK"))
+        check("200" in wait_line(process, "message answered"), "MESSAGE answered")
+
+        # RFC 3261 section 18.1.1: the MESSAGE of more than 1300 bytes over TCP from port_uc to port_ps.
+        connection, peer = protected_listener.accept()
+        check(
+            peer == (UE, client["port-c"]), f"TCP connection from port_uc, not {peer}"
+        )
+        large_wire = SipWire(connection)
+        large = large_wire.receive()
+        check(
+            large[0].startswith("MESSAGE")
+            and len(large[2]) == 1500
+            and large[1]["via"][0].startswith("SIP/2.0/TCP"),
+            f"large MESSAGE over TCP with a TCP Via: {large[1]['via'][0]}",
+        )
+        large_wire.send(response_to(large, 200, "OK"))
+        check("200" in wait_line(process, "large answered"), "large MESSAGE answered")
+        protected.sock.settimeout(1.5)
+        try:
+            again = protected.receive()
+            raise AssertionError(f"the large MESSAGE also went over UDP: {again[0]}")
+        except TimeoutError:
+            pass
+        protected.sock.settimeout(10)
+
+        # The large INVITE over the same connection; its 200 Record-Routes the P-CSCF over TCP (as the P-CSCF does for
+        # a request it received over TCP), so the dialog's ACK and BYE go over that connection too (RFC 3261 section
+        # 12.2.1.1), not refused for the UDP transport the dialog is pinned to.
+        invite = large_wire.receive()
+        check(
+            invite[0].startswith("INVITE sip:bob@example.org") and invite[1]["via"][0].startswith("SIP/2.0/TCP"),
+            f"large INVITE over TCP: {invite[0]} {invite[1]['via'][0]}",
+        )
+        answer_sdp = (
+            "v=0\r\no=- 2 2 IN IP4 127.0.0.2\r\ns=-\r\nc=IN IP4 127.0.0.2\r\nt=0 0\r\n"
+            "m=audio 40002 RTP/AVP 96\r\na=rtpmap:96 AMR-WB/16000\r\n"
+        )
+        large_wire.send(
+            response_to(
+                invite,
+                200,
+                "OK",
+                f"Record-Route: <sip:{PCSCF}:{PORT_PS};transport=tcp;lr>\n"
+                f"Contact: <sip:bob@{PCSCF}:{PORT_PS};transport=tcp>\nRequire: timer\n"
+                "Session-Expires: 1800;refresher=uac\nContent-Type: application/sdp",
+            ).rstrip("\n")
+            + "\n\n"
+            + answer_sdp
+        )
+        ack = large_wire.receive()
+        check(ack[0].startswith("ACK sip:bob@") and ack[1]["via"][0].startswith("SIP/2.0/TCP"), f"ACK over TCP: {ack[0]}")
+        bye = large_wire.receive()
+        check(bye[0].startswith("BYE sip:bob@"), f"BYE over the connection: {bye[0]}")
+        large_wire.send(response_to(bye, 200, "OK"))
+        check("200" in wait_line(process, "bye answered"), "BYE answered")
+
+        # A request of the P-CSCF from port_pc to port_us; the UE's 200 from port_uc to port_ps.
+        to_ue.send(
+            f"MESSAGE sip:alice@{UE}:{PORT_US};transport=udp SIP/2.0\nVia: SIP/2.0/UDP "
+            f"{PCSCF}:{PORT_PS};branch=z9hG4bKudp\nFrom: <sip:bob@{REALM}>;tag=b\n"
+            f"To: <sip:alice@{REALM}>\nCall-ID: pcscf-udp\nCSeq: 1 MESSAGE\nMax-Forwards: 70\n"
+            f"Content-Type: text/plain\n\nderegister"
+        )
+        answer = protected.receive()
+        check(
+            answer[0] == "SIP/2.0 200 OK"
+            and protected.source == (UE, client["port-c"]),
+            f"the UE's 200 from port_uc to port_ps: {answer[0]} from {protected.source}",
+        )
+        dereg = protected.receive()
+        check(
+            dereg[0].startswith("REGISTER") and dereg[1]["expires"] == ["0"],
+            "deregistration over UDP",
+        )
+        to_ue.send(
+            response_to(
+                dereg, 200, "OK", f"Contact: {dereg[1]['contact'][0]};expires=0"
+            )
+        )
+        wait_line(process, "deregistered")
+        check(process.wait(10) == 0, "UE exit")
+        check(
+            xfrm("state", "list").strip() == "", "every SA removed after deregistration"
+        )
+    finally:
+        if connection is not None:
+            connection.close()
+        if client is not None:
+            pcscf_policies(client, add=False, proto="udp")
+            pcscf_policies(client, add=False, proto="tcp")
+        for sock in (unprotected, ps, pc):
+            sock.close()
+        stop_ue(process)
+
+
+# ------------------------------------------------------------------------------
 def main():
     """Run the three scenarios."""
     if not has_net_admin():
@@ -884,6 +1116,10 @@ def main():
         scenario_test_algorithm(binary, listener, protected_listener, sqn_file)
         print(
             "ims_aka_sip: TS 34.108 test algorithm, resynchronisation and registration ok"
+        )
+        scenario_udp(binary, protected_listener, sqn_file)
+        print(
+            "ims_aka_sip: SIP over UDP, large request over TCP, responses from port_uc ok"
         )
     return 0
 

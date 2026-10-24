@@ -7,7 +7,7 @@
 #   tools/lint-image              builds it as openmcx-lint:<version below>
 # Pinned: LLVM 23 (clang-format, clang-tidy), golangci-lint 2.14.0, ruff 0.16.9; the archives are
 # fetched by the build and checked against their published SHA-256 (docker/fetch; DEPS_MIRROR for offline builds).
-FROM openmcx-dev:0.2
+FROM openmcx-dev:0.3
 
 ARG LLVM_VERSION=23
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \

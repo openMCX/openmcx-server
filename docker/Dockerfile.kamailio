@@ -16,7 +16,7 @@
 # exact source it was built from (/usr/src/kamailio-6.1.4.tar.gz, pinned in dependencies/lock.json) and the patch
 # applied to it (/usr/src/kamailio-patches).
 
-ARG DEV_IMAGE=openmcx-dev:0.2
+ARG DEV_IMAGE=openmcx-dev:0.3
 ARG RUNTIME_BASE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
 ARG UBUNTU=24.04
 

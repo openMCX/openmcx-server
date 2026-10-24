@@ -60,8 +60,9 @@ ENV PATH="/usr/local/go/bin:/opt/pjsip/bin:${PATH}" \
 COPY docker/fetch /usr/local/bin/fetch
 RUN fetch "$GO_FILE" "$GO_URL" "$GO_SHA256" /tmp/go.tar.gz \
     && tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
-# OpenMCX's pjproject patches (dependencies/pjproject/README.md): the TCP client port of IMS AKA (TS 33.203 7.1).
-COPY dependencies/pjproject/0001-tcp-client-port.patch /tmp/pjproject-patches/
+# OpenMCX's pjproject patches (dependencies/pjproject/README.md): the TCP client port of IMS AKA (TS 33.203 7.1)
+# and TCP for requests pinned to a UDP transport (RFC 3261 18.1.1, TCP next hops).
+COPY dependencies/pjproject/0001-tcp-client-port.patch dependencies/pjproject/0002-udp-to-tcp.patch /tmp/pjproject-patches/
 RUN fetch "$PJSIP_FILE" "$PJSIP_URL" "$PJSIP_SHA256" /tmp/pjproject.tar.gz \
     && mkdir /tmp/pjproject && tar -xzf /tmp/pjproject.tar.gz -C /tmp/pjproject --strip-components=1 \
     && cd /tmp/pjproject \
