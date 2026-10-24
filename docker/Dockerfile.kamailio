@@ -10,7 +10,7 @@
 # against its SHA-256 and applied to the verified source. Built on the development
 # image, run on a slim Ubuntu image with only Kamailio's run-time libraries (docker/packages).
 #
-#   docker build -t openmcx-kamailio:6.1.4-3 -f docker/Dockerfile.kamailio .
+#   docker build -t openmcx-kamailio:6.1.4-4 -f docker/Dockerfile.kamailio .
 #
 # Kamailio is GPL-2.0 (its tls module ISC). The image carries the licence (/usr/share/doc/kamailio/COPYING) and the
 # exact source it was built from (/usr/src/kamailio-6.1.4.tar.gz, pinned in dependencies/lock.json) and the patch
@@ -60,6 +60,9 @@ COPY --from=build /opt/kamailio /opt/kamailio
 COPY --from=build /install/doc/COPYING /usr/share/doc/kamailio/COPYING
 COPY --from=build /src/${KAMAILIO_FILE} /usr/src/${KAMAILIO_FILE}
 COPY --from=build /src/kamailio-patches /usr/src/kamailio-patches
+# TS 33.210 clause 6.2: the TLS groups of the 3GPP profile (docker/openssl-3gpp.cnf).
+COPY docker/openssl-3gpp.cnf /etc/ssl/openssl-3gpp.cnf
+ENV OPENSSL_CONF=/etc/ssl/openssl-3gpp.cnf
 LABEL org.opencontainers.image.title="openmcx-kamailio" \
       org.opencontainers.image.version="6.1.4" \
       org.opencontainers.image.licenses="GPL-2.0-only AND ISC" \

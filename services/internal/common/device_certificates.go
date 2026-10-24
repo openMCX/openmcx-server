@@ -249,7 +249,7 @@ func rpcClient(cfg *CredentialsConfig) (*http.Client, error) {
 			return nil, errors.New("credentials.ca_file: no PEM certificate")
 		}
 	}
-	transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
+	transport := &http.Transport{TLSClientConfig: TLSProfile(&tls.Config{RootCAs: pool})}
 	if cfg.ClientCertFile != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.ClientCertFile, cfg.ClientKeyFile)
 		if err != nil {

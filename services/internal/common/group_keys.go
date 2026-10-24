@@ -160,7 +160,7 @@ func groupKMSClient() (*http.Client, error) {
 	if err != nil || !roots.AppendCertsFromPEM(pem) {
 		return nil, errors.New("KMS trust anchor unavailable")
 	}
-	return &http.Client{Timeout: 20 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("KMS redirect forbidden") }}, nil
+	return &http.Client{Timeout: 20 * time.Second, Transport: &http.Transport{TLSClientConfig: TLSProfile(&tls.Config{RootCAs: roots})}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("KMS redirect forbidden") }}, nil
 }
 
 // ------------------------------------------------------------------------------

@@ -7,6 +7,7 @@
 // Specifications: RFC 3261, RFC 3262, RFC 4028, RFC 6665, TS 33.180 V19.4.0 (Rel-19).
 
 #include "mcx/runtime.hpp"
+#include "mcx/tls_profile.hpp"
 #include "sip_impl.hpp"
 
 namespace mcx {
@@ -184,6 +185,24 @@ void SipEngine::Impl::start() {
     tls.verify_client = PJ_TRUE;
     tls.require_client_cert = PJ_TRUE;
     tls.proto = PJ_SSL_SOCK_PROTO_TLS1_2 | PJ_SSL_SOCK_PROTO_TLS1_3;
+    // TS 33.210 clause 6.2 (mcx/tls_profile.hpp): TLS 1.2 only with ECDHE and AEAD (TLS 1.3 keeps the library's
+    // suites); the groups P-256, P-384 and P-521, no ffdhe (pjproject names no x25519).
+    std::array<pj_ssl_cipher, PJ_SSL_SOCK_MAX_CIPHERS> available{};
+    unsigned available_count = available.size();
+    require_success(pj_ssl_cipher_get_availables(available.data(), &available_count), "list the TLS cipher suites");
+    std::vector<pj_ssl_cipher> ciphers;
+    const std::string allowed = std::string(":") + tls_profile::tls12_ciphers + ":";
+    for (unsigned i = 0; i < available_count; ++i) {
+      const char *name = pj_ssl_cipher_name(available[i]);
+      if (name != nullptr && allowed.find(std::string(":") + name + ":") != std::string::npos)
+        ciphers.push_back(available[i]);
+    }
+    if (ciphers.empty()) throw std::runtime_error("no TLS 1.2 cipher suite of the TS 33.210 profile available");
+    tls.ciphers = ciphers.data();
+    tls.ciphers_num = static_cast<unsigned>(ciphers.size());
+    std::array<pj_ssl_curve, 3> curves{PJ_TLS_CURVE_SECP256R1, PJ_TLS_CURVE_SECP384R1, PJ_TLS_CURVE_SECP521R1};
+    tls.curves = curves.data();
+    tls.curves_num = static_cast<unsigned>(curves.size());
 
     pj_sockaddr local{};
     auto listen = pj_view(config.listen_address);

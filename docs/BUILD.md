@@ -85,7 +85,7 @@ with OpenH264 for MCVideo.
 ## 4. SIP core and database images
 
 ```sh
-docker build -t openmcx-kamailio:6.1.4-3 -f docker/Dockerfile.kamailio .
+docker build -t openmcx-kamailio:6.1.4-4 -f docker/Dockerfile.kamailio .
 docker build -t openmcx-sipdb:8.0-1 -f docker/Dockerfile.sipdb .
 ```
 

@@ -8,6 +8,7 @@
 // Specifications: TS 24.582 V19.0.0 (Rel-19), RFC 4975, RFC 6135, RFC 2046.
 
 #include "mcx/msrp.hpp"
+#include "mcx/tls_profile.hpp"
 
 #include <fcntl.h>
 #include <netdb.h>
@@ -373,7 +374,10 @@ struct Endpoint::State {
 
   void configure(const TlsConfig &config) {
     tls = SSL_CTX_new(TLS_method());
+    // TS 33.210 clause 6.2 (mcx/tls_profile.hpp): TLS 1.2 only with ECDHE and AEAD, no ffdhe group.
     if (!tls || SSL_CTX_set_min_proto_version(tls, TLS1_2_VERSION) != 1 ||
+        SSL_CTX_set_cipher_list(tls, tls_profile::tls12_ciphers) != 1 ||
+        SSL_CTX_set1_groups_list(tls, tls_profile::groups) != 1 ||
         SSL_CTX_use_certificate_chain_file(tls, config.cert_file.c_str()) != 1 ||
         SSL_CTX_use_PrivateKey_file(tls, config.key_file.c_str(), SSL_FILETYPE_PEM) != 1 ||
         SSL_CTX_check_private_key(tls) != 1 || SSL_CTX_load_verify_locations(tls, config.ca_file.c_str(), nullptr) != 1)

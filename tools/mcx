@@ -13,7 +13,7 @@ case "${1:-help}" in
   build)
     python3 tools/fetch-dependencies.py
     docker build -t openmcx-dev:0.3 -f docker/Dockerfile.dev .
-    docker build -t openmcx-kamailio:6.1.4-3 -f docker/Dockerfile.kamailio .
+    docker build -t openmcx-kamailio:6.1.4-4 -f docker/Dockerfile.kamailio .
     docker build -t openmcx-sipdb:8.0-1 -f docker/Dockerfile.sipdb .
     docker build -t openmcx:0.1 -f docker/Dockerfile .
     # mcx-client lives in the openmcx-client repository (directory linux/), checked out beside this one.

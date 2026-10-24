@@ -33,6 +33,12 @@ import subprocess
 import uuid
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+# TS 33.210 clause 6.2.3 (include/mcx/tls_profile.hpp): the SIP core's and P-CSCF's TLS 1.2 suites, ECDHE with AEAD
+# only; the groups (no ffdhe) come from the Kamailio image's OpenSSL configuration (docker/Dockerfile.kamailio).
+TLS12_CIPHERS = (
+    "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:"
+    "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305"
+)
 # The protected server port of an IMS AKA client (TS 33.203 clause 7.1: not 5060 or 5061).
 AKA_PROTECTED_SERVER_PORT = 5064
 
@@ -731,11 +737,11 @@ TLS_CA = "/config/tls/ca.crt";
         save("pcscf.cfg", pcscf)
         save(
             "pcscf-tls.cfg",
-            "[server:default]\nmethod = TLSv1.2+\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/pcscf.key\ncertificate = /config/tls/pcscf.crt\nca_list = /config/tls/ca.crt\n[client:default]\nmethod = TLSv1.2+\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/pcscf.key\ncertificate = /config/tls/pcscf.crt\nca_list = /config/tls/ca.crt\n",
+            f"[server:default]\nmethod = TLSv1.2+\ncipher_list = {TLS12_CIPHERS}\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/pcscf.key\ncertificate = /config/tls/pcscf.crt\nca_list = /config/tls/ca.crt\n[client:default]\nmethod = TLSv1.2+\ncipher_list = {TLS12_CIPHERS}\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/pcscf.key\ncertificate = /config/tls/pcscf.crt\nca_list = /config/tls/ca.crt\n",
         )
     save(
         "tls.cfg",
-        "[server:default]\nmethod = TLSv1.2+\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/sip-core.key\ncertificate = /config/tls/sip-core.crt\nca_list = /config/tls/ca.crt\n[client:default]\nmethod = TLSv1.2+\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/sip-core.key\ncertificate = /config/tls/sip-core.crt\nca_list = /config/tls/ca.crt\n",
+        f"[server:default]\nmethod = TLSv1.2+\ncipher_list = {TLS12_CIPHERS}\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/sip-core.key\ncertificate = /config/tls/sip-core.crt\nca_list = /config/tls/ca.crt\n[client:default]\nmethod = TLSv1.2+\ncipher_list = {TLS12_CIPHERS}\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/sip-core.key\ncertificate = /config/tls/sip-core.crt\nca_list = /config/tls/ca.crt\n",
     )
     print(f"Provisioned {out}; credentials and CA expire after 30 days. Explicit clear media/floor lab policy.")
 

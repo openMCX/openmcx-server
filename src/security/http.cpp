@@ -8,6 +8,7 @@
 // Specifications: TS 24.482 V19.1.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), TS 37.579-1 V18.1.0 (Rel-18), RFC 6749,
 // RFC 7636, OpenID Connect Core 1.0, RFC 7515, RFC 7517, RFC 7518, RFC 7519, RFC 4648, RFC 3986, RFC 6265, HTML 4.01.
 #include "mcx/http.hpp"
+#include "mcx/tls_profile.hpp"
 
 #include <curl/curl.h>
 #include <openssl/bn.h>
@@ -165,6 +166,16 @@ std::string query_value(const std::string &uri, const std::string &key) {
   }
   return {};
 }
+
+//------------------------------------------------------------------------------
+// Helper: TS 33.210 clause 6.2 (TS 33.180 clause 6.1.2): TLS 1.2 or 1.3, TLS 1.2 only with ECDHE and AEAD, no ffdhe
+// group (mcx/tls_profile.hpp).
+void apply_tls_profile(CURL *easy) {
+  curl_easy_setopt(easy, CURLOPT_SSLVERSION, static_cast<long>(CURL_SSLVERSION_TLSv1_2));
+  curl_easy_setopt(easy, CURLOPT_SSL_CIPHER_LIST, tls_profile::tls12_ciphers);
+  curl_easy_setopt(easy, CURLOPT_SSL_EC_CURVES, tls_profile::groups);
+}
+
 } // namespace
 
 //------------------------------------------------------------------------------
@@ -208,6 +219,7 @@ HttpResponse HttpClient::request(std::string_view method, const std::string &url
   curl_easy_setopt(easy, CURLOPT_CAPATH, trust_ == HttpTrust::configured_and_system ? "/etc/ssl/certs" : nullptr);
   curl_easy_setopt(easy, CURLOPT_SSL_VERIFYPEER, 1L);
   curl_easy_setopt(easy, CURLOPT_SSL_VERIFYHOST, 2L);
+  apply_tls_profile(easy);
   curl_easy_setopt(easy, CURLOPT_PROTOCOLS_STR, "https");
   curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 0L);
   curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT_MS, timeouts_.connect_ms);
@@ -319,6 +331,7 @@ HttpResponse http_get_pinned(const std::string &url, std::string_view pin, HttpT
   curl_easy_setopt(easy, CURLOPT_SSL_CTX_FUNCTION, pin_context);
   curl_easy_setopt(easy, CURLOPT_SSL_CTX_DATA, &expected);
   curl_easy_setopt(easy, CURLOPT_SSL_SESSIONID_CACHE, 0L);
+  apply_tls_profile(easy);
   curl_easy_setopt(easy, CURLOPT_PROTOCOLS_STR, "https");
   curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 0L);
   curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT_MS, timeouts.connect_ms);

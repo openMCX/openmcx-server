@@ -62,7 +62,12 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   core requests a client certificate, which annex O.2.1 forbids (the client is authenticated by digest only).
 - **Transport.** SIP of the digest identities uses TLS 1.2 or later with client certificates (see SIP core access), not
   a qualified TS 33.203 Gm profile, and the servers' Diameter uses TLS rather than NDS/IP. The lab's common-service
-  configuration shares client credentials between the services and needs further secret isolation for production.
+  configuration shares client credentials between the services and needs further secret isolation for production. Every
+  TLS client and server (HTTP, SIP, MSRP, the SIP core and P-CSCF, MCX Admin) follows the TLS profile of TS 33.210
+  clause 6.2 that TS 33.180 clause 6.1 refers to: TLS 1.2 and 1.3, TLS 1.2 only with ECDHE and AEAD suites, no finite
+  field Diffie-Hellman (include/mcx/tls_profile.hpp; checked by tests/integration/tls_profile_check.py). SIP over TLS of
+  the C++ programs offers P-256, P-384 and P-521 but not x25519 (pjproject names no x25519 group). A test system whose
+  PIXIT only allows TLS 1.2 RSA, PSK or NULL suites (TS 37.579-5 px_MCX_TLS_CipherSuite) is refused.
 
 ### Media and floor control
 

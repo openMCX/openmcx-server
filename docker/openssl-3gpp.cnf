@@ -1,0 +1,20 @@
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
+# OpenSSL configuration of the Kamailio image (SIP core and P-CSCF, docker/Dockerfile.kamailio, OPENSSL_CONF): the
+# 3GPP TLS profile, TS 33.210 V19.3.0 clause 6.2. Kamailio's tls.cfg sets the TLS 1.2 cipher suites (cipher_list,
+# tools/provision.py) but has no setting for the groups: here P-256 (shall), P-384 (should), x25519, and no finite
+# field Diffie-Hellman group (clauses 6.2.1 and 6.2.2), as in include/mcx/tls_profile.hpp.
+openssl_conf = openssl_init
+
+[openssl_init]
+ssl_conf = ssl_sect
+
+[ssl_sect]
+system_default = system_default_sect
+
+[system_default_sect]
+MinProtocol = TLSv1.2
+CipherString = DEFAULT:@SECLEVEL=2
+Groups = X25519:P-256:P-384:P-521

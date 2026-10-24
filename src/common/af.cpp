@@ -4,6 +4,7 @@
 
 #include "mcx/af.hpp"
 #include "mcx/h2.hpp"
+#include "mcx/tls_profile.hpp"
 #include <algorithm>
 #include <atomic>
 #include <arpa/inet.h>
@@ -556,6 +557,10 @@ PolicyAuthorizationClient::Result PolicyAuthorizationClient::perform(const Job &
   // negotiated with ALPN, and an HTTP/1.1 answer is refused below.
   curl_easy_setopt(c, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE);
   curl_easy_setopt(c, CURLOPT_PROTOCOLS_STR, "http,https");
+  // Over TLS, the 3GPP TLS profile: TS 33.210 clause 6.2 (mcx/tls_profile.hpp).
+  curl_easy_setopt(c, CURLOPT_SSLVERSION, static_cast<long>(CURL_SSLVERSION_TLSv1_2));
+  curl_easy_setopt(c, CURLOPT_SSL_CIPHER_LIST, tls_profile::tls12_ciphers);
+  curl_easy_setopt(c, CURLOPT_SSL_EC_CURVES, tls_profile::groups);
   curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
   curl_easy_setopt(c, CURLOPT_TIMEOUT_MS, static_cast<long>(cfg_.timeout_ms));
   curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT_MS, static_cast<long>(cfg_.timeout_ms));

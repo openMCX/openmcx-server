@@ -92,7 +92,13 @@ LABS = [
     lab('smoke', 'single', [], ['prearranged_scenario'], ['smoke', 'mcptt']),
     # outbound_flow_scenario: a client without a SIP listener, reached over its RFC 5626 flow.
     # MCX Admin (slices B2, C): the accounts managed by MCX Admin; needs --admin-image.
-    lab('admin', 'single', ['--admin'], ['prearranged_scenario', 'admin_scenario'], ['admin']),
+    lab(
+        'admin',
+        'single',
+        ['--admin'],
+        ['prearranged_scenario', 'admin_scenario', 'tls_profile_check'],
+        ['admin'],
+    ),
     # MCX Admin with MCData rights: a user created there uses MCData (ADM-13).
     # service_limit_scenario: a second client ID of a user is refused with 486 until the first client logs off
     # (TS 24.379 and TS 24.282 clause 7.3.3 steps 3a and 3b, clause 7.3.5).
@@ -104,7 +110,13 @@ LABS = [
         ['admin'],
     ),
     # MCX Admin with protected groups: membership changes re-key the group (ADM-14).
-    lab('admin-protected', 'single', ['--admin'] + KEYS, ['admin_scenario'], ['admin', 'protected']),
+    lab(
+        'admin-protected',
+        'single',
+        ['--admin'] + KEYS,
+        ['admin_scenario', 'tls_profile_check'],
+        ['admin', 'protected'],
+    ),
     lab(
         'smoke-mcdata',
         'single',
@@ -166,7 +178,8 @@ LABS = [
         'smoke-mcvideo',
         'single',
         ['--mcvideo'],
-        ['mcvideo_server_scenario', 'prearranged_scenario'],
+        # tls_profile_check: TS 33.210 clause 6.2 on every TLS listener and ClientHello (TS 33.180 clause 6.1).
+        ['mcvideo_server_scenario', 'prearranged_scenario', 'tls_profile_check'],
         ['smoke', 'mcvideo'],
     ),
     lab(
@@ -376,7 +389,13 @@ LABS = [
         'aka',
         'single',
         ['--aka', '--private-call', '--mcdata'],
-        ['aka_negative_scenario', 'prearranged_scenario', 'private_call_scenario', 'mcdata_sds_scenario'],
+        [
+            'aka_negative_scenario',
+            'prearranged_scenario',
+            'private_call_scenario',
+            'mcdata_sds_scenario',
+            'tls_profile_check',
+        ],
         ['aka', 'common'],
     ),
     # The same over UDP (TS 24.229 clause 4.2A, TS 33.203 clause 7.1 UDP case): the AKA UEs send from port_uc to

@@ -12,6 +12,7 @@ package common
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -257,7 +258,7 @@ func (svc *service) httpClient() *http.Client {
 	if svc.serviceClient != nil {
 		return svc.serviceClient
 	}
-	return &http.Client{Timeout: 10 * time.Second}
+	return &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: TLSProfile(&tls.Config{})}}
 }
 
 // ------------------------------------------------------------------------------

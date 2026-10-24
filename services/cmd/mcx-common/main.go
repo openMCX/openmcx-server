@@ -84,7 +84,7 @@ func run() error {
 			return err
 		}
 	}
-	serverTLS := &tls.Config{MinVersion: tls.VersionTLS12}
+	serverTLS := common.TLSProfile(&tls.Config{})
 	var opts []common.Option
 	if (role == common.RoleMsgStore || role == common.RoleContent || role == common.RoleKMS || role == common.RoleGMS ||
 		((role == common.RoleIDMS || role == common.RoleCMS || role == common.RoleCredentials || role == common.RoleLMS) && cfg.AdminAccounts != nil)) && caPath != "" {
@@ -100,7 +100,7 @@ func run() error {
 			return fmt.Errorf("CA file contains no certificate")
 		}
 		opts = append(opts, common.WithServiceClient(&http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: pool}, TLSHandshakeTimeout: 5 * time.Second,
+			TLSClientConfig: common.TLSProfile(&tls.Config{RootCAs: pool}), TLSHandshakeTimeout: 5 * time.Second,
 		}}))
 	}
 	handler, err := common.NewHandlerWithKeys(role, cfg, signing, verification, dataDir, opts...)

@@ -89,7 +89,7 @@ func run() error {
 	}
 	// The proxy presents its own certificate upstream.
 	transport := &http.Transport{
-		TLSClientConfig:     &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{own}},
+		TLSClientConfig:     common.TLSProfile(&tls.Config{RootCAs: pool, Certificates: []tls.Certificate{own}}),
 		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second,
 		IdleConnTimeout: 30 * time.Second, MaxIdleConns: 32, MaxIdleConnsPerHost: 8,
 	}
@@ -103,7 +103,7 @@ func run() error {
 	} else if debug {
 		handler = common.WithRequestLog(handler, "http-proxy")
 	}
-	serverTLS := &tls.Config{MinVersion: tls.VersionTLS12}
+	serverTLS := common.TLSProfile(&tls.Config{})
 	server := &http.Server{Addr: listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 15 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 30 * time.Second,
 		MaxHeaderBytes: 64 << 10, TLSConfig: serverTLS}
