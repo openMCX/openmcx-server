@@ -226,7 +226,11 @@ void validate_aka_config(const SipConfig &config) {
     throw std::invalid_argument("the IMS AKA protected server port must not be 5060, 5061 or the unprotected port");
   if (aka.impi.find_first_of("\"\r\n") != std::string::npos) throw std::invalid_argument("invalid IMPI");
   (void)aka::key_from_hex(aka.k);
-  (void)aka::key_from_hex(aka.opc);
+  // TS 34.108 clause 8.1.2: the test algorithm uses K alone.
+  if (aka.algorithm != "milenage" && aka.algorithm != "test")
+    throw std::invalid_argument("unknown ISIM algorithm (milenage or test)");
+  if (aka.algorithm == "milenage" || !aka.opc.empty()) (void)aka::key_from_hex(aka.opc);
+  if (aka.res_length < 4 || aka.res_length > 16) throw std::invalid_argument("ISIM RES length must be 4 to 16 bytes");
   (void)aka::amf_from_hex(aka.amf);
   const auto identity = ascii_lower(config.identity);
   if (!identity.starts_with("sip:")) throw std::invalid_argument("SIP identity must be a sip: URI");

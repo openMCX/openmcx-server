@@ -6,7 +6,7 @@
 // (TS 33.102 annex C.2), the HTTP Digest AKA passwords and responses, sec-agree and the ESP keys of annex I.
 //
 // Specifications: TS 35.206 V19.0.0 (Rel-19), TS 33.102 V19.1.0 (Rel-19), TS 33.203 V19.1.0 (Rel-19),
-// TS 24.229 V19.7.0 (Rel-19), RFC 2617, RFC 3310, RFC 3329, RFC 4169, RFC 7616.
+// TS 24.229 V19.7.0 (Rel-19), TS 34.108 V15.2.0, RFC 2617, RFC 3310, RFC 3329, RFC 4169, RFC 7616.
 
 #include "mcx/ims_aka.hpp"
 
@@ -131,6 +131,47 @@ Milenage2345 Milenage::f2345(const Rand &rand) const {
 }
 
 //------------------------------------------------------------------------------
+// TS 34.108 clause 8.1.2.1 step 1: XDOUT = K XOR RAND.
+Key TestAlgorithm::xdout(const Rand &rand) const {
+  Key out{};
+  for (std::size_t index = 0; index < out.size(); ++index) out[index] = k_[index] ^ rand[index];
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// Step 2: CK = XDOUT[bits 8..127, 0..7], a rotation by one byte.
+Key TestAlgorithm::ck(const Key &xdout) {
+  Key out{};
+  std::rotate_copy(xdout.begin(), xdout.begin() + 1, xdout.end(), out.begin());
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// Step 2: IK = XDOUT[bits 16..127, 0..15], a rotation by two bytes.
+Key TestAlgorithm::ik(const Key &xdout) {
+  Key out{};
+  std::rotate_copy(xdout.begin(), xdout.begin() + 2, xdout.end(), out.begin());
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// Step 2: AK = XDOUT[bits 24..71], bytes 3 to 8.
+Sqn TestAlgorithm::ak(const Key &xdout) {
+  Sqn out{};
+  std::copy(xdout.begin() + 3, xdout.begin() + 9, out.begin());
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// Steps 3 and 4: XMAC = XDOUT[bits 0..63] XOR CDOUT, CDOUT = SQN || AMF.
+Mac TestAlgorithm::f1(const Key &xdout, const Sqn &sqn, const Amf &amf) {
+  Mac out{};
+  for (std::size_t index = 0; index < out.size(); ++index)
+    out[index] = xdout[index] ^ (index < sqn.size() ? sqn[index] : amf[index - sqn.size()]);
+  return out;
+}
+
+//------------------------------------------------------------------------------
 // TS 33.102 annex C.2.1: SEQ - SEQ_MS <= delta, then annex C.2.2: SEQ > SEQ_MS(IND).
 bool SequenceNumbers::fresh(std::uint64_t sqn) const noexcept {
   const std::uint64_t seq = sqn >> ind_bits;
@@ -168,8 +209,11 @@ SequenceNumbers SequenceNumbers::parse(std::string_view text) {
 //------------------------------------------------------------------------------
 // Helper: the ISIM with its keys; the sequence numbers come from the file, or start at zero (TS 33.102 annex C.2.2)
 // when it does not exist.
-SoftIsim::SoftIsim(const Key &k, const Key &opc, std::filesystem::path sqn_file)
-    : milenage_(k, opc), sqn_file_(std::move(sqn_file)) {
+SoftIsim::SoftIsim(const Key &k, const Key &opc, std::filesystem::path sqn_file, IsimAlgorithm algorithm,
+                   std::size_t res_length)
+    : algorithm_(algorithm), res_length_(res_length), test_(k), milenage_(k, opc), sqn_file_(std::move(sqn_file)) {
+  if (res_length_ < 4 || res_length_ > 16) throw std::invalid_argument("ISIM RES length must be 4 to 16 bytes");
+  if (algorithm_ == IsimAlgorithm::test) return;
   std::ifstream in(sqn_file_);
   if (!in) return;
   std::stringstream text;
@@ -197,6 +241,7 @@ void SoftIsim::save() const {
 // TS 33.102 clause 6.3.3: verifies AUTN = (SQN XOR AK) || AMF || MAC and computes RES, CK and IK, or AUTS on a
 // synchronisation failure. The new sequence number is saved before the result is returned.
 AuthResult SoftIsim::authenticate(const Rand &rand, const Autn &autn) {
+  if (algorithm_ == IsimAlgorithm::test) return authenticate_test(rand, autn);
   AuthResult result;
   const auto outputs = milenage_.f2345(rand);
   Sqn sqn{};
@@ -221,9 +266,39 @@ AuthResult SoftIsim::authenticate(const Rand &rand, const Autn &autn) {
   sqn_.accept(received);
   save();
   result.status = AuthStatus::success;
-  result.res = outputs.res;
+  result.res.assign(outputs.res.begin(), outputs.res.end());
   result.ck = outputs.ck;
   result.ik = outputs.ik;
+  return result;
+}
+
+//------------------------------------------------------------------------------
+// TS 34.108 clause 8.1.2.3: the test USIM takes SQN_MS = SQN_SS = AUTN[bits 0..47] XOR AK and checks XMAC = MAC
+// (8.1.2.3.1, 8.1.2.3.2); an AMF of AMF_RESYNCH (FFFF) asks for AUTS = (SQN_MS XOR AK) || MAC-S, MAC-S = f1 of
+// SQN_MS || 0000 (clause 8.1.2.2, 8.1.2.3.3).
+AuthResult SoftIsim::authenticate_test(const Rand &rand, const Autn &autn) const {
+  AuthResult result;
+  const auto xdout = test_.xdout(rand);
+  const auto ak = TestAlgorithm::ak(xdout);
+  Sqn sqn{};
+  for (std::size_t index = 0; index < sqn.size(); ++index) sqn[index] = autn[index] ^ ak[index];
+  const Amf amf{autn[6], autn[7]};
+  const auto xmac = TestAlgorithm::f1(xdout, sqn, amf);
+  if (os_memcmp_const(xmac.data(), autn.data() + 8, xmac.size()) != 0) {
+    result.status = AuthStatus::mac_failure;
+    return result;
+  }
+  if (amf == Amf{0xff, 0xff}) {
+    for (std::size_t index = 0; index < sqn.size(); ++index) result.auts[index] = sqn[index] ^ ak[index];
+    const auto mac_s = TestAlgorithm::f1(xdout, sqn, Amf{0, 0});
+    std::copy(mac_s.begin(), mac_s.end(), result.auts.begin() + 6);
+    result.status = AuthStatus::sync_failure;
+    return result;
+  }
+  result.status = AuthStatus::success;
+  result.res.assign(xdout.begin(), xdout.begin() + static_cast<std::ptrdiff_t>(res_length_));
+  result.ck = TestAlgorithm::ck(xdout);
+  result.ik = TestAlgorithm::ik(xdout);
   return result;
 }
 

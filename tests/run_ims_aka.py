@@ -23,10 +23,12 @@ preloaded Route, a MESSAGE of the P-CSCF from port_pc to port_us, an unprotected
 ESP counters, and the deregistration that removes every SA. (2) a restarted UE with the same SQN file and a replayed
 SQN: AUTS, resynchronisation, AKAv1-MD5 this time, registration; then a refresh over the set, a new challenge,
 a new set (new port_uc and port_pc) taking over, and the old set deleted 32 s after the first P-CSCF message on it. (3) a wrong key: MAC failure, empty response, 403,
-no SA left.
+no SA left. (4) the UE's ISIM on the test algorithm of TS 34.108 clause 8.1.2 (vectors computed here): AMF_RESYNCH
+answered with its AUTS (clause 8.1.2.3.3), then an AKAv1-MD5 challenge answered with the 16-byte RES, registration
+over the set, a MESSAGE and the deregistration.
 
 Specifications: TS 24.229 V19.7.0 (Rel-19) clauses 5.1.1.2, 5.1.1.5, 5.1.1.6 and 5.1.2A.1, TS 33.203 V19.1.0
-(Rel-19) clauses 7.1 to 7.4 and annexes H and I, TS 33.102 V19.1.0 clause 6.3, RFC 3310, RFC 3329, RFC 4169,
+(Rel-19) clauses 7.1 to 7.4 and annexes H and I, TS 33.102 V19.1.0 clause 6.3, TS 34.108 V15.2.0 clause 8.1.2, RFC 3310, RFC 3329, RFC 4169,
 RFC 2617, RFC 7616.
 """
 
@@ -140,6 +142,17 @@ def vector(binary, k, sqn, rand):
 
 
 # ------------------------------------------------------------------------------
+def test_vector(k, rand, sqn, amf):
+    """AUTN, XRES, CK, IK of the test algorithm (TS 34.108 clause 8.1.2.1): XDOUT = K XOR RAND, AK = bytes 3 to 8,
+    MAC = XDOUT[0..7] XOR (SQN || AMF), XRES = XDOUT, CK and IK = XDOUT rotated by one and two bytes."""
+    xdout = bytes(a ^ b for a, b in zip(k, rand))
+    ak = xdout[3:9]
+    mac = bytes(a ^ b for a, b in zip(xdout[:8], sqn + amf))
+    autn = bytes(a ^ b for a, b in zip(sqn, ak)) + amf + mac
+    return autn, xdout, xdout[1:] + xdout[:1], xdout[2:] + xdout[:2]
+
+
+# ------------------------------------------------------------------------------
 def digest(algorithm, password, nonce, fields, method="REGISTER", uri=f"sip:{REALM}"):
     """The request-digest of RFC 2617 (MD5) or RFC 7616 (SHA-256) with the Authorization's qop, nc and cnonce."""
     h = (
@@ -237,11 +250,11 @@ def challenge(wire, request, binary, sqn, rand, server, k=K):
 
 
 # ------------------------------------------------------------------------------
-def start_ue(binary, sqn_file, k=K):
-    """Start the UE role; returns the process."""
+def start_ue(binary, sqn_file, k=K, opc=OPC):
+    """Start the UE role (opc "test": the TS 34.108 test algorithm); returns the process."""
     env = dict(os.environ, MCX_LOG=os.environ.get("MCX_LOG", "info"))
     return subprocess.Popen(
-        [binary, "ue", sqn_file, k, OPC],
+        [binary, "ue", sqn_file, k, opc],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -716,6 +729,124 @@ def scenario_mac_failure(binary, listener, sqn_file):
 
 
 # ------------------------------------------------------------------------------
+def scenario_test_algorithm(binary, listener, protected_listener, sqn_file):
+    """Scenario 4: the ISIM on the TS 34.108 test algorithm."""
+    k = bytes(range(16))
+    process = start_ue(binary, sqn_file, k=k.hex(), opc="test")
+    try:
+        wire, request, client = accept_initial(listener)
+        server = (
+            f"ipsec-3gpp;alg=hmac-sha-1-96;ealg=aes-cbc;spi-c={SPI_PC};spi-s={SPI_PS};"
+            f"port-c={PORT_PC};port-s={PORT_PS}"
+        )
+        sqn = bytes.fromhex("000000000120")
+
+        def send_401(request, amf, rand):
+            autn, res, ck, ik = test_vector(k, rand, sqn, amf)
+            nonce = base64.b64encode(rand + autn).decode()
+            wire.send(
+                response_to(
+                    request,
+                    401,
+                    "Unauthorized",
+                    f'WWW-Authenticate: Digest realm="{REALM}", nonce="{nonce}", algorithm=AKAv1-MD5, '
+                    f'qop="auth"\nSecurity-Server: {server}',
+                )
+            )
+            return nonce, res, ck, ik
+
+        # Clause 8.1.2.3.3: AMF_RESYNCH; AUTS = (SQN_MS XOR AK) || MAC-S, SQN_MS the received SQN, MAC-S of SQN || 0000.
+        rand = os.urandom(16)
+        send_401(request, b"\xff\xff", rand)
+        again = wire.receive()
+        xdout = bytes(a ^ b for a, b in zip(k, rand))
+        auts = bytes(a ^ b for a, b in zip(sqn, xdout[3:9])) + bytes(
+            a ^ b for a, b in zip(xdout[:8], sqn + b"\0\0")
+        )
+        received = parameters(again[1]["authorization"][0])
+        check(
+            received.get("auts") == base64.b64encode(auts).decode(),
+            f"test algorithm AUTS (TS 34.108 clause 8.1.2.2): {received.get('auts')}",
+        )
+        check(
+            xfrm("state", "list").strip() == "", "no temporary SA on resynchronisation"
+        )
+
+        # TS 24.229 clause 5.1.1.5.3: the REGISTER with AUTS offers new spi_uc, spi_us and port_uc.
+        client = {
+            name: int(value)
+            for name, value in parameters(again[1]["security-client"][0]).items()
+            if name in ("spi-c", "spi-s", "port-c", "port-s")
+        }
+        # Clause 8.1.2.3.1: the challenge answered with RES = XDOUT (16 bytes) as the AKAv1-MD5 password.
+        rand = os.urandom(16)
+        nonce, res, _, _ = send_401(again, b"\x80\x00", rand)
+        pcscf_policies(client)
+        protected, second = protected_register(
+            protected_listener, again, client, server
+        )
+        authorization = parameters(second[1]["authorization"][0])
+        check(
+            authorization["algorithm"] == "AKAv1-MD5"
+            and authorization["response"]
+            == digest("AKAv1-MD5", res, nonce, authorization),
+            "AKAv1-MD5 response with the test algorithm's RES",
+        )
+        expires = second[1]["expires"][0]
+        protected.send(
+            response_to(
+                second,
+                200,
+                "OK",
+                f"Contact: {second[1]['contact'][0]};expires={expires}\n"
+                f"Service-Route: <sip:orig@scscf.{REALM};lr>\n"
+                f"P-Associated-URI: <sip:alice@{REALM}>",
+            )
+        )
+        check("hmac-sha-1-96 aes-cbc" in wait_line(process, "sa "), "SA set in use")
+        message = protected.receive()
+        check(
+            message[0].startswith("MESSAGE sip:bob@example.org"), "MESSAGE over the set"
+        )
+        protected.send(response_to(message, 200, "OK"))
+        check("200" in wait_line(process, "message answered"), "MESSAGE answered")
+
+        inbound = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        inbound.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        inbound.bind((PCSCF, PORT_PC))
+        inbound.connect((UE, PORT_US))
+        inbound_wire = SipWire(inbound)
+        inbound_wire.send(
+            f"MESSAGE sip:alice@{UE}:{PORT_US};transport=tcp SIP/2.0\nVia: SIP/2.0/TCP "
+            f"{PCSCF}:{PORT_PC};branch=z9hG4bKtestalg\nFrom: <sip:bob@{REALM}>;tag=b\n"
+            f"To: <sip:alice@{REALM}>\nCall-ID: pcscf-testalg\nCSeq: 1 MESSAGE\nMax-Forwards: 70\n"
+            f"Content-Type: text/plain\n\nderegister"
+        )
+        check(
+            inbound_wire.receive()[0] == "SIP/2.0 200 OK", "the UE answers on port_us"
+        )
+        dereg = protected.receive()
+        check(
+            dereg[0].startswith("REGISTER") and dereg[1]["expires"] == ["0"],
+            "deregistration",
+        )
+        protected.send(
+            response_to(
+                dereg, 200, "OK", f"Contact: {dereg[1]['contact'][0]};expires=0"
+            )
+        )
+        wait_line(process, "deregistered")
+        check(process.wait(10) == 0, "UE exit")
+        check(
+            xfrm("state", "list").strip() == "", "every SA removed after deregistration"
+        )
+        pcscf_policies(client, add=False)
+        inbound.close()
+    finally:
+        stop_ue(process)
+
+
+# ------------------------------------------------------------------------------
 def main():
     """Run the three scenarios."""
     if not has_net_admin():
@@ -750,6 +881,10 @@ def main():
         print("ims_aka_sip: resynchronisation, re-registration with a new set ok")
         scenario_mac_failure(binary, listener, sqn_file)
         print("ims_aka_sip: MAC failure ok")
+        scenario_test_algorithm(binary, listener, protected_listener, sqn_file)
+        print(
+            "ims_aka_sip: TS 34.108 test algorithm, resynchronisation and registration ok"
+        )
     return 0
 
 

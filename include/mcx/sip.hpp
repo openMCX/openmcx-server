@@ -56,6 +56,10 @@ struct SipImsAkaConfig {
   std::uint16_t pcscf_port = 5060;
   // The UE's own port of the unprotected REGISTER (its Via sent-by and Contact).
   std::uint16_t unprotected_port = 5060;
+  // "milenage" (TS 35.206), or "test": the test algorithm of TS 34.108 clause 8.1.2 (no OPc), with a RES of
+  // res_length bytes, for a test system's challenges.
+  std::string algorithm = "milenage";
+  unsigned res_length = 16;
 };
 
 //------------------------------------------------------------------------------

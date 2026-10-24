@@ -89,7 +89,7 @@ SipConfig sip_config(const Json &cfg, bool disable_tls) {
   config.identity = sip.at("identity");
   config.session_expires = sip.value("session_expires", 1800u);
   // TS 33.203 and TS 24.229 clause 5.1.1.2.2: sip.auth "aka": the ISIM (sip.isim: impi, k, opc, amf, and optionally
-  // sqn_file) and the preconfigured P-CSCF (sip.pcscf: address, port); sip.port is the protected server port port_us.
+  // sqn_file; or algorithm "test", TS 34.108 clause 8.1.2, with k and optionally res_length, no opc) and the preconfigured P-CSCF (sip.pcscf: address, port); sip.port is the protected server port port_us.
   // The SAs bind IP addresses, so names are resolved here.
   if (sip.value("auth", "digest") == "aka") {
     const auto &isim = sip.at("isim");
@@ -99,7 +99,13 @@ SipConfig sip_config(const Json &cfg, bool disable_tls) {
     config.aka.enabled = true;
     config.aka.impi = isim.at("impi");
     config.aka.k = isim.at("k");
-    config.aka.opc = isim.at("opc");
+    config.aka.algorithm = isim.value("algorithm", "milenage");
+    if (config.aka.algorithm != "milenage" && config.aka.algorithm != "test")
+      throw std::invalid_argument("sip.isim.algorithm must be milenage or test");
+    config.aka.opc = config.aka.algorithm == "test" ? isim.value("opc", "") : isim.at("opc").get<std::string>();
+    config.aka.res_length = isim.value("res_length", 16u);
+    if (config.aka.res_length < 4 || config.aka.res_length > 16)
+      throw std::invalid_argument("sip.isim.res_length must be 4 to 16 bytes");
     config.aka.amf = isim.value("amf", "8000");
     config.aka.sqn_file = isim.value("sqn_file", "");
     const auto numeric = [](const std::string &host) {

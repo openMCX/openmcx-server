@@ -8,7 +8,7 @@
 // security associations.
 //
 // Specifications: TS 35.206 V19.0.0 (Rel-19), TS 33.102 V19.1.0 (Rel-19), TS 33.203 V19.1.0 (Rel-19),
-// TS 24.229 V19.7.0 (Rel-19), RFC 2617, RFC 3310, RFC 3329, RFC 4169, RFC 7616.
+// TS 24.229 V19.7.0 (Rel-19), TS 34.108 V15.2.0, RFC 2617, RFC 3310, RFC 3329, RFC 4169, RFC 7616.
 #pragma once
 
 #include <array>
@@ -55,6 +55,31 @@ private:
 };
 
 //------------------------------------------------------------------------------
+// TS 34.108 clause 8.1.2: the test algorithm that test USIMs and system simulators use, from K alone (no OPc):
+// XDOUT = K XOR RAND, RES = the first bytes of XDOUT, CK and IK = XDOUT rotated left by 8 and 16 bits, AK = bits 24
+// to 71 of XDOUT, and MAC = the first 64 bits of XDOUT XOR (SQN || AMF); f1* and f5* are f1 and f5.
+class TestAlgorithm {
+public:
+  explicit TestAlgorithm(const Key &k) : k_(k) {}
+
+  // Clause 8.1.2.1 step 1: XDOUT of a challenge.
+  [[nodiscard]] Key xdout(const Rand &rand) const;
+  // Step 2: f3 (CK), f4 (IK) and f5 (AK, also f5*) of XDOUT.
+  [[nodiscard]] static Key ck(const Key &xdout);
+  [[nodiscard]] static Key ik(const Key &xdout);
+  [[nodiscard]] static Sqn ak(const Key &xdout);
+  // Steps 3 and 4: f1 (XMAC, MAC; also f1*, clause 8.1.2.2) of XDOUT and CDOUT = SQN || AMF.
+  [[nodiscard]] static Mac f1(const Key &xdout, const Sqn &sqn, const Amf &amf);
+
+private:
+  Key k_{};
+};
+
+// The authentication algorithm of the software ISIM: MILENAGE (TS 35.206), or the test algorithm (TS 34.108 clause
+// 8.1.2) that a test system challenges with.
+enum class IsimAlgorithm { milenage, test };
+
+//------------------------------------------------------------------------------
 // TS 33.102 annex C.2 with the parameters of profile 2 (annex C.3.2, sequence numbers that are not time-based):
 // SQN = SEQ || IND with a 5-bit IND, an array of a = 32 accepted SEQ values SEQ_MS(i) that start at zero, the wrap
 // around limit delta = 2^28 of annex C.2.1 and no age limit L (optional in annex C.2.2). SQN_MS is the highest accepted
@@ -92,7 +117,7 @@ enum class AuthStatus {
 
 struct AuthResult {
   AuthStatus status = AuthStatus::mac_failure;
-  std::array<std::uint8_t, 8> res{};
+  std::vector<std::uint8_t> res; // 8 bytes with MILENAGE; the configured length with the test algorithm
   Key ck{}, ik{};
   // AUTS = (SQN_MS XOR f5*K(RAND)) || f1*K(SQN_MS || RAND || AMF*), AMF* all zeros (TS 33.102 clause 6.3.3).
   std::array<std::uint8_t, 14> auts{};
@@ -101,20 +126,28 @@ struct AuthResult {
 //------------------------------------------------------------------------------
 // TS 33.203 clause 6.1 and TS 33.102 clause 6.3.3: a software ISIM: its long-term key K and OPc, and its sequence
 // numbers (annex C.2), kept in a file that is written before a RES leaves the ISIM, so that a challenge is never
-// accepted twice across restarts. A missing file is the initial state (all zero, annex C.2.2).
+// accepted twice across restarts. A missing file is the initial state (all zero, annex C.2.2). With the test algorithm
+// (TS 34.108 clause 8.1.2) it acts as a test USIM: no OPc, no sequence number state, RES of res_length bytes (4 to 16,
+// clause 8.1.2.1 step 2).
 class SoftIsim {
 public:
-  SoftIsim(const Key &k, const Key &opc, std::filesystem::path sqn_file);
+  SoftIsim(const Key &k, const Key &opc, std::filesystem::path sqn_file,
+           IsimAlgorithm algorithm = IsimAlgorithm::milenage, std::size_t res_length = 16);
 
   // TS 33.102 clause 6.3.3: AK = f5(RAND), SQN = (SQN XOR AK) XOR AK, XMAC = f1(SQN || RAND || AMF) compared with
   // MAC, then the SQN range; RES = f2(RAND), CK = f3(RAND), IK = f4(RAND) when both hold. The AMF is not checked: its
-  // separation bit concerns EPS and 5G AKA (TS 33.102 annex H), not IMS AKA.
+  // separation bit concerns EPS and 5G AKA (TS 33.102 annex H), not IMS AKA. With the test algorithm: TS 34.108
+  // clauses 8.1.2.3.1 to 8.1.2.3.3, the MAC checked, SQN_MS = the received SQN, AUTS only when AMF is AMF_RESYNCH.
   [[nodiscard]] AuthResult authenticate(const Rand &rand, const Autn &autn);
 
   [[nodiscard]] const SequenceNumbers &sequence_numbers() const noexcept { return sqn_; }
 
 private:
   void save() const;
+  [[nodiscard]] AuthResult authenticate_test(const Rand &rand, const Autn &autn) const;
+  IsimAlgorithm algorithm_;
+  std::size_t res_length_;
+  TestAlgorithm test_;
   Milenage milenage_;
   std::filesystem::path sqn_file_;
   SequenceNumbers sqn_;

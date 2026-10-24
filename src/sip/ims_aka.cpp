@@ -165,8 +165,10 @@ void SipEngine::Impl::aka_start(const pj_sockaddr &local, const pjsip_host_port 
 #else
   aka = std::make_unique<Aka>();
   aka->xfrm = std::make_unique<xfrm::Xfrm>();
-  aka->isim = std::make_unique<aka::SoftIsim>(aka::key_from_hex(config.aka.k), aka::key_from_hex(config.aka.opc),
-                                              config.aka.sqn_file);
+  const bool test = config.aka.algorithm == "test";
+  aka->isim = std::make_unique<aka::SoftIsim>(
+      aka::key_from_hex(config.aka.k), test && config.aka.opc.empty() ? aka::Key{} : aka::key_from_hex(config.aka.opc),
+      config.aka.sqn_file, test ? aka::IsimAlgorithm::test : aka::IsimAlgorithm::milenage, config.aka.res_length);
   require_success(pjsip_tcp_transport_start2(endpoint, &local.ipv4, &advertised, 1, &tls_factory),
                   "start the IMS AKA protected SIP TCP transport");
   pj_sockaddr unprotected = local;

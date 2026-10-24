@@ -137,7 +137,8 @@ int main() {
       SoftIsim isim(k, opc, file);
       const auto good = isim.authenticate(rand, make_autn(network, rand, 0x40, amf));
       check(good.status == AuthStatus::success, "valid challenge refused");
-      check(good.res == bytes<8>(test_sets[0].f2) && good.ck == bytes<16>(test_sets[0].f3) &&
+      const auto f2 = bytes<8>(test_sets[0].f2);
+      check(good.res == std::vector<std::uint8_t>(f2.begin(), f2.end()) && good.ck == bytes<16>(test_sets[0].f3) &&
                 good.ik == bytes<16>(test_sets[0].f4),
             "RES, CK, IK");
       auto bad_mac = make_autn(network, rand, 0x60, amf);
@@ -158,6 +159,41 @@ int main() {
     }
     std::filesystem::remove(file);
 
+    // TS 34.108 clause 8.1.2: the test algorithm with the default test USIM key 000102...0F (clause 8.2); the
+    // expected values come from a bit-level implementation of clauses 8.1.2.1 and 8.1.2.2.
+    {
+      const auto test_k = bytes<16>("000102030405060708090a0b0c0d0e0f");
+      const auto test_rand = bytes<16>("23553cbe9637a89d218ae64dae47bf35");
+      SoftIsim isim(test_k, Key{}, {}, IsimAlgorithm::test);
+      const auto good = isim.authenticate(test_rand, bytes<16>("bd9232ae9b09800023543ebd93122e9a"));
+      const auto res = bytes<16>("23543ebd9232ae9a2983ec46a24ab13a");
+      check(good.status == AuthStatus::success && good.res == std::vector<std::uint8_t>(res.begin(), res.end()) &&
+                good.ck == bytes<16>("543ebd9232ae9a2983ec46a24ab13a23") &&
+                good.ik == bytes<16>("3ebd9232ae9a2983ec46a24ab13a2354"),
+            "test algorithm RES, CK, IK");
+      // Clause 8.1.2.3.1: the same challenge again is accepted (the test USIM keeps no SQN state).
+      check(isim.authenticate(test_rand, bytes<16>("bd9232ae9b09800023543ebd93122e9a")).status == AuthStatus::success,
+            "test algorithm replay");
+      // Clause 8.1.2.3.2: a wrong MAC.
+      check(isim.authenticate(test_rand, bytes<16>("bd9232ae9b09800023543ebd93122e9b")).status ==
+                AuthStatus::mac_failure,
+            "test algorithm MAC failure");
+      // Clause 8.1.2.3.3: AMF_RESYNCH gives AUTS = (SQN_MS XOR AK) || MAC-S.
+      const auto resync = isim.authenticate(test_rand, bytes<16>("bd9232ae9b09ffff23543ebd93125165"));
+      check(resync.status == AuthStatus::sync_failure && resync.auts == bytes<14>("bd9232ae9b0923543ebd9312ae9a"),
+            "test algorithm AUTS");
+      SoftIsim short_res(test_k, Key{}, {}, IsimAlgorithm::test, 8);
+      check(short_res.authenticate(test_rand, bytes<16>("bd9232ae9b09800023543ebd93122e9a")).res.size() == 8,
+            "test algorithm RES length");
+      bool refused = false;
+      try {
+        SoftIsim bad(test_k, Key{}, {}, IsimAlgorithm::test, 17);
+      } catch (const std::invalid_argument &) {
+        refused = true;
+      }
+      check(refused, "RES of 17 bytes accepted");
+    }
+
     // RFC 2617 section 3.5 and RFC 7616 section 3.9.1 examples (MD5 and SHA-256 request-digests).
     check(digest_response(AkaAlgorithm::akav1_md5, "Mufasa", "testrealm@host.com", "Circle Of Life", "GET",
                           "/dir/index.html", "dcd98b7102dd2f0e8b11d0f600bfb0c093", "00000001", "0a4f113b",
@@ -169,7 +205,8 @@ int main() {
                           "auth") == "753927fa0e85d155564e2e272a28d1802ca10daf4496794697cf8db5856cb6c1",
           "RFC 7616 response");
     AuthResult result;
-    result.res = bytes<8>(test_sets[0].f2);
+    const auto f2 = bytes<8>(test_sets[0].f2);
+    result.res.assign(f2.begin(), f2.end());
     check(digest_password(AkaAlgorithm::akav1_md5, result) == std::string(result.res.begin(), result.res.end()),
           "AKAv1 password is RES");
     check(digest_password(AkaAlgorithm::akav2_sha256, result).size() == 44, "AKAv2 password is base64 of 32 bytes");

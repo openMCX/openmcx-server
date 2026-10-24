@@ -106,6 +106,18 @@ int main() {
       ims.aka.impi != "a@example.test" || ims.aka.unprotected_port != 5060)
     throw std::runtime_error("IMS AKA configuration not taken");
   { mcx::SipEngine accepted(ims); }
+  // TS 34.108 clause 8.1.2: the test algorithm needs no OPc; a RES length outside 4 to 16 bytes is refused.
+  mcx::Json test_isim = aka;
+  test_isim["sip"]["isim"] = {
+      {"impi", "a@example.test"}, {"k", "000102030405060708090a0b0c0d0e0f"}, {"algorithm", "test"}, {"res_length", 8}};
+  const auto test_config = mcx::sip_config(test_isim);
+  if (test_config.aka.algorithm != "test" || test_config.aka.res_length != 8 || !test_config.aka.opc.empty())
+    throw std::runtime_error("IMS AKA test algorithm configuration not taken");
+  { mcx::SipEngine accepted(test_config); }
+  test_isim["sip"]["isim"]["res_length"] = 17;
+  rejects([&] { mcx::sip_config(test_isim); }, "a RES of 17 bytes");
+  test_isim["sip"]["isim"]["algorithm"] = "comp128";
+  rejects([&] { mcx::sip_config(test_isim); }, "an unknown ISIM algorithm");
   aka["sip"]["port"] = 5060;
   rejects([&] { mcx::SipEngine engine(mcx::sip_config(aka)); }, "an IMS AKA protected server port 5060");
   aka["sip"]["port"] = 31900;

@@ -80,7 +80,11 @@ int ue(const std::string &sqn_file, const std::string &k, const std::string &opc
   config.aka.enabled = true;
   config.aka.impi = "alice@example.org";
   config.aka.k = k;
-  config.aka.opc = opc;
+  // OPC "test": the test algorithm of TS 34.108 clause 8.1.2 (K alone, RES of 16 bytes).
+  if (opc == "test")
+    config.aka.algorithm = "test";
+  else
+    config.aka.opc = opc;
   config.aka.sqn_file = sqn_file;
   config.aka.pcscf_address = "127.0.0.2";
   bool deregister = false, done = false;
