@@ -26,6 +26,7 @@
 #include "mcx/key_documents.hpp"
 #include "mcx/location.hpp"
 #include "mcx/media.hpp"
+#include "mcx/multicast.hpp"
 #include "mcx/private_call.hpp"
 #include "mcx/protected_call.hpp"
 #include "mcx/runtime.hpp"
@@ -1305,6 +1306,20 @@ protected:
   void unpermitted_media(Leg &leg);
 
   void unpermitted_media_tick(const Session &session, std::uint64_t now);
+
+  // ---- IP multicast delivery of group call speech (media.cpp, an OpenMCX profile: include/mcx/multicast.hpp) ----
+  void multicast_setup();
+
+  [[nodiscard]] const MulticastDestination *multicast_destination(const Session &session) const;
+
+  [[nodiscard]] bool multicast_leg(const Leg &leg) const;
+
+  void send_multicast(std::span<const std::uint8_t> packet, const MulticastDestination &destination);
+
+  // The "multicast" block of the mcptt configuration, and the socket the speech is sent from; none when not
+  // configured.
+  std::optional<MulticastConfig> multicast_;
+  std::unique_ptr<UdpSocket> multicast_socket_;
 
   // ---- XML integrity protection (xml_protection.cpp): TS 24.379 clause 6.6.3, TS 33.180 clause 9.3.5 ----
   // Each XML body of a message is signed with HMAC-SHA256 under the integrity key of

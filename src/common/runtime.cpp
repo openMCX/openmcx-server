@@ -275,6 +275,47 @@ bool UdpSocket::matches(const sockaddr_in &source, const std::string &ip, std::u
 }
 
 //------------------------------------------------------------------------------
+// RFC 1112 section 4: a host group address has 1110 as its high-order four bits.
+bool is_ipv4_multicast(const std::string &address) {
+  in_addr parsed{};
+  constexpr std::uint32_t class_d_mask = 0xf0000000, class_d = 0xe0000000;
+  return inet_pton(AF_INET, address.c_str(), &parsed) == 1 && (ntohl(parsed.s_addr) & class_d_mask) == class_d;
+}
+
+//------------------------------------------------------------------------------
+// Helper: the IPv4 address of a numeric interface address ("0.0.0.0": INADDR_ANY).
+static in_addr interface_address(const std::string &interface) {
+  in_addr address{};
+  if (inet_pton(AF_INET, interface.c_str(), &address) != 1)
+    throw std::runtime_error("multicast: numeric IPv4 interface address required: " + interface);
+  return address;
+}
+
+//------------------------------------------------------------------------------
+// RFC 1112 section 7.1: the sending interface, time-to-live and loopback of datagrams sent to a host group.
+void UdpSocket::multicast_sending(const std::string &interface, int ttl, bool loop) {
+  if (ttl < 1 || ttl > max_multicast_ttl) throw std::runtime_error("multicast: time-to-live must be 1 to 255");
+  const auto address = interface_address(interface);
+  const auto hops = static_cast<unsigned char>(ttl);
+  const unsigned char looped = loop ? 1 : 0;
+  if (setsockopt(fd_, IPPROTO_IP, IP_MULTICAST_IF, &address, sizeof(address)) < 0 ||
+      setsockopt(fd_, IPPROTO_IP, IP_MULTICAST_TTL, &hops, sizeof(hops)) < 0 ||
+      setsockopt(fd_, IPPROTO_IP, IP_MULTICAST_LOOP, &looped, sizeof(looped)) < 0)
+    throw std::runtime_error("multicast: sending options refused: " + std::string(std::strerror(errno)));
+}
+
+//------------------------------------------------------------------------------
+// RFC 1112 section 7.2: joins a host group on an interface.
+void UdpSocket::join(const std::string &group, const std::string &interface) {
+  ip_mreq membership{};
+  if (inet_pton(AF_INET, group.c_str(), &membership.imr_multiaddr) != 1 || !is_ipv4_multicast(group))
+    throw std::runtime_error("multicast: not an IPv4 host group address: " + group);
+  membership.imr_interface = interface_address(interface);
+  if (setsockopt(fd_, IPPROTO_IP, IP_ADD_MEMBERSHIP, &membership, sizeof(membership)) < 0)
+    throw std::runtime_error("multicast: joining " + group + " refused: " + std::strerror(errno));
+}
+
+//------------------------------------------------------------------------------
 // Helper: creates (or reopens a safe, own) control FIFO.
 Control::Control(const std::string &fifo) : path_(fifo) {
   std::filesystem::create_directories(std::filesystem::path(fifo).parent_path());

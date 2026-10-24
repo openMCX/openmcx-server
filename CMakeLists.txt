@@ -136,7 +136,7 @@ if(BUILD_TESTING)
     set_tests_properties(rx PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
-    add_library(mcx_sip src/sip/helpers.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp src/sip/messages.cpp src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp src/sip/ims_aka.cpp src/common/runtime.cpp src/security/key_client.cpp src/security/xfrm.cpp)
+    add_library(mcx_sip src/sip/helpers.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp src/sip/messages.cpp src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp src/sip/ims_aka.cpp src/common/runtime.cpp src/common/multicast.cpp src/security/key_client.cpp src/security/xfrm.cpp)
     target_link_libraries(mcx_sip PUBLIC mcx_core mcx_keying mcx_ims_aka)
     target_compile_options(mcx_sip PRIVATE -Wall -Wextra -Wpedantic)
     # The service parts shared by the MCPTT and MCVideo core and the MCData server:
@@ -249,6 +249,9 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         add_executable(test_runtime tests/test_runtime.cpp)
         target_link_libraries(test_runtime PRIVATE mcx_sip)
         add_test(NAME runtime_identity COMMAND test_runtime)
+        add_executable(test_multicast tests/test_multicast.cpp)
+        target_link_libraries(test_multicast PRIVATE mcx_sip)
+        add_test(NAME multicast COMMAND test_multicast)
         # TS 33.203 clauses 6.3 and 7.1: the IMS AKA UE's ESP SAs and policies over NETLINK_XFRM (src/security/xfrm.cpp);
         # without CAP_NET_ADMIN the test checks the refusal only.
         add_executable(test_xfrm tests/test_xfrm.cpp)

@@ -45,6 +45,14 @@ std::uint32_t random_ssrc();
 MediaDescription local_media(const Json &cfg, unsigned offset = 0);
 
 //------------------------------------------------------------------------------
+// RFC 1112 section 4: whether a numeric IPv4 address is a host group address (class D, 224.0.0.0/4).
+bool is_ipv4_multicast(const std::string &address);
+
+//------------------------------------------------------------------------------
+// RFC 791 section 3.1: the largest time-to-live.
+inline constexpr int max_multicast_ttl = 255;
+
+//------------------------------------------------------------------------------
 // Helper: one received UDP datagram and its source address.
 struct Datagram {
   std::vector<std::uint8_t> bytes;
@@ -65,6 +73,12 @@ public:
   void send(std::span<const std::uint8_t> data, const std::string &host, std::uint16_t port);
   // Whether a source address is the given IPv4 address and port.
   static bool matches(const sockaddr_in &source, const std::string &ip, std::uint16_t port);
+  // RFC 1112 section 7.1: datagrams sent to a host group leave through the interface with the given IPv4 address
+  // ("0.0.0.0": the routing table's choice), with the time-to-live, and are looped back to this host only when asked.
+  void multicast_sending(const std::string &interface, int ttl, bool loop = false);
+  // RFC 1112 section 7.2: joins the host group on the interface with the given IPv4 address ("0.0.0.0": the routing
+  // table's choice); the membership ends when the socket is closed.
+  void join(const std::string &group, const std::string &interface);
   // The bound port, which the system chose when the socket was bound to port 0.
   std::uint16_t port() const;
 

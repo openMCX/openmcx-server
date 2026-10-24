@@ -612,6 +612,15 @@ then reads:
   `call_policy`, `private_call`, `adhoc_call`, `floor_ack`, `document_poll_ms`, `configuration_poll_ms`, and for
   MCVideo the `floor_*` timer settings and `reception_control`. A participating server without `controller`, or a
   controller that is not a configured peer, refuses to start.
+- `mcptt.multicast` (optional): IP multicast delivery of group call speech, an OpenMCX profile and not 3GPP MBMS
+  (`include/mcx/multicast.hpp`, `McServer::multicast_setup`). `groups` maps a group URI to `"<IPv4 host
+  group>:<port>"`; `users` is the opt-in list of MCPTT IDs that receive that group's speech by multicast instead of
+  unicast; `interface` (default `0.0.0.0`), `ttl` (default 1), and the multicast speech's `payload_type` (default
+  96) and `octet_aligned` (default false). A participant gets multicast only when its SDP agreed that payload type
+  and format; the others keep unicast. Floor control stays unicast. Only prearranged, chat and broadcast group calls
+  (and regroups) with floor control use it; private, ad hoc and ambient listening calls stay unicast. The server
+  refuses to start with the block for MCVideo or a role other than `both`. The status shows `multicast_groups` and
+  `multicast_forwarded` (packets sent to a host group, counted once each, not per receiver).
 - `common`: the common services' URLs and the server's client ID and secret; `issuer` (default: `idms`), the IdMS
   whose access tokens the server accepts, and `token_audience` (default: `client_id`), their audience.
 - `diameter_config`: MCPTT-2; required by the MCPTT server (`McpttServer` constructor), not used by MCVideo.

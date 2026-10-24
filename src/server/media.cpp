@@ -2,12 +2,15 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// Media relay of audio (TS 24.380 clause 6.3, floor control; TS 24.581 clause 6.3, transmission control). The
-// MCVideo server relays the video (src/mcvideo/video_media.cpp).
+// Media relay of audio (TS 24.380 clause 6.3, floor control; TS 24.581 clause 6.3, transmission control), with the
+// IP multicast delivery of MCPTT group call speech (an OpenMCX profile, include/mcx/multicast.hpp). The MCVideo
+// server relays the video (src/mcvideo/video_media.cpp).
 //
 // Specifications: TS 24.380 V19.2.0 (Rel-19), TS 24.581 V19.2.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19).
 
 #include "server.hpp"
+
+#include <utility>
 
 namespace mcx {
 
@@ -38,6 +41,9 @@ void McServer::audio_packet(Leg &leg, const Datagram &datagram) {
   session->last_media = monotonic_ms();
   if (!open) session->arbitrator->media_received(leg.user, session->last_media);
   if (leg.floor_retries) leg.floor_retries->cancel(FloorType::Granted);
+  // The participants on the opt-in list share one copy sent to the group's host group (include/mcx/multicast.hpp).
+  const auto *multicast = multicast_destination(*session);
+  bool multicast_sent = false;
   if (leg.local.protected_media) {
     if (datagram.bytes.size() < 40) throw std::runtime_error("truncated protected media");
     for (auto &[id, dst] : legs_) {
@@ -45,6 +51,12 @@ void McServer::audio_packet(Leg &leg, const Datagram &datagram) {
       if (!dst->local.protected_media || dst->remote->payload_type != leg.remote->payload_type ||
           dst->remote->octet_aligned != leg.remote->octet_aligned)
         throw std::runtime_error("protected media profile mismatch");
+      if (multicast && multicast_leg(*dst)) {
+        // The SRTP of a group call is protected with the group's GMK (TS 33.180 clause 7.4.2), the same for every
+        // receiver: one copy serves them all.
+        if (!std::exchange(multicast_sent, true)) send_multicast(datagram.bytes, *multicast);
+        continue;
+      }
       dst->audio->send(datagram.bytes, dst->remote->address, dst->remote->audio_port);
       status_["media_forwarded"] = status_.value("media_forwarded", 0u) + 1;
     }
@@ -54,6 +66,13 @@ void McServer::audio_packet(Leg &leg, const Datagram &datagram) {
   (void)unpack_amr_wb(payload, leg.remote->octet_aligned); // malformed speech is refused even with no receiver
   for (auto &[id, dst] : legs_) {
     if (dst.get() == &leg || dst->session != session || !eligible(*dst)) continue;
+    if (multicast && multicast_leg(*dst)) {
+      if (std::exchange(multicast_sent, true)) continue;
+      packet.payload_type = multicast_->payload_type;
+      packet.payload = relay_payload(payload, RtpCodec::amr_wb, leg.remote->octet_aligned, multicast_->octet_aligned);
+      send_multicast(encode_rtp(packet), *multicast);
+      continue;
+    }
     packet.payload_type = dst->remote->payload_type;
     packet.payload = relay_payload(payload, RtpCodec::amr_wb, leg.remote->octet_aligned, dst->remote->octet_aligned);
     dst->audio->send(encode_rtp(packet), dst->remote->address, dst->remote->audio_port);
@@ -94,6 +113,48 @@ void McServer::unpermitted_media_tick(const Session &session, std::uint64_t now)
     leg->unpermitted_revoke_ms = now;
     if (still_sending) send_notice(*leg, {FloorNoticeKind::Revoke, leg->user, leg->user, 3});
   }
+}
+
+//------------------------------------------------------------------------------
+// Helper: reads the "multicast" block of the mcptt configuration and opens the socket the speech is sent from, on the
+// media address. The profile serves MCPTT group calls of a server in the "both" role only: MCVideo and the separate
+// participating and controlling servers keep unicast media.
+void McServer::multicast_setup() {
+  const auto &service = cfg_.at(svc_.name);
+  if (!service.contains("multicast")) return;
+  if (std::string_view(svc_.name) != "mcptt") throw std::runtime_error("multicast: MCPTT only");
+  if (role_ != "both") throw std::runtime_error("multicast: needs mcptt.role both");
+  multicast_ = multicast_config(service.at("multicast"));
+  multicast_socket_ = std::make_unique<UdpSocket>(cfg_.at("media").at("bind").get<std::string>(), 0);
+  multicast_socket_->multicast_sending(multicast_->interface, multicast_->ttl);
+  status_["multicast_groups"] = multicast_->groups.size();
+  status_["multicast_forwarded"] = 0;
+}
+
+//------------------------------------------------------------------------------
+// Helper: the host group of a session's speech: a prearranged, chat or broadcast group call (or a regroup) whose group
+// is configured, with floor control. Private, ad hoc and ambient listening calls and calls without floor control
+// (TS 24.379 clause 11.1.2, where a receiver follows the first SSRC it hears, its own included) stay unicast.
+const MulticastDestination *McServer::multicast_destination(const Session &session) const {
+  if (!multicast_ || session.private_call || session.adhoc || session.no_media_control || !session.ambient.empty())
+    return nullptr;
+  return multicast_->group(session.group);
+}
+
+//------------------------------------------------------------------------------
+// Helper: whether a participant receives the speech by multicast: its user is on the opt-in list and its SDP agreed
+// the multicast speech's RTP payload type and AMR-WB payload format (RFC 4867 section 4); a participant with
+// another one keeps unicast.
+bool McServer::multicast_leg(const Leg &leg) const {
+  return multicast_ && leg.remote && multicast_->serves(leg.user) &&
+         leg.remote->payload_type == multicast_->payload_type && leg.remote->octet_aligned == multicast_->octet_aligned;
+}
+
+//------------------------------------------------------------------------------
+// Helper: sends one RTP packet of a session's speech to its host group.
+void McServer::send_multicast(std::span<const std::uint8_t> packet, const MulticastDestination &destination) {
+  multicast_socket_->send(packet, destination.address, destination.port);
+  status_["multicast_forwarded"] = status_.value("multicast_forwarded", 0u) + 1;
 }
 
 } // namespace mcx
