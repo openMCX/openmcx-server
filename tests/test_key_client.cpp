@@ -32,6 +32,8 @@ static auto authority = mcx::keying::create_authority({"https://kms.example.org"
 // encapsulation and protected-key payload below is generated and parsed by
 // production code.
 static std::string substituted_identity;
+// The client credentials grants the stub IdMS answered.
+static int token_grants = 0;
 
 namespace mcx {
 //------------------------------------------------------------------------------
@@ -43,12 +45,22 @@ HttpClient::HttpClient(std::string, HttpTimeouts, HttpAddressMap, HttpTrust) {}
 std::string url_encode(std::string_view text) { return std::string(text); }
 
 //------------------------------------------------------------------------------
-// Stub KMS: answers the TS 33.180 annex D.2.3 KMS Initialize and D.2.4 KMS KeyProvision
-// requests (HTTP POST without body) for the identity of the Authorization header, or for the
-// substituted identity when one is set.
+// Stub IdMS (https://idms.example.org: its discovery document and the RFC 6749 section 4.4 client credentials grant of
+// the client "mcptt-key", whose token is the identity it names) and stub KMS: answers the TS 33.180 annex D.2.3 KMS
+// Initialize and D.2.4 KMS KeyProvision requests (HTTP POST without body or basic authentication) for the identity of
+// the Authorization header, or for the substituted identity when one is set.
 HttpResponse HttpClient::request(std::string_view method, const std::string &url, const std::string &body,
                                  const std::map<std::string, std::string> &headers, const std::string &basic,
-                                 const std::string &) const {
+                                 const std::string &password) const {
+  if (url == "https://idms.example.org/.well-known/openid-configuration" && method == "GET")
+    return {200, R"({"issuer": "https://idms.example.org", "token_endpoint": "https://idms.example.org/token"})", {}};
+  if (url == "https://idms.example.org/token" && method == "POST") {
+    if (basic != "mcptt-key" || password != "mcptt-secret" ||
+        body != "grant_type=client_credentials&scope=3gpp:mc:ptt_key_management_service")
+      return {401, R"({"error": "invalid_client"})", {}};
+    ++token_grants;
+    return {200, R"({"access_token": "sip:mcptt@example.org", "token_type": "Bearer", "expires_in": 300})", {}};
+  }
   if (method != "POST" || !body.empty() || !basic.empty()) throw std::runtime_error("invalid provisioning request");
   const auto identity = substituted_identity.empty() ? headers.at("Authorization").substr(7) : substituted_identity;
   auto xml = url.ends_with("/init") ? keying::kms_init_xml(authority.public_parameters, identity, url, now())
@@ -104,6 +116,19 @@ int main() {
     substituted_identity.clear();
     alice.provision("sip:alice@example.org");
     bob.provision("sip:bob@example.org");
+    // TS 33.180 clauses 5.3.2 and 5.3.3: an MC server's key management client with its own access token from the
+    // client credentials grant; a wrong secret gets none; a server client takes no user's token.
+    mcx::KeyClient server(http, config, "sip:mcptt@example.org");
+    reject([&] {
+      server.provision_client("https://idms.example.org", "mcptt-key", "wrong", "3gpp:mc:ptt_key_management_service");
+    });
+    reject([&] { server.provision_client("http://idms.example.org", "mcptt-key", "mcptt-secret", "scope"); });
+    server.provision_client("https://idms.example.org/", "mcptt-key", "mcptt-secret",
+                            "3gpp:mc:ptt_key_management_service");
+    check(token_grants == 1 && server.knows_kms("https://kms.example.org"), "server provisioned with its own token");
+    reject([&] { server.provision("sip:mcptt@example.org"); });
+    server.make_csk("sip:bob@example.org");
+    check(token_grants == 1, "token reused while valid");
     auto [csk, wire] = alice.make_csk("sip:bob@example.org");
     auto received = bob.accept_csk("sip:alice@example.org", wire);
     check(csk.key == received.key, "CSK changed");

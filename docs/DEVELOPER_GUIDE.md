@@ -631,7 +631,7 @@ a notification arriving later is refused 403 with warning 216, TS 24.282 clause 
 | User profile | MCPTT: Diameter pull from `mcx-user-db` at service authorisation; all services: CMS `GET /internal/user?<id>=` (`McServer::user_profile`) for rulesets | on each request that needs it |
 | Service configuration (TS 24.484 clauses 8.4 and 9.4: Resource-Priority values, floor timers and queue) | CMS `GET /internal/service-config?service=` (`McServer::refresh_service_config`) | every 30 s, every 2 s until the first answer |
 | IdMS's keys, for the access tokens | the JWKS of the issuer's discovery document (`AccessTokens`, over HTTPS trusting `tls.ca_file` and the system's CAs, `HttpTrust::configured_and_system`) | at the first access token, then for a token of a new key |
-| Keys | KMS (`KeyClient::provision`) and GMS (GKTP documents) | at start and per key subscription |
+| Keys | KMS (`provision_server_keys`: the annex D.2 requests with the access token of the server's key management client, `security.key_client`, from the IdMS's client credentials grant) and GMS (GKTP documents) | at start, at a new key period and per key subscription |
 
 The service's view of a document is passed through its hooks (`service_user_profile`, `service_members`), so the
 MCVideo server sees the MCVideo parts.

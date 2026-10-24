@@ -78,6 +78,8 @@ type service struct {
 	groupKeyMu sync.Mutex
 	// The GMS's client towards its KMS; replaced in tests.
 	gmsKMSClient *http.Client
+	// The GMS's access token for the KMS (key_clients.go).
+	gmsKeyToken keyClientToken
 	// The SEAL location management server's positions, subscriptions and channels.
 	sealLM *sealState
 	// IdMS's password verifiers and set-password links, for accounts managed by MCX Admin.

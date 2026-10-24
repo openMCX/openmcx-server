@@ -25,8 +25,13 @@ public:
   ~KeyClient();
   KeyClient(const KeyClient &) = delete;
   KeyClient &operator=(const KeyClient &) = delete;
-  // TS 33.180 clause 5.3.3: provisions the identity keys with either an access token or basic authentication.
-  void provision(const std::string &token, const std::string &basic_user = {}, const std::string &password = {});
+  // TS 33.180 clause 5.3.3: provisions the identity keys with the user's access token.
+  void provision(const std::string &token);
+  // TS 33.180 clauses 5.3.2 and 5.3.3: provisions the identity keys of an MC server or the GMS, as a confidential
+  // OAuth client of the IdMS (issuer) with its own access token from the client credentials grant (RFC 6749 section
+  // 4.4), renewed before it expires; scope is its key management scope.
+  void provision_client(const std::string &issuer, const std::string &client_id, const std::string &secret,
+                        const std::string &scope);
   // The KMS URI whose key material serves an identity: this user's KMS.
   std::string kms_uri_of(std::string_view identity) const;
   // TS 33.180 clause 5.2.7.3: whether this client holds the certificate of a KMS (its own).
@@ -62,4 +67,9 @@ private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
+
+//------------------------------------------------------------------------------
+// TS 33.180 clause 5.3.3: provisions an MC server's identity keys with its key management client (the configuration's
+// security.key_client: client_id, secret, scope) at the IdMS of its common section (issuer, else idms).
+void provision_server_keys(KeyClient &keys, const nlohmann::json &cfg);
 } // namespace mcx

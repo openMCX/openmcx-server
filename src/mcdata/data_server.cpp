@@ -254,7 +254,7 @@ DataServer::DataServer(Json cfg, bool disable_tls)
 void DataServer::run() {
   if (cfg_.contains("security")) {
     keys_ = std::make_unique<KeyClient>(http_, cfg_.at("security"), service_uri_);
-    keys_->provision("", cfg_.at("common").at("client_id"), cfg_.at("common").at("secret"));
+    provision_server_keys(*keys_, cfg_);
   }
   sip_.start();
   event("mcdata_server_started");

@@ -284,21 +284,40 @@ func newGroupKeyHandler(svc *service, client *http.Client, lifetime time.Duratio
 }
 
 // ------------------------------------------------------------------------------
-// TS 33.180 annex D.2.3 and annex D.2.4: gmsKeyDocuments adds this GMS's KMS documents to a key tool input: the init
-// and key provisioning responses.
+// TS 33.180 clause 5.3.3 and annex D.2.3 and D.2.4: gmsKeyDocuments adds this GMS's KMS documents to a key tool
+// input: the init and key provisioning responses, requested on the KMS request URIs with the access token of its key
+// management client (key_clients.go).
 func (svc *service) gmsKeyDocuments(ctx context.Context, client *http.Client, input map[string]any) string {
 	gmsURI, _ := input["gms_uri"].(string)
 	parsed, err := url.Parse(svc.cfg.Endpoints.KMS)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "invalid_kms_endpoint"
 	}
+	var key KeyClient
+	for _, candidate := range svc.cfg.KeyClients {
+		if candidate.Identity == gmsURI {
+			key = candidate
+		}
+	}
+	if key.ClientID == "" {
+		return "no_key_client"
+	}
+	token, err := svc.keyClientAccessToken(ctx, client, key)
+	if err != nil {
+		return "key_client_token_unavailable"
+	}
+	base := strings.TrimRight(svc.cfg.Endpoints.KMS, "/") + "/keymanagement/identity/v1/"
 	for _, op := range []string{"init", "keyprov"} {
-		target := strings.TrimRight(svc.cfg.Endpoints.KMS, "/") + "/internal/keymanagement/" + op + "?" + url.Values{"identity": []string{gmsURI}}.Encode()
+		target := base + op
+		if op == "keyprov" {
+			// TS 33.180 annex D.2.4: the key provisioning request names the identity.
+			target += "/" + url.PathEscape(gmsURI)
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, nil)
 		if err != nil {
 			return "kms_request_failed"
 		}
-		req.SetBasicAuth(svc.cfg.GMSKeyClientID, svc.cfg.GMSKeySecret)
+		req.Header.Set("Authorization", "Bearer "+token)
 		// Disable redirects even on an injected client so credentials cannot leave
 		// the configured KMS authority.
 		requestClient := *client

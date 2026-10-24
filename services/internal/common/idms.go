@@ -64,7 +64,7 @@ func (svc *service) discovery(writer http.ResponseWriter, _ *http.Request) {
 			"3gpp:mc:ptt_config_management_service", "3gpp:mc:video_config_management_service", "3gpp:mc:data_config_management_service",
 			"3gpp:mc:ptt_group_management_service", "3gpp:mc:video_group_management_service", "3gpp:mc:data_group_management_service",
 			"3gpp:mc:location_management_service"},
-		"grant_types_supported": []string{"authorization_code", "refresh_token"},
+		"grant_types_supported": []string{"authorization_code", "refresh_token", "client_credentials"},
 	})
 }
 
@@ -286,6 +286,11 @@ func (svc *service) token(writer http.ResponseWriter, request *http.Request) {
 	}
 	if request.Form.Get("grant_type") == "refresh_token" {
 		svc.refreshGrant(writer, request)
+		return
+	}
+	// TS 33.180 clause 5.3.3: the key management clients of the MC servers and the GMS (key_clients.go).
+	if request.Form.Get("grant_type") == "client_credentials" {
+		svc.clientCredentialsGrant(writer, request)
 		return
 	}
 	codeValue := request.Form.Get("code")

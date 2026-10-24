@@ -28,19 +28,9 @@ import (
 func TestGroupKeyAccessPersistenceAndRotation(test *testing.T) {
 	now := time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC)
 	var kmsRequests atomic.Int32
-	kms := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		kmsRequests.Add(1)
-		username, password, ok := request.BasicAuth()
-		if !ok || username != "gms-key" || password != "gms-secret" || request.Method != "POST" {
-			test.Errorf("invalid KMS access")
-			writer.WriteHeader(401)
-			return
-		}
-		writer.Header().Set("Content-Type", "application/xml")
-		_, _ = writer.Write([]byte("<KmsResponse/>"))
-	}))
+	kms := testKeyServer(test, &kmsRequests)
 	defer kms.Close()
-	svc := &service{dataDir: test.TempDir(), now: func() time.Time { return now }, cfg: Config{ServerClientID: "server", ServerSecret: "secret", GMSKeyClientID: "gms-key", GMSKeySecret: "gms-secret", Endpoints: Endpoints{KMS: kms.URL, GMS: "https://gms.example.org"}, Users: []User{{MCPTTID: "sip:alice@example.org", MCVideoID: "sip:alice.video@example.org"}, {MCPTTID: "sip:bob@example.org", MCVideoID: "sip:bob.video@example.org"}}, Groups: []Group{{ID: "sip:group@example.org", Members: []string{"sip:alice@example.org"}, ProtectMedia: true, MCVideo: &GroupMCVideo{Members: []string{"sip:alice.video@example.org"}}}}}}
+	svc := &service{dataDir: test.TempDir(), now: func() time.Time { return now }, cfg: Config{ServerClientID: "server", ServerSecret: "secret", Issuer: kms.URL, KeyClients: []KeyClient{testGMSKeyClient}, Endpoints: Endpoints{KMS: kms.URL, GMS: "https://gms.example.org"}, Users: []User{{MCPTTID: "sip:alice@example.org", MCVideoID: "sip:alice.video@example.org"}, {MCPTTID: "sip:bob@example.org", MCVideoID: "sip:bob.video@example.org"}}, Groups: []Group{{ID: "sip:group@example.org", Members: []string{"sip:alice@example.org"}, ProtectMedia: true, MCVideo: &GroupMCVideo{Members: []string{"sip:alice.video@example.org"}}}}}}
 	var operations []map[string]any
 	svc.keyTool = func(in map[string]any) (json.RawMessage, error) {
 		operations = append(operations, in)
@@ -150,12 +140,9 @@ func TestGroupKeyAccessPersistenceAndRotation(test *testing.T) {
 // which is delivered to MCVideo members only, and encapsulated for that identity.
 func TestGroupKeyForMCVideoMember(test *testing.T) {
 	now := time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC)
-	kms := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		writer.Header().Set("Content-Type", "application/xml")
-		_, _ = writer.Write([]byte("<KmsResponse/>"))
-	}))
+	kms := testKeyServer(test, nil)
 	defer kms.Close()
-	svc := &service{dataDir: test.TempDir(), now: func() time.Time { return now }, cfg: Config{ServerClientID: "server", ServerSecret: "secret", GMSKeyClientID: "gms-key", GMSKeySecret: "gms-secret", Endpoints: Endpoints{KMS: kms.URL, GMS: "https://gms.example.org"},
+	svc := &service{dataDir: test.TempDir(), now: func() time.Time { return now }, cfg: Config{ServerClientID: "server", ServerSecret: "secret", Issuer: kms.URL, KeyClients: []KeyClient{testGMSKeyClient}, Endpoints: Endpoints{KMS: kms.URL, GMS: "https://gms.example.org"},
 		Users:  []User{{MCPTTID: "sip:alice@example.org", MCVideoID: "sip:alice.video@example.org"}, {MCPTTID: "sip:bob@example.org", MCVideoID: "sip:bob.video@example.org"}},
 		Groups: []Group{{ID: "sip:group@example.org", Members: []string{"sip:alice@example.org", "sip:bob@example.org"}, ProtectMedia: true, MCVideo: &GroupMCVideo{Members: []string{"sip:alice.video@example.org"}}}}}}
 	var recipients []any
@@ -183,13 +170,10 @@ func TestGroupKeyForMCVideoMember(test *testing.T) {
 // data race (run with -race).
 func TestGroupKeyRequestsShareKMSClient(test *testing.T) {
 	now := time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC)
-	kms := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		writer.Header().Set("Content-Type", "application/xml")
-		_, _ = writer.Write([]byte("<KmsResponse/>"))
-	}))
+	kms := testKeyServer(test, nil)
 	defer kms.Close()
 	svc := &service{dataDir: test.TempDir(), now: func() time.Time { return now }, gmsKMSClient: kms.Client(),
-		cfg: Config{ServerClientID: "server", ServerSecret: "secret", GMSKeyClientID: "gms-key", GMSKeySecret: "gms-secret",
+		cfg: Config{ServerClientID: "server", ServerSecret: "secret", Issuer: kms.URL, KeyClients: []KeyClient{testGMSKeyClient},
 			Endpoints: Endpoints{KMS: kms.URL, GMS: "https://gms.example.org"}, Users: []User{{MCPTTID: "sip:alice@example.org"}},
 			Groups: []Group{{ID: "sip:group@example.org", Members: []string{"sip:alice@example.org"}, ProtectMedia: true}}}}
 	svc.keyTool = func(map[string]any) (json.RawMessage, error) {
@@ -216,4 +200,44 @@ func TestGroupKeyRequestsShareKMSClient(test *testing.T) {
 	if local.Load() != 4 {
 		test.Fatalf("%d of 4 local GKTP requests served", local.Load())
 	}
+}
+
+// The GMS's key management client in these tests.
+var testGMSKeyClient = KeyClient{ClientID: "gms-key", Secret: "gms-secret", Identity: "https://gms.example.org/xcap-root/org.openmobilealliance.groups", Scope: scopePTTKeys}
+
+// ------------------------------------------------------------------------------
+// Helper: an HTTPS server that is the IdMS (its discovery document and the client credentials grant of
+// testGMSKeyClient) and the KMS (annex D.2 init and keyprov of the GMS URI with that token); it counts the KMS
+// requests when count is not nil.
+func testKeyServer(test *testing.T, count *atomic.Int32) *httptest.Server {
+	var server *httptest.Server
+	server = httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/.well-known/openid-configuration":
+			writeJSON(writer, 200, map[string]string{"issuer": server.URL, "token_endpoint": server.URL + "/token"})
+			return
+		case "/token":
+			client, secret, ok := request.BasicAuth()
+			if !ok || client != "gms-key" || secret != "gms-secret" || request.FormValue("grant_type") != "client_credentials" || request.FormValue("scope") != scopePTTKeys {
+				test.Errorf("invalid client credentials grant")
+				writer.WriteHeader(401)
+				return
+			}
+			writeJSON(writer, 200, map[string]any{"access_token": "gms-token", "token_type": "Bearer", "expires_in": 300})
+			return
+		}
+		if count != nil {
+			count.Add(1)
+		}
+		gms := "/keymanagement/identity/v1/keyprov/" + url.PathEscape(testGMSKeyClient.Identity)
+		if request.Header.Get("Authorization") != "Bearer gms-token" || request.Method != "POST" ||
+			(request.URL.Path != "/keymanagement/identity/v1/init" && request.URL.EscapedPath() != gms) {
+			test.Errorf("invalid KMS access %s %s", request.Method, request.URL.EscapedPath())
+			writer.WriteHeader(401)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/xml")
+		_, _ = writer.Write([]byte("<KmsResponse/>"))
+	}))
+	return server
 }

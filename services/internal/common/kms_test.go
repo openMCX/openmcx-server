@@ -9,7 +9,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,14 +19,12 @@ import (
 )
 
 // ------------------------------------------------------------------------------
-// TS 33.180 annex D.2.4: the KMS answers a KeyProvision request only for the identity a client may have: on the
-// internal interface, an MC server for its public service identity and the GMS (with its own credentials) for
-// its identity; a signed-in user, with the key management scope, for its MCPTT ID, its MCData ID under the MCData
+// TS 33.180 annex D.2.4: the KMS answers a KeyProvision request only for the identity a client may have (the MC
+// servers and the GMS: key_clients_test.go): a signed-in user, with the key management scope, for its MCPTT ID, its MCData ID under the MCData
 // scope (TS 24.282 clause 6.6) and its MCVideo ID under the MCVideo scope (TS 24.281 clause 4.7). The authority
 // never leaks, is persisted privately (TS 33.180 clause 5.3.1.2) and not regenerated at a restart.
 func TestKMSAuthorizesIdentityAndPersistsAuthority(test *testing.T) {
 	cfg, key := testConfig(), testKey(test)
-	cfg.GMSKeyClientID, cfg.GMSKeySecret = "gms-key", "separate-gms-secret"
 	cfg.Users[0].MCDataID = "sip:alice.data@mcx.test"
 	cfg.MCDataService.ServiceURI = "sip:mcdata@mcx.test"
 	cfg.Users[0].MCVideoID = "sip:alice.mcvideo@mcx.test"
@@ -44,31 +41,6 @@ func TestKMSAuthorizesIdentityAndPersistsAuthority(test *testing.T) {
 	handler, err := NewHandlerWithKeys(RoleKMS, cfg, nil, &key.PublicKey, dir, WithClock(func() time.Time { return testNow }), WithKeyTool(backend))
 	if err != nil {
 		test.Fatal(err)
-	}
-	for _, tc := range []struct {
-		identity, client, secret string
-		status                   int
-	}{
-		{cfg.ServiceURI, cfg.ServerClientID, cfg.ServerSecret, 200},
-		{cfg.Endpoints.GMS + "/xcap-root/org.openmobilealliance.groups", cfg.ServerClientID, cfg.ServerSecret, 403},
-		{cfg.Endpoints.GMS + "/xcap-root/org.openmobilealliance.groups", cfg.GMSKeyClientID, cfg.GMSKeySecret, 200},
-		{cfg.ServiceURI, cfg.GMSKeyClientID, cfg.GMSKeySecret, 403},
-		{cfg.MCDataService.ServiceURI, cfg.ServerClientID, cfg.ServerSecret, 200},
-		{cfg.MCDataService.ServiceURI, cfg.GMSKeyClientID, cfg.GMSKeySecret, 403},
-		{cfg.MCVideoService.ServiceURI, cfg.ServerClientID, cfg.ServerSecret, 200},
-		{cfg.MCVideoService.ServiceURI, cfg.GMSKeyClientID, cfg.GMSKeySecret, 403},
-		{"sip:other@mcx.test", cfg.ServerClientID, cfg.ServerSecret, 403},
-	} {
-		request := httptest.NewRequest("POST", "/internal/keymanagement/keyprov", nil)
-		query := request.URL.Query()
-		query.Set("identity", tc.identity)
-		request.URL.RawQuery = query.Encode()
-		request.SetBasicAuth(tc.client, tc.secret)
-		rr := httptest.NewRecorder()
-		handler.ServeHTTP(rr, request)
-		if rr.Code != tc.status {
-			test.Fatalf("internal service identity binding got%d want%d", rr.Code, tc.status)
-		}
 	}
 	claims, _ := newClaims(cfg, cfg.Users[0], cfg.ServerClientID, "access", "", testNow)
 	claims.Scope = "openid 3gpp:mc:ptt_key_management_service"
@@ -178,12 +150,14 @@ func TestKMSRunsKeyToolConcurrently(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
+	claims, _ := newClaims(cfg, cfg.Users[0], cfg.ServerClientID, "access", "", testNow)
+	claims.Scope = scopePTTKeys
+	token, _ := signToken(claims, key)
 	var wait sync.WaitGroup
 	codes := make([]int, 2)
 	for index := range codes {
 		wait.Go(func() {
-			request := httptest.NewRequest(http.MethodPost, "/internal/keymanagement/keyprov?identity="+url.QueryEscape(cfg.ServiceURI), nil)
-			request.SetBasicAuth(cfg.ServerClientID, cfg.ServerSecret)
+			request := bearerRequest(http.MethodPost, "/keymanagement/identity/v1/keyprov", token, nil)
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, request)
 			codes[index] = rr.Code

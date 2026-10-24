@@ -3,7 +3,8 @@
 //
 
 // KMS: the key management server of TS 33.180 clause 5.3, answering the KMS requests of annex D.2 (Initialize,
-// KeyProvision and CertCache, over direct TLS) with the KMS responses of annex D.3, computed by the native
+// KeyProvision and CertCache, over direct TLS) of the key management clients in the MC UEs, the MC servers and the
+// GMS, each with its access token (clause 5.3.3), with the KMS responses of annex D.3, computed by the native
 // ECCSI/SAKKE key tool.
 //
 // Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), RFC 6507,
@@ -13,7 +14,6 @@ package common
 import (
 	"bytes"
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -129,7 +129,7 @@ func (svc *service) initializeKMS() error {
 }
 
 // ------------------------------------------------------------------------------
-// TS 33.180 annex D.2: the KMS request URIs (init, keyprov and certcache) and the internal requests of the MC servers and the GMS.
+// TS 33.180 annex D.2: the KMS request URIs (init, keyprov and certcache).
 func (svc *service) routesKMS(mux *http.ServeMux) {
 	mux.HandleFunc("GET /readyz", func(writer http.ResponseWriter, _ *http.Request) {
 		if svc.kmsError != nil || len(svc.kmsAuthority) == 0 {
@@ -143,14 +143,14 @@ func (svc *service) routesKMS(mux *http.ServeMux) {
 	mux.HandleFunc("POST /keymanagement/identity/v1/certcache/{version}", svc.kmsProvision)
 	mux.HandleFunc("POST /keymanagement/identity/v1/keyprov/{identity}", svc.kmsProvision)
 	mux.HandleFunc("POST /keymanagement/identity/v1/keyprov/{identity}/{timestamp}", svc.kmsProvision)
-	mux.HandleFunc("POST /internal/keymanagement/{operation}", svc.kmsProvision)
 }
 
 // ------------------------------------------------------------------------------
 // TS 33.180 annex D.2.3, D.2.4 and D.2.5: answers a KMS Initialize, KeyProvision or CertCache request with its KMS
 // response XML (annex D.3): for a signed-in user with the key management scope (annex B.4.2.2), its MCPTT, MCData
-// or MCVideo ID; for an MC server, its public service identity; for the GMS, its identity. A KeyProvision request
-// may name the key period by its NTP timestamp (RFC 5905).
+// or MCVideo ID; for the key management client of an MC server or the GMS (key_clients.go), the identity its access
+// token names, a KeyProvision request naming no other. A KeyProvision request may name the key period by its NTP
+// timestamp (RFC 5905).
 func (svc *service) kmsProvision(writer http.ResponseWriter, request *http.Request) {
 	user := ""
 	operation := request.PathValue("operation")
@@ -164,23 +164,12 @@ func (svc *service) kmsProvision(writer http.ResponseWriter, request *http.Reque
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
-	if strings.HasPrefix(request.URL.Path, "/internal/") {
-		client, secret, basic := request.BasicAuth()
-		gms := basic && svc.cfg.GMSKeyClientID != "" && svc.cfg.GMSKeySecret != "" &&
-			client == svc.cfg.GMSKeyClientID && subtle.ConstantTimeCompare([]byte(secret), []byte(svc.cfg.GMSKeySecret)) == 1
-		as := svc.internalAuthorized(request)
-		if !as && !gms {
-			writer.Header().Set("WWW-Authenticate", `Basic realm="mcx-kms"`)
-			writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-			return
-		}
-		user = request.URL.Query().Get("identity")
-		server := user == svc.cfg.ServiceURI || (svc.cfg.MCDataService.ServiceURI != "" && user == svc.cfg.MCDataService.ServiceURI) ||
-			(svc.cfg.MCVideoService.ServiceURI != "" && user == svc.cfg.MCVideoService.ServiceURI)
-		if !(as && server) && !(gms && user == svc.cfg.Endpoints.GMS+"/xcap-root/org.openmobilealliance.groups") {
+	if identity, server := svc.keyClientIdentity(request); server {
+		if id := request.PathValue("identity"); id != "" && id != identity {
 			writeJSON(writer, http.StatusForbidden, map[string]string{"error": "forbidden_identity"})
 			return
 		}
+		user = identity
 	} else {
 		// authenticateBearer: a key management scope of any MC service (TS 33.180 clause 5.1.3.1: "This key
 		// management authorisation may be repeated for each KM service the user is authorised to use").

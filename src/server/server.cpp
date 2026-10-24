@@ -662,7 +662,7 @@ void McServer::media_answered(std::string_view dialog, const MediaDescription &m
 void McServer::run() {
   if (cfg_.contains("security")) {
     keys_ = std::make_unique<KeyClient>(http_, cfg_.at("security"), cfg_.at(svc_.name).at("service_uri"));
-    keys_->provision("", cfg_.at("common").at("client_id"), cfg_.at("common").at("secret"));
+    provision_server_keys(*keys_, cfg_);
   }
   policy_start();
   sip_.set_body_filters(

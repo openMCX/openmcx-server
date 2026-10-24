@@ -54,8 +54,6 @@ type Config struct {
 	OAuthRedirectURIs []string `json:"oauth_redirect_uris"`
 	ServerClientID    string   `json:"server_client_id"`
 	ServerSecret      string   `json:"server_secret"`
-	GMSKeyClientID    string   `json:"gms_key_client_id"`
-	GMSKeySecret      string   `json:"gms_key_secret"`
 	TokenTTLSeconds   int      `json:"token_ttl_seconds"`
 	// RefreshTokenTTLSeconds: a refresh token not used for this long lapses (default 7 days).
 	RefreshTokenTTLSeconds int     `json:"refresh_token_ttl_seconds,omitempty"`
@@ -83,6 +81,8 @@ type Config struct {
 	// clauses 8.3.2.1, 9.3.2.1 and 10.3.2.1) and <mc-org> of emergency alerts (TS 24.379 clause 6.3.3.1.12); the
 	// domain when not set. An MCData user's own organization (MCDataPolicy) takes precedence for MCData.
 	Organization string `json:"organization,omitempty"`
+	// The key management clients of the MC servers and the GMS (key_clients.go, TS 33.180 clause 5.3.3).
+	KeyClients []KeyClient `json:"key_clients,omitempty"`
 }
 
 // FunctionalAlias is the subset of the functional alias configuration used by the
@@ -516,6 +516,9 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.TokenTTLSeconds <= 0 {
 		return errors.New("token_ttl_seconds must be positive")
+	}
+	if err := cfg.validateKeyClients(); err != nil {
+		return err
 	}
 	if err := cfg.ServiceConfig.Validate(); err != nil {
 		return err

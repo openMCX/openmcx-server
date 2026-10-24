@@ -394,8 +394,21 @@ def main():
         "oauth_redirect_uris": [source["oauth_redirect_uri"]],
         "server_client_id": source["server_client_id"],
         "server_secret": secrets.token_hex(24),
-        "gms_key_client_id": source.get("gms_key_client_id", "gms-key"),
-        "gms_key_secret": secrets.token_hex(24),
+        # TS 33.180 clauses 5.3.2 and 5.3.3: the key management clients of the MC servers and the GMS, each an OAuth
+        # client of the IdMS with its own secret, for the identity it is keyed as and its key management scope.
+        "key_clients": [
+            {"client_id": f"{name}-key", "secret": secrets.token_hex(24), "identity": identity, "scope": scope}
+            for name, identity, scope in (
+                ("mcptt", service, "3gpp:mc:ptt_key_management_service"),
+                ("mcdata", mcdata_service, "3gpp:mc:data_key_management_service"),
+                ("mcvideo", mcvideo_service, "3gpp:mc:video_key_management_service"),
+                (
+                    "gms",
+                    f"{endpoints['gms']}/xcap-root/org.openmobilealliance.groups",
+                    "3gpp:mc:ptt_key_management_service",
+                ),
+            )
+        ],
         "token_ttl_seconds": source["token_ttl_seconds"],
         "users": users,
         "groups": [

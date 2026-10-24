@@ -29,9 +29,11 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   7.3.2) is offered by the Linux client only (`mcptt.authorise_by_register`); the Android client authorises by PUBLISH
   (clause 7.3.3). A server that refuses an authorisation by third-party REGISTER cannot tell the client, which got its
   200 (OK) from the SIP core's registrar.
-- **Keys.** The servers and the GMS fetch keys from the KMS over an internal interface, not with the requests of
-  TS 33.180 annex D.2. This matters only when the KMS of the same system comes from another vendor, which would not
-  serve them; the clients use annex D.2, and an interconnected system keeps its own KMS.
+- **Keys.** The MC servers and the GMS fetch their keys with the requests of TS 33.180 annex D.2, with an access token
+  of their own (clause 5.3.3). TS 33.180 gives access tokens to MC users only (clause 5.1, annex B) and does not say how
+  a server or the GMS obtains one or which identity it names; OpenMCX makes each a confidential OAuth client of the
+  IdMS that obtains its token with the client credentials grant (RFC 6749 section 4.4), with its public service
+  identity (the GMS URI) as subject. A KMS of another vendor serves them if it accepts such tokens of the IdMS.
 - **Profile.** The default lab keeps media and floor protection off; the protected fixtures use an explicitly configured
   E.6 numeric wire profile that has not been qualified against an independent peer.
 - **SIP core access.** TS 33.180 clause 6.2.1 requires IMS AKA (TS 33.203) for SIP core access, also with a SIP core

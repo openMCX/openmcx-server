@@ -111,7 +111,11 @@ std::string cache_key(std::string_view identity, std::uint32_t id) {
 // identity keys and the caches of received keys.
 struct KeyClient::Impl {
   const HttpClient &http;
-  std::string kms_uri, user_uri, account_uri, bearer, basic_user, basic_password;
+  std::string kms_uri, user_uri, account_uri, bearer;
+  // The key management client of an MC server or the GMS: its IdMS, OAuth client credentials and scope, and when its
+  // access token expires (Unix seconds).
+  std::string issuer, client_id, client_secret, client_scope;
+  std::uint64_t bearer_expiry = 0;
   keying::KeyParameterWireProfile profile;
   keying::PublicParameters parameters;
   keying::IdentityKeys identity;
@@ -150,28 +154,52 @@ struct KeyClient::Impl {
   // Helper: wipes the credentials, identity keys and received group keys.
   ~Impl() {
     clear(bearer);
-    clear(basic_password);
+    clear(client_secret);
     clear_identity(identity);
     for (auto &[unused, key] : received_groups) OPENSSL_cleanse(key.key.data(), key.key.size());
   }
 
-  // TS 33.180 annexes D.2.3 and D.2.4: the request URI of a KMS operation ("init" or "keyprov") at the configured KMS;
-  // the internal form with basic authentication names the identity as a query.
+  // TS 33.180 annexes D.2.3 and D.2.4: the request URI of a KMS operation ("init" or "keyprov") at the configured KMS.
   std::string request_uri(std::string_view operation) const {
-    if (!basic_user.empty())
-      return kms_uri + "/internal/keymanagement/" + std::string(operation) + "?identity=" + url_encode(user_uri);
-    // TS 33.180 annex D.2.4: the key provisioning request names the identity, which is
-    // the user's MCPTT ID or, for its MCData client, its MCData ID.
+    // TS 33.180 annex D.2.4: the key provisioning request names the identity: the user's MCPTT ID or, for its MCData
+    // client, its MCData ID; the public service identity of an MC server, or the GMS URI.
     if (operation == "keyprov") return kms_uri + "/keymanagement/identity/v1/keyprov/" + url_encode(user_uri);
     return kms_uri + "/keymanagement/identity/v1/" + std::string(operation);
   }
 
-  // TS 33.180 clause 5.3.3 steps 1 and 2: a POST request for key material, authenticated with the access token (or
-  // basic authentication); returns the KMS response XML.
+  // RFC 6749 section 4.4 (TS 33.180 clause 5.3.3 step 1): the access token of an MC server's or the GMS's key
+  // management client, from the token endpoint of the IdMS's discovery document (OpenID Connect Discovery 1.0
+  // section 3), authenticated with HTTP Basic (RFC 6749 section 2.3.1), when there is none or it expires within 30 s.
+  void renew_token() {
+    if (client_id.empty()) return;
+    const auto unix_now = now_ntp() - ntp_epoch;
+    if (!bearer.empty() && unix_now + 30 < bearer_expiry) return;
+    const auto discovery = http.request("GET", issuer + "/.well-known/openid-configuration");
+    require(discovery.status == 200, "IdMS discovery unavailable");
+    const auto document = nlohmann::json::parse(discovery.body);
+    const auto endpoint = document.at("token_endpoint").get<std::string>();
+    require(document.at("issuer") == issuer && endpoint.starts_with("https://"), "invalid IdMS discovery document");
+    const auto response =
+        http.request("POST", endpoint, "grant_type=client_credentials&scope=" + url_encode(client_scope),
+                     {{"Content-Type", "application/x-www-form-urlencoded"}, {"Accept", "application/json"}},
+                     url_encode(client_id), url_encode(client_secret));
+    require(response.status == 200, "client credentials grant refused");
+    const auto answer = nlohmann::json::parse(response.body);
+    const auto token = answer.at("access_token").get<std::string>();
+    const auto lifetime = answer.at("expires_in").get<std::int64_t>();
+    require(!token.empty() && token.find_first_of("\r\n") == std::string::npos && lifetime > 0,
+            "invalid client credentials token");
+    clear(bearer);
+    bearer = token;
+    bearer_expiry = unix_now + static_cast<std::uint64_t>(lifetime);
+  }
+
+  // TS 33.180 clause 5.3.3 steps 1 and 2: a POST request for key material, authenticated with the access token;
+  // returns the KMS response XML.
   std::string fetch(std::string_view operation) const {
-    std::map<std::string, std::string> headers{{"Accept", "application/xml"}, {"Cache-Control", "no-store"}};
-    if (basic_user.empty()) headers.emplace("Authorization", "Bearer " + bearer);
-    const auto response = http.request("POST", request_uri(operation), {}, headers, basic_user, basic_password);
+    const std::map<std::string, std::string> headers{
+        {"Accept", "application/xml"}, {"Cache-Control", "no-store"}, {"Authorization", "Bearer " + bearer}};
+    const auto response = http.request("POST", request_uri(operation), {}, headers);
     require(response.status == 200, "KMS provisioning HTTP request rejected");
     require(!response.body.empty() && response.body.size() <= 262144, "invalid KMS response size");
     return response.body;
@@ -180,7 +208,8 @@ struct KeyClient::Impl {
   // TS 33.180 clause 5.3.3 (annexes D.2.3 and D.2.4): KMSInit and KMSKeyProv. The identity is replaced only once
   // every response and the key validation succeed.
   void refresh() {
-    require(!basic_user.empty() || !bearer.empty(), "KMS credentials have not been provisioned");
+    renew_token();
+    require(!bearer.empty(), "KMS credentials have not been provisioned");
     // Keep existing identity until both authenticated responses and key validation succeed.
     const auto init = fetch("init");
     // The init request names no identity: the KMS answers for the token's user.
@@ -247,19 +276,43 @@ KeyClient::KeyClient(const HttpClient &http, const nlohmann::json &security, std
 KeyClient::~KeyClient() = default;
 
 //------------------------------------------------------------------------------
-// TS 33.180 clause 5.3.3: provisions the identity keys with either an access token or basic authentication.
-void KeyClient::provision(const std::string &token, const std::string &basic_user, const std::string &password) {
+// TS 33.180 clause 5.3.3: provisions the identity keys with the user's access token.
+void KeyClient::provision(const std::string &token) {
   std::lock_guard lock(impl_->mutex);
-  require((basic_user.empty() && !token.empty() && password.empty()) ||
-              (!basic_user.empty() && !password.empty() && token.empty()),
-          "select exactly one KMS authentication method");
-  require(token.find_first_of("\r\n") == std::string::npos, "invalid bearer token");
+  require(!token.empty() && token.find_first_of("\r\n") == std::string::npos, "invalid bearer token");
+  require(impl_->client_id.empty(), "the key management client of a server has its own access token");
   clear(impl_->bearer);
-  clear(impl_->basic_password);
   impl_->bearer = token;
-  impl_->basic_user = basic_user;
-  impl_->basic_password = password;
   impl_->refresh();
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 clauses 5.3.2 and 5.3.3: provisions the identity keys of an MC server or the GMS with the access token
+// of its own OAuth client (Impl::renew_token).
+void KeyClient::provision_client(const std::string &issuer, const std::string &client_id, const std::string &secret,
+                                 const std::string &scope) {
+  std::lock_guard lock(impl_->mutex);
+  require(issuer.starts_with("https://") && !client_id.empty() && !secret.empty() && !scope.empty() &&
+              (issuer + client_id + secret + scope).find_first_of("\r\n") == std::string::npos,
+          "invalid key management client credentials");
+  clear(impl_->bearer);
+  clear(impl_->client_secret);
+  impl_->issuer = issuer;
+  while (impl_->issuer.ends_with('/')) impl_->issuer.pop_back();
+  impl_->client_id = client_id;
+  impl_->client_secret = secret;
+  impl_->client_scope = scope;
+  impl_->bearer_expiry = 0;
+  impl_->refresh();
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 clause 5.3.3: an MC server's key management client, from its configuration.
+void provision_server_keys(KeyClient &keys, const nlohmann::json &cfg) {
+  const auto &common = cfg.at("common");
+  const auto &client = cfg.at("security").at("key_client");
+  keys.provision_client(common.value("issuer", common.value("idms", std::string{})), client.at("client_id"),
+                        client.at("secret"), client.at("scope"));
 }
 
 //------------------------------------------------------------------------------

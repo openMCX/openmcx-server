@@ -1633,6 +1633,14 @@ MC_SCOPES = [
 
 
 # ------------------------------------------------------------------------------
+def key_client(site, identity):
+    """The key management client (TS 33.180 clause 5.3.3) of the server keyed as identity, from site.json: its OAuth
+    client ID, secret and key management scope."""
+    entry = next(client for client in site['key_clients'] if client['identity'] == identity)
+    return dict(client_id=entry['client_id'], secret=entry['secret'], scope=entry['scope'])
+
+
+# ------------------------------------------------------------------------------
 def add_keycloak(fixture, compose, args):
     """Keycloak (args.keycloak, an image) as the lab's IdMS instead of OpenMCX's. It answers at the same address (the service "idms", https://idms:8443) with its own paths, the
     realm "openmcx" (issuer https://idms:8443/realms/openmcx), and signs with the lab's IdMS key, which the common
@@ -1732,6 +1740,36 @@ def add_keycloak(fixture, compose, args):
             ],
         },
     )
+    if args.protected:
+        # TS 33.180 clause 5.3.3: the key management clients of the MC servers and the GMS, confidential clients
+        # with a service account (RFC 6749 section 4.4); their tokens name the keyed identity as subject (the realm
+        # adds no sub of its own without the basic scope), the MC servers' audience and the client ID.
+        realm['clients'] += [
+            dict(
+                clientId=entry['client_id'],
+                enabled=True,
+                publicClient=False,
+                clientAuthenticatorType='client-secret',
+                secret=entry['secret'],
+                serviceAccountsEnabled=True,
+                standardFlowEnabled=False,
+                directAccessGrantsEnabled=False,
+                implicitFlowEnabled=False,
+                defaultClientScopes=[entry['scope']],
+                optionalClientScopes=[],
+                protocolMappers=[
+                    mapper('sub', 'oidc-hardcoded-claim-mapper',
+                           {'claim.name': 'sub', 'claim.value': entry['identity'], 'jsonType.label': 'String'},
+                           id_token=False),
+                    mapper('MC servers', 'oidc-audience-mapper', {'included.custom.audience': audience},
+                           id_token=False),
+                    mapper('client_id', 'oidc-hardcoded-claim-mapper',
+                           {'claim.name': 'client_id', 'claim.value': entry['client_id'], 'jsonType.label': 'String'},
+                           id_token=False),
+                ],
+            )
+            for entry in site['key_clients']
+        ]
     keycloak = gen / 'keycloak'
     keycloak.mkdir()
     (keycloak / 'openmcx.json').write_text(json.dumps(realm, indent=2) + '\n')
@@ -2171,6 +2209,7 @@ def main():
                 )
                 if role in servers:
                     cfg['common']['kms'] = site['endpoints']['kms']
+                    cfg['security']['key_client'] = key_client(site, cfg['mcptt']['service_uri'])
             path.write_text(json.dumps(cfg, indent=2) + '\n')
         if args.protected and args.mcvideo:
             # TS 24.281 clauses 4.7 and 6.6: the MCVideo server keys its own identity, holds its
@@ -2186,6 +2225,7 @@ def main():
                     protect_floor=True,
                     confidentiality_protection=args.xml_protection,
                     integrity_protection=args.integrity_protection,
+                    key_client=key_client(site, cfg['mcvideo']['service_uri']),
                 )
                 cfg['common']['kms'] = site['endpoints']['kms']
                 path.write_text(json.dumps(cfg, indent=2) + '\n')
@@ -2243,6 +2283,8 @@ def main():
                     cfg['security'] = dict(
                         kms_uri=client_security['kms_uri'],
                         key_parameter_profile=client_security['key_parameter_profile'],
+                        key_client=key_client(json.loads((fixture / 'generated/site.json').read_text()),
+                                              cfg['mcdata']['service_uri']),
                     )
                 else:
                     cfg['mcdata']['protect_payload'] = True
