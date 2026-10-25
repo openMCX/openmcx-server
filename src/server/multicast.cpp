@@ -8,7 +8,7 @@
 // A participant on the opt-in list receives the speech by unicast until it reports "listening" for the session, and
 // again once it reports "not-listening" (TS 24.380 clause 6.4.3 step 3 a).
 //
-// Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.3.0 (Rel-19), RFC 1112, RFC 3428.
+// Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19), RFC 1112, RFC 3428.
 
 #include "server.hpp"
 

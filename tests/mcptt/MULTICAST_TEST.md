@@ -4,7 +4,7 @@ These tests cover the **IP multicast delivery of MCPTT group call speech**, an O
 procedure: the server sends a configured group's speech once to an IPv4 host group (RFC 1112) that opted-in clients
 join, instead of one unicast copy per participant. Of TS 24.379 V19.7.0 §14 only the **listening status report** is
 used (§14.2.3, §14.2.4, §14.3.3.2): a client receives a session's speech by multicast once the server has taken its
-"listening" report, and by unicast again after "not-listening" (TS 24.380 V19.3.0 §6.4.3 step 3 a). There is no MBMS
+"listening" report, and by unicast again after "not-listening" (TS 24.380 V19.2.0 §6.4.3 step 3 a). There is no MBMS
 bearer, announcement or MuSiK (§14.2.2, §14.2.2.5) and no MBMS subchannel control (TS 24.380 §10); the host group,
 its TMGI and the opt-in list are configured, and floor control stays unicast. What the tests do not cover is listed
 under [coverage gaps](#coverage-gaps).

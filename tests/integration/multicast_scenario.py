@@ -22,7 +22,7 @@ At the end the clients leave the host group, and client-c (multicast, then unica
 (unicast) have decoded the same speech. The wire verifier (verify_multicast.py) checks the server's copies on the
 capture.
 
-Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.3.0 (Rel-19), RFC 1112, RFC 3550.
+Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19), RFC 1112, RFC 3550.
 """
 
 import argparse

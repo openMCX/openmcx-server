@@ -9,7 +9,7 @@
 // 14.3.3): a client receives a session's speech by multicast once it reported "listening" for it. Floor control
 // stays on each participant's unicast media plane.
 //
-// Specifications: RFC 1112, TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.3.0 (Rel-19).
+// Specifications: RFC 1112, TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19).
 #pragma once
 #include "mcx/runtime.hpp"
 
