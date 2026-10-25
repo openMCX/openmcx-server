@@ -25,6 +25,7 @@
 #include "mcx/key_client.hpp"
 #include "mcx/key_documents.hpp"
 #include "mcx/location.hpp"
+#include "mcx/mbms_usage.hpp"
 #include "mcx/media.hpp"
 #include "mcx/multicast.hpp"
 #include "mcx/private_call.hpp"
@@ -1307,7 +1308,7 @@ protected:
 
   void unpermitted_media_tick(const Session &session, std::uint64_t now);
 
-  // ---- IP multicast delivery of group call speech (media.cpp, an OpenMCX profile: include/mcx/multicast.hpp) ----
+  // ---- IP multicast delivery of group call speech (multicast.cpp, an OpenMCX profile: include/mcx/multicast.hpp) ----
   void multicast_setup();
 
   [[nodiscard]] const MulticastDestination *multicast_destination(const Session &session) const;
@@ -1316,10 +1317,20 @@ protected:
 
   void send_multicast(std::span<const std::uint8_t> packet, const MulticastDestination &destination);
 
+  static const std::string *mbms_usage_part(const SipMessage &message);
+
+  SipResponse mbms_usage_message(const SipMessage &message, const User &user, const std::string &body);
+
+  [[nodiscard]] std::string multicast_listening_refusal(const User &user, const MbmsListeningStatus &status) const;
+
+  void publish_multicast_listening();
+
   // The "multicast" block of the mcptt configuration, and the socket the speech is sent from; none when not
-  // configured.
+  // configured. The users whose latest listening status report for a session is "listening" (MCPTT ID, session
+  // URI; TS 24.379 clause 14.2.3).
   std::optional<MulticastConfig> multicast_;
   std::unique_ptr<UdpSocket> multicast_socket_;
+  std::set<std::pair<std::string, std::string>> multicast_listening_;
 
   // ---- XML integrity protection (xml_protection.cpp): TS 24.379 clause 6.6.3, TS 33.180 clause 9.3.5 ----
   // Each XML body of a message is signed with HMAC-SHA256 under the integrity key of

@@ -613,14 +613,20 @@ then reads:
   MCVideo the `floor_*` timer settings and `reception_control`. A participating server without `controller`, or a
   controller that is not a configured peer, refuses to start.
 - `mcptt.multicast` (optional): IP multicast delivery of group call speech, an OpenMCX profile and not 3GPP MBMS
-  (`include/mcx/multicast.hpp`, `McServer::multicast_setup`). `groups` maps a group URI to `"<IPv4 host
-  group>:<port>"`; `users` is the opt-in list of MCPTT IDs that receive that group's speech by multicast instead of
-  unicast; `interface` (default `0.0.0.0`), `ttl` (default 1), and the multicast speech's `payload_type` (default
-  96) and `octet_aligned` (default false). A participant gets multicast only when its SDP agreed that payload type
-  and format; the others keep unicast. Floor control stays unicast. Only prearranged, chat and broadcast group calls
-  (and regroups) with floor control use it; private, ad hoc and ambient listening calls stay unicast. The server
-  refuses to start with the block for MCVideo or a role other than `both`. The status shows `multicast_groups` and
-  `multicast_forwarded` (packets sent to a host group, counted once each, not per receiver).
+  (`include/mcx/multicast.hpp`, `src/server/multicast.cpp`). `groups` maps a group URI to `{"host_group": "<IPv4 host
+  group>:<port>", "tmgi": "<TMGI>"}` (the TMGI in TS 24.008 clause 10.5.6.13 coding, octets 3 to 8, hexadecimal);
+  `users` is the opt-in list of MCPTT IDs allowed to receive that group's speech by multicast; `interface` (default
+  `0.0.0.0`), `ttl` (default 1), and the multicast speech's `payload_type` (default 96) and `octet_aligned` (default
+  false). Of TS 24.379 clause 14 only the listening status report is used: a participant on the list gets the
+  speech by unicast until its client reports "listening" for the session and the group's TMGI (a SIP MESSAGE with
+  `application/vnd.3gpp.mcptt-mbms-usage-info+xml`, clause 14.2.3), and by unicast again once it reports
+  "not-listening". A report from a user not on the list, for a session without a host group, with another TMGI or
+  from a user not in the session is refused with 403, as is one with an `<announcement>` or naming another MCPTT ID
+  (clause 14.2.4). A participant whose SDP agreed another payload type or format keeps unicast. Floor control stays
+  unicast. Only prearranged, chat and broadcast group calls (and regroups) with floor control use it; private, ad hoc
+  and ambient listening calls stay unicast. The server refuses to start with the block for MCVideo or a role other
+  than `both`. The status shows `multicast_groups`, `multicast_forwarded` (packets sent to a host group, counted once
+  each, not per receiver) and `multicast_listening` (the users and sessions reported listening).
 - `common`: the common services' URLs and the server's client ID and secret; `issuer` (default: `idms`), the IdMS
   whose access tokens the server accepts, and `token_audience` (default: `client_id`), their audience.
 - `diameter_config`: MCPTT-2; required by the MCPTT server (`McpttServer` constructor), not used by MCVideo.

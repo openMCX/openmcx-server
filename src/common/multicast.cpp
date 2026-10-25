@@ -9,6 +9,7 @@
 
 #include "mcx/multicast.hpp"
 
+#include <cctype>
 #include <limits>
 #include <stdexcept>
 
@@ -27,10 +28,10 @@ const MulticastDestination *MulticastConfig::group(const std::string &uri) const
 
 //------------------------------------------------------------------------------
 // Helper: "<IPv4 host group>:<port>" of a group.
-static MulticastDestination destination(const std::string &group, const std::string &value) {
+static MulticastDestination host_group(const std::string &group, const std::string &value) {
   const auto colon = value.rfind(':');
   if (colon == std::string::npos) throw std::runtime_error("multicast: group " + group + " needs <address>:<port>");
-  MulticastDestination result{value.substr(0, colon), 0};
+  MulticastDestination result{value.substr(0, colon), 0, {}};
   if (!is_ipv4_multicast(result.address))
     throw std::runtime_error("multicast: group " + group + ": not an IPv4 host group address: " + result.address);
   const auto port = value.substr(colon + 1);
@@ -40,6 +41,28 @@ static MulticastDestination destination(const std::string &group, const std::str
       std::stoul(port) == 0 || std::stoul(port) > max_port)
     throw std::runtime_error("multicast: group " + group + ": port must be 1 to 65535");
   result.port = static_cast<std::uint16_t>(std::stoul(port));
+  return result;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 annex F.2.3: a TMGI is coded as TS 24.008 clause 10.5.6.13 octets 3 to 8: the MBMS Service ID (3 octets),
+// optionally followed by the MCC and MNC (3 octets). Kept in lower case, as the reports are compared with it.
+static std::string tmgi(const std::string &group, std::string value) {
+  constexpr std::size_t service_id_digits = 6, with_plmn_digits = 12;
+  if ((value.size() != service_id_digits && value.size() != with_plmn_digits) ||
+      value.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+    throw std::runtime_error("multicast: group " + group + ": tmgi must be 3 or 6 octets in hexadecimal");
+  for (auto &digit : value) digit = static_cast<char>(std::tolower(static_cast<unsigned char>(digit)));
+  return value;
+}
+
+//------------------------------------------------------------------------------
+// Helper: a group's {"host_group", "tmgi"}.
+static MulticastDestination destination(const std::string &group, const Json &value) {
+  if (!value.is_object() || !value.contains("host_group") || !value.contains("tmgi"))
+    throw std::runtime_error("multicast: group " + group + " needs host_group and tmgi");
+  auto result = host_group(group, value.at("host_group").get<std::string>());
+  result.tmgi = tmgi(group, value.at("tmgi").get<std::string>());
   return result;
 }
 
@@ -61,12 +84,15 @@ MulticastConfig multicast_config(const Json &block) {
   for (const auto &user : users) result.users.insert(user.get<std::string>());
 
   std::set<std::pair<std::string, std::uint16_t>> used;
+  std::set<std::string> tmgis;
   const auto groups = block.value("groups", Json::object());
   if (!groups.is_object()) throw std::runtime_error("multicast: groups must map group URIs to host groups");
   for (const auto &[group, value] : groups.items()) {
-    auto target = destination(group, value.get<std::string>());
+    auto target = destination(group, value);
     if (!used.emplace(target.address, target.port).second)
       throw std::runtime_error("multicast: group " + group + " shares its address and port with another group");
+    if (!tmgis.insert(target.tmgi).second)
+      throw std::runtime_error("multicast: group " + group + " shares its TMGI with another group");
     result.groups.emplace(group, std::move(target));
   }
   if (result.groups.empty()) throw std::runtime_error("multicast: no groups configured");

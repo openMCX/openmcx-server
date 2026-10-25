@@ -935,10 +935,16 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
 }
 
 //------------------------------------------------------------------------------
-// SIP MESSAGE from a served user: regroup (TS 24.379 clause 16), private call services (TS 24.379 clauses 11.1.5 to
-// 11.1.9), functional alias binding (TS 24.379 clause 9A.4), ad hoc alerts (TS 24.379 clause 12.1A) and group
-// emergency alerts (TS 24.379 clause 12.1.3); a request for a function controlled elsewhere is passed on.
+// SIP MESSAGE from a served user: an MBMS listening status (TS 24.379 clause 14.2.3), regroup (TS 24.379 clause
+// 16), private call services (TS 24.379 clauses 11.1.5 to 11.1.9), functional alias binding (TS 24.379 clause
+// 9A.4), ad hoc alerts (TS 24.379 clause 12.1A) and group emergency alerts (TS 24.379 clause 12.1.3); a request for a
+// function controlled elsewhere is passed on.
 void McServer::user_message(const SipMessage &message, User &user, SipResponse &response) {
+  // TS 24.379 clause 14.2.3: a listening status report for the IP multicast profile (src/server/multicast.cpp).
+  if (const auto *usage = mbms_usage_part(message)) {
+    response = mbms_usage_message(message, user, *usage);
+    return;
+  }
   // TS 24.379 clause 16: a regroup request carries its own MIME body and is not a
   // call service request, so it is handled before the rest.
   if (const auto *regroup = regroup_part(message)) {

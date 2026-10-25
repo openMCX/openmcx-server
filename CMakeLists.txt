@@ -51,7 +51,7 @@ target_link_libraries(mcx_keying PUBLIC mcx_dependencies PRIVATE ${WOLFSSL_LIBRA
 target_compile_options(mcx_keying PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(mcx-keytool src/keytool/keytool.cpp)
 target_link_libraries(mcx-keytool PRIVATE mcx_keying)
-add_library(mcx_core src/media/floor.cpp src/media/media.cpp src/media/video.cpp src/media/transmission.cpp src/protocol/affiliation.cpp src/protocol/bodies.cpp src/protocol/conference.cpp src/protocol/functional_alias.cpp src/protocol/location.cpp src/protocol/profiles.cpp src/protocol/resource_lists.cpp src/protocol/sdp.cpp src/protocol/service_info.cpp src/protocol/xml_support.cpp src/protocol/mcdata.cpp src/media/msrp.cpp src/media/ipconn.cpp src/security/http.cpp src/security/security.cpp src/security/xml_security.cpp src/location/location.cpp src/location/seal_location.cpp)
+add_library(mcx_core src/media/floor.cpp src/media/media.cpp src/media/video.cpp src/media/transmission.cpp src/protocol/affiliation.cpp src/protocol/bodies.cpp src/protocol/conference.cpp src/protocol/functional_alias.cpp src/protocol/mbms_usage.cpp src/protocol/location.cpp src/protocol/profiles.cpp src/protocol/resource_lists.cpp src/protocol/sdp.cpp src/protocol/service_info.cpp src/protocol/xml_support.cpp src/protocol/mcdata.cpp src/media/msrp.cpp src/media/ipconn.cpp src/security/http.cpp src/security/security.cpp src/security/xml_security.cpp src/location/location.cpp src/location/seal_location.cpp)
 target_link_libraries(mcx_core PUBLIC mcx_dependencies PkgConfig::OPENH264)
 target_link_libraries(mcx-keytool PRIVATE mcx_core)
 target_compile_options(mcx_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -169,6 +169,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/server/split_relay.cpp
         src/server/location.cpp
         src/server/media.cpp
+        src/server/multicast.cpp
         src/server/notices.cpp
         src/server/policy.cpp
         src/server/priority.cpp

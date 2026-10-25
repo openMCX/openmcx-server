@@ -5,10 +5,11 @@
 
 """Verify the IP multicast delivery of group call speech (an OpenMCX profile) from a capture at the MCPTT server.
 
-Reads the capture of multicast_scenario.py and its results (the containers' addresses and the server's counters).
-The server sends the speech RTP (RFC 3550 section 5.1, payload type 96) to the IPv4 host group with time-to-live 1
-(RFC 1112 section 6.1), from its own address; it sends no speech by unicast to the opted-in clients, and one copy by
-unicast to client-d for each packet sent to the host group.
+Reads the capture of multicast_scenario.py and its results (the containers' addresses and the counters of each talk
+burst). The server sends the speech RTP (RFC 3550 section 5.1, payload type 96) to the IPv4 host group with
+time-to-live 1 (RFC 1112 section 6.1), from its own address, as many packets as it counted; and by unicast to each
+client exactly as many packets as arrived at that client by unicast (kept, or dropped as a copy): none to a client
+while it listens to the host group, all of them to client-d, whose listening report the server refused.
 
 Usage: verify_multicast.py capture.pcap results.json --output result.json
 
@@ -23,7 +24,7 @@ import struct
 import sys
 
 SPEECH_PAYLOAD_TYPE = 96
-OPTED_IN = ['client-a', 'client-b', 'client-c']
+ROLES = ['client-a', 'client-b', 'client-c', 'client-d']
 
 
 # ------------------------------------------------------------------------------
@@ -66,7 +67,15 @@ def main():
     addresses = results['addresses']
     group, port = results['host_group'].rsplit(':', 1)
     server = addresses['mcptt-server']
-    sent = sum(burst['mcptt-server']['multicast'] for burst in results['bursts'].values())
+    bursts = results['bursts'].values()
+    sent = sum(burst['mcptt-server']['multicast'] for burst in bursts)
+    # A client receives by unicast what it kept that way and the copies it dropped that came that way.
+    by_unicast = {
+        role: sum(
+            burst[role]['received'] - burst[role]['multicast'] + burst[role]['unicast_copies'] for burst in bursts
+        )
+        for role in ROLES
+    }
 
     multicast, unicast, ttls, sources = 0, collections.Counter(), set(), set()
     for source, destination, destination_port, ttl, payload in datagrams(args.capture):
@@ -89,9 +98,10 @@ def main():
     check(multicast == sent and multicast > 0, f'{multicast} speech packets to {group}:{port}, server counted {sent}')
     check(ttls == {1}, f'host group packets sent with time-to-live {sorted(ttls)}')
     check(sources == {server}, f'host group packets sent from {sorted(sources)}')
-    for role in OPTED_IN:
-        check(unicast[addresses[role]] == 0, f'{unicast[addresses[role]]} unicast speech packets to {role}')
-    check(unicast[addresses['client-d']] == multicast, f'{unicast[addresses["client-d"]]} unicast packets to client-d')
+    for role in ROLES:
+        found = unicast[addresses[role]]
+        check(found == by_unicast[role], f'{found} unicast speech packets to {role}, it received {by_unicast[role]}')
+    check(by_unicast['client-d'] == sent, f'{by_unicast["client-d"]} of {sent} packets to client-d by unicast')
     result = dict(capture=str(args.capture), passed=not errors, checks=checks, errors=errors)
     args.output.write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))
