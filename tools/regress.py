@@ -124,6 +124,10 @@ LABS = [
         ['mcdata_sds_scenario', 'outbound_flow_scenario'],
         ['smoke', 'mcdata'],
     ),
+    # mcx-agent, the MCData plumbing for AI agents (openmcx-client agent/): client-a runs as the agent with the echo
+    # bot and the alias front-desk, client-c chats with it. Needs the openmcx-agent image as --client-image; with a
+    # plain client image the scenario reports itself skipped.
+    lab('mcdata-agent', 'single', ['--private-call', '--mcdata'], ['mcdata_agent_scenario'], ['agent', 'mcdata']),
     # Two-minute tokens: the clients renew them before expiry and keep their service authorisation.
     # service_logoff_scenario: the clients' log-off and log-on, log-off on the wire (TS 24.379 clause 7.3.5, RFC 3903)
     # and a dead client's binding removed when its service authorisation ends (clause 7.3.3 step 8).
