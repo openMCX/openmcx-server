@@ -4,8 +4,9 @@
 #
 
 """Exercise mcx-agent, the MCData plumbing for AI agents (openmcx-client agent/), against the real servers: client-a
-runs as the agent (the mcx-agent daemon with mcx-client as its engine) holding the functional alias front-desk, with
-the hello-world echo bot of agent/examples on it; client-c is the field user who chats with it.
+runs as the agent (the mcx-agent daemon with mcx-client as its engine) holding the functional alias front-desk; the
+hello-world echo bot of agent/examples runs in client-b's container, as a third-party agent would, and reaches it
+over MCP on HTTP with a bearer token; client-c is the field user who chats with it.
 
 The client image must hold mcx-agent (the openmcx-agent image, FROM openmcx-client): without it the scenario reports
 itself skipped. Run against a fixture prepared with --private-call --mcdata (add_mcdata_policy in
@@ -25,6 +26,7 @@ Checks:
   AG-09 front-desk taken over: the agent refuses to send; given back, the agent activates it again
   AG-10 the MCP server lists the tools and answers a call
   AG-11 the audit log records the tool calls that acted on the network
+  AG-12 MCP over HTTP from another container: refused without the token, answering with it
 
 Specifications: TS 24.282 V19.7.0 (Rel-19) clauses 9.2.2 (SDS), 9.2.1.3 and 12.2 (disposition notifications),
 10.2.4 (FD over HTTP), 22 (functional aliases).
@@ -44,6 +46,8 @@ READ, DELIVERED_AND_READ = 3, 4
 AGENT_ROLE, USER_ROLE = 'client-a', 'client-c'
 SOCKET = '/run/mcx/agent.sock'
 BOT = '/usr/local/share/mcx-agent/examples/echo-bot.py'
+BOT_ROLE = 'client-b'  # the third-party agent's container
+MCP_URL = 'http://client-a:8765/mcp'
 
 
 # ------------------------------------------------------------------------------
@@ -194,6 +198,8 @@ def main():
         work = args.artifacts / 'agent'
         work.mkdir(parents=True, exist_ok=True)
         work.chmod(0o777)
+        token = secrets.token_hex(24)
+        (work / 'token').write_text(token + '\n')
         (work / 'agent.json').write_text(
             json.dumps(
                 dict(
@@ -205,6 +211,7 @@ def main():
                     recipients=[],
                     allow_senders_hours=1,
                     rate_per_minute=30,
+                    mcp_http=dict(listen='0.0.0.0:8765', token_file='/artifacts/agent/token'),
                 ),
                 indent=2,
             )
@@ -243,11 +250,12 @@ def main():
         )
         wait('AG-01 the server lists client-a on front-desk', lambda: aliases().get(front_desk) == [agent_id])
         bot = exec_in(
-            AGENT_ROLE,
+            BOT_ROLE,
             [
                 'sh',
                 '-c',
-                f'nohup python3 {BOT} --cursor /artifacts/agent/echo.cursor > /artifacts/agent/echo-bot.log 2>&1 &',
+                f'nohup python3 {BOT} --mcp-url {MCP_URL} --token-file /artifacts/agent/token '
+                '--cursor /artifacts/agent/echo.cursor > /artifacts/agent/echo-bot.log 2>&1 &',
             ],
         )
         if bot.returncode:
@@ -429,6 +437,37 @@ def main():
         check(
             'AG-11 the audit log records sends, replies, reads and files',
             {'send_message', 'reply_message', 'mark_read', 'send_file', 'respond_file'} <= set(tools),
+        )
+        # AG-12 MCP over HTTP, from client-c's container: what an agent in another container sees.
+        probe = (
+            'import json, sys, urllib.request, urllib.error\n'
+            'url, token = sys.argv[1], sys.argv[2]\n'
+            'def post(body, auth=True):\n'
+            '    headers = {"Content-Type": "application/json",\n'
+            '               "Accept": "application/json, text/event-stream"}\n'
+            '    if auth: headers["Authorization"] = "Bearer " + token\n'
+            '    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")\n'
+            '    try:\n'
+            '        with urllib.request.urlopen(req, timeout=20) as r:\n'
+            '            return r.status, json.loads(r.read() or b"null")\n'
+            '    except urllib.error.HTTPError as e: return e.code, None\n'
+            'init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",\n'
+            '        "params": {"protocolVersion": "2025-06-18"}}\n'
+            'status = {"jsonrpc": "2.0", "id": 2, "method": "tools/call",\n'
+            '          "params": {"name": "status", "arguments": {}}}\n'
+            'print(json.dumps({"no_token": post(init, False)[0], "init": post(init), "status": post(status)}))\n'
+        )
+        run = exec_in(USER_ROLE, ['python3', '-c', probe, MCP_URL, token])
+        seen = json.loads(run.stdout or '{}')
+        observations['mcp_http'] = seen
+        check('AG-12 MCP over HTTP refuses a request without the token (401)', seen.get('no_token') == 401)
+        check(
+            'AG-12 MCP over HTTP initializes with the token',
+            seen['init'][0] == 200 and seen['init'][1]['result']['serverInfo']['name'] == 'mcx-agent',
+        )
+        check(
+            'AG-12 an MCP tool call over HTTP answers',
+            seen['status'][1]['result']['structuredContent']['mcdata_id'] == agent_id,
         )
         result['passed'] = True
     except StopIteration:
