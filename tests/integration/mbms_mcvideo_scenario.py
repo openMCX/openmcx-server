@@ -169,11 +169,21 @@ def main():
         assert equal == common, f'client-c: {equal} of {common} pictures equal the sender\'s'
         checks.append('MV-MB-07 client-c\'s pictures (MBMS, unicast, MBMS) equal the sender\'s')
 
+        # TS 24.581 clauses 10.2.3.2 and 10.2.3.3: the end of the transmission is told to the listeners over the
+        # subchannel (Transmission Idle), once.
+        control = status('mcvideo-server').get('mbms_control_sent', 0)
+        command('client-a', 'mcvideo-end')
+        wait(
+            'MV-MB-08 Transmission Idle over the subchannel reaches client-b and client-c',
+            lambda: status('mcvideo-server').get('mbms_control_sent', 0) > control
+            and all(status(role).get('mcvideo_mbms_control_received', 0) > 0 for role in LISTENERS)
+            and status('client-d').get('mcvideo_mbms_control_received', 0) == 0,
+        )
         unmaps = status('mcvideo-server').get('mbms_unmap_sent', 0)
         for role in ROLES:
             command(role, 'mcvideo-hangup')
         wait(
-            'MV-MB-08 the call is released: Unmap Group To Bearer, every client left the subchannel',
+            'MV-MB-09 the call is released: Unmap Group To Bearer, every client left the subchannel',
             lambda: not conversation()
             and status('mcvideo-server').get('mbms_unmap_sent', 0) > unmaps
             and all(status(role).get('mcvideo_multicast_joined', '') == '' for role in ROLES),

@@ -629,7 +629,9 @@ then reads:
   the subchannel for the participants that reported listening for the session; Unmap Group To Bearer after T15 of
   silence, every T17 up to C17; TS 24.380 clause 10.2); `t15_ms` (30000), `t16_ms` (500), `t17_ms` (200) and `c17`
   (3) set the timers. The BM-SC and the radio are emulated: each subchannel is an IPv4 host group on the media
-  network. The former `multicast` block is refused. MCVideo video goes over the subchannel as the speech does
+  network. Floor Taken and Floor Idle (MCVideo: Transmission Idle, Media Transmission Notification) to listeners
+  go once over the subchannel with the server's SSRC and acknowledgement bit '0' (`McServer::mbms_control`; TS 24.380
+  clauses 10.2.3.2 and 10.2.3.3), unless floor control is protected. The former `multicast` block is refused. MCVideo video goes over the subchannel as the speech does
   (`src/mcvideo/video_media.cpp`, TS 24.581 clause 10.2). Status: `mbms_bearers`, `mbms_announced`,
   `mbms_general_purpose`, `mbms_bearer_announcements`, `mbms_conversations`, `mbms_map_sent`, `mbms_unmap_sent`,
   `multicast_forwarded` (packets sent over subchannels), `multicast_listening` (users and sessions).

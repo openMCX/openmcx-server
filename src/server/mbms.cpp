@@ -48,6 +48,7 @@ void McServer::mbms_setup() {
   status_["mbms_conversations"] = Json::array();
   status_["mbms_map_sent"] = 0;
   status_["mbms_unmap_sent"] = 0;
+  status_["mbms_control_sent"] = 0;
   status_["multicast_forwarded"] = 0;
   status_["multicast_listening"] = Json::array();
   // TS 24.380 table 11.1.4-2: T15, T16 and T17 and counter C17 (table 11.2-1), here in the mbms block rather than
@@ -355,6 +356,36 @@ void McServer::mbms_conversation_tick(std::uint64_t now) {
     }
   }
   for (const auto &[uri, reason] : released) mbms_release(uri, reason);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 10.2.3.2 and 10.2.3.3 (TS 24.581 clauses 10.2.3.2 and 10.2.3.3): a Floor Idle or Floor Taken
+// (Transmission Idle or Media Transmission Notification) destined to a participant listening to the conversation's
+// subchannel goes over the subchannel instead of by unicast, once for every listener of one arbitration outcome
+// (the same kind within 200 ms is a copy; a later one, such as the floor state told to a late joiner, goes again, as
+// clause 4.1.3.3 allows): with this function's SSRC (the Map Group To Bearer header's), the conversation's message
+// sequence number and the acknowledgement bit '0'; T15 restarts. The Floor Ack the participating function would send
+// towards the controlling function (step 4) is internal to a server in the "both" role. A protected floor
+// control channel stays unicast until a MuSiK protects the subchannel. Returns whether it was taken.
+bool McServer::mbms_control(Leg &leg, const std::string &kind,
+                            const std::function<std::vector<std::uint8_t>(std::uint32_t, std::uint16_t)> &encode) {
+  if (!mbms_ || floor_protected(leg)) return false;
+  const bool listener = mbms_service() == MbmsService::Mcvideo ? multicast_video_leg(leg) : multicast_leg(leg);
+  if (!listener) return false;
+  const auto found = mbms_conversations_.find(leg.session->uri);
+  if (found == mbms_conversations_.end() || found->second.t17) return false;
+  auto &conversation = found->second;
+  const auto now = monotonic_ms();
+  constexpr std::uint64_t same_outcome_ms = 200;
+  if (conversation.last_control == kind && now - conversation.last_control_ms < same_outcome_ms) return true;
+  conversation.last_control = kind;
+  conversation.last_control_ms = now;
+  // RFC 5761: the control messages share the subchannel's media port (Floor m-line Number 0).
+  mbms_socket_->send(encode(mbms_ssrc_, ++conversation.control_sequence), conversation.channel.address,
+                     conversation.channel.port);
+  conversation.t15 = now + mbms_timers_.t15;
+  status_["mbms_control_sent"] = status_.value("mbms_control_sent", 0u) + 1;
+  return true;
 }
 
 //------------------------------------------------------------------------------

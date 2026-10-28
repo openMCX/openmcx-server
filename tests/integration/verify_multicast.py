@@ -12,7 +12,8 @@ address, as many packets as it counted; by unicast to each client exactly as man
 by unicast (kept, or dropped as a copy): none to a client while it listens to the subchannel, all of them to
 client-d, outside the bearer's service area. The Map Group To Bearer messages go to the general purpose subchannel
 and the Unmap Group To Bearer messages to the subchannel ("MCMC", TS 24.380 clause 8.4), as many as the server
-counted.
+counted, and the clear Floor Taken and Floor Idle messages to the subchannel ("MCPT", TS 24.380 clauses 10.2.3.2 and
+10.2.3.3) too.
 
 Usage: verify_multicast.py capture.pcap results.json --output result.json
 
@@ -69,6 +70,12 @@ def subchannel_control(payload):
 
 
 # ------------------------------------------------------------------------------
+def is_floor(payload):
+    """TS 24.380 clause 8.2: a clear floor control message ("MCPT", RTCP APP)."""
+    return len(payload) >= 12 and payload[0] >> 6 == 2 and payload[1] == 204 and payload[8:12] == b'MCPT'
+
+
+# ------------------------------------------------------------------------------
 def main():
     """Decode the capture, run the checks and write the result file; exit status 1 on any failure."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -92,9 +99,11 @@ def main():
 
     final = results['status']['mcptt-server']
     general_purpose = tuple(results['general_purpose'].rsplit(':', 1))
-    maps = unmaps = 0
+    maps = unmaps = floor = 0
     multicast, unicast, ttls, sources = 0, collections.Counter(), set(), set()
     for source, destination, destination_port, ttl, payload in datagrams(args.capture):
+        if destination == group and destination_port == int(port) and is_floor(payload):
+            floor += 1
         subtype = subchannel_control(payload)
         if subtype == 0 and (destination, str(destination_port)) == general_purpose:
             maps += 1
@@ -126,6 +135,7 @@ def main():
     check(by_unicast['client-d'] == received_d, f'{by_unicast["client-d"]} of {received_d} packets to client-d by unicast')
     check(maps == final.get('mbms_map_sent') and maps > 0, f'{maps} Map Group To Bearer to the general purpose subchannel')
     check(unmaps == final.get('mbms_unmap_sent') and unmaps > 0, f'{unmaps} Unmap Group To Bearer to the subchannel')
+    check(floor == final.get('mbms_control_sent', 0), f'{floor} floor control messages to the subchannel')
     result = dict(capture=str(args.capture), passed=not errors, checks=checks, errors=errors)
     args.output.write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))

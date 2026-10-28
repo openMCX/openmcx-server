@@ -11,8 +11,8 @@ Back to the [test index by call type](../MCVIDEO_TEST.md).
 
 | Part | Behavior | Reference |
 |---|---|---|
-| Server | `mcvideo.mbms` as `mcptt.mbms` (users omitted: every served user). The announcement uses `application/vnd.3gpp.mcvideo-mbms-usage-info+xml`; its SDP has an `m=video` line (`video_payload_type`, default 97) and an `m=audio` line before the general purpose `m=application` lines. A granted transmission maps the conversation to a subchannel ("MCV3" Map Group To Bearer: video m-line 1 on the pool entry's port, audio m-line 2 on the port two above); each video RTP packet goes once over the subchannel for the participants that reported listening, by unicast to the others; the audio likewise on its port. Timers as for MCPTT. | `src/server/mbms.cpp`, `src/mcvideo/video_media.cpp`; TS 24.281 §16.3, TS 24.581 §9.3, §10.2 |
-| Client | Map Group To Bearer for the group of the active MCVideo group call: the client joins the subchannel's video port and reports "listening" for the session (TS 24.281 §16.2.3); the video from it is reassembled and decoded as the unicast video, the transmitting client drops its own, and a packet not newer than the last one kept of the stream is dropped as a copy. The audio port is not joined (the audio component is not played). Unmap Group To Bearer: "not-listening", the subchannel left. | `src/client/mcvideo/multicast.cpp`; TS 24.581 §10.3 |
+| Server | `mcvideo.mbms` as `mcptt.mbms` (users omitted: every served user). The announcement uses `application/vnd.3gpp.mcvideo-mbms-usage-info+xml`; its SDP has an `m=video` line (`video_payload_type`, default 97) and an `m=audio` line before the general purpose `m=application` lines. A granted transmission maps the conversation to a subchannel ("MCV3" Map Group To Bearer: video m-line 1 on the pool entry's port, audio m-line 2 on the port two above); each video RTP packet goes once over the subchannel for the participants that reported listening, by unicast to the others; the audio likewise on its port. Transmission Idle and Media Transmission Notification to listeners go once over the subchannel (video port), acknowledgement bit '0'. Timers as for MCPTT. | `src/server/mbms.cpp`, `src/mcvideo/video_media.cpp`; TS 24.281 §16.3, TS 24.581 §9.3, §10.2 |
+| Client | Map Group To Bearer for the group of the active MCVideo group call: the client joins the subchannel's video port and reports "listening" for the session (TS 24.281 §16.2.3); the video from it is reassembled and decoded as the unicast video, the transmitting client drops its own, and a packet not newer than the last one kept of the stream is dropped as a copy. The audio port is not joined (the audio component is not played). Transmission Idle and Media Transmission Notification from the subchannel (the Map Group To Bearer's SSRC) go to the transmission participant; the transmitter's own notification is ignored. Unmap Group To Bearer: "not-listening", the subchannel left. | `src/client/mcvideo/multicast.cpp`; TS 24.581 §10.3 |
 
 ## Running the tests
 
@@ -35,7 +35,8 @@ the service area.
 | MV-MB-05 | The server sent video over the subchannel; client-d received none from it, the transmitter decoded none of its own. |
 | MV-MB-06 | `mbms quality bad`: client-c leaves the subchannel, the server takes it off, and it keeps decoding by unicast. |
 | MV-MB-07 | `mbms quality good`: client-c rejoins on the next Map Group To Bearer; all its pictures (MBMS, unicast, MBMS) equal the sender's. |
-| MV-MB-08 | The call is released: Unmap Group To Bearer, every client left the subchannel. |
+| MV-MB-08 | client-a ends its transmission: Transmission Idle goes over the subchannel and reaches client-b and client-c, not client-d. |
+| MV-MB-09 | The call is released: Unmap Group To Bearer, every client left the subchannel. |
 
 ## Results
 
@@ -46,7 +47,7 @@ Debug TCP SIP, 2026-10-28, images from the multicast branches (`mb4` quick image
 
 | Gap | Reason |
 |---|---|
-| Transmission control over the subchannel | Next phase (TS 24.581 §10.2.3.2 to §10.2.3.4). |
+| Protected transmission control over the subchannel | Next phase: the MuSiK. |
 | Reception control | A client listening to the subchannel receives the video whatever its reception mode: the server's reception control (Receive Media Request) governs only the unicast copies. |
 | Audio over the subchannel | Sent, not verified: the client does not join the audio port. |
 | FEC | Not implemented (TS 24.581 §10.4: optional). |

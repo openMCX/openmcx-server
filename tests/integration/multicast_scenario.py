@@ -329,6 +329,18 @@ def main():
         assert third['client-c']['multicast'] == third['client-c']['received'], 'client-c not back on multicast'
         checks.append('burst 3: client-c by multicast only again')
 
+        # TS 24.380 clauses 10.2.3.2, 10.2.3.3 and 10.3.3: Floor Taken and Floor Idle to the listeners over the
+        # subchannel, once each; client-d by unicast. Under protected floor control they stay unicast.
+        control = status('mcptt-server').get('mbms_control_sent', 0)
+        received = {role: status(role).get('mbms_floor_received', 0) for role in ROLES}
+        if any(received[role] for role in OPTED_IN):
+            assert control > 0 and received['client-d'] == 0, f'floor over the subchannel: {control}, {received}'
+            assert all(received[role] > 0 for role in ['client-b', 'client-c']), f'floor not received: {received}'
+            checks.append(f'MS-08 {control} Floor Taken/Idle over the subchannel, received {received}')
+        else:
+            assert control == 0, f'{control} floor messages over the subchannel'
+            checks.append('MS-08 protected floor control: Floor Taken/Idle stay unicast')
+        result['floor_over_subchannel'] = control
         unmaps = status('mcptt-server').get('mbms_unmap_sent', 0)
         wait(
             'MS-06 silence longer than T15: Unmap Group To Bearer, repeated C17 times, then released',

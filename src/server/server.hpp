@@ -1355,6 +1355,12 @@ protected:
     MulticastDestination channel;
     std::uint64_t t15 = 0, t16 = 0, t17 = 0;
     unsigned c17 = 0;
+    // TS 24.380 clauses 10.2.3.2 and 10.2.3.3: the message sequence number of the media control messages sent over
+    // the subchannel, and the last one sent (its kind and when), so that the copies for each listener of one
+    // arbitration outcome go once.
+    std::uint16_t control_sequence = 0;
+    std::string last_control;
+    std::uint64_t last_control_ms = 0;
   };
   struct MbmsTimers {
     std::uint64_t t15 = 30000, t16 = 500, t17 = 200;
@@ -1374,6 +1380,9 @@ protected:
   void mbms_release(const std::string &session_uri, const char *reason);
 
   void mbms_conversation_tick(std::uint64_t now);
+
+  bool mbms_control(Leg &leg, const std::string &kind,
+                    const std::function<std::vector<std::uint8_t>(std::uint32_t, std::uint16_t)> &encode);
 
   MbmsTimers mbms_timers_;
   std::map<std::string, MbmsConversation> mbms_conversations_;
