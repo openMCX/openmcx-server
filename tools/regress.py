@@ -128,6 +128,16 @@ LABS = [
     # bot and the alias front-desk, client-c chats with it. Needs the openmcx-agent image as --client-image; with a
     # plain client image the scenario reports itself skipped.
     lab('mcdata-agent', 'single', ['--private-call', '--mcdata'], ['mcdata_agent_scenario'], ['agent', 'mcdata']),
+    # mcx-agent's voice and video plumbing: client-a runs as the agent with the voice bot and the camera agent of
+    # agent/examples in client-d's container; client-b and client-c talk to it and watch its video. Needs the
+    # openmcx-agent image as --client-image, like mcdata-agent.
+    lab(
+        'voice-video-agent',
+        'single',
+        ['--private-call', '--mcvideo'],
+        ['voice_video_agent_scenario'],
+        ['agent', 'mcptt', 'mcvideo'],
+    ),
     # Two-minute tokens: the clients renew them before expiry and keep their service authorisation.
     # service_logoff_scenario: the clients' log-off and log-on, log-off on the wire (TS 24.379 clause 7.3.5, RFC 3903)
     # and a dead client's binding removed when its service authorisation ends (clause 7.3.3 step 8).
