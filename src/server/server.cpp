@@ -173,6 +173,7 @@ void McServer::tick() {
   docsub_tick(now);
   temporary_tick(now);
   seal_tick();
+  mbms_tick(now);
   for (auto &[dialog, leg] : legs_)
     if (leg->active && !floor_key_ready(*leg)) stop_unkeyed_leg(*leg, "floor key expired or unavailable");
   for (const auto &[dialog, sub] : key_subscriptions_)
@@ -624,6 +625,7 @@ McServer::McServer(const ServiceProfile &service, Json cfg, bool disable_tls)
              {"media_forwarded", 0},
              {"media_dropped", 0}};
   multicast_setup();
+  mbms_setup();
 }
 
 //------------------------------------------------------------------------------

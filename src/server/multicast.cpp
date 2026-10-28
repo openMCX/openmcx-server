@@ -65,10 +65,11 @@ void McServer::send_multicast(std::span<const std::uint8_t> packet, const Multic
 
 //------------------------------------------------------------------------------
 // Helper: the application/vnd.3gpp.mcptt-mbms-usage-info+xml body of a SIP MESSAGE, or none.
-const std::string *McServer::mbms_usage_part(const SipMessage &message) {
+const std::string *McServer::mbms_usage_part(const SipMessage &message) const {
+  const std::string mime = mbms_usage_type(mbms_service()).mime;
   for (const auto &part : message.parts)
-    if (part.content_type == mbms_usage_mime) return &part.body;
-  return message.content_type == mbms_usage_mime ? &message.body : nullptr;
+    if (part.content_type == mime) return &part.body;
+  return message.content_type == mime ? &message.body : nullptr;
 }
 
 //------------------------------------------------------------------------------
@@ -82,7 +83,7 @@ SipResponse McServer::mbms_usage_message(const SipMessage &message, const User &
   response.status_code = 403;
   MbmsUsageInfo usage;
   try {
-    usage = parse_mbms_usage_info(body);
+    usage = parse_mbms_usage_info(body, mbms_service());
   } catch (const std::exception &error) {
     response.status_code = 400;
     event("multicast_status_refused", {{"user_id", user.id}, {"reason", error.what()}});
@@ -92,6 +93,14 @@ SipResponse McServer::mbms_usage_message(const SipMessage &message, const User &
   if (!usage.announcements.empty() || info.request_uri != user.id) {
     event("multicast_status_refused", {{"user_id", user.id}, {"reason", "TS 24.379 clause 14.2.4"}});
     return response;
+  }
+  // TS 24.379 clause 14.2.3 step 1 a ii and step 1 b ii: the general purpose subchannel of announced bearers
+  // (src/server/mbms.cpp); the same report may also name a session.
+  if (usage.listening_status && usage.listening_status->general_purpose) {
+    if (const auto refusal = mbms_general_purpose_status(user, *usage.listening_status); !refusal.empty()) {
+      event("multicast_status_refused", {{"user_id", user.id}, {"reason", refusal}});
+      return response;
+    }
   }
   if (!usage.listening_status || usage.listening_status->session_id.empty()) {
     response.status_code = 200;

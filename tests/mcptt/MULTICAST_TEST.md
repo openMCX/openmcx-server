@@ -28,12 +28,21 @@ python3 tools/regress.py --images <tag> --client-image openmcx-client:<tag> --se
 The labs are generated with `--multicast`: the four clients have the client block, with the prearranged group on
 `239.10.0.1:40000` and TMGI `00000199f907` (MBMS Service ID 000001, MCC 999, MNC 70); the server's opt-in list
 names client-a, client-b and client-c, not client-d. `multicast-protected` adds protected media and floor control
-(`--protected`).
+(`--protected`). The labs also have one pre-activated MBMS bearer (`mcptt.mbms`, TMGI `00000199f907`, MBMS service
+area `0001`, general purpose subchannel `239.10.1.1:40100`, Bearer Announcement every 5 s) announced to the four
+users; client-d's emulated MBMS interface starts in area `0002`. The MB checks run before the call; the bearer
+carries no group media yet (the MC checks use the static host group).
 
 ## Checks
 
 | ID | Check |
 |---|---|
+| MB-01 | The MBMS bearer is announced to the four users (TS 24.379 clause 14.2.2.2); each client stores it with the general purpose subchannel of its SDP (clause 14.3.2). |
+| MB-02 | client-a to client-c, in the bearer's service area, join the general purpose subchannel and the server takes their "listening" reports with `<general-purpose>` (clause 14.3.3); client-d, outside, does not listen. |
+| MB-03 | The Bearer Announcement message sent over the general purpose subchannel (TS 24.380 clause 4.1.3.7) reaches the listeners, not client-d. |
+| MB-04 | `mbms area 0001`: client-d enters the service area, listens and is taken. |
+| MB-05 | `mbms quality bad`: client-c reports "not-listening" and leaves; `mbms quality good`: it listens again. |
+| MB-06 | `mbms area 0002`: client-d leaves the service area and reports "not-listening". |
 | MC-01 | The server is set up with one host group, has sent nothing and counts nobody listening; no client has joined before a call. |
 | MC-02 | A prearranged group call with the four clients; client-a, client-b and client-c join the host group and the server takes their "listening" reports. |
 | MC-03 | client-d's report is refused with 403; client-d leaves the host group. |

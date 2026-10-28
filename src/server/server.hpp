@@ -1317,7 +1317,7 @@ protected:
 
   void send_multicast(std::span<const std::uint8_t> packet, const MulticastDestination &destination);
 
-  static const std::string *mbms_usage_part(const SipMessage &message);
+  [[nodiscard]] const std::string *mbms_usage_part(const SipMessage &message) const;
 
   SipResponse mbms_usage_message(const SipMessage &message, const User &user, const std::string &body);
 
@@ -1331,6 +1331,35 @@ protected:
   std::optional<MulticastConfig> multicast_;
   std::unique_ptr<UdpSocket> multicast_socket_;
   std::set<std::pair<std::string, std::string>> multicast_listening_;
+
+  // ---- MBMS bearers (mbms.cpp): TS 24.379 clause 14.2, TS 24.281 clause 16.3, TS 24.380 clause 10 ----
+  [[nodiscard]] MbmsService mbms_service() const;
+
+  void mbms_setup();
+
+  [[nodiscard]] std::string mbms_announcement_sdp() const;
+
+  [[nodiscard]] std::vector<MbmsAnnouncement> mbms_announcements() const;
+
+  void mbms_announce(const User &user);
+
+  void mbms_tick(std::uint64_t now);
+
+  void send_general_purpose(std::span<const std::uint8_t> packet, const MbmsBearerConfig &bearer);
+
+  std::string mbms_general_purpose_status(const User &user, const MbmsListeningStatus &status);
+
+  void publish_mbms_status();
+
+  // The "mbms" block, the socket of the general purpose and MBMS subchannels and the SSRC of this participating
+  // function on them; none when not configured. The users the bearers were announced to, and the TMGIs whose general
+  // purpose subchannel each user reported listening to (TS 24.379 clause 14.2.3).
+  std::optional<MbmsConfig> mbms_;
+  std::unique_ptr<UdpSocket> mbms_socket_;
+  std::uint32_t mbms_ssrc_ = 0;
+  std::uint64_t mbms_next_announcement_ = 0;
+  std::set<std::string> mbms_announced_;
+  std::map<std::string, std::set<std::string>> mbms_general_purpose_;
 
   // ---- XML integrity protection (xml_protection.cpp): TS 24.379 clause 6.6.3, TS 33.180 clause 9.3.5 ----
   // Each XML body of a message is signed with HMAC-SHA256 under the integrity key of

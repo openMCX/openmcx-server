@@ -25,9 +25,13 @@ std::string multipart_body(const std::vector<BodyPart> &parts, std::string_view 
         part.body.find("\r\n--" + std::string(boundary)) != part.body.npos)
       invalid("unsafe MIME header or delimiter");
     if (part.content_id.find_first_of("\r\n<>") != part.content_id.npos) invalid("unsafe MIME Content-ID");
+    if (part.content_disposition.find_first_of("\r\n") != part.content_disposition.npos)
+      invalid("unsafe MIME Content-Disposition");
     out += "--" + std::string(boundary) + "\r\nContent-Type: " + part.content_type +
-           (part.content_id.empty() ? std::string{} : "\r\nContent-ID: <" + part.content_id + ">") + "\r\n\r\n" +
-           part.body + "\r\n";
+           (part.content_id.empty() ? std::string{} : "\r\nContent-ID: <" + part.content_id + ">") +
+           (part.content_disposition.empty() ? std::string{}
+                                             : "\r\nContent-Disposition: " + part.content_disposition) +
+           "\r\n\r\n" + part.body + "\r\n";
   }
   out += "--" + std::string(boundary) + "--\r\n";
   bounded_envelope(out);

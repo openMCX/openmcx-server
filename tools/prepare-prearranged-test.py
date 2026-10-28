@@ -31,6 +31,20 @@ ROOT = Path(__file__).resolve().parents[1]
 # The --multicast lab's group: its IPv4 host group and port (administratively scoped, RFC 2365) and its TMGI
 # (TS 24.008 clause 10.5.6.13 octets 3 to 8: MBMS Service ID 000001, MCC 999, MNC 70).
 MULTICAST_GROUP = dict(host_group='239.10.0.1:40000', tmgi='00000199f907')
+# The pre-activated MBMS bearer of the --multicast lab (TS 24.380 clause 4.1.3.1, emulated on the lab network): the
+# MCPTT group's TMGI, one MBMS service area (TS 29.061 MBMS-Service-Area coding of SAI 1), the general purpose MBMS
+# subchannel and the subchannel pool; client-d's emulated MBMS interface starts outside the service area.
+MBMS_BEARER = dict(
+    tmgi='00000199f907',
+    qci=65,
+    service_areas=['0001'],
+    report_suspension=True,
+    general_purpose='239.10.1.1:40100',
+    subchannels=['239.10.0.2:40002', '239.10.0.3:40004'],
+)
+MBMS_VIDEO_BEARER = dict(
+    MBMS_BEARER, tmgi='00000299f907', general_purpose='239.10.1.2:40200', subchannels=['239.10.0.4:40006']
+)
 
 
 # ------------------------------------------------------------------------------
@@ -1279,7 +1293,20 @@ def add_multicast(fixture):
     server = json.loads(server_file.read_text())
     opted_in = [configs[role]['mcptt']['user_id'] for role in ['client-a', 'client-b', 'client-c']]
     server['mcptt']['multicast'] = dict(users=opted_in, groups=groups)
+    # TS 24.379 clause 14.2.2: the bearer is announced to the four users; client-d is outside its service area.
+    announced = [configs[role]['mcptt']['user_id'] for role in roles]
+    server['mcptt']['mbms'] = dict(users=announced, bearers=[MBMS_BEARER], bearer_announcement_ms=5000)
     server_file.write_text(json.dumps(server, indent=2) + '\n')
+    for role, cfg in configs.items():
+        cfg['mbms'] = dict(service_areas=['0002' if role == 'client-d' else '0001'])
+        (fixture / f'generated/{role}.json').write_text(json.dumps(cfg, indent=2) + '\n')
+    # TS 24.281 clause 16.3.2: with an MCVideo server, a bearer of its own announced to the MCVideo users.
+    video_file = fixture / 'generated/mcvideo-server.json'
+    if video_file.is_file():
+        video = json.loads(video_file.read_text())
+        users = [cfg['mcvideo']['user_id'] for cfg in configs.values() if 'mcvideo' in cfg]
+        video['mcvideo']['mbms'] = dict(users=users, bearers=[MBMS_VIDEO_BEARER], bearer_announcement_ms=5000)
+        video_file.write_text(json.dumps(video, indent=2) + '\n')
 
 
 def add_mock_pcrf(compose, fixture):

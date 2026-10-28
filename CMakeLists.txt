@@ -170,6 +170,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/server/location.cpp
         src/server/media.cpp
         src/server/multicast.cpp
+        src/server/mbms.cpp
         src/server/notices.cpp
         src/server/policy.cpp
         src/server/priority.cpp

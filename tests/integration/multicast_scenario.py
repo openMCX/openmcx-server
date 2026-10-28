@@ -34,6 +34,9 @@ import wave
 
 ROOT = Path(__file__).resolve().parents[2]
 HOST_GROUP = '239.10.0.1:40000'
+# The pre-activated MBMS bearer (tools/prepare-prearranged-test.py MBMS_BEARER).
+TMGI = '00000199f907'
+GENERAL_PURPOSE = '239.10.1.1:40100'
 OPTED_IN = ['client-a', 'client-b', 'client-c']
 ROLES = OPTED_IN + ['client-d']
 # A talk burst of the lab's speech fixtures is several seconds of 20 ms packets (RFC 4867 section 4.3).
@@ -179,6 +182,64 @@ def main():
         with wave.open(str(args.artifacts / role / 'received.wav'), 'rb') as audio:
             return audio.readframes(audio.getnframes())
 
+    # ------------------------------------------------------------------------------
+    def bearer(role):
+        """The client's view of the announced bearer (core/mbms.cpp), or {}."""
+        return status(role).get('mbms_bearers', {}).get(TMGI, {})
+
+    # ------------------------------------------------------------------------------
+    def general_purpose():
+        """The MCPTT IDs the server counts as listening to the general purpose subchannel of the bearer."""
+        return {
+            entry['user_id']
+            for entry in status('mcptt-server').get('mbms_general_purpose', [])
+            if TMGI in entry.get('tmgis', [])
+        }
+
+    # ------------------------------------------------------------------------------
+    def announcements(ids):
+        """MB-01 to MB-06: the MBMS bearer announcement (TS 24.379 clause 14.2.2.2, clause 14.3.2), the listening
+        status reports on the general purpose subchannel (clause 14.3.3) as the emulated MBMS interface moves between
+        service areas and radio conditions, and the Bearer Announcement over the bearer (TS 24.380 clause 10.3.6)."""
+        wait(
+            'MB-01 the bearer is announced to the four users',
+            lambda: set(status('mcptt-server').get('mbms_announced', [])) >= set(ids.values())
+            and all(bearer(role).get('general_purpose') == GENERAL_PURPOSE for role in ROLES),
+        )
+        wait(
+            'MB-02 client-a to client-c listen to the general purpose subchannel, client-d (outside) does not',
+            lambda: general_purpose() == {ids[role] for role in OPTED_IN}
+            and all(bearer(role).get('joined') and bearer(role).get('accepted') for role in OPTED_IN)
+            and not bearer('client-d').get('joined')
+            and not bearer('client-d').get('reported_listening'),
+        )
+        wait(
+            'MB-03 Bearer Announcements over the general purpose subchannel reach the listeners only',
+            lambda: all(status(role).get('mbms_bearer_announcements', 0) >= 1 for role in OPTED_IN)
+            and status('client-d').get('mbms_bearer_announcements', 0) == 0,
+            15,
+        )
+        command('client-d', 'mbms area 0001')
+        wait(
+            'MB-04 client-d enters the service area and listens',
+            lambda: ids['client-d'] in general_purpose() and bearer('client-d').get('accepted'),
+            10,
+        )
+        command('client-c', 'mbms quality bad')
+        wait(
+            'MB-05 bad radio conditions: client-c reports not-listening',
+            lambda: ids['client-c'] not in general_purpose() and not bearer('client-c').get('joined'),
+            10,
+        )
+        command('client-c', 'mbms quality good')
+        wait('MB-05 good again: client-c listens', lambda: ids['client-c'] in general_purpose(), 10)
+        command('client-d', 'mbms area 0002')
+        wait(
+            'MB-06 client-d leaves the service area: not-listening',
+            lambda: ids['client-d'] not in general_purpose() and not bearer('client-d').get('joined'),
+            10,
+        )
+
     generated = args.compose.resolve().parent / 'generated'
     ids = {role: json.loads((generated / f'{role}.json').read_text())['mcptt']['user_id'] for role in ROLES}
     result = dict(scenario='multicast-group-call', passed=False, checks=checks, host_group=HOST_GROUP)
@@ -195,6 +256,7 @@ def main():
         assert not server.get('multicast_listening'), 'listening before any call'
         assert all(status(role).get('multicast_joined') == '' for role in ROLES), 'joined before any call'
         result['addresses'] = {role: address(role) for role in ROLES + ['mcptt-server']}
+        announcements(ids)
 
         command('client-a', 'call')
         wait('four-participant call', lambda: all(status(role).get('call_state') == 'active' for role in ROLES))

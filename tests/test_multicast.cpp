@@ -166,9 +166,44 @@ static void Section_7_SendAndReceive() {
 }
 
 //------------------------------------------------------------------------------
+// The "mbms" block of pre-activated bearers: defaults, a bearer read back, and what is refused (a missing general
+// purpose subchannel or service area, a TMGI or a host group and port used twice, a unicast address).
+static void MbmsBlock() {
+  const auto bearer = [](const std::string &tmgi, const std::string &general_purpose) {
+    return mcx::Json{{"tmgi", tmgi},
+                     {"general_purpose", general_purpose},
+                     {"subchannels", {"239.10.0.2:40002"}},
+                     {"service_areas", {"0001"}}};
+  };
+  auto block = mcx::Json{{"users", {"mcptt-a"}}, {"bearers", {bearer("00000199F907", "239.10.1.1:40100")}}};
+  block["bearers"][0]["qci"] = 65;
+  const auto config = mcx::mbms_config(block);
+  if (config.ttl != 1 || config.payload_type != 96 || config.bearer_announcement_ms != 0 || !config.serves("mcptt-a"))
+    throw std::runtime_error("mbms defaults not taken");
+  const auto *read = config.bearer("00000199f907");
+  if (!read || read->qci != 65 || read->general_purpose.port != 40100 || read->subchannels.size() != 1 ||
+      read->subchannels[0].tmgi != "00000199f907" || read->service_areas != std::vector<std::string>{"0001"})
+    throw std::runtime_error("mbms bearer not read back");
+  auto twice = block;
+  twice["bearers"].push_back(bearer("00000199f907", "239.10.1.2:40100"));
+  rejects([&] { (void)mcx::mbms_config(twice); }, "a TMGI used twice");
+  auto shared = block;
+  shared["bearers"].push_back(bearer("000002", "239.10.0.2:40002"));
+  rejects([&] { (void)mcx::mbms_config(shared); }, "a host group and port used twice");
+  auto unicast = block;
+  unicast["bearers"][0]["general_purpose"] = "10.0.0.1:40100";
+  rejects([&] { (void)mcx::mbms_config(unicast); }, "a unicast general purpose subchannel");
+  auto no_area = block;
+  no_area["bearers"][0].erase("service_areas");
+  rejects([&] { (void)mcx::mbms_config(no_area); }, "a bearer without service areas");
+  rejects([&] { (void)mcx::mbms_config(mcx::Json{{"bearers", mcx::Json::array()}}); }, "no bearer");
+}
+
+//------------------------------------------------------------------------------
 int main() {
   Section_4_HostGroupAddresses();
   ConfigurationBlock();
+  MbmsBlock();
   Clause_14_3_3_2_ListeningStatus();
   Section_7_SendAndReceive();
   std::cout << "multicast tests passed\n";
