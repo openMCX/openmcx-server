@@ -5,8 +5,9 @@
 
 """Exercise mcx-agent, the MCData plumbing for AI agents (openmcx-client agent/), against the real servers: client-a
 runs as the agent (the mcx-agent daemon with mcx-client as its engine) holding the functional alias front-desk; the
-hello-world echo bot of agent/examples runs in client-b's container, as a third-party agent would, and reaches it
-over MCP on HTTP with a bearer token; client-c is the field user who chats with it.
+chat bot of agent/examples (chat-bot.py: it marks each message read and answers time, ping and help) runs in client-b's
+container, as a third-party agent would, and reaches it over MCP on HTTP with a bearer token; client-c is the field
+user who chats with it.
 
 The client image must hold mcx-agent (the openmcx-agent image, FROM openmcx-client): without it the scenario reports
 itself skipped. Run against a fixture prepared with --private-call --mcdata (add_mcdata_policy in
@@ -15,14 +16,16 @@ client-b may take front-desk over.
 
 Checks:
   AG-01 the agent starts on client-a's identity and activates front-desk
-  AG-02 a two-line SDS to the alias is answered by the echo bot, in the sender's conversation, presenting the
-        alias, line breaks kept, asking for delivery and read reports; the agent learns the echo was delivered
+  AG-02 a two-line SDS to the alias reaches the agent with its line breaks and is answered by the chat bot (an
+        unknown word: its help) in the sender's conversation, presenting the alias, asking for delivery and read
+        reports; the agent learns the answer was delivered
   AG-03 the sender gets the read report the bot's mark_read sends
-  AG-04 an SDS to the agent's MCData ID is answered too
+  AG-04 SDSs to the agent's MCData ID are answered too: ping with pong, time with the time in UTC
   AG-05 a group SDS does not reach the agent
   AG-06 the agent may send only to users who wrote to it (allow_senders_hours): others are refused (not_allowed)
   AG-07 a file from the agent's outbox reaches the field user
-  AG-08 a file from the field user is accepted and acknowledged by the bot
+  AG-08 a file from the field user reaches the agent as a file offer, which the chat bot leaves alone; accepted
+        with respond_file, it is downloaded
   AG-09 front-desk taken over: the agent refuses to send; given back, the agent activates it again
   AG-10 the MCP server lists the tools and answers a call
   AG-11 the audit log records the tool calls that acted on the network
@@ -34,6 +37,7 @@ Specifications: TS 24.282 V19.7.0 (Rel-19) clauses 9.2.2 (SDS), 9.2.1.3 and 12.2
 
 import argparse
 import json
+import re
 import secrets
 import subprocess
 import time
@@ -45,7 +49,8 @@ ROOT = Path(__file__).resolve().parents[2]
 READ, DELIVERED_AND_READ = 3, 4
 AGENT_ROLE, USER_ROLE = 'client-a', 'client-c'
 SOCKET = '/run/mcx/agent.sock'
-BOT = '/usr/local/share/mcx-agent/examples/echo-bot.py'
+BOT = '/usr/local/share/mcx-agent/examples/chat-bot.py'
+HELP = 'I answer: time (the time in UTC), ping, help.'  # chat-bot.py's answer to anything else
 BOT_ROLE = 'client-b'  # the third-party agent's container
 MCP_URL = 'http://client-a:8765/mcp'
 
@@ -171,8 +176,20 @@ def main():
     def unique(label):
         return f'{label}-{secrets.token_hex(4)}'
 
-    def echo(text):
-        return f'Hello {user_id}, you said: {text}'
+    # ------------------------------------------------------------------------------
+    # The field user's messages that answer one of its messages (InReplyTo).
+    def answers(sent):
+        return [
+            message
+            for message in status(USER_ROLE).get('mcdata_inbox') or []
+            if message.get('in_reply_to') == sent['message_id']
+        ]
+
+    # ------------------------------------------------------------------------------
+    # The text of the first answer to one of the field user's messages, or None.
+    def answer_text(sent):
+        found = answers(sent)
+        return found[0]['payloads'][0].get('text') if found and found[0].get('payloads') else None
 
     try:
         wait(
@@ -254,17 +271,17 @@ def main():
             [
                 'sh',
                 '-c',
-                f'nohup python3 {BOT} --mcp-url {MCP_URL} --token-file /artifacts/agent/token '
-                '--cursor /artifacts/agent/echo.cursor > /artifacts/agent/echo-bot.log 2>&1 &',
+                f'nohup python3 {BOT} --url {MCP_URL} --token-file /artifacts/agent/token '
+                '--cursor /artifacts/agent/chat.cursor > /artifacts/agent/chat-bot.log 2>&1 &',
             ],
         )
         if bot.returncode:
-            raise RuntimeError(f'the echo bot did not start: {bot.stderr}')
+            raise RuntimeError(f'the chat bot did not start: {bot.stderr}')
         wait(
-            'AG-01 the echo bot is ready',
+            'AG-01 the chat bot is ready',
             lambda: (
-                'echo bot ready' in (work / 'echo-bot.log').read_text(errors='replace')
-                if (work / 'echo-bot.log').exists()
+                f'ready as {agent_id}, alias {front_desk}' in (work / 'chat-bot.log').read_text(errors='replace')
+                if (work / 'chat-bot.log').exists()
                 else False
             ),
         )
@@ -278,16 +295,16 @@ def main():
             f'sds-fa both escaped {front_desk} {first}\\nsecond line',
             'AG-02 the SDS to front-desk is accepted (202)',
         )
-        wait('AG-02 the field user receives the echo', lambda: bool(inbox(USER_ROLE, echo(text))))
-        answer = inbox(USER_ROLE, echo(text))[0]
+        wait('AG-02 the field user receives an answer', lambda: bool(answers(sent)))
+        answer = answers(sent)[0]
         observations['alias_answer'] = answer
-        check('AG-02 the echo comes from the agent', answer['from'] == agent_id)
-        check('AG-02 the echo presents front-desk', answer['functional_alias'] == front_desk)
-        check('AG-02 the echo is in the sender\'s conversation', answer['conversation_id'] == sent['conversation_id'])
-        check('AG-02 the echo replies to the message (InReplyTo)', answer['in_reply_to'] == sent['message_id'])
-        check('AG-02 the echo asks for delivery and read reports', answer['disposition'] == 3)
+        check('AG-02 the answer is the bot\'s help', answer_text(sent) == HELP)
+        check('AG-02 the answer comes from the agent', answer['from'] == agent_id)
+        check('AG-02 the answer presents front-desk', answer['functional_alias'] == front_desk)
+        check('AG-02 the answer is in the sender\'s conversation', answer['conversation_id'] == sent['conversation_id'])
+        check('AG-02 the answer asks for delivery and read reports', answer['disposition'] == 3)
         wait(
-            'AG-02 the agent learns the echo was delivered',
+            'AG-02 the agent learns the answer was delivered',
             lambda: (
                 agent('message_status', message_id=answer['message_id'])[1].get('message', {}).get('delivered') is True
             ),
@@ -295,6 +312,7 @@ def main():
         code, received = agent('inbox', kind='message')
         item = next((i for i in received['items'] if i['text'] == text), None)
         check('AG-02 the agent\'s inbox shows the message to front-desk', item and item['to_alias'] == front_desk)
+        check('AG-02 the message keeps its line breaks', item and item['text'].split('\n') == [first, 'second line'])
 
         # AG-03 the bot marked it read: the read report reaches the sender.
         wait(
@@ -306,10 +324,16 @@ def main():
             ),
         )
 
-        # AG-04 the field user writes to the agent's own MCData ID.
-        text = unique('direct')
-        send(USER_ROLE, f'sds {agent_id} {text}', 'AG-04 the SDS to the agent is accepted (202)')
-        wait('AG-04 the field user receives the echo', lambda: bool(inbox(USER_ROLE, echo(text))))
+        # AG-04 the field user writes to the agent's own MCData ID: ping, then time.
+        sent = send(USER_ROLE, f'sds {agent_id} ping', 'AG-04 ping to the agent is accepted (202)')
+        wait('AG-04 the bot answers ping with pong', lambda: answer_text(sent) == 'pong')
+        sent = send(USER_ROLE, f'sds {agent_id} time', 'AG-04 time to the agent is accepted (202)')
+        wait('AG-04 the bot answers time', lambda: answer_text(sent) is not None)
+        observations['time_answer'] = answer_text(sent)
+        check(
+            'AG-04 the answer is the time in UTC',
+            re.fullmatch(r'It is \d\d:\d\d UTC on \d{4}-\d\d-\d\d\.', answer_text(sent) or '') is not None,
+        )
 
         # AG-05 a group SDS reaches client-a's engine but not the agent.
         text = unique('group')
@@ -364,23 +388,38 @@ def main():
             ),
         )
 
-        # AG-08 a file from the field user: the bot accepts it and says so.
+        # AG-08 a file from the field user: the chat bot reads only messages, so the offer waits for the agent,
+        # which accepts it here.
         upload = args.artifacts / 'agent-test'
         upload.mkdir(parents=True, exist_ok=True)
         (upload / 'photo-note.txt').write_text('Broken fence at the north gate, photo to follow.\n' * 2)
+        answered = len([m for m in status(USER_ROLE).get('mcdata_inbox') or [] if m.get('from') == agent_id])
+
+        def offer():
+            items = agent('inbox', kind='file')[1].get('items') or []
+            return next((i for i in items if i.get('file_name') == 'photo-note.txt'), None)
+
         command(USER_ROLE, f'fd-send {agent_id} /artifacts/agent-test/photo-note.txt')
-        wait(
-            'AG-08 the bot acknowledges the file',
-            lambda: any(
-                'I got your file photo-note.txt' in payload.get('text', '')
-                for message in status(USER_ROLE).get('mcdata_inbox') or []
-                for payload in message.get('payloads', [])
+        wait('AG-08 the file offer reaches the agent', lambda: offer() is not None, 30)
+        check(
+            'AG-08 the chat bot leaves the offer alone',
+            holds(
+                lambda: (
+                    offer().get('file_state') == 'offered'
+                    and len([m for m in status(USER_ROLE).get('mcdata_inbox') or [] if m.get('from') == agent_id])
+                    == answered
+                ),
+                3,
             ),
-            30,
         )
-        code, received = agent('inbox', kind='file')
-        item = next((i for i in received['items'] if i['file_name'] == 'photo-note.txt'), {})
-        check('AG-08 the agent downloaded the file', item.get('file_state') == 'downloaded' and item.get('path'))
+        code, accepted = agent('respond_file', message_id=offer()['message_id'], action='accept')
+        observations['file_accepted'] = accepted
+        check('AG-08 respond_file downloads the file', code == 0 and accepted.get('state') == 'downloaded')
+        item = offer()
+        check(
+            'AG-08 the agent\'s inbox shows the file downloaded',
+            item.get('file_state') == 'downloaded' and item.get('path'),
+        )
 
         # AG-09 client-b takes front-desk over; when it gives it back, the agent activates it again.
         command('client-b', f'mcdata-fa takeover {front_desk}')
@@ -474,7 +513,7 @@ def main():
         pass
     except (AssertionError, KeyError, IndexError, TypeError, OSError, RuntimeError, subprocess.SubprocessError) as exc:
         result['error'] = str(exc)
-    for name in ('echo-bot.log',):
+    for name in ('chat-bot.log',):
         path = args.artifacts / 'agent' / name
         if path.exists():
             observations[name] = path.read_text(errors='replace')[-3000:]

@@ -6,7 +6,7 @@
 """Exercise mcx-agent's voice (MCPTT) and video (MCVideo) plumbing for AI agents (openmcx-client agent/) against
 the real servers: client-a runs as the agent (the mcx-agent daemon with mcx-client as its engine, voice and video
 on, no MCData); in client-d's container, as third-party agents would, the hello-world voice bot (agent/examples/
-voice-bot.py: it plays back every talk burst it hears) and the camera agent (video-feed.py: a generated test card
+voice-bot.py: it plays back every talk burst it hears) and the camera agent (video-bot.py: a generated test card
 streamed to POST /video) reach it over MCP on HTTP with a bearer token. client-b and client-c are the users.
 
 The client image must hold mcx-agent (the openmcx-agent image, FROM openmcx-client): without it the scenario reports
@@ -339,8 +339,8 @@ def main():
         wait('VA-05 client-b\'s call ended', lambda: status('client-b').get('call_state') == 'idle')
 
         # The camera agent streams its pictures and transmits in every MCVideo call it is in.
-        start_bot('video-feed.py', 'video-feed.log', '--seconds 180')
-        wait('the camera agent is ready', lambda: 'video feed ready' in log('video-feed.log'), 30)
+        start_bot('video-bot.py', 'video-bot.log', '--seconds 180')
+        wait('the camera agent is ready', lambda: 'video feed ready' in log('video-bot.log'), 30)
 
         # VA-06 client-c calls the agent with video.
         command('client-c', f"mcvideo-private {mcvideo[AGENT_ROLE]} auto")
@@ -433,7 +433,7 @@ def main():
         pass
     except (AssertionError, KeyError, IndexError, TypeError, OSError, RuntimeError, subprocess.SubprocessError) as exc:
         result['error'] = str(exc)
-    for name in ('voice-bot.log', 'video-feed.log'):
+    for name in ('voice-bot.log', 'video-bot.log'):
         if (work / name).exists():
             observations[name] = log(name)[-3000:]
     result['status'] = snapshot()
