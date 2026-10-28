@@ -153,6 +153,11 @@ def main():
         return status(role).get('mbms_group_dynamic_data', {}).get(group, {})
 
     # ------------------------------------------------------------------------------
+    def server_config():
+        """The MCPTT server's generated configuration."""
+        return json.loads((generated / 'mcptt-server.json').read_text())
+
+    # ------------------------------------------------------------------------------
     def conversation():
         """The server's MBMS conversation of the call, or {}."""
         conversations = status('mcptt-server').get('mbms_conversations', [])
@@ -290,6 +295,16 @@ def main():
         result['addresses'] = {role: address(role) for role in ROLES + ['mcptt-server']}
         announcements(ids)
 
+        # TS 24.379 clauses 14B.2.2.2, 14B.3.2 and 14B.3.5: on 5G MBS sessions (the mbs lab) the announcement is the
+        # MBS one and the listeners send a UE session join notification for the multicast session.
+        mbs = any(b.get('system') == 'mbs' for b in server_config()['mcptt']['mbms']['bearers'])
+        if mbs:
+            wait(
+                'MBS-01 MBS session announced; client-a to client-c sent the UE session join notification',
+                lambda: all(bearer(role).get('system') == 'mbs' for role in ROLES)
+                and {ids[role] for role in OPTED_IN}
+                <= {e['user_id'] for e in status('mcptt-server').get('mbs_joined', []) if e['mbs_session_id'] == TMGI},
+            )
         command('client-a', 'call')
         wait('four-participant call', lambda: all(status(role).get('call_state') == 'active' for role in ROLES))
         group = json.loads((generated / 'client-a.json').read_text())['mcptt']['group_id']

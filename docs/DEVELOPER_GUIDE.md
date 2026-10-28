@@ -615,7 +615,9 @@ then reads:
 - `mcptt.mbms`, `mcvideo.mbms` (optional): pre-activated MBMS bearers of the participating function (role `both`;
   `include/mcx/multicast.hpp`, `src/server/mbms.cpp`; TS 24.379 clause 14.2, TS 24.281 clause 16.3). `bearers` is a
   list of `{"tmgi", "general_purpose": "<IPv4 host group>:<port>", "subchannels": ["<host group>:<port>", ...],
-  "service_areas": ["<hexBinary>", ...]}` with optional `qci`, `frequency` and `report_suspension`; `users` lists the
+  "service_areas": ["<hexBinary>", ...]}` with optional `qci`, `frequency` and `report_suspension` (`"system": "mbs"`
+  makes it a 5G MBS session: `tmgi` is its MBS session ID, `mode` broadcast or multicast, optional `report_join` and
+  `fsa_ids`; TS 24.379 clause 14B, TS 24.380 clause 10B, announced in the MBS usage information, "MCSC"/"MCV5"); `users` lists the
   MC service IDs the bearers are announced to (local policy, clause 14.2.2.1; omitted: every served user);
   `interface` (default `0.0.0.0`), `ttl` (1), the AMR-WB `payload_type` (96) and `octet_aligned` (false) and, for
   MCVideo, the H.264 `video_payload_type` (97; an MCVideo subchannel carries the video on its pool port and the
@@ -642,7 +644,7 @@ then reads:
   (`src/mcvideo/video_media.cpp`, TS 24.581 clause 10.2). Status: `mbms_bearers`, `mbms_announced`,
   `mbms_general_purpose`, `mbms_bearer_announcements`, `mbms_conversations`, `mbms_map_sent`, `mbms_unmap_sent`,
   `mbms_control_sent`, `mbms_musik_users`, `mbms_mscck_id`, `mbms_musik_id`, `mbms_suspended`, `mbms_paging_sent`,
-  `mbms_group_data_sent`,
+  `mbms_group_data_sent`, `mbs_joined`,
   `multicast_forwarded` (packets sent over subchannels), `multicast_listening` (users and sessions).
 - `common`: the common services' URLs and the server's client ID and secret; `issuer` (default: `idms`), the IdMS
   whose access tokens the server accepts, and `token_audience` (default: `client_id`), their audience.

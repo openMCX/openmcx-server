@@ -1314,9 +1314,9 @@ protected:
 
   [[nodiscard]] bool multicast_video_leg(const Leg &leg) const;
 
-  [[nodiscard]] const std::string *mbms_usage_part(const SipMessage &message) const;
+  [[nodiscard]] std::optional<std::pair<std::string, bool>> mbms_usage_part(const SipMessage &message) const;
 
-  SipResponse mbms_usage_message(const SipMessage &message, const User &user, const std::string &body);
+  SipResponse mbms_usage_message(const SipMessage &message, const User &user, const std::string &body, bool mbs);
 
   [[nodiscard]] std::string multicast_listening_refusal(const User &user, const MbmsListeningStatus &status) const;
 
@@ -1334,6 +1334,8 @@ protected:
   [[nodiscard]] std::string mbms_announcement_sdp(const std::string &key_mgmt = {}) const;
 
   [[nodiscard]] std::vector<MbmsAnnouncement> mbms_announcements() const;
+
+  [[nodiscard]] std::vector<MbsAnnouncement> mbs_announcements() const;
 
   void mbms_announce(const User &user);
 
@@ -1403,6 +1405,8 @@ protected:
   // TS 24.379 clause 14.2.3 step 1 a (suspension): the bearers reported as about to be suspended, whose conversations
   // moved to unicast and which take no new one until a "not-suspending" report (TS 24.380 clause 10.2.3.12).
   std::set<std::string> mbms_suspended_;
+  // TS 24.379 clause 14B.2.5: the users that sent a UE session join notification, by MBS session ID.
+  std::set<std::pair<std::string, std::string>> mbms_joined_;
 
   void mbms_suspension(const User &user, const MbmsSuspensionStatus &status);
 

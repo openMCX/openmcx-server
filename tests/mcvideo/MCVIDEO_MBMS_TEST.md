@@ -21,6 +21,8 @@ python3 tools/regress.py --images <tag> --client-image openmcx-client:<tag> --se
 ```
 
 `mbms-mcvideo-protected` adds protected media and transmission control: the bearer then has an MSCCK and a MuSiK.
+`mbs-mcvideo` runs the scenario over a 5G MBS session of the MCVideo server (`application/vnd.3gpp.mcvideo-mbs-usage-info+xml`,
+"MCV5" MapGroupToSessionStream; TS 24.281 clause 16A, TS 24.581 clause 9.5).
 
 The lab is generated with `--mcvideo --multicast`: the MCVideo server's bearer has TMGI `00000299f907`, MBMS service
 area `0001`, general purpose subchannel `239.10.1.2:40200` and subchannel `239.10.0.4:40006`; client-d starts outside

@@ -277,4 +277,201 @@ MbmsUsageInfo parse_mbms_usage_info(std::string_view xml, MbmsService service) {
   return out;
 }
 
+//------------------------------------------------------------------------------
+// TS 24.379 annex F.2A.4 and F.2A.2; TS 24.281 annex F.2A.
+const MbmsUsageType &mbs_usage_type(MbmsService service) {
+  static constexpr MbmsUsageType mcptt{"application/vnd.3gpp.mcptt-mbs-usage-info+xml", "urn:3gpp:ns:mcpttMbsUsage:1.0",
+                                       "mcptt-mbs-usage-info", "mcptt-mbs-rohc"};
+  static constexpr MbmsUsageType mcvideo{"application/vnd.3gpp.mcvideo-mbs-usage-info+xml",
+                                         "urn:3gpp:ns:mcvideoMbsUsage:1.0", "mcvideo-mbs-usage-info",
+                                         "mcvideo-mbs-rohc"};
+  return service == MbmsService::Mcvideo ? mcvideo : mcptt;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 annex F.2A.3 items 1 and 3, item 2 a), item 4 a) ii): the string values.
+inline constexpr std::string_view deleting_value = "deleting", not_deleting_value = "not-deleting";
+inline constexpr std::string_view join_value = "ue-session-join", leave_value = "ue-session-leave";
+
+//------------------------------------------------------------------------------
+// Helper: an MBS session ID (TS 23.247 clause 6.5.1), hexBinary in lower case.
+static std::string mbs_session_hex(std::string value) { return hex_binary(std::move(value)); }
+
+//------------------------------------------------------------------------------
+// TS 24.379 annex F.2A.2: the document, in the schema's order: listening status, de-announcement status, UE session join
+// notification, announcements, <version>, and the MuSiK download in <anyExt>. The schema makes
+// <multicast-mbs-session-related-info> mandatory in <mbs-session-info>; it is written empty.
+std::string mbs_usage_xml(const MbsUsageInfo &info, MbmsService service) {
+  const auto &type = mbs_usage_type(service);
+  std::string out = std::string("<?xml version=\"1.0\" encoding=\"UTF-8\"?><") + type.root + " xmlns=\"" + type.ns +
+                    "\">";
+  if (info.listening_status) {
+    const auto &status = *info.listening_status;
+    if (status.mbs_session_ids.empty()) invalid("MBS listening status without an MBS session ID");
+    if (!status.general_purpose && status.session_id.empty())
+      invalid("MBS listening status without session or general purpose");
+    out += "<mbs-listening-status><mbs-listening-status>" +
+           std::string(status.listening ? listening_value : not_listening_value) +
+           "</mbs-listening-status><unicast-listening-status>" +
+           std::string(status.unicast_listening ? listening_value : not_listening_value) +
+           "</unicast-listening-status>";
+    if (!status.session_id.empty()) {
+      conference_uri(status.session_id, true);
+      out += "<session-id>" + xml_escape(status.session_id) + "</session-id>";
+    }
+    if (status.general_purpose)
+      out += std::string("<general-purpose>") + boolean_text(*status.general_purpose) + "</general-purpose>";
+    for (const auto &id : status.mbs_session_ids) out += "<mbs-session-id>" + mbs_session_hex(id) + "</mbs-session-id>";
+    out += "</mbs-listening-status>";
+  }
+  if (info.de_announcement_status) {
+    const auto &status = *info.de_announcement_status;
+    out += "<mbs-session-de-announcement-status><mbs-session-de-announcement-status>" +
+           std::string(status.deleting ? deleting_value : not_deleting_value) +
+           "</mbs-session-de-announcement-status><number-of-reported-sessions>" +
+           std::to_string(1 + status.other_session_ids.size()) + "</number-of-reported-sessions><deleted-mbs-session-id>" +
+           mbs_session_hex(status.deleted_session_id) + "</deleted-mbs-session-id>";
+    for (const auto &id : status.other_session_ids)
+      out += "<other-mbs-session-id>" + mbs_session_hex(id) + "</other-mbs-session-id>";
+    out += "</mbs-session-de-announcement-status>";
+  }
+  if (info.join_notification) {
+    const auto &join = *info.join_notification;
+    out += "<ue-session-join-notification><mbs-multicast-joining-status>" +
+           std::string(join.join ? join_value : leave_value) + "</mbs-multicast-joining-status><mbs-session-id>" +
+           mbs_session_hex(join.mbs_session_id) + "</mbs-session-id>";
+    if (!join.session_id.empty()) {
+      conference_uri(join.session_id, true);
+      out += "<session-id>" + xml_escape(join.session_id) + "</session-id>";
+    }
+    out += "</ue-session-join-notification>";
+  }
+  for (const auto &announcement : info.announcements) {
+    if (announcement.mode != "multicast" && announcement.mode != "broadcast") invalid("unknown MBS session mode");
+    out += "<announcement><mbs-session-info><mbs-session-id>" + mbs_session_hex(announcement.session_id) +
+           "</mbs-session-id><mbs-session-mode>" + announcement.mode + "</mbs-session-mode>";
+    if (announcement.frequency) out += "<frequency>" + std::to_string(*announcement.frequency) + "</frequency>";
+    if (announcement.gpms) {
+      if (*announcement.gpms == 0) invalid("GPMS is a positive integer");
+      out += "<GPMS>" + std::to_string(*announcement.gpms) + "</GPMS>";
+    }
+    if (!announcement.service_areas.empty()) {
+      out += "<mbs-service-areas>";
+      for (const auto &area : announcement.service_areas)
+        out += "<mbs-service-area-id>" + hex_binary(area) + "</mbs-service-area-id>";
+      out += "</mbs-service-areas>";
+    }
+    if (announcement.report_join)
+      out += std::string("<report-ue-session-join-notification>") + boolean_text(*announcement.report_join) +
+             "</report-ue-session-join-notification>";
+    out += "<multicast-mbs-session-related-info/>";
+    for (const auto &fsa : announcement.fsa_ids) out += "<mbs-fsa-id>" + hex_binary(fsa) + "</mbs-fsa-id>";
+    if (announcement.de_announcement_ack)
+      out += std::string("<mbs-session-de-announcement-acknowledgement>") +
+             boolean_text(*announcement.de_announcement_ack) + "</mbs-session-de-announcement-acknowledgement>";
+    out += "</mbs-session-info></announcement>";
+  }
+  out += "<version>1</version>";
+  if (info.musik_download) {
+    const auto &download = *info.musik_download;
+    if (download.explicit_groups && download.groups.empty()) invalid("explicit MuSiK download without a group");
+    const char *element = download.explicit_groups ? "mbs-explicitMuSiK-download" : "mbs-defaultMuSiK-download";
+    out += std::string("<anyExt><") + element + ">";
+    for (const auto &group : download.groups) out += "<group>" + xml_escape(group) + "</group>";
+    out += std::string("</") + element + "></anyExt>";
+  }
+  out += std::string("</") + type.root + ">";
+  bounded(out);
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 annex F.2A.2 and F.2A.3 (TS 24.281 annex F.2A): reads an MBS usage information document. An announcement
+// without <mbs-session-info> (an eMBMS bearer only) is not taken.
+MbsUsageInfo parse_mbs_usage_info(std::string_view xml, MbmsService service) {
+  const auto &type = mbs_usage_type(service);
+  const char *ns = type.ns;
+  auto doc = document(xml);
+  auto *root = xmlDocGetRootElement(doc.get());
+  if (!is(root, type.root, ns)) invalid("wrong MBS usage information root");
+  (void)unique_child(root, "version", ns);
+  MbsUsageInfo out;
+  if (auto *node = unique_child(root, "mbs-listening-status", ns, false)) {
+    MbsListeningStatus status;
+    const auto value = text(unique_child(node, "mbs-listening-status", ns));
+    const auto unicast = text(unique_child(node, "unicast-listening-status", ns));
+    for (const auto &item : {value, unicast})
+      if (item != listening_value && item != not_listening_value) invalid("unknown MBS listening status");
+    status.listening = value == listening_value;
+    status.unicast_listening = unicast == listening_value;
+    if (auto *session = unique_child(node, "session-id", ns, false)) {
+      status.session_id = text(session);
+      conference_uri(status.session_id, true);
+    }
+    if (auto *general = unique_child(node, "general-purpose", ns, false))
+      status.general_purpose = boolean(general, "general-purpose is not a boolean");
+    for (auto *child = node->children; child; child = child->next)
+      if (is(child, "mbs-session-id", ns)) status.mbs_session_ids.push_back(mbs_session_hex(text(child)));
+    if (status.mbs_session_ids.empty()) invalid("MBS listening status without an MBS session ID");
+    if (!status.general_purpose && status.session_id.empty())
+      invalid("MBS listening status without session or general purpose");
+    out.listening_status = status;
+  }
+  if (auto *node = unique_child(root, "mbs-session-de-announcement-status", ns, false)) {
+    MbsDeAnnouncementStatus status;
+    const auto value = text(unique_child(node, "mbs-session-de-announcement-status", ns));
+    if (value != deleting_value && value != not_deleting_value) invalid("unknown MBS de-announcement status");
+    status.deleting = value == deleting_value;
+    status.deleted_session_id = mbs_session_hex(text(unique_child(node, "deleted-mbs-session-id", ns)));
+    for (auto *child = node->children; child; child = child->next)
+      if (is(child, "other-mbs-session-id", ns)) status.other_session_ids.push_back(mbs_session_hex(text(child)));
+    out.de_announcement_status = status;
+  }
+  if (auto *node = unique_child(root, "ue-session-join-notification", ns, false)) {
+    UeSessionJoin join;
+    const auto value = text(unique_child(node, "mbs-multicast-joining-status", ns));
+    if (value != join_value && value != leave_value) invalid("unknown MBS joining status");
+    join.join = value == join_value;
+    join.mbs_session_id = mbs_session_hex(text(unique_child(node, "mbs-session-id", ns)));
+    if (auto *session = unique_child(node, "session-id", ns, false)) {
+      join.session_id = text(session);
+      conference_uri(join.session_id, true);
+    }
+    out.join_notification = join;
+  }
+  for (auto *child = root->children; child; child = child->next) {
+    if (!is(child, "announcement", ns)) continue;
+    auto *info = unique_child(child, "mbs-session-info", ns, false);
+    if (!info) continue;
+    MbsAnnouncement announcement;
+    announcement.session_id = mbs_session_hex(text(unique_child(info, "mbs-session-id", ns)));
+    announcement.mode = text(unique_child(info, "mbs-session-mode", ns));
+    if (announcement.mode != "multicast" && announcement.mode != "broadcast") invalid("unknown MBS session mode");
+    if (auto *frequency = unique_child(info, "frequency", ns, false))
+      announcement.frequency = integer(frequency, 0, UINT64_MAX, "frequency is not an unsignedLong");
+    if (auto *gpms = unique_child(info, "GPMS", ns, false))
+      announcement.gpms = static_cast<unsigned>(integer(gpms, 1, 65535, "GPMS out of range"));
+    if (auto *areas = unique_child(info, "mbs-service-areas", ns, false)) {
+      for (auto *area = areas->children; area; area = area->next)
+        if (is(area, "mbs-service-area-id", ns)) announcement.service_areas.push_back(hex_binary(text(area)));
+      if (announcement.service_areas.empty()) invalid("mbs-service-areas without an MBS service area ID");
+    }
+    if (auto *report = unique_child(info, "report-ue-session-join-notification", ns, false))
+      announcement.report_join = boolean(report, "report-ue-session-join-notification is not a boolean");
+    for (auto *fsa = info->children; fsa; fsa = fsa->next)
+      if (is(fsa, "mbs-fsa-id", ns)) announcement.fsa_ids.push_back(hex_binary(text(fsa)));
+    if (auto *ack = unique_child(info, "mbs-session-de-announcement-acknowledgement", ns, false))
+      announcement.de_announcement_ack = boolean(ack, "mbs-session-de-announcement-acknowledgement is not a boolean");
+    out.announcements.push_back(std::move(announcement));
+  }
+  if (auto *ext = any_ext(root, ns)) {
+    auto *by_default = unique_child(ext, "mbs-defaultMuSiK-download", ns, false);
+    auto *by_group = unique_child(ext, "mbs-explicitMuSiK-download", ns, false);
+    if (by_default && by_group) invalid("both a default and an explicit MuSiK download");
+    if (by_default || by_group)
+      out.musik_download = musik_download(by_group ? by_group : by_default, by_group != nullptr, ns);
+  }
+  return out;
+}
+
 } // namespace mcx

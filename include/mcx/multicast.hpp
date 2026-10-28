@@ -38,6 +38,13 @@ struct MulticastDestination {
 // allocated (clause 4.1.3.2). The emulated BM-SC delivers each host group on the lab network; TS 29.468 activation
 // is not used.
 struct MbmsBearerConfig {
+  // A 5G MBS session (TS 24.379 clause 14B, TS 24.380 clause 10B) rather than an EPS MBMS bearer: tmgi is then its MBS
+  // session ID (a TMGI, TS 23.247 clause 6.5.1), mode "multicast" or "broadcast", and report_join and fsa_ids go in
+  // its announcement.
+  bool mbs = false;
+  std::string mode = "broadcast";
+  std::optional<bool> report_join;
+  std::vector<std::string> fsa_ids;
   std::string tmgi;
   std::optional<int> qci;
   std::optional<std::uint64_t> frequency;
@@ -77,7 +84,8 @@ struct MbmsConfig {
 //------------------------------------------------------------------------------
 // Helper: reads and checks an "mbms" block. Each bearer is {"tmgi", "general_purpose": "<host group>:<port>",
 // "subchannels": ["<host group>:<port>", ...], "service_areas": ["<hexBinary>", ...], optional "qci", "frequency"
-// and "report_suspension"}; no two bearers share a TMGI, and no two subchannels (general purpose or not) share a
+// and "report_suspension" (for an MBS session: whether de-announcement is acknowledged)}, with "system": "mbs" an
+// MBS session with optional "mode", "report_join" and "fsa_ids"; no two bearers share a TMGI, and no two subchannels (general purpose or not) share a
 // host group and port.
 [[nodiscard]] MbmsConfig mbms_config(const Json &block);
 

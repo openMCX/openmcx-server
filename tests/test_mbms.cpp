@@ -415,6 +415,59 @@ static void Clause_14_2_2_5_MusikDownload() {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 annex F.2A and clause 14B (TS 24.281 annex F.2A): an MBS session announcement and a cancellation, the
+// listening status with <unicast-listening-status>, the de-announcement status and the UE session join notification,
+// for each service; what is refused.
+static void Clause_14B_MbsUsage() {
+  for (const auto service : {mcx::MbmsService::Mcptt, mcx::MbmsService::Mcvideo}) {
+    mcx::MbsAnnouncement session;
+    session.session_id = "00000399f907";
+    session.mode = "multicast";
+    session.gpms = 3;
+    session.service_areas = {"0001"};
+    session.report_join = true;
+    session.fsa_ids = {"000001"};
+    session.de_announcement_ack = true;
+    mcx::MbsAnnouncement cancelled;
+    cancelled.session_id = "000004";
+    mcx::MbsUsageInfo info;
+    info.announcements = {session, cancelled};
+    info.musik_download = mcx::MusikDownload{false, {}};
+    const auto xml = mcx::mbs_usage_xml(info, service);
+    expect(xml.find("<multicast-mbs-session-related-info/>") != std::string::npos, "related info element");
+    expect(mcx::parse_mbs_usage_info(xml, service) == info, "MBS announcement not read back: " + xml);
+    const auto other = service == mcx::MbmsService::Mcptt ? mcx::MbmsService::Mcvideo : mcx::MbmsService::Mcptt;
+    rejects([&] { (void)mcx::parse_mbs_usage_info(xml, other); }, "an MBS body of the other service");
+    rejects([&] { (void)mcx::parse_mbms_usage_info(xml, service); }, "an MBS body read as MBMS");
+
+    mcx::MbsUsageInfo reports;
+    reports.listening_status = mcx::MbsListeningStatus{true, false, "sip:s@example.test;session=1", std::nullopt,
+                                                       {"00000399f907"}};
+    reports.de_announcement_status = mcx::MbsDeAnnouncementStatus{true, "00000399f907", {}};
+    reports.join_notification = mcx::UeSessionJoin{true, "00000399f907", "sip:s@example.test;session=1"};
+    const auto report_xml = mcx::mbs_usage_xml(reports, service);
+    expect(mcx::parse_mbs_usage_info(report_xml, service) == reports, "MBS reports not read back: " + report_xml);
+  }
+  const auto ns = std::string(mcx::mbs_usage_type(mcx::MbmsService::Mcptt).ns);
+  const auto document = [&](const std::string &inner) {
+    return "<mcptt-mbs-usage-info xmlns=\"" + ns + "\">" + inner + "<version>1</version></mcptt-mbs-usage-info>";
+  };
+  rejects([&] {
+    (void)mcx::parse_mbs_usage_info(document("<mbs-listening-status><mbs-listening-status>listening</mbs-listening-status>"
+                                             "<general-purpose>true</general-purpose><mbs-session-id>000001</mbs-session-id>"
+                                             "</mbs-listening-status>"));
+  }, "an MBS listening status without <unicast-listening-status>");
+  rejects([&] {
+    (void)mcx::parse_mbs_usage_info(document("<announcement><mbs-session-info><mbs-session-id>000001</mbs-session-id>"
+                                             "<mbs-session-mode>anycast</mbs-session-mode>"
+                                             "<multicast-mbs-session-related-info/></mbs-session-info></announcement>"));
+  }, "an unknown MBS session mode");
+  mcx::MbsUsageInfo bad;
+  bad.listening_status = mcx::MbsListeningStatus{true, false, "", std::nullopt, {"000001"}};
+  rejects([&] { (void)mcx::mbs_usage_xml(bad); }, "an MBS listening status without session or general purpose");
+}
+
+//------------------------------------------------------------------------------
 int main() {
   Clause_8_4_4_MapGroupToBearer();
   Clause_8_4_7_BearerAnnouncement();
@@ -427,5 +480,6 @@ int main() {
   Clause_14_2_2_Announcement();
   Clause_14_3_3_2_ListeningAndSuspension();
   Clause_14_2_2_5_MusikDownload();
+  Clause_14B_MbsUsage();
   std::cout << "mbms tests passed\n";
 }

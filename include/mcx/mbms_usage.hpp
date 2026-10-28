@@ -128,4 +128,83 @@ std::string mbms_listening_status_xml(const MbmsListeningStatus &status, MbmsSer
 // when it is not one of the service, or breaks the schema or annex F.2.3. Unknown elements are ignored.
 MbmsUsageInfo parse_mbms_usage_info(std::string_view xml, MbmsService service = MbmsService::Mcptt);
 
+//------------------------------------------------------------------------------
+// TS 24.379 annex F.2A (TS 24.281 annex F.2A): the 5G MBS usage information body
+// (application/vnd.3gpp.mcptt-mbs-usage-info+xml, application/vnd.3gpp.mcvideo-mbs-usage-info+xml): the MBS session
+// announcement of TS 24.379 clause 14B.2.2, the listening status, de-announcement status and UE session join
+// notification of clause 14B.3, and the MuSiK download. MBS session IDs are lower-case hexadecimal (TS 23.247 clause
+// 6.5.1: a TMGI, or a source specific IP multicast address).
+[[nodiscard]] const MbmsUsageType &mbs_usage_type(MbmsService service);
+
+//------------------------------------------------------------------------------
+// TS 24.379 annex F.2A.3 item 4 a): the <mbs-session-info> of an <announcement>: the MBS session ID and mode
+// ("multicast" or "broadcast"), frequency, <GPMS>, MBS service area IDs (none: the announcement cancels, clause
+// 14B.3.2 step 2), whether a UE session join notification is wanted, the MBS FSA IDs and whether de-announcement is
+// to be acknowledged.
+struct MbsAnnouncement {
+  std::string session_id;
+  std::string mode = "broadcast";
+  std::optional<std::uint64_t> frequency;
+  std::optional<unsigned> gpms;
+  std::vector<std::string> service_areas;
+  std::optional<bool> report_join;
+  std::vector<std::string> fsa_ids;
+  std::optional<bool> de_announcement_ack;
+
+  [[nodiscard]] bool cancellation() const { return service_areas.empty(); }
+  bool operator==(const MbsAnnouncement &) const = default;
+};
+
+//------------------------------------------------------------------------------
+// TS 24.379 annex F.2A.3 item 1: <mbs-listening-status> (as <mbms-listening-status>, with the MBS session IDs for the
+// TMGIs) and its mandatory <unicast-listening-status> ("listening" or "not-listening").
+struct MbsListeningStatus {
+  bool listening = false;
+  bool unicast_listening = false;
+  std::string session_id;
+  std::optional<bool> general_purpose;
+  std::vector<std::string> mbs_session_ids;
+
+  bool operator==(const MbsListeningStatus &) const = default;
+};
+
+//------------------------------------------------------------------------------
+// TS 24.379 annex F.2A.3 item 2: <mbs-session-de-announcement-status>: "deleting" or "not-deleting", the MBS session
+// reported and the others.
+struct MbsDeAnnouncementStatus {
+  bool deleting = false;
+  std::string deleted_session_id;
+  std::vector<std::string> other_session_ids;
+
+  bool operator==(const MbsDeAnnouncementStatus &) const = default;
+};
+
+//------------------------------------------------------------------------------
+// TS 24.379 annex F.2A.3 item 3: <ue-session-join-notification>: "ue-session-join" or "ue-session-leave", the MBS
+// session ID and the MCPTT session.
+struct UeSessionJoin {
+  bool join = false;
+  std::string mbs_session_id;
+  std::string session_id;
+
+  bool operator==(const UeSessionJoin &) const = default;
+};
+
+struct MbsUsageInfo {
+  std::optional<MbsListeningStatus> listening_status;
+  std::optional<MbsDeAnnouncementStatus> de_announcement_status;
+  std::optional<UeSessionJoin> join_notification;
+  std::vector<MbsAnnouncement> announcements;
+  std::optional<MusikDownload> musik_download;
+
+  bool operator==(const MbsUsageInfo &) const = default;
+};
+
+//------------------------------------------------------------------------------
+// TS 24.379 annex F.2A.2: writes an MBS usage information document with <version> 1, in the schema's order.
+[[nodiscard]] std::string mbs_usage_xml(const MbsUsageInfo &info, MbmsService service = MbmsService::Mcptt);
+//------------------------------------------------------------------------------
+// TS 24.379 annex F.2A.2 and F.2A.3: reads an MBS usage information document of the service.
+MbsUsageInfo parse_mbs_usage_info(std::string_view xml, MbmsService service = MbmsService::Mcptt);
+
 } // namespace mcx

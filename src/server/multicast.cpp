@@ -38,24 +38,61 @@ bool McServer::multicast_video_leg(const Leg &leg) const {
 }
 
 //------------------------------------------------------------------------------
-// Helper: the application/vnd.3gpp.mcptt-mbms-usage-info+xml body of a SIP MESSAGE, or none.
-const std::string *McServer::mbms_usage_part(const SipMessage &message) const {
-  const std::string mime = mbms_usage_type(mbms_service()).mime;
-  for (const auto &part : message.parts)
-    if (part.content_type == mime) return &part.body;
-  return message.content_type == mime ? &message.body : nullptr;
+// Helper: the MBMS (application/vnd.3gpp.mcptt-mbms-usage-info+xml) or 5G MBS (...-mbs-usage-info+xml) usage
+// information body of a SIP MESSAGE, and whether it is the MBS one; none without either.
+std::optional<std::pair<std::string, bool>> McServer::mbms_usage_part(const SipMessage &message) const {
+  for (const bool mbs : {false, true}) {
+    const std::string mime = mbs ? mbs_usage_type(mbms_service()).mime : mbms_usage_type(mbms_service()).mime;
+    for (const auto &part : message.parts)
+      if (part.content_type == mime) return std::pair{part.body, mbs};
+    if (message.content_type == mime) return std::pair{message.body, mbs};
+  }
+  return std::nullopt;
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clauses 14.2.3 and 14.2.4: a "SIP MESSAGE request for an MBMS listening status update" from a served
-// user. A body with an <announcement>, or an mcptt-info naming another MCPTT ID than the asserted user's, is refused
-// with 403 (clause 14.2.4, clause 14.2.3 step 1).
-SipResponse McServer::mbms_usage_message(const SipMessage &message, const User &user, const std::string &body) {
+// TS 24.379 clause 14B.2.3 and annex L.3.4 (TS 24.281 clause 16A.3.3): an MBS usage information body read as the MBMS
+// one: the MBS session IDs for the TMGIs, the de-announcement status for the suspension status ("deleting" for
+// "suspending"), an announcement still an announcement. The UE session join notification (clause 14B.2.5) is kept
+// apart.
+static MbmsUsageInfo as_mbms(const MbsUsageInfo &mbs) {
+  MbmsUsageInfo out;
+  if (mbs.listening_status) {
+    const auto &status = *mbs.listening_status;
+    out.listening_status =
+        MbmsListeningStatus{status.listening, status.session_id, status.general_purpose, status.mbs_session_ids, {}};
+  }
+  if (mbs.de_announcement_status)
+    out.suspension_status = MbmsSuspensionStatus{mbs.de_announcement_status->deleting,
+                                                 mbs.de_announcement_status->deleted_session_id,
+                                                 mbs.de_announcement_status->other_session_ids};
+  for (const auto &announcement : mbs.announcements) {
+    MbmsAnnouncement copy;
+    copy.tmgi = announcement.session_id;
+    out.announcements.push_back(std::move(copy));
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 14.2.3 and 14.2.4 (MBS: clauses 14B.2.3 to 14B.2.5): a "SIP MESSAGE request for an MBMS listening
+// status update" from a served user. A body with an <announcement>, or an mcptt-info naming another MCPTT ID than the
+// asserted user's, is refused with 403 (clause 14.2.4, clause 14.2.3 step 1). A UE session join notification is taken
+// as the indication to the media plane of clause 14B.2.5 step 1: the status lists who joined which MBS session.
+SipResponse McServer::mbms_usage_message(const SipMessage &message, const User &user, const std::string &body,
+                                         bool mbs) {
   SipResponse response;
   response.status_code = 403;
   MbmsUsageInfo usage;
+  std::optional<UeSessionJoin> join;
   try {
-    usage = parse_mbms_usage_info(body, mbms_service());
+    if (mbs) {
+      const auto parsed = parse_mbs_usage_info(body, mbms_service());
+      usage = as_mbms(parsed);
+      join = parsed.join_notification;
+    } else {
+      usage = parse_mbms_usage_info(body, mbms_service());
+    }
   } catch (const std::exception &error) {
     response.status_code = 400;
     event("multicast_status_refused", {{"user_id", user.id}, {"reason", error.what()}});
@@ -65,6 +102,14 @@ SipResponse McServer::mbms_usage_message(const SipMessage &message, const User &
   if (!usage.announcements.empty() || info.request_uri != user.id) {
     event("multicast_status_refused", {{"user_id", user.id}, {"reason", "TS 24.379 clause 14.2.4"}});
     return response;
+  }
+  if (join) {
+    if (join->join)
+      mbms_joined_.emplace(user.id, join->mbs_session_id);
+    else
+      mbms_joined_.erase({user.id, join->mbs_session_id});
+    event("mbs_session_join", {{"user_id", user.id}, {"mbs_session_id", join->mbs_session_id}, {"join", join->join}});
+    publish_mbms_status();
   }
   // TS 24.379 clause 14.2.3, the suspension status report (src/server/mbms.cpp).
   if (usage.suspension_status) mbms_suspension(user, *usage.suspension_status);

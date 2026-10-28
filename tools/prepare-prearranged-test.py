@@ -1276,7 +1276,7 @@ def add_rx(fixture):
     conf.write_text(conf.read_text() + f'{comment}\nConnectPeer = "mock-pcrf.{domain}" {{ {peer} }};\n')
 
 
-def add_multicast(fixture, protected=False):
+def add_multicast(fixture, protected=False, mbs=False):
     """MBMS delivery of the prearranged group's media over a pre-activated MBMS bearer (TS 24.379 clause 14, TS 24.380
     clause 10; the BM-SC and the radio emulated on the lab network): the bearer is announced to the four users, whose
     clients have the emulated MBMS interface (the mbms block); client-d starts outside the bearer's service area, so it
@@ -1292,6 +1292,11 @@ def add_multicast(fixture, protected=False):
     # an MSCCK and the multicast floor control with a MuSiK (TS 24.379 clauses 14.2.2.2 and 14.2.2.5).
     if protected:
         server['mcptt']['mbms'].update(mscck=True, musik=True)
+    # TS 24.379 clause 14B, TS 24.380 clause 10B: with --mbs the bearers are 5G MBS sessions (multicast mode, with UE
+    # session join notifications; the MBS session ID is the TMGI).
+    if mbs:
+        for bearer in server['mcptt']['mbms']['bearers']:
+            bearer.update(system='mbs', mode='multicast', report_join=True, fsa_ids=['000001'])
     server_file.write_text(json.dumps(server, indent=2) + '\n')
     for role, cfg in configs.items():
         cfg['mbms'] = dict(service_areas=['0002' if role == 'client-d' else '0001'])
@@ -1303,6 +1308,9 @@ def add_multicast(fixture, protected=False):
         video['mcvideo']['mbms'] = dict(bearers=[MBMS_VIDEO_BEARER], bearer_announcement_ms=5000)
         if protected:
             video['mcvideo']['mbms'].update(mscck=True, musik=True)
+        if mbs:
+            for bearer in video['mcvideo']['mbms']['bearers']:
+                bearer.update(system='mbs', mode='multicast', report_join=True, fsa_ids=['000001'])
         video_file.write_text(json.dumps(video, indent=2) + '\n')
 
 
@@ -1925,6 +1933,11 @@ def main():
         action='store_true',
         help='MBMS delivery of group call media over a pre-activated bearer (TS 24.380 clause 10): client-d outside',
     )
+    parser.add_argument(
+        '--mbs',
+        action='store_true',
+        help='with --multicast: the bearers are 5G MBS sessions (TS 24.379 clause 14B, TS 24.380 clause 10B)',
+    )
     parser.add_argument('--priority', action='store_true')
     parser.add_argument('--protected', action='store_true')
     parser.add_argument(
@@ -2204,8 +2217,8 @@ def main():
         cfg['sip']['session_expires'] = 90
         cfg['mcptt']['floor_queue'] = args.floor_queue
         path.write_text(json.dumps(cfg, indent=2) + '\n')
-    if args.multicast:
-        add_multicast(fixture, args.protected)
+    if args.multicast or args.mbs:
+        add_multicast(fixture, args.protected, args.mbs)
     if args.priority or args.protected:
         site_path = fixture / 'generated/site.json'
         site = json.loads(site_path.read_text())

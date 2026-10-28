@@ -99,6 +99,10 @@ std::vector<MbmsAnnouncement> McServer::mbms_announcements() const {
   std::vector<MbmsAnnouncement> out;
   unsigned line = mbms_service() == MbmsService::Mcvideo ? 3 : 2;
   for (const auto &bearer : mbms_->bearers) {
+    if (bearer.mbs) {
+      ++line;
+      continue;
+    }
     MbmsAnnouncement announcement;
     announcement.tmgi = bearer.tmgi;
     announcement.qci = bearer.qci;
@@ -106,6 +110,30 @@ std::vector<MbmsAnnouncement> McServer::mbms_announcements() const {
     announcement.service_areas = bearer.service_areas;
     announcement.gpms = line++;
     announcement.report_suspension = bearer.report_suspension;
+    out.push_back(std::move(announcement));
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 14B.2.2.2 step 6 a (TS 24.281 clause 16A.3.2.2): the <announcement> of each MBS session: its
+// <mbs-session-info> with the MBS session ID, mode, <GPMS> (the media lines counted as for the bearers), MBS service
+// areas, report-ue-session-join-notification, FSA IDs and de-announcement acknowledgement.
+std::vector<MbsAnnouncement> McServer::mbs_announcements() const {
+  std::vector<MbsAnnouncement> out;
+  unsigned line = mbms_service() == MbmsService::Mcvideo ? 3 : 2;
+  for (const auto &bearer : mbms_->bearers) {
+    const auto gpms = line++;
+    if (!bearer.mbs) continue;
+    MbsAnnouncement announcement;
+    announcement.session_id = bearer.tmgi;
+    announcement.mode = bearer.mode;
+    announcement.frequency = bearer.frequency;
+    announcement.gpms = gpms;
+    announcement.service_areas = bearer.service_areas;
+    announcement.report_join = bearer.report_join;
+    announcement.fsa_ids = bearer.fsa_ids;
+    announcement.de_announcement_ack = bearer.report_suspension;
     out.push_back(std::move(announcement));
   }
   return out;
@@ -127,11 +155,17 @@ void McServer::mbms_announce(const User &user) {
   }
   McpttInfo info;
   info.request_uri = user.id;
+  // The MBMS bearers in the MBMS usage information, the MBS sessions (clause 14B.2.2.2) in the MBS one, with one SDP.
   MbmsUsageInfo usage;
   usage.announcements = mbms_announcements();
-  std::vector<BodyPart> parts{{svc_.info_mime, service_info_xml_(info)},
-                              {mbms_usage_type(mbms_service()).mime, mbms_usage_xml(usage, mbms_service())},
-                              {"application/sdp", mbms_announcement_sdp(key_mgmt), {}, "render"}};
+  MbsUsageInfo mbs_usage;
+  mbs_usage.announcements = mbs_announcements();
+  std::vector<BodyPart> parts{{svc_.info_mime, service_info_xml_(info)}};
+  if (!usage.announcements.empty())
+    parts.push_back({mbms_usage_type(mbms_service()).mime, mbms_usage_xml(usage, mbms_service())});
+  if (!mbs_usage.announcements.empty())
+    parts.push_back({mbs_usage_type(mbms_service()).mime, mbs_usage_xml(mbs_usage, mbms_service())});
+  parts.push_back({"application/sdp", mbms_announcement_sdp(key_mgmt), {}, "render"});
   const auto boundary = "mcx-" + random_id();
   sip_.request("MESSAGE", user.sip, "multipart/mixed; boundary=" + boundary, multipart_body(parts, boundary),
                user_route(user, {{"P-Asserted-Service", svc_.icsi},
@@ -194,10 +228,19 @@ std::vector<std::uint8_t> McServer::mbms_protect_control(std::vector<std::uint8_
 // successful; a user without it keeps unicast floor control.
 void McServer::mbms_musik_download(const User &user) {
   if (!mbms_signalling_keys() || !mbms_musik_) return;
-  MbmsUsageInfo usage;
-  usage.musik_download = MusikDownload{false, {}};
-  const std::vector<BodyPart> parts{{mbms_usage_type(mbms_service()).mime, mbms_usage_xml(usage, mbms_service())},
-                                    {"application/mikey", keys_->wrap_key(user.id, *mbms_musik_)}};
+  // TS 24.379 clause 14B.2.2.5: with MBS sessions only, the MBS usage information carries the download.
+  const bool mbs_only = std::ranges::all_of(mbms_->bearers, [](const auto &bearer) { return bearer.mbs; });
+  std::vector<BodyPart> parts;
+  if (mbs_only) {
+    MbsUsageInfo usage;
+    usage.musik_download = MusikDownload{false, {}};
+    parts.push_back({mbs_usage_type(mbms_service()).mime, mbs_usage_xml(usage, mbms_service())});
+  } else {
+    MbmsUsageInfo usage;
+    usage.musik_download = MusikDownload{false, {}};
+    parts.push_back({mbms_usage_type(mbms_service()).mime, mbms_usage_xml(usage, mbms_service())});
+  }
+  parts.push_back({"application/mikey", keys_->wrap_key(user.id, *mbms_musik_)});
   const auto boundary = "mcx-" + random_id();
   sip_.request("MESSAGE", user.sip, "multipart/mixed; boundary=" + boundary, multipart_body(parts, boundary),
                user_route(user, {{"P-Asserted-Service", svc_.icsi},
@@ -230,6 +273,11 @@ void McServer::mbms_tick(std::uint64_t now) {
     announcement.type = SubchannelMessageType::Announcement;
     announcement.tmgis = {bearer.tmgi};
     announcement.monitoring = true;
+    // TS 24.380 clause 8.6.7: the Session Announcement of an MBS session leads with its MBS session ID.
+    if (bearer.mbs) {
+      announcement.system = MbmsSystem::Mbs;
+      announcement.mbs_session_id = bearer.tmgi;
+    }
     send_general_purpose(encode_subchannel(announcement), bearer);
     status_["mbms_bearer_announcements"] = status_.value("mbms_bearer_announcements", 0u) + 1;
   }
@@ -283,8 +331,15 @@ SubchannelMessage McServer::mbms_message(SubchannelMessageType type, const MbmsC
   message.type = type;
   message.ssrc = mbms_ssrc_;
   message.group = conversation.group;
-  if (type == SubchannelMessageType::MapGroup) {
-    message.tmgis = {conversation.bearer->tmgi};
+  // TS 24.380 clause 10B and clause 8.6 (TS 24.581 clause 9.5): on an MBS session, MapGroupToSessionStream and
+  // UnMapGroupFromSessionStream carry the MBS session ID and the subchannel with the floor control SSRC.
+  const bool mbs = conversation.bearer->mbs;
+  if (mbs) {
+    message.system = MbmsSystem::Mbs;
+    message.mbs_session_id = conversation.bearer->tmgi;
+  }
+  if (type == SubchannelMessageType::MapGroup || (mbs && type == SubchannelMessageType::UnmapGroup)) {
+    if (!mbs) message.tmgis = {conversation.bearer->tmgi};
     MbmsSubchannel channel;
     channel.media_line = 1;
     channel.address = conversation.channel.address;
@@ -294,6 +349,7 @@ SubchannelMessage McServer::mbms_message(SubchannelMessageType type, const MbmsC
       channel.audio_line = 2;
       channel.audio_port = static_cast<std::uint16_t>(conversation.channel.port + 2);
     }
+    if (mbs) channel.control_ssrc = mbms_ssrc_;
     message.subchannel = channel;
   }
   return message;
@@ -558,6 +614,9 @@ void McServer::publish_mbms_status() {
   status_["mbms_general_purpose"] = std::move(listening);
   status_["mbms_musik_users"] = Json(std::vector<std::string>(mbms_musik_users_.begin(), mbms_musik_users_.end()));
   status_["mbms_suspended"] = Json(std::vector<std::string>(mbms_suspended_.begin(), mbms_suspended_.end()));
+  auto joined = Json::array();
+  for (const auto &[user, session] : mbms_joined_) joined.push_back({{"user_id", user}, {"mbs_session_id", session}});
+  status_["mbs_joined"] = std::move(joined);
   if (mbms_mscck_) status_["mbms_mscck_id"] = mbms_mscck_->csb_id;
   if (mbms_musik_) status_["mbms_musik_id"] = mbms_musik_->csb_id;
   auto conversations = Json::array();

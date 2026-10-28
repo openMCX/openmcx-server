@@ -100,6 +100,9 @@ LABS = [
         ['multicast_scenario'],
         ['mcptt', 'multicast', 'protected'],
     ),
+    # The same over 5G MBS sessions (TS 24.379 clause 14B, TS 24.380 clause 10B, TS 24.581 clause 9.5).
+    lab('mbs', 'single', ['--multicast', '--mbs'], ['multicast_scenario'], ['mcptt', 'multicast', 'mbs']),
+    lab('mbs-mcvideo', 'single', ['--mcvideo', '--multicast', '--mbs'], ['mbms_mcvideo_scenario'], ['mcvideo', 'mbs']),
     # MBMS delivery of an MCVideo group call's video (TS 24.581 clause 10) over the MCVideo server's bearer.
     lab('mbms-mcvideo', 'single', ['--mcvideo', '--multicast'], ['mbms_mcvideo_scenario'], ['mcvideo', 'multicast']),
     # The same with protected media and transmission control: the MSCCK and the MuSiK (TS 24.581 clause 10, TS 33.180

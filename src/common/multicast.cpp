@@ -119,6 +119,15 @@ MbmsConfig mbms_config(const Json &block) {
     if (entry.contains("qci")) bearer.qci = entry.at("qci").get<int>();
     if (entry.contains("frequency")) bearer.frequency = entry.at("frequency").get<std::uint64_t>();
     if (entry.contains("report_suspension")) bearer.report_suspension = entry.at("report_suspension").get<bool>();
+    const auto system = entry.value("system", std::string("mbms"));
+    if (system != "mbms" && system != "mbs") throw std::runtime_error("mbms: bearer system must be mbms or mbs");
+    bearer.mbs = system == "mbs";
+    bearer.mode = entry.value("mode", bearer.mode);
+    if (bearer.mode != "broadcast" && bearer.mode != "multicast")
+      throw std::runtime_error("mbms: MBS session mode must be broadcast or multicast");
+    if (entry.contains("report_join")) bearer.report_join = entry.at("report_join").get<bool>();
+    for (const auto &fsa : entry.value("fsa_ids", Json::array()))
+      bearer.fsa_ids.push_back(service_area(bearer.tmgi, fsa.get<std::string>()));
     result.bearers.push_back(std::move(bearer));
   }
   return result;

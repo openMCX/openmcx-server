@@ -11,7 +11,8 @@ subchannel (an IPv4 host group on the emulated bearer) with time-to-live 1 (RFC 
 address, as many packets as it counted; by unicast to each client exactly as many packets as arrived at that client
 by unicast (kept, or dropped as a copy): none to a client while it listens to the subchannel, all of them to
 client-d, outside the bearer's service area. The Map Group To Bearer messages go to the general purpose subchannel
-and the Unmap Group To Bearer messages to the subchannel ("MCMC", TS 24.380 clause 8.4), as many as the server
+and the Unmap Group To Bearer messages to the subchannel ("MCMC", TS 24.380 clause 8.4; "MCSC" on 5G MBS, clause
+8.6), as many as the server
 counted, and the clear Floor Taken and Floor Idle messages to the subchannel ("MCPT", TS 24.380 clauses 10.2.3.2 and
 10.2.3.3) too.
 
@@ -66,23 +67,24 @@ def mki_purpose(payload):
 
 
 # ------------------------------------------------------------------------------
-def subchannel_control(payload):
-    """TS 24.380 clause 8.4: the subtype of an MBMS subchannel control message ("MCMC", RTCP APP), clear or SRTCP under
-    the MSCCK (MKI purpose tag 5; the first two words stay clear, RFC 3711 section 3.4), or None."""
+def subchannel_control(payload, mscck):
+    """TS 24.380 clause 8.4: the subtype of an MBMS subchannel control message ("MCMC", RTCP APP), clear or, with an
+    MSCCK, SRTCP under it (MKI purpose tag 5; the first two words stay clear, RFC 3711 section 3.4), or None. Without
+    the key a clear message's last octets are no MKI."""
     if len(payload) < 12 or payload[0] >> 6 != 2 or payload[1] != 204:
         return None
-    if payload[8:12] == b'MCMC' or mki_purpose(payload) == 5:
+    if payload[8:12] in (b'MCMC', b'MCSC') or (mscck and mki_purpose(payload) == 5):
         return payload[0] & 0x1F
-    return 3 if payload[4:8] == b'MCMC' else None
+    return 3 if payload[4:8] in (b'MCMC', b'MCSC') else None
 
 
 # ------------------------------------------------------------------------------
-def is_floor(payload):
-    """TS 24.380 clause 8.2: a floor control message ("MCPT", RTCP APP), clear or SRTCP under the MuSiK (MKI purpose
-    tag 6, TS 33.180 clause 9.2.2)."""
+def is_floor(payload, musik):
+    """TS 24.380 clause 8.2: a floor control message ("MCPT", RTCP APP), clear or, with a MuSiK, SRTCP under it (MKI
+    purpose tag 6, TS 33.180 clause 9.2.2)."""
     if len(payload) < 12 or payload[0] >> 6 != 2 or payload[1] != 204:
         return False
-    return payload[8:12] == b'MCPT' or mki_purpose(payload) == 6
+    return payload[8:12] == b'MCPT' or (musik and mki_purpose(payload) == 6)
 
 
 # ------------------------------------------------------------------------------
@@ -112,10 +114,10 @@ def main():
     maps = unmaps = pagings = floor = clear_control = 0
     multicast, unicast, ttls, sources = 0, collections.Counter(), set(), set()
     for source, destination, destination_port, ttl, payload in datagrams(args.capture):
-        if destination == group and destination_port == int(port) and is_floor(payload):
+        if destination == group and destination_port == int(port) and is_floor(payload, bool(final.get('mbms_musik_id'))):
             floor += 1
-        subtype = subchannel_control(payload)
-        if subtype in (0, 1) and payload[8:12] == b'MCMC':
+        subtype = subchannel_control(payload, bool(final.get('mbms_mscck_id')))
+        if subtype in (0, 1) and payload[8:12] in (b'MCMC', b'MCSC'):
             clear_control += 1
         if subtype == 0 and (destination, str(destination_port)) == general_purpose:
             maps += 1
