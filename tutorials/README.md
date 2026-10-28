@@ -56,14 +56,14 @@ link is planned; it gets its link when the tutorial is published.
 ## Agent Tutorials
 
 Programs that take part in mission critical communication as an MC user, on mcx-agent (openmcx-client `agent/`): its
-tools over MCP, and agents built on them. One computer, the published server images, and the agent images built from
-openmcx-client.
+tools over MCP, and agents built on them. They add an agent to the system and phones of End-to-End Tutorial 1; the
+agent's image is built from openmcx-client.
 
 | # | Tutorial | What you build |
 |---|---|---|
-| 1 | [The&nbsp;example&nbsp;bots:&nbsp;chat,&nbsp;voice&nbsp;and&nbsp;video](agents/01-example-bots/README.md) | An agent user with three bots over MCP on HTTP: a chat bot (MCData), a voice bot that answers in MCPTT private and group calls, a video bot that shows its camera in MCVideo calls; a headless user and you in the browser try them. |
+| 1 | [The&nbsp;example&nbsp;bots:&nbsp;chat,&nbsp;voice&nbsp;and&nbsp;video](agents/01-example-bots/README.md) | Tutorial 1 plus an agent user, activated from MCX Admin, with three bots over MCP: the phones write to a chat bot (MCData), talk to a voice bot in private and group calls (MCPTT), and see a video bot's camera in video calls (MCVideo). |
 
-Each has its own folder in `agents/` with its Docker Compose file and `run.sh`.
+Each has its own folder in `agents/` with its Docker Compose file and `.env.example`.
 
 ## Good to know
 

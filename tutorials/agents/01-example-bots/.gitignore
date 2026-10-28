@@ -1,2 +1,1 @@
-config/
-captures/*-run.pcap*
+.env
