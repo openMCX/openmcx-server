@@ -51,7 +51,7 @@ target_link_libraries(mcx_keying PUBLIC mcx_dependencies PRIVATE ${WOLFSSL_LIBRA
 target_compile_options(mcx_keying PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(mcx-keytool src/keytool/keytool.cpp)
 target_link_libraries(mcx-keytool PRIVATE mcx_keying)
-add_library(mcx_core src/media/floor.cpp src/media/media.cpp src/media/video.cpp src/media/transmission.cpp src/protocol/affiliation.cpp src/protocol/bodies.cpp src/protocol/conference.cpp src/protocol/functional_alias.cpp src/protocol/mbms_usage.cpp src/protocol/location.cpp src/protocol/profiles.cpp src/protocol/resource_lists.cpp src/protocol/sdp.cpp src/protocol/service_info.cpp src/protocol/xml_support.cpp src/protocol/mcdata.cpp src/media/msrp.cpp src/media/ipconn.cpp src/security/http.cpp src/security/security.cpp src/security/xml_security.cpp src/location/location.cpp src/location/seal_location.cpp)
+add_library(mcx_core src/media/floor.cpp src/media/mbms.cpp src/media/media.cpp src/media/video.cpp src/media/transmission.cpp src/protocol/affiliation.cpp src/protocol/bodies.cpp src/protocol/conference.cpp src/protocol/functional_alias.cpp src/protocol/mbms_usage.cpp src/protocol/location.cpp src/protocol/profiles.cpp src/protocol/resource_lists.cpp src/protocol/sdp.cpp src/protocol/service_info.cpp src/protocol/xml_support.cpp src/protocol/mcdata.cpp src/media/msrp.cpp src/media/ipconn.cpp src/security/http.cpp src/security/security.cpp src/security/xml_security.cpp src/location/location.cpp src/location/seal_location.cpp)
 target_link_libraries(mcx_core PUBLIC mcx_dependencies PkgConfig::OPENH264)
 target_link_libraries(mcx-keytool PRIVATE mcx_core)
 target_compile_options(mcx_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -253,6 +253,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         add_executable(test_multicast tests/test_multicast.cpp)
         target_link_libraries(test_multicast PRIVATE mcx_sip)
         add_test(NAME multicast COMMAND test_multicast)
+        # TS 24.380 clauses 8.4 to 8.6, TS 24.581 clauses 9.3 to 9.5, TS 24.379 and TS 24.281 annex F.2: the MBMS and
+        # MBS subchannel control messages, the MBMS notifications and the MBMS usage information bodies.
+        add_executable(test_mbms tests/test_mbms.cpp)
+        target_link_libraries(test_mbms PRIVATE mcx_core)
+        add_test(NAME mbms COMMAND test_mbms)
         # TS 33.203 clauses 6.3 and 7.1: the IMS AKA UE's ESP SAs and policies over NETLINK_XFRM (src/security/xfrm.cpp);
         # without CAP_NET_ADMIN the test checks the refusal only.
         add_executable(test_xfrm tests/test_xfrm.cpp)

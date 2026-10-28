@@ -89,7 +89,7 @@ SipResponse McServer::mbms_usage_message(const SipMessage &message, const User &
     return response;
   }
   const auto info = message_info(message, svc_);
-  if (usage.announcement || info.request_uri != user.id) {
+  if (!usage.announcements.empty() || info.request_uri != user.id) {
     event("multicast_status_refused", {{"user_id", user.id}, {"reason", "TS 24.379 clause 14.2.4"}});
     return response;
   }

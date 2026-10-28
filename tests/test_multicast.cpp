@@ -78,8 +78,8 @@ static void ConfigurationBlock() {
   rejects([&] { (void)mcx::multicast_config(changed("groups", "239.10.0.1:40000")); }, "groups that are not a map");
   rejects([&] { (void)mcx::multicast_config(changed("users", "mcptt-a")); }, "users that are not a list");
   const auto group = [&](const mcx::Json &value) { return changed("groups", {{"sip:fire@example.test", value}}); };
-  for (const auto *value : {"10.0.0.1:40000", "239.10.0.1", "239.10.0.1:0", "239.10.0.1:65536", "239.10.0.1:4x",
-                            "mcast:40000"})
+  for (const auto *value :
+       {"10.0.0.1:40000", "239.10.0.1", "239.10.0.1:0", "239.10.0.1:65536", "239.10.0.1:4x", "mcast:40000"})
     rejects([&] { (void)mcx::multicast_config(group(entry(value, "000001"))); }, std::string("group address ") + value);
   for (const auto *value : {"", "0001", "00000x", "0000010000", "00000100000100"})
     rejects([&] { (void)mcx::multicast_config(group(entry("239.10.0.1:40000", value))); },
@@ -101,7 +101,8 @@ static void Clause_14_3_3_2_ListeningStatus() {
   const mcx::MbmsListeningStatus listening{true, "sip:mcptt@example.test;session=abc", std::nullopt, {"000001"}};
   const auto xml = mcx::mbms_listening_status_xml(listening);
   const auto read = mcx::parse_mbms_usage_info(xml);
-  if (!read.listening_status || *read.listening_status != listening || read.announcement || read.suspension_status)
+  if (!read.listening_status || *read.listening_status != listening || !read.announcements.empty() ||
+      read.suspension_status)
     throw std::runtime_error("listening status not read back: " + xml);
   auto stopped = listening;
   stopped.listening = false;
@@ -129,7 +130,8 @@ static void Clause_14_3_3_2_ListeningStatus() {
           "an unknown listening status");
   const auto announced =
       mcx::parse_mbms_usage_info(document("<announcement><TMGI>000001</TMGI></announcement><version>1</version>"));
-  if (!announced.announcement || announced.listening_status) throw std::runtime_error("announcement not seen");
+  if (announced.announcements.size() != 1 || announced.listening_status)
+    throw std::runtime_error("announcement not seen");
   const std::string unqualified = "<mcptt-mbms-usage-info><version>1</version></mcptt-mbms-usage-info>";
   rejects([&] { (void)mcx::parse_mbms_usage_info(unqualified); }, "a document without the namespace");
 }
