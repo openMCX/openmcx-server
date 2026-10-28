@@ -1,0 +1,39 @@
+# OpenMCX: Agent Tutorial 2, build your first agent (tutorials/agents/02-first-agent/README.md).
+#
+# Your agent, my-agent.py, in place of the example chat bot of Agent Tutorial 1: it reaches the agent bots of that
+# tutorial over MCP on HTTP (127.0.0.1:8765), with the token kept in that tutorial's volume. Agent Tutorial 1 must be
+# running, with its chat bot stopped (docker compose stop chat-bot, in its folder).
+#
+#   docker run --rm --entrypoint cat openmcx-agent:local /usr/local/share/mcx-agent/examples/chat-bot.py > my-agent.py
+#   docker compose up -d
+#   docker compose logs -f
+
+name: openmcx-first-agent
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  my-agent:
+    logging: *logging
+    container_name: openmcx-my-agent
+    # Any Python 3 image works: the agent uses the standard library only. This one is already on the computer.
+    image: ${OPENMCX_AGENT_IMAGE:-openmcx-agent:local}
+    network_mode: host
+    working_dir: /state
+    entrypoint: [python3, -u, /agent/my-agent.py]
+    command: [--url, "http://127.0.0.1:8765/mcp", --token-file, /bots/token, --cursor, /state/my-agent.cursor]
+    volumes:
+      - ./my-agent.py:/agent/my-agent.py:ro
+      - bots:/bots:ro               # Agent Tutorial 1's volume, for the token
+      - state:/state                # the cursor: where the agent stopped reading
+    restart: unless-stopped
+
+volumes:
+  bots:
+    external: true
+    name: openmcx-agent_agent-data
+  state:

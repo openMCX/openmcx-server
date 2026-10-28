@@ -186,7 +186,7 @@ claude mcp add --transport http mcx http://127.0.0.1:8765/mcp --header "Authoriz
 The tools, their results and error codes are in
 [API.md](https://github.com/openMCX/openmcx-client/blob/main/agent/API.md), and the bots' sources in
 [agent/examples](https://github.com/openMCX/openmcx-client/tree/main/agent/examples). The chat bot step by step is
-[FIRST_AGENT.md](https://github.com/openMCX/openmcx-client/blob/main/agent/FIRST_AGENT.md). The agent's rules
+[Agent Tutorial 2](../02-first-agent/README.md). The agent's rules
 (`setup/agent.json`) are in mcx-agent's [README](https://github.com/openMCX/openmcx-client/blob/main/agent/README.md).
 
 ## When something does not work

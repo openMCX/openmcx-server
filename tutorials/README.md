@@ -62,6 +62,7 @@ agent's image is built from openmcx-client.
 | # | Tutorial | What you build |
 |---|---|---|
 | 1 | [The&nbsp;example&nbsp;bots:&nbsp;chat,&nbsp;voice&nbsp;and&nbsp;video](agents/01-example-bots/README.md) | Tutorial 1 plus an agent user, activated from MCX Admin, with three bots over MCP: the phones write to a chat bot (MCData), talk to a voice bot in private and group calls (MCPTT), and see a video bot's camera in video calls (MCVideo). |
+| 2 | [Build&nbsp;your&nbsp;first&nbsp;agent](agents/02-first-agent/README.md) | Agent Tutorial 1 with your own chat agent in place of the example chat bot: the tools by hand, the chat bot's code step by step, your answers, and the rules for an agent with a language model. |
 
 Each has its own folder in `agents/` with its Docker Compose file and `.env.example`.
 
