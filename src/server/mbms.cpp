@@ -33,6 +33,8 @@ MbmsService McServer::mbms_service() const {
 // servers keep unicast.
 void McServer::mbms_setup() {
   const auto &service = cfg_.at(svc_.name);
+  if (service.contains("multicast"))
+    throw std::runtime_error(std::string(svc_.name) + ".multicast is replaced by the MBMS procedures (the mbms block)");
   if (!service.contains("mbms")) return;
   if (role_ != "both") throw std::runtime_error("mbms: needs role both");
   mbms_ = mbms_config(service.at("mbms"));
@@ -43,6 +45,20 @@ void McServer::mbms_setup() {
   status_["mbms_announced"] = Json::array();
   status_["mbms_general_purpose"] = Json::array();
   status_["mbms_bearer_announcements"] = 0;
+  status_["mbms_conversations"] = Json::array();
+  status_["mbms_map_sent"] = 0;
+  status_["mbms_unmap_sent"] = 0;
+  status_["multicast_forwarded"] = 0;
+  status_["multicast_listening"] = Json::array();
+  // TS 24.380 table 11.1.4-2: T15, T16 and T17 and counter C17 (table 11.2-1), here in the mbms block rather than
+  // the <fc-timers-counters> of the service configuration (TS 24.484).
+  const auto &block = service.at("mbms");
+  mbms_timers_.t15 = block.value("t15_ms", mbms_timers_.t15);
+  mbms_timers_.t16 = block.value("t16_ms", mbms_timers_.t16);
+  mbms_timers_.t17 = block.value("t17_ms", mbms_timers_.t17);
+  mbms_timers_.c17 = block.value("c17", mbms_timers_.c17);
+  if (!mbms_timers_.t15 || !mbms_timers_.t16 || !mbms_timers_.t17 || !mbms_timers_.c17)
+    throw std::runtime_error("mbms: T15, T16, T17 and C17 must be positive");
 }
 
 //------------------------------------------------------------------------------
@@ -124,7 +140,9 @@ void McServer::mbms_announce(const User &user) {
 // Announcement message (the bearer's TMGI, monitoring active) goes over each bearer's general purpose subchannel; a
 // client acknowledges it with a listening status report (TS 24.380 clause 10.3.6).
 void McServer::mbms_tick(std::uint64_t now) {
-  if (!mbms_ || mbms_->bearer_announcement_ms == 0 || now < mbms_next_announcement_) return;
+  if (!mbms_) return;
+  mbms_conversation_tick(now);
+  if (mbms_->bearer_announcement_ms == 0 || now < mbms_next_announcement_) return;
   mbms_next_announcement_ = now + mbms_->bearer_announcement_ms;
   for (const auto &bearer : mbms_->bearers) {
     SubchannelMessage announcement;
@@ -162,13 +180,170 @@ std::string McServer::mbms_general_purpose_status(const User &user, const MbmsLi
   }
   if (listened.empty()) {
     mbms_general_purpose_.erase(user.id);
-    if (!*status.general_purpose)
+    if (!*status.general_purpose) {
       std::erase_if(multicast_listening_, [&](const auto &entry) { return entry.first == user.id; });
+      publish_multicast_listening();
+    }
   }
   event("mbms_general_purpose",
         {{"user_id", user.id}, {"listening", status.listening && *status.general_purpose}, {"tmgis", status.tmgis}});
   publish_mbms_status();
   return {};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 8.4.4 to 8.4.6 (TS 24.581 clauses 9.3.4 to 9.3.6): a subchannel control message of a
+// conversation, with this function's SSRC, the group and, for Map Group To Bearer, the TMGI and the MBMS
+// subchannel: the media line of the announcement's SDP (the first) and the subchannel's host group and port, floor
+// control on the same port (Floor m-line Number 0, RFC 5761 multiplexing).
+SubchannelMessage McServer::mbms_message(SubchannelMessageType type, const MbmsConversation &conversation) const {
+  SubchannelMessage message;
+  message.service = mbms_service();
+  message.type = type;
+  message.ssrc = mbms_ssrc_;
+  message.group = conversation.group;
+  if (type == SubchannelMessageType::MapGroup) {
+    message.tmgis = {conversation.bearer->tmgi};
+    MbmsSubchannel channel;
+    channel.media_line = 1;
+    channel.address = conversation.channel.address;
+    channel.media_port = conversation.channel.port;
+    message.subchannel = channel;
+  }
+  return message;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 10.2.2.2 (TS 24.581 clause 10.2.2.2): the conversation of a group session uses an MBMS subchannel
+// when the floor is granted or media flows and served participants listen to the general purpose subchannel of a
+// bearer with a free subchannel (the decision is the function's, NOTE): the bearer with the most such listeners is
+// taken, a subchannel of its pool allocated, Map Group To Bearer sent over its general purpose subchannel (step 2)
+// and T15 and T16 started (steps 3 and 4). Without a free subchannel the conversation stays on unicast (the
+// insufficient capacity case). Private, ad hoc and ambient calls and calls without floor control stay on unicast.
+// Returns the conversation's subchannel, or none (also while it is being unmapped).
+const MulticastDestination *McServer::mbms_conversation_start(const Session &session) {
+  if (!mbms_ || session.private_call || session.adhoc || session.no_media_control || !session.ambient.empty())
+    return nullptr;
+  if (const auto found = mbms_conversations_.find(session.uri); found != mbms_conversations_.end())
+    return found->second.t17 ? nullptr : &found->second.channel;
+  const MbmsBearerConfig *chosen = nullptr;
+  std::size_t best = 0;
+  const auto legs = session_legs(session);
+  for (const auto &bearer : mbms_->bearers) {
+    const auto listeners = std::ranges::count_if(legs, [&](const auto &leg) {
+      const auto found = mbms_general_purpose_.find(leg->user);
+      return mbms_->serves(leg->user) && found != mbms_general_purpose_.end() && found->second.contains(bearer.tmgi);
+    });
+    if (static_cast<std::size_t>(listeners) > best) {
+      best = static_cast<std::size_t>(listeners);
+      chosen = &bearer;
+    }
+  }
+  if (!chosen) return nullptr;
+  const auto free = std::ranges::find_if(chosen->subchannels, [&](const auto &channel) {
+    return std::ranges::none_of(mbms_conversations_, [&](const auto &entry) {
+      return entry.second.channel.address == channel.address && entry.second.channel.port == channel.port;
+    });
+  });
+  if (free == chosen->subchannels.end()) {
+    event("mbms_no_capacity", {{"session_uri", session.uri}, {"tmgi", chosen->tmgi}});
+    return nullptr;
+  }
+  auto &conversation = mbms_conversations_[session.uri];
+  conversation.group = session.group;
+  conversation.session_uri = session.uri;
+  conversation.bearer = chosen;
+  conversation.channel = *free;
+  const auto now = monotonic_ms();
+  conversation.t15 = now + mbms_timers_.t15;
+  mbms_map(conversation, now);
+  event("mbms_conversation_started", {{"session_uri", session.uri},
+                                      {"tmgi", chosen->tmgi},
+                                      {"subchannel", free->address + ":" + std::to_string(free->port)}});
+  publish_mbms_status();
+  return &conversation.channel;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 10.2.3.5 steps 3 and 4: an RTP media packet (or, TS 24.380 clause 10.2.3.2 to 10.2.3.4, a floor
+// control message) over the conversation's MBMS subchannel restarts T15.
+void McServer::send_subchannel(std::span<const std::uint8_t> packet, const Session &session) {
+  auto &conversation = mbms_conversations_.at(session.uri);
+  mbms_socket_->send(packet, conversation.channel.address, conversation.channel.port);
+  conversation.t15 = monotonic_ms() + mbms_timers_.t15;
+  status_["multicast_forwarded"] = status_.value("multicast_forwarded", 0u) + 1;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 10.2.2.2 step 2 and clause 10.2.3.7: Map Group To Bearer over the bearer's general purpose
+// subchannel; T16 (re)started.
+void McServer::mbms_map(MbmsConversation &conversation, std::uint64_t now) {
+  send_general_purpose(encode_subchannel(mbms_message(SubchannelMessageType::MapGroup, conversation)),
+                       *conversation.bearer);
+  conversation.t16 = now + mbms_timers_.t16;
+  status_["mbms_map_sent"] = status_.value("mbms_map_sent", 0u) + 1;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 10.2.3.6 step 2, 10.2.3.8 and 10.2.3.9: Unmap Group To Bearer over the conversation's MBMS
+// subchannel, T17 (re)started and C17 counted. Map Group To Bearer is no longer repeated once the conversation is
+// being unmapped (docs/3GPP_CORRECTION_CANDIDATES.md M12), and its listeners get unicast again at once: their
+// "not-listening" reports follow.
+void McServer::mbms_unmap(MbmsConversation &conversation, std::uint64_t now) {
+  mbms_socket_->send(encode_subchannel(mbms_message(SubchannelMessageType::UnmapGroup, conversation)),
+                     conversation.channel.address, conversation.channel.port);
+  status_["mbms_unmap_sent"] = status_.value("mbms_unmap_sent", 0u) + 1;
+  conversation.t15 = conversation.t16 = 0;
+  conversation.t17 = now + mbms_timers_.t17;
+  ++conversation.c17;
+  std::erase_if(multicast_listening_, [&](const auto &entry) { return entry.second == conversation.session_uri; });
+  publish_multicast_listening();
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 10.2.3.6 step 1 b, 10.2.3.9 step 2, 10.2.3.10 and 10.2.3.11 step 3: the state machine instance
+// is released (back to 'Start-stop'); its subchannel returns to the pool.
+void McServer::mbms_release(const std::string &session_uri, const char *reason) {
+  mbms_conversations_.erase(session_uri);
+  std::erase_if(multicast_listening_, [&](const auto &entry) { return entry.second == session_uri; });
+  publish_multicast_listening();
+  event("mbms_conversation_released", {{"session_uri", session_uri}, {"reason", reason}});
+  publish_mbms_status();
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 10.2.3.6 to 10.2.3.11: the timers of each conversation, and the release of its group call.
+void McServer::mbms_conversation_tick(std::uint64_t now) {
+  std::vector<std::pair<std::string, const char *>> released;
+  for (auto &[uri, conversation] : mbms_conversations_) {
+    const bool current = std::ranges::any_of(sessions_, [&](const auto &entry) { return entry.second->uri == uri; });
+    if (!current) {
+      // Clause 10.2.3.11: Unmap Group To Bearer once, the timers stopped, the instance released.
+      mbms_socket_->send(encode_subchannel(mbms_message(SubchannelMessageType::UnmapGroup, conversation)),
+                         conversation.channel.address, conversation.channel.port);
+      status_["mbms_unmap_sent"] = status_.value("mbms_unmap_sent", 0u) + 1;
+      released.emplace_back(uri, "group call released");
+      continue;
+    }
+    if (conversation.t16 && now >= conversation.t16) mbms_map(conversation, now);
+    if (conversation.t15 && now >= conversation.t15) {
+      // Clause 10.2.3.6: without a listener the instance is released; otherwise Unmap Group To Bearer.
+      const bool listened =
+          std::ranges::any_of(multicast_listening_, [&](const auto &entry) { return entry.second == uri; });
+      if (!listened) {
+        released.emplace_back(uri, "T15 expired, no listener");
+        continue;
+      }
+      mbms_unmap(conversation, now);
+    }
+    if (conversation.t17 && now >= conversation.t17) {
+      // Clauses 10.2.3.8 and 10.2.3.9: repeated until C17 reaches its upper limit, then released.
+      const bool last = conversation.c17 >= mbms_timers_.c17;
+      mbms_unmap(conversation, now);
+      if (last) released.emplace_back(uri, "T17 expired C17 times");
+    }
+  }
+  for (const auto &[uri, reason] : released) mbms_release(uri, reason);
 }
 
 //------------------------------------------------------------------------------
@@ -179,6 +354,13 @@ void McServer::publish_mbms_status() {
   for (const auto &[user, tmgis] : mbms_general_purpose_)
     listening.push_back({{"user_id", user}, {"tmgis", std::vector<std::string>(tmgis.begin(), tmgis.end())}});
   status_["mbms_general_purpose"] = std::move(listening);
+  auto conversations = Json::array();
+  for (const auto &[uri, conversation] : mbms_conversations_)
+    conversations.push_back({{"session_uri", uri},
+                             {"group", conversation.group},
+                             {"tmgi", conversation.bearer->tmgi},
+                             {"subchannel", conversation.channel.address + ":" + std::to_string(conversation.channel.port)}});
+  status_["mbms_conversations"] = std::move(conversations);
 }
 
 } // namespace mcx

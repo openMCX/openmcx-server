@@ -624,7 +624,6 @@ McServer::McServer(const ServiceProfile &service, Json cfg, bool disable_tls)
              {"service", svc_.name},
              {"media_forwarded", 0},
              {"media_dropped", 0}};
-  multicast_setup();
   mbms_setup();
 }
 

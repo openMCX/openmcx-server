@@ -25,6 +25,7 @@
 #include "mcx/key_client.hpp"
 #include "mcx/key_documents.hpp"
 #include "mcx/location.hpp"
+#include "mcx/mbms.hpp"
 #include "mcx/mbms_usage.hpp"
 #include "mcx/media.hpp"
 #include "mcx/multicast.hpp"
@@ -1308,14 +1309,8 @@ protected:
 
   void unpermitted_media_tick(const Session &session, std::uint64_t now);
 
-  // ---- IP multicast delivery of group call speech (multicast.cpp, an OpenMCX profile: include/mcx/multicast.hpp) ----
-  void multicast_setup();
-
-  [[nodiscard]] const MulticastDestination *multicast_destination(const Session &session) const;
-
+  // ---- MBMS listening status reports (multicast.cpp): TS 24.379 clauses 14.2.3 and 14.2.4 ----
   [[nodiscard]] bool multicast_leg(const Leg &leg) const;
-
-  void send_multicast(std::span<const std::uint8_t> packet, const MulticastDestination &destination);
 
   [[nodiscard]] const std::string *mbms_usage_part(const SipMessage &message) const;
 
@@ -1325,11 +1320,8 @@ protected:
 
   void publish_multicast_listening();
 
-  // The "multicast" block of the mcptt configuration, and the socket the speech is sent from; none when not
-  // configured. The users whose latest listening status report for a session is "listening" (MCPTT ID, session
-  // URI; TS 24.379 clause 14.2.3).
-  std::optional<MulticastConfig> multicast_;
-  std::unique_ptr<UdpSocket> multicast_socket_;
+  // The users whose latest listening status report for a session is "listening" (MC service ID, session URI;
+  // TS 24.379 clause 14.2.3).
   std::set<std::pair<std::string, std::string>> multicast_listening_;
 
   // ---- MBMS bearers (mbms.cpp): TS 24.379 clause 14.2, TS 24.281 clause 16.3, TS 24.380 clause 10 ----
@@ -1350,6 +1342,39 @@ protected:
   std::string mbms_general_purpose_status(const User &user, const MbmsListeningStatus &status);
 
   void publish_mbms_status();
+
+  // TS 24.380 clause 10.2 (TS 24.581 clause 10.2): the participating function's MBMS subchannel control state
+  // machine of a conversation in 'M: A conversation is active': its group and session, the bearer and the MBMS
+  // subchannel allocated from its pool (the host group's tmgi is the bearer's), and timers T15 (Conversation), T16
+  // (Map Group To Bearer) and T17 (Unmap Group To Bearer) with counter C17, as deadlines (0: not running).
+  struct MbmsConversation {
+    std::string group, session_uri;
+    const MbmsBearerConfig *bearer = nullptr;
+    MulticastDestination channel;
+    std::uint64_t t15 = 0, t16 = 0, t17 = 0;
+    unsigned c17 = 0;
+  };
+  struct MbmsTimers {
+    std::uint64_t t15 = 30000, t16 = 500, t17 = 200;
+    unsigned c17 = 3;
+  };
+
+  [[nodiscard]] SubchannelMessage mbms_message(SubchannelMessageType type, const MbmsConversation &conversation) const;
+
+  const MulticastDestination *mbms_conversation_start(const Session &session);
+
+  void send_subchannel(std::span<const std::uint8_t> packet, const Session &session);
+
+  void mbms_map(MbmsConversation &conversation, std::uint64_t now);
+
+  void mbms_unmap(MbmsConversation &conversation, std::uint64_t now);
+
+  void mbms_release(const std::string &session_uri, const char *reason);
+
+  void mbms_conversation_tick(std::uint64_t now);
+
+  MbmsTimers mbms_timers_;
+  std::map<std::string, MbmsConversation> mbms_conversations_;
 
   // The "mbms" block, the socket of the general purpose and MBMS subchannels and the SSRC of this participating
   // function on them; none when not configured. The users the bearers were announced to, and the TMGIs whose general

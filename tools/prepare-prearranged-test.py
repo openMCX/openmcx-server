@@ -28,12 +28,10 @@ import uuid
 import lab_images
 
 ROOT = Path(__file__).resolve().parents[1]
-# The --multicast lab's group: its IPv4 host group and port (administratively scoped, RFC 2365) and its TMGI
-# (TS 24.008 clause 10.5.6.13 octets 3 to 8: MBMS Service ID 000001, MCC 999, MNC 70).
-MULTICAST_GROUP = dict(host_group='239.10.0.1:40000', tmgi='00000199f907')
-# The pre-activated MBMS bearer of the --multicast lab (TS 24.380 clause 4.1.3.1, emulated on the lab network): the
-# MCPTT group's TMGI, one MBMS service area (TS 29.061 MBMS-Service-Area coding of SAI 1), the general purpose MBMS
-# subchannel and the subchannel pool; client-d's emulated MBMS interface starts outside the service area.
+# The pre-activated MBMS bearer of the --multicast lab (TS 24.380 clause 4.1.3.1, emulated on the lab network): its
+# TMGI (TS 24.008 clause 10.5.6.13 octets 3 to 8: MBMS Service ID 000001, MCC 999, MNC 70), one MBMS service area
+# (TS 29.061 MBMS-Service-Area coding of SAI 1), the general purpose MBMS subchannel and the subchannel pool
+# (administratively scoped host groups, RFC 2365); client-d's emulated MBMS interface starts outside the area.
 MBMS_BEARER = dict(
     tmgi='00000199f907',
     qci=65,
@@ -1279,23 +1277,17 @@ def add_rx(fixture):
 
 
 def add_multicast(fixture):
-    """IP multicast of the prearranged group's speech, an OpenMCX profile (include/mcx/multicast.hpp): the four clients
-    have the client block and join the group's IPv4 host group, and report listening (TS 24.379 clause 14.3.3.2);
-    the MCPTT server's opt-in list names client-a, client-b and client-c, so it refuses client-d's report and sends
-    client-d the speech by unicast."""
+    """MBMS delivery of the prearranged group's media over a pre-activated MBMS bearer (TS 24.379 clause 14, TS 24.380
+    clause 10; the BM-SC and the radio emulated on the lab network): the bearer is announced to the four users, whose
+    clients have the emulated MBMS interface (the mbms block); client-d starts outside the bearer's service area, so it
+    keeps unicast. T15 is 10 s, so the scenario sees the conversation unmapped after a silence."""
     roles = ['client-a', 'client-b', 'client-c', 'client-d']
     configs = {role: json.loads((fixture / f'generated/{role}.json').read_text()) for role in roles}
-    groups = {configs['client-a']['mcptt']['group_id']: MULTICAST_GROUP}
-    for role, cfg in configs.items():
-        cfg['mcptt']['multicast'] = dict(groups=groups)
-        (fixture / f'generated/{role}.json').write_text(json.dumps(cfg, indent=2) + '\n')
     server_file = fixture / 'generated/mcptt-server.json'
     server = json.loads(server_file.read_text())
-    opted_in = [configs[role]['mcptt']['user_id'] for role in ['client-a', 'client-b', 'client-c']]
-    server['mcptt']['multicast'] = dict(users=opted_in, groups=groups)
     # TS 24.379 clause 14.2.2: the bearer is announced to the four users; client-d is outside its service area.
     announced = [configs[role]['mcptt']['user_id'] for role in roles]
-    server['mcptt']['mbms'] = dict(users=announced, bearers=[MBMS_BEARER], bearer_announcement_ms=5000)
+    server['mcptt']['mbms'] = dict(users=announced, bearers=[MBMS_BEARER], bearer_announcement_ms=5000, t15_ms=10000)
     server_file.write_text(json.dumps(server, indent=2) + '\n')
     for role, cfg in configs.items():
         cfg['mbms'] = dict(service_areas=['0002' if role == 'client-d' else '0001'])
@@ -1926,7 +1918,7 @@ def main():
     parser.add_argument(
         '--multicast',
         action='store_true',
-        help='IP multicast of group call speech (an OpenMCX profile): client-a to client-c opted in, client-d refused',
+        help='MBMS delivery of group call media over a pre-activated bearer (TS 24.380 clause 10): client-d outside',
     )
     parser.add_argument('--priority', action='store_true')
     parser.add_argument('--protected', action='store_true')

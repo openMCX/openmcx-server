@@ -3,8 +3,8 @@
 //
 
 // Media relay of audio (TS 24.380 clause 6.3, floor control; TS 24.581 clause 6.3, transmission control), with one
-// copy for the participants receiving a group's speech by IP multicast (src/server/multicast.cpp). The MCVideo server
-// relays the video (src/mcvideo/video_media.cpp).
+// copy over the MBMS subchannel of the conversation for the participants listening to it (TS 24.380 clause
+// 10.2.3.5, src/server/mbms.cpp). The MCVideo server relays the video (src/mcvideo/video_media.cpp).
 //
 // Specifications: TS 24.380 V19.2.0 (Rel-19), TS 24.581 V19.2.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19).
 
@@ -41,8 +41,9 @@ void McServer::audio_packet(Leg &leg, const Datagram &datagram) {
   session->last_media = monotonic_ms();
   if (!open) session->arbitrator->media_received(leg.user, session->last_media);
   if (leg.floor_retries) leg.floor_retries->cancel(FloorType::Granted);
-  // The participants on the opt-in list share one copy sent to the group's host group (include/mcx/multicast.hpp).
-  const auto *multicast = multicast_destination(*session);
+  // TS 24.380 clause 10.2.3.5: the participants listening to the conversation's MBMS subchannel share one copy sent
+  // over it; the others get theirs by unicast (its NOTE).
+  const auto *subchannel = mbms_conversation_start(*session);
   bool multicast_sent = false;
   if (leg.local.protected_media) {
     if (datagram.bytes.size() < 40) throw std::runtime_error("truncated protected media");
@@ -51,10 +52,10 @@ void McServer::audio_packet(Leg &leg, const Datagram &datagram) {
       if (!dst->local.protected_media || dst->remote->payload_type != leg.remote->payload_type ||
           dst->remote->octet_aligned != leg.remote->octet_aligned)
         throw std::runtime_error("protected media profile mismatch");
-      if (multicast && multicast_leg(*dst)) {
+      if (subchannel && multicast_leg(*dst)) {
         // The SRTP of a group call is protected with the group's GMK (TS 33.180 clause 7.4.2), the same for every
         // receiver: one copy serves them all.
-        if (!std::exchange(multicast_sent, true)) send_multicast(datagram.bytes, *multicast);
+        if (!std::exchange(multicast_sent, true)) send_subchannel(datagram.bytes, *session);
         continue;
       }
       dst->audio->send(datagram.bytes, dst->remote->address, dst->remote->audio_port);
@@ -66,11 +67,11 @@ void McServer::audio_packet(Leg &leg, const Datagram &datagram) {
   (void)unpack_amr_wb(payload, leg.remote->octet_aligned); // malformed speech is refused even with no receiver
   for (auto &[id, dst] : legs_) {
     if (dst.get() == &leg || dst->session != session || !eligible(*dst)) continue;
-    if (multicast && multicast_leg(*dst)) {
+    if (subchannel && multicast_leg(*dst)) {
       if (std::exchange(multicast_sent, true)) continue;
-      packet.payload_type = multicast_->payload_type;
-      packet.payload = relay_payload(payload, RtpCodec::amr_wb, leg.remote->octet_aligned, multicast_->octet_aligned);
-      send_multicast(encode_rtp(packet), *multicast);
+      packet.payload_type = mbms_->payload_type;
+      packet.payload = relay_payload(payload, RtpCodec::amr_wb, leg.remote->octet_aligned, mbms_->octet_aligned);
+      send_subchannel(encode_rtp(packet), *session);
       continue;
     }
     packet.payload_type = dst->remote->payload_type;
