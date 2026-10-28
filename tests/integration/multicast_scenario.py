@@ -99,6 +99,14 @@ def main():
     def address(role):
         """The IPv4 address of a role's container on the lab network."""
         container = subprocess.run(cli + ['ps', '-q', role], capture_output=True, text=True, check=True).stdout.strip()
+        # With --srsran a client shares the network namespace of its ran container (network_mode container:<id>).
+        mode = subprocess.run(
+            ['docker', 'inspect', '-f', '{{.HostConfig.NetworkMode}}', container],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        container = mode.removeprefix('container:') if mode.startswith('container:') else container
         template = '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
         return subprocess.run(
             ['docker', 'inspect', '-f', template, container], capture_output=True, text=True, check=True

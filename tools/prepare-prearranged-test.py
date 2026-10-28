@@ -1314,6 +1314,45 @@ def add_multicast(fixture, protected=False, mbs=False):
         video_file.write_text(json.dumps(video, indent=2) + '\n')
 
 
+def add_srsran(compose, fixture, image):
+    """The --srsran lab's radio (docker/srsran, tests/integration/srsran): instead of the lab network, the MBMS bearers
+    are carried by srsRAN 4G eMBMS. ran-core holds the EPC and the MBMS gateway and forwards the servers' host groups
+    into SGi-mb; each client runs in the network namespace of its ran-<x> container, an eNodeB and a UE over ZeroMQ,
+    and receives the host groups only over the UE's MTCH. SIP and unicast media stay on the lab network."""
+    roles = ['client-a', 'client-b', 'client-c', 'client-d']
+    groups = [MBMS_BEARER['general_purpose'], *MBMS_BEARER['subchannels']]
+    groups += [MBMS_VIDEO_BEARER['general_purpose'], *MBMS_VIDEO_BEARER['subchannels']]
+    scripts = {'type': 'bind', 'source': str(ROOT / 'tests/integration/srsran'), 'target': '/ran', 'read_only': True}
+    artifacts = {'type': 'bind', 'source': str(fixture / 'artifacts'), 'target': '/artifacts'}
+
+    def radio(command):
+        return {
+            'image': image,
+            'init': True,
+            'privileged': True,
+            'entrypoint': ['bash', *command],
+            'volumes': [scripts, artifacts],
+            'healthcheck': {'test': ['CMD', 'test', '-f', '/tmp/ready'], 'interval': '1s', 'timeout': '3s',
+                            'retries': 90, 'start_period': '2s'},
+        }
+
+    services = compose['services']
+    services['ran-core'] = radio(['/ran/ran-core.sh', str(len(roles)), *groups])
+    services['ran-core']['networks'] = {'mcx': None}
+    for index, role in enumerate(roles, start=1):
+        name = 'ran-' + role.removeprefix('client-')
+        services[name] = radio(['/ran/ran-ue.sh', name, str(index)])
+        # The client's address is the ran container's: it keeps the client's name on the lab network.
+        services[name]['networks'] = {'mcx': {'aliases': [role]}}
+        services[name]['depends_on'] = {'ran-core': {'condition': 'service_healthy'}}
+        client = services[role]
+        client.pop('networks', None)
+        client['network_mode'] = f'service:{name}'
+        client['depends_on'][name] = {'condition': 'service_healthy'}
+        (fixture / 'artifacts' / name).mkdir(parents=True, exist_ok=True)
+    (fixture / 'artifacts/ran-core').mkdir(parents=True, exist_ok=True)
+
+
 def add_mock_pcrf(compose, fixture):
     """The mock PCRF (tests/integration/mock_pcrf.py, with the Python of the development image) and the Rx lab's
     network: a fixed subnet, client-d outside rx.ue_subnets."""
@@ -1938,6 +1977,13 @@ def main():
         action='store_true',
         help='with --multicast: the bearers are 5G MBS sessions (TS 24.379 clause 14B, TS 24.380 clause 10B)',
     )
+    parser.add_argument(
+        '--srsran',
+        action='store_true',
+        help='with --multicast: the MBMS bearers go over srsRAN 4G eMBMS (an eNodeB and a UE over ZeroMQ per client) '
+        'instead of the lab network',
+    )
+    parser.add_argument('--srsran-image', default='openmcx-srsran:23.11', help='image of docker/srsran for --srsran')
     parser.add_argument('--priority', action='store_true')
     parser.add_argument('--protected', action='store_true')
     parser.add_argument(
@@ -2117,6 +2163,8 @@ def main():
         parser.error('--private-refresh requires --private-call')
     if args.manual_only_caller and not args.private_call:
         parser.error('--manual-only-caller requires --private-call')
+    if args.srsran and (not args.multicast or args.mbs):
+        parser.error('--srsran requires --multicast, without --mbs (srsRAN 4G carries MBMS bearers only)')
     fixture = args.directory.resolve()
     if fixture.exists():
         parser.error(f'refusing to overwrite existing fixture {fixture}')
@@ -2526,6 +2574,8 @@ def main():
         add_mock_pcf(compose, fixture)
     if args.rx:
         add_mock_pcrf(compose, fixture)
+    if args.srsran:
+        add_srsran(compose, fixture, args.srsran_image)
     rights_from_group_lists(fixture)
     service_configuration(fixture)
     if args.admin:

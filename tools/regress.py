@@ -114,6 +114,22 @@ LABS = [
         ['mbms_mcvideo_scenario'],
         ['mcvideo', 'multicast', 'protected'],
     ),
+    # The MBMS labs over srsRAN 4G eMBMS instead of the lab network (an eNodeB and a UE over ZeroMQ per client; needs
+    # the image of docker/srsran, so only their own tag selects them). Eight PHYs take several cores, so they run alone.
+    dict(
+        lab('srsran', 'single', ['--multicast', '--srsran'], ['multicast_scenario'], ['srsran']),
+        alone=True,
+    ),
+    dict(
+        lab(
+            'srsran-mcvideo',
+            'single',
+            ['--mcvideo', '--multicast', '--srsran'],
+            ['mbms_mcvideo_scenario'],
+            ['srsran'],
+        ),
+        alone=True,
+    ),
     # outbound_flow_scenario: a client without a SIP listener, reached over its RFC 5626 flow.
     # MCX Admin (slices B2, C): the accounts managed by MCX Admin; needs --admin-image.
     lab(

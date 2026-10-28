@@ -1,0 +1,72 @@
+diff --git a/srsenb/src/phy/phy_common.cc b/srsenb/src/phy/phy_common.cc
+index e024200..32d0649 100644
+--- a/srsenb/src/phy/phy_common.cc
++++ b/srsenb/src/phy/phy_common.cc
+@@ -239,7 +239,8 @@ bool phy_common::is_mcch_subframe(srsran_mbsfn_cfg_t* cfg, uint32_t phy_tti)
+     // mbsfn_area_info_r9_s* area_info = &mbsfn.mbsfn_area_info;
+     srsran::mbsfn_area_info_t* area_info = &mbsfn.mbsfn_area_info;
+     offset                               = area_info->mcch_cfg.mcch_offset;
+-    period                               = enum_to_number(area_info->mcch_cfg.mcch_repeat_period);
++    // The MCH scheduling information goes with the MCCH: repeat both every MCH scheduling period (80 ms).
++    period                               = 8;
+ 
+     if ((sfn % period == offset) && mcch_table[sf] > 0) {
+       cfg->mbsfn_area_id           = area_info->mbsfn_area_id;
+diff --git a/srsenb/src/stack/rrc/rrc.cc b/srsenb/src/stack/rrc/rrc.cc
+index 59611d2..fbcc608 100644
+--- a/srsenb/src/stack/rrc/rrc.cc
++++ b/srsenb/src/stack/rrc/rrc.cc
+@@ -932,7 +932,7 @@ void rrc::configure_mbsfn_sibs()
+   // pack MCCH for transmission and pass relevant MCCH values to PHY/MAC
+   pack_mcch();
+   srsran::mcch_msg_t mcch_t;
+-  mcch_t.common_sf_alloc_period         = srsran::mcch_msg_t::common_sf_alloc_period_t::rf64;
++  mcch_t.common_sf_alloc_period         = srsran::mcch_msg_t::common_sf_alloc_period_t::rf8;
+   mcch_t.nof_common_sf_alloc            = 1;
+   srsran::mbsfn_sf_cfg_t sf_alloc_item  = mcch_t.common_sf_alloc[0];
+   sf_alloc_item.radioframe_alloc_offset = 0;
+@@ -953,8 +953,8 @@ void rrc::configure_mbsfn_sibs()
+   }
+   logger.debug("PMCH data MCS=%d", mbms_mcs);
+   pmch_item->data_mcs         = mbms_mcs;
+-  pmch_item->mch_sched_period = srsran::pmch_info_t::mch_sched_period_t::rf64;
+-  pmch_item->sf_alloc_end     = 64 * 6;
++  pmch_item->mch_sched_period = srsran::pmch_info_t::mch_sched_period_t::rf8;
++  pmch_item->sf_alloc_end     = 8 * 6;
+ 
+   // Configure PHY when PHY is done being initialized
+   task_sched.defer_task([this, sibs2, sibs13, mcch_t]() mutable {
+@@ -968,7 +968,7 @@ int rrc::pack_mcch()
+ {
+   mcch.msg.set_c1();
+   mbsfn_area_cfg_r9_s& area_cfg_r9      = mcch.msg.c1().mbsfn_area_cfg_r9();
+-  area_cfg_r9.common_sf_alloc_period_r9 = mbsfn_area_cfg_r9_s::common_sf_alloc_period_r9_e_::rf64;
++  area_cfg_r9.common_sf_alloc_period_r9 = mbsfn_area_cfg_r9_s::common_sf_alloc_period_r9_e_::rf8;
+   area_cfg_r9.common_sf_alloc_r9.resize(1);
+   mbsfn_sf_cfg_s* sf_alloc_item          = &area_cfg_r9.common_sf_alloc_r9[0];
+   sf_alloc_item->radioframe_alloc_offset = 0;
+@@ -1009,8 +1009,8 @@ int rrc::pack_mcch()
+ 
+   logger.debug("PMCH data MCS=%d", mbms_mcs);
+   pmch_item->pmch_cfg_r9.data_mcs_r9         = mbms_mcs;
+-  pmch_item->pmch_cfg_r9.mch_sched_period_r9 = pmch_cfg_r9_s::mch_sched_period_r9_e_::rf64;
+-  pmch_item->pmch_cfg_r9.sf_alloc_end_r9     = 64 * 6;
++  pmch_item->pmch_cfg_r9.mch_sched_period_r9 = pmch_cfg_r9_s::mch_sched_period_r9_e_::rf8;
++  pmch_item->pmch_cfg_r9.sf_alloc_end_r9     = 8 * 6;
+ 
+   const int     rlc_header_len = 1;
+   asn1::bit_ref bref(&mcch_payload_buffer[rlc_header_len], sizeof(mcch_payload_buffer) - rlc_header_len);
+diff --git a/srsue/src/phy/phy_common.cc b/srsue/src/phy/phy_common.cc
+index 88f2907..3ab4a7b 100644
+--- a/srsue/src/phy/phy_common.cc
++++ b/srsue/src/phy/phy_common.cc
+@@ -1113,7 +1113,8 @@ bool phy_common::is_mcch_subframe(srsran_mbsfn_cfg_t* cfg, uint32_t phy_tti)
+     srsran::mbsfn_area_info_t& area_info = mbsfn_config.mbsfn_area_info;
+ 
+     offset = area_info.mcch_cfg.mcch_offset;
+-    period = enum_to_number(area_info.mcch_cfg.mcch_repeat_period);
++    // The MCH scheduling information goes with the MCCH: repeat both every MCH scheduling period (80 ms).
++    period = 8;
+ 
+     if ((sfn % period == offset) && mcch_table[sf] > 0) {
+       cfg->mbsfn_area_id           = area_info.mbsfn_area_id;
