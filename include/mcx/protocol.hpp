@@ -241,6 +241,9 @@ struct BodyPart {
   // The Content-ID of the part (RFC 2045), without angle brackets: the target of a
   // cid URL, such as a signature's reference (TS 24.379 clause 6.6.3.1).
   std::string content_id = {};
+  // The Content-Disposition of the part (RFC 3261 section 20.11), such as "render" for the SDP of an MBMS bearer
+  // announcement (TS 24.379 clause 14.2.2.2 step 5 a).
+  std::string content_disposition = {};
 };
 
 //------------------------------------------------------------------------------

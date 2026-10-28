@@ -111,6 +111,21 @@ void McvideoServer::transmission_notification(Leg &leg, const std::string &trans
 // TS 24.581 clause 9.2 with TS 33.180 clause 9.4: encode a transmission control message and send it to the
 // participant, as SRTCP when the call's transmission control is protected.
 void McvideoServer::send_transmission(const mcx::transmission::Packet &packet, Leg &leg) {
+  // TS 24.581 clauses 10.2.3.2 and 10.2.3.3: Transmission Idle and Media Transmission Notification to a participant
+  // listening to the conversation's MBMS subchannel go over it, once (src/server/mbms.cpp).
+  using mcx::transmission::Type;
+  if (packet.type == Type::Idle || packet.type == Type::MediaTransmissionNotification) {
+    std::string kind = packet.type == Type::Idle ? "idle" : "notification";
+    if (const auto *field = mcx::transmission::find(packet, mcx::transmission::Field::TransmittingUserId))
+      kind += " " + mcx::transmission::read_transmitting_user(*field);
+    const auto subchannel = [&packet](std::uint32_t ssrc, std::uint16_t) {
+      auto copy = packet;
+      copy.ssrc = ssrc;
+      copy.ack_required = false;
+      return mcx::transmission::encode(copy);
+    };
+    if (mbms_control(leg, kind, subchannel)) return;
+  }
   auto bytes = mcx::transmission::encode(packet);
   if (floor_protected(leg)) {
     auto *user = by_id(leg.user);

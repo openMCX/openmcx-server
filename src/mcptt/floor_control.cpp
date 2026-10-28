@@ -220,6 +220,21 @@ void McpttServer::send_floor_notice(Leg &leg, const FloorNotice &notice) {
   if (packet.type == FloorType::Idle || packet.type == FloorType::Revoke || packet.type == FloorType::Taken)
     leg.floor_retries->cancel(FloorType::Granted);
   validate_on_network_floor(packet);
+  // TS 24.380 clauses 10.2.3.2 and 10.2.3.3: Floor Idle and Floor Taken to a participant listening to the
+  // conversation's MBMS subchannel go over it, once (src/server/mbms.cpp), and are not repeated for a Floor Ack.
+  if (packet.type == FloorType::Taken || packet.type == FloorType::Idle) {
+    const auto kind = packet.type == FloorType::Taken ? "taken " + notice.participant : std::string("idle");
+    const auto subchannel = [&packet](std::uint32_t ssrc, std::uint16_t sequence) {
+      auto copy = packet;
+      copy.ssrc = ssrc;
+      copy.ack_required = false;
+      for (auto &field : copy.fields)
+        if (field.id == static_cast<std::uint8_t>(FloorFieldId::MessageSequence))
+          field = message_sequence_field(sequence);
+      return encode_floor(copy);
+    };
+    if (mbms_control(leg, kind, subchannel)) return;
+  }
   leg.floor_retries->send(packet, monotonic_ms());
   transmit_floor(leg, packet);
 }

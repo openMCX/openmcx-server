@@ -40,6 +40,9 @@ void McServer::send_notice(Leg &leg, const FloorNotice &notice) {
 //------------------------------------------------------------------------------
 // Helper: each floor arbitration outcome goes to the recipient's legs in the session.
 void McServer::notices(const Session &session, const std::vector<FloorNotice> &floor_notices) {
+  // TS 24.380 clause 10.2.2.2: a granted floor may start the conversation's MBMS subchannel (src/server/mbms.cpp).
+  if (std::ranges::any_of(floor_notices, [](const auto &notice) { return notice.kind == FloorNoticeKind::Granted; }))
+    (void)mbms_conversation_start(session);
   for (auto &notice : floor_notices)
     for (auto &[dialog, leg] : legs_)
       if (leg->session.get() == &session && leg->user == notice.recipient) send_notice(*leg, notice);

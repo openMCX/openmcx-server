@@ -90,8 +90,8 @@ def lab(name, kind, flags, scenarios, tags, call_types=False, no_payload=False):
 # the IP connectivity labs (its tunnel limits), and --priority needs --floor-queue.
 LABS = [
     lab('smoke', 'single', [], ['prearranged_scenario'], ['smoke', 'mcptt']),
-    # IP multicast of group call speech (an OpenMCX profile, include/mcx/multicast.hpp): three clients by multicast,
-    # one by unicast, clear and with media protected by the GMK (TS 33.180 clause 7.4.2).
+    # MBMS delivery of group call speech over a pre-activated bearer (TS 24.379 clause 14, TS 24.380 clause 10):
+    # three clients over the MBMS subchannel, one by unicast, clear and with media protected by the GMK.
     lab('multicast', 'single', ['--multicast'], ['multicast_scenario'], ['mcptt', 'multicast']),
     lab(
         'multicast-protected',
@@ -99,6 +99,36 @@ LABS = [
         ['--multicast'] + KEYS,
         ['multicast_scenario'],
         ['mcptt', 'multicast', 'protected'],
+    ),
+    # The same over 5G MBS sessions (TS 24.379 clause 14B, TS 24.380 clause 10B, TS 24.581 clause 9.5).
+    lab('mbs', 'single', ['--multicast', '--mbs'], ['multicast_scenario'], ['mcptt', 'multicast', 'mbs']),
+    lab('mbs-mcvideo', 'single', ['--mcvideo', '--multicast', '--mbs'], ['mbms_mcvideo_scenario'], ['mcvideo', 'mbs']),
+    # MBMS delivery of an MCVideo group call's video (TS 24.581 clause 10) over the MCVideo server's bearer.
+    lab('mbms-mcvideo', 'single', ['--mcvideo', '--multicast'], ['mbms_mcvideo_scenario'], ['mcvideo', 'multicast']),
+    # The same with protected media and transmission control: the MSCCK and the MuSiK (TS 24.581 clause 10, TS 33.180
+    # clause 9.2.2).
+    lab(
+        'mbms-mcvideo-protected',
+        'single',
+        ['--mcvideo', '--multicast'] + KEYS,
+        ['mbms_mcvideo_scenario'],
+        ['mcvideo', 'multicast', 'protected'],
+    ),
+    # The MBMS labs over srsRAN 4G eMBMS instead of the lab network (an eNodeB and a UE over ZeroMQ per client; needs
+    # the image of docker/srsran, so only their own tag selects them). Eight PHYs take several cores, so they run alone.
+    dict(
+        lab('srsran', 'single', ['--multicast', '--srsran'], ['multicast_scenario'], ['srsran']),
+        alone=True,
+    ),
+    dict(
+        lab(
+            'srsran-mcvideo',
+            'single',
+            ['--mcvideo', '--multicast', '--srsran'],
+            ['mbms_mcvideo_scenario'],
+            ['srsran'],
+        ),
+        alone=True,
     ),
     # outbound_flow_scenario: a client without a SIP listener, reached over its RFC 5626 flow.
     # MCX Admin (slices B2, C): the accounts managed by MCX Admin; needs --admin-image.

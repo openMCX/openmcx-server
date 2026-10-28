@@ -10,6 +10,8 @@
 
 #include "mcvideo_server.hpp"
 
+#include <utility>
+
 namespace mcx {
 
 //------------------------------------------------------------------------------
@@ -85,12 +87,19 @@ void McvideoServer::video_packet(Leg &leg, const Datagram &datagram) {
     // RTP header, AES-GCM tag and at least the PCK's 4-byte MKI (a GMK adds the ROC and
     // GUK-ID), with a payload byte: small H.264 units such as the parameter sets are short.
     if (datagram.bytes.size() < 12 + 16 + 4 + 1) throw std::runtime_error("truncated protected media");
+    const auto *subchannel = mbms_conversation_start(*session);
+    bool multicast_sent = false;
     for (auto &[id, dst] : legs_) {
       if (dst.get() == &leg || dst->session != session || !eligible(*dst) || !dst->video || !dst->remote->video ||
           !dst->receiving)
         continue;
       if (!dst->local.protected_media || dst->remote->video->payload_type != leg.remote->video->payload_type)
         throw std::runtime_error("protected video profile mismatch");
+      // TS 24.581 clause 10.2.3.5: one copy over the conversation's MBMS subchannel for its listeners.
+      if (subchannel && multicast_video_leg(*dst)) {
+        if (!std::exchange(multicast_sent, true)) send_subchannel(datagram.bytes, *session, true);
+        continue;
+      }
       dst->video->send(datagram.bytes, dst->remote->address, dst->remote->video->port);
       status_["video_forwarded"] = status_.value("video_forwarded", 0u) + 1;
     }
@@ -105,10 +114,21 @@ void McvideoServer::video_packet(Leg &leg, const Datagram &datagram) {
     return;
   }
   const auto payload = packet.payload;
+  // TS 24.581 clause 10.2.3.5: one copy over the conversation's MBMS subchannel for the participants listening to it,
+  // by unicast to the others.
+  const auto *subchannel = mbms_conversation_start(*session);
+  bool multicast_sent = false;
   for (auto &[id, dst] : legs_) {
     if (dst.get() == &leg || dst->session != session || !eligible(*dst) || !dst->video || !dst->remote->video ||
         !dst->receiving)
       continue;
+    if (subchannel && multicast_video_leg(*dst)) {
+      if (std::exchange(multicast_sent, true)) continue;
+      packet.payload_type = mbms_->video_payload_type;
+      packet.payload = relay_payload(payload, RtpCodec::h264, false, false);
+      send_subchannel(encode_rtp(packet), *session, true);
+      continue;
+    }
     packet.payload_type = dst->remote->video->payload_type;
     packet.payload = relay_payload(payload, RtpCodec::h264, false, false);
     dst->video->send(encode_rtp(packet), dst->remote->address, dst->remote->video->port);

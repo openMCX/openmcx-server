@@ -41,6 +41,7 @@ enum class Warning {
   automatic_commencement_not_authorised, // code 125 in TS 24.379 and TS 24.281 table 4.4.2-2
   manual_commencement_not_authorised,    // code 126 in TS 24.379 and TS 24.281 table 4.4.2-2
   not_callable_in_private_call,          // code 127 in TS 24.379 and TS 24.281 table 4.4.2-2
+  mikey_authentication_failed,           // code 136 in TS 24.379 and TS 24.281 table 4.4.2-2
   conference_subscription_not_allowed,   // code 138 in TS 24.379 and TS 24.281 table 4.4.2-2
   integrity_check_failed,                // code 139 in TS 24.379 and TS 24.281 table 4.4.2-2
   no_signing_key, // code 139 in TS 24.379 table 4.4.2-2, with a text of its own (MCVideo: the table text)
@@ -133,6 +134,7 @@ constexpr WarningEntry mcptt_warning(Warning warning) {
   case Warning::manual_commencement_not_authorised:
     return {126, "user not authorised to make private call with manual commencement"};
   case Warning::not_callable_in_private_call: return {127, "user not authorised to be called in private call"};
+  case Warning::mikey_authentication_failed: return {136, "authentication of the MIKEY-SAKKE I_MESSAGE failed"};
   case Warning::conference_subscription_not_allowed: return {138, "subscription of conference events not allowed"};
   case Warning::integrity_check_failed: return {139, "integrity protection check failed"};
   case Warning::no_signing_key: return {139, "no XPK for the signatures"}; // deviation, see above
@@ -223,6 +225,7 @@ constexpr WarningEntry mcvideo_warning(Warning warning) {
   case Warning::manual_commencement_not_authorised:
     return {126, "user not authorised to make private call with manual commencement"};
   case Warning::not_callable_in_private_call: return {127, "user not authorised to be called in private call"};
+  case Warning::mikey_authentication_failed: return {136, "authentication of the MIKEY-SAKKE I_MESSAGE failed"};
   case Warning::conference_subscription_not_allowed: return {138, "subscription of conference events not allowed"};
   case Warning::integrity_check_failed:
   case Warning::no_signing_key: return {139, "integrity protection check failed"};

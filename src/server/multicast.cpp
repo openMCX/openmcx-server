@@ -2,13 +2,12 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// IP multicast delivery of MCPTT group call speech, an OpenMCX profile (include/mcx/multicast.hpp): the configured
-// host groups, the participants that receive a session's speech by multicast, and the participating function's part
-// of TS 24.379 clause 14 that the profile uses: the client's listening status report (clauses 14.2.3 and 14.2.4).
-// A participant on the opt-in list receives the speech by unicast until it reports "listening" for the session, and
-// again once it reports "not-listening" (TS 24.380 clause 6.4.3 step 3 a).
+// The participating function's handling of the MBMS listening status reports (TS 24.379 clauses 14.2.3 and 14.2.4,
+// TS 24.281 clauses 16.3.3 and 16.3.4): a client that reported "listening" for a session whose conversation has an
+// MBMS subchannel (src/server/mbms.cpp) receives the session's media there, and by unicast again once it reports
+// "not-listening" (TS 24.380 clause 6.4.3 step 3 a, clause 10.2.3.5 NOTE).
 //
-// Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19), RFC 1112, RFC 3428.
+// Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19), RFC 3428.
 
 #include "server.hpp"
 
@@ -19,79 +18,108 @@
 namespace mcx {
 
 //------------------------------------------------------------------------------
-// Helper: reads the "multicast" block of the mcptt configuration and opens the socket the speech is sent from, on the
-// media address. The profile serves MCPTT group calls of a server in the "both" role only: MCVideo and the separate
-// participating and controlling servers keep unicast media.
-void McServer::multicast_setup() {
-  const auto &service = cfg_.at(svc_.name);
-  if (!service.contains("multicast")) return;
-  if (std::string_view(svc_.name) != "mcptt") throw std::runtime_error("multicast: MCPTT only");
-  if (role_ != "both") throw std::runtime_error("multicast: needs mcptt.role both");
-  multicast_ = multicast_config(service.at("multicast"));
-  multicast_socket_ = std::make_unique<UdpSocket>(cfg_.at("media").at("bind").get<std::string>(), 0);
-  multicast_socket_->multicast_sending(multicast_->interface, multicast_->ttl);
-  status_["multicast_groups"] = multicast_->groups.size();
-  status_["multicast_forwarded"] = 0;
-  status_["multicast_listening"] = Json::array();
-}
-
-//------------------------------------------------------------------------------
-// Helper: the host group of a session's speech: a prearranged, chat or broadcast group call (or a regroup) whose group
-// is configured, with floor control. Private, ad hoc and ambient listening calls and calls without floor control
-// (TS 24.379 clause 11.1.2, where a receiver follows the first SSRC it hears, its own included) stay unicast.
-const MulticastDestination *McServer::multicast_destination(const Session &session) const {
-  if (!multicast_ || session.private_call || session.adhoc || session.no_media_control || !session.ambient.empty())
-    return nullptr;
-  return multicast_->group(session.group);
-}
-
-//------------------------------------------------------------------------------
-// TS 24.380 clause 6.4.3 step 3 a): whether a participant receives the speech by multicast: its user is on the
-// opt-in list, its latest report for the session is "listening" (TS 24.379 clause 14.2.3 step 1 a), and its SDP
-// agreed the multicast speech's RTP payload type and AMR-WB payload format (RFC 4867 section 4). Any other
-// participant keeps unicast.
+// TS 24.380 clause 10.2.3.5 and its NOTE: whether a participant receives the media over the MBMS subchannel of its
+// session's conversation: it is served over MBMS, its latest report for the session is "listening" (TS 24.379
+// clause 14.2.3 step 1 a i), and its SDP agreed the subchannel's RTP payload type and AMR-WB payload format (RFC 4867
+// section 4). Any other participant keeps unicast.
 bool McServer::multicast_leg(const Leg &leg) const {
-  return multicast_ && leg.remote && multicast_->serves(leg.user) &&
+  return mbms_ && leg.remote && mbms_->serves(leg.user) && mbms_conversations_.contains(leg.session->uri) &&
          multicast_listening_.contains({leg.user, leg.session->uri}) &&
-         leg.remote->payload_type == multicast_->payload_type && leg.remote->octet_aligned == multicast_->octet_aligned;
+         leg.remote->payload_type == mbms_->payload_type && leg.remote->octet_aligned == mbms_->octet_aligned;
 }
 
 //------------------------------------------------------------------------------
-// Helper: sends one RTP packet of a session's speech to its host group.
-void McServer::send_multicast(std::span<const std::uint8_t> packet, const MulticastDestination &destination) {
-  multicast_socket_->send(packet, destination.address, destination.port);
-  status_["multicast_forwarded"] = status_.value("multicast_forwarded", 0u) + 1;
+// TS 24.581 clause 10.2.3.5: the same for an MCVideo participant's video: its SDP agreed the subchannel's H.264
+// payload type.
+bool McServer::multicast_video_leg(const Leg &leg) const {
+  return mbms_ && leg.remote && leg.remote->video && mbms_->serves(leg.user) &&
+         mbms_conversations_.contains(leg.session->uri) && multicast_listening_.contains({leg.user, leg.session->uri}) &&
+         leg.remote->video->payload_type == mbms_->video_payload_type;
 }
 
 //------------------------------------------------------------------------------
-// Helper: the application/vnd.3gpp.mcptt-mbms-usage-info+xml body of a SIP MESSAGE, or none.
-const std::string *McServer::mbms_usage_part(const SipMessage &message) {
-  for (const auto &part : message.parts)
-    if (part.content_type == mbms_usage_mime) return &part.body;
-  return message.content_type == mbms_usage_mime ? &message.body : nullptr;
+// Helper: the MBMS (application/vnd.3gpp.mcptt-mbms-usage-info+xml) or 5G MBS (...-mbs-usage-info+xml) usage
+// information body of a SIP MESSAGE, and whether it is the MBS one; none without either.
+std::optional<std::pair<std::string, bool>> McServer::mbms_usage_part(const SipMessage &message) const {
+  for (const bool mbs : {false, true}) {
+    const std::string mime = mbs ? mbs_usage_type(mbms_service()).mime : mbms_usage_type(mbms_service()).mime;
+    for (const auto &part : message.parts)
+      if (part.content_type == mime) return std::pair{part.body, mbs};
+    if (message.content_type == mime) return std::pair{message.body, mbs};
+  }
+  return std::nullopt;
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clauses 14.2.3 and 14.2.4: a "SIP MESSAGE request for an MBMS listening status update" from a served
-// user. A body with an <announcement>, or an mcptt-info naming another MCPTT ID than the asserted user's, is refused
-// with 403 (clause 14.2.4, clause 14.2.3 step 1). A suspension status is accepted without action (clause 14.2.3: the
-// action is implementation specific; the profile has no bearer to suspend), and so is a report on the general
-// purpose subchannel only (the profile has none).
-SipResponse McServer::mbms_usage_message(const SipMessage &message, const User &user, const std::string &body) {
+// TS 24.379 clause 14B.2.3 and annex L.3.4 (TS 24.281 clause 16A.3.3): an MBS usage information body read as the MBMS
+// one: the MBS session IDs for the TMGIs, the de-announcement status for the suspension status ("deleting" for
+// "suspending"), an announcement still an announcement. The UE session join notification (clause 14B.2.5) is kept
+// apart.
+static MbmsUsageInfo as_mbms(const MbsUsageInfo &mbs) {
+  MbmsUsageInfo out;
+  if (mbs.listening_status) {
+    const auto &status = *mbs.listening_status;
+    out.listening_status =
+        MbmsListeningStatus{status.listening, status.session_id, status.general_purpose, status.mbs_session_ids, {}};
+  }
+  if (mbs.de_announcement_status)
+    out.suspension_status = MbmsSuspensionStatus{mbs.de_announcement_status->deleting,
+                                                 mbs.de_announcement_status->deleted_session_id,
+                                                 mbs.de_announcement_status->other_session_ids};
+  for (const auto &announcement : mbs.announcements) {
+    MbmsAnnouncement copy;
+    copy.tmgi = announcement.session_id;
+    out.announcements.push_back(std::move(copy));
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 14.2.3 and 14.2.4 (MBS: clauses 14B.2.3 to 14B.2.5): a "SIP MESSAGE request for an MBMS listening
+// status update" from a served user. A body with an <announcement>, or an mcptt-info naming another MCPTT ID than the
+// asserted user's, is refused with 403 (clause 14.2.4, clause 14.2.3 step 1). A UE session join notification is taken
+// as the indication to the media plane of clause 14B.2.5 step 1: the status lists who joined which MBS session.
+SipResponse McServer::mbms_usage_message(const SipMessage &message, const User &user, const std::string &body,
+                                         bool mbs) {
   SipResponse response;
   response.status_code = 403;
   MbmsUsageInfo usage;
+  std::optional<UeSessionJoin> join;
   try {
-    usage = parse_mbms_usage_info(body);
+    if (mbs) {
+      const auto parsed = parse_mbs_usage_info(body, mbms_service());
+      usage = as_mbms(parsed);
+      join = parsed.join_notification;
+    } else {
+      usage = parse_mbms_usage_info(body, mbms_service());
+    }
   } catch (const std::exception &error) {
     response.status_code = 400;
     event("multicast_status_refused", {{"user_id", user.id}, {"reason", error.what()}});
     return response;
   }
   const auto info = message_info(message, svc_);
-  if (usage.announcement || info.request_uri != user.id) {
+  if (!usage.announcements.empty() || info.request_uri != user.id) {
     event("multicast_status_refused", {{"user_id", user.id}, {"reason", "TS 24.379 clause 14.2.4"}});
     return response;
+  }
+  if (join) {
+    if (join->join)
+      mbms_joined_.emplace(user.id, join->mbs_session_id);
+    else
+      mbms_joined_.erase({user.id, join->mbs_session_id});
+    event("mbs_session_join", {{"user_id", user.id}, {"mbs_session_id", join->mbs_session_id}, {"join", join->join}});
+    publish_mbms_status();
+  }
+  // TS 24.379 clause 14.2.3, the suspension status report (src/server/mbms.cpp).
+  if (usage.suspension_status) mbms_suspension(user, *usage.suspension_status);
+  // TS 24.379 clause 14.2.3 step 1 a ii and step 1 b ii: the general purpose subchannel of announced bearers
+  // (src/server/mbms.cpp); the same report may also name a session.
+  if (usage.listening_status && usage.listening_status->general_purpose) {
+    if (const auto refusal = mbms_general_purpose_status(user, *usage.listening_status); !refusal.empty()) {
+      event("multicast_status_refused", {{"user_id", user.id}, {"reason", refusal}});
+      return response;
+    }
   }
   if (!usage.listening_status || usage.listening_status->session_id.empty()) {
     response.status_code = 200;
@@ -116,19 +144,19 @@ SipResponse McServer::mbms_usage_message(const SipMessage &message, const User &
 }
 
 //------------------------------------------------------------------------------
-// Helper: why a "listening" report cannot be taken, or empty: the profile is not configured, the user is not on the
-// opt-in list, the session is not a current one with a host group, the user takes no part in it, or the report does
-// not name the session's TMGI.
+// Helper: why a "listening" report for a session cannot be taken, or empty: MBMS is not configured, the user is not
+// served over MBMS, the session has no conversation with an MBMS subchannel (no Map Group To Bearer was sent), the
+// report does not name its bearer's TMGI, or the user takes no part in the session.
 std::string McServer::multicast_listening_refusal(const User &user, const MbmsListeningStatus &status) const {
-  if (!multicast_) return "multicast not configured";
-  if (!multicast_->serves(user.id)) return "user not on the multicast opt-in list";
+  if (!mbms_) return "MBMS not configured";
+  if (!mbms_->serves(user.id)) return "user not served over MBMS";
+  const auto conversation = mbms_conversations_.find(status.session_id);
+  if (conversation == mbms_conversations_.end()) return "session without an MBMS subchannel";
+  if (std::ranges::find(status.tmgis, conversation->second.channel.tmgi) == status.tmgis.end())
+    return "TMGI of another bearer";
   const auto found = std::find_if(sessions_.begin(), sessions_.end(),
                                   [&](const auto &entry) { return entry.second->uri == status.session_id; });
   if (found == sessions_.end()) return "no such session";
-  const auto *destination = multicast_destination(*found->second);
-  if (!destination) return "session without a host group";
-  if (std::find(status.tmgis.begin(), status.tmgis.end(), destination->tmgi) == status.tmgis.end())
-    return "TMGI of another host group";
   const auto legs = session_legs(*found->second);
   if (std::none_of(legs.begin(), legs.end(), [&](const auto &leg) { return leg->user == user.id; }))
     return "user not in the session";

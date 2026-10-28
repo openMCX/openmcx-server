@@ -121,6 +121,26 @@ int main() {
     group_data[group_data.size() - 150] ^= 1;
     rejected([&] { open_mikey(pub, bob, alice.uri, group_data, time, 300, &profile); },
              "tampered key properties accepted");
+    // TS 33.180 clause 9.2.2, annex H.3 and table E.6.11-1: an MSCCK (purpose tag and key type 5) and a MuSiK (6, with
+    // the MC Group IDs of annex E.6.1 NOTE) distributed by key download; a key type that disagrees is refused.
+    for (const std::uint8_t purpose : {std::uint8_t{5}, std::uint8_t{6}}) {
+      KeyMessage signalling = key;
+      signalling.csb_id = (std::uint32_t(purpose) << 28) | 0x0123456U;
+      signalling.properties = KeyProperties{purpose, 1, time - 2208988800ULL, time - 2208988800ULL + 60, {},
+                                            purpose == 6 ? std::vector<std::string>{"sip:group@example.org"}
+                                                         : std::vector<std::string>{}};
+      auto opened_signalling =
+          open_mikey(pub, bob, alice.uri, create_mikey(pub, alice, bob.uri, signalling, &profile), time, 300, &profile);
+      check(opened_signalling.properties == signalling.properties && opened_signalling.csb_id == signalling.csb_id,
+            "MSCCK and MuSiK key parameters round trip");
+      require_active(opened_signalling, {}, time - 2208988800ULL);
+      signalling.properties->type = purpose == 5 ? 6 : 5;
+      rejected([&] { create_mikey(pub, alice, bob.uri, signalling, &profile); }, "key type disagreeing with purpose");
+    }
+    KeyMessage mscck = key;
+    mscck.csb_id = 0x50000001U;
+    mscck.properties = KeyProperties{5, 1, time - 2208988800ULL, time - 2208988800ULL + 60, {}, {"sip:group@x"}};
+    rejected([&] { create_mikey(pub, alice, bob.uri, mscck, &profile); }, "an MSCCK with group IDs accepted");
     rejected([&] { open_mikey(pub, outsider, alice.uri, data, time); }, "wrong recipient accepted");
     rejected([&] { open_mikey(pub, bob, outsider.uri, data, time); }, "wrong sender accepted");
     rejected([&] { open_mikey(pub, bob, alice.uri, data, time + 301); }, "stale MIKEY accepted");

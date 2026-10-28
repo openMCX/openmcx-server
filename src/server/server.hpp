@@ -25,6 +25,7 @@
 #include "mcx/key_client.hpp"
 #include "mcx/key_documents.hpp"
 #include "mcx/location.hpp"
+#include "mcx/mbms.hpp"
 #include "mcx/mbms_usage.hpp"
 #include "mcx/media.hpp"
 #include "mcx/multicast.hpp"
@@ -1308,29 +1309,123 @@ protected:
 
   void unpermitted_media_tick(const Session &session, std::uint64_t now);
 
-  // ---- IP multicast delivery of group call speech (multicast.cpp, an OpenMCX profile: include/mcx/multicast.hpp) ----
-  void multicast_setup();
-
-  [[nodiscard]] const MulticastDestination *multicast_destination(const Session &session) const;
-
+  // ---- MBMS listening status reports (multicast.cpp): TS 24.379 clauses 14.2.3 and 14.2.4 ----
   [[nodiscard]] bool multicast_leg(const Leg &leg) const;
 
-  void send_multicast(std::span<const std::uint8_t> packet, const MulticastDestination &destination);
+  [[nodiscard]] bool multicast_video_leg(const Leg &leg) const;
 
-  static const std::string *mbms_usage_part(const SipMessage &message);
+  [[nodiscard]] std::optional<std::pair<std::string, bool>> mbms_usage_part(const SipMessage &message) const;
 
-  SipResponse mbms_usage_message(const SipMessage &message, const User &user, const std::string &body);
+  SipResponse mbms_usage_message(const SipMessage &message, const User &user, const std::string &body, bool mbs);
 
   [[nodiscard]] std::string multicast_listening_refusal(const User &user, const MbmsListeningStatus &status) const;
 
   void publish_multicast_listening();
 
-  // The "multicast" block of the mcptt configuration, and the socket the speech is sent from; none when not
-  // configured. The users whose latest listening status report for a session is "listening" (MCPTT ID, session
-  // URI; TS 24.379 clause 14.2.3).
-  std::optional<MulticastConfig> multicast_;
-  std::unique_ptr<UdpSocket> multicast_socket_;
+  // The users whose latest listening status report for a session is "listening" (MC service ID, session URI;
+  // TS 24.379 clause 14.2.3).
   std::set<std::pair<std::string, std::string>> multicast_listening_;
+
+  // ---- MBMS bearers (mbms.cpp): TS 24.379 clause 14.2, TS 24.281 clause 16.3, TS 24.380 clause 10 ----
+  [[nodiscard]] MbmsService mbms_service() const;
+
+  void mbms_setup();
+
+  [[nodiscard]] std::string mbms_announcement_sdp(const std::string &key_mgmt = {}) const;
+
+  [[nodiscard]] std::vector<MbmsAnnouncement> mbms_announcements() const;
+
+  [[nodiscard]] std::vector<MbsAnnouncement> mbs_announcements() const;
+
+  void mbms_announce(const User &user);
+
+  void mbms_tick(std::uint64_t now);
+
+  void send_general_purpose(std::span<const std::uint8_t> packet, const MbmsBearerConfig &bearer);
+
+  std::string mbms_general_purpose_status(const User &user, const MbmsListeningStatus &status);
+
+  void publish_mbms_status();
+
+  // TS 24.380 clause 10.2 (TS 24.581 clause 10.2): the participating function's MBMS subchannel control state
+  // machine of a conversation in 'M: A conversation is active': its group and session, the bearer and the MBMS
+  // subchannel allocated from its pool (the host group's tmgi is the bearer's), and timers T15 (Conversation), T16
+  // (Map Group To Bearer) and T17 (Unmap Group To Bearer) with counter C17, as deadlines (0: not running).
+  struct MbmsConversation {
+    std::string group, session_uri;
+    const MbmsBearerConfig *bearer = nullptr;
+    MulticastDestination channel;
+    std::uint64_t t15 = 0, t16 = 0, t17 = 0;
+    unsigned c17 = 0;
+    // TS 24.380 clauses 10.2.3.2 and 10.2.3.3: the message sequence number of the media control messages sent over
+    // the subchannel, and the last one sent (its kind and when), so that the copies for each listener of one
+    // arbitration outcome go once.
+    std::uint16_t control_sequence = 0;
+    std::string last_control;
+    std::uint64_t last_control_ms = 0;
+  };
+  struct MbmsTimers {
+    std::uint64_t t15 = 30000, t16 = 500, t17 = 200;
+    unsigned c17 = 3;
+  };
+
+  [[nodiscard]] SubchannelMessage mbms_message(SubchannelMessageType type, const MbmsConversation &conversation) const;
+
+  const MulticastDestination *mbms_conversation_start(const Session &session);
+
+  void send_subchannel(std::span<const std::uint8_t> packet, const Session &session, bool video = false);
+
+  void mbms_map(MbmsConversation &conversation, std::uint64_t now);
+
+  void mbms_unmap(MbmsConversation &conversation, std::uint64_t now);
+
+  void mbms_release(const std::string &session_uri, const char *reason);
+
+  void mbms_conversation_tick(std::uint64_t now);
+
+  bool mbms_control(Leg &leg, const std::string &kind,
+                    const std::function<std::vector<std::uint8_t>(std::uint32_t, std::uint16_t)> &encode);
+
+  MbmsTimers mbms_timers_;
+  std::map<std::string, MbmsConversation> mbms_conversations_;
+
+  // TS 24.380 clause 13 and TS 33.180 clause 9.2.2 and annex H: the MSCCK of the subchannel control messages and the
+  // MuSiK of the multicast floor and transmission control, with their SRTCP contexts (made on first use), and the
+  // users that took the MuSiK download (TS 24.379 clause 14.2.2.5: the others keep unicast floor control).
+  std::optional<keying::KeyMessage> mbms_mscck_, mbms_musik_;
+  std::unique_ptr<ProtectedCall> mbms_control_keys_, mbms_floor_keys_;
+  std::set<std::string> mbms_musik_users_;
+
+  bool mbms_signalling_keys();
+
+  [[nodiscard]] std::vector<std::uint8_t> mbms_protect_control(std::vector<std::uint8_t> packet);
+
+  void mbms_musik_download(const User &user);
+
+  // TS 24.379 clause 14.2.3 step 1 a (suspension): the bearers reported as about to be suspended, whose conversations
+  // moved to unicast and which take no new one until a "not-suspending" report (TS 24.380 clause 10.2.3.12).
+  std::set<std::string> mbms_suspended_;
+  // TS 24.379 clause 14B.2.5: the users that sent a UE session join notification, by MBS session ID.
+  std::set<std::pair<std::string, std::string>> mbms_joined_;
+
+  void mbms_suspension(const User &user, const MbmsSuspensionStatus &status);
+
+  void mbms_move_to_unicast(MbmsConversation &conversation, std::uint64_t now);
+
+  // TS 24.380 clause 10A.1 (TS 24.581 clause 10.5.1): the group dynamic data last sent over the bearers, by group.
+  std::map<std::string, GroupDynamicData> mbms_group_data_;
+
+  void mbms_group_dynamic_data_tick();
+
+  // The "mbms" block, the socket of the general purpose and MBMS subchannels and the SSRC of this participating
+  // function on them; none when not configured. The users the bearers were announced to, and the TMGIs whose general
+  // purpose subchannel each user reported listening to (TS 24.379 clause 14.2.3).
+  std::optional<MbmsConfig> mbms_;
+  std::unique_ptr<UdpSocket> mbms_socket_;
+  std::uint32_t mbms_ssrc_ = 0;
+  std::uint64_t mbms_next_announcement_ = 0;
+  std::set<std::string> mbms_announced_;
+  std::map<std::string, std::set<std::string>> mbms_general_purpose_;
 
   // ---- XML integrity protection (xml_protection.cpp): TS 24.379 clause 6.6.3, TS 33.180 clause 9.3.5 ----
   // Each XML body of a message is signed with HMAC-SHA256 under the integrity key of

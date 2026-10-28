@@ -221,7 +221,9 @@ pj_status_t SipEngine::Impl::protect_outgoing(pjsip_tx_data *data) {
         result.parts.push_back({result.content_type, result.body});
       }
       for (const auto &part : result.parts) {
-        if (part.content_type.starts_with("application/sdp")) {
+        // The SDP of a MESSAGE offers no session: the MBMS bearer announcement describes multicast subchannels
+        // (TS 24.379 clause 14.2.2.2 step 5), left to the application.
+        if (part.content_type.starts_with("application/sdp") && result.method != "MESSAGE") {
           // Media that is not MCPTT or MCVideo audio and video, such as the
           // MSRP stream of the MCData media plane, is left to the application.
           if (part.body.find("m=audio") != std::string::npos || part.body.find("m=video") != std::string::npos)

@@ -13,6 +13,7 @@ cites against the text.
 | TS 23.281 | MCVideo functional architecture | V19.10.0 | 2026-04 |
 | TS 23.282 | MCData functional architecture | V19.10.0 | 2026-04 |
 | TS 23.379 | MCPTT functional architecture | V19.11.0 | 2026-08 |
+| TS 24.008 | Mobile radio interface layer 3 (the TMGI coding of clause 10.5.6.13) | V19.4.0 | 2026-01 |
 | TS 24.281 | MCVideo signalling control | V19.6.0 | 2026-08 |
 | TS 24.282 | MCData signalling control | V19.7.0 | 2026-08 |
 | TS 24.379 | MCPTT call control | V19.7.0 | 2026-08 |

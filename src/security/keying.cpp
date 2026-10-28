@@ -232,14 +232,20 @@ void length_string(Bytes &out, std::string_view text) {
 }
 
 //------------------------------------------------------------------------------
+// TS 33.180 table E.6.11-1: the key types whose Key Parameters are written and read: GMK (0), CSK (2), MSCCK (5) and
+// MuSiK (6); and annex E.6.1 NOTE: the MC Group IDs are present for a GMK, an MKFC (4) or a MuSiK.
+bool supported_type(unsigned type) { return type == 0 || type == 2 || type == 5 || type == 6; }
+bool carries_groups(unsigned type) { return type == 0 || type == 4 || type == 6; }
+
+//------------------------------------------------------------------------------
 // TS 33.180 annex E.6.1 (table E.6.1-1): the Key Parameters payload: Key Type (annex E.6.11), Status (annex E.6.9),
 // Activation Time (annex E.6.4), Expiry Time (annex E.6.10), Text (annex E.6.5) and, for a GMK, the MC Group IDs
 // (annex E.6.3, each an MCData group ID IE of TS 24.282 clause 15.2.14).
 Bytes encode_properties(const KeyProperties &properties, const KeyParameterWireProfile &profile) {
-  require((properties.type == 0 || properties.type == 2) && properties.activation_unix_seconds <= 0xffffffffffULL &&
+  require(supported_type(properties.type) && properties.activation_unix_seconds <= 0xffffffffffULL &&
               properties.expiry_unix_seconds <= 0xffffffffffULL,
           "unsupported key properties");
-  require(properties.type == 0 || properties.groups.empty(), "CSK must not carry group IDs");
+  require(carries_groups(properties.type) || properties.groups.empty(), "key type must not carry group IDs");
   require(properties.groups.size() <= 255, "too many group IDs");
 
   Bytes content{properties.type};
@@ -247,7 +253,7 @@ Bytes encode_properties(const KeyProperties &properties, const KeyParameterWireP
   integer(content, properties.activation_unix_seconds, 5);
   integer(content, properties.expiry_unix_seconds, 5);
   length_string(content, properties.text);
-  if (properties.type == 0) {
+  if (carries_groups(properties.type)) {
     Bytes groups{static_cast<byte>(properties.groups.size())};
     for (const auto &group : properties.groups) {
       require(!group.empty(), "empty group ID");
@@ -276,14 +282,14 @@ KeyProperties decode_properties(std::span<const byte> data, const KeyParameterWi
 
   KeyProperties properties;
   properties.type = reader.number(1);
-  require(properties.type == 0 || properties.type == 2, "unsupported key type");
+  require(supported_type(properties.type), "unsupported key type");
   properties.status = reader.number(4);
   properties.activation_unix_seconds = reader.number(5);
   properties.expiry_unix_seconds = reader.number(5);
   auto text = reader.take(reader.number(2));
   properties.text.assign(reinterpret_cast<const char *>(text.data()), text.size());
 
-  if (properties.type == 0) {
+  if (carries_groups(properties.type)) {
     Reader groups{reader.take(reader.number(2))};
     const auto count = groups.number(1);
     for (std::size_t index = 0; index < count; ++index) {

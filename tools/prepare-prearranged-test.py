@@ -28,9 +28,21 @@ import uuid
 import lab_images
 
 ROOT = Path(__file__).resolve().parents[1]
-# The --multicast lab's group: its IPv4 host group and port (administratively scoped, RFC 2365) and its TMGI
-# (TS 24.008 clause 10.5.6.13 octets 3 to 8: MBMS Service ID 000001, MCC 999, MNC 70).
-MULTICAST_GROUP = dict(host_group='239.10.0.1:40000', tmgi='00000199f907')
+# The pre-activated MBMS bearer of the --multicast lab (TS 24.380 clause 4.1.3.1, emulated on the lab network): its
+# TMGI (TS 24.008 clause 10.5.6.13 octets 3 to 8: MBMS Service ID 000001, MCC 999, MNC 70), one MBMS service area
+# (TS 29.061 MBMS-Service-Area coding of SAI 1), the general purpose MBMS subchannel and the subchannel pool
+# (administratively scoped host groups, RFC 2365); client-d's emulated MBMS interface starts outside the area.
+MBMS_BEARER = dict(
+    tmgi='00000199f907',
+    qci=65,
+    service_areas=['0001'],
+    report_suspension=True,
+    general_purpose='239.10.1.1:40100',
+    subchannels=['239.10.0.2:40002', '239.10.0.3:40004'],
+)
+MBMS_VIDEO_BEARER = dict(
+    MBMS_BEARER, tmgi='00000299f907', general_purpose='239.10.1.2:40200', subchannels=['239.10.0.4:40006']
+)
 
 
 # ------------------------------------------------------------------------------
@@ -1264,22 +1276,81 @@ def add_rx(fixture):
     conf.write_text(conf.read_text() + f'{comment}\nConnectPeer = "mock-pcrf.{domain}" {{ {peer} }};\n')
 
 
-def add_multicast(fixture):
-    """IP multicast of the prearranged group's speech, an OpenMCX profile (include/mcx/multicast.hpp): the four clients
-    have the client block and join the group's IPv4 host group, and report listening (TS 24.379 clause 14.3.3.2);
-    the MCPTT server's opt-in list names client-a, client-b and client-c, so it refuses client-d's report and sends
-    client-d the speech by unicast."""
+def add_multicast(fixture, protected=False, mbs=False):
+    """MBMS delivery of the prearranged group's media over a pre-activated MBMS bearer (TS 24.379 clause 14, TS 24.380
+    clause 10; the BM-SC and the radio emulated on the lab network): the bearer is announced to the four users, whose
+    clients have the emulated MBMS interface (the mbms block); client-d starts outside the bearer's service area, so it
+    keeps unicast. T15 is 10 s, so the scenario sees the conversation unmapped after a silence."""
     roles = ['client-a', 'client-b', 'client-c', 'client-d']
     configs = {role: json.loads((fixture / f'generated/{role}.json').read_text()) for role in roles}
-    groups = {configs['client-a']['mcptt']['group_id']: MULTICAST_GROUP}
-    for role, cfg in configs.items():
-        cfg['mcptt']['multicast'] = dict(groups=groups)
-        (fixture / f'generated/{role}.json').write_text(json.dumps(cfg, indent=2) + '\n')
     server_file = fixture / 'generated/mcptt-server.json'
     server = json.loads(server_file.read_text())
-    opted_in = [configs[role]['mcptt']['user_id'] for role in ['client-a', 'client-b', 'client-c']]
-    server['mcptt']['multicast'] = dict(users=opted_in, groups=groups)
+    # TS 24.379 clause 14.2.2: the bearer is announced to the four users; client-d is outside its service area.
+    announced = [configs[role]['mcptt']['user_id'] for role in roles]
+    server['mcptt']['mbms'] = dict(users=announced, bearers=[MBMS_BEARER], bearer_announcement_ms=5000, t15_ms=10000)
+    # TS 24.380 clause 13: with key management (the protected labs) the subchannel control messages are protected with
+    # an MSCCK and the multicast floor control with a MuSiK (TS 24.379 clauses 14.2.2.2 and 14.2.2.5).
+    if protected:
+        server['mcptt']['mbms'].update(mscck=True, musik=True)
+    # TS 24.379 clause 14B, TS 24.380 clause 10B: with --mbs the bearers are 5G MBS sessions (multicast mode, with UE
+    # session join notifications; the MBS session ID is the TMGI).
+    if mbs:
+        for bearer in server['mcptt']['mbms']['bearers']:
+            bearer.update(system='mbs', mode='multicast', report_join=True, fsa_ids=['000001'])
     server_file.write_text(json.dumps(server, indent=2) + '\n')
+    for role, cfg in configs.items():
+        cfg['mbms'] = dict(service_areas=['0002' if role == 'client-d' else '0001'])
+        (fixture / f'generated/{role}.json').write_text(json.dumps(cfg, indent=2) + '\n')
+    # TS 24.281 clause 16.3.2: with an MCVideo server, a bearer of its own announced to every MCVideo user.
+    video_file = fixture / 'generated/mcvideo-server.json'
+    if video_file.is_file():
+        video = json.loads(video_file.read_text())
+        video['mcvideo']['mbms'] = dict(bearers=[MBMS_VIDEO_BEARER], bearer_announcement_ms=5000)
+        if protected:
+            video['mcvideo']['mbms'].update(mscck=True, musik=True)
+        if mbs:
+            for bearer in video['mcvideo']['mbms']['bearers']:
+                bearer.update(system='mbs', mode='multicast', report_join=True, fsa_ids=['000001'])
+        video_file.write_text(json.dumps(video, indent=2) + '\n')
+
+
+def add_srsran(compose, fixture, image):
+    """The --srsran lab's radio (docker/srsran, tests/integration/srsran): instead of the lab network, the MBMS bearers
+    are carried by srsRAN 4G eMBMS. ran-core holds the EPC and the MBMS gateway and forwards the servers' host groups
+    into SGi-mb; each client runs in the network namespace of its ran-<x> container, an eNodeB and a UE over ZeroMQ,
+    and receives the host groups only over the UE's MTCH. SIP and unicast media stay on the lab network."""
+    roles = ['client-a', 'client-b', 'client-c', 'client-d']
+    groups = [MBMS_BEARER['general_purpose'], *MBMS_BEARER['subchannels']]
+    groups += [MBMS_VIDEO_BEARER['general_purpose'], *MBMS_VIDEO_BEARER['subchannels']]
+    scripts = {'type': 'bind', 'source': str(ROOT / 'tests/integration/srsran'), 'target': '/ran', 'read_only': True}
+    artifacts = {'type': 'bind', 'source': str(fixture / 'artifacts'), 'target': '/artifacts'}
+
+    def radio(command):
+        return {
+            'image': image,
+            'init': True,
+            'privileged': True,
+            'entrypoint': ['bash', *command],
+            'volumes': [scripts, artifacts],
+            'healthcheck': {'test': ['CMD', 'test', '-f', '/tmp/ready'], 'interval': '1s', 'timeout': '3s',
+                            'retries': 90, 'start_period': '2s'},
+        }
+
+    services = compose['services']
+    services['ran-core'] = radio(['/ran/ran-core.sh', str(len(roles)), *groups])
+    services['ran-core']['networks'] = {'mcx': None}
+    for index, role in enumerate(roles, start=1):
+        name = 'ran-' + role.removeprefix('client-')
+        services[name] = radio(['/ran/ran-ue.sh', name, str(index)])
+        # The client's address is the ran container's: it keeps the client's name on the lab network.
+        services[name]['networks'] = {'mcx': {'aliases': [role]}}
+        services[name]['depends_on'] = {'ran-core': {'condition': 'service_healthy'}}
+        client = services[role]
+        client.pop('networks', None)
+        client['network_mode'] = f'service:{name}'
+        client['depends_on'][name] = {'condition': 'service_healthy'}
+        (fixture / 'artifacts' / name).mkdir(parents=True, exist_ok=True)
+    (fixture / 'artifacts/ran-core').mkdir(parents=True, exist_ok=True)
 
 
 def add_mock_pcrf(compose, fixture):
@@ -1899,8 +1970,20 @@ def main():
     parser.add_argument(
         '--multicast',
         action='store_true',
-        help='IP multicast of group call speech (an OpenMCX profile): client-a to client-c opted in, client-d refused',
+        help='MBMS delivery of group call media over a pre-activated bearer (TS 24.380 clause 10): client-d outside',
     )
+    parser.add_argument(
+        '--mbs',
+        action='store_true',
+        help='with --multicast: the bearers are 5G MBS sessions (TS 24.379 clause 14B, TS 24.380 clause 10B)',
+    )
+    parser.add_argument(
+        '--srsran',
+        action='store_true',
+        help='with --multicast: the MBMS bearers go over srsRAN 4G eMBMS (an eNodeB and a UE over ZeroMQ per client) '
+        'instead of the lab network',
+    )
+    parser.add_argument('--srsran-image', default='openmcx-srsran:23.11', help='image of docker/srsran for --srsran')
     parser.add_argument('--priority', action='store_true')
     parser.add_argument('--protected', action='store_true')
     parser.add_argument(
@@ -2080,6 +2163,8 @@ def main():
         parser.error('--private-refresh requires --private-call')
     if args.manual_only_caller and not args.private_call:
         parser.error('--manual-only-caller requires --private-call')
+    if args.srsran and (not args.multicast or args.mbs):
+        parser.error('--srsran requires --multicast, without --mbs (srsRAN 4G carries MBMS bearers only)')
     fixture = args.directory.resolve()
     if fixture.exists():
         parser.error(f'refusing to overwrite existing fixture {fixture}')
@@ -2180,8 +2265,8 @@ def main():
         cfg['sip']['session_expires'] = 90
         cfg['mcptt']['floor_queue'] = args.floor_queue
         path.write_text(json.dumps(cfg, indent=2) + '\n')
-    if args.multicast:
-        add_multicast(fixture)
+    if args.multicast or args.mbs:
+        add_multicast(fixture, args.protected, args.mbs)
     if args.priority or args.protected:
         site_path = fixture / 'generated/site.json'
         site = json.loads(site_path.read_text())
@@ -2489,6 +2574,8 @@ def main():
         add_mock_pcf(compose, fixture)
     if args.rx:
         add_mock_pcrf(compose, fixture)
+    if args.srsran:
+        add_srsran(compose, fixture, args.srsran_image)
     rights_from_group_lists(fixture)
     service_configuration(fixture)
     if args.admin:

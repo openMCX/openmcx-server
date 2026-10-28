@@ -513,6 +513,11 @@ void McServer::bind_authorized_user(const Json &claims, const McpttInfo &info, c
   }
   response.headers = {{"SIP-ETag", user.auth_etag}, {"Expires", "4294967295"}};
   event("service_authorized", {{"user_id", user.id}, {"profile_bytes", profile.size()}});
+  // TS 24.379 clause 14.2.2.1: when and to whom the bearers are announced is local policy: to a served user on
+  // the list after each service authorisation (src/server/mbms.cpp).
+  schedule([this, sip = asserted] {
+    if (const auto found = users_.find(sip); found != users_.end()) mbms_announce(found->second);
+  });
 
   // TS 24.379 clause 13.2.2: location reporting is configured upon successful service authorisation.
   schedule([this, id = user.id] { location_.configure(id); });
@@ -941,8 +946,8 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
 // function controlled elsewhere is passed on.
 void McServer::user_message(const SipMessage &message, User &user, SipResponse &response) {
   // TS 24.379 clause 14.2.3: a listening status report for the IP multicast profile (src/server/multicast.cpp).
-  if (const auto *usage = mbms_usage_part(message)) {
-    response = mbms_usage_message(message, user, *usage);
+  if (const auto usage = mbms_usage_part(message)) {
+    response = mbms_usage_message(message, user, usage->first, usage->second);
     return;
   }
   // TS 24.379 clause 16: a regroup request carries its own MIME body and is not a

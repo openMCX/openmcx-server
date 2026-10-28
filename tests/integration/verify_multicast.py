@@ -3,17 +3,22 @@
 # OpenMCX Licence Information : AGPL-3.0-or-later
 #
 
-"""Verify the IP multicast delivery of group call speech (an OpenMCX profile) from a capture at the MCPTT server.
+"""Verify the MBMS delivery of group call speech (TS 24.380 clause 10) from a capture at the MCPTT server.
 
-Reads the capture of multicast_scenario.py and its results (the containers' addresses and the counters of each talk
-burst). The server sends the speech RTP (RFC 3550 section 5.1, payload type 96) to the IPv4 host group with
-time-to-live 1 (RFC 1112 section 6.1), from its own address, as many packets as it counted; and by unicast to each
-client exactly as many packets as arrived at that client by unicast (kept, or dropped as a copy): none to a client
-while it listens to the host group, all of them to client-d, whose listening report the server refused.
+Reads the capture of multicast_scenario.py and its results (the containers' addresses, the counters of each talk
+burst and the final status). The server sends the speech RTP (RFC 3550 section 5.1, payload type 96) over the MBMS
+subchannel (an IPv4 host group on the emulated bearer) with time-to-live 1 (RFC 1112 section 6.1), from its own
+address, as many packets as it counted; by unicast to each client exactly as many packets as arrived at that client
+by unicast (kept, or dropped as a copy): none to a client while it listens to the subchannel, all of them to
+client-d, outside the bearer's service area. The Map Group To Bearer messages go to the general purpose subchannel
+and the Unmap Group To Bearer messages to the subchannel ("MCMC", TS 24.380 clause 8.4; "MCSC" on 5G MBS, clause
+8.6), as many as the server
+counted, and the clear Floor Taken and Floor Idle messages to the subchannel ("MCPT", TS 24.380 clauses 10.2.3.2 and
+10.2.3.3) too.
 
 Usage: verify_multicast.py capture.pcap results.json --output result.json
 
-Specifications: RFC 1112, RFC 3550; no 3GPP procedure.
+Specifications: TS 24.380 V19.2.0 (Rel-19), RFC 1112, RFC 3550.
 """
 
 import argparse
@@ -56,6 +61,33 @@ def is_speech(payload):
 
 
 # ------------------------------------------------------------------------------
+def mki_purpose(payload):
+    """TS 33.180 annex G: the purpose tag of the 32-bit MKI ending an SRTCP packet (RFC 3711 section 3.4)."""
+    return payload[-4] >> 4 if len(payload) >= 12 else None
+
+
+# ------------------------------------------------------------------------------
+def subchannel_control(payload, mscck):
+    """TS 24.380 clause 8.4: the subtype of an MBMS subchannel control message ("MCMC", RTCP APP), clear or, with an
+    MSCCK, SRTCP under it (MKI purpose tag 5; the first two words stay clear, RFC 3711 section 3.4), or None. Without
+    the key a clear message's last octets are no MKI."""
+    if len(payload) < 12 or payload[0] >> 6 != 2 or payload[1] != 204:
+        return None
+    if payload[8:12] in (b'MCMC', b'MCSC') or (mscck and mki_purpose(payload) == 5):
+        return payload[0] & 0x1F
+    return 3 if payload[4:8] in (b'MCMC', b'MCSC') else None
+
+
+# ------------------------------------------------------------------------------
+def is_floor(payload, musik):
+    """TS 24.380 clause 8.2: a floor control message ("MCPT", RTCP APP), clear or, with a MuSiK, SRTCP under it (MKI
+    purpose tag 6, TS 33.180 clause 9.2.2)."""
+    if len(payload) < 12 or payload[0] >> 6 != 2 or payload[1] != 204:
+        return False
+    return payload[8:12] == b'MCPT' or (musik and mki_purpose(payload) == 6)
+
+
+# ------------------------------------------------------------------------------
 def main():
     """Decode the capture, run the checks and write the result file; exit status 1 on any failure."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -77,8 +109,22 @@ def main():
         for role in ROLES
     }
 
+    final = results['status']['mcptt-server']
+    general_purpose = tuple(results['general_purpose'].rsplit(':', 1))
+    maps = unmaps = pagings = floor = clear_control = 0
     multicast, unicast, ttls, sources = 0, collections.Counter(), set(), set()
     for source, destination, destination_port, ttl, payload in datagrams(args.capture):
+        if destination == group and destination_port == int(port) and is_floor(payload, bool(final.get('mbms_musik_id'))):
+            floor += 1
+        subtype = subchannel_control(payload, bool(final.get('mbms_mscck_id')))
+        if subtype in (0, 1) and payload[8:12] in (b'MCMC', b'MCSC'):
+            clear_control += 1
+        if subtype == 0 and (destination, str(destination_port)) == general_purpose:
+            maps += 1
+        elif subtype == 1 and destination == group and destination_port == int(port):
+            unmaps += 1
+        elif subtype == 2 and destination == group and destination_port == int(port):
+            pagings += 1
         if not is_speech(payload):
             continue
         if destination == group and destination_port == int(port):
@@ -101,7 +147,14 @@ def main():
     for role in ROLES:
         found = unicast[addresses[role]]
         check(found == by_unicast[role], f'{found} unicast speech packets to {role}, it received {by_unicast[role]}')
-    check(by_unicast['client-d'] == sent, f'{by_unicast["client-d"]} of {sent} packets to client-d by unicast')
+    received_d = sum(burst['client-d']['received'] for burst in bursts)
+    check(by_unicast['client-d'] == received_d, f'{by_unicast["client-d"]} of {received_d} packets to client-d by unicast')
+    check(maps == final.get('mbms_map_sent') and maps > 0, f'{maps} Map Group To Bearer to the general purpose subchannel')
+    check(unmaps == final.get('mbms_unmap_sent') and unmaps > 0, f'{unmaps} Unmap Group To Bearer to the subchannel')
+    check(floor == final.get('mbms_control_sent', 0), f'{floor} floor control messages to the subchannel')
+    check(pagings == final.get('mbms_paging_sent', 0), f'{pagings} Application Paging to the subchannel')
+    if final.get('mbms_mscck_id'):
+        check(clear_control == 0, f'{clear_control} clear Map or Unmap Group To Bearer under the MSCCK')
     result = dict(capture=str(args.capture), passed=not errors, checks=checks, errors=errors)
     args.output.write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))

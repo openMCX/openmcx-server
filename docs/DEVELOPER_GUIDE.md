@@ -122,7 +122,7 @@ flowchart LR
 
 | Directory | Responsibility | Key files |
 |---|---|---|
-| `include/mcx/` | Public headers of the libraries the servers and the client share | `sip.hpp` (SIP engine API), `floor.hpp` and `media_control.hpp` (floor control codec and arbitration), `transmission.hpp` (MCVideo transmission control codec), `protocol.hpp` (SIP bodies), `mcdata.hpp`, `msrp.hpp`, `warning.hpp`, `service.hpp` (service profiles), `runtime.hpp` |
+| `include/mcx/` | Public headers of the libraries the servers and the client share | `sip.hpp` (SIP engine API), `floor.hpp` and `media_control.hpp` (floor control codec and arbitration), `transmission.hpp` (MCVideo transmission control codec), `mbms.hpp` (MBMS and 5G MBS subchannel control and notification messages, TS 24.380 clauses 8.4 to 8.6 and TS 24.581 clauses 9.3 to 9.5; the code points the specifications leave open are listed in its header), `mbms_usage.hpp` (MBMS usage information bodies of TS 24.379 and TS 24.281 annex F.2), `protocol.hpp` (SIP bodies), `mcdata.hpp`, `msrp.hpp`, `warning.hpp`, `service.hpp` (service profiles), `runtime.hpp` |
 | `src/sip/` | SIP user agent and application server core over pjsip (`SipEngine`, private implementation `sip_impl.hpp`) | `incoming.cpp` (received requests, INVITE state), `requests.cpp`, `responses.cpp`, `transactions.cpp`, `messages.cpp` (bodies and their protection hooks) |
 | `src/server/` | `McServer`, the shared core of the MCPTT and MCVideo servers, one topic per file | `server.hpp` (the class), `server.cpp` (construction, run loop, tick, status), `sip_dispatch.cpp` (request dispatch), `group_call.cpp`, `private_call.cpp`, `adhoc.cpp`, `ambient.cpp`, `priority.cpp`, `affiliation.cpp`, `regroup.cpp`, `functional_alias.cpp`, `split.cpp`, `split_relay.cpp`, `xml_protection.cpp`, `policy.cpp` |
 | `src/server/parts/` | Service parts shared by `McServer` and `DataServer`, reached through small host interfaces (`ServiceHost`) | `task_queue.hpp`, `served_users.hpp`, `location_service.*`, `peer_registration.*`, `peers.*`, `alias_registry.*`, `common_services.*`, `program.*` (shared `serve` entry point) |
@@ -612,21 +612,40 @@ then reads:
   `call_policy`, `private_call`, `adhoc_call`, `floor_ack`, `document_poll_ms`, `configuration_poll_ms`, and for
   MCVideo the `floor_*` timer settings and `reception_control`. A participating server without `controller`, or a
   controller that is not a configured peer, refuses to start.
-- `mcptt.multicast` (optional): IP multicast delivery of group call speech, an OpenMCX profile and not 3GPP MBMS
-  (`include/mcx/multicast.hpp`, `src/server/multicast.cpp`). `groups` maps a group URI to `{"host_group": "<IPv4 host
-  group>:<port>", "tmgi": "<TMGI>"}` (the TMGI in TS 24.008 clause 10.5.6.13 coding, octets 3 to 8, hexadecimal);
-  `users` is the opt-in list of MCPTT IDs allowed to receive that group's speech by multicast; `interface` (default
-  `0.0.0.0`), `ttl` (default 1), and the multicast speech's `payload_type` (default 96) and `octet_aligned` (default
-  false). Of TS 24.379 clause 14 only the listening status report is used: a participant on the list gets the
-  speech by unicast until its client reports "listening" for the session and the group's TMGI (a SIP MESSAGE with
-  `application/vnd.3gpp.mcptt-mbms-usage-info+xml`, clause 14.2.3), and by unicast again once it reports
-  "not-listening". A report from a user not on the list, for a session without a host group, with another TMGI or
-  from a user not in the session is refused with 403, as is one with an `<announcement>` or naming another MCPTT ID
-  (clause 14.2.4). A participant whose SDP agreed another payload type or format keeps unicast. Floor control stays
-  unicast. Only prearranged, chat and broadcast group calls (and regroups) with floor control use it; private, ad hoc
-  and ambient listening calls stay unicast. The server refuses to start with the block for MCVideo or a role other
-  than `both`. The status shows `multicast_groups`, `multicast_forwarded` (packets sent to a host group, counted once
-  each, not per receiver) and `multicast_listening` (the users and sessions reported listening).
+- `mcptt.mbms`, `mcvideo.mbms` (optional): pre-activated MBMS bearers of the participating function (role `both`;
+  `include/mcx/multicast.hpp`, `src/server/mbms.cpp`; TS 24.379 clause 14.2, TS 24.281 clause 16.3). `bearers` is a
+  list of `{"tmgi", "general_purpose": "<IPv4 host group>:<port>", "subchannels": ["<host group>:<port>", ...],
+  "service_areas": ["<hexBinary>", ...]}` with optional `qci`, `frequency` and `report_suspension` (`"system": "mbs"`
+  makes it a 5G MBS session: `tmgi` is its MBS session ID, `mode` broadcast or multicast, optional `report_join` and
+  `fsa_ids`; TS 24.379 clause 14B, TS 24.380 clause 10B, announced in the MBS usage information, "MCSC"/"MCV5"); `users` lists the
+  MC service IDs the bearers are announced to (local policy, clause 14.2.2.1; omitted: every served user);
+  `interface` (default `0.0.0.0`), `ttl` (1), the AMR-WB `payload_type` (96) and `octet_aligned` (false) and, for
+  MCVideo, the H.264 `video_payload_type` (97; an MCVideo subchannel carries the video on its pool port and the
+  audio two ports above); `bearer_announcement_ms` (default 0, off) sends the Bearer Announcement
+  message over each general purpose subchannel (TS 24.380 clause 4.1.3.7). After each service authorisation of a
+  user on the list the server sends the MBMS bearer announcement (a SIP MESSAGE with the SDP of the general purpose
+  subchannels, the MBMS usage information and P-Asserted-Identity set to `service_uri`, the PSI the reports go to).
+  Listening status reports on the general purpose subchannel are taken for announced TMGIs from users on the list.
+  The floor granted in a group session whose served participants listen to a bearer's general purpose subchannel
+  maps the conversation to a subchannel of the bearer's pool (Map Group To Bearer every T16; the media once over
+  the subchannel for the participants that reported listening for the session; Unmap Group To Bearer after T15 of
+  silence, every T17 up to C17; TS 24.380 clause 10.2); `t15_ms` (30000), `t16_ms` (500), `t17_ms` (200) and `c17`
+  (3) set the timers. The BM-SC and the radio are emulated: each subchannel is an IPv4 host group on the media
+  network. Floor Taken and Floor Idle (MCVideo: Transmission Idle, Media Transmission Notification) to listeners
+  go once over the subchannel with the server's SSRC and acknowledgement bit '0' (`McServer::mbms_control`; TS 24.380
+  clauses 10.2.3.2 and 10.2.3.3). `mscck` (false) puts an MSCCK in the announcement's "a=key-mgmt" and sends the
+  subchannel control messages as SRTCP under it; `musik` (false) sends each user a default MuSiK download after the
+  announcement, and protected floor control then goes over the subchannel as SRTCP under the MuSiK to the users that
+  took it (unicast to the others). Both need the `security` block (the server's key management client). A
+  "suspending" report moves the bearer's conversations to unicast (Application Paging, Unmap Group To Bearer) and keeps
+  new ones off it until "not-suspending"; Group Dynamic Data Notify goes over the general purpose subchannels when a
+  group's dynamic data changes (TS 24.380 clause 10A.1). The former
+  `multicast` block is refused. MCVideo video goes over the subchannel as the speech does
+  (`src/mcvideo/video_media.cpp`, TS 24.581 clause 10.2). Status: `mbms_bearers`, `mbms_announced`,
+  `mbms_general_purpose`, `mbms_bearer_announcements`, `mbms_conversations`, `mbms_map_sent`, `mbms_unmap_sent`,
+  `mbms_control_sent`, `mbms_musik_users`, `mbms_mscck_id`, `mbms_musik_id`, `mbms_suspended`, `mbms_paging_sent`,
+  `mbms_group_data_sent`, `mbs_joined`,
+  `multicast_forwarded` (packets sent over subchannels), `multicast_listening` (users and sessions).
 - `common`: the common services' URLs and the server's client ID and secret; `issuer` (default: `idms`), the IdMS
   whose access tokens the server accepts, and `token_audience` (default: `client_id`), their audience.
 - `diameter_config`: MCPTT-2; required by the MCPTT server (`McpttServer` constructor), not used by MCVideo.
