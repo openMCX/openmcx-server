@@ -1276,7 +1276,7 @@ def add_rx(fixture):
     conf.write_text(conf.read_text() + f'{comment}\nConnectPeer = "mock-pcrf.{domain}" {{ {peer} }};\n')
 
 
-def add_multicast(fixture):
+def add_multicast(fixture, protected=False):
     """MBMS delivery of the prearranged group's media over a pre-activated MBMS bearer (TS 24.379 clause 14, TS 24.380
     clause 10; the BM-SC and the radio emulated on the lab network): the bearer is announced to the four users, whose
     clients have the emulated MBMS interface (the mbms block); client-d starts outside the bearer's service area, so it
@@ -1288,6 +1288,10 @@ def add_multicast(fixture):
     # TS 24.379 clause 14.2.2: the bearer is announced to the four users; client-d is outside its service area.
     announced = [configs[role]['mcptt']['user_id'] for role in roles]
     server['mcptt']['mbms'] = dict(users=announced, bearers=[MBMS_BEARER], bearer_announcement_ms=5000, t15_ms=10000)
+    # TS 24.380 clause 13: with key management (the protected labs) the subchannel control messages are protected with
+    # an MSCCK and the multicast floor control with a MuSiK (TS 24.379 clauses 14.2.2.2 and 14.2.2.5).
+    if protected:
+        server['mcptt']['mbms'].update(mscck=True, musik=True)
     server_file.write_text(json.dumps(server, indent=2) + '\n')
     for role, cfg in configs.items():
         cfg['mbms'] = dict(service_areas=['0002' if role == 'client-d' else '0001'])
@@ -1297,6 +1301,8 @@ def add_multicast(fixture):
     if video_file.is_file():
         video = json.loads(video_file.read_text())
         video['mcvideo']['mbms'] = dict(bearers=[MBMS_VIDEO_BEARER], bearer_announcement_ms=5000)
+        if protected:
+            video['mcvideo']['mbms'].update(mscck=True, musik=True)
         video_file.write_text(json.dumps(video, indent=2) + '\n')
 
 
@@ -2199,7 +2205,7 @@ def main():
         cfg['mcptt']['floor_queue'] = args.floor_queue
         path.write_text(json.dumps(cfg, indent=2) + '\n')
     if args.multicast:
-        add_multicast(fixture)
+        add_multicast(fixture, args.protected)
     if args.priority or args.protected:
         site_path = fixture / 'generated/site.json'
         site = json.loads(site_path.read_text())

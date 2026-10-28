@@ -68,8 +68,9 @@ void McServer::mbms_setup() {
 // media and media control, whose address and port a Map Group To Bearer message gives (step 5 b, NOTE 4); then one
 // "m=application" line per bearer, with the host group and port of its general purpose MBMS subchannel (step 5 d).
 // For MCVideo an "m=video" line comes first and the "m=audio" line is the separate audio of the subchannel (TS 24.581
-// clause 9.3.3.3).
-std::string McServer::mbms_announcement_sdp() const {
+// clause 9.3.3.3). With an MSCCK each general purpose line has the "a=key-mgmt" attribute (step 5 d, RFC 4567) with
+// the MIKEY-SAKKE I_MESSAGE of the MSCCK to the user (the same key on every bearer).
+std::string McServer::mbms_announcement_sdp(const std::string &key_mgmt) const {
   const bool video = mbms_service() == MbmsService::Mcvideo;
   const unsigned pt = mbms_->payload_type;
   std::string sdp = "v=0\r\no=- " + std::to_string(mbms_ssrc_) +
@@ -86,7 +87,8 @@ std::string McServer::mbms_announcement_sdp() const {
          "\r\na=rtcp-mux\r\na=rtcp:9\r\n";
   for (const auto &bearer : mbms_->bearers)
     sdp += "m=application " + std::to_string(bearer.general_purpose.port) + " udp " + (video ? "MCVideo" : "MCPTT") +
-           "\r\nc=IN IP4 " + bearer.general_purpose.address + "/" + std::to_string(mbms_->ttl) + "\r\n";
+           "\r\nc=IN IP4 " + bearer.general_purpose.address + "/" + std::to_string(mbms_->ttl) + "\r\n" +
+           (key_mgmt.empty() ? std::string{} : "a=key-mgmt:mikey " + key_mgmt + "\r\n");
   return sdp;
 }
 
@@ -117,13 +119,19 @@ std::vector<MbmsAnnouncement> McServer::mbms_announcements() const {
 // service's PSI, where the client sends its reports) and the MC service information naming the user (step 8).
 void McServer::mbms_announce(const User &user) {
   if (!mbms_ || !mbms_->serves(user.id)) return;
+  // Step 5 d i to v: the MSCCK encapsulated to the user's UID, signed by this function's PSI.
+  std::string key_mgmt;
+  if (mbms_->mscck) {
+    if (!mbms_signalling_keys()) return;
+    key_mgmt = keys_->wrap_key(user.id, *mbms_mscck_);
+  }
   McpttInfo info;
   info.request_uri = user.id;
   MbmsUsageInfo usage;
   usage.announcements = mbms_announcements();
   std::vector<BodyPart> parts{{svc_.info_mime, service_info_xml_(info)},
                               {mbms_usage_type(mbms_service()).mime, mbms_usage_xml(usage, mbms_service())},
-                              {"application/sdp", mbms_announcement_sdp(), {}, "render"}};
+                              {"application/sdp", mbms_announcement_sdp(key_mgmt), {}, "render"}};
   const auto boundary = "mcx-" + random_id();
   sip_.request("MESSAGE", user.sip, "multipart/mixed; boundary=" + boundary, multipart_body(parts, boundary),
                user_route(user, {{"P-Asserted-Service", svc_.icsi},
@@ -134,6 +142,74 @@ void McServer::mbms_announce(const User &user) {
                  event("mbms_announced", {{"user_id", id}, {"status", response.status_code}});
                  if (response.status_code >= 300) return;
                  mbms_announced_.insert(id);
+                 publish_mbms_status();
+                 if (mbms_->musik)
+                   if (const auto *found = by_id(id)) mbms_musik_download(*found);
+               });
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 13.1 and TS 33.180 clause 9.2.2 and annex H.3: the MSCCK and the MuSiK of this function, made by
+// the key management client on first use (TS 24.379 clause 14.2.2.1 steps 1 to 3), with the SRTCP contexts they key
+// (TS 33.180 clauses 9.4.5 and 9.4.6, the MSCCK and the MuSiK as KFC). False without key management.
+bool McServer::mbms_signalling_keys() {
+  if (!keys_) {
+    event("mbms_keys_unavailable", {{"reason", "no key management client"}});
+    return false;
+  }
+  const bool video = mbms_service() == MbmsService::Mcvideo;
+  try {
+    if (mbms_->mscck && !mbms_mscck_) {
+      mbms_mscck_ = keys_->make_signalling_key(5);
+      mbms_control_keys_ = std::make_unique<ProtectedCall>(video);
+      mbms_control_keys_->set_floor(*mbms_mscck_);
+    }
+    if (mbms_->musik && !mbms_musik_) {
+      mbms_musik_ = keys_->make_signalling_key(6);
+      mbms_floor_keys_ = std::make_unique<ProtectedCall>(video);
+      mbms_floor_keys_->set_floor(*mbms_musik_);
+    }
+  } catch (const std::exception &error) {
+    event("mbms_keys_unavailable", {{"reason", error.what()}});
+    return false;
+  }
+  return true;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 13.3.2 (step for the general purpose subchannel) and TS 24.379 clause 14.2.2.2 NOTE 6: with an
+// MSCCK, an MBMS subchannel control message is sent as SRTCP under it (MKI: the MSCCK-ID), over the general purpose
+// subchannel and over the bearer's subchannels. The Bearer Announcement message has no SSRC for an SRTCP context and
+// is sent clear (docs/3GPP_CORRECTION_CANDIDATES.md M17).
+std::vector<std::uint8_t> McServer::mbms_protect_control(std::vector<std::uint8_t> packet) {
+  if (!mbms_control_keys_ || (packet[0] & 0x1f) == static_cast<std::uint8_t>(SubchannelMessageType::Announcement))
+    return packet;
+  return mbms_control_keys_->protect_floor(packet);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 14.2.2.5 (TS 24.281 clause 16.3.2.5): the default MuSiK download, a SIP MESSAGE with the MBMS usage
+// information (<mbms-defaultMuSiK-download> without groups: every group of the user, step 5 b) and the MIKEY-SAKKE
+// I_MESSAGE of the MuSiK to the user in an application/mikey body (step 6). A 200 response makes the download
+// successful; a user without it keeps unicast floor control.
+void McServer::mbms_musik_download(const User &user) {
+  if (!mbms_signalling_keys() || !mbms_musik_) return;
+  MbmsUsageInfo usage;
+  usage.musik_download = MusikDownload{false, {}};
+  const std::vector<BodyPart> parts{{mbms_usage_type(mbms_service()).mime, mbms_usage_xml(usage, mbms_service())},
+                                    {"application/mikey", keys_->wrap_key(user.id, *mbms_musik_)}};
+  const auto boundary = "mcx-" + random_id();
+  sip_.request("MESSAGE", user.sip, "multipart/mixed; boundary=" + boundary, multipart_body(parts, boundary),
+               user_route(user, {{"P-Asserted-Service", svc_.icsi},
+                                 {"P-Asserted-Identity", "<" + session_service_ + ">"},
+                                 {"Accept-Contact", feature_accept()}}),
+               [this, id = user.id](const SipResponse &response) {
+                 if (response.status_code < 200) return;
+                 event("mbms_musik_downloaded", {{"user_id", id}, {"status", response.status_code}});
+                 if (response.status_code < 300)
+                   mbms_musik_users_.insert(id);
+                 else
+                   mbms_musik_users_.erase(id);
                  publish_mbms_status();
                });
 }
@@ -161,7 +237,8 @@ void McServer::mbms_tick(std::uint64_t now) {
 //------------------------------------------------------------------------------
 // Helper: a message over a bearer's general purpose subchannel.
 void McServer::send_general_purpose(std::span<const std::uint8_t> packet, const MbmsBearerConfig &bearer) {
-  mbms_socket_->send(packet, bearer.general_purpose.address, bearer.general_purpose.port);
+  const auto bytes = mbms_protect_control({packet.begin(), packet.end()});
+  mbms_socket_->send(bytes, bearer.general_purpose.address, bearer.general_purpose.port);
 }
 
 //------------------------------------------------------------------------------
@@ -302,7 +379,7 @@ void McServer::mbms_map(MbmsConversation &conversation, std::uint64_t now) {
 // being unmapped (docs/3GPP_CORRECTION_CANDIDATES.md M12), and its listeners get unicast again at once: their
 // "not-listening" reports follow.
 void McServer::mbms_unmap(MbmsConversation &conversation, std::uint64_t now) {
-  mbms_socket_->send(encode_subchannel(mbms_message(SubchannelMessageType::UnmapGroup, conversation)),
+  mbms_socket_->send(mbms_protect_control(encode_subchannel(mbms_message(SubchannelMessageType::UnmapGroup, conversation))),
                      conversation.channel.address, conversation.channel.port);
   status_["mbms_unmap_sent"] = status_.value("mbms_unmap_sent", 0u) + 1;
   conversation.t15 = conversation.t16 = 0;
@@ -331,8 +408,9 @@ void McServer::mbms_conversation_tick(std::uint64_t now) {
     const bool current = std::ranges::any_of(sessions_, [&](const auto &entry) { return entry.second->uri == uri; });
     if (!current) {
       // Clause 10.2.3.11: Unmap Group To Bearer once, the timers stopped, the instance released.
-      mbms_socket_->send(encode_subchannel(mbms_message(SubchannelMessageType::UnmapGroup, conversation)),
-                         conversation.channel.address, conversation.channel.port);
+      mbms_socket_->send(
+          mbms_protect_control(encode_subchannel(mbms_message(SubchannelMessageType::UnmapGroup, conversation))),
+          conversation.channel.address, conversation.channel.port);
       status_["mbms_unmap_sent"] = status_.value("mbms_unmap_sent", 0u) + 1;
       released.emplace_back(uri, "group call released");
       continue;
@@ -365,11 +443,14 @@ void McServer::mbms_conversation_tick(std::uint64_t now) {
 // (the same kind within 200 ms is a copy; a later one, such as the floor state told to a late joiner, goes again, as
 // clause 4.1.3.3 allows): with this function's SSRC (the Map Group To Bearer header's), the conversation's message
 // sequence number and the acknowledgement bit '0'; T15 restarts. The Floor Ack the participating function would send
-// towards the controlling function (step 4) is internal to a server in the "both" role. A protected floor
-// control channel stays unicast until a MuSiK protects the subchannel. Returns whether it was taken.
+// towards the controlling function (step 4) is internal to a server in the "both" role. Returns whether it was taken.
 bool McServer::mbms_control(Leg &leg, const std::string &kind,
                             const std::function<std::vector<std::uint8_t>(std::uint32_t, std::uint16_t)> &encode) {
-  if (!mbms_ || floor_protected(leg)) return false;
+  if (!mbms_) return false;
+  // TS 24.380 clause 13.3.2: protected floor control goes over the subchannel as SRTCP under the MuSiK, for a user
+  // that took the MuSiK download (TS 24.379 clause 14.2.2.5); otherwise it stays unicast.
+  const bool protect = floor_protected(leg);
+  if (protect && (!mbms_floor_keys_ || !mbms_musik_users_.contains(leg.user))) return false;
   const bool listener = mbms_service() == MbmsService::Mcvideo ? multicast_video_leg(leg) : multicast_leg(leg);
   if (!listener) return false;
   const auto found = mbms_conversations_.find(leg.session->uri);
@@ -381,8 +462,9 @@ bool McServer::mbms_control(Leg &leg, const std::string &kind,
   conversation.last_control = kind;
   conversation.last_control_ms = now;
   // RFC 5761: the control messages share the subchannel's media port (Floor m-line Number 0).
-  mbms_socket_->send(encode(mbms_ssrc_, ++conversation.control_sequence), conversation.channel.address,
-                     conversation.channel.port);
+  auto bytes = encode(mbms_ssrc_, ++conversation.control_sequence);
+  if (protect) bytes = mbms_floor_keys_->protect_floor(bytes);
+  mbms_socket_->send(bytes, conversation.channel.address, conversation.channel.port);
   conversation.t15 = now + mbms_timers_.t15;
   status_["mbms_control_sent"] = status_.value("mbms_control_sent", 0u) + 1;
   return true;
@@ -396,6 +478,9 @@ void McServer::publish_mbms_status() {
   for (const auto &[user, tmgis] : mbms_general_purpose_)
     listening.push_back({{"user_id", user}, {"tmgis", std::vector<std::string>(tmgis.begin(), tmgis.end())}});
   status_["mbms_general_purpose"] = std::move(listening);
+  status_["mbms_musik_users"] = Json(std::vector<std::string>(mbms_musik_users_.begin(), mbms_musik_users_.end()));
+  if (mbms_mscck_) status_["mbms_mscck_id"] = mbms_mscck_->csb_id;
+  if (mbms_musik_) status_["mbms_musik_id"] = mbms_musik_->csb_id;
   auto conversations = Json::array();
   for (const auto &[uri, conversation] : mbms_conversations_)
     conversations.push_back({{"session_uri", uri},

@@ -20,6 +20,8 @@ Back to the [test index by call type](../MCVIDEO_TEST.md).
 python3 tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select mbms-mcvideo
 ```
 
+`mbms-mcvideo-protected` adds protected media and transmission control: the bearer then has an MSCCK and a MuSiK.
+
 The lab is generated with `--mcvideo --multicast`: the MCVideo server's bearer has TMGI `00000299f907`, MBMS service
 area `0001`, general purpose subchannel `239.10.1.2:40200` and subchannel `239.10.0.4:40006`; client-d starts outside
 the service area.
@@ -36,6 +38,7 @@ the service area.
 | MV-MB-06 | `mbms quality bad`: client-c leaves the subchannel, the server takes it off, and it keeps decoding by unicast. |
 | MV-MB-07 | `mbms quality good`: client-c rejoins on the next Map Group To Bearer; all its pictures (MBMS, unicast, MBMS) equal the sender's. |
 | MV-MB-08 | client-a ends its transmission: Transmission Idle goes over the subchannel and reaches client-b and client-c, not client-d. |
+| MV-MB-10 | `mbms-mcvideo-protected` only: every MCVideo user took the MSCCK of the announcement and the MuSiK download; the Transmission Idle of MV-MB-08 was SRTCP under the MuSiK. |
 | MV-MB-09 | The call is released: Unmap Group To Bearer, every client left the subchannel. |
 
 ## Results
@@ -47,7 +50,6 @@ Debug TCP SIP, 2026-10-28, images from the multicast branches (`mb4` quick image
 
 | Gap | Reason |
 |---|---|
-| Protected transmission control over the subchannel | Next phase: the MuSiK. |
 | Reception control | A client listening to the subchannel receives the video whatever its reception mode: the server's reception control (Receive Media Request) governs only the unicast copies. |
 | Audio over the subchannel | Sent, not verified: the client does not join the audio port. |
 | FEC | Not implemented (TS 24.581 §10.4: optional). |

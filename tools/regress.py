@@ -102,6 +102,15 @@ LABS = [
     ),
     # MBMS delivery of an MCVideo group call's video (TS 24.581 clause 10) over the MCVideo server's bearer.
     lab('mbms-mcvideo', 'single', ['--mcvideo', '--multicast'], ['mbms_mcvideo_scenario'], ['mcvideo', 'multicast']),
+    # The same with protected media and transmission control: the MSCCK and the MuSiK (TS 24.581 clause 10, TS 33.180
+    # clause 9.2.2).
+    lab(
+        'mbms-mcvideo-protected',
+        'single',
+        ['--mcvideo', '--multicast'] + KEYS,
+        ['mbms_mcvideo_scenario'],
+        ['mcvideo', 'multicast', 'protected'],
+    ),
     # outbound_flow_scenario: a client without a SIP listener, reached over its RFC 5626 flow.
     # MCX Admin (slices B2, C): the accounts managed by MCX Admin; needs --admin-image.
     lab(

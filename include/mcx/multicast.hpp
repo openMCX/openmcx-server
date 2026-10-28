@@ -62,6 +62,10 @@ struct MbmsConfig {
   std::set<std::string> users;
   std::vector<MbmsBearerConfig> bearers;
   std::uint64_t bearer_announcement_ms = 0;
+  // TS 24.379 clause 14.2.2.2 step 5 d and TS 24.380 clause 13: whether the MBMS subchannel control messages are
+  // protected with an MSCCK sent in the announcement, and the multicast floor and transmission control with a
+  // MuSiK sent by key download (clause 14.2.2.5) when the call's floor control is protected.
+  bool mscck = false, musik = false;
 
   // The bearer of a TMGI, or none.
   [[nodiscard]] const MbmsBearerConfig *bearer(const std::string &tmgi) const;

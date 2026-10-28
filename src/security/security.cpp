@@ -157,9 +157,12 @@ SecurityMaterial derive_private_security(std::span<const std::uint8_t> key, std:
 // control from the KFC: CS-ID 6 (MCPTT) or 8 (MCVideo); the MKI is the 32-bit KFC-ID.
 SecurityMaterial derive_floor_security(std::span<const std::uint8_t> key, std::span<const std::uint8_t> random,
                                        std::uint32_t id, bool mcvideo) {
-  // A CSK (purpose tag 2) between a client and its server, or an SPK (3) between
-  // servers, which TS 33.180 clause 9.4.5 uses the same way as the KFC.
-  if ((id >> 28) != 2 && (id >> 28) != 3) throw std::invalid_argument("floor key purpose tag must be two or three");
+  // A CSK (purpose tag 2) between a client and its server, or an SPK (3) between servers, which TS 33.180 clause
+  // 9.4.5 uses the same way as the KFC; over MBMS the MSCCK (5) of the subchannel control messages (annex H.4) and
+  // the MuSiK (6) of the multicast floor and transmission control (clause 9.2.2) are KFCs too.
+  const auto tag = id >> 28;
+  if (tag != 2 && tag != 3 && tag != 5 && tag != 6)
+    throw std::invalid_argument("floor key purpose tag must be 2, 3, 5 or 6");
   auto out = derive(key, random, id, mcvideo ? 8 : 6);
   put32(out.mki, id);
   return out;

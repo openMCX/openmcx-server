@@ -631,9 +631,14 @@ then reads:
   (3) set the timers. The BM-SC and the radio are emulated: each subchannel is an IPv4 host group on the media
   network. Floor Taken and Floor Idle (MCVideo: Transmission Idle, Media Transmission Notification) to listeners
   go once over the subchannel with the server's SSRC and acknowledgement bit '0' (`McServer::mbms_control`; TS 24.380
-  clauses 10.2.3.2 and 10.2.3.3), unless floor control is protected. The former `multicast` block is refused. MCVideo video goes over the subchannel as the speech does
+  clauses 10.2.3.2 and 10.2.3.3). `mscck` (false) puts an MSCCK in the announcement's "a=key-mgmt" and sends the
+  subchannel control messages as SRTCP under it; `musik` (false) sends each user a default MuSiK download after the
+  announcement, and protected floor control then goes over the subchannel as SRTCP under the MuSiK to the users that
+  took it (unicast to the others). Both need the `security` block (the server's key management client). The former
+  `multicast` block is refused. MCVideo video goes over the subchannel as the speech does
   (`src/mcvideo/video_media.cpp`, TS 24.581 clause 10.2). Status: `mbms_bearers`, `mbms_announced`,
   `mbms_general_purpose`, `mbms_bearer_announcements`, `mbms_conversations`, `mbms_map_sent`, `mbms_unmap_sent`,
+  `mbms_control_sent`, `mbms_musik_users`, `mbms_mscck_id`, `mbms_musik_id`,
   `multicast_forwarded` (packets sent over subchannels), `multicast_listening` (users and sessions).
 - `common`: the common services' URLs and the server's client ID and secret; `issuer` (default: `idms`), the IdMS
   whose access tokens the server accepts, and `token_audience` (default: `client_id`), their audience.

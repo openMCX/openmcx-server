@@ -40,6 +40,15 @@ public:
   std::pair<keying::KeyMessage, std::string> make_csk(std::string_view recipient);
   // TS 33.180 clause 5.4 and annex E.4: opens a CSK upload I_MESSAGE from the sender.
   keying::KeyMessage accept_csk(std::string_view sender, std::string_view encoded);
+  // TS 33.180 clause 9.2.2 and annex H.3: a new MuSiK (purpose tag 6, for the given groups or, none given, for every
+  // group) or MSCCK (5) of this MCX server, with its key parameters (valid to the end of the identity key period).
+  keying::KeyMessage make_signalling_key(std::uint8_t purpose, const std::vector<std::string> &groups = {});
+  // TS 33.180 clause 5.8 (key download): a key of this identity in a signed MIKEY-SAKKE I_MESSAGE to the recipient,
+  // base64.
+  std::string wrap_key(std::string_view recipient, const keying::KeyMessage &key);
+  // TS 33.180 clause 5.8 and TS 24.379 clauses 14.3.2 step 1 f and 14.3.4: opens a key download from the expected
+  // initiator (the participating function's PSI); its purpose tag must be the given one, its key parameters agree.
+  keying::KeyMessage accept_signalling_key(std::string_view expected, std::string_view encoded, std::uint8_t purpose);
   // TS 33.180 clause 5.6 and annex E.3: a PCK with a PCK-ID whose purpose tag is 1, encapsulated to the recipient's
   // UID and signed by this user, without key parameters.
   std::pair<keying::KeyMessage, std::string> make_pck(std::string_view recipient, std::string_view recipient_kms = {});

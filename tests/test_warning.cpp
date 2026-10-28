@@ -23,7 +23,8 @@ using namespace mcx;
 int main() {
   // Every coded warning mcptt-server sent before the table existed (2026-09-25):
   // the MCPTT table must reproduce each one exactly and add no other.
-  // Plus 101, added with MCVideo V1 as TS 24.379 clause 7.3.3 step 6 requires.
+  // Plus 101, added with MCVideo V1 as TS 24.379 clause 7.3.3 step 6 requires, and 136, the client's answer to an MBMS
+  // bearer announcement or MuSiK download whose MIKEY-SAKKE I_MESSAGE fails (TS 24.379 clauses 14.3.2 and 14.3.4).
   const std::set<std::string> before{
       "101 service authorisation failed",
       "102 too many simultaneous affiliations",
@@ -44,6 +45,7 @@ int main() {
       "125 user not authorised to make private call with automatic commencement",
       "126 user not authorised to make private call with manual commencement",
       "127 user not authorised to be called in private call",
+      "136 authentication of the MIKEY-SAKKE I_MESSAGE failed",
       "138 subscription of conference events not allowed",
       "139 no XPK for the signatures",
       "139 integrity protection check failed",

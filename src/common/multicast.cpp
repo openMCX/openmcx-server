@@ -84,6 +84,8 @@ MbmsConfig mbms_config(const Json &block) {
   result.video_payload_type = static_cast<std::uint8_t>(video_payload_type);
   result.octet_aligned = block.value("octet_aligned", result.octet_aligned);
   result.bearer_announcement_ms = block.value("bearer_announcement_ms", result.bearer_announcement_ms);
+  result.mscck = block.value("mscck", false);
+  result.musik = block.value("musik", false);
   result.all_users = !block.contains("users");
   const auto users = block.value("users", Json::array());
   if (!users.is_array()) throw std::runtime_error("mbms: users must be a list of MC service IDs");

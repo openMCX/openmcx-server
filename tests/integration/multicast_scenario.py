@@ -333,13 +333,19 @@ def main():
         # subchannel, once each; client-d by unicast. Under protected floor control they stay unicast.
         control = status('mcptt-server').get('mbms_control_sent', 0)
         received = {role: status(role).get('mbms_floor_received', 0) for role in ROLES}
-        if any(received[role] for role in OPTED_IN):
-            assert control > 0 and received['client-d'] == 0, f'floor over the subchannel: {control}, {received}'
-            assert all(received[role] > 0 for role in ['client-b', 'client-c']), f'floor not received: {received}'
-            checks.append(f'MS-08 {control} Floor Taken/Idle over the subchannel, received {received}')
-        else:
-            assert control == 0, f'{control} floor messages over the subchannel'
-            checks.append('MS-08 protected floor control: Floor Taken/Idle stay unicast')
+        assert control > 0 and received['client-d'] == 0, f'floor over the subchannel: {control}, {received}'
+        assert all(received[role] > 0 for role in ['client-b', 'client-c']), f'floor not received: {received}'
+        checks.append(f'MS-08 {control} Floor Taken/Idle over the subchannel, received {received}')
+        server = status('mcptt-server')
+        if server.get('mbms_musik_id'):
+            # TS 24.379 clauses 14.2.2.2 step 5 d and 14.2.2.5, TS 24.380 clause 13: an MSCCK in the announcement and a
+            # MuSiK downloaded to each user, both purpose tags right; the floor messages above were SRTCP under it.
+            assert server['mbms_musik_id'] >> 28 == 6 and server.get('mbms_mscck_id', 0) >> 28 == 5, server
+            assert set(server.get('mbms_musik_users', [])) >= {ids[role] for role in OPTED_IN}, server
+            assert all(bearer(role).get('mscck') for role in ROLES), 'MSCCK not taken'
+            assert all(status(role).get('mbms_musik_id') == server['mbms_musik_id'] for role in ROLES), 'MuSiK'
+            checks.append('MS-09 MSCCK (tag 5) in the announcement and MuSiK (tag 6) downloaded to every user')
+            result['protected_signalling'] = dict(mscck=server['mbms_mscck_id'], musik=server['mbms_musik_id'])
         result['floor_over_subchannel'] = control
         unmaps = status('mcptt-server').get('mbms_unmap_sent', 0)
         wait(

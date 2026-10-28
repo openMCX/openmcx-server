@@ -1331,7 +1331,7 @@ protected:
 
   void mbms_setup();
 
-  [[nodiscard]] std::string mbms_announcement_sdp() const;
+  [[nodiscard]] std::string mbms_announcement_sdp(const std::string &key_mgmt = {}) const;
 
   [[nodiscard]] std::vector<MbmsAnnouncement> mbms_announcements() const;
 
@@ -1386,6 +1386,19 @@ protected:
 
   MbmsTimers mbms_timers_;
   std::map<std::string, MbmsConversation> mbms_conversations_;
+
+  // TS 24.380 clause 13 and TS 33.180 clause 9.2.2 and annex H: the MSCCK of the subchannel control messages and the
+  // MuSiK of the multicast floor and transmission control, with their SRTCP contexts (made on first use), and the
+  // users that took the MuSiK download (TS 24.379 clause 14.2.2.5: the others keep unicast floor control).
+  std::optional<keying::KeyMessage> mbms_mscck_, mbms_musik_;
+  std::unique_ptr<ProtectedCall> mbms_control_keys_, mbms_floor_keys_;
+  std::set<std::string> mbms_musik_users_;
+
+  bool mbms_signalling_keys();
+
+  [[nodiscard]] std::vector<std::uint8_t> mbms_protect_control(std::vector<std::uint8_t> packet);
+
+  void mbms_musik_download(const User &user);
 
   // The "mbms" block, the socket of the general purpose and MBMS subchannels and the SSRC of this participating
   // function on them; none when not configured. The users the bearers were announced to, and the TMGIs whose general

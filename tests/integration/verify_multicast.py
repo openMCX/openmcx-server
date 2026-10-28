@@ -60,19 +60,29 @@ def is_speech(payload):
 
 
 # ------------------------------------------------------------------------------
+def mki_purpose(payload):
+    """TS 33.180 annex G: the purpose tag of the 32-bit MKI ending an SRTCP packet (RFC 3711 section 3.4)."""
+    return payload[-4] >> 4 if len(payload) >= 12 else None
+
+
+# ------------------------------------------------------------------------------
 def subchannel_control(payload):
-    """TS 24.380 clause 8.4: the subtype of an MBMS subchannel control message ("MCMC", RTCP APP), or None."""
+    """TS 24.380 clause 8.4: the subtype of an MBMS subchannel control message ("MCMC", RTCP APP), clear or SRTCP under
+    the MSCCK (MKI purpose tag 5; the first two words stay clear, RFC 3711 section 3.4), or None."""
     if len(payload) < 12 or payload[0] >> 6 != 2 or payload[1] != 204:
         return None
-    if payload[8:12] == b'MCMC':
+    if payload[8:12] == b'MCMC' or mki_purpose(payload) == 5:
         return payload[0] & 0x1F
     return 3 if payload[4:8] == b'MCMC' else None
 
 
 # ------------------------------------------------------------------------------
 def is_floor(payload):
-    """TS 24.380 clause 8.2: a clear floor control message ("MCPT", RTCP APP)."""
-    return len(payload) >= 12 and payload[0] >> 6 == 2 and payload[1] == 204 and payload[8:12] == b'MCPT'
+    """TS 24.380 clause 8.2: a floor control message ("MCPT", RTCP APP), clear or SRTCP under the MuSiK (MKI purpose
+    tag 6, TS 33.180 clause 9.2.2)."""
+    if len(payload) < 12 or payload[0] >> 6 != 2 or payload[1] != 204:
+        return False
+    return payload[8:12] == b'MCPT' or mki_purpose(payload) == 6
 
 
 # ------------------------------------------------------------------------------
@@ -99,12 +109,14 @@ def main():
 
     final = results['status']['mcptt-server']
     general_purpose = tuple(results['general_purpose'].rsplit(':', 1))
-    maps = unmaps = floor = 0
+    maps = unmaps = floor = clear_control = 0
     multicast, unicast, ttls, sources = 0, collections.Counter(), set(), set()
     for source, destination, destination_port, ttl, payload in datagrams(args.capture):
         if destination == group and destination_port == int(port) and is_floor(payload):
             floor += 1
         subtype = subchannel_control(payload)
+        if subtype in (0, 1) and payload[8:12] == b'MCMC':
+            clear_control += 1
         if subtype == 0 and (destination, str(destination_port)) == general_purpose:
             maps += 1
         elif subtype == 1 and destination == group and destination_port == int(port):
@@ -136,6 +148,8 @@ def main():
     check(maps == final.get('mbms_map_sent') and maps > 0, f'{maps} Map Group To Bearer to the general purpose subchannel')
     check(unmaps == final.get('mbms_unmap_sent') and unmaps > 0, f'{unmaps} Unmap Group To Bearer to the subchannel')
     check(floor == final.get('mbms_control_sent', 0), f'{floor} floor control messages to the subchannel')
+    if final.get('mbms_mscck_id'):
+        check(clear_control == 0, f'{clear_control} clear Map or Unmap Group To Bearer under the MSCCK')
     result = dict(capture=str(args.capture), passed=not errors, checks=checks, errors=errors)
     args.output.write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))

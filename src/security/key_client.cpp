@@ -354,6 +354,62 @@ std::pair<keying::KeyMessage, std::string> KeyClient::make_csk(std::string_view 
 }
 
 //------------------------------------------------------------------------------
+// TS 33.180 clause 9.2.2 (MuSiK) and annex H.3 (MSCCK): a signalling key of this MCX server; the purpose tag is the
+// four most significant bits of the key identifier (annex G), the key type of the key parameters the same.
+keying::KeyMessage KeyClient::make_signalling_key(std::uint8_t purpose, const std::vector<std::string> &groups) {
+  require(purpose == 5 || purpose == 6, "a signalling key is an MSCCK or a MuSiK");
+  std::lock_guard lock(impl_->mutex);
+  auto now = now_ntp();
+  impl_->ensure_provisioned(now);
+  now = now_ntp();
+  keying::KeyMessage key;
+  key.ntp_seconds = now;
+  std::array<unsigned char, 4> id{};
+  require(RAND_priv_bytes(key.key.data(), key.key.size()) == 1 &&
+              RAND_bytes(key.random.data(), key.random.size()) == 1 && RAND_bytes(id.data(), id.size()) == 1,
+          "signalling key random generation failed");
+  key.csb_id = (std::uint32_t(purpose) << 28) |
+               ((std::uint32_t(id[0]) << 24 | std::uint32_t(id[1]) << 16 | std::uint32_t(id[2]) << 8 | id[3]) &
+                0x0fffffffU);
+  key.properties = keying::KeyProperties{purpose, 1, now - ntp_epoch, impl_->identity_expiry_unix(), {},
+                                         purpose == 6 ? groups : std::vector<std::string>{}};
+  keying::require_active(key, {}, now - ntp_epoch);
+  return key;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 clause 5.8: the key download I_MESSAGE, signed by this identity and encapsulated to the recipient.
+std::string KeyClient::wrap_key(std::string_view recipient, const keying::KeyMessage &key) {
+  std::lock_guard lock(impl_->mutex);
+  impl_->ensure_provisioned(now_ntp());
+  return encode_base64(keying::create_mikey(impl_->parameters, impl_->identity, recipient, key, &impl_->profile));
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 clause 5.8: opens a key download: signed by the expected initiator, of the given purpose, with key
+// parameters of that type; a replayed I_MESSAGE is refused.
+keying::KeyMessage KeyClient::accept_signalling_key(std::string_view expected, std::string_view encoded,
+                                                    std::uint8_t purpose) {
+  const auto message = decode_base64(encoded);
+  const auto sender = keying::mikey_initiator(message);
+  require(sender == expected, "unexpected MIKEY sender");
+  std::lock_guard lock(impl_->mutex);
+  auto now = now_ntp();
+  impl_->ensure_provisioned(now);
+  now = now_ntp();
+  constexpr std::uint32_t skew = 300;
+  auto key = keying::open_mikey(impl_->parameters, impl_->identity, sender, message, now, skew, &impl_->profile);
+  require((key.csb_id >> 28) == purpose && key.properties && key.properties->type == purpose,
+          "received key is not of the expected purpose");
+  impl_->remove_expired(now - ntp_epoch);
+  const auto identity = cache_key("signalling:" + sender, key.csb_id);
+  require(!impl_->received_csks.contains(identity), "duplicate or replayed signalling key");
+  require(impl_->received_csks.size() < maximum_cache_entries, "signalling key replay cache capacity reached");
+  impl_->received_csks.emplace(identity, key.ntp_seconds - ntp_epoch + 2 * skew);
+  return key;
+}
+
+//------------------------------------------------------------------------------
 // TS 33.180 clause 5.4 and annex E.4: opens a CSK upload I_MESSAGE: the key must be an active CSK that expires within
 // the identity key period, and each CSK is accepted once.
 keying::KeyMessage KeyClient::accept_csk(std::string_view sender, std::string_view encoded) {

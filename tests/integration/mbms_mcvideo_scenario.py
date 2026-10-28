@@ -179,6 +179,13 @@ def main():
             and all(status(role).get('mcvideo_mbms_control_received', 0) > 0 for role in LISTENERS)
             and status('client-d').get('mcvideo_mbms_control_received', 0) == 0,
         )
+        server = status('mcvideo-server')
+        if server.get('mbms_musik_id'):
+            # TS 24.281 clauses 16.3.2.2 and 16.3.2.5, TS 24.581 clause 10: the MSCCK of the announcement and the
+            # MuSiK of the key download; the Transmission Idle above was SRTCP under the MuSiK.
+            assert all(bearer(role).get('mscck') for role in ROLES), 'MSCCK not taken'
+            assert all(status(role).get('mcvideo_mbms_musik_id') == server['mbms_musik_id'] for role in ROLES), 'MuSiK'
+            checks.append('MV-MB-10 MSCCK in the announcement and MuSiK downloaded to every MCVideo user')
         unmaps = status('mcvideo-server').get('mbms_unmap_sent', 0)
         for role in ROLES:
             command(role, 'mcvideo-hangup')
