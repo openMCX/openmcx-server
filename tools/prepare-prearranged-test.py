@@ -1292,12 +1292,11 @@ def add_multicast(fixture):
     for role, cfg in configs.items():
         cfg['mbms'] = dict(service_areas=['0002' if role == 'client-d' else '0001'])
         (fixture / f'generated/{role}.json').write_text(json.dumps(cfg, indent=2) + '\n')
-    # TS 24.281 clause 16.3.2: with an MCVideo server, a bearer of its own announced to the MCVideo users.
+    # TS 24.281 clause 16.3.2: with an MCVideo server, a bearer of its own announced to every MCVideo user.
     video_file = fixture / 'generated/mcvideo-server.json'
     if video_file.is_file():
         video = json.loads(video_file.read_text())
-        users = [cfg['mcvideo']['user_id'] for cfg in configs.values() if 'mcvideo' in cfg]
-        video['mcvideo']['mbms'] = dict(users=users, bearers=[MBMS_VIDEO_BEARER], bearer_announcement_ms=5000)
+        video['mcvideo']['mbms'] = dict(bearers=[MBMS_VIDEO_BEARER], bearer_announcement_ms=5000)
         video_file.write_text(json.dumps(video, indent=2) + '\n')
 
 

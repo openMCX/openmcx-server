@@ -78,8 +78,13 @@ MbmsConfig mbms_config(const Json &block) {
   if (payload_type < first_dynamic_payload_type || payload_type > last_dynamic_payload_type)
     throw std::runtime_error("mbms: payload_type must be a dynamic payload type, 96 to 127");
   result.payload_type = static_cast<std::uint8_t>(payload_type);
+  const auto video_payload_type = block.value("video_payload_type", unsigned{result.video_payload_type});
+  if (video_payload_type < first_dynamic_payload_type || video_payload_type > last_dynamic_payload_type)
+    throw std::runtime_error("mbms: video_payload_type must be a dynamic payload type, 96 to 127");
+  result.video_payload_type = static_cast<std::uint8_t>(video_payload_type);
   result.octet_aligned = block.value("octet_aligned", result.octet_aligned);
   result.bearer_announcement_ms = block.value("bearer_announcement_ms", result.bearer_announcement_ms);
+  result.all_users = !block.contains("users");
   const auto users = block.value("users", Json::array());
   if (!users.is_array()) throw std::runtime_error("mbms: users must be a list of MC service IDs");
   for (const auto &user : users) result.users.insert(user.get<std::string>());

@@ -66,21 +66,23 @@ void McServer::mbms_setup() {
 // c-line is the unspecified address; one media line (port 9, RFC 5761 multiplexing) is the MBMS subchannel for
 // media and media control, whose address and port a Map Group To Bearer message gives (step 5 b, NOTE 4); then one
 // "m=application" line per bearer, with the host group and port of its general purpose MBMS subchannel (step 5 d).
-// For MCVideo the media line is "m=video" (TS 24.581 clause 9.3.3.3: the audio is combined with the video).
+// For MCVideo an "m=video" line comes first and the "m=audio" line is the separate audio of the subchannel (TS 24.581
+// clause 9.3.3.3).
 std::string McServer::mbms_announcement_sdp() const {
   const bool video = mbms_service() == MbmsService::Mcvideo;
   const unsigned pt = mbms_->payload_type;
   std::string sdp = "v=0\r\no=- " + std::to_string(mbms_ssrc_) +
                     " 1 IN IP4 0.0.0.0\r\ns=-\r\nc=IN IP4 0.0.0.0\r\n"
                     "t=0 0\r\n";
-  if (video)
-    sdp += "m=video 9 RTP/AVP " + std::to_string(pt) + "\r\na=rtpmap:" + std::to_string(pt) +
-           " H264/90000\r\na=fmtp:" + std::to_string(pt) + " profile-level-id=42e01f;packetization-mode=1\r\n";
-  else
-    sdp += "m=audio 9 RTP/AVP " + std::to_string(pt) + "\r\na=rtpmap:" + std::to_string(pt) +
-           " AMR-WB/16000/1\r\na=fmtp:" + std::to_string(pt) + " octet-align=" + (mbms_->octet_aligned ? "1" : "0") +
-           "\r\n";
-  sdp += "a=rtcp-mux\r\na=rtcp:9\r\n";
+  if (video) {
+    const unsigned vpt = mbms_->video_payload_type;
+    sdp += "m=video 9 RTP/AVP " + std::to_string(vpt) + "\r\na=rtpmap:" + std::to_string(vpt) +
+           " H264/90000\r\na=fmtp:" + std::to_string(vpt) +
+           " profile-level-id=42e01f;packetization-mode=1\r\na=rtcp-mux\r\na=rtcp:9\r\n";
+  }
+  sdp += "m=audio 9 RTP/AVP " + std::to_string(pt) + "\r\na=rtpmap:" + std::to_string(pt) +
+         " AMR-WB/16000/1\r\na=fmtp:" + std::to_string(pt) + " octet-align=" + (mbms_->octet_aligned ? "1" : "0") +
+         "\r\na=rtcp-mux\r\na=rtcp:9\r\n";
   for (const auto &bearer : mbms_->bearers)
     sdp += "m=application " + std::to_string(bearer.general_purpose.port) + " udp " + (video ? "MCVideo" : "MCPTT") +
            "\r\nc=IN IP4 " + bearer.general_purpose.address + "/" + std::to_string(mbms_->ttl) + "\r\n";
@@ -92,7 +94,7 @@ std::string McServer::mbms_announcement_sdp() const {
 // m=application line after the media line, in the bearers' order (<GPMS>, a media line number counted from 1).
 std::vector<MbmsAnnouncement> McServer::mbms_announcements() const {
   std::vector<MbmsAnnouncement> out;
-  unsigned line = 2;
+  unsigned line = mbms_service() == MbmsService::Mcvideo ? 3 : 2;
   for (const auto &bearer : mbms_->bearers) {
     MbmsAnnouncement announcement;
     announcement.tmgi = bearer.tmgi;
@@ -208,6 +210,11 @@ SubchannelMessage McServer::mbms_message(SubchannelMessageType type, const MbmsC
     channel.media_line = 1;
     channel.address = conversation.channel.address;
     channel.media_port = conversation.channel.port;
+    if (mbms_service() == MbmsService::Mcvideo) {
+      // TS 24.581 clause 9.3.3.3: the video m-line and port, the separate audio m-line and its port.
+      channel.audio_line = 2;
+      channel.audio_port = static_cast<std::uint16_t>(conversation.channel.port + 2);
+    }
     message.subchannel = channel;
   }
   return message;
@@ -267,11 +274,15 @@ const MulticastDestination *McServer::mbms_conversation_start(const Session &ses
 //------------------------------------------------------------------------------
 // TS 24.380 clause 10.2.3.5 steps 3 and 4: an RTP media packet (or, TS 24.380 clause 10.2.3.2 to 10.2.3.4, a floor
 // control message) over the conversation's MBMS subchannel restarts T15.
-void McServer::send_subchannel(std::span<const std::uint8_t> packet, const Session &session) {
+void McServer::send_subchannel(std::span<const std::uint8_t> packet, const Session &session, bool video) {
   auto &conversation = mbms_conversations_.at(session.uri);
-  mbms_socket_->send(packet, conversation.channel.address, conversation.channel.port);
+  // An MCVideo subchannel's audio goes to the port two above its video (mbms_message).
+  const bool separate_audio = mbms_service() == MbmsService::Mcvideo && !video;
+  mbms_socket_->send(packet, conversation.channel.address,
+                     static_cast<std::uint16_t>(conversation.channel.port + (separate_audio ? 2 : 0)));
   conversation.t15 = monotonic_ms() + mbms_timers_.t15;
-  status_["multicast_forwarded"] = status_.value("multicast_forwarded", 0u) + 1;
+  const char *counter = video ? "multicast_video_forwarded" : "multicast_forwarded";
+  status_[counter] = status_.value(counter, 0u) + 1;
 }
 
 //------------------------------------------------------------------------------

@@ -48,14 +48,16 @@ struct MbmsBearerConfig {
 };
 
 //------------------------------------------------------------------------------
-// The "mbms" block: the interface and time-to-live of the multicast datagrams, the RTP payload format of the media
-// sent on MBMS subchannels, the MC service IDs the bearers are announced to (TS 24.379 clause 14.2.2.1: whom to
+// The "mbms" block: the interface and time-to-live of the multicast datagrams, the RTP payload formats of the media
+// sent on MBMS subchannels (AMR-WB speech; H.264 video for MCVideo, whose subchannel carries the video on its port and
+// the audio on the port two above), the MC service IDs the bearers are announced to (TS 24.379 clause 14.2.2.1: whom to
 // announce to is local policy), the bearers, and how often the Bearer Announcement message goes over each general
 // purpose subchannel (TS 24.380 clause 4.1.3.7; 0: never).
 struct MbmsConfig {
   std::string interface = "0.0.0.0";
   int ttl = 1;
   std::uint8_t payload_type = 96;
+  std::uint8_t video_payload_type = 97;
   bool octet_aligned = false;
   std::set<std::string> users;
   std::vector<MbmsBearerConfig> bearers;
@@ -63,7 +65,9 @@ struct MbmsConfig {
 
   // The bearer of a TMGI, or none.
   [[nodiscard]] const MbmsBearerConfig *bearer(const std::string &tmgi) const;
-  [[nodiscard]] bool serves(const std::string &user) const { return users.contains(user); }
+  // Without a "users" list every served user is announced to.
+  bool all_users = false;
+  [[nodiscard]] bool serves(const std::string &user) const { return all_users || users.contains(user); }
 };
 
 //------------------------------------------------------------------------------

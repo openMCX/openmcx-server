@@ -1312,6 +1312,8 @@ protected:
   // ---- MBMS listening status reports (multicast.cpp): TS 24.379 clauses 14.2.3 and 14.2.4 ----
   [[nodiscard]] bool multicast_leg(const Leg &leg) const;
 
+  [[nodiscard]] bool multicast_video_leg(const Leg &leg) const;
+
   [[nodiscard]] const std::string *mbms_usage_part(const SipMessage &message) const;
 
   SipResponse mbms_usage_message(const SipMessage &message, const User &user, const std::string &body);
@@ -1363,7 +1365,7 @@ protected:
 
   const MulticastDestination *mbms_conversation_start(const Session &session);
 
-  void send_subchannel(std::span<const std::uint8_t> packet, const Session &session);
+  void send_subchannel(std::span<const std::uint8_t> packet, const Session &session, bool video = false);
 
   void mbms_map(MbmsConversation &conversation, std::uint64_t now);
 

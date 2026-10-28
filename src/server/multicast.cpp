@@ -29,6 +29,15 @@ bool McServer::multicast_leg(const Leg &leg) const {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.581 clause 10.2.3.5: the same for an MCVideo participant's video: its SDP agreed the subchannel's H.264
+// payload type.
+bool McServer::multicast_video_leg(const Leg &leg) const {
+  return mbms_ && leg.remote && leg.remote->video && mbms_->serves(leg.user) &&
+         mbms_conversations_.contains(leg.session->uri) && multicast_listening_.contains({leg.user, leg.session->uri}) &&
+         leg.remote->video->payload_type == mbms_->video_payload_type;
+}
+
+//------------------------------------------------------------------------------
 // Helper: the application/vnd.3gpp.mcptt-mbms-usage-info+xml body of a SIP MESSAGE, or none.
 const std::string *McServer::mbms_usage_part(const SipMessage &message) const {
   const std::string mime = mbms_usage_type(mbms_service()).mime;

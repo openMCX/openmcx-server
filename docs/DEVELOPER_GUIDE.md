@@ -616,8 +616,10 @@ then reads:
   `include/mcx/multicast.hpp`, `src/server/mbms.cpp`; TS 24.379 clause 14.2, TS 24.281 clause 16.3). `bearers` is a
   list of `{"tmgi", "general_purpose": "<IPv4 host group>:<port>", "subchannels": ["<host group>:<port>", ...],
   "service_areas": ["<hexBinary>", ...]}` with optional `qci`, `frequency` and `report_suspension`; `users` lists the
-  MC service IDs the bearers are announced to (local policy, clause 14.2.2.1); `interface`, `ttl`, `payload_type`
-  and `octet_aligned` as for `multicast`; `bearer_announcement_ms` (default 0, off) sends the Bearer Announcement
+  MC service IDs the bearers are announced to (local policy, clause 14.2.2.1; omitted: every served user);
+  `interface` (default `0.0.0.0`), `ttl` (1), the AMR-WB `payload_type` (96) and `octet_aligned` (false) and, for
+  MCVideo, the H.264 `video_payload_type` (97; an MCVideo subchannel carries the video on its pool port and the
+  audio two ports above); `bearer_announcement_ms` (default 0, off) sends the Bearer Announcement
   message over each general purpose subchannel (TS 24.380 clause 4.1.3.7). After each service authorisation of a
   user on the list the server sends the MBMS bearer announcement (a SIP MESSAGE with the SDP of the general purpose
   subchannels, the MBMS usage information and P-Asserted-Identity set to `service_uri`, the PSI the reports go to).
@@ -627,7 +629,8 @@ then reads:
   the subchannel for the participants that reported listening for the session; Unmap Group To Bearer after T15 of
   silence, every T17 up to C17; TS 24.380 clause 10.2); `t15_ms` (30000), `t16_ms` (500), `t17_ms` (200) and `c17`
   (3) set the timers. The BM-SC and the radio are emulated: each subchannel is an IPv4 host group on the media
-  network. The former `multicast` block is refused. Status: `mbms_bearers`, `mbms_announced`,
+  network. The former `multicast` block is refused. MCVideo video goes over the subchannel as the speech does
+  (`src/mcvideo/video_media.cpp`, TS 24.581 clause 10.2). Status: `mbms_bearers`, `mbms_announced`,
   `mbms_general_purpose`, `mbms_bearer_announcements`, `mbms_conversations`, `mbms_map_sent`, `mbms_unmap_sent`,
   `multicast_forwarded` (packets sent over subchannels), `multicast_listening` (users and sessions).
 - `common`: the common services' URLs and the server's client ID and secret; `issuer` (default: `idms`), the IdMS
