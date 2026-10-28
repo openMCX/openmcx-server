@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Agent Tutorial 1: alice is the agent, mcx-agent on client-a; the chat, voice and video bots reach it over MCP on HTTP on an internal network; bob in the browser client page and the headless client-c reach it through the OpenMCX system on the lab network 172.31.101.0/24</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6472"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2f8f5b"/>
+    </marker>
+  </defs>
+  <rect width="900" height="420" rx="14" fill="#ffffff"/>
+  <rect x="12" y="12" width="876" height="396" rx="16" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="32" y="40" font-size="15" font-weight="700" fill="#374151">Computer · Docker</text>
+  <text x="868" y="40" text-anchor="end" font-size="12" fill="#4b5563">published: only the client page, 127.0.0.1:8080</text>
+
+  <!-- agents network -->
+  <rect x="32" y="60" width="230" height="300" rx="14" fill="#ecfdf3" stroke="#2f8f5b" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="147" y="84" text-anchor="middle" font-size="13" font-weight="700" fill="#1f6b43">agents network (internal)</text>
+  <g font-size="14" fill="#1f2937">
+    <rect x="52" y="100" width="190" height="56" rx="12" fill="#ffffff" stroke="#2f8f5b" stroke-width="1.5"/>
+    <text x="147" y="124" text-anchor="middle" font-weight="600">chat-bot</text>
+    <text x="147" y="143" text-anchor="middle" font-size="12" fill="#4b5563">MCData: time, ping, help</text>
+    <rect x="52" y="168" width="190" height="56" rx="12" fill="#ffffff" stroke="#2f8f5b" stroke-width="1.5"/>
+    <text x="147" y="192" text-anchor="middle" font-weight="600">voice-bot</text>
+    <text x="147" y="211" text-anchor="middle" font-size="12" fill="#4b5563">MCPTT: plays speech back</text>
+    <rect x="52" y="236" width="190" height="56" rx="12" fill="#ffffff" stroke="#2f8f5b" stroke-width="1.5"/>
+    <text x="147" y="260" text-anchor="middle" font-weight="600">video-bot</text>
+    <text x="147" y="279" text-anchor="middle" font-size="12" fill="#4b5563">MCVideo: a test card</text>
+  </g>
+  <text x="147" y="320" text-anchor="middle" font-size="12" fill="#4b5563">no route to the MC system</text>
+  <text x="147" y="338" text-anchor="middle" font-size="12" fill="#4b5563">only MCP over HTTP + token</text>
+
+  <!-- agent -->
+  <rect x="300" y="150" width="170" height="82" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="2"/>
+  <text x="385" y="176" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">client-a · .101</text>
+  <text x="385" y="195" text-anchor="middle" font-size="12" fill="#4b5563">alice, the agent</text>
+  <text x="385" y="213" text-anchor="middle" font-size="12" fill="#4b5563">mcx-agent + mcx-client</text>
+  <path d="M242 128 L300 176" stroke="#2f8f5b" stroke-width="1.6" fill="none" marker-end="url(#arrow-green)" marker-start="url(#arrow-green)"/>
+  <path d="M242 196 L300 191" stroke="#2f8f5b" stroke-width="1.6" fill="none" marker-end="url(#arrow-green)" marker-start="url(#arrow-green)"/>
+  <path d="M242 264 L300 206" stroke="#2f8f5b" stroke-width="1.6" fill="none" marker-end="url(#arrow-green)" marker-start="url(#arrow-green)"/>
+  <text x="385" y="132" text-anchor="middle" font-size="11" fill="#1f6b43">MCP over HTTP, :8765</text>
+
+  <!-- OpenMCX system -->
+  <rect x="505" y="60" width="160" height="300" rx="16" fill="#fff7ed" stroke="#ea8a1a" stroke-width="2"/>
+  <text x="585" y="86" text-anchor="middle" font-size="14" font-weight="700" fill="#9a4b05">OpenMCX system</text>
+  <g font-size="12" fill="#1f2937" text-anchor="middle">
+    <rect x="520" y="100" width="130" height="36" rx="8" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="585" y="123">SIP core · .10</text>
+    <rect x="520" y="146" width="130" height="36" rx="8" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="585" y="169">MCPTT server · .20</text>
+    <rect x="520" y="192" width="130" height="36" rx="8" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="585" y="215">MCData server · .21</text>
+    <rect x="520" y="238" width="130" height="36" rx="8" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="585" y="261">MCVideo server · .22</text>
+    <rect x="520" y="284" width="130" height="36" rx="8" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="585" y="307">common services</text>
+  </g>
+  <path d="M470 191 L505 191" stroke="#5b6472" stroke-width="1.6" fill="none" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+
+  <!-- users -->
+  <g font-size="14" fill="#1f2937">
+    <rect x="700" y="110" width="170" height="70" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
+    <text x="785" y="134" text-anchor="middle" font-weight="600">client-b · .102</text>
+    <text x="785" y="152" text-anchor="middle" font-size="12" fill="#4b5563">bob, the client page</text>
+    <text x="785" y="169" text-anchor="middle" font-size="12" fill="#4b5563">in your browser</text>
+    <rect x="700" y="210" width="170" height="70" rx="12" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
+    <text x="785" y="234" text-anchor="middle" font-weight="600">client-c · .103</text>
+    <text x="785" y="252" text-anchor="middle" font-size="12" fill="#4b5563">headless user</text>
+    <text x="785" y="269" text-anchor="middle" font-size="12" fill="#4b5563">driven by run.sh</text>
+  </g>
+  <path d="M700 145 L665 175" stroke="#5b6472" stroke-width="1.6" fill="none" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  <path d="M700 245 L665 215" stroke="#5b6472" stroke-width="1.6" fill="none" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+
+  <text x="585" y="384" text-anchor="middle" font-size="12" fill="#4b5563">lab network 172.31.101.0/24 (openmcx-ag01)</text>
+  <text x="585" y="400" text-anchor="middle" font-size="12" fill="#4b5563">SIP in clear, speech, video, floor and transmission control</text>
+</svg>
