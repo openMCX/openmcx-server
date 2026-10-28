@@ -220,7 +220,12 @@ func (svc *service) refreshTTL() time.Duration {
 func (svc *service) refreshGrant(writer http.ResponseWriter, request *http.Request) {
 	invalid := func() { writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_grant"}) }
 	token := request.Form.Get("refresh_token")
-	if token == "" || request.Form.Get("client_id") != svc.cfg.OAuthClientID {
+	// RFC 6749 sections 5.2 and 6: the refresh_token parameter is REQUIRED ("invalid_request" without it).
+	if token == "" {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+		return
+	}
+	if request.Form.Get("client_id") != svc.cfg.OAuthClientID {
 		invalid()
 		return
 	}
@@ -232,12 +237,13 @@ func (svc *service) refreshGrant(writer http.ResponseWriter, request *http.Reque
 		invalid()
 		return
 	}
-	// RFC 6749 section 6 and TS 33.180 table B.5.2-1: a narrower scope may be asked for, never a wider one.
+	// RFC 6749 section 6 and TS 33.180 table B.5.2-1: a narrower scope may be asked for, never a wider one (RFC 6749
+	// section 5.2: "invalid_scope", the scope "exceeds the scope granted by the resource owner").
 	scope := record.Scope
 	if asked := request.Form.Get("scope"); asked != "" {
 		for _, word := range strings.Fields(asked) {
 			if !containsWord(record.Scope, word) {
-				invalid()
+				writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_scope"})
 				return
 			}
 		}
@@ -322,6 +328,8 @@ func (svc *service) issueTokens(writer http.ResponseWriter, user User, scope, no
 		fail()
 		return
 	}
+	// RFC 6749 section 5.1: "Cache-Control" no-store (writeJSON) and "Pragma" no-cache.
+	writer.Header().Set("Pragma", "no-cache")
 	writeJSON(writer, http.StatusOK, map[string]any{"access_token": access, "id_token": id, "refresh_token": refresh,
 		"token_type": "Bearer", "expires_in": svc.cfg.TokenTTLSeconds})
 }

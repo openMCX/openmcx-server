@@ -176,11 +176,13 @@ struct SecureStream::Impl {
   std::uint32_t ssrc;
   srtp_t outbound = nullptr, inbound = nullptr;
   bool sent_rtp = false;
+  // A failed re-key (rekey): no packet is protected or unprotected any more.
+  bool broken = false;
   std::uint16_t last_sequence = 0;
 
   // TS 33.180 tables E.2.2-1, E.3.2-1 and E.4.2-1: an AEAD_AES_128_GCM policy with a 16-byte tag, no key
-  // derivation rate, and the master key selected by its MKI.
-  srtp_t create() {
+  // derivation rate, and the master key selected by its MKI; use(policy) runs while the policy is valid.
+  template <class Use> srtp_err_status_t with_policy(Use use) {
     srtp_policy_t policy{};
     srtp_crypto_policy_set_aes_gcm_128_16_auth(&policy.rtp);
     srtp_crypto_policy_set_aes_gcm_128_16_auth(&policy.rtcp);
@@ -195,9 +197,44 @@ struct SecureStream::Impl {
     srtp_master_key_t *keys[] = {&key};
     policy.keys = keys;
     policy.num_master_keys = 1;
+    return use(policy);
+  }
+
+  srtp_t create() {
     srtp_t ctx = nullptr;
-    require(srtp_create(&ctx, &policy));
+    require(with_policy([&ctx](const srtp_policy_t &policy) { return srtp_create(&ctx, &policy); }));
     return ctx;
+  }
+
+  // RFC 3711 section 3.4: "The SRTCP index MUST be set to zero before the first SRTCP packet is sent, and MUST be
+  // incremented by one, modulo 2^31, after each SRTCP packet is sent. In particular, after a re-key, the SRTCP index
+  // MUST NOT be reset to zero again." (TS 33.180 clauses 9.4.7 and 9.4.8 use SRTCP "as defined in IETF RFC 3711").
+  // A re-key changes the master key within the crypto context of the stream (RFC 3711 section 3.2.1: the context
+  // holds "the master key(s)", and section 8.1 re-keys "by associating a master key in a crypto context with an
+  // MKI"); the context, and with it the replay list (section 3.2.1, section 3.3.2: "Only packets with index ahead
+  // of the window, or, inside the window but not already received, SHALL be accepted"), stays. srtp_update_stream()
+  // of libsrtp 2.8.1 replaces the keys of the ssrc_specific stream and restores its SRTCP replay database
+  // (rtcp_rdb: the sender's next index and the receiver's window) and its extended RTP index (rtp_rdbx.index), so
+  // both contexts keep their SRTCP state under the new key. The two contexts are updated one after the other, so a
+  // failure can leave one direction under the old key and the other under the new one, or none at all: any failed
+  // re-key breaks the stream, which then refuses every later packet in both directions (process); its index is
+  // never restarted and its SSRC is not used again under the new key.
+  void rekey(const SecurityMaterial &next) {
+    try {
+      if (broken) throw std::runtime_error("SRTP stream broken by a failed re-key");
+      if (next.mki.size() != material.mki.size() || next.media != material.media ||
+          next.transmit_roc != material.transmit_roc)
+        throw std::invalid_argument("re-key with another protection profile");
+      // The copy is made here, so that a failure to make it breaks the stream as well.
+      SecurityMaterial value = next;
+      OPENSSL_cleanse(material.master_key_salt.data(), material.master_key_salt.size());
+      material = std::move(value);
+      require(with_policy([this](const srtp_policy_t &policy) { return srtp_update_stream(outbound, &policy); }));
+      require(with_policy([this](const srtp_policy_t &policy) { return srtp_update_stream(inbound, &policy); }));
+    } catch (...) {
+      broken = true;
+      throw;
+    }
   }
 
   // Helper: checks the MKI length of the profile and creates both contexts.
@@ -227,6 +264,7 @@ struct SecureStream::Impl {
   // TS 33.180 clause 7.5.2 (and RFC 4771 for the ROC): protects or unprotects one RTP or RTCP packet; a received ROC
   // is verified in a disposable context before it changes the inbound state.
   Bytes process(std::span<const std::uint8_t> packet, bool rtcp, bool protect) {
+    if (broken) throw std::runtime_error("SRTP stream broken by a failed re-key");
     if (!rtcp && !material.media) throw std::invalid_argument("CSK is restricted to SRTCP");
     const std::size_t minimum = rtcp ? 8 : 12;
     if (packet.size() < minimum || packet.size() > 65535 || (packet[0] >> 6) != 2 ||
@@ -294,6 +332,10 @@ SecureStream::SecureStream(SecurityMaterial material, std::uint32_t ssrc)
 //------------------------------------------------------------------------------
 // Helper: frees the SRTP contexts.
 SecureStream::~SecureStream() = default;
+
+//------------------------------------------------------------------------------
+// RFC 3711 sections 3.4 and 8.1: a new master key for the stream, keeping its SRTCP index and replay list.
+void SecureStream::rekey(const SecurityMaterial &material) { impl_->rekey(material); }
 
 //------------------------------------------------------------------------------
 // TS 33.180 clause 7.5.2: protects an outbound RTP packet (SRTP).

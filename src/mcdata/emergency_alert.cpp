@@ -19,7 +19,12 @@ void DataServer::alert_message(const User &target, mcdata::Info info, const std:
   info.request_uri = target.id;
   std::vector<BodyPart> parts{{mcdata::info_mime, mcdata::info_xml(info)}};
   if (!location.empty()) parts.push_back({mcdata::location_mime, location});
-  parts = seal_for(target.sip, std::move(parts));
+  try {
+    parts = seal_for(target.sip, std::move(parts));
+  } catch (const CskExpired &error) {
+    // TS 33.180 annex E.6.10: the recipient's CSK may no longer be used: this message is not sent (never in the clear).
+    return csk_expired_not_sent(target.id, "alert", error);
+  }
   const auto boundary = "mcdata-" + random_id();
   sip_.request("MESSAGE", target.sip,
                parts.size() == 1 ? std::string(mcdata::info_mime) : "multipart/mixed; boundary=" + boundary,

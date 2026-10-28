@@ -230,6 +230,17 @@ int main() {
     check(server.size() == 2 && server[0].q == 0.9 && server[1].port_s == 6101, "Security-Server parsed");
     const auto chosen = select_mechanism(server);
     check(chosen && chosen->spi_c == 3333U && chosen->ealg == "aes-cbc", "hmac-sha-1-96 chosen");
+    // The Security-Server of a test system's 401 as sent (ealg after q, no prot/mod): TS 33.203 clause 7.2, the first
+    // supported combination of the list, hmac-sha-1-96/aes-cbc; hmac-md5-96 (removed from annex H) is not taken.
+    const auto system = select_mechanism(parse_sec_mechanisms(
+        "ipsec-3gpp;alg=hmac-sha-1-96;spi-c=257;spi-s=256;port-c=5061;port-s=5062;q=0.9;ealg=aes-cbc,"
+        "ipsec-3gpp;alg=hmac-md5-96;spi-c=257;spi-s=256;port-c=5061;port-s=5062;q=0.7;ealg=aes-cbc"));
+    check(system && system->alg == "hmac-sha-1-96" && system->ealg == "aes-cbc" && system->spi_c == 257U &&
+              system->port_s == 5062U,
+          "test system Security-Server: hmac-sha-1-96/aes-cbc chosen");
+    check(!select_mechanism(parse_sec_mechanisms(
+              "ipsec-3gpp;alg=hmac-md5-96;spi-c=257;spi-s=256;port-c=5061;port-s=5062;q=0.7;ealg=aes-cbc")),
+          "hmac-md5-96 alone accepted");
     // TS 33.203 clause 7.2: no ealg: NULL encryption.
     const auto null = select_mechanism(
         parse_sec_mechanisms("ipsec-3gpp;alg=hmac-sha-1-96;spi-c=1;spi-s=2;port-c=3;port-s=4;prot=esp;mod=trans"));
@@ -262,11 +273,51 @@ int main() {
 
     // TS 33.203 annex I.
     const auto ik = bytes<16>(test_sets[0].f4), ck = bytes<16>(test_sets[0].f3);
-    const auto ik_esp = integrity_key_esp("hmac-sha-1-96", ik);
+    const auto ik_esp = integrity_key_esp("hmac-sha-1-96", ck, ik);
     check(ik_esp.size() == 20 && std::equal(ik.begin(), ik.end(), ik_esp.begin()) && ik_esp[16] == 0 && ik_esp[19] == 0,
           "IK_ESP = IK || 32 zero bits");
     check(encryption_key_esp("aes-cbc", ck) == std::vector<std::uint8_t>(ck.begin(), ck.end()), "CK_ESP = CK");
     check(encryption_key_esp("null", ck).empty(), "NULL has no key");
+    // KDF of TS 33.220 annex B over CK || IK (known answers computed independently with Python's hmac module).
+    check(hex(integrity_key_esp("hmac-sha2-256-128", ck, ik)) ==
+              "9e98fd635ce304d820de064bea152b645b2fa171ba99416e3a3e90f5f9687c9e",
+          "HMAC-SHA2-256-128 IK_ESP = KDF(CK || IK, 0x5A, \"HMAC-SHA2-256-128\")");
+    check(integrity_key_esp("aes-gmac-us", ck, ik) == std::vector<std::uint8_t>(ik.begin(), ik.end()), "GMAC: IK");
+    check(encryption_key_esp("aes-gcm-us", ck) == std::vector<std::uint8_t>(ck.begin(), ck.end()), "GCM: CK");
+    check(hex(esp_salt("null", "aes-gcm", ck, ik)) == "89273db6", "AES-GCM salt (FC 0x59, low 32 bits)");
+    check(hex(esp_salt("aes-gmac", "null", ck, ik)) == "dbc2b1c2", "AES-GMAC salt (FC 0x58, low 32 bits)");
+    check(esp_salt("hmac-sha-1-96", "aes-cbc", ck, ik).empty(), "no salt for AES-CBC");
+    const auto salt = esp_salt("null", "aes-gcm-us", ck, ik);
+    check(hex(sa_salt(salt, "null", "aes-gcm-us", false, false)) == "89273db6" &&
+              hex(sa_salt(salt, "null", "aes-gcm-us", true, false)) == "89273db7" &&
+              hex(sa_salt(salt, "null", "aes-gcm-us", false, true)) == "89273db4" &&
+              hex(sa_salt(salt, "null", "aes-gcm-us", true, true)) == "89273db5",
+          "unique salt: direction bit on the LSB, role bit on the second LSB");
+    check(hex(sa_salt(salt, "null", "aes-gcm", true, true)) == "89273db6", "aes-gcm: one salt for every SA");
+    bool unsupported = false;
+    try {
+      (void)integrity_key_esp("hmac-md5-96", ck, ik);
+    } catch (const std::invalid_argument &) {
+      unsupported = true;
+    }
+    check(unsupported, "hmac-md5-96 (removed from annex H) refused");
+
+    // Annex H: the offer lists every supported combination, AES-GCM with unique salt first; the UE takes the first
+    // combination of the P-CSCF's list it supports, and none of the removed algorithms.
+    const auto offers = esp_offers(offer);
+    check(offers.size() == supported_esp_algorithms().size() && offers.front().ealg == "aes-gcm-us" &&
+              offers.front().alg == "null" && offers.front().q == 0.9 && offers.back().alg == "hmac-sha-1-96",
+          "offers: one per combination, by preference");
+    check(format_sec_mechanisms({offers[0], offers[1]}) ==
+              "ipsec-3gpp;q=0.9;alg=null;ealg=aes-gcm-us;prot=esp;mod=trans;spi-c=11;spi-s=12;port-c=13;port-s=14, "
+              "ipsec-3gpp;q=0.8;alg=null;ealg=aes-gcm;prot=esp;mod=trans;spi-c=11;spi-s=12;port-c=13;port-s=14",
+          "Security-Client list text");
+    const auto gcm = select_mechanism(parse_sec_mechanisms(
+        "ipsec-3gpp;q=0.9;alg=hmac-md5-96;ealg=des-ede3-cbc;spi-c=1;spi-s=2;port-c=3;port-s=4, "
+        "ipsec-3gpp;q=0.8;alg=NULL;ealg=AES-GCM-US;spi-c=5;spi-s=6;port-c=7;port-s=8, "
+        "ipsec-3gpp;q=0.7;alg=hmac-sha-1-96;ealg=aes-cbc;spi-c=9;spi-s=10;port-c=11;port-s=12"));
+    check(gcm && gcm->spi_c == 5U && gcm->alg == "null" && gcm->ealg == "aes-gcm-us",
+          "P-CSCF's first supported combination, in lower case");
     check(key_from_hex("465b5ce8b199b49faa5f0a2ee238a6bc") == k && amf_from_hex("8000") == amf, "hex keys");
   } catch (const std::exception &error) {
     std::cerr << "ims_aka: " << error.what() << '\n';

@@ -112,7 +112,14 @@ std::vector<SipHeader> LocationService::report_headers() const {
 // reported.
 void LocationService::to_client(const LocationUser &target, std::vector<BodyPart> parts,
                                 const std::vector<SipHeader> &headers, const std::string &what) {
-  parts = host_.seal_for_client(target.sip, std::move(parts));
+  // A body that cannot be protected for the client (TS 33.180 annex E.6.10: its CSK may no longer be used) is not
+  // sent.
+  try {
+    parts = host_.seal_for_client(target.sip, std::move(parts));
+  } catch (const std::exception &error) {
+    event(event_name("location_message_not_protected"), {{"user_id", target.id}, {"reason", error.what()}});
+    return;
+  }
   std::string type, body;
   if (parts.size() == 1) {
     type = parts.front().content_type;
@@ -323,7 +330,13 @@ void LocationService::notify_area(const LocationUser &user, const std::string &n
   }
   auto headers = client_headers();
   headers.push_back({"Accept-Contact", feature_accept(service_)});
-  const auto parts = host_.seal_for_client(user.sip, host_.location_info_parts(info));
+  std::vector<BodyPart> parts;
+  try {
+    parts = host_.seal_for_client(user.sip, host_.location_info_parts(info)); // not sent unprotected (to_client)
+  } catch (const std::exception &error) {
+    event(event_name("location_message_not_protected"), {{"user_id", user.id}, {"reason", error.what()}});
+    return;
+  }
   host_.send_message(user.sip, parts.front().content_type, parts.front().body, headers,
                      [this, id = user.id, name, entered](const SipResponse &response) {
                        if (response.status_code < 200) return;

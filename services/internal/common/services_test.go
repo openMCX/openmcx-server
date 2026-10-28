@@ -6,7 +6,11 @@ package common
 
 import (
 	"bytes"
+	"crypto"
+	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -101,13 +105,41 @@ func TestVerifyAccessTokenClaims(test *testing.T) {
 	if err != nil || claims.OpenMCX() || claims.MCPTTID != "sip:alice@mcx.test" {
 		test.Fatalf("another IdMS's access token: %+v %v", claims, err)
 	}
+	// TS 33.180 table B.2.2.2-1 and RFC 7519 sections 4.1.1 and 4.1.3: iss and aud are checked when present, so a
+	// token without them is accepted, as the access token of the annex B.4.2.5 example (mcptt_id, exp, scope and
+	// client_id only).
+	example := map[string]any{"mcptt_id": "alice@org.com", "exp": testNow.Add(time.Minute).Unix(),
+		"scope": "openid 3gpp:mc:ptt_service", "client_id": "mcptt_client"}
+	if claims, err := VerifyAccessToken(sign(example), &key.PublicKey, cfg.Issuer, cfg.ServerClientID, testNow); err != nil ||
+		claims.MCPTTID != "alice@org.com" {
+		test.Fatalf("the access token of annex B.4.2.5: %+v %v", claims, err)
+	}
+	for _, name := range []string{"iss", "aud"} {
+		claims := other()
+		delete(claims, name)
+		if _, err := VerifyAccessToken(sign(claims), &key.PublicKey, cfg.Issuer, cfg.ServerClientID, testNow); err != nil {
+			test.Fatalf("an access token without %s: %v", name, err)
+		}
+	}
+	// TS 33.180 annex B.11.2 and RFC 7519 section 7.2: no rule compares an access token's iat with the clock, so one
+	// issued ahead of it is accepted; an iat that is not a NumericDate (section 4.1.6) is not.
+	ahead := other()
+	ahead["iat"] = testNow.Add(time.Hour).Unix()
+	if _, err := VerifyAccessToken(sign(ahead), &key.PublicKey, cfg.Issuer, cfg.ServerClientID, testNow); err != nil {
+		test.Fatalf("an access token issued ahead of the clock: %v", err)
+	}
 	for name, change := range map[string]func(map[string]any){
+		"other issuer":   func(c map[string]any) { c["iss"] = "https://other.example.test" },
+		"null issuer":    func(c map[string]any) { c["iss"] = nil },
+		"null audience":  func(c map[string]any) { c["aud"] = nil },
+		"no exp":         func(c map[string]any) { delete(c, "exp") },
 		"no scope":       func(c map[string]any) { delete(c, "scope") },
 		"no client_id":   func(c map[string]any) { delete(c, "client_id") },
 		"no MCPTT ID":    func(c map[string]any) { delete(c, "mcptt_id") },
 		"other audience": func(c map[string]any) { c["aud"] = []string{"account"} },
 		"not yet valid":  func(c map[string]any) { c["nbf"] = testNow.Add(time.Minute).Unix() },
 		"an ID token":    func(c map[string]any) { c["token_type"] = "id" },
+		"text iat":       func(c map[string]any) { c["iat"] = "now" },
 		"OpenMCX, no SIP": func(c map[string]any) {
 			c["mc_id"], c["token_type"], c["mc_client_id"] = "alice-mc", "access", "alice-device"
 		},
@@ -120,6 +152,28 @@ func TestVerifyAccessTokenClaims(test *testing.T) {
 		if _, err := VerifyAccessToken(sign(claims), &key.PublicKey, cfg.Issuer, cfg.ServerClientID, testNow); err == nil {
 			test.Fatalf("%s accepted", name)
 		}
+	}
+}
+
+// ------------------------------------------------------------------------------
+// RFC 7515 section 4.1.11: a JWS whose "crit" header parameter lists an extension (none is understood here) is
+// invalid.
+func TestVerifyTokenRejectsCriticalHeader(test *testing.T) {
+	cfg, key := testConfig(), testKey(test)
+	valid := tokenFor(test, cfg, key, "alice", testNow, cfg.ServerClientID)
+	header, err := json.Marshal(map[string]any{"alg": "RS256", "kid": keyID(&key.PublicKey), "crit": []string{"exp"}, "exp": 1})
+	if err != nil {
+		test.Fatal(err)
+	}
+	unsigned := base64.RawURLEncoding.EncodeToString(header) + "." + strings.Split(valid, ".")[1]
+	hash := sha256.Sum256([]byte(unsigned))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, hash[:])
+	if err != nil {
+		test.Fatal(err)
+	}
+	if _, err := VerifyToken(unsigned+"."+base64.RawURLEncoding.EncodeToString(sig), &key.PublicKey, cfg.Issuer,
+		cfg.ServerClientID, testNow); err == nil {
+		test.Fatal("a critical header parameter accepted")
 	}
 }
 

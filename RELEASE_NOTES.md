@@ -11,6 +11,12 @@ common services, a SIP core, the clients and MCX Admin, as containers that start
   (the Linux client, the dispatcher and the Android app `openmcx-client-v1.apk`) do not ask for the configuration and
   group management scopes, so they are refused by these servers: use the clients of the same images (`develop`) or
   `openmcx-client-develop.apk`. The 1.0.0 images keep working together.
+- **XCAP root URIs.** The clients take the GMS and CMS XCAP root URIs as their configuration gives them (TS 24.484
+  clause 7.2.2.7 items 7 and 8) and no longer add `/xcap-root` to the servers' addresses; MCX Admin now puts these
+  XCAP root URIs in the activation package. A client of the `develop` images (the Linux client, the dispatcher or
+  `openmcx-client-develop.apk`) activated through the MCX Admin of release 1.0.0 cannot read its user profile and
+  does not sign in: use the MCX Admin of the same images. A system set up with earlier images needs its setup run
+  again: MCX Admin needs the XCAP root URIs in its configuration. The 1.0.0 images keep working together.
 
 ## What 1.0.0 provides
 

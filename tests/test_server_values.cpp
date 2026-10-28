@@ -4,12 +4,15 @@
 
 // The request values of the MCPTT, MCVideo and MCData servers (src/server/request_values.hpp): the Expires header
 // field, percent-decoding of URI components, the outcome rule of an implicit affiliation and the configuration
-// management documents of a subscription's resource list.
+// management documents of a subscription's resource list; and the implicit floor request rules of the MCPTT server
+// (src/server/implicit_floor.hpp).
 //
-// Specifications: RFC 3261, RFC 3986, RFC 5875, TS 24.379 V19.7.0 (Rel-19), TS 24.484 V19.6.0 (Rel-19).
+// Specifications: RFC 3261, RFC 3986, RFC 5875, TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19),
+// TS 24.484 V19.6.0 (Rel-19).
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
+#include "implicit_floor.hpp"
 #include "request_values.hpp"
 
 #include <cassert>
@@ -81,11 +84,47 @@ static void Clause_6_3_13_3_2_2_ConfigurationDocuments() {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.380 clause 14.3.5: the initial INVITE that initiates a call with floor control is accepted as an implicit
+// floor request; a join of an existing chat group call, a rejoin by session identity (clause 6.2.1 item 2), a call
+// without floor control and an offer without "mc_implicit_request" are not.
+static void Clause_14_3_5_ImplicitFloorAccepted() {
+  assert(implicit_floor_accepted(true, true, true));
+  assert(!implicit_floor_accepted(false, true, true));
+  assert(!implicit_floor_accepted(true, false, true));
+  assert(!implicit_floor_accepted(true, true, false));
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 14.3.6: "mc_ssrc" returns the offer's "a=ssrc" unless it collides, then a new value; nothing
+// without an "a=ssrc".
+static void Clause_14_3_6_McSsrc() {
+  std::uint32_t next = 40;
+  const auto fresh = [&] { return next++; };
+  assert(implicit_audio_ssrc(0, {}, fresh) == 0);
+  assert(implicit_audio_ssrc(17, {}, fresh) == 17);
+  assert(implicit_audio_ssrc(17, {16, 18}, fresh) == 17);
+  assert(implicit_audio_ssrc(17, {17, 40}, fresh) == 41); // collision: a new value, itself not in use
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 6.3.5.2.2 items 1 and 3: with nobody sending media the implicit request is processed as a Floor
+// Request; with another talker it is queued when queueing is negotiated (3b), or answered with Floor Taken (3c).
+static void Clause_6_3_5_2_2_ImplicitFloorOutcome() {
+  assert(implicit_floor_outcome(false, false) == ImplicitFloorOutcome::request);
+  assert(implicit_floor_outcome(false, true) == ImplicitFloorOutcome::request);
+  assert(implicit_floor_outcome(true, true) == ImplicitFloorOutcome::queue);
+  assert(implicit_floor_outcome(true, false) == ImplicitFloorOutcome::taken);
+}
+
+//------------------------------------------------------------------------------
 int main() {
   Section_20_19_Expires();
   Section_2_1_PercentDecoding();
   Clause_9_2_2_3_11_ImplicitAffiliationCancellation();
   Clause_6_3_13_3_2_2_ConfigurationDocuments();
+  Clause_14_3_5_ImplicitFloorAccepted();
+  Clause_14_3_6_McSsrc();
+  Clause_6_3_5_2_2_ImplicitFloorOutcome();
   std::cout << "server request values: all checks passed\n";
   return 0;
 }

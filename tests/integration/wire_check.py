@@ -42,7 +42,58 @@ MCVIDEO = 'sip:mcvideo@mcx.test'
 # ------------------------------------------------------------------------------
 def verifiers(scenario, flags):
     """The server to capture at and the verifier command lines (without capture and output) of a scenario in a lab
-    with flags; None when the scenario has no wire verifier."""
+    with flags; None when the scenario has no wire verifier. With --integrity-protection, verify_xml_signatures.py
+    also checks that every XML body is signed (TS 33.180 clause 9.3.5), at the scenario's server."""
+    found = scenario_verifiers(scenario, flags)
+    # TS 24.481 clause 6.3.13.2.1 step b: with a GMS-URI apart from the MCPTT PSI, the Request-URIs of the group
+    # document and GKTP subscriptions, at the MCPTT server.
+    if '--gms-user' in flags and scenario in GMS_URI_SCENARIOS:
+        gms = 'sip:' + flags[flags.index('--gms-user') + 1] + '@mcx.test'
+        command = ['verify_subscription_uris.py', '--gms-uri', gms, '--service', MCPTT]
+        # TS 24.481 clause 6.3.13.2.2: the MCData server's own group document subscriptions.
+        if '--mcdata' in flags:
+            command += ['--mcs-server', MCDATA]
+        found = ('mcptt-server', (found[1] if found else []) + [command])
+    # TS 24.484 and TS 24.481 clause 6.3.13: the CMS, GMS and GKTP subscriptions without identity hiding stay
+    # unprotected in labs with XML protection, before and after the service authorisation.
+    if '--xml-protection' in flags or '--integrity-protection' in flags:
+        cases = SUBSCRIPTION_CASES.get(scenario, '') if '--documents-on-notify' in flags else ''
+        if found or cases:
+            server, commands = found if found else ('mcptt-server', [])
+            found = (server, commands + [['verify_subscription_protection.py'] + (['--require', cases] if cases else [])])
+    if '--integrity-protection' not in flags:
+        return found
+    server = found[0] if found else SIGNED_SCENARIO_SERVERS.get(scenario)
+    if not server:
+        return found
+    return server, (found[1] if found else []) + [['verify_xml_signatures.py']]
+
+
+# The subscription cases verify_subscription_protection.py requires of a scenario in a --documents-on-notify lab.
+SUBSCRIPTION_CASES = {
+    # No document changes after the authorisation here, so no NOTIFY follows it: 'authorised' is
+    # group_management_scenario's and service_logoff_scenario's.
+    'xml_key_scenario': 'bootstrap',
+    'group_management_scenario': 'bootstrap,authorised,update,refresh,gktp',
+    'service_logoff_scenario': 'bootstrap,authorised,termination',
+    'bootstrap_recovery_scenario': 'bootstrap,unauthorised-refresh,unauthorised-termination',
+}
+
+
+# The scenarios that subscribe to group documents or GKTP documents (verify_subscription_uris.py with --gms-user).
+GMS_URI_SCENARIOS = ('group_management_scenario', 'prearranged_scenario', 'mcdata_group_subscription_scenario')
+
+
+# The scenarios of the XML integrity labs without a wire verifier of their own, and the server they run at.
+SIGNED_SCENARIO_SERVERS = {
+    'xml_protection_scenario': 'mcptt-server',
+}
+
+
+# ------------------------------------------------------------------------------
+def scenario_verifiers(scenario, flags):
+    """The server to capture at and the scenario's own verifier command lines in a lab with flags; None when the
+    scenario has no wire verifier."""
     protected = '--protected' in flags
     if scenario == 'prearranged_scenario':
         if '--mcvideo' in flags or '--admin' in flags:
@@ -64,6 +115,18 @@ def verifiers(scenario, flags):
             [['verify_remote_group_call.py', '--service', MCPTT, '--group', 'sip:operations@mcx.test']],
         ),
         'ambient_listening_scenario': ('mcptt-server', [['verify_ambient_listening.py', '--service', MCPTT]]),
+        'implicit_floor_scenario': ('mcptt-server', [['verify_implicit_floor.py', '--service', MCPTT]]),
+        'xml_key_scenario': (
+            'mcptt-server',
+            [
+                ['verify_xml_keys.py', '--users', '3' if '--kms-unreachable' in flags else '4']
+                + (['--confidentiality'] if '--xml-protection' in flags else [])
+                + (['--integrity'] if '--integrity-protection' in flags else [])
+                + (['--documents-first'] if '--documents-on-notify' in flags else [])
+            ],
+        ),
+        'reinvite_ssrc_scenario': ('mcptt-server', [['verify_reinvite_ssrc.py']]),
+        'held_rekey_scenario': ('mcptt-server', [['verify_held_rekey.py']]),
         'first_to_answer_emergency_scenario': (
             'mcptt-server',
             [['verify_first_to_answer_emergency.py', '--service', MCPTT, '--emergency-priority', 'mcpttp.15']],
@@ -88,7 +151,11 @@ def verifiers(scenario, flags):
         'protected_private_scenario': ('mcptt-server', [['verify_protected_private.py']]),
         'register_authorisation_scenario': (
             'mcptt-server',
-            [['verify_third_party_register.py'] + (['--protected'] if protected else [])],
+            [
+                ['verify_third_party_register.py']
+                + (['--protected'] if '--xml-protection' in flags else [])
+                + (['--integrity'] if '--integrity-protection' in flags else [])
+            ],
         ),
         'mcdata_location_scenario': (
             'mcdata-server',
@@ -182,7 +249,7 @@ def start(args, cli):
     with open(pcap, 'wb') as out, open(log, 'wb') as err:
         subprocess.Popen(
             ['docker', 'run', '--rm', '--name', name, '--network', f'container:{server}', '--cap-drop', 'ALL']
-            + ['--cap-add', 'NET_RAW', 'openmcx-dev:0.3', 'tcpdump', '-Z', 'root', '-i', 'eth0', '-U']
+            + ['--cap-add', 'NET_RAW', 'openmcx-dev:0.4', 'tcpdump', '-Z', 'root', '-i', 'eth0', '-U']
             + ['--immediate-mode', '-s', '0', '-w', '-', 'tcp or (udp and not port 53)'],
             stdout=out,
             stderr=err,

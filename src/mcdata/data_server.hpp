@@ -51,6 +51,14 @@
 #include <sstream>
 
 namespace mcx {
+//------------------------------------------------------------------------------
+// TS 33.180 annex E.6.10: "The 'Expiry time' element shall define the time in UTC at which the associated key shall
+// no longer be used". A client's CSK that is past its Expiry time (or revoked, annex E.6.9) and would be needed to
+// protect or open a message: the message is not sent to that client, or is refused; never sent or taken in the clear.
+struct CskExpired : std::runtime_error {
+  using std::runtime_error::runtime_error;
+};
+
 class DataServer {
   // The binding of MCData ID, MCData client ID and public user identity (TS 24.282 clause 7.3.3 step 5a), with the
   // affiliated MCData groups (TS 24.282 clause 8.3), the affiliation status subscription (clause 8.3.2.4) and the CSK
@@ -105,7 +113,13 @@ class DataServer {
   // encrypted with the client's CSK as the XPK, keyed to the client's MCData ID.
   unsigned xml_encrypted_ = 0, xml_decrypted_ = 0, xml_refused_ = 0;
 
-  bool protects_xml() const { return keys_ && cfg_.at("mcdata").value("confidentiality_protection", false); }
+  // TS 24.282 clauses 6.5.2.3.2 and 6.5.3.3.2: the signalling protection of the MCData service configuration document
+  // ("set to "true" or no [...] element is present"); nothing until it has been read (service_protection_of).
+  std::optional<ServiceProtection> signalling_protection_;
+
+  // The requirements alone (TS 24.282 clause 6.5.2.3.2): without the client's CSK a message they apply to is not sent
+  // (sign_outgoing), never in the clear. False until the service configuration document has been read.
+  bool protects_xml() const { return signalling_protection_ && signalling_protection_->confidentiality; }
 
   static xmlsec::Key xml_key_of(const keying::KeyMessage &csk, const std::string &id);
 
@@ -119,6 +133,21 @@ class DataServer {
 
   std::vector<BodyPart> decrypt_xml(const std::optional<xmlsec::Key> &key, std::vector<BodyPart> parts);
 
+  // TS 24.282 clause 6.5.3 with TS 33.180 clause 9.3.5: integrity protection of the XML MIME bodies with clients, each
+  // body signed under the client's CSK in an application/vnd.3gpp.mcptt-signed+xml body (TS 24.379 annex F.6).
+  static constexpr const char *signed_mime = "application/vnd.3gpp.mcptt-signed+xml";
+  unsigned xml_signed_ = 0, xml_verified_ = 0;
+
+  // TS 24.282 clause 6.5.3.3.2: integrity protection from the service configuration document, as protects_xml().
+  bool integrity_protection() const { return signalling_protection_ && signalling_protection_->integrity; }
+
+  std::vector<BodyPart> sign_outgoing(const SipTransmission &transmission, std::vector<BodyPart> parts);
+
+  std::vector<BodyPart> verify_incoming(const SipTransmission &transmission, std::vector<BodyPart> parts);
+
+  std::optional<SipResponse> verify_signatures(std::vector<BodyPart> &parts, const std::optional<xmlsec::Key> &key,
+                                               const std::string &user);
+
   std::vector<std::pair<std::string, std::string>> seal_msrp(const std::string &owner,
                                                              std::vector<std::pair<std::string, std::string>> bodies);
 
@@ -127,6 +156,14 @@ class DataServer {
   std::vector<BodyPart> seal_for(const std::string &sip, std::vector<BodyPart> parts);
 
   std::vector<BodyPart> open_from(const keying::KeyMessage &key, std::vector<BodyPart> parts);
+
+  static void require_key_in_use(const keying::KeyMessage &csk);
+
+  void require_xpk_in_use(const xmlsec::Key &key) const;
+
+  void require_csk_in_use(const std::string &sip, const std::vector<BodyPart> &parts) const;
+
+  void csk_expired_not_sent(const std::string &user, const char *what, const std::exception &error);
 
   Control control_;
   SipEngine sip_;
@@ -812,10 +849,14 @@ class DataServer {
       if (session->endpoint) session->endpoint->poll();
       if (!session->pending.empty() && session->endpoint && session->endpoint->connected()) {
         session->deadline = now + cfg_.at("mcdata").value("media", Json::object()).value("session_ms", 60000u);
-        session->endpoint->send_parts(seal_msrp(session->owner, session->pending));
+        try {
+          session->endpoint->send_parts(seal_msrp(session->owner, session->pending));
+          count("media_delivered");
+          event("mcdata_media_sds_delivered", {{"user_id", session->target}, {"message_id", session->message_id}});
+        } catch (const CskExpired &error) {
+          csk_expired_not_sent(session->owner, "media", error); // TS 33.180 annex E.6.10: not sent
+        }
         session->pending.clear();
-        count("media_delivered");
-        event("mcdata_media_sds_delivered", {{"user_id", session->target}, {"message_id", session->message_id}});
       }
       if (!session->pending_file.empty() && session->endpoint && session->endpoint->connected()) {
         // TS 24.582 clause 7.2.3: the file follows the binding of the recipient's connection.

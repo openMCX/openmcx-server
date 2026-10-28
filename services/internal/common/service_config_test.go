@@ -101,3 +101,98 @@ func TestServiceConfigurationValidation(test *testing.T) {
 		test.Fatal("an unknown timer was accepted")
 	}
 }
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clauses 8.4.2.1, 9.4.2.1 and 10.4.2.1, TS 24.379 clauses 6.6.2.3 and 6.6.3.3: the signalling protection
+// elements are written only with the values the site sets, valid against the schemas; an element not written means
+// enabled, which the servers' view gives as true.
+func TestServiceConfigurationProtection(test *testing.T) {
+	key := testKey(test)
+	off, on := false, true
+	for _, tc := range []struct {
+		name     string
+		sc       ServiceConfiguration
+		auid     string
+		schema   *documentSchema
+		service  string
+		want     []string
+		absent   []string
+		expected map[string]any
+	}{
+		{"absent", ServiceConfiguration{}, "org.3gpp.mcptt.service-config", mcpttServiceConfigSchema, "mcptt", nil,
+			[]string{"signalling-protection", "protection-between-mcptt-servers"},
+			map[string]any{"confidentiality": true, "integrity": true, "allow_signalling": true, "allow_floor_control": true}},
+		{"off", ServiceConfiguration{MCPTT: &MCPTTServiceConfiguration{
+			SignallingProtection:     &SignallingProtection{Confidentiality: &off, Integrity: &off},
+			ProtectionBetweenServers: &MCPTTServerProtection{AllowSignalling: &off, AllowFloorControl: &on}}},
+			"org.3gpp.mcptt.service-config", mcpttServiceConfigSchema, "mcptt",
+			[]string{"</fc-timers-counters><signalling-protection><confidentiality-protection>false</confidentiality-protection><integrity-protection>false</integrity-protection></signalling-protection>" +
+				"<protection-between-mcptt-servers><allow-signalling-protection>false</allow-signalling-protection><allow-floor-control-protection>true</allow-floor-control-protection></protection-between-mcptt-servers><emergency-resource-priority>"},
+			nil, map[string]any{"confidentiality": false, "integrity": false, "allow_signalling": false, "allow_floor_control": true}},
+		{"integrity only", ServiceConfiguration{MCVideo: &MCVideoServiceConfiguration{
+			SignallingProtection:     &SignallingProtection{Confidentiality: &off},
+			ProtectionBetweenServers: &MCVideoServerProtection{AllowTransmissionControl: &off}}},
+			"org.3gpp.mcvideo.service-config", mcvideoServiceConfigSchema, "mcvideo",
+			[]string{"<on-network><signalling-protection><confidentiality-protection>false</confidentiality-protection></signalling-protection>" +
+				"<protection-between-mcvideo-servers><allow-transmission-control-protection>false</allow-transmission-control-protection></protection-between-mcvideo-servers>"},
+			[]string{"<integrity-protection>", "<allow-signalling-protection>"},
+			map[string]any{"confidentiality": false, "integrity": true, "allow_signalling": true, "allow_transmission_control": false}},
+		{"mcdata", ServiceConfiguration{MCData: &MCDataServiceConfiguration{
+			SignallingProtection:     &SignallingProtection{Integrity: &on},
+			ProtectionBetweenServers: &MCDataServerProtection{AllowSignalling: &off}}},
+			"org.3gpp.mcdata.service-config", mcdataServiceConfigSchema, "mcdata",
+			[]string{"<on-network><signalling-protection><integrity-protection>true</integrity-protection></signalling-protection>" +
+				"<protection-between-mcdata-servers><allow-signalling-protection>false</allow-signalling-protection></protection-between-mcdata-servers><file-availability>"},
+			nil, map[string]any{"confidentiality": true, "integrity": true, "allow_signalling": false}},
+	} {
+		cfg := testConfig()
+		cfg.ServiceConfig = tc.sc
+		cms := roleHandler(test, RoleCMS, cfg, key, test.TempDir())
+		alice := tokenFor(test, cfg, key, "alice", testNow, cfg.ServerClientID)
+		rr := httptest.NewRecorder()
+		cms.ServeHTTP(rr, bearerRequest("GET", "/xcap-root/"+tc.auid+"/global/service-config.xml", alice, nil))
+		body := rr.Body.String()
+		if rr.Code != http.StatusOK {
+			test.Fatalf("%s: status %d", tc.name, rr.Code)
+		}
+		if err := tc.schema.validate(rr.Body.Bytes()); err != nil {
+			test.Fatalf("%s fails its schema: %v\n%s", tc.name, err, body)
+		}
+		for _, want := range tc.want {
+			if !strings.Contains(body, want) {
+				test.Fatalf("%s lacks %s:\n%s", tc.name, want, body)
+			}
+		}
+		for _, absent := range tc.absent {
+			if strings.Contains(body, absent) {
+				test.Fatalf("%s has %s:\n%s", tc.name, absent, body)
+			}
+		}
+		rr = httptest.NewRecorder()
+		request := httptest.NewRequest("GET", "/internal/service-config?service="+tc.service, nil)
+		request.SetBasicAuth(cfg.ServerClientID, cfg.ServerSecret)
+		cms.ServeHTTP(rr, request)
+		var view struct {
+			Signalling map[string]bool `json:"signalling_protection"`
+			Between    map[string]bool `json:"protection_between_servers"`
+		}
+		if rr.Code != http.StatusOK || json.Unmarshal(rr.Body.Bytes(), &view) != nil {
+			test.Fatalf("%s: internal view %d %s", tc.name, rr.Code, rr.Body.String())
+		}
+		got := map[string]any{}
+		for name, value := range view.Signalling {
+			got[name] = value
+		}
+		for name, value := range view.Between {
+			got[name] = value
+		}
+		if len(got) != len(tc.expected) {
+			test.Fatalf("%s: internal view %v, want %v", tc.name, got, tc.expected)
+		}
+		for name, value := range tc.expected {
+			if got[name] != value {
+				test.Fatalf("%s: internal view %v, want %v", tc.name, got, tc.expected)
+			}
+		}
+	}
+}

@@ -85,12 +85,13 @@ func TestRefreshTokenGrant(test *testing.T) {
 		test.Fatalf("refreshed ID token: %+v %v", id, err)
 	}
 
-	// A wider scope, another client or nothing at all are refused.
-	if status, out := refreshWith(handler, second.RefreshToken, url.Values{"scope": {"openid 3gpp:mc:ptt_service"}}); status != http.StatusBadRequest || out.Error != "invalid_grant" {
+	// A wider scope (RFC 6749 section 5.2: invalid_scope), another client or nothing at all (invalid_request) are
+	// refused.
+	if status, out := refreshWith(handler, second.RefreshToken, url.Values{"scope": {"openid 3gpp:mc:ptt_service"}}); status != http.StatusBadRequest || out.Error != "invalid_scope" {
 		test.Fatalf("wider scope: %d %+v", status, out)
 	}
-	if status, _ := refreshWith(handler, "", nil); status != http.StatusBadRequest {
-		test.Fatalf("no token: %d", status)
+	if status, out := refreshWith(handler, "", nil); status != http.StatusBadRequest || out.Error != "invalid_request" {
+		test.Fatalf("no token: %d %+v", status, out)
 	}
 	// The scope check used (retired) second's token: the chain continues from a fresh sign-in.
 	third := signIn(test, handler, "alice", "alice-password")

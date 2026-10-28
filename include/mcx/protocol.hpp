@@ -204,6 +204,24 @@ unsigned parse_profile_index(std::string_view xml);
 // Resource-Priority header field values of an MCPTT, MCVideo or MCData service configuration document, by level
 // ("emergency", "imminent", "normal"), each "<namespace>.<priority>" (RFC 4412 with RFC 8101).
 std::map<std::string, std::string> parse_service_resource_priorities(std::string_view xml);
+
+//------------------------------------------------------------------------------
+// TS 24.484 clauses 8.4.2.1, 9.4.2.1 and 10.4.2.1: the signalling protection of a service configuration document,
+// each true when its element is "true" or absent (TS 24.379 clauses 6.6.2.3 and 6.6.3.3): confidentiality and
+// integrity protection between the clients and the server (<signalling-protection>), protection of the signalling
+// between servers (<allow-signalling-protection>) and of the floor or transmission control signalling between
+// servers (<allow-floor-control-protection>, <allow-transmission-control-protection>; MCData has none: true).
+struct ServiceProtection {
+  bool confidentiality = true, integrity = true, between_servers = true, between_servers_control = true;
+};
+
+ServiceProtection parse_service_protection(std::string_view xml);
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 7.2.2.1 item 4 and clause 7.2.2.7 item 5 (TS 24.483 clause 8.2.9 GMSURI): the <GMS-URI> of the
+// <on-network> element of an MCS UE initial configuration document, "the public service identity for performing
+// subscription proxy function of the GMS".
+std::string parse_initial_gms_uri(std::string_view xml);
 //------------------------------------------------------------------------------
 // TS 24.481 clause 7.2.4.2: <preconfigured-group-use-only> of a group document (<list-service>): calls on
 // the group are not allowed (TS 24.379 clause 10.1.5.2.1 step 1A, warning 167 of TS 24.379 table 4.4.2-2).
@@ -306,7 +324,8 @@ struct MediaDescription {
   MediaControl control = MediaControl::floor;
   std::optional<VideoMedia> video; // MCVideo only
   // MCVideo transmission control (TS 24.581 clause 12.1.2): mc_granted, and the
-  // mc_audio_ssrc and mc_video_ssrc an answer grants to the offerer.
+  // mc_audio_ssrc and mc_video_ssrc an answer grants to the offerer. MCPTT floor control (TS 24.380 clauses 14.3.6
+  // and 14.4): granted_audio_ssrc is the "mc_ssrc" an answer returns for an implicit floor request.
   bool granted = false;
   std::uint32_t granted_audio_ssrc = 0, granted_video_ssrc = 0;
   std::string address, floor_address;

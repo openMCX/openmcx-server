@@ -22,14 +22,12 @@ std::string McServer::pre_established_uri() const {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 11.1.6.2.1.1 steps 12 and 13: an implicit floor request (mc_implicit_request) is accepted only
-// in an ambient listening call. TS 24.379 clause 11.1.2: an MCPTT call without floor control is accepted only
-// where uncontrolled_allowed (a private call). Checks a client's SDP offer against the service, the negotiated
-// profile and the client's authenticated address.
-void McServer::validate_remote(const std::string &user, const MediaDescription &media, bool implicit_allowed,
-                               bool uncontrolled_allowed) {
-  // The service's media plane control, video and implicit request (check_service_media).
-  check_service_media(media, implicit_allowed, uncontrolled_allowed);
+// TS 24.379 clause 11.1.2: an MCPTT call without floor control is accepted only where uncontrolled_allowed (a
+// private call). Checks a client's SDP offer against the service, the negotiated profile and the client's
+// authenticated address. An implicit floor request (TS 24.379 clause 6.4) is no reason to refuse it.
+void McServer::validate_remote(const std::string &user, const MediaDescription &media, bool uncontrolled_allowed) {
+  // The service's media plane control and video (check_service_media).
+  check_service_media(media, uncontrolled_allowed);
   if ((media.protected_media && !keys_) || (media.queueing && !cfg_.at(svc_.name).value("floor_queue", false)))
     throw std::runtime_error("unsupported negotiated profile");
 
@@ -56,14 +54,45 @@ void McServer::validate_remote(const std::string &user, const MediaDescription &
 }
 
 //------------------------------------------------------------------------------
-// Helper: a new leg of the session for a user: its local media description and its media sockets.
-std::shared_ptr<McServer::Leg> McServer::make_leg(const std::string &id, const std::shared_ptr<Session> &session) {
+// TS 24.380 clauses 14.3.5 and 14.3.6: the SDP answer to a client's initial INVITE: the leg's media, with
+// "mc_implicit_request" and (when there is one) "mc_ssrc" where the implicit floor request is accepted
+// (accept_implicit_floor_request). Only this answer carries them: the leg's later offers and answers do not
+// (clause 14.3.1: an answer has no parameter its offer lacks; clause 14.5).
+MediaDescription McServer::initial_answer_media(const Leg &leg) const {
+  auto media = leg.local;
+  if (leg.implicit_floor) {
+    media.implicit_request = true;
+    media.granted_audio_ssrc = leg.implicit_audio_ssrc;
+  }
+  return media;
+}
+
+//------------------------------------------------------------------------------
+// Helper: a new leg of the session for a user: its local media description and its media sockets. [offered]: the
+// user's floor or transmission control SSRC from its offer, which the leg's own SSRC differs from (TS 24.380 clause
+// 4.3.3.1, peer_floor_ssrc_refused).
+std::shared_ptr<McServer::Leg> McServer::make_leg(const std::string &id, const std::shared_ptr<Session> &session,
+                                                  std::optional<std::uint32_t> offered) {
   const auto offset = media_offset();
   auto leg = std::make_shared<Leg>();
   leg->user = id;
   leg->session = session;
   leg->local = local_media(cfg_, offset);
   leg->local.queueing = cfg_.at(svc_.name).value("floor_queue", false);
+  // RFC 7714 section 8.4: the server's floor or transmission control SSRC towards a user is protected under that
+  // user's CSK (or the peer's SPK) with every call, so it is one never issued under it before, and none negotiated
+  // under it for a stream that has carried no packet yet (floor_ssrcs_in_use, the offered one; issue_ssrc).
+  auto *keys = [&]() -> ProtectedCall * {
+    const auto *user = by_id(id);
+    return user ? floor_keys(*user) : nullptr;
+  }();
+  if (keys) {
+    auto reserved = floor_ssrcs_in_use(keys);
+    if (offered) reserved.insert(*offered);
+    leg->local.floor_ssrc = keys->issue_ssrc(random_ssrc, reserved);
+  } else if (offered) {
+    while (leg->local.floor_ssrc == *offered) leg->local.floor_ssrc = random_ssrc();
+  }
 
   // A private call is protected when its caller offers a PCK; an ad hoc call is clear.
   leg->local.protected_media = session->private_call
@@ -202,7 +231,7 @@ void McServer::prepare_broadcast_hierarchy(Session &session, const Json &profile
       if (!only.empty() && leg->user != only) continue;
       session.awaiting_users.insert(leg->user);
       leg->active = false;
-      sip_.bye(leg->dialog);
+      bye(leg->dialog);
     }
     event("broadcast_preempted_call",
           {{"group_id", other->group}, {"user_id", only}, {"broadcast_group", session.group}});
@@ -257,7 +286,7 @@ bool McServer::preempt_lower_priority_participant(const std::shared_ptr<Session>
   event("participant_preempted", {{"user_id", lowest->user}, {"by", joiner}, {"session_uri", session->uri}});
   lowest->active = false;
   notices(*session, session->arbitrator->release(lowest->user, monotonic_ms()));
-  sip_.bye(lowest->dialog);
+  bye(lowest->dialog);
   return true;
 }
 
@@ -364,7 +393,7 @@ void McServer::complete_setup(const std::shared_ptr<Session> &session) {
     sip_.answer(origin->dialog, failure);
     event("call_setup_failed", {{"session_uri", session->uri}, {"status", failure.status_code}});
     for (const auto &leg : session_legs(*session))
-      if (leg != origin) sip_.bye(leg->dialog);
+      if (leg != origin) bye(leg->dialog);
   }
 }
 
@@ -476,6 +505,101 @@ ProtectedCall *McServer::floor_keys(const User &user) const {
   if (user.peer.empty()) return user.protection.get();
   const auto peer = peers_.find(user.peer);
   return peer == peers_.end() ? nullptr : peer->second.spk.get();
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 4.3.3.1 (TS 24.581 clause 4.3.3.1 for transmission control): the floor or transmission control
+// SSRCs, in both directions, of the calls and relays whose floor control is under [keys]: the SSRC this server
+// allocated for the user's messages (local) and the one the user allocated for this server's (remote). These
+// streams go on when the key changes (ProtectedCall::set_floor) and are in use under it (peer_floor_ssrc_refused).
+// [except], [except_relay]: a leg or relay left out.
+std::set<std::uint32_t> McServer::floor_ssrcs_in_use(const ProtectedCall *keys, const Leg *except,
+                                                     const Relay *except_relay) {
+  std::set<std::uint32_t> ssrcs;
+  if (!keys) return ssrcs;
+  for (const auto &[dialog, leg] : legs_) {
+    if (leg.get() == except || !floor_protected(*leg)) continue;
+    const auto *user = by_id(leg->user);
+    if (!user || floor_keys(*user) != keys) continue;
+    ssrcs.insert(leg->local.floor_ssrc);
+    if (leg->remote) ssrcs.insert(leg->remote->floor_ssrc);
+  }
+  // TS 33.180 clauses 9.4.2 and 9.4.5: a relayed call's floor control between the client and this server is under
+  // the client's CSK, and between this server and the peer under their SPK (split_relay.cpp).
+  for (const auto &[dialog, relay] : relays_) {
+    if (relay.get() == except_relay) continue;
+    const auto *user = by_id(relay->user);
+    const auto peer = peers_.find(relay->peer);
+    if ((!user || user->protection.get() != keys) && (peer == peers_.end() || peer->second.spk.get() != keys))
+      continue;
+    ssrcs.insert(relay->local.floor_ssrc);
+    if (relay->client_remote) ssrcs.insert(relay->client_remote->floor_ssrc);
+    if (relay->peer_remote) ssrcs.insert(relay->peer_remote->floor_ssrc);
+  }
+  ssrcs.erase(0);
+  return ssrcs;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 4.3.3.1: the SSRC the user allocates in its SDP ("mc_floor_ssrc", TS 24.581: "mc_transmission_
+// ssrc") is the one this server "shall use in the RTCP header of the floor control messages it sends in this
+// session". Refused: the SSRC this server allocated for the leg itself, and, when the leg's floor control is
+// protected, an SSRC already used under the leg's floor key (the CSK, or the SPK of the user's server) for another
+// stream in either direction: one that carried floor control under it (ProtectedCall::floor_ssrc_used) or one of
+// another call that is under way (floor_ssrcs_in_use). Under AEAD_AES_128_GCM (TS 33.180 clause 9.4.8) a new stream
+// of this server on such an SSRC would repeat an SRTCP IV (RFC 7714 section 9.1, RFC 3711 section 9.1: "Any fixed
+// keystream output, generated from the same key and index MUST only be used to encrypt once"). A leg that goes on
+// with the SSRC it already has (leg.remote) is not a new stream (mcx::floor_ssrc_refused). The callers
+// refuse as for the leg's own SSRC: an INVITE's offer with 488 (TS 24.379 clause 10.1.1.4.2 step 2, "shall
+// determine if the media parameters are acceptable [...] and if not reject the request with a SIP 488 (Not
+// Acceptable Here) response"; RFC 3261 section 13.3.1.3, "A UAS rejecting an offer contained in an INVITE SHOULD
+// return a 488 (Not Acceptable Here) response"), an answer to this server's offer by ending the dialog
+// (media_answered).
+bool McServer::peer_floor_ssrc_refused(const Leg &leg, std::uint32_t ssrc) {
+  const auto *user = floor_protected(leg) ? by_id(leg.user) : nullptr;
+  const auto *keys = user ? floor_keys(*user) : nullptr;
+  const auto current = leg.remote ? std::optional(leg.remote->floor_ssrc) : std::nullopt;
+  return floor_ssrc_refused(ssrc, leg.local.floor_ssrc, current, keys, floor_ssrcs_in_use(keys, &leg));
+}
+
+//------------------------------------------------------------------------------
+// peer_floor_ssrc_refused for an offer before its leg exists, so that a refused SSRC is answered before the request
+// changes anything (a participant preempted, calls released for a broadcast, an ambient listening call released):
+// the SSRC is refused when floor control is to be protected ([protect_floor]) and it is already used under the
+// user's floor key for another stream. The leg's own SSRC is drawn apart from the offered one (make_leg).
+bool McServer::offered_floor_ssrc_refused(const User &user, bool protect_floor, std::uint32_t ssrc) {
+  const auto *keys = protect_floor ? floor_keys(user) : nullptr;
+  return keys && (keys->floor_ssrc_used(ssrc) || floor_ssrcs_in_use(keys).contains(ssrc));
+}
+
+//------------------------------------------------------------------------------
+// A relay forwards floor control re-protected (relay_media, TS 33.180 clauses 9.4.2 and 9.4.5): towards the client
+// under the client's CSK with the SSRC the client allocated ([toward_client]: the client's SDP), towards the peer
+// under the SPK with the SSRC the peer allocated (the peer's SDP; TS 24.380 clause 4.3.3.1). Each side's SDP goes
+// on to the other side with its SSRC (mirror), so under each key the relay's side sends with one side's SSRC and
+// receives the other's ([opposite], once known). This server sends on the SSRC of [media] under that key, so it is
+// refused as for a leg (peer_floor_ssrc_refused, mcx::floor_ssrc_refused): when it is the opposite direction's (both
+// senders would form the same SRTCP IVs, RFC 7714 sections 8.4 and 9.4), or when it is already used under the key
+// for another stream: one that carried floor control under it, or one of another call or relay under way. The stream
+// going on with the SSRC it has ([current]: a re-INVITE, a session refresh) is kept. Only protected floor control
+// (media.protected_media) is checked.
+bool McServer::relay_floor_ssrc_refused(const Relay &relay, bool toward_client, const MediaDescription &media,
+                                        std::optional<std::uint32_t> current, std::optional<std::uint32_t> opposite) {
+  if (media.control == MediaControl::none || !media.protected_media) return false;
+  const ProtectedCall *keys = nullptr;
+  if (toward_client) {
+    if (const auto *user = by_id(relay.user)) keys = user->protection.get();
+  } else if (const auto peer = peers_.find(relay.peer); peer != peers_.end()) {
+    keys = peer->second.spk.get();
+  }
+  const bool refused =
+      keys && floor_ssrc_refused(media.floor_ssrc, opposite, current, keys, floor_ssrcs_in_use(keys, nullptr, &relay));
+  if (refused)
+    event("relay_floor_ssrc_refused", {{"user_id", relay.user},
+                                       {"ssrc", media.floor_ssrc},
+                                       {"key", toward_client ? "csk" : "spk"},
+                                       {"opposite", opposite == media.floor_ssrc}});
+  return refused;
 }
 
 //------------------------------------------------------------------------------

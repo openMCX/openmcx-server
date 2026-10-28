@@ -38,16 +38,21 @@ ARG FREEDIAMETER_URL=https://github.com/freeDiameter/freeDiameter/archive/refs/t
 ARG FREEDIAMETER_SHA256=cc4ceafd9d0d4a6a5e3aa02bf557906fe755df9ec14d16c4fcd5dab6930296aa
 ARG OPENH264_FILE=openh264-2.4.1.tar.gz
 ARG OPENH264_URL=https://github.com/cisco/openh264/archive/refs/tags/v2.4.1.tar.gz
+ARG LIBSRTP_FILE=libsrtp-2.8.1.tar.gz
+ARG LIBSRTP_URL=https://github.com/cisco/libsrtp/archive/6ff02afa8d2dc3f2e8896af391d137c1c66ff6fa.tar.gz
+ARG LIBSRTP_SHA256=1ef3e6315e0ea3cd05f4980c8b5f7a9df369e3d586f5e0616e6cc4c778401d4c
+ARG LIBSRTP_PATCH=0001-srtcp-index-zero.patch
+ARG LIBSRTP_PATCH_SHA256=965965cd8718165a3617ebaf8e0744d79d9b7d367cf3eff25d5b60246168fc58
 ARG OPENH264_SHA256=8ffbe944e74043d0d3fb53d4a2a14c94de71f58dbea6a06d0dc92369542958ea
-# json-devel, opencore-amr-devel, vo-amrwbenc-devel and libidn-devel come from EPEL; libsrtp-devel and
-# libunistring-devel from CRB; the rest from BaseOS and AppStream.
+# json-devel, opencore-amr-devel, vo-amrwbenc-devel and libidn-devel come from EPEL; libunistring-devel from CRB;
+# the rest from BaseOS and AppStream. libsrtp is built from source below (dependencies/libsrtp).
 RUN dnf config-manager --set-enabled crb \
     && dnf install -y epel-release \
     && dnf update -y \
     && cat /etc/os-release \
     && dnf install -y gcc-c++ make cmake pkgconf-pkg-config bison flex autoconf automake libtool which tar gzip patch \
        diffutils file ca-certificates python3 openssl binutils \
-       libuuid-devel openssl-devel libxml2-devel libcurl-devel libnghttp2-devel json-devel libsrtp-devel lksctp-tools-devel \
+       libuuid-devel openssl-devel libxml2-devel libcurl-devel libnghttp2-devel json-devel lksctp-tools-devel \
        opencore-amr-devel vo-amrwbenc-devel gnutls-devel libgcrypt-devel libidn-devel libidn2-devel \
        mariadb-connector-c-devel pcre2-devel libunistring-devel \
     && dnf clean all \
@@ -60,6 +65,18 @@ ENV PATH="/usr/local/go/bin:/opt/pjsip/bin:${PATH}" \
 COPY docker/fetch /usr/local/bin/fetch
 RUN fetch "$GO_FILE" "$GO_URL" "$GO_SHA256" /tmp/go.tar.gz \
     && tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
+# libsrtp from its pinned source with OpenMCX's patch (dependencies/libsrtp/README.md): the first SRTCP index is zero
+# (RFC 3711 section 3.4). A static library in /usr/local, used by pjproject and the OpenMCX programs.
+COPY dependencies/libsrtp/${LIBSRTP_PATCH} /tmp/libsrtp-patches/
+RUN fetch "$LIBSRTP_FILE" "$LIBSRTP_URL" "$LIBSRTP_SHA256" /tmp/libsrtp.tar.gz \
+    && echo "$LIBSRTP_PATCH_SHA256  /tmp/libsrtp-patches/$LIBSRTP_PATCH" | sha256sum --check --strict - \
+    && mkdir /tmp/libsrtp && tar -xzf /tmp/libsrtp.tar.gz -C /tmp/libsrtp --strip-components=1 \
+    && cd /tmp/libsrtp && patch -p1 --forward < /tmp/libsrtp-patches/$LIBSRTP_PATCH \
+    && grep -q SRTP_OPENMCX_SRTCP_INDEX_ZERO include/srtp.h \
+    && ./configure --prefix=/usr/local --enable-openssl CFLAGS='-O2 -fPIC' \
+    && make -j4 && make install \
+    && install -D -m 644 LICENSE /usr/local/share/doc/libsrtp/LICENSE \
+    && rm -rf /tmp/libsrtp /tmp/libsrtp.tar.gz /tmp/libsrtp-patches
 # OpenMCX's pjproject patches (dependencies/pjproject/README.md): the TCP client port of IMS AKA (TS 33.203 7.1)
 # and TCP for requests pinned to a UDP transport (RFC 3261 18.1.1, TCP next hops).
 COPY dependencies/pjproject/0001-tcp-client-port.patch dependencies/pjproject/0002-udp-to-tcp.patch /tmp/pjproject-patches/
@@ -124,6 +141,8 @@ RUN microdnf update -y \
     && microdnf clean all -y && rm -rf /var/cache/yum /var/cache/dnf \
     && echo "/usr/local/lib64" > /etc/ld.so.conf.d/local-lib.conf
 COPY --from=build /install/libs/ /usr/local/lib64/
+# libsrtp's licence (BSD-3-Clause): the programs link the patched libsrtp statically (dependencies/libsrtp).
+COPY --from=build /usr/local/share/doc/libsrtp/LICENSE /usr/share/doc/openmcx/libsrtp-LICENSE
 RUN ldconfig
 COPY tools/healthcheck.py /healthcheck.py
 WORKDIR /workspace
@@ -131,7 +150,7 @@ WORKDIR /workspace
 #------------------------------------------------------------------------------
 # MCPTT server (TS 24.379, TS 24.380): SIP and media, HTTP to the common services, Diameter to the user database.
 FROM runtime AS openmcx-mcptt-server
-RUN microdnf install -y libxml2 libsrtp openssl-libs libuuid lksctp-tools gnutls libgcrypt libidn2 \
+RUN microdnf install -y libxml2 openssl-libs libuuid lksctp-tools gnutls libgcrypt libidn2 \
     && microdnf clean all -y && rm -rf /var/cache/yum /var/cache/dnf
 COPY --from=build /install/stripped/openmcx-mcptt-server /usr/local/bin/
 RUN ! ldd /usr/local/bin/openmcx-mcptt-server | grep 'not found'
@@ -140,7 +159,7 @@ ENTRYPOINT ["/usr/local/bin/openmcx-mcptt-server"]
 #------------------------------------------------------------------------------
 # MCVideo server (TS 24.281, TS 24.581): as the MCPTT server.
 FROM runtime AS openmcx-mcvideo-server
-RUN microdnf install -y libxml2 libsrtp openssl-libs libuuid lksctp-tools gnutls libgcrypt libidn2 \
+RUN microdnf install -y libxml2 openssl-libs libuuid lksctp-tools gnutls libgcrypt libidn2 \
     && microdnf clean all -y && rm -rf /var/cache/yum /var/cache/dnf
 COPY --from=build /install/stripped/openmcx-mcvideo-server /usr/local/bin/
 RUN ! ldd /usr/local/bin/openmcx-mcvideo-server | grep 'not found'
@@ -149,7 +168,7 @@ ENTRYPOINT ["/usr/local/bin/openmcx-mcvideo-server"]
 #------------------------------------------------------------------------------
 # MCData server (TS 24.282, TS 24.582).
 FROM runtime AS openmcx-mcdata-server
-RUN microdnf install -y libxml2 libsrtp openssl-libs libuuid \
+RUN microdnf install -y libxml2 openssl-libs libuuid \
     && microdnf clean all -y && rm -rf /var/cache/yum /var/cache/dnf
 COPY --from=build /install/stripped/openmcx-mcdata-server /usr/local/bin/
 RUN ! ldd /usr/local/bin/openmcx-mcdata-server | grep 'not found'
@@ -158,7 +177,7 @@ ENTRYPOINT ["/usr/local/bin/openmcx-mcdata-server"]
 #------------------------------------------------------------------------------
 # Common services (one role per container) with the key tool the KMS, GMS and IS proxy run.
 FROM runtime AS openmcx-common
-RUN microdnf install -y libxml2 libsrtp openssl-libs \
+RUN microdnf install -y libxml2 openssl-libs \
     && microdnf clean all -y && rm -rf /var/cache/yum /var/cache/dnf
 COPY --from=build /install/stripped/mcx-common /install/stripped/mcx-keytool /usr/local/bin/
 RUN ! ldd /usr/local/bin/mcx-common /usr/local/bin/mcx-keytool | grep 'not found'

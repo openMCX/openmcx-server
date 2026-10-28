@@ -186,11 +186,23 @@ def participating_routes(servers, users_by_role):
 
 
 # ------------------------------------------------------------------------------
+def positive_days(text):
+    """--certificate-days: a whole number of days, at least 1."""
+    days = int(text)
+    if days < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return days
+
+
+# ------------------------------------------------------------------------------
 def main():
     """Read the lab description and write the lab's credentials and configuration files."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=pathlib.Path, default=ROOT / "config/lab.json")
     parser.add_argument("--output", type=pathlib.Path, default=ROOT / "config/generated")
+    # The validity of the lab CA and of the certificates it signs, in days (OpenMCX's own CA: its validity period is
+    # local policy); 30 by default: default pending maintainer choice (no spec value).
+    parser.add_argument("--certificate-days", type=positive_days, default=30)
     args = parser.parse_args()
     source = json.loads(args.input.read_text())
     domain = source["domain"]
@@ -233,7 +245,9 @@ def main():
         subprocess.run(["openssl", *map(str, cmd)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
     tlsdir = out / "tls"
-    # A CA that signs certificates and revocation lists (the Credential Service's, MCX Admin slice F2).
+    # A CA that signs certificates and revocation lists (the Credential Service's, MCX Admin slice F2). TS 33.310
+    # clause 6.1.4a (TLS client/server CA): "Mandatory critical key usage" and "Mandatory critical basic constraints:
+    # CA=True, path length 0" (pathLenConstraint, RFC 5280 section 4.2.1.9).
     openssl(
         "req",
         "-x509",
@@ -245,11 +259,11 @@ def main():
         "-out",
         tlsdir / "ca.crt",
         "-days",
-        "30",
+        args.certificate_days,
         "-subj",
         "/CN=OpenMCX local lab CA",
         "-addext",
-        "basicConstraints=critical,CA:TRUE",
+        "basicConstraints=critical,CA:TRUE,pathlen:0",
         "-addext",
         "keyUsage=critical,keyCertSign,cRLSign",
     )
@@ -292,10 +306,12 @@ def main():
             f"/CN={role}",
         )
         extension = tlsdir / f"{role}.ext"
+        # TS 33.310 clause 6.1.3a (TLS entity): "Mandatory critical key usage: At least digitalSignature shall be set".
         key_usage = "digitalSignature" if role == "sip-core" else "digitalSignature,keyEncipherment"
         names = [role, f"{role}.{domain}"]
         extension.write_text(
-            f"subjectAltName={','.join('DNS:' + dns_name for dns_name in names)}\nextendedKeyUsage=serverAuth,clientAuth\nbasicConstraints=CA:FALSE\nkeyUsage={key_usage}\n"
+            f"subjectAltName={','.join('DNS:' + dns_name for dns_name in names)}\n"
+            f"extendedKeyUsage=serverAuth,clientAuth\nbasicConstraints=CA:FALSE\nkeyUsage=critical,{key_usage}\n"
         )
         openssl(
             "x509",
@@ -310,7 +326,7 @@ def main():
             "-out",
             tlsdir / f"{role}.crt",
             "-days",
-            "30",
+            args.certificate_days,
             "-extfile",
             extension,
         )
@@ -568,6 +584,9 @@ TLS_CA = "/config/tls/ca.crt";
                 },
                 mcptt={
                     "service_uri": service,
+                    # TS 24.481 clause 6.3.13.3.1: the PSI of its GMS subscription proxy function, when the lab names
+                    # one apart from the MCPTT PSI.
+                    **({"gms_subscription_psi": f"sip:{source['gms_user']}@{domain}"} if source.get("gms_user") else {}),
                     "max_talk_ms": 30000,
                     "adhoc_call": {"enabled": True, "max_participants": 8},
                 },
@@ -604,6 +623,11 @@ TLS_CA = "/config/tls/ca.crt";
                 },
                 oauth={
                     "issuer": site["issuer"],
+                    # TS 24.484 clause 7.2.2.7 item 4: <idms-auth-endpoint> and <idms-token-endpoint>; the JWKS URI
+                    # (OpenID Connect Core 1.0 section 10, "by other means").
+                    "idms_auth_endpoint": site["issuer"] + "/authorize",
+                    "idms_token_endpoint": site["issuer"] + "/token",
+                    "jwks_uri": site["issuer"] + "/jwks",
                     "username": user["username"],
                     "password": user["password"],
                     "client_id": site["oauth_client_id"],
@@ -622,12 +646,19 @@ TLS_CA = "/config/tls/ca.crt";
                 trusted_core="sip-core",
                 server_address=serving_server(servers, role),
                 endpoints={
-                    **{function: "https://http-proxy:8443/" + function for function in ("cms", "gms")},
+                    # TS 24.484 clause 7.2.2.7 items 7 and 8: the GMS and CMS XCAP root URIs, used as given.
+                    **{function: "https://http-proxy:8443/" + function + "/xcap-root" for function in ("cms", "gms")},
                     "content": "https://http-proxy:8443/content",
                     "msgstore": endpoints["msgstore"],
                     "notification": endpoints["notification"],
                 },
                 msgstore={"store": "mcdata"},
+                # TS 24.481 clause 6.3.13.2.1 step b, TS 24.483 clause 8.2.9 GMSURI: the GMS subscription proxy PSI of
+                # the group document and group key subscriptions; the MCPTT PSI (the MCPTT server provides that
+                # function, as openmcx-admin's <GMS-URI>) unless the lab names one apart ("gms_user").
+                gms={
+                    "subscription_psi": f"sip:{source['gms_user']}@{domain}" if source.get("gms_user") else service
+                },
             )
             if user["username"] in isims:
                 cfg["trusted_core"] = "pcscf"
@@ -713,6 +744,7 @@ TLS_CA = "/config/tls/ca.crt";
     for old, new in {
         "@DOMAIN@": domain,
         "@SERVICE_USER@": source["service_user"],
+        "@GMS_USER@": source.get("gms_user", ""),
         "@MCDATA_USER@": mcdata_user,
         "@MCVIDEO_USER@": mcvideo_user,
         "@DB_PASSWORD@": dbpassword,
@@ -725,6 +757,9 @@ TLS_CA = "/config/tls/ca.crt";
     # secrets (docs/USAGE.md section 7). An explicit switch of its own: no log level turns it on.
     if source.get("sip_core", {}).get("tls_keylog") is True:
         template = "#!define TLS_KEYLOG\n" + template
+    # A GMS-URI apart from the MCPTT PSI ("gms_user"), served by the MCPTT server (TS 24.481 clause 6.3.13.3.1).
+    if source.get("gms_user"):
+        template = "#!define GMS_PSI\n" + template
     # The S-CSCF procedures of IMS AKA, only in a lab with an IMS AKA identity.
     if aka:
         template = "#!define WITH_AKA\n" + template
@@ -743,7 +778,7 @@ TLS_CA = "/config/tls/ca.crt";
         "tls.cfg",
         f"[server:default]\nmethod = TLSv1.2+\ncipher_list = {TLS12_CIPHERS}\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/sip-core.key\ncertificate = /config/tls/sip-core.crt\nca_list = /config/tls/ca.crt\n[client:default]\nmethod = TLSv1.2+\ncipher_list = {TLS12_CIPHERS}\nverify_certificate = yes\nrequire_certificate = yes\nprivate_key = /config/tls/sip-core.key\ncertificate = /config/tls/sip-core.crt\nca_list = /config/tls/ca.crt\n",
     )
-    print(f"Provisioned {out}; credentials and CA expire after 30 days. Explicit clear media/floor lab policy.")
+    print(f"Provisioned {out}; credentials and CA expire after {args.certificate_days} days. Explicit clear media/floor lab policy.")
 
 
 if __name__ == "__main__":

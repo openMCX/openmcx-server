@@ -203,6 +203,38 @@ struct Reader {
     return value;
   }
 
+  // RFC 3830 section 6.1, RFC 6509 section 4.1 and TS 33.180 annex E.1.2: the HDR of a MIKEY-SAKKE I_MESSAGE
+  // (version 1, data type 26, next payload T) with CS# 0 and CS ID map type 1; returns the CSB-ID. The V bit "MUST
+  // be set to '0' and ignored by the Responder" (RFC 6509 section 4.1). PRF func 1 (PRF-HMAC-SHA-256, the one
+  // TS 33.180 annex E.1.2 makes mandatory) is the only one implemented.
+  // Not implemented: CS# > 0 with GENERIC-ID (TS 33.180 annex E.1.2, RFC 6043 section 6.1.2) and a Security
+  // Properties payload; they are refused.
+  std::uint32_t mikey_header() {
+    require(number(1) == 1 && number(1) == 26 && number(1) == 5, "unsupported MIKEY header");
+    require((number(1) & 0x7f) == 1, "unsupported MIKEY PRF function");
+    const auto csb_id = static_cast<std::uint32_t>(number(4));
+    require(number(1) == 0 && number(1) == 1, "unsupported MIKEY session map");
+    return csb_id;
+  }
+
+  // RFC 3830 section 6.6 and TS 33.180 annex E.1.2: the T payload (next payload RAND), TS type NTP-UTC (0), 64 bits;
+  // returns its 32-bit seconds field (ntp_from_wire gives the era), the fraction is not used.
+  std::uint32_t timestamp() {
+    require(number(1) == 11 && number(1) == 0, "unsupported MIKEY timestamp");
+    const auto seconds = static_cast<std::uint32_t>(number(4));
+    (void)number(4);
+    return seconds;
+  }
+
+  // RFC 3830 section 6.11: the RAND payload (next payload IDR), of variable length: "RAND len ... SHOULD be at least
+  // 16" (a SHOULD, not a MUST): a shorter RAND of at least one octet is read, and KeyClient logs a warning for it.
+  std::span<const byte> random() {
+    require(number(1) == 14, "unsupported MIKEY RAND");
+    const auto length = number(1);
+    require(length >= 1, "empty MIKEY RAND");
+    return take(length);
+  }
+
   // RFC 6043 section 6.6: an IDR payload with the expected next payload and role and ID type URI (1).
   std::string identity(byte expected_role, byte expected_next) {
     require(number(1) == expected_next && number(1) == expected_role && number(1) == 1,
@@ -273,7 +305,9 @@ Bytes encode_properties(const KeyProperties &properties, const KeyParameterWireP
 }
 
 //------------------------------------------------------------------------------
-// TS 33.180 annex E.6.1 (table E.6.1-1): reads the Key Parameters payload written by encode_properties.
+// TS 33.180 annex E.6.1 (table E.6.1-1): reads a Key Parameters payload: every Key Type of table E.6.11-1, the MC
+// Group IDs for a GMK, MKFC or MuSiK only (annex E.6.3), and any Reserved IEs (TLV-E, annex E.6.6, "outside of scope
+// of the present document") skipped.
 KeyProperties decode_properties(std::span<const byte> data, const KeyParameterWireProfile &profile) {
   Reader reader{data};
   require(reader.number(1) == profile.key_parameters_iei, "unexpected Key Parameters IEI");
@@ -282,7 +316,8 @@ KeyProperties decode_properties(std::span<const byte> data, const KeyParameterWi
 
   KeyProperties properties;
   properties.type = reader.number(1);
-  require(supported_type(properties.type), "unsupported key type");
+  // TS 33.180 table E.6.11-1: GMK 0, PCK 1, CSK 2, SPK 3, MKFC 4, MSCCK 5, MuSiK 6; "All other values are reserved".
+  require(properties.type <= 6, "reserved key type");
   properties.status = reader.number(4);
   properties.activation_unix_seconds = reader.number(5);
   properties.expiry_unix_seconds = reader.number(5);
@@ -300,38 +335,52 @@ KeyProperties decode_properties(std::span<const byte> data, const KeyParameterWi
     }
     require(groups.position == groups.data.size(), "trailing MC group IDs");
   }
-  require(reader.position == data.size(), "unsupported trailing key parameters");
+  while (reader.position < data.size()) {
+    (void)reader.number(1);
+    (void)reader.take(reader.number(2));
+  }
   return properties;
 }
 
 //------------------------------------------------------------------------------
-// TS 33.180 clause 8.5.3 and annex F.1.5: the DPCK from the DPPK with the KDF of TS 33.220 annex B, FC = 0x53,
-// P0 = DPPK-ID; the 128 least significant bits of the output.
-std::array<byte, 16> payload_key(const KeyMessage &key) {
+// TS 33.180 clause 8.5.3 and annex F.1.5: the KDF of TS 33.220 annex B keyed with the DPPK, FC = 0x53,
+// P0 = DPPK-ID: its full 256-bit output.
+std::array<byte, 32> payload_kdf(std::span<const byte, 16> dppk, std::uint32_t dppk_id) {
   Bytes input{0x53};
-  integer(input, key.csb_id, 4);
+  integer(input, dppk_id, 4);
   integer(input, 4, 2);
   std::array<byte, 32> hash{};
   unsigned size = hash.size();
-  require(HMAC(EVP_sha256(), key.key.data(), key.key.size(), input.data(), input.size(), hash.data(), &size) !=
-                  nullptr &&
+  require(HMAC(EVP_sha256(), dppk.data(), dppk.size(), input.data(), input.size(), hash.data(), &size) != nullptr &&
               size == 32,
           "key parameter KDF failed");
-  std::array<byte, 16> result{};
-  std::copy(hash.begin() + 16, hash.end(), result.begin());
+  return hash;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex F.1.5: the DPCK of a DPPK and DPPK-ID: "Where the DPPK is 128-bits, the DPCK shall be 128-bits and
+// hence the 128 least significant bits of the 256 bits of the KDF output shall be used"; for the CSK protecting
+// MCData signalling with DP_AES_256_GCM, "the output DPCK shall be 256-bits and hence the entire output of the KDF
+// shall be used" (last paragraph).
+Bytes payload_key(std::span<const byte, 16> dppk, std::uint32_t dppk_id, PayloadAlgorithm algorithm) {
+  auto hash = payload_kdf(dppk, dppk_id);
+  Bytes result = algorithm == PayloadAlgorithm::aes_256_gcm ? Bytes(hash.begin(), hash.end())
+                                                            : Bytes(hash.begin() + 16, hash.end());
   OPENSSL_cleanse(hash.data(), hash.size());
   return result;
 }
 
 //------------------------------------------------------------------------------
-// Helper: the DPCK (TS 33.180 annex F.1.5) of a bare DPPK and DPPK-ID.
-std::array<byte, 16> payload_key(std::span<const byte, 16> dppk, std::uint32_t dppk_id) {
-  KeyMessage key;
-  std::copy(dppk.begin(), dppk.end(), key.key.begin());
-  key.csb_id = dppk_id;
-  auto result = payload_key(key);
-  OPENSSL_cleanse(key.key.data(), key.key.size());
-  return result;
+// TS 33.180 annex F.1.5 and annex G: DP_AES_256_GCM has a key only for the CSK (purpose tag 2) protecting MCData
+// signalling; every other DPPK is 16 octets (annex E.1.1) and gives a 128-bit DPCK.
+void require_256_key(std::uint32_t dppk_id) {
+  require((dppk_id >> 28) == 2, "DP_AES_256_GCM is for MCData signalling under the CSK only (TS 33.180 annex F.1.5)");
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 tables 8.5.4.2-1 and 8.5.4.2-2: AEAD_AES_128_GCM or AEAD_AES_256_GCM (RFC 5116).
+const EVP_CIPHER *payload_cipher(PayloadAlgorithm algorithm) {
+  return algorithm == PayloadAlgorithm::aes_256_gcm ? EVP_aes_256_gcm() : EVP_aes_128_gcm();
 }
 
 //------------------------------------------------------------------------------
@@ -354,13 +403,13 @@ Bytes encrypt_properties(const KeyMessage &key, const KeyParameterWireProfile &p
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex E.6.1: opens the Protected Payload of the key parameters; the DPPK-ID must be the CSB-ID and the
-// key type must agree with the purpose tag of the CSB-ID.
+// key type must agree with the purpose tag of the CSB-ID (annex G). Its Date and Time is not compared with the MIKEY
+// timestamp: annex E.6.1 does not ask for it.
 KeyProperties decrypt_properties(const KeyMessage &key, std::span<const byte> data,
                                  const KeyParameterWireProfile &profile) {
   require(!data.empty() && data[0] == profile.message_type, "unexpected protected payload type");
   require(payload_key_id(data) == key.csb_id, "key properties CSB-ID mismatch");
   auto message = open_payload(data, key.key, profile);
-  require(message.unix_seconds + 2208988800ULL == key.ntp_seconds, "key properties timestamp mismatch");
   auto properties = decode_properties(message.plain, profile);
   OPENSSL_cleanse(message.plain.data(), message.plain.size());
   require(properties.type == (key.csb_id >> 28), "key type disagrees with CSB-ID purpose");
@@ -375,16 +424,23 @@ KeyProperties decrypt_properties(const KeyMessage &key, std::span<const byte> da
 Bytes seal_payload(const ProtectedPayload &message, std::span<const byte, 16> dppk,
                    const KeyParameterWireProfile &profile) {
   require(message.unix_seconds <= 0xffffffffffULL, "protected payload time out of range");
-  // Not implemented: DP_AES_256_GCM (TS 33.180 table 8.5.4.2-2, 256-bit IV). Only DP_AES_128_GCM (algorithm 1,
-  // table 8.5.4.2-1, 128-bit IV) is written and read; another algorithm is refused.
-  require(profile.algorithm == 1, "only DP_AES_128_GCM is supported");
+  // DP_AES_128_GCM is the profile's algorithm 1; DP_AES_256_GCM needs the profile's code for it and a CSK. Both use
+  // the 16-octet IV field of table 8.5.4.1-1 (table 8.5.4.2-2 gives DP_AES_256_GCM a 256-bit IV, which that field
+  // cannot hold; reported as a spec defect).
+  require(profile.algorithm == 1, "only DP_AES_128_GCM is supported as the profile's algorithm 1");
+  const bool aes_256 = message.algorithm == PayloadAlgorithm::aes_256_gcm;
+  if (aes_256) {
+    require(profile.algorithm_256 && *profile.algorithm_256 != profile.algorithm,
+            "the wire profile names no code for DP_AES_256_GCM");
+    require_256_key(message.dppk_id);
+  }
 
-  auto dpck = payload_key(dppk, message.dppk_id);
+  auto dpck = payload_key(dppk, message.dppk_id, message.algorithm);
   Bytes output{message.message_type};
   integer(output, message.unix_seconds, 5);
   integer(output, message.payload_id, 4);
   output.push_back(message.sequence);
-  output.push_back(profile.algorithm);
+  output.push_back(aes_256 ? *profile.algorithm_256 : profile.algorithm);
   std::array<byte, 16> iv{};
   require(RAND_bytes(iv.data(), iv.size()) == 1, "IV generation failed");
   output.insert(output.end(), iv.begin(), iv.end());
@@ -393,7 +449,7 @@ Bytes seal_payload(const ProtectedPayload &message, std::span<const byte, 16> dp
   std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)> ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
   require(bool(ctx), "allocate AES-GCM context");
   int length = 0;
-  require(EVP_EncryptInit_ex(ctx.get(), EVP_aes_128_gcm(), nullptr, nullptr, nullptr) == 1 &&
+  require(EVP_EncryptInit_ex(ctx.get(), payload_cipher(message.algorithm), nullptr, nullptr, nullptr) == 1 &&
               EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN, iv.size(), nullptr) == 1 &&
               EVP_EncryptInit_ex(ctx.get(), nullptr, nullptr, dpck.data(), iv.data()) == 1 &&
               EVP_EncryptUpdate(ctx.get(), nullptr, &length, output.data(), output.size()) == 1,
@@ -502,27 +558,34 @@ std::uint32_t payload_key_id(std::span<const byte> data) {
 // TS 33.180 clauses 8.5.4.1 and 8.5.4.2: decrypts and authenticates a Protected Payload message under the DPCK of
 // its DPPK-ID.
 ProtectedPayload open_payload(std::span<const byte> data, std::span<const byte, 16> dppk,
-                              const KeyParameterWireProfile &profile) {
-  require(profile.algorithm == 1, "only DP_AES_128_GCM is supported"); // its 16-octet IV is read below
+                              const KeyParameterWireProfile &profile, bool csk_signalling) {
+  require(profile.algorithm == 1, "only DP_AES_128_GCM is supported as the profile's algorithm 1");
   ProtectedPayload message;
   Reader reader{data};
   message.message_type = reader.number(1);
   message.unix_seconds = reader.number(5);
   message.payload_id = reader.number(4);
   message.sequence = reader.number(1);
-  require(reader.number(1) == profile.algorithm, "unsupported payload algorithm");
-  auto iv = reader.take(16);
+  const auto algorithm = reader.number(1);
+  if (algorithm != profile.algorithm) {
+    require(csk_signalling && profile.algorithm_256 && algorithm == *profile.algorithm_256 &&
+                *profile.algorithm_256 != profile.algorithm,
+            "unsupported payload algorithm");
+    message.algorithm = PayloadAlgorithm::aes_256_gcm;
+  }
+  auto iv = reader.take(16); // both algorithms: the 16-octet IV field of table 8.5.4.1-1
   message.dppk_id = reader.number(4);
+  if (message.algorithm == PayloadAlgorithm::aes_256_gcm) require_256_key(message.dppk_id);
   const auto associated = data.first(reader.position);
   require(reader.number(1) == profile.encrypted_payload_iei, "unexpected protected payload IEI");
   auto cipher = reader.take(reader.number(2));
   require(reader.position == data.size() && cipher.size() >= 16, "invalid protected payload");
 
-  auto dpck = payload_key(dppk, message.dppk_id);
+  auto dpck = payload_key(dppk, message.dppk_id, message.algorithm);
   std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)> ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
   require(bool(ctx), "allocate AES-GCM context");
   int length = 0;
-  require(EVP_DecryptInit_ex(ctx.get(), EVP_aes_128_gcm(), nullptr, nullptr, nullptr) == 1 &&
+  require(EVP_DecryptInit_ex(ctx.get(), payload_cipher(message.algorithm), nullptr, nullptr, nullptr) == 1 &&
               EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN, iv.size(), nullptr) == 1 &&
               EVP_DecryptInit_ex(ctx.get(), nullptr, nullptr, dpck.data(), iv.data()) == 1 &&
               EVP_DecryptUpdate(ctx.get(), nullptr, &length, associated.data(), associated.size()) == 1,
@@ -542,6 +605,20 @@ ProtectedPayload open_payload(std::span<const byte> data, std::span<const byte, 
     throw std::runtime_error("protected payload authentication failed");
   }
   return message;
+}
+
+//------------------------------------------------------------------------------
+// RFC 5905 section 6: "the seconds field is divided into a 32-bit Era Number field and a 32-bit Era Offset field";
+// eras "can be derived from external means", and "correct values are obtained even if the client and server are in
+// adjacent eras" (within 68 years). The 32-bit seconds of the timestamp (the era offset) is placed in the era
+// nearest to the local clock: the previous, the current or the next one.
+std::uint64_t ntp_from_wire(std::uint32_t seconds, std::uint64_t now) {
+  const auto era = now >> 32;
+  const auto distance = [now](std::uint64_t value) { return value > now ? value - now : now - value; };
+  auto best = (era << 32) | seconds;
+  if (era > 0 && distance(((era - 1) << 32) | seconds) < distance(best)) best = ((era - 1) << 32) | seconds;
+  if (era < 0xffffffffULL && distance(((era + 1) << 32) | seconds) < distance(best)) best = ((era + 1) << 32) | seconds;
+  return best;
 }
 
 //------------------------------------------------------------------------------
@@ -744,16 +821,17 @@ Bytes create_mikey(const PublicParameters &parameters, const IdentityKeys &sende
 // payload (signed under the initiator's KMS) over everything before the signature (RFC 3830 section 5.2).
 Bytes create_mikey(const PublicParameters &parameters, const PublicParameters &rp, const IdentityKeys &sender,
                    std::string_view recipient, const KeyMessage &key, const KeyParameterWireProfile *profile) {
-  require(key.ntp_seconds <= 0xffffffffULL, "NTP era unsupported");
+  require(key.random.size() >= 16 && key.random.size() <= 255, "invalid MIKEY RAND length");
   auto encrypted = encapsulate(rp, recipient, key.ntp_seconds, key.key);
 
   Bytes out{1, 26, 5, 1};
   integer(out, key.csb_id, 4);
   out.insert(out.end(), {0, 1});
   out.insert(out.end(), {11, 0});
-  integer(out, key.ntp_seconds, 4);
+  // RFC 5905 section 6: the 32-bit seconds field carries the era offset; the receiver infers the era (ntp_from_wire).
+  integer(out, key.ntp_seconds & 0xffffffffULL, 4);
   integer(out, 0, 4);
-  out.insert(out.end(), {14, 16});
+  out.insert(out.end(), {14, static_cast<byte>(key.random.size())});
   out.insert(out.end(), key.random.begin(), key.random.end());
 
   id_payload(out, 14, 1, sender.uri);
@@ -794,30 +872,24 @@ KeyMessage open_mikey(const PublicParameters &parameters, const IdentityKeys &re
 }
 
 //------------------------------------------------------------------------------
-// TS 33.180 clauses 5.2.2 and 5.2.7.3 and annex E.1.2: checks the header, the timestamp against the allowed skew, the
-// key period, the IDRi, IDRr and IDRkmsr, resolves the signing KMS (IDRkmsi), verifies the ECCSI signature by the
+// TS 33.180 clauses 5.2.2 and 5.2.7.3 and annex E.1.2: checks the header, the timestamp (its era from now, RFC 5905
+// section 6) against the allowed skew, the key period, the IDRi, IDRr and IDRkmsr, resolves the signing KMS
+// (IDRkmsi), reads the general extension payloads after the SAKKE payload, verifies the ECCSI signature by the
 // sender's UID, then decapsulates the key and opens the key parameters (annex E.6).
 KeyMessage open_mikey(const PublicParameters &parameters, const KmsLookup &lookup, const IdentityKeys &recipient,
                       std::string_view sender, std::span<const byte> message, std::uint64_t now, std::uint32_t skew,
                       const KeyParameterWireProfile *profile) {
   require(message.size() <= 65535, "oversized MIKEY message");
   Reader reader{message};
-  require(reader.number(1) == 1 && reader.number(1) == 26 && reader.number(1) == 5 && reader.number(1) == 1,
-          "unsupported MIKEY header");
-
   KeyMessage key;
-  key.csb_id = reader.number(4);
-  require(reader.number(1) == 0 && reader.number(1) == 1, "unsupported MIKEY session map");
-  require(reader.number(1) == 11 && reader.number(1) == 0, "unsupported MIKEY timestamp");
-  key.ntp_seconds = reader.number(4);
-  (void)reader.number(4);
+  key.csb_id = reader.mikey_header();
+  key.ntp_seconds = ntp_from_wire(reader.timestamp(), now);
   const auto delta = now >= key.ntp_seconds ? now - key.ntp_seconds : key.ntp_seconds - now;
   require(delta <= skew, "stale or future MIKEY timestamp");
   check_identity_period(parameters, recipient, key.ntp_seconds);
 
-  require(reader.number(1) == 14 && reader.number(1) == 16, "unsupported MIKEY RAND");
-  auto random = reader.take(16);
-  std::copy(random.begin(), random.end(), key.random.begin());
+  auto random = reader.random();
+  key.random.assign(random.begin(), random.end());
 
   require(reader.identity(1, 14) == sender, "unexpected MIKEY sender");
   require(reader.identity(2, 14) == recipient.uri, "unexpected MIKEY recipient");
@@ -830,12 +902,26 @@ KeyMessage open_mikey(const PublicParameters &parameters, const KmsLookup &looku
   auto next = reader.number(1);
   require((next == 4 || next == 21) && reader.number(1) == 1 && reader.number(1) == 2, "unsupported SAKKE profile");
   auto ciphertext = reader.take(reader.number(2));
+  // RFC 3830 section 6.15 and TS 33.180 annex E.1.2: general extension payloads (21) up to the SIGN payload (4): the
+  // key parameters (type 7, annex E.6, at most one), SAKKE-to-self (type 6, annex E.5: "may be included"; not used
+  // here, its content is ignored) and the RFC 3830 table 6.15 types Vendor ID (0) and SDP IDs (1), skipped. Any other
+  // type is an unsupported parameter, refused: RFC 3830 section 5.3, "If any unsupported parameters or errors occur
+  // during the processing ... The processing is then aborted."
   std::span<const byte> properties;
-  if (next == 21) {
-    require(profile != nullptr, "key properties require an explicit wire profile");
-    require(reader.number(1) == 4 && reader.number(1) == 7, "unsupported MIKEY extension");
-    properties = reader.take(reader.number(2));
+  bool have_properties = false;
+  while (next == 21) {
+    next = reader.number(1);
+    const auto type = reader.number(1);
+    auto data = reader.take(reader.number(2));
+    if (type == 7) {
+      require(!have_properties, "duplicate MIKEY key parameters");
+      require(profile != nullptr, "key properties require an explicit wire profile");
+      properties = data;
+      have_properties = true;
+    } else
+      require(type == 6 || type == 0 || type == 1, "unsupported MIKEY general extension");
   }
+  require(next == 4, "unsupported MIKEY payload before SIGN");
 
   require(reader.number(2) == 0x2081, "unsupported ECCSI SIGN");
   const auto signed_length = reader.position;
@@ -844,7 +930,7 @@ KeyMessage open_mikey(const PublicParameters &parameters, const KmsLookup &looku
   require(verify(*sp, sender, key.ntp_seconds, message.first(signed_length), signature), "MIKEY signature invalid");
 
   key.key = decapsulate(parameters, recipient, key.ntp_seconds, ciphertext);
-  if (!properties.empty()) key.properties = decrypt_properties(key, properties, *profile);
+  if (have_properties) key.properties = decrypt_properties(key, properties, *profile);
   return key;
 }
 
@@ -937,14 +1023,9 @@ AuthenticatedPayload open_authenticated(const KmsLookup &lookup, std::string_vie
 std::string mikey_initiator_kms(std::span<const byte> message) {
   require(message.size() <= 65535, "oversized MIKEY message");
   Reader reader{message};
-  require(reader.number(1) == 1 && reader.number(1) == 26 && reader.number(1) == 5 && reader.number(1) == 1,
-          "unsupported MIKEY header");
-  (void)reader.number(4);
-  require(reader.number(1) == 0 && reader.number(1) == 1, "unsupported MIKEY session map");
-  require(reader.number(1) == 11 && reader.number(1) == 0, "unsupported MIKEY timestamp");
-  (void)reader.take(8);
-  require(reader.number(1) == 14 && reader.number(1) == 16, "unsupported MIKEY RAND");
-  (void)reader.take(16);
+  (void)reader.mikey_header();
+  (void)reader.timestamp();
+  (void)reader.random();
   (void)reader.identity(1, 14);
   (void)reader.identity(2, 14);
   return reader.identity(6, 14);
@@ -955,14 +1036,9 @@ std::string mikey_initiator_kms(std::span<const byte> message) {
 std::pair<std::string, std::string> mikey_receiver(std::span<const byte> message) {
   require(message.size() <= 65535, "oversized MIKEY message");
   Reader reader{message};
-  require(reader.number(1) == 1 && reader.number(1) == 26 && reader.number(1) == 5 && reader.number(1) == 1,
-          "unsupported MIKEY header");
-  (void)reader.number(4);
-  require(reader.number(1) == 0 && reader.number(1) == 1, "unsupported MIKEY session map");
-  require(reader.number(1) == 11 && reader.number(1) == 0, "unsupported MIKEY timestamp");
-  (void)reader.take(8);
-  require(reader.number(1) == 14 && reader.number(1) == 16, "unsupported MIKEY RAND");
-  (void)reader.take(16);
+  (void)reader.mikey_header();
+  (void)reader.timestamp();
+  (void)reader.random();
   (void)reader.identity(1, 14);
   auto receiver = reader.identity(2, 14);
   (void)reader.identity(6, 14);
@@ -973,7 +1049,7 @@ std::pair<std::string, std::string> mikey_receiver(std::span<const byte> message
 // TS 33.180 clause 5.2.2: the CSB-ID of an I_MESSAGE (the key identifier K-ID), read without authenticating it.
 std::uint32_t mikey_csb_id(std::span<const byte> message) {
   Reader reader{message};
-  require(reader.number(1) == 1 && reader.number(1) == 26 && reader.number(1) == 5 && reader.number(1) == 1,
+  require(reader.number(1) == 1 && reader.number(1) == 26 && reader.number(1) == 5 && (reader.number(1) & 0x7f) == 1,
           "unsupported MIKEY header");
   return static_cast<std::uint32_t>(reader.number(4));
 }
@@ -983,14 +1059,9 @@ std::uint32_t mikey_csb_id(std::span<const byte> message) {
 std::string mikey_initiator(std::span<const byte> message) {
   require(message.size() <= 65535, "oversized MIKEY message");
   Reader reader{message};
-  require(reader.number(1) == 1 && reader.number(1) == 26 && reader.number(1) == 5 && reader.number(1) == 1,
-          "unsupported MIKEY header");
-  (void)reader.number(4);
-  require(reader.number(1) == 0 && reader.number(1) == 1, "unsupported MIKEY session map");
-  require(reader.number(1) == 11 && reader.number(1) == 0, "unsupported MIKEY timestamp");
-  (void)reader.take(8);
-  require(reader.number(1) == 14 && reader.number(1) == 16, "unsupported MIKEY RAND");
-  (void)reader.take(16);
+  (void)reader.mikey_header();
+  (void)reader.timestamp();
+  (void)reader.random();
   return reader.identity(1, 14);
 }
 

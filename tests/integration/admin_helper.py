@@ -78,6 +78,8 @@ def login(user, password, client_id, redirect_uri, scope='openid'):
             state='s1',
             nonce='n1',
             code_challenge=challenge,
+            # TS 33.180 table B.4.2.2-1: REQUIRED.
+            acr_values='3gpp:acr:password',
             code_challenge_method='S256',
         )
     )

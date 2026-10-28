@@ -71,7 +71,7 @@ std::optional<SipResponse> McServer::ambient_media_refusal(const SipMessage &mes
   // The SDP direction of the ambient call type (ambient_direction_refusal).
   if (const auto refusal = ambient_direction_refusal(*message.remote_media, type)) return reject(488, *refusal);
   try {
-    validate_remote(user.id, *message.remote_media, true);
+    validate_remote(user.id, *message.remote_media);
   } catch (const std::exception &error) {
     event("sdp_rejected", {{"reason", error.what()}});
     return reject(488);
@@ -175,8 +175,8 @@ SipResponse McServer::ambient_invite(const SipMessage &message, const User &user
   if (in_call(user.id)) return reject(486);
   if (in_call(request.target)) return reject(480);
   auto session = make_ambient_session(message, user, type, request, policy);
-  auto leg = make_leg(user.id, session);
-  if (leg->local.floor_ssrc == message.remote_media->floor_ssrc) return reject(488);
+  auto leg = make_leg(user.id, session, message.remote_media->floor_ssrc);
+  if (peer_floor_ssrc_refused(*leg, message.remote_media->floor_ssrc)) return reject(488);
   leg->dialog = message.dialog_id;
   leg->origin = true;
   leg->incoming_offer = true;
@@ -186,8 +186,14 @@ SipResponse McServer::ambient_invite(const SipMessage &message, const User &user
   leg->local.queueing = leg->local.queueing && message.remote_media->queueing;
   leg->local.floor_priority.reset();
   leg->local.direction = type == "remote-init" ? "sendonly" : "recvonly";
+  // TS 24.380 clause 14.3.5: the answer accepts the implicit request that TS 24.379 clause 11.1.6.2.1.1 steps 12
+  // and 13 have the client send; the floor goes to the listened-to user once both parties are connected
+  // (ambient_floor). TS 24.379 clause 6.4: in a remotely initiated call it is a request to grant the floor to the
+  // terminating client, no implicit floor request of the offerer, so no "mc_ssrc" (TS 24.380 clause 14.3.6).
+  accept_implicit_floor_request(*leg, *message.remote_media, true);
+  if (type == "remote-init") leg->implicit_audio_ssrc = 0;
   response.status_code = 200;
-  response.local_media = leg->local;
+  response.local_media = initial_answer_media(*leg);
   response.contact_uri = session->uri;
   response.focus = true;
   McpttInfo answer;
@@ -260,7 +266,7 @@ void McServer::release_ambient(const std::shared_ptr<Session> &session, const st
     if (leg->user == session->listened_to && !leg->awaiting_answer) {
       listened_to_leg = true;
       leg->active = false;
-      sip_.bye(leg->dialog);
+      bye(leg->dialog);
     }
   if (!listened_to_leg) release_ambient_listening(*session);
 }
@@ -284,7 +290,7 @@ void McServer::release_ambient_listening(const Session &session) {
   McpttInfo release;
   release.release_reason = session.ambient_release_reason;
   for (const auto &leg : session_legs(session))
-    if (leg->user == session.listening && !leg->awaiting_answer) sip_.bye(leg->dialog, {}, {}, service_parts(release));
+    if (leg->user == session.listening && !leg->awaiting_answer) bye(leg->dialog, {}, {}, service_parts(release));
 }
 
 //------------------------------------------------------------------------------
@@ -343,7 +349,7 @@ bool McServer::release_relayed_ambient(const std::string &id, const std::string 
     };
     relay->client_released = true;
     try {
-      sip_.bye(relay->client_dialog, [this, finish](const SipResponse &response) {
+      bye(relay->client_dialog, [this, finish](const SipResponse &response) {
         if (response.status_code >= 200) schedule(finish);
       });
     } catch (const std::exception &) {

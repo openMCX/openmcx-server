@@ -120,6 +120,7 @@ pj_status_t SipEngine::Impl::protect_outgoing(pjsip_tx_data *data) {
     transmission.from_uri = bare_header_uri(message, PJSIP_H_FROM);
     transmission.to_uri = bare_header_uri(message, PJSIP_H_TO);
     transmission.headers = collect_headers(message);
+    transmission.call_id = call_id_from(message);
 
     const auto type = content_type_from(message);
     auto text = print_body(message->body);

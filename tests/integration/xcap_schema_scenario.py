@@ -48,7 +48,7 @@ state = secrets.token_hex(8)
 query = urllib.parse.urlencode({"response_type": "code", "client_id": oauth["client_id"], "redirect_uri": oauth["redirect_uri"],
     "scope": "openid 3gpp:mc:ptt_service 3gpp:mc:ptt_config_management_service 3gpp:mc:ptt_group_management_service",
     "state": state, "nonce": secrets.token_hex(8), "code_challenge": challenge,
-    "code_challenge_method": "S256"})
+    "acr_values": "3gpp:acr:password", "code_challenge_method": "S256"})
 request_id = json.loads(call("GET", oauth["issuer"] + "/authorize?" + query)[4])["request_id"]
 form = {"Content-Type": "application/x-www-form-urlencoded"}
 location = call("POST", oauth["issuer"] + "/login", urllib.parse.urlencode({"request_id": request_id,
@@ -97,9 +97,9 @@ def main():
         """Percent-encode text for one XCAP path segment."""
         return url_quote(text, safe='')
 
-    tree = f"{gms}/xcap-root/org.openmobilealliance.groups/users/{quote(ids['client-a'])}/"
-    profile_b = f"{cms}/xcap-root/org.3gpp.mcptt.user-profile/users/{quote(ids['client-b'])}/mcptt-user-profile-1.xml"
-    profile_a = f"{cms}/xcap-root/org.3gpp.mcptt.user-profile/users/{quote(ids['client-a'])}/mcptt-user-profile-1.xml"
+    tree = f"{gms}/org.openmobilealliance.groups/users/{quote(ids['client-a'])}/"
+    profile_b = f"{cms}/org.3gpp.mcptt.user-profile/users/{quote(ids['client-b'])}/mcptt-user-profile-1.xml"
+    profile_a = f"{cms}/org.3gpp.mcptt.user-profile/users/{quote(ids['client-a'])}/mcptt-user-profile-1.xml"
     squad = f'sip:schema-{int(time.time()) % 100000}@{domain}'
     checks, observations = [], {}
     result = dict(scenario='xcap-schema', passed=False, checks=checks, observations=observations)
@@ -151,7 +151,7 @@ def main():
         f'<oxe:supported-services><oxe:service enabler="{MCPTT_ICSI}"><oxe:group-media><gi:mcptt-speech/></oxe:group-media>'
         '</oxe:service></oxe:supported-services><gi:protect-media>false</gi:protect-media>'
     )
-    entry_url = f"{gms}/xcap-root/org.openmobilealliance.groups/global/byGroupID/{quote(squad)}/~~/" + quote(
+    entry_url = f"{gms}/org.openmobilealliance.groups/global/byGroupID/{quote(squad)}/~~/" + quote(
         f'group/list-service/list/entry[@uri="{ids["client-b"]}"]'
     )
     # Each case: ID and label, request, expected status, a text the body must hold.

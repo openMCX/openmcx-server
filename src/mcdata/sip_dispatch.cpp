@@ -14,6 +14,12 @@ namespace mcx {
 // TS 24.282 clauses 6.6.3.3 and 6.5.2.4 (TS 33.180 clause 9.5): a SIP request as received: the MCData signalling of a
 // client is opened with its CSK, the protected XML is decrypted, and the XML of the answer is protected the same way.
 SipResponse DataServer::incoming(const SipMessage &request) {
+  // TS 24.282 clause 6.5.3.4.2 steps 3 and 5: signatures that do not verify (verify_incoming).
+  if (!request.protection_error.empty()) {
+    ++xml_refused_;
+    event("mcdata_xml_refused", {{"method", request.method}, {"reason", request.protection_error}});
+    return reject(403, "139 integrity protection check failed", asserted_identity(request), "integrity");
+  }
   // Only the SIP core is a trusted source (dispatch refuses any other).
   if (request.source_address != core_address_) return dispatch(request);
   // TS 24.282 clause 7.3.2: the SIP core's third-party REGISTER asserts no identity; third_party_register opens the
@@ -25,7 +31,11 @@ SipResponse DataServer::incoming(const SipMessage &request) {
   const auto xml = users_.contains(sip) ? xml_key(sip) : std::nullopt;
   auto response = dispatch(opened);
 
-  // The XML of the answer is protected like any other sent to this client.
+  // The XML of the answer is protected like any other sent to this client. TS 33.180 annex E.6.10: with its CSK past
+  // its Expiry time the answer cannot be: CskExpired refuses the request (500 by the SIP engine), with no XML sent.
+  if (users_.contains(sip))
+    require_csk_in_use(sip, !response.parts.empty() ? response.parts
+                                                    : std::vector<BodyPart>{{response.content_type, response.body}});
   if (xml && !response.parts.empty())
     response.parts = encrypt_xml(xml, std::move(response.parts));
   else if (xml && response.content_type == mcdata::info_mime && !response.body.empty())

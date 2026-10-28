@@ -121,7 +121,8 @@ func (svc *service) clientCredentialsGrant(writer http.ResponseWriter, request *
 		return
 	}
 	svc.logEvent("key_client_token_issued", map[string]any{"client_id": client.ClientID, "identity": client.Identity})
-	writer.Header().Set("Cache-Control", "no-store")
+	// RFC 6749 section 5.1: "Cache-Control" no-store (writeJSON) and "Pragma" no-cache.
+	writer.Header().Set("Pragma", "no-cache")
 	writeJSON(writer, http.StatusOK, map[string]any{"access_token": token, "token_type": "Bearer",
 		"expires_in": svc.cfg.TokenTTLSeconds, "scope": client.Scope})
 }
@@ -130,13 +131,15 @@ func (svc *service) clientCredentialsGrant(writer http.ResponseWriter, request *
 // TS 33.180 clause 5.3.3 step 1 and annex D.2: the identity of a key management client of an MC server or the GMS
 // from its Bearer access token: a token of the IdMS (issuer, audience, signature, lifetime) without an MC user (no
 // mcptt_id), issued to a configured key management client, whose subject is that client's identity and whose scope
-// holds its key management scope. ok is false for any other token (a user's token goes the user's way).
+// holds its key management scope. ok is false for any other token (a user's token goes the user's way, with the
+// challenges of RFC 6750 section 3 in authenticateBearer). The auth-scheme is matched case-insensitively (bearerToken,
+// RFC 6750 section 2.1, RFC 7235 section 2.1).
 func (svc *service) keyClientIdentity(request *http.Request) (identity string, ok bool) {
-	value := request.Header.Get("Authorization")
-	if !strings.HasPrefix(value, "Bearer ") {
+	token, bearer := bearerToken(request.Header.Get("Authorization"))
+	if !bearer {
 		return "", false
 	}
-	claims, err := VerifyToken(strings.TrimPrefix(value, "Bearer "), svc.verificationKey, svc.cfg.Issuer, svc.cfg.ServerClientID, svc.now())
+	claims, err := VerifyToken(token, svc.verificationKey, svc.cfg.Issuer, svc.cfg.ServerClientID, svc.now())
 	if err != nil || claims.MCPTTID != "" || (claims.Type != "" && claims.Type != "access") {
 		return "", false
 	}

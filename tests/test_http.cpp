@@ -102,9 +102,10 @@ public:
   }
 
   //------------------------------------------------------------------------------
-  // RFC 7519: the claims as a JWT signed with RS256.
-  std::string token(const json &claims) const {
-    const auto header = json{{"alg", "RS256"}, {"typ", "JWT"}, {"kid", "test-key"}}.dump();
+  // RFC 7519: the claims as a JWT signed with RS256, under the given JOSE header (RFC 7515 section 4).
+  std::string token(const json &claims,
+                    const json &jose = json{{"alg", "RS256"}, {"typ", "JWT"}, {"kid", "test-key"}}) const {
+    const auto header = jose.dump();
     const auto unsigned_token = base64url(header) + "." + base64url(claims.dump());
     OpenSsl<EVP_MD_CTX, EVP_MD_CTX_free> context(EVP_MD_CTX_new(), EVP_MD_CTX_free);
     std::size_t signature_size = 0;
@@ -160,8 +161,9 @@ template <typename Function> void expect_rejected(std::string_view name, Functio
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex B.11.2 with tables B.2.2.2-1 and B.2.2.3-1: an access token of another IdMS (a subject of its own,
-// the MC servers among other audiences, no OpenMCX claims) is accepted; one without scope or client_id, of another
-// issuer or audience, expired or of an unknown key is not.
+// the MC servers among other audiences, no OpenMCX claims) is accepted, and so is one without iss or aud (RFC 7519
+// sections 4.1.1 and 4.1.3: checked "when this claim is present"), as the access token of the annex B.4.2.5 example;
+// one without scope, client_id or exp, of another issuer or audience, expired or of an unknown key is not.
 void access_tokens(const SigningKey &key, const json &keys) {
   const auto now = std::time(nullptr);
   const json claims = {{"iss", "https://idms.example.test"},
@@ -181,11 +183,25 @@ void access_tokens(const SigningKey &key, const json &keys) {
   changed["aud"] = "mcx-servers";
   changed.erase("iat");
   (void)check(changed);
-  for (const auto *name : {"scope", "client_id", "exp", "aud"}) {
+  for (const auto *name : {"scope", "client_id", "exp"}) {
     changed = claims;
     changed.erase(name);
     expect_rejected(std::string("an access token without ") + name, [&] { (void)check(changed); });
   }
+  // TS 33.180 annex B.4.2.5: the example access token has mcptt_id, exp, scope and client_id only.
+  const json example = {{"mcptt_id", "sip:alice@mcx.test"},
+                        {"exp", now + 300},
+                        {"scope", "openid 3gpp:mc:ptt_service"},
+                        {"client_id", "mcptt_client"}};
+  if (check(example).at("mcptt_id") != "sip:alice@mcx.test") throw std::runtime_error("B.4.2.5 access token refused");
+  for (const auto *name : {"iss", "aud"}) {
+    changed = claims;
+    changed.erase(name);
+    (void)check(changed);
+  }
+  changed = claims;
+  changed["iss"] = nullptr;
+  expect_rejected("an access token with a null issuer", [&] { (void)check(changed); });
   changed = claims;
   changed["iss"] = "https://other.example.test";
   expect_rejected("an access token of another issuer", [&] { (void)check(changed); });
@@ -195,6 +211,13 @@ void access_tokens(const SigningKey &key, const json &keys) {
   changed = claims;
   changed["exp"] = now - 1;
   expect_rejected("an expired access token", [&] { (void)check(changed); });
+  // TS 33.180 annex B.11.2, RFC 7519 section 7.2: no rule compares an access token's iat with the clock; a NumericDate
+  // ahead of it is accepted, an iat that is not one (section 4.1.6) is not.
+  changed = claims;
+  changed["iat"] = now + 3600;
+  (void)check(changed);
+  changed["iat"] = "now";
+  expect_rejected("an access token with a non-numeric iat", [&] { (void)check(changed); });
   auto other = keys;
   other["keys"][0]["kid"] = "rotated";
   try {
@@ -364,7 +387,45 @@ void html_forms() {
 // TS 33.180 clause 6.1.2 and annex B.11.1: clear HTTP is refused; a valid ID token returns its claims, and a token
 // without a subject or MCPTT ID, an empty identity binding, a wrong issuer, audience or nonce, an expired or not yet valid
 // lifetime, a changed signature, an encryption key or another key algorithm is refused.
+//------------------------------------------------------------------------------
+// TS 24.484 clause 7.2.2.7 item 4: the configured <idms-auth-endpoint> and <idms-token-endpoint> (and a configured
+// JWKS URI) are used as given, without the discovery document; one not configured comes from the issuer's discovery
+// document; a configured endpoint that is not https, or a discovery document of another issuer, is refused.
+void configured_idms_endpoints() {
+  int fetched = 0;
+  const auto discovery = [&] {
+    ++fetched;
+    return json{{"issuer", "https://idms.test"},
+                {"authorization_endpoint", "https://idms.test/authorize"},
+                {"token_endpoint", "https://idms.test/token"},
+                {"jwks_uri", "https://idms.test/jwks"}};
+  };
+  const json cfg{{"issuer", "https://idms.test"},
+                 {"idms_auth_endpoint", "https://idms-auth.test:8443/idms/auth"},
+                 {"idms_token_endpoint", "https://idms-token.test:8443/idms/token"}};
+  if (mcx::oidc_endpoint(cfg, "authorization_endpoint", discovery) != "https://idms-auth.test:8443/idms/auth" ||
+      mcx::oidc_endpoint(cfg, "token_endpoint", discovery) != "https://idms-token.test:8443/idms/token" || fetched != 0)
+    throw std::runtime_error("configured IdMS endpoints not used as given");
+  if (mcx::oidc_endpoint(cfg, "jwks_uri", discovery) != "https://idms.test/jwks" || fetched != 1)
+    throw std::runtime_error("JWKS URI not taken from discovery");
+  auto with_jwks = cfg;
+  with_jwks["jwks_uri"] = "https://idms.test/keys";
+  if (mcx::oidc_endpoint(with_jwks, "jwks_uri", discovery) != "https://idms.test/keys" || fetched != 1)
+    throw std::runtime_error("configured JWKS URI not used");
+  if (mcx::oidc_endpoint(json{{"issuer", "https://idms.test"}}, "token_endpoint", discovery) !=
+      "https://idms.test/token")
+    throw std::runtime_error("token endpoint not taken from discovery");
+  auto clear = cfg;
+  clear["idms_token_endpoint"] = "http://idms.test/token";
+  expect_rejected("a configured clear HTTP token endpoint",
+                  [&] { mcx::oidc_endpoint(clear, "token_endpoint", discovery); });
+  expect_rejected("a discovery document of another issuer", [&] {
+    mcx::oidc_endpoint(json{{"issuer", "https://other.test"}}, "token_endpoint", discovery);
+  });
+}
+
 int main() {
+  configured_idms_endpoints();
   if (mcx::url_encode("sip:a+b@example.test") != "sip%3Aa%2Bb%40example.test") throw std::runtime_error("URI escaping");
   expect_rejected("clear HTTP", [] { mcx::HttpClient("unused").request("GET", "http://localhost/"); });
   configured_timeout();
@@ -434,16 +495,31 @@ int main() {
   changed["iat"] = std::time(nullptr) + 60;
   expect_rejected("issued-at beyond the clock skew", [&] { verify(key.token(changed), keys); });
 
-  // OpenID Connect Core 1.0 section 3.1.3.7: an audience list names the client, and then azp is the client.
+  // OpenID Connect Core 1.0 section 3.1.3.7 step 3: an audience list of the client alone is accepted; one with an
+  // additional audience is refused, azp or not (this client trusts no other audience), and so is one without the
+  // client.
   changed = claims;
+  changed["aud"] = json::array({"mcptt-client"});
+  verify(key.token(changed), keys);
   changed["aud"] = json::array({"mcptt-client", "account"});
   changed["azp"] = "mcptt-client";
-  verify(key.token(changed), keys);
-  changed.erase("azp");
-  expect_rejected("an audience list without azp", [&] { verify(key.token(changed), keys); });
+  expect_rejected("an additional audience", [&] { verify(key.token(changed), keys); });
   changed["aud"] = json::array({"account"});
-  changed["azp"] = "mcptt-client";
   expect_rejected("an audience list without the client", [&] { verify(key.token(changed), keys); });
+
+  // RFC 7515 section 4.1.11: a "crit" header parameter names an extension this verifier does not understand.
+  expect_rejected("a critical header parameter", [&] {
+    verify(key.token(claims, {{"alg", "RS256"}, {"kid", "test-key"}, {"crit", {"exp"}}, {"exp", 1}}), keys);
+  });
+  // OpenID Connect Core 1.0 section 10.1: without kid, the JWK Set's only key verifies the token; with several keys
+  // the token must name one.
+  const auto unnamed = key.token(claims, {{"alg", "RS256"}, {"typ", "JWT"}});
+  verify(unnamed, keys);
+  auto two = keys;
+  two["keys"].push_back(keys.at("keys").at(0));
+  two["keys"][1]["kid"] = "second-key";
+  expect_rejected("a token without kid for two keys", [&] { verify(unnamed, two); });
+  verify(token, two);
 
   access_tokens(key, keys);
 

@@ -81,7 +81,7 @@ def access_token(cfg):
                                         # TS 33.180 table B.4.2.2-1: the MCPTT and MCData servers check their scope.
                                         scope="openid 3gpp:mc:ptt_service 3gpp:mc:data_service",
                                         nonce=secrets.token_hex(8), code_challenge=challenge,
-                                        code_challenge_method="S256"))
+                                        acr_values="3gpp:acr:password", code_challenge_method="S256"))
     status, _, body = call("GET", oauth["issuer"] + "/authorize?" + query)
     if status != 200:
         raise RuntimeError("authorize")

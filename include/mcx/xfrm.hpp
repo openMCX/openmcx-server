@@ -31,9 +31,12 @@ struct SecurityAssociation {
   std::string source, destination; // numeric IPv4 or IPv6 addresses
   std::uint16_t source_port = 0, destination_port = 0;
   std::uint32_t spi = 0;
-  // Annex H names: "hmac-sha-1-96"; "aes-cbc" or "null".
+  // Annex H names (TS 33.203 V19.1.0): alg "hmac-sha-1-96", "hmac-sha2-256-128", "aes-gmac", "aes-gmac-us" or "null";
+  // ealg "aes-cbc", "aes-gcm", "aes-gcm-us" or "null" (aes-gcm with alg null, aes-gmac with ealg null).
   std::string alg, ealg;
   std::vector<std::uint8_t> integrity_key, encryption_key;
+  // AES-GCM and AES-GMAC: the 4-octet salt of annex I (RFC 4106 section 4, RFC 4543 section 3.2), this SA's.
+  std::vector<std::uint8_t> salt;
   // Outbound: an OUT policy (packets from this host are protected with the SA); inbound: an IN policy (packets of the
   // selectors that did not arrive protected with this SA are dropped, TS 33.203 clause 7.1 rule 7 at the IP layer).
   bool outbound = false;

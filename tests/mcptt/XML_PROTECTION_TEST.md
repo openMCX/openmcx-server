@@ -20,7 +20,7 @@ Back to the [test index by call type](../MCPTT_TEST.md).
 
 | Choice | Reason |
 |---|---|
-| Protection is enabled by `security.confidentiality_protection` and `security.integrity_protection` in each client and server configuration, not by the service configuration document's `<confidentiality-protection>` and `<integrity-protection>`. | The lab has no service configuration document. |
+| Protection is enabled by the service configuration documents' `<confidentiality-protection>` and `<integrity-protection>` (absent: enabled), which the lab generator writes "false" where the lab's flags leave a protection off. | `--protection-documents-only` (lab xml-key-documents) removes the local switches from every configuration to show that nothing else decides. |
 | The signed digest covers the octets of each body as sent (no transform), and the signature covers the exclusive canonical form of SignedInfo. | TS 33.180 §9.3.5 leaves the canonicalisation to "an appropriate algorithm". |
 | The MCData service protects its own messages under the MCData CSK; the MCPTT filter leaves messages to and from the MCData server alone. | One client process runs both services. |
 
@@ -67,6 +67,25 @@ The clients and servers report `xml_protection` in their status: whether each pr
 | XP-05 | Nothing is refused |
 | XP-06 | With integrity protection, every client and server signs its XML bodies and verifies those it receives |
 
+### Required protection without keys (`xml_key_scenario`)
+
+The `xml-key-confidentiality`, `xml-key-integrity` and `xml-key-mixed` labs run XML protection without media and
+floor protection (`--xml-only`), confidentiality and integrity apart, with one client whose KMS cannot be reached
+(`--kms-unreachable client-c`), and MCPTT XML protection with MCData signalling protection off
+(`--mcdata-clear-signalling`). The requirement is the configuration alone; without the service's CSK, or past its
+Expiry time, a message it applies to is not sent (TS 24.379 clauses 6.6.2.3.1 and 6.6.3.3.1, TS 24.282 clauses
+6.5.2.3.1 and 6.5.3.3.1, TS 33.180 annex E.6.10).
+
+| ID | What is checked |
+|---|---|
+| XK-01 | Every client with a reachable KMS is authorised and holds its MCPTT CSK without media or floor protection |
+| XK-02 | The client without keys is not authorised; nothing of it goes out in the clear |
+| XK-03 | A group call with its signalling protected as required |
+| XK-04 | With MCData (mixed configuration), a one-to-one SDS is delivered |
+| wire | `verify_xml_keys.py`: every service authorisation carries the CSK; no clear sensitive mcptt-info element with confidentiality protection; every authorisation signed with integrity protection; integrity alone encrypts nothing, confidentiality alone signs nothing (`verify_xml_signatures.py` checks every later XML body in the integrity labs) |
+
+The missing, expired and revoked key cases of the gate itself are unit tests (openmcx-client `linux/tests/test_xml_gate.cpp`).
+
 In the same labs the protected private call scenario (automatic, manual, tampered key, first-to-answer, ambient
 listening, emergency) and the prearranged scenario run with the protection on.
 
@@ -75,6 +94,6 @@ listening, emergency) and the prearranged scenario run with the protection on.
 | Area | Gap |
 |---|---|
 | MCData integrity | The MCData XML signatures of TS 24.282 §6.5.3 are not implemented. |
-| Service configuration | `<confidentiality-protection>` and `<allow-signalling-protection>` are not read from a service configuration document. |
+| Service configuration | The servers read the document from the CMS's internal view, not by a subscription (LIMITATIONS). |
 | Pre-established sessions | The REFER case of §6.6.2.1 does not arise (pre-established sessions are not in present edition). |
 | Negative lab test | No scenario sends a tampered or undecryptable body; the xmlsec unit tests cover tampered bodies and signatures, keys of another XPK and decryption failures. |

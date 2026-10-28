@@ -4,7 +4,8 @@
 #   docker/packages <ubuntu release> <part>      e.g. docker/packages 26.04 mcptt
 # Parts: dev, dev-autotools, dev-openh264, runtime, mcptt (also MCVideo), mcdata, common, http-proxy, user-db,
 # kamailio (the SIP core's run-time libraries and nc for its health check), kamailio-dev (the build libraries of the
-# SIP core's IMS modules that dev lacks).
+# SIP core's IMS modules that dev lacks). libsrtp is not among them: docker/Dockerfile.dev builds it from source with
+# OpenMCX's patch (dependencies/libsrtp) and links it statically.
 set -eu
 release=$1
 part=$2
@@ -26,12 +27,12 @@ case "$release" in
   ;;
 esac
 
-server="libcurl4t64 libnghttp2-14 $xml libsrtp2-1 libssl3t64 libuuid1"
+server="libcurl4t64 libnghttp2-14 $xml libssl3t64 libuuid1"
 case "$part" in
 dev)
   echo build-essential cmake pkg-config ca-certificates curl bison flex \
     uuid-dev libssl-dev libxml2-dev libcurl4-openssl-dev libnghttp2-dev nlohmann-json3-dev \
-    libopencore-amrwb-dev libvo-amrwbenc-dev libsrtp2-dev libsctp-dev \
+    libopencore-amrwb-dev libvo-amrwbenc-dev libsctp-dev \
     libfreediameter-dev libmariadb-dev libpcre2-dev libunistring-dev \
     python3 python3-pytest python3-yaml openssl ffmpeg espeak-ng tcpdump \
     iproute2 netcat-openbsd
@@ -41,7 +42,7 @@ dev-openh264) echo "$openh264" ;;
 runtime) echo ca-certificates curl python3 ;;
 mcptt) echo "$server libsctp1 $diameter libopencore-amrwb0 libvo-amrwbenc0" ;;
 mcdata) echo "$server" ;;
-common) echo "$xml libsrtp2-1 libssl3t64" ;;
+common) echo "$xml libssl3t64" ;;
 http-proxy) echo "$xml" ;;
 user-db) echo "libsctp1 $diameter" ;;
 kamailio) echo "ca-certificates libssl3t64 libcurl4t64 libmariadb3 netcat-openbsd $xml libgcrypt20 libmnl0" ;;

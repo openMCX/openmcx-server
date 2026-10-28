@@ -1,0 +1,3129 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: OpenMCX <noreply@openmcx.invalid>
+Date: Sun, 25 Oct 2026 01:00:00 +0200
+Subject: [PATCH] ims_ipsec_pcscf: TS 33.203 Rel-19 algorithms, algorithm list,
+ checked SAs and protected port guards
+
+- add_sa(): the integrity and encryption algorithms of TS 33.203 V19.1.0
+  annex H with the key expansion of annex I and TS 33.210 V19.3.0 clauses
+  5.3.3/5.3.4: hmac-sha-1-96, hmac-sha2-256-128 (KDF of TS 33.220 annex B),
+  aes-gcm and aes-gmac (AEAD rfc4106/rfc4543 with the KDF salt) and their
+  unique-salt "-us" variants; hmac-md5-96 and des-ede3-cbc, removed from
+  annex H, are refused. The kernel's answer is checked (NLM_F_ACK), as for
+  add_policy(): a refused SA no longer goes unnoticed.
+- create_ipsec_tunnel(): a tunnel whose SAs or policies fail is deleted and
+  the creation fails, so the 401 never announces SAs that do not exist
+  (TS 33.203 clause 7.2).
+- parse_sec_agree() replaced: every Security-Client header field and every
+  mechanism in it is parsed on its own (the former parser merged the
+  parameters of all mechanisms); the P-CSCF selects the first combination of
+  its own ordered list (new parameter ipsec_algorithms) that the UE offers,
+  and its Security-Server lists the whole list (TS 33.203 clause 7.2, SM6).
+- add_port_guards(), at start-up: BLOCK policies for the protected ports
+  below the SAs' policies, so that no unprotected message is received on or
+  sent from them (TS 33.203 clause 7.1).
+- update_contact_ipsec_params(): a re-registration's new set keeps the
+  port_ps of the set in use (TS 33.203 clause 7.4.0), and the P-CSCF's SPIs
+  differ from the UE's (clause 7.1).
+- create_ipsec_tunnel(): only the two pairs of SAs of clause 6.1.0; the four
+  cross-port SAs, which the kernel refused as duplicates, are gone.
+- destroy_ipsec_tunnel(): a set is destroyed once, its SPIs given back once,
+  so that the old set of a re-registration can be deleted early (clause
+  7.4.2a) without its contact's expiry releasing the SPIs again.
+- ipsec_destroy_when_idle(): TS 33.203 clause 7.4.2a, "The old SAs are then
+  deleted as soon as all pending SIP transactions have been completed, or
+  have timed out", and the new SAs after a failed authentication: tm
+  callbacks count the transactions started over each set (requests from the
+  UE on port_uc, requests to the UE from port_pc); a released set is deleted
+  when its count is 0.
+- ipsec_set_released(): TS 33.203 clause 6.1.5, a REGISTER over a set being
+  deleted is not over an SA of the latest successful authentication.
+- ipsec_sa_pair_free(): TS 33.203 clause 7.1 rule 3, the pair (UE address,
+  protected client port) must not be in the SA table already.
+- spi_gen: the SA_table of TS 33.203 clause 7.1 rule 1: each SPI pair in
+  use holds the record of its set (UE address, ports, SPIs, the IMPI of its
+  REGISTER, temporary until ipsec_set_completed() at SM12); the pool uses a
+  Kamailio shared-memory lock instead of a POSIX mutex not shared between the
+  processes, and gives a pair back once only (a second release put it twice
+  in the free list; clause 7.1, distinct SPIs). A copy of a set whose set is
+  gone deletes and releases nothing.
+- ipsec_create(): TS 33.203 clauses 7.3.1.4 and 7.4.2a, "The registration
+  SAs shall be deleted if they exist": when the S-CSCF's challenge arrives,
+  the temporary sets of the same UE registration (same IMPI, same UE address)
+  are deleted before the new set is created, the one the challenged REGISTER
+  came over once its transaction has ended; a temporary set ends after
+  ipsec_temp_set_lifetime (TS 24.229 clause 5.2.2.2, 401 item 4:
+  reg-await-auth, 4 minutes), also a re-registration's, which no contact
+  holds (clauses 7.3.1.1 and 7.4.2a). A set that cannot be recorded or
+  admitted is deleted again and the creation fails.
+- ipsec_impi_reserve(): TS 33.203 clause 7.1 rule 3, "for any one IMPI, no
+  more than six SAs per direction are stored at any one time": counting and
+  admission are one step under the pool's lock and bound to the REGISTER's
+  transaction; the challenge's set consumes the admission, the transaction's
+  end gives back an unused one. Counted: the IMPI's sets that stay over all
+  its contacts and the admissions of other transactions; at most three sets
+  (two SAs per direction each). ipsec_sa_pair_free() checks the pair against
+  the same records.
+- ipsec_set_completed(), ipsec_forward(): TS 33.203 clause 7.4.2a after
+  SM12: if SM1 came over an old valid set, that set stays in use for
+  outbound messages and the other old sets are deleted; the UE's first
+  request or response over the new set's inbound SA takes the new set into
+  use and the old one goes once its pending transactions are over; when the
+  old set ends with its lifetime, the new one is used. If SM1 was
+  unprotected, the old sets are removed. Responses go over the set their
+  request came on.
+- ipsec_reply_over_sa(): a stateful reply to a request received over a set
+  leaves over UDP from the set's port_pc to the UE's port_us (clause 7.1;
+  clauses 7.4.1a/7.4.2a, failure messages over the old SAs).
+
+The modified files carry a notice of the change (GPL-2.0 section 2(a)).
+---
+diff --git a/src/modules/ims_ipsec_pcscf/cmd.c b/src/modules/ims_ipsec_pcscf/cmd.c
+index dc66a5f..481bbe5 100644
+--- a/src/modules/ims_ipsec_pcscf/cmd.c
++++ b/src/modules/ims_ipsec_pcscf/cmd.c
+@@ -1,4 +1,18 @@
+ /*
++ * Modified by OpenMCX on 2026-10-25 (GPL-2.0 section 2(a)): every new set of security associations is recorded with
++ * the private user identity of its REGISTER, temporary until its registration completes (ipsec_set_completed()); a
++ * new challenge deletes the temporary sets of the same UE registration and a temporary set ends after its lifetime
++ * (TS 33.203 clauses 7.3.1 and 7.4.2a, TS 24.229 clause 5.2.2.2); ipsec_impi_reserve() admits a REGISTER under
++ * clause 7.1 rule 3 atomically with the count, ipsec_create() consumes the admission with the set and deletes a set
++ * it cannot record; after SM12 the old set stays in use for outbound messages until the UE's first message over
++ * the new one (clause 7.4.2a), ipsec_forward() sending over the set in use (responses over the set their request
++ * came on); ipsec_sa_pair_free() checks the records; ipsec_reply_over_sa() sends a stateful reply to a protected
++ * request over the set it came on (clause 7.1); a copy of a set that is gone no longer deletes or releases anything.
++ *
++ * Modified by OpenMCX on 2026-10-25 (GPL-2.0 section 2(a)): the Security-Server lists the P-CSCF's
++ * algorithm combinations; every SA and policy of a tunnel is checked and a failed tunnel is taken back; the SAs
++ * carry the unique-salt bits of TS 33.203 annex I.
++ *
+  * Modified by OpenMCX on 2026-10-23 (GPL-2.0 section 2(a)): an initial registration
+  * is told by the unprotected port its REGISTER arrived on, not by the UE's Via port
+  * 5060; the earlier temporary set of a pending registration is deleted when a new
+@@ -50,6 +64,7 @@
+  */
+ 
+ #include "../../core/parser/msg_parser.h"
++#include "../../core/parser/digest/digest.h"
+ #include "../../core/socket_info.h"
+ #include "../../lib/ims/ims_getters.h"
+ #include "../../modules/tm/tm_load.h"
+@@ -64,6 +79,7 @@
+ #include <string.h>
+ 
+ #include <arpa/inet.h>
++#include <time.h>
+ 
+ 
+ extern str ipsec_listen_addr;
+@@ -71,7 +87,11 @@ extern str ipsec_listen_addr6;
+ extern int ipsec_reuse_server_port;
+ extern int ipsec_client_port;
+ extern int ipsec_server_port;
++extern str ipsec_alg_list[];
++extern str ipsec_ealg_list[];
++extern int ipsec_alg_count;
+ extern int ipsec_max_connections;
++extern int ipsec_temp_set_lifetime;
+ extern ip_addr_t ipsec_listen_ip_addr;
+ extern ip_addr_t ipsec_listen_ip_addr6;
+ 
+@@ -109,6 +129,13 @@ extern struct tm_binds tmb;
+ /* if set - try TCP if corresponding UDP socket is not found */
+ #define IPSEC_FORWARD_TRYTCP (1 << 9)
+ 
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.1 rule 3, "no more than six SAs per direction" for one IMPI, and
++ * two SAs per direction in a set (clause 7.1: inbound port_uc to port_ps and port_us to port_pc, outbound the
++ * reverse; clause 6.1.0, "two pairs of SAs"): three sets. */
++#define TS33203_MAX_SAS_PER_DIRECTION 6
++#define IPSEC_SAS_PER_DIRECTION_PER_SET 2
++#define IPSEC_MAX_SETS_PER_IMPI (TS33203_MAX_SAS_PER_DIRECTION / IPSEC_SAS_PER_DIRECTION_PER_SET)
++
+ /* if set - delete unused tunnels before every registration */
+ #define IPSEC_CREATE_DELETE_UNUSED_TUNNELS 0x01
+ 
+@@ -452,8 +479,8 @@ static int get_ck_ik(const struct sip_msg *m, str *ck, str *ik)
+ 	return 0;
+ }
+ 
+-static int update_contact_ipsec_params(
+-		ipsec_t *s, const struct sip_msg *m, ipsec_t *s_old)
++static int update_contact_ipsec_params(ipsec_t *s, const struct sip_msg *m,
++		ipsec_t *s_old, const ipsec_t *current)
+ {
+ 	// Get CK and IK
+ 	str ck, ik;
+@@ -497,20 +524,46 @@ static int update_contact_ipsec_params(
+ 		}
+ 	}
+ 
+-	if(acquire_spi(&s->spi_pc, &s->spi_ps, &s->port_pc, &s->port_ps) == 0) {
+-		LM_ERR("Error generating client SPI for IPSEC tunnel creation\n");
+-		shm_free(s->ck.s);
+-		s->ck.s = NULL;
+-		s->ck.len = 0;
+-		shm_free(s->ik.s);
+-		s->ik.s = NULL;
+-		s->ik.len = 0;
++	/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.1: "The SPIs selected by the PCSCF shall be different than the
++	 * SPIs sent by the UE": a pair colliding with spi_uc or spi_us is given back and another taken (twice at most,
++	 * the pool cycling through other values). */
++	int tries;
++	for(tries = 0; tries < 3; tries++) {
++		if(acquire_spi(&s->spi_pc, &s->spi_ps, &s->port_pc, &s->port_ps) == 0) {
++			LM_ERR("Error generating client SPI for IPSEC tunnel creation\n");
++			shm_free(s->ck.s);
++			s->ck.s = NULL;
++			s->ck.len = 0;
++			shm_free(s->ik.s);
++			s->ik.s = NULL;
++			s->ik.len = 0;
++			return -1;
++		}
++		if(s->spi_pc != s->spi_uc && s->spi_pc != s->spi_us
++				&& s->spi_ps != s->spi_uc && s->spi_ps != s->spi_us)
++			break;
++		release_spi(s->spi_pc, s->spi_ps, s->port_pc, s->port_ps);
++		s->spi_pc = s->spi_ps = 0;
++	}
++	if(s->spi_pc == 0) {
++		LM_ERR("No P-CSCF SPIs different from the UE's\n");
+ 		return -1;
+ 	}
+ 
++	/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.4.0: "the protected server ports at the UE (port_us) and the
++	 * PCSCF (port_ps) shall remain unchanged, while the protected client ports ... shall change": a new set of a
++	 * re-registration keeps the port_ps of the set in use (current); every protected port is a listening socket
++	 * shared by the UEs, the SAs' selectors telling them apart. */
++	if(current && current->port_ps) {
++		s->port_ps = current->port_ps;
++	}
++
+ 	return 0;
+ }
+ 
++static int destroy_ipsec_tunnel(
++		str remote_addr, ipsec_t *s, unsigned short received_port);
++
+ static int create_ipsec_tunnel(const struct ip_addr *remote_addr, ipsec_t *s)
+ {
+ 	struct mnl_socket *sock = init_mnl_socket();
+@@ -553,71 +606,70 @@ static int create_ipsec_tunnel(const struct ip_addr *remote_addr, ipsec_t *s)
+ 			s->spi_pc, s->spi_ps, s->spi_uc, s->spi_us, s->r_alg.len,
+ 			s->r_alg.s, s->r_ealg.len, s->r_ealg.s);
+ 
++	/* OpenMCX, 2026-10-25: TS 33.203 clause 7.2, the SAs exist or the 401 does not announce them: every add_sa()
++	 * and add_policy() is checked (the kernel's answer, ipsec.c wait_nl_ack()); on a failure the SAs made so far are
++	 * deleted and the tunnel creation fails. salt_bits of annex I's unique salt, by SPI: spi_ps UE client to P-CSCF
++	 * (0), spi_pc UE server to P-CSCF (role 2), spi_uc P-CSCF server to UE (direction 1 | role 2), spi_us P-CSCF
++	 * client to UE (direction 1). */
++	int failed = 0;
++
+ 	// SA1 UE client to P-CSCF server
+ 	//               src adrr     dst addr     src port    dst port
+-	add_sa(sock, remote_addr, ipsec_addr, s->port_uc, s->port_ps, s->spi_ps,
+-			s->ck, s->ik, s->r_alg, s->r_ealg);
+-	add_policy(sock, remote_addr, ipsec_addr, s->port_uc, s->port_ps, s->spi_ps,
++	failed |= add_sa(sock, remote_addr, ipsec_addr, s->port_uc, s->port_ps, s->spi_ps,
++			s->ck, s->ik, s->r_alg, s->r_ealg, 0);
++	failed |= add_policy(sock, remote_addr, ipsec_addr, s->port_uc, s->port_ps, s->spi_ps,
+ 			IPSEC_POLICY_DIRECTION_IN);
+ 
+ 	// SA2 P-CSCF client to UE server
+ 	//               src adrr     dst addr     src port           dst port
+-	add_sa(sock, ipsec_addr, remote_addr, s->port_pc, s->port_us, s->spi_us,
+-			s->ck, s->ik, s->r_alg, s->r_ealg);
+-	add_policy(sock, ipsec_addr, remote_addr, s->port_pc, s->port_us, s->spi_us,
++	failed |= add_sa(sock, ipsec_addr, remote_addr, s->port_pc, s->port_us, s->spi_us,
++			s->ck, s->ik, s->r_alg, s->r_ealg, 1);
++	failed |= add_policy(sock, ipsec_addr, remote_addr, s->port_pc, s->port_us, s->spi_us,
+ 			IPSEC_POLICY_DIRECTION_OUT);
+ 
+ 	// SA3 P-CSCF server to UE client
+ 	//               src adrr     dst addr     src port           dst port
+-	add_sa(sock, ipsec_addr, remote_addr, s->port_ps, s->port_uc, s->spi_uc,
+-			s->ck, s->ik, s->r_alg, s->r_ealg);
+-	add_policy(sock, ipsec_addr, remote_addr, s->port_ps, s->port_uc, s->spi_uc,
++	failed |= add_sa(sock, ipsec_addr, remote_addr, s->port_ps, s->port_uc, s->spi_uc,
++			s->ck, s->ik, s->r_alg, s->r_ealg, 3);
++	failed |= add_policy(sock, ipsec_addr, remote_addr, s->port_ps, s->port_uc, s->spi_uc,
+ 			IPSEC_POLICY_DIRECTION_OUT);
+ 
+ 	// SA4 UE server to P-CSCF client
+ 	//               src adrr     dst addr     src port    dst port
+-	add_sa(sock, remote_addr, ipsec_addr, s->port_us, s->port_pc, s->spi_pc,
+-			s->ck, s->ik, s->r_alg, s->r_ealg);
+-	add_policy(sock, remote_addr, ipsec_addr, s->port_us, s->port_pc, s->spi_pc,
++	failed |= add_sa(sock, remote_addr, ipsec_addr, s->port_us, s->port_pc, s->spi_pc,
++			s->ck, s->ik, s->r_alg, s->r_ealg, 2);
++	failed |= add_policy(sock, remote_addr, ipsec_addr, s->port_us, s->port_pc, s->spi_pc,
+ 			IPSEC_POLICY_DIRECTION_IN);
+ 
+-	/* cope with some broken In-Dialog routing */
+-	// SA5 UE client to P-CSCF client
+-	//               src adrr     dst addr     src port    dst port
+-	add_sa(sock, remote_addr, ipsec_addr, s->port_uc, s->port_pc, s->spi_ps,
+-			s->ck, s->ik, s->r_alg, s->r_ealg);
+-	add_policy(sock, remote_addr, ipsec_addr, s->port_uc, s->port_pc, s->spi_ps,
+-			IPSEC_POLICY_DIRECTION_IN);
+-
+-	// SA6 P-CSCF client to UE client
+-	//               src adrr     dst addr     src port    dst port
+-	add_sa(sock, ipsec_addr, remote_addr, s->port_pc, s->port_uc, s->spi_us,
+-			s->ck, s->ik, s->r_alg, s->r_ealg);
+-	add_policy(sock, ipsec_addr, remote_addr, s->port_pc, s->port_uc, s->spi_us,
+-			IPSEC_POLICY_DIRECTION_OUT);
+-
+-	// SA7 P-CSCF server to UE server
+-	//               src adrr     dst addr     src port    dst port
+-	add_sa(sock, ipsec_addr, remote_addr, s->port_ps, s->port_us, s->spi_uc,
+-			s->ck, s->ik, s->r_alg, s->r_ealg);
+-	add_policy(sock, ipsec_addr, remote_addr, s->port_ps, s->port_us, s->spi_uc,
+-			IPSEC_POLICY_DIRECTION_OUT);
+-
+-	// SA8 UE server to P-CSCF server
+-	//               src adrr     dst addr     src port    dst port
+-	add_sa(sock, remote_addr, ipsec_addr, s->port_us, s->port_ps, s->spi_pc,
+-			s->ck, s->ik, s->r_alg, s->r_ealg);
+-	add_policy(sock, remote_addr, ipsec_addr, s->port_us, s->port_ps, s->spi_pc,
+-			IPSEC_POLICY_DIRECTION_IN);
++	/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 6.1.0: "Only two pairs of SAs shall be active ... for each
++	 * registered contact": the four cross-port SAs and policies (UE client to P-CSCF client, P-CSCF client to UE
++	 * client, P-CSCF server to UE server, UE server to P-CSCF server) "to cope with some broken In-Dialog routing"
++	 * are no longer installed. Their SAs reused the SPIs and destinations of SA1 to SA4 and were refused by the
++	 * kernel anyway; destroy_ipsec_tunnel() still removes any left by an older version. */
+ 
+ 	close_mnl_socket(sock);
+ 
++	if(failed) {
++		str remote = {remote_addr_str, strlen(remote_addr_str)};
++		LM_ERR("Creating security associations failed: alg %.*s ealg %.*s\n",
++				s->r_alg.len, s->r_alg.s, s->r_ealg.len, s->r_ealg.s);
++		destroy_ipsec_tunnel(remote, s, s->port_uc);
++		return -1;
++	}
++
+ 	return 0;
+ }
+ 
+ static int destroy_ipsec_tunnel(
+ 		str remote_addr, ipsec_t *s, unsigned short received_port)
+ {
++	/* OpenMCX, 2026-10-25: a set already destroyed (its SPIs given back to the pool, below) is not destroyed again:
++	 * the old set of a re-registration is deleted early (ipsec_destroy_by_contact() from the configuration, TS 33.203
++	 * clause 7.4.2a) and once more when its contact expires; a second release_spi() would put the SPIs twice in the
++	 * pool. */
++	if(s->spi_pc == 0 && s->spi_ps == 0) {
++		return 0;
++	}
+ 	struct mnl_socket *sock = init_mnl_socket();
+ 	if(sock == NULL) {
+ 		return -1;
+@@ -634,6 +686,18 @@ static int destroy_ipsec_tunnel(
+ 		return -1;
+ 	}
+ 
++	/* OpenMCX, 2026-10-25: a copy of a set's parameters (a contact's) whose set is gone - deleted by a later
++	 * challenge or its lifetime, its SPI pair free or given to another set since - deletes and releases nothing,
++	 * which would hit the other set. */
++	if(spi_set_check(s->spi_pc, s->spi_ps, &ip_addr, s->port_uc, s->spi_uc) < 0) {
++		LM_DBG("security associations spi_pc %u spi_ps %u of %.*s:%u already deleted\n", s->spi_pc,
++				s->spi_ps, remote_addr.len, remote_addr.s, s->port_uc);
++		s->spi_pc = 0;
++		s->spi_ps = 0;
++		close_mnl_socket(sock);
++		return 0;
++	}
++
+ 	if(ip_addr.af == AF_INET6) {
+ 		ipsec_addr = ipsec_listen_addr6;
+ 	} else {
+@@ -698,6 +762,8 @@ static int destroy_ipsec_tunnel(
+ 
+ 	// Release SPIs
+ 	release_spi(s->spi_pc, s->spi_ps, s->port_pc, s->port_ps);
++	s->spi_pc = 0;
++	s->spi_ps = 0;
+ 
+ 	close_mnl_socket(sock);
+ 	return 0;
+@@ -799,16 +865,31 @@ int add_security_server_header(struct sip_msg *m, ipsec_t *s)
+ 	}
+ 	memset(sec_header, 0, sizeof(str));
+ 
+-	// create a temporary buffer and set the value in it
+-	char sec_hdr_buf[1024];
++	/* OpenMCX, 2026-10-25: TS 33.203 clause 7.2 SM6: "a list of identifiers for the integrity and encryption
++	 * algorithms, which the PCSCF supports": one mechanism per combination of the P-CSCF's list (ipsec_algorithms),
++	 * by priority (q from 0.9 down), with the P-CSCF's SPIs and ports; the UE takes the first it supports, the one
++	 * the P-CSCF selected (the same rule, RFC 3329 section 2.3.1). Formerly only the selected one was sent. */
++	char sec_hdr_buf[2048];
++	int i, used;
+ 	memset(sec_hdr_buf, 0, sizeof(sec_hdr_buf));
+-	sec_header->len = snprintf(sec_hdr_buf, sizeof(sec_hdr_buf) - 1,
+-			"Security-Server: "
+-			"ipsec-3gpp;q=0.1;prot=esp;mod=trans;spi-c=%d;spi-s=%d;port-c=%d;"
+-			"port-s=%"
+-			"d;alg=%.*s;ealg=%.*s\r\n",
+-			s->spi_pc, s->spi_ps, s->port_pc, s->port_ps, s->r_alg.len,
+-			s->r_alg.s, s->r_ealg.len, s->r_ealg.s);
++	used = snprintf(sec_hdr_buf, sizeof(sec_hdr_buf) - 1, "Security-Server: ");
++	for(i = 0; i < ipsec_alg_count; i++) {
++		int q = 9 - i;
++		used += snprintf(sec_hdr_buf + used, sizeof(sec_hdr_buf) - 1 - used,
++				"%sipsec-3gpp;q=0.%d;alg=%.*s;ealg=%.*s;prot=esp;mod=trans;"
++				"spi-c=%u;spi-s=%u;port-c=%u;port-s=%u",
++				i ? ", " : "", q > 0 ? q : 1, ipsec_alg_list[i].len,
++				ipsec_alg_list[i].s, ipsec_ealg_list[i].len,
++				ipsec_ealg_list[i].s, s->spi_pc, s->spi_ps, s->port_pc,
++				s->port_ps);
++		if(used >= (int)sizeof(sec_hdr_buf) - 3) {
++			LM_ERR("Security-Server too long\n");
++			pkg_free(sec_header);
++			return -1;
++		}
++	}
++	used += snprintf(sec_hdr_buf + used, sizeof(sec_hdr_buf) - 1 - used, "\r\n");
++	sec_header->len = used;
+ 
+ 	// copy to the header and add
+ 	if((sec_header->s = pkg_malloc(sec_header->len)) == NULL) {
+@@ -868,6 +949,142 @@ static int ipsec_protected_port(unsigned short port)
+ 				   && port < ipsec_server_port + ipsec_max_connections);
+ }
+ 
++/* OpenMCX, 2026-10-25: the private user identity of a REGISTER: the username of its Authorization header field
++ * (TS 24.229 clause 5.1.1.2.1 a), "the "username" header field parameter, set to the value of the private user
++ * identity"), as the configuration's $aU gives it; empty if the request has none. */
++static str ipsec_register_impi(struct sip_msg *req)
++{
++	str impi = STR_NULL;
++
++	if(req == NULL || parse_headers(req, HDR_AUTHORIZATION_F, 0) != 0
++			|| req->authorization == NULL) {
++		return impi;
++	}
++	if(parse_credentials(req->authorization) < 0
++			|| req->authorization->parsed == NULL) {
++		return impi;
++	}
++	impi = ((auth_body_t *)req->authorization->parsed)->digest.username.whole;
++	return impi;
++}
++
++/* OpenMCX, 2026-10-25: the parameters of a set as the SA_table holds them. */
++static void ipsec_set_of(spi_set_t *r, const struct ip_addr *ue, const ipsec_t *s)
++{
++	memset(r, 0, sizeof(spi_set_t));
++	r->ue = *ue;
++	r->spi_uc = s->spi_uc;
++	r->spi_us = s->spi_us;
++	r->spi_pc = s->spi_pc;
++	r->spi_ps = s->spi_ps;
++	r->port_uc = s->port_uc;
++	r->port_us = s->port_us;
++	r->port_pc = s->port_pc;
++	r->port_ps = s->port_ps;
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.1 rule 1, the SA_table holds the IMPI of each SA: the new set
++ * belongs to the private user identity of the REGISTER it answers until its SAs are deleted (its SPI pair released).
++ * Clause 7.4.2a: "The expiry time of the new SAs shall be set to allow enough time to complete the registration
++ * procedure"; TS 24.229 V19.7.0 clause 5.2.2.2, 401 item 4: "The P-CSCF shall set the temporary SIP level lifetime
++ * for the temporary set of security associations to the value of reg-await-auth timer" (table 7.7.1: 4 minutes;
++ * module parameter ipsec_temp_set_lifetime). */
++static int ipsec_record_set(struct sip_msg *req, tm_cell_t *t, ipsec_t *s, unsigned short parent_uc)
++{
++	str impi = ipsec_register_impi(req);
++	spi_set_t r;
++	int ret;
++
++	ipsec_set_of(&r, &req->rcv.src_ip, s);
++	r.temporary = 1;
++	r.expires = time(NULL) + ipsec_temp_set_lifetime;
++	r.parent_uc = parent_uc;
++	if(impi.s == NULL || impi.len <= 0) {
++		LM_WARN("REGISTER without a private user identity: its security associations are counted for no "
++				"IMPI\n");
++	}
++	ret = spi_set_record(&r, &impi, t->hash_index, t->label,
++			ipsec_protected_port(req->rcv.dst_port) ? req->rcv.src_port : 0, IPSEC_MAX_SETS_PER_IMPI);
++	if(ret == -2) {
++		LM_WARN("%.*s would hold more than %d SAs per direction: no further set (TS 33.203 clause 7.1 rule 3)\n",
++				impi.len, impi.s, TS33203_MAX_SAS_PER_DIRECTION);
++	} else if(ret != 0) {
++		LM_ERR("cannot record the security associations (spi_pc %u, spi_ps %u)\n", s->spi_pc, s->spi_ps);
++	}
++	return ret;
++}
++
++/* OpenMCX, 2026-10-25: the port_uc of the completed set the challenged REGISTER (SM1) came over, the old SAs of
++ * clause 7.4.2a; 0 if SM1 was unprotected. Over a temporary set (a REGISTER answering an earlier challenge, itself
++ * challenged), the completed set that set's SM1 came over. */
++static unsigned short ipsec_sm1_set(struct sip_msg *req)
++{
++	spi_set_t r;
++
++	if(!ipsec_protected_port(req->rcv.dst_port) || !spi_set_find(&req->rcv.src_ip, req->rcv.src_port, &r)) {
++		return 0;
++	}
++	return r.temporary ? r.parent_uc : r.port_uc;
++}
++
++/* OpenMCX, 2026-10-25: deletes a set from its record (destroy_ipsec_tunnel(), which releases its SPI pair and so
++ * its record). */
++static void ipsec_destroy_set(const spi_set_t *r)
++{
++	ipsec_t tmp;
++	char buf[IP_ADDR_MAX_STR_SIZE];
++	str remote;
++
++	memset(&tmp, 0, sizeof(ipsec_t));
++	tmp.spi_uc = r->spi_uc;
++	tmp.spi_us = r->spi_us;
++	tmp.spi_pc = r->spi_pc;
++	tmp.spi_ps = r->spi_ps;
++	tmp.port_uc = r->port_uc;
++	tmp.port_us = r->port_us;
++	tmp.port_pc = r->port_pc;
++	tmp.port_ps = r->port_ps;
++	remote.len = ip_addr2sbuf((struct ip_addr *)&r->ue, buf, sizeof(buf));
++	remote.s = buf;
++	destroy_ipsec_tunnel(remote, &tmp, r->port_uc);
++}
++
++static int ipsec_destroy_set_when_idle(const spi_set_t *r);
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.4.2a, the P-CSCF creating the new SAs of a challenge: "The
++ * registration SAs shall be deleted if they exist" (the "two existing pairs of SAs from an incomplete
++ * authentication"), and clause 7.3.1.4: "When the P-CSCF receives a challenge from the S-CSCF and creates the
++ * corresponding SAs during a registration procedure, it shall delete any information relating to any previous
++ * registration procedure (including the SAs created during the previous registration procedure)." Called when the
++ * S-CSCF's challenge (the 401 with ck and ik) arrives, before its set is created, for the UE registration of the
++ * REGISTER: the same private user identity and the same UE address ("the UE related SAs"; clause 7.4.1a, "The UE
++ * shall be involved in only one registration procedure at a time"). Its temporary sets (never one whose
++ * registration completed: in use, or old and waiting for its pending transactions) are deleted; the one the challenged REGISTER came over (req's source, on a protected port) once that REGISTER's
++ * transaction has ended, so that the 401 still goes over it (TS 24.229 clause 5.2.2.2, 401 item 5). */
++static void ipsec_delete_registration_sets(struct sip_msg *req)
++{
++	str impi = ipsec_register_impi(req);
++	struct ip_addr *ue = &req->rcv.src_ip;
++	unsigned short port_uc = 0;
++	uint32_t cursor = 0;
++	spi_set_t r;
++
++	if(impi.s == NULL || impi.len <= 0) {
++		return;
++	}
++	if(ipsec_protected_port(req->rcv.dst_port)) {
++		port_uc = req->rcv.src_port;
++	}
++	while(spi_set_next_temporary(&cursor, &impi, ue, port_uc, 0, &r)) {
++		LM_INFO("deleting the registration security associations of %.*s (port_uc %u): a new challenge\n",
++				impi.len, impi.s, r.port_uc);
++		ipsec_destroy_set(&r);
++	}
++	if(port_uc != 0 && spi_set_find(ue, port_uc, &r) && r.temporary) {
++		ipsec_destroy_set_when_idle(&r);
++	}
++}
++
+ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+ {
+ 	pcontact_t *pcontact = NULL;
+@@ -879,6 +1096,7 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+ 	security_t *req_sec_params = NULL;
+ 	ipsec_t *s = NULL;
+ 	ipsec_t *old_s = NULL;
++	ipsec_t *current = NULL;
+ 	// set to 1 once req_sec_params->data.ipsec is handed to the contact (initial
+ 	// registration); if it stays 0 that ipsec_t was only used to build the
+ 	// tunnel and must be freed before returning, otherwise it leaks
+@@ -886,6 +1104,7 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+ 	// TS 24.229 clause 5.2.2.2 item 2: an initial registration's REGISTER is
+ 	// received unprotected; the UE's Via port may be any value
+ 	int initial = 0;
++	unsigned short parent_uc = 0;
+ 
+ 	if(m->first_line.type == SIP_REPLY) {
+ 		t = tmb.t_gett();
+@@ -962,9 +1181,14 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+ 		old_s = (ipsec_reuse_server_port && pcontact->security_temp)
+ 						? pcontact->security_temp->data.ipsec
+ 						: NULL;
++		current = pcontact->security_temp ? pcontact->security_temp->data.ipsec
++										  : NULL;
+ 	}
+ 
+-	if(update_contact_ipsec_params(s, m, old_s) != 0) {
++	parent_uc = ipsec_sm1_set(req);
++	ipsec_delete_registration_sets(req);
++
++	if(update_contact_ipsec_params(s, m, old_s, current) != 0) {
+ 		LM_ERR("Could not update ipsec params in contact.\n");
+ 		goto cleanup;
+ 	}
+@@ -974,6 +1198,17 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+ 		LM_ERR("IPSEC tunnel creation failed.\n");
+ 		goto cleanup;
+ 	}
++	/* OpenMCX, 2026-10-25: the new set in the SA_table (TS 33.203 clause 7.1 rule 1), temporary, admitted under
++	 * rule 3; not admitted or not recorded, it is deleted again (its SAs and SPIs) and the creation fails: no SA is
++	 * left uncounted. */
++	if(ipsec_record_set(req, t, s, parent_uc) != 0) {
++		char rbuf[IP_ADDR_MAX_STR_SIZE];
++		str remote;
++		remote.len = ip_addr2sbuf(&req->rcv.src_ip, rbuf, sizeof(rbuf));
++		remote.s = rbuf;
++		destroy_ipsec_tunnel(remote, s, s->port_uc);
++		goto cleanup;
++	}
+ 
+ 	if(initial) {
+ 		if(req_sec_params != NULL) {
+@@ -1150,6 +1385,33 @@ int ipsec_forward(struct sip_msg *m, udomain_t *d, int _cflags)
+ 
+ 	ipsec_t *s = pcontact->security_temp->data.ipsec;
+ 
++	/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.4.2a, which set: a response over the set its request came on
++	 * ("when a SIP message is part of a pending SIP transaction it may still be sent over the old SA"); a request to
++	 * the UE over the set its UE registration uses for outbound messages (spi_set_outbound_of(): the old set until
++	 * the UE's first message over the new one, or until the old set's end), whichever contact matched. */
++	ipsec_t chosen;
++	spi_set_t use, ref;
++	int have_set = 0;
++	if(m->first_line.type == SIP_REPLY) {
++		have_set = ipsec_protected_port(req->rcv.dst_port)
++				   && spi_set_find(&req->rcv.src_ip, req->rcv.src_port, &use);
++	} else {
++		have_set = spi_set_find_by_spi(s->spi_pc, s->spi_ps, &ref)
++				   && spi_set_outbound_of(&ref.ue, ref.port_uc, &use);
++	}
++	if(have_set) {
++		chosen = *s;
++		chosen.spi_uc = use.spi_uc;
++		chosen.spi_us = use.spi_us;
++		chosen.spi_pc = use.spi_pc;
++		chosen.spi_ps = use.spi_ps;
++		chosen.port_uc = use.port_uc;
++		chosen.port_us = use.port_us;
++		chosen.port_pc = use.port_pc;
++		chosen.port_ps = use.port_ps;
++		s = &chosen;
++	}
++
+ 	// Update the destination
+ 	//
+ 	//       from sec-agree
+@@ -1510,3 +1772,626 @@ int ipsec_cleanall()
+ 
+ 	return 0;
+ }
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.4.2a, the end of an old set (and of a temporary set after a
++ * failed authentication): "The old SAs are then deleted as soon as all pending SIP transactions have been
++ * completed, or have timed out" ("A SIP transaction is called pending if it was started using an old SA"), and
++ * "after processing the failure message, the PCSCF shall delete the new SAs". Each transaction that a request over
++ * a set started is counted on that set: a request from the UE on (UE address, port_uc), one to the UE from
++ * (port_pc). ipsec_destroy_when_idle() deletes a set once its count is 0; transactions that end later bring it to
++ * 0. The SA lifetime (contact expiry, ipsec_on_expire) still deletes a set in any case. */
++
++#define IPSEC_TXN_KEY_LEN 80
++
++static void ipsec_switch_on_inbound(struct sip_msg *msg);
++
++typedef struct ipsec_txn_count
++{
++	char key[IPSEC_TXN_KEY_LEN];
++	int count;
++	int draining; /* the set is being deleted: no new transaction may start on it */
++	struct ipsec_txn_count *next;
++} ipsec_txn_count_t;
++
++typedef struct ipsec_release
++{
++	udomain_t *d;
++	str uri;
++	str host;
++	int port;
++	char key_uc[IPSEC_TXN_KEY_LEN];
++	char key_pc[IPSEC_TXN_KEY_LEN];
++	int by_set; /* OpenMCX, 2026-10-25: the set of 'set', not a contact's */
++	spi_set_t set;
++	struct ipsec_release *next;
++} ipsec_release_t;
++
++/* What one transaction holds: the set it was started on (key_in) and the set its request went to the UE over. */
++typedef struct ipsec_txn_sets
++{
++	char key_in[IPSEC_TXN_KEY_LEN];
++	char key_out[IPSEC_TXN_KEY_LEN];
++} ipsec_txn_sets_t;
++
++static gen_lock_t *ipsec_txn_lock = NULL;
++static ipsec_txn_count_t **ipsec_txn_counts = NULL;
++static ipsec_release_t **ipsec_releases = NULL;
++
++static void ipsec_txn_key(char *key, char role, struct ip_addr *ip, unsigned short port)
++{
++	snprintf(key, IPSEC_TXN_KEY_LEN, "%c|%s|%u", role, ip_addr2a(ip), (unsigned)port);
++}
++
++static int ipsec_txn_key_str(char *key, char role, str *host, unsigned short port)
++{
++	struct ip_addr *ip = str2ip(host);
++	if(ip == NULL)
++		ip = str2ip6(host);
++	if(ip == NULL)
++		return -1;
++	ipsec_txn_key(key, role, ip, port);
++	return 0;
++}
++
++/* Under ipsec_txn_lock. */
++static ipsec_txn_count_t *ipsec_txn_find(const char *key, int create)
++{
++	ipsec_txn_count_t *c;
++	for(c = *ipsec_txn_counts; c; c = c->next) {
++		if(strcmp(c->key, key) == 0)
++			return c;
++	}
++	if(!create)
++		return NULL;
++	c = shm_malloc(sizeof(ipsec_txn_count_t));
++	if(c == NULL) {
++		SHM_MEM_ERROR;
++		return NULL;
++	}
++	memset(c, 0, sizeof(ipsec_txn_count_t));
++	strncpy(c->key, key, IPSEC_TXN_KEY_LEN - 1);
++	c->next = *ipsec_txn_counts;
++	*ipsec_txn_counts = c;
++	return c;
++}
++
++/* Under ipsec_txn_lock. */
++static void ipsec_txn_forget(ipsec_txn_count_t *gone)
++{
++	ipsec_txn_count_t **c;
++	for(c = ipsec_txn_counts; *c; c = &(*c)->next) {
++		if(*c == gone) {
++			*c = gone->next;
++			shm_free(gone);
++			return;
++		}
++	}
++}
++
++/* 1 if counted; 0 if the set is being deleted (the transaction started after the switch to the new set). */
++static int ipsec_txn_start(const char *key)
++{
++	ipsec_txn_count_t *c;
++	int counted = 0;
++	lock_get(ipsec_txn_lock);
++	c = ipsec_txn_find(key, 1);
++	if(c != NULL && !c->draining) {
++		c->count++;
++		counted = 1;
++	}
++	lock_release(ipsec_txn_lock);
++	if(!counted)
++		LM_WARN("transaction started on a set being deleted (%s)\n", key);
++	return counted;
++}
++
++static void ipsec_txn_end(const char *key)
++{
++	ipsec_txn_count_t *c;
++	if(key[0] == '\0')
++		return;
++	lock_get(ipsec_txn_lock);
++	c = ipsec_txn_find(key, 0);
++	if(c != NULL && c->count > 0) {
++		c->count--;
++		if(c->count == 0 && !c->draining)
++			ipsec_txn_forget(c);
++	}
++	lock_release(ipsec_txn_lock);
++}
++
++static void ipsec_txn_cb(struct cell *t, int type, struct tmcb_params *ps)
++{
++	ipsec_txn_sets_t *sets = (ipsec_txn_sets_t *)*ps->param;
++	struct ip_addr ip;
++	char key[IPSEC_TXN_KEY_LEN];
++
++	if(sets == NULL)
++		return;
++	if(type & TMCB_REQUEST_SENT) {
++		/* The first request of the transaction sent to the UE from a protected client port (port_pc). */
++		if(sets->key_out[0] != '\0' || ps->dst == NULL || ps->dst->send_sock == NULL
++				|| (ps->flags & TMCB_RETR_F)
++				|| !ipsec_protected_port(ps->dst->send_sock->port_no))
++			return;
++		su2ip_addr(&ip, &ps->dst->to);
++		ipsec_txn_key(key, 'p', &ip, ps->dst->send_sock->port_no);
++		if(ipsec_txn_start(key))
++			memcpy(sets->key_out, key, IPSEC_TXN_KEY_LEN);
++	}
++	if(type & TMCB_RESPONSE_IN) {
++		/* OpenMCX, 2026-10-25: TS 33.203 clause 7.4.2a, a response of the UE over the new set. */
++		ipsec_switch_on_inbound(ps->rpl);
++	}
++	if(type & TMCB_DESTROY) {
++		ipsec_txn_end(sets->key_in);
++		ipsec_txn_end(sets->key_out);
++	}
++}
++
++static void ipsec_txn_sets_free(void *param)
++{
++	if(param)
++		shm_free(param);
++}
++
++/* TMCB_REQUEST_IN: every new transaction; one from the UE on a protected server port is counted on its set. */
++static void ipsec_txn_in(struct cell *t, int type, struct tmcb_params *ps)
++{
++	struct sip_msg *req = ps->req;
++	ipsec_txn_sets_t *sets;
++
++	if(req == NULL || t == NULL)
++		return;
++	sets = shm_malloc(sizeof(ipsec_txn_sets_t));
++	if(sets == NULL) {
++		SHM_MEM_ERROR;
++		return;
++	}
++	memset(sets, 0, sizeof(ipsec_txn_sets_t));
++	if(ipsec_protected_port(req->rcv.dst_port)) {
++		/* OpenMCX, 2026-10-25: TS 33.203 clause 7.4.2a, a request of the UE over the new set; before its
++		 * transaction is counted, so that a request over the new set is counted on it. */
++		ipsec_switch_on_inbound(req);
++		ipsec_txn_key(sets->key_in, 'u', &req->rcv.src_ip, req->rcv.src_port);
++		if(!ipsec_txn_start(sets->key_in))
++			sets->key_in[0] = '\0';
++	}
++	if(tmb.register_tmcb(req, t, TMCB_REQUEST_SENT | TMCB_RESPONSE_IN | TMCB_DESTROY, ipsec_txn_cb, sets,
++			   ipsec_txn_sets_free)
++			<= 0) {
++		LM_ERR("cannot follow the transaction's security association\n");
++		ipsec_txn_end(sets->key_in);
++		shm_free(sets);
++	}
++}
++
++/* Under ipsec_txn_lock: 1 if neither key of the set has a transaction left. */
++static int ipsec_set_idle(const char *key_uc, const char *key_pc)
++{
++	ipsec_txn_count_t *uc = ipsec_txn_find(key_uc, 0);
++	ipsec_txn_count_t *pc = ipsec_txn_find(key_pc, 0);
++	return (uc == NULL || uc->count == 0) && (pc == NULL || pc->count == 0);
++}
++
++/* Under ipsec_txn_lock. */
++static void ipsec_set_forget(const char *key_uc, const char *key_pc)
++{
++	ipsec_txn_count_t *c;
++	if((c = ipsec_txn_find(key_uc, 0)) != NULL)
++		ipsec_txn_forget(c);
++	if((c = ipsec_txn_find(key_pc, 0)) != NULL)
++		ipsec_txn_forget(c);
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.4.2a, "The P-CSCF shall delete any SA whose lifetime is
++ * exceeded", and clause 7.3.1.1, "It shall delete the temporarily stored SA parameters associated with this
++ * registration after a time-out": a temporary set whose lifetime (ipsec_record_set()) is over is deleted, also one
++ * that no contact holds (a re-registration's). Called from the release timer, which polls (not a protocol timer). */
++static void ipsec_expire_temporary_sets(void)
++{
++	uint32_t cursor = 0;
++	spi_set_t r;
++	time_t now = time(NULL);
++
++	while(spi_set_next_temporary(&cursor, NULL, NULL, 0, now, &r)) {
++		LM_INFO("deleting the temporary security associations of port_uc %u: lifetime over\n", r.port_uc);
++		ipsec_destroy_set(&r);
++	}
++}
++
++static int ipsec_destroy_set_when_idle(const spi_set_t *r);
++
++/* Timer (a polling interval, not a protocol timer): deletes the released sets whose transactions have all ended. */
++static void ipsec_release_timer(unsigned int ticks, void *param)
++{
++	ipsec_release_t **r, *ready = NULL, *next;
++
++	lock_get(ipsec_txn_lock);
++	for(r = ipsec_releases; *r;) {
++		if(ipsec_set_idle((*r)->key_uc, (*r)->key_pc)) {
++			ipsec_release_t *done = *r;
++			*r = done->next;
++			ipsec_set_forget(done->key_uc, done->key_pc);
++			done->next = ready;
++			ready = done;
++		} else {
++			r = &(*r)->next;
++		}
++	}
++	lock_release(ipsec_txn_lock);
++	for(; ready; ready = next) {
++		next = ready->next;
++		if(ready->by_set) {
++			LM_INFO("deleting the security associations of port_uc %u (no pending transaction left)\n",
++					ready->set.port_uc);
++			ipsec_destroy_set(&ready->set);
++		} else {
++			LM_INFO("deleting the security associations of %.*s:%d (no pending transaction left)\n",
++					ready->host.len, ready->host.s, ready->port);
++			ipsec_destroy_by_contact(ready->d, &ready->uri, &ready->host, ready->port);
++		}
++		shm_free(ready);
++	}
++	ipsec_expire_temporary_sets();
++}
++
++/* OpenMCX, 2026-10-25: ipsec_destroy_when_idle() for a set known by its record (one no contact holds). */
++static int ipsec_destroy_set_when_idle(const spi_set_t *r)
++{
++	ipsec_release_t *release;
++	ipsec_txn_count_t *c;
++	int idle;
++
++	release = shm_malloc(sizeof(ipsec_release_t));
++	if(release == NULL) {
++		SHM_MEM_ERROR;
++		return IPSEC_CMD_FAIL;
++	}
++	memset(release, 0, sizeof(ipsec_release_t));
++	release->by_set = 1;
++	release->set = *r;
++	ipsec_txn_key(release->key_uc, 'u', &release->set.ue, r->port_uc);
++	ipsec_txn_key(release->key_pc, 'p', &release->set.ue, r->port_pc);
++
++	lock_get(ipsec_txn_lock);
++	if((c = ipsec_txn_find(release->key_uc, 1)) != NULL)
++		c->draining = 1;
++	if((c = ipsec_txn_find(release->key_pc, 1)) != NULL)
++		c->draining = 1;
++	idle = ipsec_set_idle(release->key_uc, release->key_pc);
++	if(idle) {
++		ipsec_set_forget(release->key_uc, release->key_pc);
++	} else {
++		release->next = *ipsec_releases;
++		*ipsec_releases = release;
++	}
++	lock_release(ipsec_txn_lock);
++	if(idle) {
++		ipsec_destroy_set(r);
++		shm_free(release);
++	}
++	return IPSEC_CMD_SUCCESS;
++}
++
++int ipsec_txn_init(void)
++{
++	ipsec_txn_lock = lock_alloc();
++	ipsec_txn_counts = shm_malloc(sizeof(ipsec_txn_count_t *));
++	ipsec_releases = shm_malloc(sizeof(ipsec_release_t *));
++	if(ipsec_txn_lock == NULL || ipsec_txn_counts == NULL || ipsec_releases == NULL) {
++		SHM_MEM_ERROR;
++		return -1;
++	}
++	lock_init(ipsec_txn_lock);
++	*ipsec_txn_counts = NULL;
++	*ipsec_releases = NULL;
++	if(tmb.register_tmcb(0, 0, TMCB_REQUEST_IN, ipsec_txn_in, 0, 0) <= 0) {
++		LM_ERR("cannot register the transaction callback\n");
++		return -1;
++	}
++	if(register_timer(ipsec_release_timer, 0, 1) < 0) {
++		LM_ERR("cannot register the release timer\n");
++		return -1;
++	}
++	return 0;
++}
++
++/* The set of the contact (uri, received_host, received_port) goes as soon as no transaction started on it is
++ * left (TS 33.203 clauses 7.4.2a); no new transaction is counted on it from now on. */
++int ipsec_destroy_when_idle(
++		udomain_t *_d, str *uri, str *received_host, int received_port)
++{
++	pcontact_t *pcontact = NULL;
++	pcontact_info_t search_ci;
++	sip_uri_t contact_uri;
++	ipsec_release_t *release;
++	ipsec_txn_count_t *c;
++	unsigned short port_uc = 0, port_pc = 0;
++	int idle;
++
++	memset(&search_ci, 0, sizeof(struct pcontact_info));
++	if(parse_uri(uri->s, uri->len, &contact_uri) != 0) {
++		LM_WARN("Failed to parse aor [%.*s]\n", uri->len, uri->s);
++		return IPSEC_CMD_FAIL;
++	}
++	search_ci.received_host = *received_host;
++	search_ci.received_port = received_port;
++	search_ci.received_proto = contact_uri.proto ? contact_uri.proto : PROTO_UDP;
++	search_ci.searchflag = SEARCH_RECEIVED;
++	search_ci.via_host = *received_host;
++	search_ci.via_port = received_port;
++	search_ci.via_prot = search_ci.received_proto;
++	search_ci.aor = *uri;
++	search_ci.reg_state = PCONTACT_ANY;
++	if(ul.get_pcontact(_d, &search_ci, &pcontact, 0) != 0) {
++		LM_ERR("Contact doesn't exist\n");
++		return IPSEC_CMD_FAIL;
++	}
++	ul.lock_udomain(_d, &pcontact->via_host, pcontact->via_port, pcontact->via_proto);
++	if(pcontact->security_temp != NULL && pcontact->security_temp->type == SECURITY_IPSEC
++			&& pcontact->security_temp->data.ipsec != NULL) {
++		port_uc = pcontact->security_temp->data.ipsec->port_uc;
++		port_pc = pcontact->security_temp->data.ipsec->port_pc;
++	}
++	ul.unlock_udomain(_d, &pcontact->via_host, pcontact->via_port, pcontact->via_proto);
++	if(port_uc == 0 && port_pc == 0) {
++		LM_ERR("No security parameters found in contact\n");
++		return IPSEC_CMD_FAIL;
++	}
++
++	release = shm_malloc(sizeof(ipsec_release_t) + uri->len + received_host->len);
++	if(release == NULL) {
++		SHM_MEM_ERROR;
++		return IPSEC_CMD_FAIL;
++	}
++	memset(release, 0, sizeof(ipsec_release_t));
++	release->d = _d;
++	release->uri.s = (char *)(release + 1);
++	memcpy(release->uri.s, uri->s, uri->len);
++	release->uri.len = uri->len;
++	release->host.s = release->uri.s + uri->len;
++	memcpy(release->host.s, received_host->s, received_host->len);
++	release->host.len = received_host->len;
++	release->port = received_port;
++	if(ipsec_txn_key_str(release->key_uc, 'u', received_host, port_uc) != 0
++			|| ipsec_txn_key_str(release->key_pc, 'p', received_host, port_pc) != 0) {
++		LM_ERR("bad received host %.*s\n", received_host->len, received_host->s);
++		shm_free(release);
++		return IPSEC_CMD_FAIL;
++	}
++
++	lock_get(ipsec_txn_lock);
++	if((c = ipsec_txn_find(release->key_uc, 1)) != NULL)
++		c->draining = 1;
++	if((c = ipsec_txn_find(release->key_pc, 1)) != NULL)
++		c->draining = 1;
++	idle = ipsec_set_idle(release->key_uc, release->key_pc);
++	if(idle) {
++		ipsec_set_forget(release->key_uc, release->key_pc);
++	} else {
++		release->next = *ipsec_releases;
++		*ipsec_releases = release;
++	}
++	lock_release(ipsec_txn_lock);
++
++	if(idle) {
++		LM_INFO("deleting the security associations of %.*s:%d (no pending transaction)\n",
++				received_host->len, received_host->s, received_port);
++		ipsec_destroy_by_contact(_d, uri, received_host, received_port);
++		shm_free(release);
++	} else {
++		LM_INFO("security associations of %.*s:%d go when their pending transactions end\n",
++				received_host->len, received_host->s, received_port);
++	}
++	return IPSEC_CMD_SUCCESS;
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 6.1.5: whether the request came over a set being deleted (the old
++ * set after a later successful authentication, or the set of a failed one), not one of "latest successful
++ * authentication": 1 if so, -1 otherwise. */
++int ipsec_set_released(struct sip_msg *m)
++{
++	char key[IPSEC_TXN_KEY_LEN];
++	ipsec_txn_count_t *c;
++	int released = 0;
++
++	if(!ipsec_protected_port(m->rcv.dst_port))
++		return -1;
++	ipsec_txn_key(key, 'u', &m->rcv.src_ip, m->rcv.src_port);
++	lock_get(ipsec_txn_lock);
++	c = ipsec_txn_find(key, 0);
++	released = c != NULL && c->draining;
++	lock_release(ipsec_txn_lock);
++	return released ? 1 : -1;
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.1 rule 3: "the pair (UE_IP_address, UE_protected_client_port) ...
++ * has not yet been associated with entries in the "SA_table"": 1 if no set of (received_host, received_port) is
++ * stored, or only the temporary one m came over (the REGISTER answering its own challenge, SM7, repeats its
++ * Security-Client), -1 if one is. The SA_table is the record of the sets (spi_gen.c), which also holds the sets of
++ * a re-registration that no contact holds. */
++int ipsec_sa_pair_free(struct sip_msg *m, udomain_t *_d, str *uri,
++		str *received_host, int received_port)
++{
++	struct ip_addr ue;
++	spi_set_t r;
++
++	if(str2ipxbuf(received_host, &ue) < 0) {
++		LM_ERR("bad address %.*s\n", received_host->len, received_host->s);
++		return -1;
++	}
++	if(!spi_set_find(&ue, received_port, &r)) {
++		return 1;
++	}
++	if(r.temporary && ipsec_protected_port(m->rcv.dst_port) && m->rcv.src_port == received_port
++			&& ip_addr_cmp(&m->rcv.src_ip, &ue)) {
++		return 1;
++	}
++	return -1;
++}
++
++/* OpenMCX, 2026-10-25: the end of a REGISTER transaction gives back an admission not turned into a set. */
++static void ipsec_resv_cb(struct cell *t, int type, struct tmcb_params *ps)
++{
++	spi_set_unreserve(t->hash_index, t->label);
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.1 rule 3: "Furthermore, the P-CSCF shall check that, for any one
++ * IMPI, no more than six SAs per direction are stored at any one time. If these checks are unsuccessful the
++ * registration is aborted and a suitable error message is sent to the UE." Three sets (IPSEC_MAX_SETS_PER_IMPI).
++ * The challenge of this REGISTER creates one set after deleting the registration SAs of its UE registration (clause
++ * 7.4.2a, ipsec_delete_registration_sets()); counted are the IMPI's sets that stay, over all its contacts (NOTE 13
++ * bounds each contact, rule 3 the IMPI): in use, old ones waiting for their pending transactions, temporary ones of
++ * other UE addresses, the temporary set m came over (it goes only once m's transaction has ended), and the
++ * admissions of other REGISTER transactions. Under the lock of the count, a free place is reserved for m's
++ * transaction (t_newtran() first): ipsec_create() consumes it with the set, the transaction's end gives it back
++ * otherwise. 1 if reserved, -1 if not (1 also when the IMPI is unknown and cannot be checked). */
++int ipsec_impi_reserve(struct sip_msg *m, str *impi)
++{
++	tm_cell_t *t;
++	int ret;
++
++	if(impi == NULL || impi->s == NULL || impi->len <= 0) {
++		LM_WARN("no private user identity: the security associations per IMPI are not checked\n");
++		return 1;
++	}
++	t = tmb.t_gett();
++	if(t == NULL || t == T_UNDEFINED) {
++		LM_ERR("no transaction (t_newtran() first)\n");
++		return -1;
++	}
++	ret = spi_set_reserve(impi, &m->rcv.src_ip, ipsec_protected_port(m->rcv.dst_port) ? m->rcv.src_port : 0,
++			t->hash_index, t->label, IPSEC_MAX_SETS_PER_IMPI);
++	if(ret < 0) {
++		LM_ERR("cannot reserve a set for %.*s\n", impi->len, impi->s);
++		return -1;
++	}
++	if(ret == 0) {
++		LM_WARN("%.*s would hold more than %d SAs per direction: no further set\n", impi->len, impi->s,
++				TS33203_MAX_SAS_PER_DIRECTION);
++		return -1;
++	}
++	if(tmb.register_tmcb(m, t, TMCB_DESTROY, ipsec_resv_cb, 0, 0) <= 0) {
++		LM_ERR("cannot follow the REGISTER transaction\n");
++		spi_set_unreserve(t->hash_index, t->label);
++		return -1;
++	}
++	return 1;
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.4.2a, after SM12 (the 200 (OK) of a REGISTER over a temporary
++ * set; from the REGISTER's onreply route): the set is completed, its temporary lifetime replaced by the
++ * registration's (the contact's expiry and grace, ipsec_on_expire(), as for any registered contact), and:
++ * "If there are old SAs, but SM1 belonging to the same registration procedure was received unprotected, the P-CSCF
++ * considers error cases happened, and assumes UE does not have those old SAs for use. In this case the P-CSCF shall
++ * remove the old SAs." - the other sets of the UE registration are deleted, the new set is used;
++ * "If SM1 belonging to the same registration procedure was protected with an old valid SA, the P-CSCF keeps this
++ * inbound SA and the corresponding three SAs created during the same registration with the UE active, and continues
++ * to use them. Any other old SAs are deleted." - outbound messages stay on that set until the UE's first message
++ * over the new set (ipsec_switch_on_inbound()) or that set's end. 1 if a temporary set was completed, -1
++ * otherwise. */
++int ipsec_set_completed(struct sip_msg *m)
++{
++	tm_cell_t *t = tmb.t_gett();
++	sip_msg_t *req;
++	spi_set_t y, x, o;
++	uint32_t cursor = 0;
++	int keep = 0;
++
++	if(t == NULL || t == T_UNDEFINED || t->uas.request == NULL) {
++		return -1;
++	}
++	req = t->uas.request;
++	if(!ipsec_protected_port(req->rcv.dst_port)
++			|| !spi_set_complete(&req->rcv.src_ip, req->rcv.src_port, &y)) {
++		return -1;
++	}
++	if(y.parent_uc != 0 && spi_set_find(&y.ue, y.parent_uc, &x) && !x.temporary) {
++		keep = 1;
++	}
++	while(spi_set_next_sibling(&cursor, &y.ue, y.port_uc, &o)) {
++		if(keep && o.port_uc == x.port_uc) {
++			continue;
++		}
++		LM_INFO("deleting the old security associations of port_uc %u (SM12 over port_uc %u)\n", o.port_uc,
++				y.port_uc);
++		ipsec_destroy_set(&o);
++	}
++	if(keep) {
++		spi_set_use_outbound(&x.ue, x.port_uc);
++		spi_set_wait_switch(&y.ue, y.port_uc);
++		LM_INFO("keeping the old security associations of port_uc %u until the UE's first message over port_uc "
++				"%u\n", x.port_uc, y.port_uc);
++	} else {
++		spi_set_use_outbound(&y.ue, y.port_uc);
++	}
++	return 1;
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.4.2a: "When the old SAs have only a short time left before
++ * expiring or a further SIP message protected with a new inbound SA is successfully received from the UE, the P-CSCF
++ * starts to use the new SAs for outbound messages ... The old SAs are then deleted as soon as all pending SIP
++ * transactions have been completed, or have timed out." msg, a request or response received from the UE: if it came
++ * over the inbound SA of a completed set that waits for this, the set is taken into use for outbound messages and
++ * the set used until now is deleted once its pending transactions are over (ipsec_destroy_set_when_idle()). The
++ * "short time left" trigger is not implemented: the text gives no value for it. */
++static void ipsec_switch_on_inbound(struct sip_msg *msg)
++{
++	spi_set_t y, old;
++
++	if(msg == NULL || msg == FAKED_REPLY || !ipsec_protected_port(msg->rcv.dst_port)) {
++		return;
++	}
++	if(!spi_set_find_inbound(&msg->rcv.src_ip, msg->rcv.src_port, msg->rcv.dst_port, &y) || !y.switch_pending) {
++		return;
++	}
++	if(!spi_set_outbound_of(&y.ue, y.port_uc, &old)) {
++		return;
++	}
++	spi_set_use_outbound(&y.ue, y.port_uc);
++	LM_INFO("the UE's first message over port_uc %u: outbound messages over it\n", y.port_uc);
++	if(old.port_uc != y.port_uc) {
++		ipsec_destroy_set_when_idle(&old);
++	}
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.1, "UDP case: ... The P-CSCF sends requests and responses
++ * protected with ESP to a UE on the port port_pc", to the UE's port_us, and clauses 7.4.1a/7.4.2a: "If SM1 was
++ * protected, the old SAs shall be used to protect the failure messages": the reply of the transaction of m (created
++ * by t_newtran()), a request received over a set, leaves from that set's port_pc to its port_us, as ipsec_forward()
++ * sends the responses it relays. Over TCP the reply goes on the connection the request came on (TS 24.229 clause
++ * 5.2.2.2 NOTE 3), nothing is changed. 1 on success, -1 otherwise. */
++int ipsec_reply_over_sa(struct sip_msg *m)
++{
++	tm_cell_t *t;
++	spi_set_t r;
++	struct socket_info *sock;
++	str *listen;
++
++	if(!ipsec_protected_port(m->rcv.dst_port)) {
++		return -1;
++	}
++	if(m->rcv.proto != PROTO_UDP) {
++		return 1;
++	}
++	t = tmb.t_gett();
++	if(t == NULL || t == T_UNDEFINED) {
++		LM_ERR("no transaction (t_newtran() first)\n");
++		return -1;
++	}
++	if(!spi_set_find(&m->rcv.src_ip, m->rcv.src_port, &r)) {
++		LM_ERR("no security associations of the request's source\n");
++		return -1;
++	}
++	listen = m->rcv.src_ip.af == AF_INET6 ? &ipsec_listen_addr6 : &ipsec_listen_addr;
++	sock = grep_sock_info(listen, r.port_pc, PROTO_UDP);
++	if(sock == NULL) {
++		LM_ERR("no UDP socket on the protected client port %u\n", r.port_pc);
++		return -1;
++	}
++	init_su(&t->uas.response.dst.to, &m->rcv.src_ip, r.port_us);
++	t->uas.response.dst.send_sock = sock;
++	t->uas.response.dst.proto = PROTO_UDP;
++	return 1;
++}
+diff --git a/src/modules/ims_ipsec_pcscf/cmd.h b/src/modules/ims_ipsec_pcscf/cmd.h
+index 9817a63..ded58c3 100644
+--- a/src/modules/ims_ipsec_pcscf/cmd.h
++++ b/src/modules/ims_ipsec_pcscf/cmd.h
+@@ -1,4 +1,8 @@
+ /*
++ * Modified by OpenMCX on 2026-10-25 (GPL-2.0 section 2(a)): ipsec_destroy_when_idle(), ipsec_txn_init(),
++ * ipsec_set_released(), ipsec_sa_pair_free(), ipsec_impi_reserve(), ipsec_set_completed() and
++ * ipsec_reply_over_sa() (TS 33.203 clauses 6.1.5, 7.1 and 7.4.2a).
++ *
+  * $Id$
+  *
+  * Copyright (C) 2012 Smile Communications, jason.penton@smilecoms.com
+@@ -73,5 +77,14 @@ int ipsec_reconfig();
+ void ipsec_on_expire(pcontact_t *c, int type, void *param);
+ int ipsec_destroy_by_contact(
+ 		udomain_t *_d, str *uri, str *received_host, int received_port);
++int ipsec_destroy_when_idle(
++		udomain_t *_d, str *uri, str *received_host, int received_port);
++int ipsec_txn_init(void);
++int ipsec_set_released(struct sip_msg *m);
++int ipsec_sa_pair_free(struct sip_msg *m, udomain_t *_d, str *uri,
++		str *received_host, int received_port);
++int ipsec_impi_reserve(struct sip_msg *m, str *impi);
++int ipsec_set_completed(struct sip_msg *m);
++int ipsec_reply_over_sa(struct sip_msg *m);
+ 
+ #endif /* IPSEC_CMD_H */
+diff --git a/src/modules/ims_ipsec_pcscf/ims_ipsec_pcscf_mod.c b/src/modules/ims_ipsec_pcscf/ims_ipsec_pcscf_mod.c
+index 34b146a..8541e0e 100644
+--- a/src/modules/ims_ipsec_pcscf/ims_ipsec_pcscf_mod.c
++++ b/src/modules/ims_ipsec_pcscf/ims_ipsec_pcscf_mod.c
+@@ -1,4 +1,11 @@
+ /*
++ * Modified by OpenMCX on 2026-10-25 (GPL-2.0 section 2(a)): the functions ipsec_impi_reserve() (TS 33.203
++ * clause 7.1 rule 3, admission bound to the REGISTER transaction), ipsec_set_completed() (clause 7.4.2a) and ipsec_reply_over_sa() (clause 7.1), and the
++ * parameter ipsec_temp_set_lifetime (TS 24.229 clause 5.2.2.2, reg-await-auth).
++ *
++ * Modified by OpenMCX on 2026-10-25 (GPL-2.0 section 2(a)): the ipsec_algorithms parameter (the P-CSCF's
++ * ordered algorithm list) and the protected port guard policies installed at start-up.
++ *
+  * Modified by OpenMCX on 2026-10-23 (GPL-2.0 section 2(a)): the flags of
+  * ipsec_create() and ipsec_forward() read as the unsigned int the fixup stores.
+  *
+@@ -35,6 +42,8 @@
+ 
+ #include "cmd.h"
+ #include "spi_gen.h"
++#include "ipsec.h"
++#include "../../core/trim.h"
+ 
+ MODULE_VERSION
+ 
+@@ -50,10 +59,28 @@ str ipsec_listen_name = STR_NULL;
+ str ipsec_listen_agname = STR_NULL;
+ int ipsec_reuse_server_port = 1;
+ int ipsec_max_connections = 2;
++/* OpenMCX, 2026-10-25: TS 24.229 V19.7.0 clause 5.2.2.2, 401 item 4: "The P-CSCF shall set the temporary SIP level
++ * lifetime for the temporary set of security associations to the value of reg-await-auth timer"; table 7.7.1:
++ * reg-await-auth, 4 minutes (seconds here). */
++int ipsec_temp_set_lifetime = 240;
+ int spi_id_start = 100;
+ int spi_id_range = 1000;
+ str ipsec_preferred_alg = STR_NULL;
+ str ipsec_preferred_ealg = STR_NULL;
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.2 and annex H: the P-CSCF's integrity and encryption algorithm
++ * combinations ordered by priority, "alg/ealg" separated by commas; it selects the first one the UE offers and
++ * lists them all, in this order, in its Security-Server (SM6). The default follows TS 33.210 V19.3.0 clauses
++ * 5.3.3/5.3.4 (RFC 8221 MUST algorithms, AES-GMAC) and annex I (the unique-salt variants first); hmac-md5-96 and
++ * des-ede3-cbc, removed from annex H, cannot be configured. ipsec_preferred_alg/ealg are no longer used. */
++str ipsec_algorithms = STR_NULL;
++#define IPSEC_MAX_ALGS 16
++str ipsec_alg_list[IPSEC_MAX_ALGS];
++str ipsec_ealg_list[IPSEC_MAX_ALGS];
++int ipsec_alg_count = 0;
++static char ipsec_default_algorithms[] =
++		"null/aes-gcm-us,null/aes-gcm,hmac-sha2-256-128/aes-cbc,"
++		"hmac-sha-1-96/aes-cbc,aes-gmac-us/null,aes-gmac/null,"
++		"hmac-sha2-256-128/null,hmac-sha-1-96/null";
+ int xfrm_user_selector = 143956232;
+ 
+ ip_addr_t ipsec_listen_ip_addr;
+@@ -68,6 +95,14 @@ static int w_forward(struct sip_msg *_m, char *_d, char *_cflags);
+ static int w_destroy(struct sip_msg *_m, char *_d, char *_aor);
+ static int w_destroy_by_contact(struct sip_msg *_m, char *_d, char *_aor,
+ 		char *_received_host, char *_received_port);
++static int w_destroy_when_idle(struct sip_msg *_m, char *_d, char *_aor,
++		char *_received_host, char *_received_port);
++static int w_set_released(struct sip_msg *_m, char *_p1, char *_p2);
++static int w_sa_pair_free(struct sip_msg *_m, char *_d, char *_aor,
++		char *_received_host, char *_received_port);
++static int w_impi_reserve(struct sip_msg *_m, char *_impi, char *_p2);
++static int w_set_completed(struct sip_msg *_m, char *_p1, char *_p2);
++static int w_reply_over_sa(struct sip_msg *_m, char *_p1, char *_p2);
+ 
+ /*! \brief Fixup functions */
+ static int domain_fixup(void **param, int param_no);
+@@ -101,6 +136,18 @@ static cmd_export_t cmds[] = {
+ 		unregister_fixup_free, ANY_ROUTE },
+ 	{"ipsec_destroy_by_contact", (cmd_function)w_destroy_by_contact, 4, unregister_fixup,
+         unregister_fixup_free, ANY_ROUTE},
++	{"ipsec_destroy_when_idle", (cmd_function)w_destroy_when_idle, 4, unregister_fixup,
++		unregister_fixup_free, ANY_ROUTE},
++	{"ipsec_set_released", (cmd_function)w_set_released, 0, 0,
++		0, REQUEST_ROUTE},
++	{"ipsec_sa_pair_free", (cmd_function)w_sa_pair_free, 4, unregister_fixup,
++		unregister_fixup_free, REQUEST_ROUTE},
++	{"ipsec_impi_reserve", (cmd_function)w_impi_reserve, 1, fixup_spve_null,
++		fixup_free_spve_null, REQUEST_ROUTE},
++	{"ipsec_set_completed", (cmd_function)w_set_completed, 0, 0,
++		0, ONREPLY_ROUTE},
++	{"ipsec_reply_over_sa", (cmd_function)w_reply_over_sa, 0, 0,
++		0, REQUEST_ROUTE},
+ 	{"bind_ims_ipsec_pcscf", (cmd_function)bind_ipsec_pcscf, 1, 0,
+ 		0, 0},
+ 	{0, 0, 0, 0, 0, 0}
+@@ -122,6 +169,8 @@ static param_export_t params[] = {
+ 	{"ipsec_spi_id_range",		PARAM_INT, &spi_id_range			},
+ 	{"ipsec_preferred_alg",		PARAM_STR, &ipsec_preferred_alg		},
+ 	{"ipsec_preferred_ealg",	PARAM_STR, &ipsec_preferred_ealg	},
++	{"ipsec_algorithms",		PARAM_STR, &ipsec_algorithms		},
++	{"ipsec_temp_set_lifetime",	PARAM_INT, &ipsec_temp_set_lifetime	},
+ 	{0, 0, 0}
+ };
+ 
+@@ -368,6 +417,73 @@ static int ipsec_add_listen_ifaces()
+ /*! \brief
+  * Initialize parent
+  */
++/* OpenMCX, 2026-10-25: ipsec_algorithms into ipsec_alg_list/ipsec_ealg_list; each pair must be one add_sa()
++ * builds (ipsec.c). */
++static int parse_ipsec_algorithms(void)
++{
++	static const char *known[][2] = {{"null", "aes-gcm-us"}, {"null", "aes-gcm"},
++			{"hmac-sha2-256-128", "aes-cbc"}, {"hmac-sha-1-96", "aes-cbc"},
++			{"aes-gmac-us", "null"}, {"aes-gmac", "null"},
++			{"hmac-sha2-256-128", "null"}, {"hmac-sha-1-96", "null"}};
++	str list = ipsec_algorithms.len ? ipsec_algorithms
++									: (str){ipsec_default_algorithms,
++											sizeof(ipsec_default_algorithms) - 1};
++	int i = 0, start, slash, k, ok;
++	ipsec_alg_count = 0;
++	while(i < list.len) {
++		start = i;
++		slash = -1;
++		while(i < list.len && list.s[i] != ',') {
++			if(list.s[i] == '/')
++				slash = i;
++			i++;
++		}
++		if(slash < 0 || ipsec_alg_count == IPSEC_MAX_ALGS) {
++			LM_ERR("ipsec_algorithms: bad entry %.*s\n", i - start,
++					list.s + start);
++			return -1;
++		}
++		str alg = {list.s + start, slash - start};
++		str ealg = {list.s + slash + 1, i - slash - 1};
++		trim(&alg);
++		trim(&ealg);
++		ok = 0;
++		for(k = 0; k < (int)(sizeof(known) / sizeof(known[0])); k++)
++			if(alg.len == (int)strlen(known[k][0])
++					&& strncmp(alg.s, known[k][0], alg.len) == 0
++					&& ealg.len == (int)strlen(known[k][1])
++					&& strncmp(ealg.s, known[k][1], ealg.len) == 0)
++				ok = 1;
++		if(!ok) {
++			LM_ERR("ipsec_algorithms: unsupported combination %.*s/%.*s\n",
++					alg.len, alg.s, ealg.len, ealg.s);
++			return -1;
++		}
++		ipsec_alg_list[ipsec_alg_count] = alg;
++		ipsec_ealg_list[ipsec_alg_count] = ealg;
++		ipsec_alg_count++;
++		i++;
++	}
++	return ipsec_alg_count ? 0 : -1;
++}
++
++/* OpenMCX, 2026-10-25: the BLOCK policies of the protected ports (ipsec.c add_port_guards()). */
++static int install_port_guards(void)
++{
++	int ret = 0;
++	struct mnl_socket *sock = init_mnl_socket();
++	if(sock == NULL)
++		return -1;
++	if(ipsec_listen_addr.len)
++		ret |= add_port_guards(sock, &ipsec_listen_ip_addr, ipsec_client_port,
++				ipsec_server_port, ipsec_max_connections);
++	if(ipsec_listen_addr6.len)
++		ret |= add_port_guards(sock, &ipsec_listen_ip_addr6, ipsec_client_port,
++				ipsec_server_port, ipsec_max_connections);
++	close_mnl_socket(sock);
++	return ret;
++}
++
+ static int mod_init(void)
+ {
+ 	bind_usrloc_t bind_usrloc;
+@@ -404,6 +520,17 @@ static int mod_init(void)
+ 		return -1;
+ 	}
+ 
++	if(parse_ipsec_algorithms() != 0) {
++		return -1;
++	}
++	if(ipsec_txn_init() != 0) {
++		return -1;
++	}
++	if(install_port_guards() != 0) {
++		LM_ERR("Error installing the protected port guard policies\n");
++		return -1;
++	}
++
+ 	int res = 0;
+ 	if((res = init_spi_gen(spi_id_start, spi_id_range, ipsec_server_port,
+ 				ipsec_client_port, ipsec_max_connections))
+@@ -600,3 +727,113 @@ static int w_destroy_by_contact(struct sip_msg *_m, char *_d, char *_aor,
+ 	return ipsec_destroy_by_contact(
+ 			(udomain_t *)_d, &aor, &received_host, port);
+ }
++
++/* OpenMCX, 2026-10-25: ipsec_set_released() (TS 33.203 clause 6.1.5). */
++static int w_set_released(struct sip_msg *_m, char *_p1, char *_p2)
++{
++	return ipsec_set_released(_m);
++}
++
++/* OpenMCX, 2026-10-25: ipsec_destroy_when_idle() (TS 33.203 clause 7.4.2a). */
++static int w_destroy_when_idle(struct sip_msg *_m, char *_d, char *_aor,
++		char *_received_host, char *_received_port)
++{
++	str aor;
++	str received_host;
++	str received_port;
++	int port = 0;
++
++	if((_aor == NULL) || (_received_host == NULL) || (_received_port == NULL)) {
++		LM_ERR("error - bad parameters\n");
++		return -1;
++	}
++
++	if(fixup_get_svalue(_m, (gparam_t *)_aor, &aor) < 0) {
++		LM_ERR("failed to get aor parameter\n");
++		return -1;
++	}
++	if(fixup_get_svalue(_m, (gparam_t *)_received_host, &received_host) < 0) {
++		LM_ERR("failed to get received host parameter\n");
++		return -1;
++	}
++	if(fixup_get_svalue(_m, (gparam_t *)_received_port, &received_port) < 0) {
++		LM_ERR("failed to get received host parameter\n");
++		return -1;
++	}
++
++	LM_DBG("URI: %.*s\n", aor.len, aor.s);
++	LM_DBG("Received-Host: %.*s\n", received_host.len, received_host.s);
++	LM_DBG("Received-Port: %.*s\n", received_port.len, received_port.s);
++	if(str2sint(&received_port, &port) != 0) {
++		LM_ERR("error - cannot convert %.*s to an int!\n", received_port.len,
++				received_port.s);
++		return -1;
++	}
++
++	return ipsec_destroy_when_idle(
++			(udomain_t *)_d, &aor, &received_host, port);
++}
++
++/* OpenMCX, 2026-10-25: ipsec_sa_pair_free() (TS 33.203 clause 7.1 rule 3). */
++static int w_sa_pair_free(struct sip_msg *_m, char *_d, char *_aor,
++		char *_received_host, char *_received_port)
++{
++	str aor;
++	str received_host;
++	str received_port;
++	int port = 0;
++
++	if((_aor == NULL) || (_received_host == NULL) || (_received_port == NULL)) {
++		LM_ERR("error - bad parameters\n");
++		return -1;
++	}
++
++	if(fixup_get_svalue(_m, (gparam_t *)_aor, &aor) < 0) {
++		LM_ERR("failed to get aor parameter\n");
++		return -1;
++	}
++	if(fixup_get_svalue(_m, (gparam_t *)_received_host, &received_host) < 0) {
++		LM_ERR("failed to get received host parameter\n");
++		return -1;
++	}
++	if(fixup_get_svalue(_m, (gparam_t *)_received_port, &received_port) < 0) {
++		LM_ERR("failed to get received host parameter\n");
++		return -1;
++	}
++
++	LM_DBG("URI: %.*s\n", aor.len, aor.s);
++	LM_DBG("Received-Host: %.*s\n", received_host.len, received_host.s);
++	LM_DBG("Received-Port: %.*s\n", received_port.len, received_port.s);
++	if(str2sint(&received_port, &port) != 0) {
++		LM_ERR("error - cannot convert %.*s to an int!\n", received_port.len,
++				received_port.s);
++		return -1;
++	}
++
++	return ipsec_sa_pair_free(
++			_m, (udomain_t *)_d, &aor, &received_host, port);
++}
++
++/* OpenMCX, 2026-10-25: ipsec_impi_reserve(impi) (TS 33.203 clause 7.1 rule 3). */
++static int w_impi_reserve(struct sip_msg *_m, char *_impi, char *_p2)
++{
++	str impi = STR_NULL;
++
++	if(_impi == NULL || fixup_get_svalue(_m, (gparam_t *)_impi, &impi) < 0) {
++		LM_ERR("failed to get the IMPI parameter\n");
++		return -1;
++	}
++	return ipsec_impi_reserve(_m, &impi);
++}
++
++/* OpenMCX, 2026-10-25: ipsec_set_completed() (TS 33.203 clause 7.4.2a). */
++static int w_set_completed(struct sip_msg *_m, char *_p1, char *_p2)
++{
++	return ipsec_set_completed(_m);
++}
++
++/* OpenMCX, 2026-10-25: ipsec_reply_over_sa() (TS 33.203 clause 7.1). */
++static int w_reply_over_sa(struct sip_msg *_m, char *_p1, char *_p2)
++{
++	return ipsec_reply_over_sa(_m);
++}
+diff --git a/src/modules/ims_ipsec_pcscf/ipsec.c b/src/modules/ims_ipsec_pcscf/ipsec.c
+index 3f60b54..cf01ca5 100644
+--- a/src/modules/ims_ipsec_pcscf/ipsec.c
++++ b/src/modules/ims_ipsec_pcscf/ipsec.c
+@@ -1,4 +1,8 @@
+ /*
++ * Modified by OpenMCX on 2026-10-25 (GPL-2.0 section 2(a)): add_sa() with the algorithms of TS 33.203
++ * V19.1.0 annex H/I (hmac-sha2-256-128, aes-gcm, aes-gmac and their unique-salt variants; hmac-md5-96 and
++ * des-ede3-cbc removed) and the kernel's answer checked; add_policy() checked; add_port_guards().
++ *
+  * IMS IPSEC PCSCF module
+  *
+  * Copyright (C) 2018 Alexander Yosifov
+@@ -25,6 +29,7 @@
+  */
+ 
+ #include "ipsec.h"
++#include "../../core/crypto/sha256.h"
+ #include "spi_gen.h"
+ 
+ #include "../../core/dprint.h"
+@@ -103,6 +108,52 @@ static void string_to_key(char *dst, const str key_string)
+ 	}
+ }
+ 
++/* OpenMCX, 2026-10-25: TS 33.220 V19.1.0 annex B.2 KDF, HMAC-SHA-256(Key, S), S = FC || P0 || L0 (RFC 2104 over
++ * the core SHA-256), for the key expansion of TS 33.203 V19.1.0 annex I; key at most 64 octets. */
++static void ims_kdf(const unsigned char *key, int key_len, unsigned char fc,
++		const char *p0, unsigned char out[32])
++{
++	unsigned char k[64], pad[64], inner[32], s[64];
++	int p0_len = strlen(p0), i;
++	SHA256_CTX ctx;
++
++	memset(k, 0, sizeof(k));
++	memcpy(k, key, key_len);
++	s[0] = fc;
++	memcpy(s + 1, p0, p0_len);
++	s[1 + p0_len] = (unsigned char)(p0_len >> 8);
++	s[2 + p0_len] = (unsigned char)(p0_len & 0xff);
++	for(i = 0; i < 64; i++)
++		pad[i] = k[i] ^ 0x36;
++	sr_SHA256_Init(&ctx);
++	sr_SHA256_Update(&ctx, pad, 64);
++	sr_SHA256_Update(&ctx, s, 3 + p0_len);
++	sr_SHA256_Final(inner, &ctx);
++	for(i = 0; i < 64; i++)
++		pad[i] = k[i] ^ 0x5c;
++	sr_SHA256_Init(&ctx);
++	sr_SHA256_Update(&ctx, pad, 64);
++	sr_SHA256_Update(&ctx, inner, 32);
++	sr_SHA256_Final(out, &ctx);
++}
++
++/* OpenMCX, 2026-10-25: waits for the kernel's answer to a request sent with NLM_F_ACK; 0 on success, -1 with the
++ * kernel's error otherwise (a refused SA or policy is no longer ignored, TS 33.203 clause 7.2). */
++static int wait_nl_ack(struct mnl_socket *nl_sock)
++{
++	char buf[MNL_SOCKET_BUFFER_SIZE];
++	int ret = mnl_socket_recvfrom(nl_sock, buf, sizeof(buf));
++	if(ret <= 0) {
++		LM_ERR("No netlink answer: %s\n", strerror(errno));
++		return -1;
++	}
++	if(mnl_cb_run(buf, ret, 0, 0, NULL, NULL) < 0) {
++		LM_ERR("The kernel refused the request: %s\n", strerror(errno));
++		return -1;
++	}
++	return 0;
++}
++
+ static uint choose_nlmsg_seq(void)
+ {
+ 	static double Tini = 0;
+@@ -113,7 +164,7 @@ static uint choose_nlmsg_seq(void)
+ 
+ int add_sa(struct mnl_socket *nl_sock, const struct ip_addr *src_addr_param,
+ 		const struct ip_addr *dest_addr_param, int s_port, int d_port,
+-		int long id, str ck, str ik, str r_alg, str r_ealg)
++		int long id, str ck, str ik, str r_alg, str r_ealg, int salt_bits)
+ {
+ 	char l_msg_buf[MNL_SOCKET_BUFFER_SIZE];
+ 	char l_auth_algo_buf[XFRM_TMPLS_BUF_SIZE];
+@@ -121,7 +172,6 @@ int add_sa(struct mnl_socket *nl_sock, const struct ip_addr *src_addr_param,
+ 	struct nlmsghdr *l_nlh = NULL;
+ 	struct xfrm_usersa_info *l_xsainfo = NULL;
+ 
+-	struct xfrm_algo *l_auth_algo = NULL;
+ 	struct xfrm_algo *l_enc_algo = NULL;
+ 
+ 
+@@ -131,7 +181,7 @@ int add_sa(struct mnl_socket *nl_sock, const struct ip_addr *src_addr_param,
+ 
+ 	// nlmsghdr initialization
+ 	l_nlh = mnl_nlmsg_put_header(l_msg_buf);
+-	l_nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL;
++	l_nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK;
+ 	l_nlh->nlmsg_type = XFRM_MSG_NEWSA;
+ 	l_nlh->nlmsg_seq = choose_nlmsg_seq();
+ 	l_nlh->nlmsg_pid = id;
+@@ -180,80 +230,97 @@ int add_sa(struct mnl_socket *nl_sock, const struct ip_addr *src_addr_param,
+ 	l_xsainfo->mode = XFRM_MODE_TRANSPORT;
+ 	l_xsainfo->replay_window = 32;
+ 
+-	// Add authentication algorithm for this SA
+-	// 3GPP TS 33.203 Annex I
+-	// NOTE: hmac-md5-96 and des-ede3-cbc has been deprecated in Rel12+
+-
+-	// The cast below is performed because alg_key from struct xfrm_algo is char[0]
+-	// The point is to provide a continuous chunk of memory with the key in it
+-	l_auth_algo = (struct xfrm_algo *)l_auth_algo_buf;
+-
+-	// Set the proper algorithm by r_alg str
+-	if(strncasecmp(r_alg.s, "hmac-md5-96", r_alg.len) == 0) {
+-		strcpy(l_auth_algo->alg_name, "md5");
+-		l_auth_algo->alg_key_len = ik.len * 4;
+-		string_to_key(l_auth_algo->alg_key, ik);
+-	} else if(strncasecmp(r_alg.s, "hmac-sha-1-96", r_alg.len) == 0) {
+-		strcpy(l_auth_algo->alg_name, "sha1");
+-		str ik1;
+-		ik1.len = ik.len + 8;
+-		ik1.s = pkg_malloc(ik1.len + 1);
+-		if(ik1.s == NULL) {
+-			LM_ERR("Error allocating memory\n");
+-			return -1;
+-		}
+-		memcpy(ik1.s, ik.s, ik.len);
+-		ik1.s[ik.len] = 0;
+-		strcat(ik1.s, "00000000");
+-		l_auth_algo->alg_key_len = ik1.len * 4;
+-		string_to_key(l_auth_algo->alg_key, ik1);
+-		pkg_free(ik1.s);
+-	} else {
+-		LM_DBG("Creating security associations: UNKNOWN Auth Algorithm\n");
++	/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 annex H and annex I with TS 33.210 V19.3.0 clauses 5.3.3/5.3.4: alg
++	 * hmac-sha-1-96 (IK || 32 zero bits), hmac-sha2-256-128 (KDF(CK || IK, 0x5A)), aes-gmac and aes-gmac-us (AEAD
++	 * rfc4543, IK || salt, ealg null) or null (with ealg aes-gcm/aes-gcm-us: AEAD rfc4106, CK || salt); ealg aes-cbc
++	 * or null. The salt is the low 32 bits of KDF(CK || IK, 0x59 "AES_GCM_SALT" or 0x58 "AES_GMAC_SALT"); for the
++	 * "-us" variants salt_bits (bit 0: direction P-CSCF to UE, bit 1: role server of the source) are XORed into its
++	 * two least significant bits. The removed hmac-md5-96 and des-ede3-cbc are refused. */
++	unsigned char ckb[16], ikb[16], ckik[32], kdf_out[32], aead_key[20];
++	int gcm = 0, gmac = 0;
++	if(ck.len != 32 || ik.len != 32) {
++		LM_ERR("Creating security associations: CK and IK must be 128 bits\n");
+ 		return -1;
+ 	}
++	string_to_key((char *)ckb, ck);
++	string_to_key((char *)ikb, ik);
++	memcpy(ckik, ckb, 16);
++	memcpy(ckik + 16, ikb, 16);
++	if(STR_EQ(r_alg, ((str){"null", 4}))
++			&& (STR_EQ(r_ealg, ((str){"aes-gcm", 7}))
++					|| STR_EQ(r_ealg, ((str){"aes-gcm-us", 10})))) {
++		gcm = 1;
++	} else if((STR_EQ(r_alg, ((str){"aes-gmac", 8}))
++					  || STR_EQ(r_alg, ((str){"aes-gmac-us", 11})))
++			   && STR_EQ(r_ealg, ((str){"null", 4}))) {
++		gmac = 1;
++	}
+ 
+-	mnl_attr_put(l_nlh, XFRMA_ALG_AUTH,
+-			sizeof(struct xfrm_algo) + l_auth_algo->alg_key_len, l_auth_algo);
+-
+-	// add encription algorithm for this SA
+-	l_enc_algo = (struct xfrm_algo *)l_enc_algo_buf;
+-	// cipher_null, des,  des3_ede, aes
+-	if(strncasecmp(r_ealg.s, "aes-cbc", r_ealg.len) == 0) {
+-		strcpy(l_enc_algo->alg_name, "aes");
+-		l_enc_algo->alg_key_len = ck.len * 4;
+-		string_to_key(l_enc_algo->alg_key, ck);
+-	} else if(strncasecmp(r_ealg.s, "des-ede3-cbc", r_ealg.len) == 0) {
+-		strcpy(l_enc_algo->alg_name, "des3_ede");
+-		str ck1;
+-		ck1.len = ck.len + ck.len / 2;
+-		ck1.s = pkg_malloc(ck1.len + 1);
+-		if(ck1.s == NULL) {
+-			LM_ERR("Error allocating memory\n");
++	if(gcm || gmac) {
++		struct xfrm_algo_aead *l_aead = (struct xfrm_algo_aead *)l_auth_algo_buf;
++		ims_kdf(ckik, 32, gcm ? 0x59 : 0x58, gcm ? "AES_GCM_SALT" : "AES_GMAC_SALT",
++				kdf_out);
++		memcpy(aead_key, gcm ? ckb : ikb, 16);
++		memcpy(aead_key + 16, kdf_out + 28, 4);
++		if(r_ealg.len == 10 || r_alg.len == 11) /* the "-us" variants */
++			aead_key[19] ^= (unsigned char)(salt_bits & 0x3);
++		strcpy(l_aead->alg_name, gcm ? "rfc4106(gcm(aes))" : "rfc4543(gcm(aes))");
++		l_aead->alg_key_len = sizeof(aead_key) * 8;
++		l_aead->alg_icv_len = 128;
++		memcpy(l_aead->alg_key, aead_key, sizeof(aead_key));
++		mnl_attr_put(l_nlh, XFRMA_ALG_AEAD,
++				sizeof(struct xfrm_algo_aead) + sizeof(aead_key), l_aead);
++	} else {
++		struct xfrm_algo_auth *l_auth = (struct xfrm_algo_auth *)l_auth_algo_buf;
++		if(STR_EQ(r_alg, ((str){"hmac-sha-1-96", 13}))) {
++			strcpy(l_auth->alg_name, "hmac(sha1)");
++			memset(kdf_out, 0, sizeof(kdf_out));
++			memcpy(kdf_out, ikb, 16);
++			l_auth->alg_key_len = 160;
++			l_auth->alg_trunc_len = 96;
++		} else if(STR_EQ(r_alg, ((str){"hmac-sha2-256-128", 17}))) {
++			strcpy(l_auth->alg_name, "hmac(sha256)");
++			ims_kdf(ckik, 32, 0x5a, "HMAC-SHA2-256-128", kdf_out);
++			l_auth->alg_key_len = 256;
++			l_auth->alg_trunc_len = 128;
++		} else {
++			LM_ERR("Creating security associations: unsupported alg %.*s / ealg "
++				   "%.*s\n",
++					STR_FMT(&r_alg), STR_FMT(&r_ealg));
+ 			return -1;
+ 		}
+-		memcpy(ck1.s, ck.s, ck.len);
+-		memcpy(ck1.s + ck.len, ck.s, ck.len / 2);
+-		l_enc_algo->alg_key_len = ck1.len * 4;
+-		string_to_key(l_enc_algo->alg_key, ck1);
+-		pkg_free(ck1.s);
+-	} else if(strncasecmp(r_ealg.s, "null", r_ealg.len) == 0) {
+-		strcpy(l_enc_algo->alg_name, "cipher_null");
+-		l_enc_algo->alg_key_len = 0;
+-	} else {
+-		LM_DBG("Creating security associations: UNKNOWN Enc Algorithm\n");
+-		return -1;
++		memcpy(l_auth->alg_key, kdf_out, l_auth->alg_key_len / 8);
++		mnl_attr_put(l_nlh, XFRMA_ALG_AUTH_TRUNC,
++				sizeof(struct xfrm_algo_auth) + l_auth->alg_key_len / 8, l_auth);
++
++		l_enc_algo = (struct xfrm_algo *)l_enc_algo_buf;
++		if(STR_EQ(r_ealg, ((str){"aes-cbc", 7}))) {
++			strcpy(l_enc_algo->alg_name, "cbc(aes)");
++			l_enc_algo->alg_key_len = 128;
++			memcpy(l_enc_algo->alg_key, ckb, 16);
++		} else if(STR_EQ(r_ealg, ((str){"null", 4}))) {
++			strcpy(l_enc_algo->alg_name, "ecb(cipher_null)");
++			l_enc_algo->alg_key_len = 0;
++		} else {
++			LM_ERR("Creating security associations: unsupported ealg %.*s\n",
++					STR_FMT(&r_ealg));
++			return -1;
++		}
++		mnl_attr_put(l_nlh, XFRMA_ALG_CRYPT,
++				sizeof(struct xfrm_algo) + l_enc_algo->alg_key_len / 8,
++				l_enc_algo);
+ 	}
+ 
+-	mnl_attr_put(l_nlh, XFRMA_ALG_CRYPT,
+-			sizeof(struct xfrm_algo) + l_enc_algo->alg_key_len, l_enc_algo);
+-
+ 	// send it to Netlink socket
+ 	if(mnl_socket_sendto(nl_sock, l_nlh, l_nlh->nlmsg_len) < 0) {
+ 		LM_ERR("Failed to send Netlink message for SA creation, error: %s\n",
+ 				strerror(errno));
+ 		return -3;
+ 	}
++	if(wait_nl_ack(nl_sock) != 0) {
++		LM_ERR("Security association SPI %ld not created\n", id);
++		return -4;
++	}
+ 
+ 	return 0;
+ }
+@@ -358,7 +425,7 @@ int add_policy(struct mnl_socket *mnl_socket,
+ 
+ 	// nlmsghdr initialization
+ 	l_nlh = mnl_nlmsg_put_header(l_msg_buf);
+-	l_nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL;
++	l_nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK;
+ 	l_nlh->nlmsg_type = XFRM_MSG_NEWPOLICY;
+ 	l_nlh->nlmsg_seq = time(NULL);
+ 	l_nlh->nlmsg_pid = p_id;
+@@ -431,6 +498,11 @@ int add_policy(struct mnl_socket *mnl_socket,
+ 		return -4;
+ 	}
+ 
++	if(wait_nl_ack(mnl_socket) != 0) {
++		LM_ERR("Security policy not created\n");
++		return -4;
++	}
++
+ 	return 0;
+ }
+ 
+@@ -1198,3 +1270,84 @@ int delete_unused_tunnels()
+ 	free(buf);
+ 	return 0;
+ }
++
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.1: "No unprotected messages shall be sent from or received on the
++ * ports port_ps and port_pc." For each protected port of addr, an IN policy (any source to addr:port) and an OUT
++ * policy (addr:port to any destination) with action BLOCK at priority 4000, below the 2080 of the SAs' policies of
++ * add_policy(): a packet the SAs do not cover is dropped by the kernel, before Kamailio sees it, and no plaintext
++ * reply leaves the port. Tagged with a selector user other than xfrm_user_selector, so that clean_policy() and
++ * delete_unused_policy() keep them; XFRM_MSG_UPDPOLICY replaces those of an earlier start. */
++#define IPSEC_PORT_GUARD_PRIORITY 4000
++#define IPSEC_PORT_GUARD_USER 0x4f4d4358 /* "OMCX" */
++static int add_port_guard(struct mnl_socket *mnl_socket,
++		const struct ip_addr *addr, int port, int dir)
++{
++	char l_msg_buf[MNL_SOCKET_BUFFER_SIZE];
++	struct nlmsghdr *l_nlh;
++	struct xfrm_userpolicy_info *l_xpinfo;
++
++	memset(l_msg_buf, 0, sizeof(l_msg_buf));
++	l_nlh = mnl_nlmsg_put_header(l_msg_buf);
++	l_nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
++	l_nlh->nlmsg_type = XFRM_MSG_UPDPOLICY;
++	l_nlh->nlmsg_seq = time(NULL);
++	l_xpinfo = (struct xfrm_userpolicy_info *)mnl_nlmsg_put_extra_header(
++			l_nlh, sizeof(struct xfrm_userpolicy_info));
++	l_xpinfo->sel.family = addr->af;
++	if(dir == XFRM_POLICY_IN) {
++		if(addr->af == AF_INET6) {
++			memcpy(l_xpinfo->sel.daddr.a6, addr->u.addr32,
++					sizeof(l_xpinfo->sel.daddr.a6));
++			l_xpinfo->sel.prefixlen_d = 128;
++		} else {
++			l_xpinfo->sel.daddr.a4 = addr->u.addr32[0];
++			l_xpinfo->sel.prefixlen_d = 32;
++		}
++		l_xpinfo->sel.dport = htons(port);
++		l_xpinfo->sel.dport_mask = 0xFFFF;
++	} else {
++		if(addr->af == AF_INET6) {
++			memcpy(l_xpinfo->sel.saddr.a6, addr->u.addr32,
++					sizeof(l_xpinfo->sel.saddr.a6));
++			l_xpinfo->sel.prefixlen_s = 128;
++		} else {
++			l_xpinfo->sel.saddr.a4 = addr->u.addr32[0];
++			l_xpinfo->sel.prefixlen_s = 32;
++		}
++		l_xpinfo->sel.sport = htons(port);
++		l_xpinfo->sel.sport_mask = 0xFFFF;
++	}
++	l_xpinfo->sel.user = htonl(IPSEC_PORT_GUARD_USER);
++	l_xpinfo->lft.soft_byte_limit = XFRM_INF;
++	l_xpinfo->lft.hard_byte_limit = XFRM_INF;
++	l_xpinfo->lft.soft_packet_limit = XFRM_INF;
++	l_xpinfo->lft.hard_packet_limit = XFRM_INF;
++	l_xpinfo->priority = IPSEC_PORT_GUARD_PRIORITY;
++	l_xpinfo->action = XFRM_POLICY_BLOCK;
++	l_xpinfo->share = XFRM_SHARE_ANY;
++	l_xpinfo->dir = dir;
++	if(mnl_socket_sendto(mnl_socket, l_nlh, l_nlh->nlmsg_len) < 0) {
++		LM_ERR("Failed to send the port guard policy: %s\n", strerror(errno));
++		return -1;
++	}
++	return wait_nl_ack(mnl_socket);
++}
++
++int add_port_guards(struct mnl_socket *mnl_socket, const struct ip_addr *addr,
++		int client_port, int server_port, int count)
++{
++	int i;
++	for(i = 0; i < count; i++) {
++		if(add_port_guard(mnl_socket, addr, client_port + i, XFRM_POLICY_IN)
++				|| add_port_guard(
++						mnl_socket, addr, client_port + i, XFRM_POLICY_OUT)
++				|| add_port_guard(
++						mnl_socket, addr, server_port + i, XFRM_POLICY_IN)
++				|| add_port_guard(mnl_socket, addr, server_port + i,
++						XFRM_POLICY_OUT)) {
++			return -1;
++		}
++	}
++	return 0;
++}
+diff --git a/src/modules/ims_ipsec_pcscf/ipsec.h b/src/modules/ims_ipsec_pcscf/ipsec.h
+index 9fa97f5..e978f9d 100644
+--- a/src/modules/ims_ipsec_pcscf/ipsec.h
++++ b/src/modules/ims_ipsec_pcscf/ipsec.h
+@@ -1,4 +1,6 @@
+ /*
++ * Modified by OpenMCX on 2026-10-25 (GPL-2.0 section 2(a)): add_sa() salt bits; add_port_guards().
++ *
+  * IMS IPSEC PCSCF module
+  *
+  * Copyright (C) 2018 Alexander Yosifov
+@@ -45,7 +47,7 @@ void close_mnl_socket(struct mnl_socket *sock);
+ 
+ int add_sa(struct mnl_socket *nl_sock, const struct ip_addr *src_addr_param,
+ 		const struct ip_addr *dest_addr_param, int s_port, int d_port,
+-		int long id, str ck, str ik, str r_alg, str r_ealg);
++		int long id, str ck, str ik, str r_alg, str r_ealg, int salt_bits);
+ int remove_sa(struct mnl_socket *nl_sock, str src_addr_param,
+ 		str dest_addr_param, int s_port, int d_port, int long id,
+ 		unsigned int af);
+@@ -60,6 +62,10 @@ int remove_policy(struct mnl_socket *mnl_socket, str src_addr_param,
+ 
+ int clean_sa(struct mnl_socket *mnl_socket);
+ int clean_policy(struct mnl_socket *mnl_socket);
++/* OpenMCX, 2026-10-25: TS 33.203 clause 7.1, no unprotected messages on the protected ports: BLOCK policies for
++ * count protected client and server ports from client_port and server_port of addr, below the SAs' policies. */
++int add_port_guards(struct mnl_socket *mnl_socket, const struct ip_addr *addr,
++		int client_port, int server_port, int count);
+ 
+ int delete_unused_tunnels();
+ 
+diff --git a/src/modules/ims_ipsec_pcscf/sec_agree.c b/src/modules/ims_ipsec_pcscf/sec_agree.c
+index a53b6d8..d466724 100644
+--- a/src/modules/ims_ipsec_pcscf/sec_agree.c
++++ b/src/modules/ims_ipsec_pcscf/sec_agree.c
+@@ -1,4 +1,7 @@
+ /**
++ * Modified by OpenMCX on 2026-10-25 (GPL-2.0 section 2(a)): every Security-Client mechanism parsed on its
++ * own and the first combination of the P-CSCF's list selected (TS 33.203 clause 7.2).
++ *
+  * Copyright (C) 2017 kamailio.org
+  *
+  * This file is part of Kamailio, a free SIP server.
+@@ -27,8 +30,10 @@
+ #include "../../core/parser/msg_parser.h"
+ #include "../../core/mem/mem.h"
+ 
+-extern str ipsec_preferred_alg;
+-extern str ipsec_preferred_ealg;
++/* OpenMCX, 2026-10-25: the P-CSCF's ordered algorithm list (ims_ipsec_pcscf_mod.c, modparam ipsec_algorithms). */
++extern str ipsec_alg_list[];
++extern str ipsec_ealg_list[];
++extern int ipsec_alg_count;
+ 
+ static uint32_t parse_digits(str value)
+ {
+@@ -83,235 +88,150 @@ static void trim_whitespaces(str *string)
+ 	DST.len = SRC.len;
+ 
+ 
+-static int process_sec_agree_param(
+-		str name, str value, ipsec_t *ret, char *alg_found, char *ealg_found)
++/* OpenMCX, 2026-10-25: one sec-mechanism of a Security-Client (RFC 3329 section 2.2, TS 33.203 annex H), its values
++ * pointing into the message. The parameters of each mechanism are kept apart: the former parser merged the
++ * parameters of all mechanisms of a header field into one set (TS 33.203 clause 7.2, RFC 3329 section 2.3.1). */
++typedef struct sec_mech
+ {
+-	trim_whitespaces(&name);
+-	trim_whitespaces(&value);
++	str alg, ealg, prot, mod;
++	uint32_t spi_c, spi_s, port_c, port_s;
++} sec_mech_t;
+ 
+-	if(strncasecmp(name.s, "alg", name.len) == 0) {
+-		SEC_COPY_STR_PARAM(ret->r_alg, value);
++#define SEC_MAX_MECHANISMS 32
+ 
+-		if(ipsec_preferred_alg.len && STR_EQ(value, ipsec_preferred_alg)) {
+-			*alg_found = 1;
+-		}
+-	} else if(strncasecmp(name.s, "prot", name.len) == 0) {
+-		SEC_COPY_STR_PARAM(ret->prot, value);
+-	} else if(strncasecmp(name.s, "mod", name.len) == 0) {
+-		SEC_COPY_STR_PARAM(ret->mod, value);
+-	} else if(strncasecmp(name.s, "ealg", name.len) == 0) {
+-		SEC_COPY_STR_PARAM(ret->r_ealg, value);
++static int str_ieq(str a, str b)
++{
++	return a.len == b.len && strncasecmp(a.s, b.s, a.len) == 0;
++}
+ 
+-		if(ipsec_preferred_ealg.len && STR_EQ(value, ipsec_preferred_ealg)) {
+-			*ealg_found = 1;
+-		}
+-	} else if(strncasecmp(name.s, "spi-c", name.len) == 0) {
+-		ret->spi_uc = parse_digits(value);
+-	} else if(strncasecmp(name.s, "spi-s", name.len) == 0) {
+-		ret->spi_us = parse_digits(value);
+-	} else if(strncasecmp(name.s, "port-c", name.len) == 0) {
+-		ret->port_uc = parse_digits(value);
+-	} else if(strncasecmp(name.s, "port-s", name.len) == 0) {
+-		ret->port_us = parse_digits(value);
+-	} else {
+-		//unknown parameter
+-	}
++/* Parses one mechanism ("ipsec-3gpp;name=value;..."); 0 when it is an ipsec-3gpp mechanism. */
++static int parse_mechanism(str m, sec_mech_t *out)
++{
++	int i, start;
++	str name, value, mech;
+ 
++	memset(out, 0, sizeof(*out));
++	trim_whitespaces(&m);
++	for(i = 0; i < m.len && m.s[i] != ';'; i++)
++		;
++	mech.s = m.s;
++	mech.len = i;
++	trim_whitespaces(&mech);
++	if(!str_ieq(mech, ((str){"ipsec-3gpp", 10}))) {
++		LM_INFO("Unsupported mechanism: %.*s\n", STR_FMT(&mech));
++		return -1;
++	}
++	while(i < m.len) {
++		start = ++i;
++		while(i < m.len && m.s[i] != ';')
++			i++;
++		name.s = m.s + start;
++		name.len = i - start;
++		value.s = memchr(name.s, '=', name.len);
++		if(value.s == NULL)
++			continue;
++		value.len = name.len - (value.s - name.s) - 1;
++		name.len = value.s - name.s;
++		value.s++;
++		trim_whitespaces(&name);
++		trim_whitespaces(&value);
++		if(str_ieq(name, ((str){"alg", 3})))
++			out->alg = value;
++		else if(str_ieq(name, ((str){"ealg", 4})))
++			out->ealg = value;
++		else if(str_ieq(name, ((str){"prot", 4})))
++			out->prot = value;
++		else if(str_ieq(name, ((str){"mod", 3})))
++			out->mod = value;
++		else if(str_ieq(name, ((str){"spi-c", 5})))
++			out->spi_c = parse_digits(value);
++		else if(str_ieq(name, ((str){"spi-s", 5})))
++			out->spi_s = parse_digits(value);
++		else if(str_ieq(name, ((str){"port-c", 6})))
++			out->port_c = parse_digits(value);
++		else if(str_ieq(name, ((str){"port-s", 6})))
++			out->port_s = parse_digits(value);
++	}
+ 	return 0;
+ }
+ 
+-/**
+- * @brief Check whether UE IPsec parameters have been selected/populated.
+- *
+- * Verifies that all required fields of the provided ipsec_t structure are
+- * present (non-zero for integer fields and non-zero length for length-bearing
+- * fields). This function is used to decide if the UE has provided IPsec
+- * parameters for use in the session.
+- *
+- * @param params Pointer to an ipsec_t structure to inspect. Must be non-NULL;
+- *               passing NULL yields undefined behavior.
+- *
+- * @return 1 if all required parameters are present:
+- *         0 if any of the above checks fail.
+- */
+-static int is_ue_ipsec_params_selected(ipsec_t *params)
++/* Annex H: ESP ("prot" absent or "esp") in transport mode ("mod" absent or "trans"), all SPIs and ports (the SPIs
++ * above the 1 to 255 RFC 4303 section 2.1 reserves, ports up to 65535). */
++static int mechanism_valid(const sec_mech_t *m)
+ {
+-	if(params->spi_uc == 0 || params->spi_us == 0 || params->port_uc == 0
+-			|| params->port_us == 0 || params->prot.len == 0
+-			|| params->mod.len == 0 || params->r_alg.len == 0
+-			|| params->r_ealg.len == 0) {
++	if(m->prot.len && !str_ieq(m->prot, ((str){"esp", 3})))
+ 		return 0;
+-	}
+-
+-	return 1;
++	if(m->mod.len && !str_ieq(m->mod, ((str){"trans", 5})))
++		return 0;
++	return m->alg.len && m->spi_c > 255 && m->spi_s > 255 && m->port_c
++		   && m->port_s && m->port_c < 65536 && m->port_s < 65536;
+ }
+ 
+-static security_t *parse_sec_agree(struct hdr_field *h)
++static int shm_copy(str *dst, const str *src)
+ {
+-	int i = 0;
+-
+-	str name = {0, 0};
+-	str value = {0, 0};
+-	str mechanism_name = {0, 0};
+-	security_t *params = NULL;
+-	str body = h->body;
+-
+-	trim_whitespaces(&body);
+-
+-	// find mechanism name end
+-	for(i = 0; body.s[i] != ';' && i < body.len; i++)
+-		;
+-
+-	mechanism_name.s = body.s;
+-	mechanism_name.len = i;
+-
+-	if(strncasecmp(mechanism_name.s, "ipsec-3gpp", 10) != 0) {
+-		// unsupported mechanism
+-		LM_ERR("Unsupported mechanism: %.*s\n", STR_FMT(&mechanism_name));
+-		goto cleanup;
+-	}
+-
+-	// allocate shm memory for security_t (it will be saved in contact)
+-	if((params = shm_malloc(sizeof(security_t))) == NULL) {
+-		LM_ERR("Error allocating shm memory for security_t parameters during "
+-			   "sec-agree parsing\n");
+-		return NULL;
+-	}
+-	memset(params, 0, sizeof(security_t));
+-
+-	// allocate memory for ipsec_t in security_t
+-	params->data.ipsec = shm_malloc(sizeof(ipsec_t));
+-	if(!params->data.ipsec) {
+-		LM_ERR("Error allocating memory for ipsec parameters during sec-agree "
+-			   "parsing\n");
+-		goto cleanup;
++	dst->s = shm_malloc(src->len);
++	if(dst->s == NULL) {
++		SHM_MEM_ERROR;
++		return -1;
+ 	}
+-	memset(params->data.ipsec, 0, sizeof(ipsec_t));
+-
+-
+-	// set security type to IPSEC
+-	params->type = SECURITY_IPSEC;
+-
+-	body.s = body.s + i + 1;
+-	body.len = body.len - i - 1;
+-
+-	char preferred_alg_found = 0;
+-	char preferred_ealg_found = 0;
++	memcpy(dst->s, src->s, src->len);
++	dst->len = src->len;
++	return 0;
++}
+ 
+-	// get the rest of the parameters
+-	i = 0;
+-	while(i <= body.len) {
+-		//look for end of buffer or parameter separator
+-		if(i == body.len || body.s[i] == ';' || body.s[i] == ','
+-				|| body.s[i] == ' ') {
+-			if(name.len) {
+-				// if(name.len) => a param name is parsed
+-				// and now i points to the end of its value
+-				value.s = body.s;
+-				value.len = i;
++/* TS 33.203 clause 7.2: "the PCSCF has a list of integrity and encryption algorithms it supports, ordered by
++ * priority. The PCSCF selects the first algorithm combination on its own list which is also supported by the UE"; a
++ * mechanism without ealg offers the NULL encryption algorithm only. The chosen combination is stored with the P-CSCF's
++ * spelling (r_alg, r_ealg) and the UE's SPIs and ports; NULL when nothing matches. */
++static security_t *select_mechanism(const sec_mech_t *mechs, int n)
++{
++	int i, j;
++	static str null_ealg = {"null", 4};
++	str esp = {"esp", 3}, trans = {"trans", 5};
++	for(i = 0; i < ipsec_alg_count; i++) {
++		for(j = 0; j < n; j++) {
++			str ealg = mechs[j].ealg.len ? mechs[j].ealg : null_ealg;
++			if(!mechanism_valid(&mechs[j])
++					|| !str_ieq(mechs[j].alg, ipsec_alg_list[i])
++					|| !str_ieq(ealg, ipsec_ealg_list[i]))
++				continue;
++			security_t *params = shm_malloc(sizeof(security_t));
++			if(params == NULL) {
++				SHM_MEM_ERROR;
++				return NULL;
+ 			}
+-			//else - name is not read but there is a value
+-			//so there is some error - skip ahead
+-			body.s = body.s + i + 1;
+-			body.len = body.len - i - 1;
+-
+-			i = 0;
+-
+-			if(name.len && value.len) {
+-				if(ipsec_preferred_alg.len && ipsec_preferred_ealg.len) {
+-					if(preferred_alg_found && preferred_ealg_found
+-							&& is_ue_ipsec_params_selected(
+-									params->data.ipsec)) {
+-						break;
+-					}
+-					preferred_alg_found = 0;
+-					preferred_ealg_found = 0;
+-				}
+-				if(ipsec_preferred_alg.len && !ipsec_preferred_ealg.len) {
+-					if(preferred_alg_found
+-							&& is_ue_ipsec_params_selected(
+-									params->data.ipsec)) {
+-						break;
+-					}
+-					preferred_alg_found = 0;
+-				}
+-				if(!ipsec_preferred_alg.len && ipsec_preferred_ealg.len) {
+-					if(preferred_ealg_found
+-							&& is_ue_ipsec_params_selected(
+-									params->data.ipsec)) {
+-						break;
+-					}
+-					preferred_ealg_found = 0;
+-				}
+-
+-				char alg_found = 0;
+-				char ealg_found = 0;
+-				if(process_sec_agree_param(name, value, params->data.ipsec,
+-						   &alg_found, &ealg_found)) {
+-					goto cleanup;
+-				}
+-				if(alg_found) {
+-					preferred_alg_found = 1;
+-				}
+-				if(ealg_found) {
+-					preferred_ealg_found = 1;
+-				}
++			memset(params, 0, sizeof(security_t));
++			params->type = SECURITY_IPSEC;
++			params->data.ipsec = shm_malloc(sizeof(ipsec_t));
++			if(params->data.ipsec == NULL) {
++				SHM_MEM_ERROR;
++				shm_free(params);
++				return NULL;
+ 			}
+-			//else - something's wrong. Ignore!
+-
+-			//processing is done - reset
+-			name.len = 0;
+-			value.len = 0;
+-		}
+-		//look for param=value separator
+-		else if(body.s[i] == '=') {
+-			name.s = body.s;
+-			name.len = i;
+-
+-			//position saved - skip ahead
+-			body.s = body.s + i + 1;
+-			body.len = body.len - i - 1;
+-
+-			i = 0;
+-		}
+-		//nothing interesting - move on
+-		else {
+-			i++;
+-		}
+-	}
+-
+-	return params;
+-
+-cleanup:
+-	// The same piece of code also lives in modules/ims_usrloc_pcscf/pcontact.c
+-	// Function - free_security()
+-	// Keep them in sync!
+-	if(params) {
+-		if(params->type == SECURITY_IPSEC && params->data.ipsec) {
+-			if(params->data.ipsec->ealg.s)
+-				shm_free(params->data.ipsec->ealg.s);
+-			if(params->data.ipsec->r_ealg.s)
+-				shm_free(params->data.ipsec->r_ealg.s);
+-			if(params->data.ipsec->ck.s)
+-				shm_free(params->data.ipsec->ck.s);
+-			if(params->data.ipsec->alg.s)
+-				shm_free(params->data.ipsec->alg.s);
+-			if(params->data.ipsec->r_alg.s)
+-				shm_free(params->data.ipsec->r_alg.s);
+-			if(params->data.ipsec->ik.s)
+-				shm_free(params->data.ipsec->ik.s);
+-			if(params->data.ipsec->prot.s)
+-				shm_free(params->data.ipsec->prot.s);
+-			if(params->data.ipsec->mod.s)
+-				shm_free(params->data.ipsec->mod.s);
+-			shm_free(params->data.ipsec);
+-		} else {
+-			shm_free(params->data.ipsec);
++			memset(params->data.ipsec, 0, sizeof(ipsec_t));
++			ipsec_t *s = params->data.ipsec;
++			s->spi_uc = mechs[j].spi_c;
++			s->spi_us = mechs[j].spi_s;
++			s->port_uc = mechs[j].port_c;
++			s->port_us = mechs[j].port_s;
++			if(shm_copy(&s->r_alg, &ipsec_alg_list[i])
++					|| shm_copy(&s->r_ealg, &ipsec_ealg_list[i])
++					|| shm_copy(&s->prot, &esp) || shm_copy(&s->mod, &trans)) {
++				if(s->r_alg.s)
++					shm_free(s->r_alg.s);
++				if(s->r_ealg.s)
++					shm_free(s->r_ealg.s);
++				if(s->prot.s)
++					shm_free(s->prot.s);
++				shm_free(s);
++				shm_free(params);
++				return NULL;
++			}
++			return params;
+ 		}
+-
+-		shm_free(params);
+ 	}
+-
++	LM_INFO("No Security-Client mechanism matches the P-CSCF's algorithm "
++			"list\n");
+ 	return NULL;
+ }
+ 
+@@ -325,6 +245,8 @@ static str s_security_client = {"Security-Client", 15};
+ security_t *cscf_get_security(struct sip_msg *msg)
+ {
+ 	struct hdr_field *h = NULL;
++	sec_mech_t mechs[SEC_MAX_MECHANISMS];
++	int n = 0, i, start;
+ 
+ 	if(!msg)
+ 		return NULL;
+@@ -333,19 +255,26 @@ security_t *cscf_get_security(struct sip_msg *msg)
+ 		return NULL;
+ 	}
+ 
+-	h = msg->headers;
+-	while(h) {
+-		if(h->name.len == s_security_client.len
+-				&& strncasecmp(h->name.s, s_security_client.s,
++	/* OpenMCX, 2026-10-25: every Security-Client header field and every comma-separated mechanism in it
++	 * (RFC 3329 section 2.2). */
++	for(h = msg->headers; h; h = h->next) {
++		if(h->name.len != s_security_client.len
++				|| strncasecmp(h->name.s, s_security_client.s,
+ 						   s_security_client.len)
+-						   == 0) {
+-			return parse_sec_agree(h);
++						   != 0)
++			continue;
++		for(i = 0; i <= h->body.len && n < SEC_MAX_MECHANISMS;) {
++			start = i;
++			while(i < h->body.len && h->body.s[i] != ',')
++				i++;
++			if(parse_mechanism((str){h->body.s + start, i - start}, &mechs[n]) == 0)
++				n++;
++			i++;
+ 		}
+-
+-		h = h->next;
+ 	}
+-
+-	LM_INFO("No security parameters found\n");
+-
+-	return NULL;
++	if(n == 0) {
++		LM_INFO("No security parameters found\n");
++		return NULL;
++	}
++	return select_mechanism(mechs, n);
+ }
+diff --git a/src/modules/ims_ipsec_pcscf/spi_gen.c b/src/modules/ims_ipsec_pcscf/spi_gen.c
+index 5b632a7..9645cb1 100644
+--- a/src/modules/ims_ipsec_pcscf/spi_gen.c
++++ b/src/modules/ims_ipsec_pcscf/spi_gen.c
+@@ -1,4 +1,10 @@
+ /*
++ * Modified by OpenMCX on 2026-10-25 (GPL-2.0 section 2(a)): the pool is guarded by a Kamailio shared-memory lock
++ * (the POSIX mutex was not shared between the processes); a pair is given back once only (a second release_spi()
++ * of a pair no longer in use put it twice in the free list, TS 33.203 clause 7.1: distinct SPIs); each pair in use
++ * holds the record of its set of security associations (UE, SPIs, ports, private user identity, temporary or not;
++ * the "SA_table" of TS 33.203 clause 7.1 rule 1) for the checks and deletions of clauses 7.1 rule 3 and 7.4.2a.
++ *
+  * IMS IPSEC PCSCF module
+  *
+  * Copyright (C) 2018 Tsvetomir Dimitrov
+@@ -25,14 +31,15 @@
+ 
+ #include "spi_gen.h"
+ #include "spi_list.h"
+-#include <pthread.h>
+ #include "../../core/mem/shm_mem.h"
++#include "../../core/locking.h"
++#include <string.h>
+ 
+ #define MAX_HASH_SPI 10000
+ 
+ typedef struct spi_generator
+ {
+-	pthread_mutex_t spis_mut;
++	gen_lock_t *lock;
+ 	spi_list_t used_spis[MAX_HASH_SPI];
+ 	spi_list_t free_spi;
+ 	uint32_t spi_val;
+@@ -41,10 +48,46 @@ typedef struct spi_generator
+ 	uint32_t sport_start_val;
+ 	uint32_t cport_start_val;
+ 	uint32_t port_range;
++	/* OpenMCX, 2026-10-25: the record of the set each pair in use belongs to, by pair ((spi_cid - min_spi) / 2). */
++	spi_slot_t *slots;
++	uint32_t slot_count;
++	/* OpenMCX, 2026-10-25: the admissions of REGISTER transactions not yet turned into a set (clause 7.1 rule 3). */
++	spi_resv_t *resv;
++	unsigned int seq; /* order of completed registrations */
+ } spi_generator_t;
+ 
+ spi_generator_t *spi_data = NULL;
+ 
++/* OpenMCX, 2026-10-25: under the lock. The slot of a pair, NULL when spi_cid is not a pair's first SPI. */
++static spi_slot_t *spi_slot(uint32_t spi_cid)
++{
++	uint32_t i;
++	if(spi_data->slots == NULL || spi_cid < spi_data->min_spi
++			|| ((spi_cid - spi_data->min_spi) & 1) != 0) {
++		return NULL;
++	}
++	i = (spi_cid - spi_data->min_spi) / 2;
++	return i < spi_data->slot_count ? &spi_data->slots[i] : NULL;
++}
++
++/* OpenMCX, 2026-10-25: under the lock. */
++static void spi_slot_clear(spi_slot_t *o)
++{
++	if(o == NULL) {
++		return;
++	}
++	if(o->impi.s != NULL) {
++		shm_free(o->impi.s);
++	}
++	memset(o, 0, sizeof(spi_slot_t));
++}
++
++/* OpenMCX, 2026-10-25: under the lock. Whether the pair is in use. */
++static int spi_pair_used(uint32_t spi_cid, uint32_t spi_sid)
++{
++	return spi_in_list(&spi_data->used_spis[spi_cid % MAX_HASH_SPI], spi_cid, spi_sid);
++}
++
+ static int init_free_spi()
+ {
+ 	uint32_t sport_start_val, cport_start_val, port_range, sport, cport, j;
+@@ -100,14 +143,15 @@ int init_spi_gen(uint32_t spi_start_val, uint32_t spi_range,
+ 		return 4;
+ 	}
+ 
+-	if(pthread_mutex_init(&spi_data->spis_mut, NULL)) {
++	memset(spi_data, 0, sizeof(spi_generator_t));
++	spi_data->lock = lock_alloc();
++	if(spi_data->lock == NULL || lock_init(spi_data->lock) == NULL) {
+ 		shm_free(spi_data);
++		spi_data = NULL;
+ 		return 5;
+ 	}
+ 
+-	if(pthread_mutex_lock(&spi_data->spis_mut) != 0) {
+-		return 6;
+-	}
++	lock_get(spi_data->lock);
+ 
+ 	for(j = 0; j < MAX_HASH_SPI; j++) {
+ 		spi_data->used_spis[j] = create_list();
+@@ -119,11 +163,20 @@ int init_spi_gen(uint32_t spi_start_val, uint32_t spi_range,
+ 	spi_data->cport_start_val = cport_start_val;
+ 	spi_data->port_range = port_range;
+ 
++	spi_data->slot_count = spi_range / 2 + 1;
++	spi_data->slots = shm_malloc(spi_data->slot_count * sizeof(spi_slot_t));
++	if(spi_data->slots == NULL) {
++		lock_release(spi_data->lock);
++		return 4;
++	}
++	memset(spi_data->slots, 0, spi_data->slot_count * sizeof(spi_slot_t));
++
+ 	if(init_free_spi() != 0) {
++		lock_release(spi_data->lock);
+ 		return 7;
+ 	}
+ 
+-	pthread_mutex_unlock(&spi_data->spis_mut);
++	lock_release(spi_data->lock);
+ 
+ 	return 0;
+ }
+@@ -136,15 +189,12 @@ uint32_t acquire_spi(
+ 		return 0;
+ 	}
+ 
+-	if(pthread_mutex_lock(&spi_data->spis_mut) != 0) {
+-		LM_ERR("spi_data failed to lock\n");
+-		return 0;
+-	}
++	lock_get(spi_data->lock);
+ 
+ 	if(!spi_data->free_spi.head) {
+ 		LM_ERR("spi_data:%p spi_data->free_spi.head %p\n", spi_data,
+ 				spi_data->free_spi.head);
+-		pthread_mutex_unlock(&spi_data->spis_mut);
++		lock_release(spi_data->lock);
+ 		return 0;
+ 	}
+ 
+@@ -155,7 +205,8 @@ uint32_t acquire_spi(
+ 	spi_remove_head(&spi_data->free_spi);
+ 	spi_add(&spi_data->used_spis[*spi_cid % MAX_HASH_SPI], *spi_cid, *spi_sid,
+ 			*cport, *sport);
+-	pthread_mutex_unlock(&spi_data->spis_mut);
++	spi_slot_clear(spi_slot(*spi_cid));
++	lock_release(spi_data->lock);
+ 
+ 	LM_DBG("spi acquired spi_cid:%u spi_sid:%u sport:%u cport:%u \n", *spi_cid,
+ 			*spi_sid, *sport, *cport);
+@@ -173,17 +224,22 @@ int release_spi(
+ 		return 1;
+ 	}
+ 
+-	if(pthread_mutex_lock(&spi_data->spis_mut) != 0) {
+-		return 1;
+-	}
++	lock_get(spi_data->lock);
+ 
+ 	// if we successfully remove from used spi we will insert into free spi
++	/* OpenMCX, 2026-10-25: spi_remove() gives 1 when it removed the pair, 0 or -1 when the pair was not in use: only
++	 * a pair taken out of the used list goes back to the free list, so that it is never there twice and never given
++	 * to two sets at once (TS 33.203 clause 7.1). */
+ 	if(spi_remove(&spi_data->used_spis[spi_cid % MAX_HASH_SPI], spi_cid,
+-			   spi_sid)) {
++			   spi_sid)
++			== 1) {
+ 		spi_add(&spi_data->free_spi, spi_cid, spi_sid, cport, sport);
++		spi_slot_clear(spi_slot(spi_cid));
++	} else {
++		LM_DBG("spi pair %u/%u not in use, not released again\n", spi_cid, spi_sid);
+ 	}
+ 
+-	pthread_mutex_unlock(&spi_data->spis_mut);
++	lock_release(spi_data->lock);
+ 
+ 	return 0;
+ }
+@@ -196,9 +252,7 @@ int clean_spi_list()
+ 		return 1;
+ 	}
+ 
+-	if(pthread_mutex_lock(&spi_data->spis_mut) != 0) {
+-		return 1;
+-	}
++	lock_get(spi_data->lock);
+ 
+ 	for(j = 0; j < MAX_HASH_SPI; j++) {
+ 		destroy_list(&spi_data->used_spis[j]);
+@@ -206,10 +260,20 @@ int clean_spi_list()
+ 
+ 	destroy_list(&spi_data->free_spi);
+ 	init_free_spi();
++	if(spi_data->slots != NULL) {
++		for(j = 0; j < spi_data->slot_count; j++) {
++			spi_slot_clear(&spi_data->slots[j]);
++		}
++	}
++	while(spi_data->resv != NULL) {
++		spi_resv_t *r = spi_data->resv;
++		spi_data->resv = r->next;
++		shm_free(r);
++	}
+ 
+ 	spi_data->spi_val = spi_data->min_spi;
+ 
+-	pthread_mutex_unlock(&spi_data->spis_mut);
++	lock_release(spi_data->lock);
+ 
+ 	return 0;
+ }
+@@ -221,8 +285,432 @@ int destroy_spi_gen()
+ 	}
+ 
+ 	clean_spi_list();
+-
+-	int ret = pthread_mutex_destroy(&spi_data->spis_mut);
++	if(spi_data->slots != NULL) {
++		shm_free(spi_data->slots);
++	}
++	lock_destroy(spi_data->lock);
++	lock_dealloc(spi_data->lock);
+ 	shm_free(spi_data);
++	spi_data = NULL;
++	return 0;
++}
++
++
++/* Under the lock: whether slot o holds impi. */
++static int spi_slot_impi(spi_slot_t *o, str *impi)
++{
++	return o->impi.len == impi->len && (impi->len == 0 || memcmp(o->impi.s, impi->s, impi->len) == 0);
++}
++
++/* Under the lock: a slot of (ue, port_uc), NULL if none. */
++static spi_slot_t *spi_slot_of(struct ip_addr *ue, uint16_t port_uc)
++{
++	uint32_t j;
++	for(j = 0; j < spi_data->slot_count; j++) {
++		spi_slot_t *o = &spi_data->slots[j];
++		if(o->recorded && o->set.port_uc == port_uc && ip_addr_cmp(&o->set.ue, ue)) {
++			return o;
++		}
++	}
++	return NULL;
++}
++
++/* Under the lock: whether two slots are sets of one UE registration: the same private user identity and the same
++ * UE address (TS 33.203 clause 7.4.2a, "the UE related SAs"; clause 7.4.1a: "The UE shall be involved in only one
++ * registration procedure at a time"). */
++static int spi_slot_sibling(spi_slot_t *a, spi_slot_t *b)
++{
++	return a->recorded && b->recorded && ip_addr_cmp(&a->set.ue, &b->set.ue) && a->impi.len == b->impi.len
++		   && (a->impi.len == 0 || memcmp(a->impi.s, b->impi.s, a->impi.len) == 0);
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.1 rule 3, under the lock: the sets of impi that stay when the
++ * challenge of a REGISTER from ue (received over the set of protected client port arrival_uc, 0 if unprotected)
++ * creates its set, and the admissions of other REGISTER transactions not yet turned into a set. Clause 7.4.2a: the
++ * challenge deletes the registration SAs of the same UE registration (temporary sets of impi and ue), except the
++ * one the REGISTER came over, which goes once its transaction has ended. */
++static int spi_staying(str *impi, struct ip_addr *ue, uint16_t arrival_uc, unsigned int hidx, unsigned int label)
++{
++	uint32_t j;
++	int n = 0;
++	spi_resv_t *r;
++
++	for(j = 0; j < spi_data->slot_count; j++) {
++		spi_slot_t *o = &spi_data->slots[j];
++		if(!o->recorded || !spi_slot_impi(o, impi)) {
++			continue;
++		}
++		if(o->set.temporary && ip_addr_cmp(&o->set.ue, ue)
++				&& !(arrival_uc != 0 && o->set.port_uc == arrival_uc)) {
++			continue; /* deleted by the challenge */
++		}
++		n++;
++	}
++	for(r = spi_data->resv; r != NULL; r = r->next) {
++		if(!(r->hidx == hidx && r->label == label) && r->impi_len == impi->len
++				&& memcmp(r->impi, impi->s, impi->len) == 0) {
++			n++;
++		}
++	}
++	return n;
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.1 rule 3: the admission of the REGISTER transaction (hidx, label)
++ * of impi from ue: atomic with the count, so that two REGISTERs of one IMPI cannot both pass. 1 if reserved (fewer
++ * than max_sets stay with it), 0 if not, -1 on error. */
++int spi_set_reserve(str *impi, struct ip_addr *ue, uint16_t arrival_uc, unsigned int hidx, unsigned int label,
++		int max_sets)
++{
++	spi_resv_t *r;
++	int ret;
++
++	if(!spi_data || impi == NULL || impi->s == NULL || impi->len <= 0) {
++		return -1;
++	}
++	r = shm_malloc(sizeof(spi_resv_t) + impi->len);
++	if(r == NULL) {
++		SHM_MEM_ERROR;
++		return -1;
++	}
++	memset(r, 0, sizeof(spi_resv_t));
++	r->impi = (char *)(r + 1);
++	memcpy(r->impi, impi->s, impi->len);
++	r->impi_len = impi->len;
++	r->hidx = hidx;
++	r->label = label;
++	lock_get(spi_data->lock);
++	if(spi_staying(impi, ue, arrival_uc, hidx, label) + 1 > max_sets) {
++		ret = 0;
++	} else {
++		r->next = spi_data->resv;
++		spi_data->resv = r;
++		r = NULL;
++		ret = 1;
++	}
++	lock_release(spi_data->lock);
++	if(r != NULL) {
++		shm_free(r);
++	}
++	return ret;
++}
++
++/* Under the lock: takes the admission of (hidx, label) out; 1 if there was one. */
++static int spi_resv_take(unsigned int hidx, unsigned int label)
++{
++	spi_resv_t **p, *r;
++	for(p = &spi_data->resv; *p != NULL; p = &(*p)->next) {
++		if((*p)->hidx == hidx && (*p)->label == label) {
++			r = *p;
++			*p = r->next;
++			shm_free(r);
++			return 1;
++		}
++	}
++	return 0;
++}
++
++/* OpenMCX, 2026-10-25: the end of the REGISTER transaction (hidx, label): an admission not turned into a set is
++ * given back. */
++void spi_set_unreserve(unsigned int hidx, unsigned int label)
++{
++	if(!spi_data) {
++		return;
++	}
++	lock_get(spi_data->lock);
++	spi_resv_take(hidx, label);
++	lock_release(spi_data->lock);
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.1 rule 1, the SA_table (UE address, ports, SPIs, IMPI): the
++ * record of the set whose P-CSCF SPI pair (rec->spi_pc, rec->spi_ps) is in use; impi may be empty. Rule 3, under one
++ * lock with the count: the admission of the transaction (hidx, label) is consumed; without one, the set is admitted
++ * only while fewer than max_sets of impi stay with it. 0 on success, -2 if not admitted, -1 on error; in both
++ * failures nothing is recorded and the caller deletes the set. */
++int spi_set_record(const spi_set_t *rec, str *impi, unsigned int hidx, unsigned int label, uint16_t arrival_uc,
++		int max_sets)
++{
++	spi_slot_t *o;
++	char *copy = NULL;
++	int ret = -1;
++
++	if(!spi_data || rec == NULL) {
++		return -1;
++	}
++	if(impi != NULL && impi->s != NULL && impi->len > 0) {
++		copy = shm_malloc(impi->len);
++		if(copy == NULL) {
++			SHM_MEM_ERROR;
++			return -1;
++		}
++		memcpy(copy, impi->s, impi->len);
++	}
++	lock_get(spi_data->lock);
++	o = spi_slot(rec->spi_pc);
++	if(o != NULL && spi_pair_used(rec->spi_pc, rec->spi_ps)) {
++		if(copy != NULL && !spi_resv_take(hidx, label)
++				&& spi_staying(impi, (struct ip_addr *)&rec->ue, arrival_uc, hidx, label) + 1 > max_sets) {
++			ret = -2;
++		} else {
++			spi_slot_clear(o);
++			o->set = *rec;
++			o->recorded = 1;
++			if(copy != NULL) {
++				o->impi.s = copy;
++				o->impi.len = impi->len;
++				copy = NULL;
++			}
++			ret = 0;
++		}
++	}
++	lock_release(spi_data->lock);
++	if(copy != NULL) {
++		shm_free(copy);
++	}
+ 	return ret;
+ }
++
++/* OpenMCX, 2026-10-25: whether a copy of a set's parameters (a contact's) still names the set stored for its SPI
++ * pair: 1 if so, 0 if the pair is in use but holds no record (a set being created), -1 if the set is gone (the pair
++ * free, or given to another set since). */
++int spi_set_check(uint32_t spi_pc, uint32_t spi_ps, struct ip_addr *ue,
++		uint16_t port_uc, uint32_t spi_uc)
++{
++	spi_slot_t *o;
++	int ret;
++
++	if(!spi_data) {
++		return 0;
++	}
++	lock_get(spi_data->lock);
++	o = spi_slot(spi_pc);
++	if(!spi_pair_used(spi_pc, spi_ps)) {
++		ret = -1;
++	} else if(o == NULL || !o->recorded) {
++		ret = 0;
++	} else {
++		ret = (ip_addr_cmp(&o->set.ue, ue) && o->set.port_uc == port_uc
++					  && o->set.spi_uc == spi_uc)
++					  ? 1
++					  : -1;
++	}
++	lock_release(spi_data->lock);
++	return ret;
++}
++
++/* OpenMCX, 2026-10-25: the set of the UE address ue whose protected client port is port_uc (a request received
++ * over it came from there): 1 and a copy in out, 0 if there is none. */
++int spi_set_find(struct ip_addr *ue, uint16_t port_uc, spi_set_t *out)
++{
++	spi_slot_t *o;
++
++	if(!spi_data || spi_data->slots == NULL) {
++		return 0;
++	}
++	lock_get(spi_data->lock);
++	o = spi_slot_of(ue, port_uc);
++	if(o != NULL) {
++		*out = o->set;
++	}
++	lock_release(spi_data->lock);
++	return o != NULL;
++}
++
++/* OpenMCX, 2026-10-25: the set of a P-CSCF SPI pair: 1 and a copy in out, 0 if none is recorded. */
++int spi_set_find_by_spi(uint32_t spi_pc, uint32_t spi_ps, spi_set_t *out)
++{
++	spi_slot_t *o;
++	int found = 0;
++
++	if(!spi_data || spi_data->slots == NULL) {
++		return 0;
++	}
++	lock_get(spi_data->lock);
++	o = spi_slot(spi_pc);
++	if(o != NULL && o->recorded && o->set.spi_ps == spi_ps && spi_pair_used(spi_pc, spi_ps)) {
++		*out = o->set;
++		found = 1;
++	}
++	lock_release(spi_data->lock);
++	return found;
++}
++
++/* OpenMCX, 2026-10-25: the set a message from ue received over an inbound SA came over: from port_uc to port_ps or
++ * from port_us to port_pc (TS 33.203 clause 7.1). 1 and a copy in out, 0 if none. */
++int spi_set_find_inbound(struct ip_addr *ue, uint16_t src_port, uint16_t dst_port, spi_set_t *out)
++{
++	uint32_t j;
++	int found = 0;
++
++	if(!spi_data || spi_data->slots == NULL) {
++		return 0;
++	}
++	lock_get(spi_data->lock);
++	for(j = 0; j < spi_data->slot_count && !found; j++) {
++		spi_slot_t *o = &spi_data->slots[j];
++		if(o->recorded && ip_addr_cmp(&o->set.ue, ue)
++				&& ((o->set.port_uc == src_port && o->set.port_ps == dst_port)
++						|| (o->set.port_us == src_port && o->set.port_pc == dst_port))) {
++			*out = o->set;
++			found = 1;
++		}
++	}
++	lock_release(spi_data->lock);
++	return found;
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.4.2a: SM12 over the temporary set of (ue, port_uc) completes its
++ * registration: no longer temporary, its lifetime now the registration's (the contact's, ipsec_on_expire()). 1 and
++ * a copy in out if a temporary set was completed. */
++int spi_set_complete(struct ip_addr *ue, uint16_t port_uc, spi_set_t *out)
++{
++	spi_slot_t *o;
++	int done = 0;
++
++	if(!spi_data || spi_data->slots == NULL) {
++		return 0;
++	}
++	lock_get(spi_data->lock);
++	o = spi_slot_of(ue, port_uc);
++	if(o != NULL && o->set.temporary) {
++		o->set.temporary = 0;
++		o->set.expires = 0;
++		o->set.seq = ++spi_data->seq;
++		*out = o->set;
++		done = 1;
++	}
++	lock_release(spi_data->lock);
++	return done;
++}
++
++/* OpenMCX, 2026-10-25: the next completed set of the UE registration of the set of (ue, port_uc) from *cursor on,
++ * other than that set: 1 and a copy in out, 0 when there is none left. */
++int spi_set_next_sibling(uint32_t *cursor, struct ip_addr *ue, uint16_t port_uc, spi_set_t *out)
++{
++	spi_slot_t *ref;
++	int found = 0;
++
++	if(!spi_data || spi_data->slots == NULL) {
++		return 0;
++	}
++	lock_get(spi_data->lock);
++	ref = spi_slot_of(ue, port_uc);
++	for(; ref != NULL && *cursor < spi_data->slot_count && !found; (*cursor)++) {
++		spi_slot_t *o = &spi_data->slots[*cursor];
++		if(o != ref && !o->set.temporary && spi_slot_sibling(o, ref)) {
++			*out = o->set;
++			found = 1;
++		}
++	}
++	lock_release(spi_data->lock);
++	return found;
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.4.2a: the set of (ue, port_uc) is the one its UE registration
++ * uses for outbound messages (the others of the registration no longer); switch_pending: 1 if a newer completed
++ * set waits for the UE's first message over it, 0 if not, -1 unchanged. 1 if the set exists. */
++int spi_set_use_outbound(struct ip_addr *ue, uint16_t port_uc)
++{
++	spi_slot_t *ref;
++	uint32_t j;
++
++	if(!spi_data || spi_data->slots == NULL) {
++		return 0;
++	}
++	lock_get(spi_data->lock);
++	ref = spi_slot_of(ue, port_uc);
++	if(ref != NULL) {
++		for(j = 0; j < spi_data->slot_count; j++) {
++			spi_slot_t *o = &spi_data->slots[j];
++			if(o != ref && spi_slot_sibling(o, ref)) {
++				o->set.outbound = 0;
++			}
++		}
++		ref->set.outbound = 1;
++		ref->set.switch_pending = 0;
++	}
++	lock_release(spi_data->lock);
++	return ref != NULL;
++}
++
++/* OpenMCX, 2026-10-25: marks the completed set of (ue, port_uc) as waiting for the UE's first message over its
++ * inbound SA before it is taken into use for outbound messages (clause 7.4.2a). */
++int spi_set_wait_switch(struct ip_addr *ue, uint16_t port_uc)
++{
++	spi_slot_t *o;
++
++	if(!spi_data || spi_data->slots == NULL) {
++		return 0;
++	}
++	lock_get(spi_data->lock);
++	o = spi_slot_of(ue, port_uc);
++	if(o != NULL) {
++		o->set.switch_pending = 1;
++	}
++	lock_release(spi_data->lock);
++	return o != NULL;
++}
++
++/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.4.2a: the set the UE registration of the set of (ue, port_uc)
++ * uses for outbound messages: the one taken into use (outbound), otherwise the latest completed one (also when the
++ * set in use has gone with its lifetime: "When the old SAs expire without a further SIP message protected by the new
++ * SAs, the new SAs are taken into use for outbound messages"), otherwise the set itself. 1 and a copy in out. */
++int spi_set_outbound_of(struct ip_addr *ue, uint16_t port_uc, spi_set_t *out)
++{
++	spi_slot_t *ref, *best = NULL;
++	uint32_t j;
++
++	if(!spi_data || spi_data->slots == NULL) {
++		return 0;
++	}
++	lock_get(spi_data->lock);
++	ref = spi_slot_of(ue, port_uc);
++	if(ref != NULL) {
++		for(j = 0; j < spi_data->slot_count; j++) {
++			spi_slot_t *o = &spi_data->slots[j];
++			if(o->set.temporary || !(o == ref || spi_slot_sibling(o, ref))) {
++				continue;
++			}
++			if(o->set.outbound) {
++				best = o;
++				break;
++			}
++			if(best == NULL || o->set.seq > best->set.seq) {
++				best = o;
++			}
++		}
++		*out = (best != NULL ? best : ref)->set;
++	}
++	lock_release(spi_data->lock);
++	return ref != NULL;
++}
++
++/* OpenMCX, 2026-10-25: the next temporary set from *cursor on: of impi and ue (not the one of exclude_uc, 0 for
++ * none) if impi is given, otherwise one whose expiry time is not after now. 1 and a copy in out, 0 when there is
++ * none left. */
++int spi_set_next_temporary(uint32_t *cursor, str *impi, struct ip_addr *ue,
++		uint16_t exclude_uc, time_t now, spi_set_t *out)
++{
++	int found = 0;
++
++	if(!spi_data || spi_data->slots == NULL) {
++		return 0;
++	}
++	lock_get(spi_data->lock);
++	for(; *cursor < spi_data->slot_count && !found; (*cursor)++) {
++		spi_slot_t *o = &spi_data->slots[*cursor];
++		if(!o->recorded || !o->set.temporary) {
++			continue;
++		}
++		if(impi != NULL) {
++			found = impi->len > 0 && spi_slot_impi(o, impi) && ip_addr_cmp(&o->set.ue, ue)
++					&& !(exclude_uc != 0 && o->set.port_uc == exclude_uc);
++		} else {
++			found = o->set.expires != 0 && o->set.expires <= now;
++		}
++		if(found) {
++			*out = o->set;
++		}
++	}
++	lock_release(spi_data->lock);
++	return found;
++}
+diff --git a/src/modules/ims_ipsec_pcscf/spi_gen.h b/src/modules/ims_ipsec_pcscf/spi_gen.h
+index 3f80b78..da0db22 100644
+--- a/src/modules/ims_ipsec_pcscf/spi_gen.h
++++ b/src/modules/ims_ipsec_pcscf/spi_gen.h
+@@ -1,4 +1,7 @@
+ /*
++ * Modified by OpenMCX on 2026-10-25 (GPL-2.0 section 2(a)): the record of the set of security associations of each
++ * SPI pair in use (TS 33.203 clauses 7.1 and 7.4.2a).
++ *
+  * IMS IPSEC PCSCF module
+  *
+  * Copyright (C) 2018 Tsvetomir Dimitrov
+@@ -26,6 +29,41 @@
+ #ifndef _SPI_GEN_H_
+ 
+ #include <stdint.h>
++#include <time.h>
++#include "../../core/str.h"
++#include "../../core/ip_addr.h"
++
++/* OpenMCX, 2026-10-25: a set of security associations (two pairs, TS 33.203 clause 6.1.0) as the SA_table of clause
++ * 7.1 rule 1 holds it. */
++typedef struct spi_set
++{
++	struct ip_addr ue;
++	uint32_t spi_uc, spi_us, spi_pc, spi_ps;
++	uint16_t port_uc, port_us, port_pc, port_ps;
++	int temporary;	/* created by a challenge, its registration not completed (clause 7.4.2a) */
++	time_t expires; /* a temporary set's end (TS 24.229 clause 5.2.2.2, 401 item 4) */
++	uint16_t parent_uc;	 /* the port_uc of the completed set SM1 came over, 0 if SM1 was unprotected */
++	unsigned int seq;	 /* order of completion */
++	int outbound;		 /* taken into use for outbound messages (clause 7.4.2a) */
++	int switch_pending;	 /* completed, waits for the UE's first message over it (clause 7.4.2a) */
++} spi_set_t;
++
++/* OpenMCX, 2026-10-25: the admission of a REGISTER transaction (TS 33.203 clause 7.1 rule 3); the IMPI follows the
++ * structure in the same allocation. */
++typedef struct spi_resv
++{
++	char *impi;
++	int impi_len;
++	unsigned int hidx, label;
++	struct spi_resv *next;
++} spi_resv_t;
++
++typedef struct spi_slot
++{
++	int recorded;
++	spi_set_t set;
++	str impi; /* shm; empty if the REGISTER named none */
++} spi_slot_t;
+ 
+ //
+ // SPI GEN is based on SPI list.
+@@ -42,5 +80,22 @@ uint32_t acquire_spi(
+ 		uint32_t *spi_cid, uint32_t *spi_sid, uint16_t *cport, uint16_t *sport);
+ int release_spi(
+ 		uint32_t spi_cid, uint32_t spi_sid, uint16_t cport, uint16_t sport);
++int spi_set_reserve(str *impi, struct ip_addr *ue, uint16_t arrival_uc, unsigned int hidx, unsigned int label,
++		int max_sets);
++void spi_set_unreserve(unsigned int hidx, unsigned int label);
++int spi_set_record(const spi_set_t *rec, str *impi, unsigned int hidx, unsigned int label, uint16_t arrival_uc,
++		int max_sets);
++int spi_set_check(uint32_t spi_pc, uint32_t spi_ps, struct ip_addr *ue,
++		uint16_t port_uc, uint32_t spi_uc);
++int spi_set_find(struct ip_addr *ue, uint16_t port_uc, spi_set_t *out);
++int spi_set_find_by_spi(uint32_t spi_pc, uint32_t spi_ps, spi_set_t *out);
++int spi_set_find_inbound(struct ip_addr *ue, uint16_t src_port, uint16_t dst_port, spi_set_t *out);
++int spi_set_complete(struct ip_addr *ue, uint16_t port_uc, spi_set_t *out);
++int spi_set_next_sibling(uint32_t *cursor, struct ip_addr *ue, uint16_t port_uc, spi_set_t *out);
++int spi_set_use_outbound(struct ip_addr *ue, uint16_t port_uc);
++int spi_set_wait_switch(struct ip_addr *ue, uint16_t port_uc);
++int spi_set_outbound_of(struct ip_addr *ue, uint16_t port_uc, spi_set_t *out);
++int spi_set_next_temporary(uint32_t *cursor, str *impi, struct ip_addr *ue,
++		uint16_t exclude_uc, time_t now, spi_set_t *out);
+ 
+ #endif /*  _SPI_GEN_H_ */

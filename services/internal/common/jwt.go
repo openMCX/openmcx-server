@@ -125,7 +125,8 @@ func signToken(claims TokenClaims, key *rsa.PrivateKey) (string, error) {
 
 // ------------------------------------------------------------------------------
 // RFC 7515 section 5.2: verifiedPayload checks an RS256 signature (RFC 7518 section 3.3) and returns the claims
-// part.
+// part. RFC 7515 section 4.1.11: this verifier understands no extension, so a JWS with a "crit" header parameter is
+// invalid.
 func verifiedPayload(token string, key *rsa.PublicKey) ([]byte, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
@@ -136,10 +137,14 @@ func verifiedPayload(token string, key *rsa.PublicKey) ([]byte, error) {
 		return nil, errors.New("malformed header")
 	}
 	var header struct {
-		Algorithm string `json:"alg"`
+		Algorithm string          `json:"alg"`
+		Critical  json.RawMessage `json:"crit"`
 	}
 	if json.Unmarshal(headerRaw, &header) != nil || header.Algorithm != "RS256" {
 		return nil, errors.New("unsupported token algorithm")
+	}
+	if header.Critical != nil {
+		return nil, errors.New("critical header parameter not understood")
 	}
 	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
@@ -197,26 +202,28 @@ func signClaims(claims any, key *rsa.PrivateKey) (string, error) {
 	return unsigned + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
-// OpenMCX: how far in the future a token's iat may lie (the issuer's clock ahead of this server's), RFC 7519
-// section 4.1.6.
-const issuedAtLeeway = time.Minute
-
 // ------------------------------------------------------------------------------
-// RFC 7519 section 7.2: validates a token of this issuer: its RS256 signature, issuer and audience, "exp" (TS 33.180
-// annex B.12), "iat" (at most one minute ahead) and "nbf" where given.
+// RFC 7519 section 7.2: validates a token of this issuer: its RS256 signature, "exp" (TS 33.180 annex B.12), "nbf"
+// where given (an "iat" that is not a NumericDate fails the decoding; no rule of TS 33.180 annex B.11.2 or RFC 7519
+// section 7.2 compares an access token's "iat" with the clock), and issuer and audience where the token has them:
+// TS 33.180 table B.2.2.2-1 requires neither for an access token, and RFC 7519 sections 4.1.1 and 4.1.3 check the
+// audience "when this claim is present".
 func VerifyToken(token string, key *rsa.PublicKey, issuer, audience string, now time.Time) (TokenClaims, error) {
 	payload, err := verifiedPayload(token, key)
 	if err != nil {
 		return TokenClaims{}, err
 	}
 	var claims TokenClaims
-	if err := json.Unmarshal(payload, &claims); err != nil {
+	var present map[string]json.RawMessage
+	if json.Unmarshal(payload, &claims) != nil || json.Unmarshal(payload, &present) != nil {
 		return TokenClaims{}, errors.New("malformed claims")
 	}
-	if claims.Issuer != issuer || !claims.Audience.Has(audience) {
+	_, hasIssuer := present["iss"]
+	_, hasAudience := present["aud"]
+	if (hasIssuer && claims.Issuer != issuer) || (hasAudience && !claims.Audience.Has(audience)) {
 		return TokenClaims{}, errors.New("invalid issuer or audience")
 	}
-	if claims.Expires <= now.Unix() || claims.IssuedAt > now.Add(issuedAtLeeway).Unix() || claims.NotBefore > now.Unix() {
+	if claims.Expires <= now.Unix() || claims.NotBefore > now.Unix() {
 		return TokenClaims{}, errors.New("token expired or not yet valid")
 	}
 	return claims, nil

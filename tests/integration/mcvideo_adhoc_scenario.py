@@ -159,7 +159,7 @@ def main():
                     'ALL',
                     '--cap-add',
                     'NET_RAW',
-                    'openmcx-dev:0.3',
+                    'openmcx-dev:0.4',
                     'tcpdump',
                     '-Z',
                     'root',
@@ -280,8 +280,8 @@ def main():
             'client-d',
             f"mcvideo-adhoc {ids['client-a']}",
             403,
-            '185',
-            'MV-AH-04 client-d\'s ad hoc group call is refused with 403 and warning 185',
+            '185 user is not authorised to initiate the adhoc group call',
+            'MV-AH-04 client-d\'s ad hoc group call is refused with 403 and warning 185 (clause 22.3.2.1.1 step 9 text)',
         )
 
         # MV-AH-06 TS 24.281 clause 12.1A.1.1 and clause 12.1A.1.2: client-a raises an ad hoc group

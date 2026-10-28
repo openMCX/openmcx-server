@@ -458,6 +458,29 @@ int main() {
         "direction or implicit request lost");
   listening.direction = "both";
   rejects([&] { (void)make_sdp(listening, 791); });
+  {
+    // TS 24.380 clauses 14.2.5, 14.3.5 and 14.3.6: an offer's "mc_implicit_request" and the "mc_ssrc" an answer
+    // returns for it; clause 14.4: the offerer reads "mc_ssrc" (an MCVideo answer names it "mc_audio_ssrc").
+    auto implicit = media;
+    implicit.implicit_request = true;
+    implicit.granted_audio_ssrc = 4242;
+    const auto implicit_sdp = make_sdp(implicit, 794);
+    check(implicit_sdp.find("a=fmtp:MCPTT mc_floor_ssrc=12345;mc_implicit_request;mc_ssrc=4242\r\n") !=
+                  std::string::npos &&
+              implicit_sdp.find("mc_audio_ssrc") == std::string::npos,
+          "implicit floor request or mc_ssrc not encoded");
+    const auto read = parse_sdp(implicit_sdp);
+    check(read.implicit_request && read.granted_audio_ssrc == 4242, "implicit floor request or mc_ssrc lost");
+    auto offer = sdp;
+    offer.replace(offer.find("mc_floor_ssrc=12345"), 19, "mc_floor_ssrc=12345;mc_implicit_request");
+    check(parse_sdp(offer).implicit_request && !parse_sdp(offer).granted_audio_ssrc, "implicit offer misread");
+    auto bad = sdp;
+    bad.replace(bad.find("mc_floor_ssrc=12345"), 19, "mc_floor_ssrc=12345;mc_ssrc=x");
+    rejects([&] { parse_sdp(bad); });
+    auto granted = media;
+    granted.granted = true; // no MCPTT "mc_granted" is written (optional: TS 24.380 clauses 14.2.4 and 14.3.4)
+    rejects([&] { (void)make_sdp(granted, 795); });
+  }
   auto malformed_rtcp = sdp;
   malformed_rtcp.replace(malformed_rtcp.find("a=rtcp:4001"), 11, "a=rtcp:");
   rejects([&] { parse_sdp(malformed_rtcp); });
@@ -831,6 +854,60 @@ int main() {
             rp("imminent-peril-resource-priority", "mcpttp", "10") + rp("normal-resource-priority", "mcpttp", "0") +
             "</on-network></service-configuration-params></service-configuration-info>");
       });
+  }
+  // TS 24.484 clause 7.2.2.1 item 4: the <GMS-URI> of the UE initial configuration (TS 24.483 clause 8.2.9).
+  {
+    const auto initial = [](const std::string &on_network) {
+      return "<mcptt-UE-initial-configuration xmlns=\"urn:3gpp:mcptt:mcpttUEinitConfig:1.0\" domain=\"x\"><on-network>" +
+             on_network + "</on-network></mcptt-UE-initial-configuration>";
+    };
+    check(parse_initial_gms_uri(initial("<GMS-XCAP-root-URI>https://gms</GMS-XCAP-root-URI><GMS-URI>"
+                                        "sip:gms-proxy@x</GMS-URI>")) == "sip:gms-proxy@x",
+          "GMS-URI of the UE initial configuration");
+    rejects([&] { (void)parse_initial_gms_uri(initial("")); });
+    rejects([&] { (void)parse_initial_gms_uri(initial("<GMS-URI></GMS-URI>")); });
+  }
+  // TS 24.379 clauses 6.6.2.3 and 6.6.3.3, TS 24.484 clauses 8.4.2.1, 9.4.2.1 and 10.4.2.1: the signalling protection
+  // of a service configuration document; an absent element (or parent) means enabled, only "false" disables.
+  {
+    const auto document = [](const char *ns, const std::string &on_network) {
+      return std::string("<service-configuration-info xmlns=\"urn:3gpp:ns:") + ns +
+             "ServiceConfig:1.0\"><service-configuration-params domain=\"x\"><on-network>" + on_network +
+             "</on-network></service-configuration-params></service-configuration-info>";
+    };
+    const auto absent = parse_service_protection(document("mcptt", ""));
+    check(absent.confidentiality && absent.integrity && absent.between_servers && absent.between_servers_control,
+          "absent protection elements: enabled");
+    const auto off = parse_service_protection(document(
+        "mcptt", "<signalling-protection><confidentiality-protection>false</confidentiality-protection>"
+                 "<integrity-protection>0</integrity-protection></signalling-protection>"
+                 "<protection-between-mcptt-servers><allow-signalling-protection>false</allow-signalling-protection>"
+                 "</protection-between-mcptt-servers>"));
+    check(!off.confidentiality && !off.integrity && !off.between_servers && off.between_servers_control,
+          "MCPTT protection disabled by false, floor control between servers still enabled when absent");
+    const auto video = parse_service_protection(document(
+        "mcvideo", "<signalling-protection><integrity-protection>true</integrity-protection></signalling-protection>"
+                   "<protection-between-mcvideo-servers><allow-transmission-control-protection>false"
+                   "</allow-transmission-control-protection></protection-between-mcvideo-servers>"));
+    check(video.confidentiality && video.integrity && video.between_servers && !video.between_servers_control,
+          "MCVideo transmission control protection between servers");
+    const auto data = parse_service_protection(
+        document("mcdata", "<signalling-protection><confidentiality-protection>false</confidentiality-protection>"
+                           "</signalling-protection><protection-between-mcdata-servers/>"));
+    check(!data.confidentiality && data.integrity && data.between_servers && data.between_servers_control,
+          "MCData protection");
+    // Another service's element is not this document's: ignored, so the default applies.
+    check(parse_service_protection(document("mcdata", "<protection-between-mcptt-servers><allow-signalling-protection>"
+                                                      "false</allow-signalling-protection>"
+                                                      "</protection-between-mcptt-servers>"))
+              .between_servers,
+          "another service's element ignored");
+    rejects([&] {
+      (void)parse_service_protection(document(
+          "mcptt", "<signalling-protection><integrity-protection>yes</integrity-protection></signalling-protection>"));
+    });
+    rejects(
+        [&] { (void)parse_service_protection(document("mcptt", "<signalling-protection/><signalling-protection/>")); });
   }
   // TS 24.481 clauses 7.2.2 and 7.2.8: <preconfigured-group-use-only> of the group document (TS 24.379
   // clause 10.1.5.2.1 step 1A).

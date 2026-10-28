@@ -63,7 +63,7 @@ services:
     networks: [mcx]
   sip-core:
     logging: *logging
-    image: openmcx-kamailio:6.1.4-4
+    image: openmcx-kamailio:6.1.4-7
     depends_on:
       sip-db: {condition: service_healthy}
     volumes:

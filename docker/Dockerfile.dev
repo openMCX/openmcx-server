@@ -23,10 +23,28 @@ ARG PJSIP_SHA256=065fe06c06788d97c35f563796d59f00ce52fe9558a52d7b490a042a966facc
 ARG WOLFSSL_FILE=wolfssl-5.8.2-stable.tar.gz
 ARG WOLFSSL_URL=https://github.com/wolfSSL/wolfssl/archive/refs/tags/v5.8.2-stable.tar.gz
 ARG WOLFSSL_SHA256=3ef126e3466e2f8f6ebb62b916a7f8fb26c6709dbdf2b63a167759f2fdb53068
+ARG LIBSRTP_FILE=libsrtp-2.8.1.tar.gz
+ARG LIBSRTP_URL=https://github.com/cisco/libsrtp/archive/6ff02afa8d2dc3f2e8896af391d137c1c66ff6fa.tar.gz
+ARG LIBSRTP_SHA256=1ef3e6315e0ea3cd05f4980c8b5f7a9df369e3d586f5e0616e6cc4c778401d4c
+ARG LIBSRTP_PATCH=0001-srtcp-index-zero.patch
+ARG LIBSRTP_PATCH_SHA256=965965cd8718165a3617ebaf8e0744d79d9b7d367cf3eff25d5b60246168fc58
 COPY docker/fetch /usr/local/bin/fetch
 RUN fetch "$GO_FILE" "$GO_URL" "$GO_SHA256" /tmp/go.tar.gz \
     && tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
 ENV PATH="/usr/local/go/bin:/opt/pjsip/bin:${PATH}"
+# libsrtp from its pinned source with OpenMCX's patch (dependencies/libsrtp/README.md): the first SRTCP index is zero
+# (RFC 3711 section 3.4). A static library in /usr/local, used by pjproject and the OpenMCX programs; its licence is
+# kept for the runtime images.
+COPY dependencies/libsrtp/${LIBSRTP_PATCH} /tmp/libsrtp-patches/
+RUN fetch "$LIBSRTP_FILE" "$LIBSRTP_URL" "$LIBSRTP_SHA256" /tmp/libsrtp.tar.gz \
+    && echo "$LIBSRTP_PATCH_SHA256  /tmp/libsrtp-patches/$LIBSRTP_PATCH" | sha256sum --check --strict - \
+    && mkdir /tmp/libsrtp && tar -xzf /tmp/libsrtp.tar.gz -C /tmp/libsrtp --strip-components=1 \
+    && cd /tmp/libsrtp && patch -p1 --forward < /tmp/libsrtp-patches/$LIBSRTP_PATCH \
+    && grep -q SRTP_OPENMCX_SRTCP_INDEX_ZERO include/srtp.h \
+    && ./configure --prefix=/usr/local --enable-openssl CFLAGS='-O2 -fPIC' \
+    && make -j4 && make install \
+    && install -D -m 644 LICENSE /usr/local/share/doc/libsrtp/LICENSE \
+    && rm -rf /tmp/libsrtp /tmp/libsrtp.tar.gz /tmp/libsrtp-patches
 # OpenMCX's pjproject patches (dependencies/pjproject/README.md): the TCP client port of IMS AKA (TS 33.203 7.1)
 # and TCP for requests pinned to a UDP transport (RFC 3261 18.1.1, TCP next hops).
 COPY dependencies/pjproject/0001-tcp-client-port.patch dependencies/pjproject/0002-udp-to-tcp.patch /tmp/pjproject-patches/

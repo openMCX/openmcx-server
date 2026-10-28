@@ -706,13 +706,29 @@ void FloorParticipantTimers::send(const FloorPacket &packet, std::uint64_t now_m
 }
 
 //------------------------------------------------------------------------------
-// TS 24.380 clause 6.2.4.2.2 step 4: an MCPTT call initiated with an implicit floor request enters 'U: pending
-// Request'.
+// TS 24.379 clause 6.4: the terminating client of a remotely initiated ambient listening call, which the
+// originator's implicit request asks the floor to be granted to, waits for Floor Granted in 'U: pending Request'
+// (TS 24.380 clause 6.2.4.4.2 step 1c). It sent no Floor Request, so no T101 runs.
 void FloorParticipantTimers::expect_implicit_grant() {
   if (state_ != FloorParticipantState::NoPermission)
     throw std::runtime_error("implicit floor request is not valid in participant state");
   state_ = FloorParticipantState::PendingRequest;
   pending_.reset();
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 6.2.4.2.2 step 4: an MCPTT call initiated with an implicit floor request that the 200 (OK)
+// accepted: "a. shall start timer T101 (Floor Request) and initialise counter C101 (Floor Request) to 1; b. shall
+// enter the 'U: pending Request' state". Nothing is sent now; on T101 expiry tick() sends `request`, the Floor
+// Request of clause 6.2.4.4.5, and after C101 expiries enters 'U: has no permission' (clause 6.2.4.4.6).
+void FloorParticipantTimers::expect_implicit_grant(const FloorPacket &request, std::uint64_t now_ms) {
+  if (request.type != FloorType::Request) throw std::runtime_error("implicit floor request needs a Floor Request");
+  (void)encode_floor(request);
+  expect_implicit_grant();
+  local_ssrc_ = request.ssrc;
+  pending_ = request;
+  transmissions_ = 1;
+  last_sent_ms_ = now_ms;
 }
 
 //------------------------------------------------------------------------------

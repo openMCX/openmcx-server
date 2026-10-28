@@ -38,10 +38,21 @@ type CredentialsConfig struct {
 	// A file holding the DSN of a database user limited to the subscriber tables.
 	MySQLDSNFile string `json:"mysql_dsn_file"`
 	// Device certificates (slice F2): the issuing CA's certificate and key (PEM), and
-	// how long a certificate lasts; without them no certificate is issued.
+	// how long a certificate lasts (certificate_days, 30 when absent: default pending
+	// maintainer choice (no spec value)); without them no certificate is issued.
 	IssuerCertFile  string `json:"issuer_cert_file,omitempty"`
 	IssuerKeyFile   string `json:"issuer_key_file,omitempty"`
 	CertificateDays int    `json:"certificate_days,omitempty"`
+	// OpenMCX's own CA, whose validity and issue periods are local policy (RFC 5280 section 3.3: CRLs are issued
+	// periodically, at an interval the CA chooses; section 5.1.2.5: nextUpdate is the issuer's), with defaults pending
+	// maintainer choice (no spec value): certificate_backdate_s, how far an issued certificate's notBefore lies
+	// before its issue (300 s when absent); crl_validity_days, the time from a CRL's issue to its nextUpdate (30
+	// days); crl_refresh_hours, how often the CRL is issued again (24 hours); crl_clock_skew_s, how far its
+	// thisUpdate lies before its issue (300 s). The backdate and skew allow for verifiers whose clock is behind.
+	CertificateBackdateS *int `json:"certificate_backdate_s,omitempty"`
+	CRLValidityDays      int  `json:"crl_validity_days,omitempty"`
+	CRLRefreshHours      int  `json:"crl_refresh_hours,omitempty"`
+	CRLClockSkewS        *int `json:"crl_clock_skew_s,omitempty"`
 	// The revocation list the SIP core reads (crl in its tls.cfg), rewritten on a
 	// revocation, and the SIP core's operator RPC that reloads it (tls.reload), called
 	// with this service's certificate (client_cert_file, client_key_file, ca_file).

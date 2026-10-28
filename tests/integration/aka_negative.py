@@ -15,6 +15,12 @@ AKAv1-MD5 (TS 33.203 clause 6.1.1), with one nonce of RAND and AUTN (32 bytes), 
 without the ck and ik meant for the P-CSCF (TS 24.229 clauses 5.2.2.2 and 5.4.1.2.1A, TS 37.579-1 table
 5.5.2.19.7-1); the Via carries received (TS 24.229 clause 5.2.2.2 item 2 c)). AKA-05: a Security-Client with an
 integrity algorithm TS 33.203 clause 6.3 does not define is refused with 400 (TS 33.203 clause 7.1, RFC 3329).
+AKA-07: a Security-Client offering only hmac-md5-96 and des-ede3-cbc, removed from TS 33.203 V19.1.0 annex H, is
+refused with 400. AKA-08: the Security-Server of the AKA-04 challenge lists the P-CSCF's algorithm combinations by
+priority (TS 33.203 clause 7.2, SM6). AKA-09: a new challenge deletes the registration SAs of the IMPI (TS 33.203
+clauses 7.3.1.4 and 7.4.2a), so incomplete authentications never reach the six SAs per direction of clause 7.1 rule
+3: three more initial REGISTERs of the IMS AKA identity (other protected ports, new SPIs) are all challenged; the
+deletion of the earlier temporary sets is checked at the P-CSCF by aka_negative_scenario.py.
 
 Example: python3 aka_negative.py --config /config/client-c.json --aka-identity sip:alice@mcx.test \
     --aka-impi alice@mcx.test
@@ -77,7 +83,7 @@ def register(sock, transport, identity, impi, domain, extra=""):
 
 # ------------------------------------------------------------------------------
 def main():
-    """Run AKA-01 to AKA-05; print and write the result as JSON."""
+    """Run AKA-01 to AKA-09 (no AKA-06: aka_protected_ports.py); print and write the result as JSON."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
     parser.add_argument("--aka-identity", required=True)
@@ -88,12 +94,17 @@ def main():
     cfg = json.load(open(args.config))
     domain = cfg["sip"]["identity"].split("@", 1)[1]
     digest_identity, digest_user = cfg["sip"]["identity"], cfg["sip"]["username"]
-    security_client = (
-        "Security-Client: ipsec-3gpp;alg=hmac-sha-1-96;ealg=aes-cbc;prot=esp;mod=trans;"
-        f"spi-c={secrets.randbelow(1 << 30) + 4096};spi-s={secrets.randbelow(1 << 30) + 4096};"
-        "port-c=40100;port-s=40101\r\n"
-        "Require: sec-agree\r\nProxy-Require: sec-agree\r\n"
-    )
+
+    def offer(port_c):
+        """A Security-Client with new SPIs and the protected ports port_c, port_c + 1."""
+        return (
+            "Security-Client: ipsec-3gpp;alg=hmac-sha-1-96;ealg=aes-cbc;prot=esp;mod=trans;"
+            f"spi-c={secrets.randbelow(1 << 30) + 4096};spi-s={secrets.randbelow(1 << 30) + 4096};"
+            f"port-c={port_c};port-s={port_c + 1}\r\n"
+            "Require: sec-agree\r\nProxy-Require: sec-agree\r\n"
+        )
+
+    security_client = offer(40100)
     checks = []
 
     def check(name, passed, detail):
@@ -129,6 +140,13 @@ def main():
         except ValueError:
             nonce_length = 0
         server = any(line.lower().startswith("security-server:") and "ipsec-3gpp" in line for line in headers)
+        offered = []
+        for line in headers:
+            if line.lower().startswith("security-server:"):
+                for mechanism in line.split(":", 1)[1].split(","):
+                    alg = re.search(r"(?i);alg=([^;\s]+)", mechanism)
+                    ealg = re.search(r"(?i);ealg=([^;\s]+)", mechanism)
+                    offered.append((alg.group(1).lower() if alg else "", ealg.group(1).lower() if ealg else "null"))
         received = any(line.lower().startswith("via:") and "received=" in line for line in headers)
         check(
             "AKA-04 challenges AKAv2-SHA-256 then AKAv1-MD5, qop auth, Security-Server, no ck/ik, Via received",
@@ -151,6 +169,31 @@ def main():
             security_client.replace("hmac-sha-1-96", "hmac-sha-256"),
         )
         check("AKA-05 Security-Client with an unknown algorithm refused", code == 400, f"{code}")
+    # AKA-07: only the algorithms removed from TS 33.203 V19.1.0 annex H ("Removal of hmac-md5-96", "Removal of
+    # des-ede3-cbc"): refused with 400, also in a list of several mechanisms.
+    with pcscf() as sock:
+        removed = security_client.replace("alg=hmac-sha-1-96;ealg=aes-cbc", "alg=hmac-md5-96;ealg=des-ede3-cbc")
+        removed = removed.replace("\r\nRequire:", ", " + removed.split("Security-Client: ", 1)[1].split("\r\n")[0]
+                                  .replace("ealg=des-ede3-cbc", "ealg=aes-cbc") + "\r\nRequire:", 1)
+        code, _ = register(sock, "TCP", args.aka_identity, args.aka_impi, domain, removed)
+        check("AKA-07 Security-Client with only hmac-md5-96 / des-ede3-cbc refused", code == 400, f"{code}")
+    # AKA-08 (TS 33.203 clause 7.2, SM6): the 401's Security-Server lists the P-CSCF's algorithm combinations by
+    # priority (docker/pcscf.cfg IPSEC_ALGORITHMS), not only the selected one.
+    expected = [("null", "aes-gcm-us"), ("null", "aes-gcm"), ("hmac-sha2-256-128", "aes-cbc"),
+                ("hmac-sha-1-96", "aes-cbc"), ("aes-gmac-us", "null"), ("aes-gmac", "null"),
+                ("hmac-sha2-256-128", "null"), ("hmac-sha-1-96", "null")]
+    check("AKA-08 Security-Server lists the P-CSCF's algorithm combinations by priority", offered == expected,
+          f"{offered}")
+    # AKA-09 (TS 33.203 clauses 7.3.1.4 and 7.4.2a, 7.1 rule 3): the AKA-04 challenge left one temporary set of the
+    # IMS AKA identity's IMPI; each further initial REGISTER, on a connection of its own (another contact of the same
+    # IMPI), from other protected ports and with new SPIs, is challenged, its challenge deleting the earlier temporary
+    # set first: never more than one set of the IMPI stays, none is refused.
+    codes = []
+    for port_c in (40110, 40120, 40130):
+        with pcscf() as sock:
+            code, _ = register(sock, "TCP", args.aka_identity, args.aka_impi, domain, offer(port_c))
+            codes.append(code)
+    check("AKA-09 incomplete authentications of one IMPI never refused", codes == [401, 401, 401], f"{codes}")
     result = dict(scenario="aka-negative", passed=all(item["passed"] for item in checks), checks=checks)
     if args.output:
         json.dump(result, open(args.output, "w"), indent=2)

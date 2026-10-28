@@ -6,26 +6,33 @@
 // the refresh token grant and ID token validation of the MCX Connect profile.
 //
 // Specifications: TS 24.482 V19.1.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), TS 37.579-1 V18.1.0 (Rel-18), RFC 6749,
-// RFC 7636, OpenID Connect Core 1.0, RFC 7515, RFC 7517, RFC 7518, RFC 7519, RFC 4648, RFC 3986, RFC 6265, HTML 4.01.
+// RFC 7636, OpenID Connect Core 1.0, RFC 7515, RFC 7517, RFC 7518, RFC 7519, RFC 4648, RFC 3986, RFC 6265, HTML 4.01;
+// CRLs: TS 33.310 V19.5.0 (Rel-19), RFC 5280.
 #include "mcx/http.hpp"
 #include "mcx/tls_profile.hpp"
 
 #include <curl/curl.h>
 #include <openssl/bn.h>
 #include <openssl/core_names.h>
+#include <openssl/err.h>
 #include <openssl/evp.h>
+#include <openssl/objects.h>
 #include <openssl/param_build.h>
+#include <openssl/pem.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
+#include <openssl/x509_vfy.h>
 
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <chrono>
+#include <functional>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <set>
 #include <stdexcept>
 
@@ -176,6 +183,49 @@ void apply_tls_profile(CURL *easy) {
   curl_easy_setopt(easy, CURLOPT_SSL_EC_CURVES, tls_profile::groups);
 }
 
+// The CRLs of one request, owned.
+using CrlSet = std::vector<std::unique_ptr<X509_CRL, decltype(&X509_CRL_free)>>;
+
+//------------------------------------------------------------------------------
+// Helper: TS 33.310 clause 6.1a: the CRLs of a PEM file, each a version 2 CRL ("Version 2 CRL according to
+// RFC5280") whose signature hash is not MD2, MD5 or SHA-1 ("shall not be supported"), and a full CRL (clause 7.6: "The
+// use of delta CRLs is not allowed"). A file that cannot be read, holds no CRL or a CRL outside the profile throws.
+CrlSet load_crls(const std::string &path) {
+  std::unique_ptr<BIO, decltype(&BIO_free)> file(BIO_new_file(path.c_str(), "r"), BIO_free);
+  if (!file) throw std::runtime_error("CRL file unreadable: " + path);
+  CrlSet crls;
+  while (X509_CRL *crl = PEM_read_bio_X509_CRL(file.get(), nullptr, nullptr, nullptr)) {
+    crls.emplace_back(crl, X509_CRL_free);
+    int digest = NID_undef, key = NID_undef;
+    if (X509_CRL_get_version(crl) != X509_CRL_VERSION_2)
+      throw std::runtime_error("CRL not version 2 (TS 33.310 clause 6.1a): " + path);
+    if (OBJ_find_sigid_algs(X509_CRL_get_signature_nid(crl), &digest, &key) != 1 || digest == NID_md2 ||
+        digest == NID_md5 || digest == NID_sha1)
+      throw std::runtime_error("CRL signature algorithm refused (TS 33.310 clause 6.1a): " + path);
+    if (X509_CRL_get_ext_by_NID(crl, NID_delta_crl, -1) >= 0)
+      throw std::runtime_error("delta CRL refused (TS 33.310 clause 7.6): " + path);
+  }
+  ERR_clear_error();
+  if (crls.empty()) throw std::runtime_error("CRL file holds no CRL: " + path);
+  return crls;
+}
+
+//------------------------------------------------------------------------------
+// Helper: libcurl SSL_CTX callback (OpenSSL backend) of a request with CRLs: adds them to the trust store and has the
+// whole received chain checked against them (RFC 5280 section 6.3; X509_V_FLAG_CRL_CHECK_ALL: every certificate, not
+// only the server's own), on the store and on the context, so the check stays on whatever store the handshake uses.
+CURLcode crl_context(CURL *, void *context, void *data) {
+  auto *ctx = static_cast<SSL_CTX *>(context);
+  X509_STORE *store = SSL_CTX_get_cert_store(ctx);
+  if (!store) return CURLE_SSL_CERTPROBLEM;
+  for (const auto &crl : *static_cast<const CrlSet *>(data))
+    if (X509_STORE_add_crl(store, crl.get()) != 1) return CURLE_SSL_CERTPROBLEM;
+  constexpr unsigned long flags = X509_V_FLAG_CRL_CHECK | X509_V_FLAG_CRL_CHECK_ALL;
+  if (X509_STORE_set_flags(store, flags) != 1 || X509_VERIFY_PARAM_set_flags(SSL_CTX_get0_param(ctx), flags) != 1)
+    return CURLE_SSL_CERTPROBLEM;
+  return CURLE_OK;
+}
+
 } // namespace
 
 //------------------------------------------------------------------------------
@@ -188,8 +238,10 @@ nlohmann::json HttpResponse::json() const {
 //------------------------------------------------------------------------------
 // TS 24.482 annex A.2.1.2: an HTTPS client that verifies the server against a configured trust anchor (and the
 // system's CAs, with HttpTrust::configured_and_system).
-HttpClient::HttpClient(std::string ca_file, HttpTimeouts timeouts, HttpAddressMap address_map, HttpTrust trust)
-    : ca_(std::move(ca_file)), timeouts_(timeouts), address_map_(std::move(address_map)), trust_(trust) {
+HttpClient::HttpClient(std::string ca_file, HttpTimeouts timeouts, HttpAddressMap address_map, HttpTrust trust,
+                       std::string crl_file)
+    : ca_(std::move(ca_file)), timeouts_(timeouts), address_map_(std::move(address_map)), trust_(trust),
+      crl_file_(std::move(crl_file)) {
   for (const auto &[named, reached] : address_map_)
     if (named.find(':') == named.npos || reached.find(':') == reached.npos ||
         (named + reached).find_first_of(" \r\n") != std::string::npos)
@@ -220,6 +272,16 @@ HttpResponse HttpClient::request(std::string_view method, const std::string &url
   curl_easy_setopt(easy, CURLOPT_SSL_VERIFYPEER, 1L);
   curl_easy_setopt(easy, CURLOPT_SSL_VERIFYHOST, 2L);
   apply_tls_profile(easy);
+  // TS 33.180 clause 6.1.1, TS 33.310 clause 6.1.1: "CRLs as specified in subclause 6.1a shall be supported for
+  // certificate revocation verification". The file is read for this request (a CRL replaced in it applies at once);
+  // libcurl's CA store cache is off so the CRLs go into this handshake's own store.
+  CrlSet crls;
+  if (!crl_file_.empty()) {
+    crls = load_crls(crl_file_);
+    curl_easy_setopt(easy, CURLOPT_CA_CACHE_TIMEOUT, 0L);
+    curl_easy_setopt(easy, CURLOPT_SSL_CTX_FUNCTION, crl_context);
+    curl_easy_setopt(easy, CURLOPT_SSL_CTX_DATA, &crls);
+  }
   curl_easy_setopt(easy, CURLOPT_PROTOCOLS_STR, "https");
   curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 0L);
   curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT_MS, timeouts_.connect_ms);
@@ -378,8 +440,10 @@ std::string random_id() {
 namespace {
 //------------------------------------------------------------------------------
 // Helper: RFC 7515 section 5.2 with RFC 7518 section 3.3: the claims of an RS256-signed JWT whose signature the IdMS
-// JWKS (RFC 7517) key named by its "kid" verifies. A token of a key the JWKS does not hold throws
-// oidc_unknown_signing_key.
+// JWKS (RFC 7517) key named by its "kid" verifies; a JWT without "kid", the JWKS's only key (OpenID Connect Core 1.0
+// section 10.1: "If there are multiple keys in the referenced JWK Set document, a kid value MUST be provided"). A
+// token of a key the JWKS does not hold throws oidc_unknown_signing_key. RFC 7515 section 4.1.11: this verifier
+// understands no extension, so a JWS with a "crit" header parameter is invalid.
 json signed_claims(std::string_view token, const json &jwks) {
   if (token.size() > max_id_token) throw std::runtime_error("oversized token");
   auto first = token.find('.'), second = token.find('.', first == token.npos ? 0 : first + 1);
@@ -387,15 +451,19 @@ json signed_claims(std::string_view token, const json &jwks) {
     throw std::runtime_error("invalid JWT");
   auto head = json::parse(unb64(token.substr(0, first)));
   if (head.value("alg", "") != "RS256") throw std::runtime_error("JWT algorithm refused");
+  if (head.contains("crit")) throw std::runtime_error("JWT critical header parameter not understood");
 
+  const bool named_key = head.contains("kid");
   json key;
-  for (const auto &candidate : jwks.at("keys"))
-    if (candidate.value("kid", "") == head.value("kid", "") && candidate.value("kty", "") == "RSA" &&
-        (!candidate.contains("use") || candidate.value("use", "") == "sig") &&
-        (!candidate.contains("alg") || candidate.value("alg", "") == "RS256")) {
-      if (!key.is_null()) throw std::runtime_error("duplicate JWKS key");
-      key = candidate;
-    }
+  for (const auto &candidate : jwks.at("keys")) {
+    if (candidate.value("kty", "") != "RSA" || (candidate.contains("use") && candidate.value("use", "") != "sig") ||
+        (candidate.contains("alg") && candidate.value("alg", "") != "RS256"))
+      continue;
+    if (named_key && candidate.value("kid", "") != head.value("kid", "")) continue;
+    if (!key.is_null())
+      throw std::runtime_error(named_key ? "duplicate JWKS key" : "JWT without kid for a JWKS of several keys");
+    key = candidate;
+  }
   if (key.is_null()) throw oidc_unknown_signing_key("unknown signing key");
 
   auto nbytes = unb64(key.at("n").get<std::string>()), ebytes = unb64(key.at("e").get<std::string>());
@@ -431,16 +499,18 @@ json signed_claims(std::string_view token, const json &jwks) {
 }
 
 //------------------------------------------------------------------------------
-// Helper: RFC 7519 section 4.1: "exp" ahead (TS 33.180 annex B.12), "iat" (where required or given) not ahead by
-// more than the clock skew, and "nbf" (where given) passed.
-bool times_valid(const json &claims, bool iat_required) {
+// Helper: RFC 7519 section 4.1: "exp" ahead (TS 33.180 annex B.12), "iat" a NumericDate where given (section 4.1.6)
+// and "nbf" (where given) passed. An ID token must have "iat" (OpenID Connect Core 1.0 section 2), not ahead by more
+// than the clock skew (section 3.1.3.7 item 10). An access token's "iat" is not compared with the clock: no rule of
+// TS 33.180 annex B.11.2 or RFC 7519 section 7.2 asks for it.
+bool times_valid(const json &claims, bool id_token) {
   const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
   const auto number = [&claims](const char *name) {
     return claims.contains(name) && claims.at(name).is_number_integer();
   };
-  return number("exp") && claims.at("exp").get<long long>() > now &&
-         (number("iat") ? claims.at("iat").get<long long>() <= now + id_token_clock_skew_s
-                        : !iat_required && !claims.contains("iat")) &&
+  const bool iat_valid = id_token ? number("iat") && claims.at("iat").get<long long>() <= now + id_token_clock_skew_s
+                                  : !claims.contains("iat") || number("iat");
+  return number("exp") && claims.at("exp").get<long long>() > now && iat_valid &&
          (!claims.contains("nbf") || (number("nbf") && claims.at("nbf").get<long long>() <= now));
 }
 
@@ -454,6 +524,19 @@ bool audience_valid(const json &claims, std::string_view audience) {
   for (const auto &item : *aud)
     if (item.is_string() && item.get_ref<const std::string &>() == audience) return true;
   return false;
+}
+
+//------------------------------------------------------------------------------
+// Helper: OpenID Connect Core 1.0 section 3.1.3.7 step 3: "aud" names the client and no other audience (this client
+// trusts no other one): the client_id, or an array of it alone.
+bool sole_audience(const json &claims, std::string_view audience) {
+  const auto aud = claims.find("aud");
+  if (aud == claims.end()) return false;
+  if (aud->is_string()) return aud->get_ref<const std::string &>() == audience;
+  if (!aud->is_array() || aud->empty()) return false;
+  for (const auto &item : *aud)
+    if (!item.is_string() || item.get_ref<const std::string &>() != audience) return false;
+  return true;
 }
 
 //------------------------------------------------------------------------------
@@ -479,11 +562,9 @@ json verify_id_token(std::string_view token, const json &jwks, std::string_view 
     bound = bound && (!claims.contains(name) || named(claims, name));
   if (!bound) throw std::runtime_error("ID token identity binding rejected");
 
-  // OpenID Connect Core 1.0 section 3.1.3.7 steps 3 and 4: aud names the client; with other audiences, azp is the
-  // client.
-  const auto &aud = claims.contains("aud") ? claims.at("aud") : json{};
-  const bool authorized_party = !aud.is_array() || aud.size() == 1 || claims.value("azp", "") == audience;
-  if (claims.value("iss", "") != issuer || !audience_valid(claims, audience) || !authorized_party ||
+  // OpenID Connect Core 1.0 section 3.1.3.7 step 3: "The ID Token MUST be rejected if the ID Token does not list the
+  // Client as a valid audience, or if it contains additional audiences not trusted by the Client".
+  if (claims.value("iss", "") != issuer || !sole_audience(claims, audience) ||
       (claims.contains("nonce") || !refreshed ? claims.value("nonce", "") != nonce : false) ||
       !times_valid(claims, true))
     throw std::runtime_error("ID token claims rejected");
@@ -492,11 +573,13 @@ json verify_id_token(std::string_view token, const json &jwks, std::string_view 
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex B.11.2: validates an access token (RFC 7519 section 7.2): its RS256 signature by a key of the IdMS
-// JWKS, iss, aud (the MC servers' audience, alone or among others), exp, iat and nbf, and the claims of tables
-// B.2.2.2-1 and B.2.2.3-1: scope and client_id; the MC service ID is the caller's to check.
+// JWKS, exp, nbf and the form of iat, and the claims of tables B.2.2.2-1 and B.2.2.3-1: scope and client_id; the MC
+// service ID is the caller's to check. Table B.2.2.2-1 requires neither iss nor aud: RFC 7519 sections 4.1.1 and 4.1.3, iss is
+// the IdMS's and aud names the MC servers' audience (alone or among others) "when this claim is present".
 json verify_access_token(std::string_view token, const json &jwks, std::string_view issuer, std::string_view audience) {
   auto claims = signed_claims(token, jwks);
-  if (claims.value("iss", "") != issuer || !audience_valid(claims, audience) || !times_valid(claims, false) ||
+  if ((claims.contains("iss") && claims.value("iss", "") != issuer) ||
+      (claims.contains("aud") && !audience_valid(claims, audience)) || !times_valid(claims, false) ||
       !named(claims, "scope") || !named(claims, "client_id"))
     throw std::runtime_error("access token claims rejected");
   return claims;
@@ -521,15 +604,69 @@ json checked_discovery(json discovery, const std::string &issuer, std::initializ
 }
 
 //------------------------------------------------------------------------------
+// Helper: RFC 6749 section 7.1 ("The client MUST NOT use an access token if it does not understand the token type")
+// with TS 33.180 annex B.10 and tables B.4.2.5-1 and B.5.3-1: a token response whose access token is of the type
+// "bearer" (RFC 6749 section 5.1: "Value is case insensitive").
+json bearer_token_response(json tokens) {
+  const auto access = tokens.find("access_token"), type = tokens.find("token_type");
+  if (access == tokens.end() || !access->is_string() || type == tokens.end() || !type->is_string() ||
+      lower(type->get<std::string>()) != "bearer")
+    throw std::runtime_error("token response without a bearer access token");
+  return tokens;
+}
+
+//------------------------------------------------------------------------------
 // Helper: fetches and checks the discovery document of the configured issuer.
 json oidc_discovery(const HttpClient &http, const std::string &issuer, std::initializer_list<const char *> endpoints) {
   return checked_discovery(http.request("GET", issuer + "/.well-known/openid-configuration").json(), issuer, endpoints);
 }
+
+//------------------------------------------------------------------------------
+// Helper: a discovery document of the configured issuer fetched once, on first use (oidc_endpoint), through send.
+std::function<json()> lazy_discovery(const std::string &issuer, std::function<json()> send) {
+  return [issuer, send = std::move(send), document = std::make_shared<std::optional<json>>()] {
+    if (!*document) *document = checked_discovery(send(), issuer, {});
+    return **document;
+  };
+}
+
+//------------------------------------------------------------------------------
+// Helper: the discovery document of the configured issuer, fetched on first use.
+std::function<json()> lazy_discovery(const HttpClient &http, const std::string &issuer) {
+  return lazy_discovery(issuer, [&http, issuer] {
+    return http.request("GET", issuer + "/.well-known/openid-configuration").json();
+  });
+}
 } // namespace
 
 //------------------------------------------------------------------------------
-// TS 33.180 clause 8.6.1 leaves how a resource server gets IdMS's keys open: the JWKS (RFC 7517) its discovery
-// document names (OpenID Connect Discovery 1.0 section 3, "jwks_uri").
+// TS 24.484 clause 7.2.2.7 item 4: the IdMS endpoints of the initial MC UE configuration, <App-Server-Info>
+// <idms-auth-endpoint> ("authorization_endpoint") and <idms-token-endpoint> ("token_endpoint"), configured as
+// idms_auth_endpoint and idms_token_endpoint; a JWKS URI ("jwks_uri") configured as jwks_uri (OpenID Connect Core
+// 1.0 section 10: keys supplied "by other means"). A configured endpoint is used as given, without the discovery
+// document; it is an https URI (TS 33.180 clause 5.1.2.1: "protected using HTTPS"). An endpoint not configured is
+// taken from the issuer's discovery document (OpenID Connect Discovery 1.0 section 3), which discovery returns.
+std::string oidc_endpoint(const json &cfg, std::string_view name, const std::function<json()> &discovery) {
+  static const std::map<std::string_view, const char *> configured{{"authorization_endpoint", "idms_auth_endpoint"},
+                                                                   {"token_endpoint", "idms_token_endpoint"},
+                                                                   {"jwks_uri", "jwks_uri"}};
+  const auto key = configured.find(name);
+  if (key == configured.end()) throw std::invalid_argument("unknown IdMS endpoint");
+  if (const auto value = cfg.find(key->second); value != cfg.end()) {
+    if (!value->is_string() || !value->get_ref<const std::string &>().starts_with("https://"))
+      throw std::runtime_error(std::string("configured ") + key->second + " is not an https URI");
+    return value->get<std::string>();
+  }
+  const auto document = discovery();
+  const std::string issuer = cfg.at("issuer");
+  checked_discovery(document, issuer, {key->first.data()});
+  return document.at(std::string(name)).get<std::string>();
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex B.11.2 (access token validation by RFC 7519) does not say how a resource server gets IdMS's keys;
+// OpenID Connect Core 1.0 section 10: "The OP advertises its public keys via its Discovery document or may supply this
+// information by other means". Here: the JWKS (RFC 7517) its discovery document names ("jwks_uri").
 json oidc_jwks(const HttpClient &http, const std::string &issuer) {
   const auto discovery = oidc_discovery(http, issuer, {"jwks_uri"});
   auto keys = http.request("GET", discovery.at("jwks_uri")).json();
@@ -543,14 +680,13 @@ json oidc_jwks(const HttpClient &http, const std::string &issuer) {
 // "code_verifier" the client keeps for the response.
 json oidc_authorization_request(const HttpClient &http, const json &cfg) {
   const std::string issuer = cfg.at("issuer"), client = cfg.at("client_id"), redirect = cfg.at("redirect_uri");
-  const auto discovery = oidc_discovery(http, issuer, {"authorization_endpoint", "token_endpoint", "jwks_uri"});
+  const auto endpoint = oidc_endpoint(cfg, "authorization_endpoint", lazy_discovery(http, issuer));
 
   auto verifier = random_id(), state = random_id(), nonce = random_id();
   unsigned char digest[32];
   unsigned int len = 0;
   if (EVP_Digest(verifier.data(), verifier.size(), digest, &len, EVP_sha256(), nullptr) != 1)
     throw std::runtime_error("PKCE digest failure");
-  const auto endpoint = discovery.at("authorization_endpoint").get<std::string>();
   const auto url = endpoint + (endpoint.find('?') == std::string::npos ? "?" : "&") +
                    form({{"response_type", "code"},
                          {"client_id", client},
@@ -572,8 +708,8 @@ json oidc_exchange_code(const HttpClient &http, const json &cfg, const std::stri
                         const std::string &code_verifier, const std::string &nonce) {
   const std::string issuer = cfg.at("issuer"), client = cfg.at("client_id"), redirect = cfg.at("redirect_uri");
   if (code.empty()) throw std::runtime_error("OIDC code absent");
-  const auto discovery = oidc_discovery(http, issuer, {"token_endpoint", "jwks_uri"});
-  auto response = http.request("POST", discovery.at("token_endpoint"),
+  const auto discovery = lazy_discovery(http, issuer);
+  auto response = http.request("POST", oidc_endpoint(cfg, "token_endpoint", discovery),
                                form({{"grant_type", "authorization_code"},
                                      {"client_id", client},
                                      {"redirect_uri", redirect},
@@ -583,8 +719,8 @@ json oidc_exchange_code(const HttpClient &http, const json &cfg, const std::stri
   constexpr long ok = 200;
   if (response.status != ok)
     throw std::runtime_error("OIDC token request refused: HTTP " + std::to_string(response.status));
-  auto tokens = response.json();
-  auto keys = http.request("GET", discovery.at("jwks_uri")).json();
+  auto tokens = bearer_token_response(response.json());
+  auto keys = http.request("GET", oidc_endpoint(cfg, "jwks_uri", discovery)).json();
   tokens["claims"] = verify_id_token(tokens.at("id_token").get<std::string>(), keys, issuer, client, nonce);
   tokens["nonce"] = nonce;
   return tokens;
@@ -907,24 +1043,25 @@ json oidc_refresh(const HttpClient &http, const json &cfg, const std::string &re
     }
   };
 
-  const auto discovery = checked_discovery(
-      transient([&] { return http.request("GET", issuer + "/.well-known/openid-configuration").json(); }), issuer,
-      {"token_endpoint", "jwks_uri"});
+  const auto discovery = lazy_discovery(issuer, [&] {
+    return transient([&] { return http.request("GET", issuer + "/.well-known/openid-configuration").json(); });
+  });
+  const auto token_endpoint = oidc_endpoint(cfg, "token_endpoint", discovery);
 
   const auto response = transient([&] {
     return http.request(
-        "POST", discovery.at("token_endpoint"),
+        "POST", token_endpoint,
         form({{"grant_type", "refresh_token"}, {"client_id", client}, {"refresh_token", refresh_token}}),
         {{"Content-Type", "application/x-www-form-urlencoded"}});
   });
   if (oidc_refresh_refusal(response)) throw oidc_refresh_refused("IdMS refused the refresh token (invalid_grant)");
   if (response.status != ok) throw oidc_refresh_failed("token refresh failed: HTTP " + std::to_string(response.status));
 
-  auto tokens = response.json();
+  auto tokens = bearer_token_response(response.json());
   // TS 33.180 table B.5.3-1: the ID token is optional. OpenID Connect Core 1.0 section 12.2: one given names the
   // same user, and its nonce, where given, is the authentication's.
   if (tokens.contains("id_token")) {
-    auto keys = http.request("GET", discovery.at("jwks_uri")).json();
+    auto keys = http.request("GET", oidc_endpoint(cfg, "jwks_uri", discovery)).json();
     tokens["claims"] = verify_id_token(tokens.at("id_token").get<std::string>(), keys, issuer, client, nonce, true);
   }
   tokens["nonce"] = nonce;

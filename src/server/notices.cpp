@@ -23,7 +23,7 @@ void McServer::disconnect_user(const std::string &id, const std::shared_ptr<Sess
       if (leg->user == id) leg->active = false;
     notices(*session, session->arbitrator->release(id, monotonic_ms()));
     for (const auto &leg : session_legs(*session))
-      if (leg->user == id) sip_.bye(leg->dialog);
+      if (leg->user == id) bye(leg->dialog);
   }
 }
 

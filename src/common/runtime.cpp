@@ -78,6 +78,24 @@ Json load_config(const std::string &path, bool disable_tls) {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clauses 6.6.2.3.2 and 6.6.3.3.2: the signalling protection of the CMS's view of a service configuration
+// document (services/internal/common/service_config.go getInternalServiceConfig).
+std::optional<ServiceProtection> service_protection_of(const Json &service_config) {
+  if (!service_config.is_object() || !service_config.contains("signalling_protection") ||
+      !service_config.contains("protection_between_servers"))
+    return std::nullopt;
+  const auto &signalling = service_config.at("signalling_protection");
+  const auto &between = service_config.at("protection_between_servers");
+  ServiceProtection out;
+  out.confidentiality = signalling.at("confidentiality").get<bool>();
+  out.integrity = signalling.at("integrity").get<bool>();
+  out.between_servers = between.at("allow_signalling").get<bool>();
+  for (const auto *name : {"allow_floor_control", "allow_transmission_control"})
+    if (between.contains(name)) out.between_servers_control = between.at(name).get<bool>();
+  return out;
+}
+
+//------------------------------------------------------------------------------
 // Helper: the SIP stack settings of the configuration; with TLS disabled, the debug port and core URI over TCP.
 SipConfig sip_config(const Json &cfg, bool disable_tls) {
   auto &sip = cfg.at("sip");

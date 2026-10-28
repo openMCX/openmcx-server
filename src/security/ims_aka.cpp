@@ -445,6 +445,42 @@ std::string format_sec_mechanism(const SecMechanism &mechanism) {
 }
 
 //------------------------------------------------------------------------------
+// TS 33.203 annex H and annex I with TS 33.210 clauses 5.3.3/5.3.4: the combinations, the UE's preference first.
+std::span<const EspAlgorithms> supported_esp_algorithms() {
+  static constexpr std::array<EspAlgorithms, 8> list{{{"null", "aes-gcm-us"},
+                                                      {"null", "aes-gcm"},
+                                                      {"hmac-sha2-256-128", "aes-cbc"},
+                                                      {"hmac-sha-1-96", "aes-cbc"},
+                                                      {"aes-gmac-us", "null"},
+                                                      {"aes-gmac", "null"},
+                                                      {"hmac-sha2-256-128", "null"},
+                                                      {"hmac-sha-1-96", "null"}}};
+  return list;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.203 clause 7.2 (SM1) and RFC 3329 section 2.2: one mechanism per combination, q from 0.9 down by 0.1.
+std::vector<SecMechanism> esp_offers(const SecMechanism &base) {
+  std::vector<SecMechanism> out;
+  int tenths = 9;
+  for (const auto &combination : supported_esp_algorithms()) {
+    auto offer = base;
+    offer.q = tenths-- / 10.0;
+    offer.alg = std::string(combination.alg);
+    offer.ealg = std::string(combination.ealg);
+    out.push_back(std::move(offer));
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
+std::string format_sec_mechanisms(const std::vector<SecMechanism> &mechanisms) {
+  std::string out;
+  for (const auto &mechanism : mechanisms) out += (out.empty() ? "" : ", ") + format_sec_mechanism(mechanism);
+  return out;
+}
+
+//------------------------------------------------------------------------------
 // TS 33.203 clause 7.2: "the UE selects the first integrity and encryption algorithm combination on the list received
 // from the P-CSCF ... which is also supported by the UE. If the P-CSCF did not include any confidentiality algorithm
 // ... the UE shall select the NULL encryption algorithm"; the list is ordered by q (RFC 3329 section 2.2).
@@ -454,15 +490,19 @@ std::optional<SecMechanism> select_mechanism(const std::vector<SecMechanism> &se
   std::stable_sort(ordered.begin(), ordered.end(), [](const SecMechanism *left, const SecMechanism *right) {
     return left->q.value_or(0.001) > right->q.value_or(0.001);
   });
+  const auto supported = supported_esp_algorithms();
   for (const auto *mechanism : ordered) {
-    if (lower(mechanism->name) != "ipsec-3gpp" || lower(mechanism->alg) != "hmac-sha-1-96") continue;
+    if (lower(mechanism->name) != "ipsec-3gpp") continue;
     if (mechanism->prot && lower(*mechanism->prot) != "esp") continue;
     if (mechanism->mod && lower(*mechanism->mod) != "trans") continue;
+    const auto alg = lower(mechanism->alg);
     const auto ealg = lower(mechanism->ealg.value_or("null"));
-    if (ealg != "aes-cbc" && ealg != "null") continue;
+    if (std::none_of(supported.begin(), supported.end(),
+                     [&](const EspAlgorithms &c) { return c.alg == alg && c.ealg == ealg; }))
+      continue;
     if (!mechanism->spi_c || !mechanism->spi_s || !mechanism->port_c || !mechanism->port_s) continue;
     auto chosen = *mechanism;
-    chosen.alg = "hmac-sha-1-96";
+    chosen.alg = alg;
     chosen.ealg = ealg;
     return chosen;
   }
@@ -470,23 +510,86 @@ std::optional<SecMechanism> select_mechanism(const std::vector<SecMechanism> &se
 }
 
 //------------------------------------------------------------------------------
-// TS 33.203 annex I: "If the selected authentication algorithm is HMAC-SHA-1-96 then IK_ESP is obtained from IK_IM by
-// appending 32 zero bits to the end of IK_IM to create a 160-bit string."
-std::vector<std::uint8_t> integrity_key_esp(std::string_view alg, const Key &ik) {
-  if (lower(alg) != "hmac-sha-1-96") throw std::invalid_argument("unsupported IPsec integrity algorithm");
-  std::vector<std::uint8_t> key(ik.begin(), ik.end());
-  key.resize(20, 0);
+// TS 33.220 annex B.2.0: "derived key = HMAC-SHA-256 ( Key , S )", S = FC || P0 || L0.
+std::array<std::uint8_t, 32> kdf(std::span<const std::uint8_t> key, std::uint8_t fc, std::string_view p0) {
+  std::vector<std::uint8_t> s{fc};
+  s.insert(s.end(), p0.begin(), p0.end());
+  s.push_back(static_cast<std::uint8_t>(p0.size() >> 8));
+  s.push_back(static_cast<std::uint8_t>(p0.size() & 0xff));
+  std::array<std::uint8_t, 32> out{};
+  unsigned int length = 0;
+  const auto *done = HMAC(EVP_sha256(), key.data(), static_cast<int>(key.size()), s.data(), s.size(), out.data(), &length);
+  if (done == nullptr ||
+      length != out.size())
+    throw std::runtime_error("HMAC-SHA-256 failed");
+  return out;
+}
+
+namespace {
+// Helper: CK_IM || IK_IM, the input Key of every annex I derivation.
+std::vector<std::uint8_t> ck_ik(const Key &ck, const Key &ik) {
+  std::vector<std::uint8_t> key(ck.begin(), ck.end());
+  key.insert(key.end(), ik.begin(), ik.end());
   return key;
+}
+} // namespace
+
+//------------------------------------------------------------------------------
+// TS 33.203 annex I, integrity keys.
+std::vector<std::uint8_t> integrity_key_esp(std::string_view alg, const Key &ck, const Key &ik) {
+  const auto name = lower(alg);
+  // "IK_ESP is obtained from IK_IM by appending 32 zero bits to the end of IK_IM to create a 160 bit string."
+  if (name == "hmac-sha-1-96") {
+    std::vector<std::uint8_t> key(ik.begin(), ik.end());
+    key.resize(20, 0);
+    return key;
+  }
+  // "FC = 0x5A. P0 = "HMAC-SHA2-256-128" ... IK_ESP shall be the 256 bits of the KDF output."
+  if (name == "hmac-sha2-256-128") {
+    const auto key = kdf(ck_ik(ck, ik), 0x5a, "HMAC-SHA2-256-128");
+    return {key.begin(), key.end()};
+  }
+  // "If selected authentication algorithm is AES-GMAC ... with 128 bit key then IK_ESP = IK_IM."
+  if (name == "aes-gmac" || name == "aes-gmac-us") return {ik.begin(), ik.end()};
+  // Alg "null" only with AES-GCM (annex H), whose ICV authenticates.
+  if (name == "null") return {};
+  throw std::invalid_argument("unsupported IPsec integrity algorithm");
 }
 
 //------------------------------------------------------------------------------
-// TS 33.203 annex I: "If selected encryption algorithm is AES-CBC ... with 128 bit key then CK_ESP = CK_IM"; the
-// NULL algorithm (clause 7.2) has no key.
+// TS 33.203 annex I: "If selected encryption algorithm is AES-CBC ... with 128 bit key then CK_ESP = CK_IM"; the same
+// for AES-GCM; the NULL algorithm (clause 7.2) has no key.
 std::vector<std::uint8_t> encryption_key_esp(std::string_view ealg, const Key &ck) {
   const auto name = lower(ealg);
   if (name == "null") return {};
-  if (name != "aes-cbc") throw std::invalid_argument("unsupported IPsec encryption algorithm");
+  if (name != "aes-cbc" && name != "aes-gcm" && name != "aes-gcm-us")
+    throw std::invalid_argument("unsupported IPsec encryption algorithm");
   return {ck.begin(), ck.end()};
+}
+
+//------------------------------------------------------------------------------
+// TS 33.203 annex I: "The salt value shall consist of the 32 least significant bits of the 256 bits of the KDF output."
+std::vector<std::uint8_t> esp_salt(std::string_view alg, std::string_view ealg, const Key &ck, const Key &ik) {
+  const auto a = lower(alg), e = lower(ealg);
+  std::array<std::uint8_t, 32> out{};
+  if (e == "aes-gcm" || e == "aes-gcm-us")
+    out = kdf(ck_ik(ck, ik), 0x59, "AES_GCM_SALT");
+  else if (a == "aes-gmac" || a == "aes-gmac-us")
+    out = kdf(ck_ik(ck, ik), 0x58, "AES_GMAC_SALT");
+  else
+    return {};
+  return {out.end() - 4, out.end()};
+}
+
+//------------------------------------------------------------------------------
+// TS 33.203 annex I, unique salt: "The direction bit will be XOR'd with the LSB of the 32-bit string ... The role bit
+// will be XOR'd with the second LSB".
+std::vector<std::uint8_t> sa_salt(std::span<const std::uint8_t> salt, std::string_view alg, std::string_view ealg,
+                                  bool to_ue, bool from_server) {
+  std::vector<std::uint8_t> out(salt.begin(), salt.end());
+  if (out.size() == 4 && (lower(ealg) == "aes-gcm-us" || lower(alg) == "aes-gmac-us"))
+    out[3] ^= static_cast<std::uint8_t>((to_ue ? 0x01 : 0x00) | (from_server ? 0x02 : 0x00));
+  return out;
 }
 
 //------------------------------------------------------------------------------

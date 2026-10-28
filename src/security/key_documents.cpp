@@ -360,7 +360,13 @@ IdentityKeys parse_kms_keyprov(std::string_view xml, const PublicParameters &par
   auto pvt = keyfield(keys, "UserPubTokenPVT");
   point(pvt, 65);
   point(out.receiver_secret, 257);
-  require(out.signing_pair.size() == 32, "invalid SSK size");
+  // TS 33.180 table D.3.3.2-1: the SSK is an "OCTET STRING encoding of an integer as described in section 6 of
+  // [31]" (RFC 6090 section 6.2: "an octet string S of length k", k not fixed): leading zero octets are dropped and
+  // the integer is left-padded to the 32 octets of the P-256 order; validate_identity checks its value.
+  auto &ssk = out.signing_pair;
+  while (ssk.size() > 32 && ssk.front() == 0) ssk.erase(ssk.begin());
+  require(!ssk.empty() && ssk.size() <= 32, "invalid SSK size");
+  ssk.insert(ssk.begin(), 32 - ssk.size(), 0);
   out.signing_pair.insert(out.signing_pair.end(), pvt.begin() + 1, pvt.end());
   validate_identity(parameters, out, now);
   return out;

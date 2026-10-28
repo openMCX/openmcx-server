@@ -20,9 +20,10 @@ class McpttServer final : public McServer {
   // ---- Floor control server (floor_control.cpp): TS 24.380 clause 6.3.5 ----
   void floor_packet(Leg &leg, const Datagram &datagram);
 
-  // floor_packet() (floor_control.cpp): TS 24.380 clauses 6.3.5.3.4 and 6.3.5.4.4, a Floor Request.
+  // floor_packet() (floor_control.cpp): TS 24.380 clauses 6.3.5.3.4 and 6.3.5.4.4, a Floor Request; implicit: an
+  // implicit floor request (TS 24.380 clause 6.3.5.2.2, initial_service_state).
   void floor_request(Leg &leg, const std::shared_ptr<Session> &session, MediaPlaneController &arbitrator,
-                     std::uint8_t priority);
+                     std::uint8_t priority, bool implicit = false);
 
   void send_floor_notice(Leg &leg, const FloorNotice &notice);
 
@@ -42,8 +43,9 @@ class McpttServer final : public McServer {
     return false;
   }
 
-  void check_service_media(const MediaDescription &media, bool implicit_allowed,
-                           bool uncontrolled_allowed) const override;
+  void check_service_media(const MediaDescription &media, bool uncontrolled_allowed) const override;
+
+  void accept_implicit_floor_request(Leg &leg, const MediaDescription &remote, bool initiates) override;
 
   //------------------------------------------------------------------------------
   // TS 24.379 clause 6.2.1: an MCPTT call carries speech and floor control only.
@@ -60,12 +62,7 @@ class McpttServer final : public McServer {
   // TS 24.379 clause 6.2.1: an MCPTT leg has no media besides speech (no video socket, so never called).
   void service_media_packets(Leg & /*leg*/) override {}
 
-  //------------------------------------------------------------------------------
-  // TS 24.380 clause 6.3.4: a newly active MCPTT leg is told the floor state by the core.
-  bool initial_service_state(const std::shared_ptr<Leg> & /*leg*/,
-                             const std::shared_ptr<Session> & /*session*/) override {
-    return false;
-  }
+  bool initial_service_state(const std::shared_ptr<Leg> &leg, const std::shared_ptr<Session> &session) override;
 
   //------------------------------------------------------------------------------
   // TS 24.379 clause 6.3.8: the core supervises an MCPTT call alone.

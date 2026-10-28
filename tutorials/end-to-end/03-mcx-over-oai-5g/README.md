@@ -35,7 +35,7 @@ its address from the pool `12.1.1.0/24` (the dispatcher's UE: `12.1.1.2`).
 - **Two Android phones** on the same Wi-Fi as in tutorial 1, with the OpenMCX app from the `develop` build
   ([`android/apk/openmcx-client-develop.apk`](https://github.com/openMCX/openmcx-client/tree/main/android/apk)): the
   servers of the `develop` images check the scopes of the access token, which the app of release 1.0.0 does not ask for.
-- **IPsec in the kernel** for IMS AKA: the modules `xfrm_user`, `esp4` and `authenc` (step 3 loads them), with the
+- **IPsec in the kernel** for IMS AKA: the modules `xfrm_user`, `esp4`, `authenc` and `gcm` (step 3 loads them; `gcm` for AES-GCM and AES-GMAC), with the
   HMAC-SHA-1 and AES-CBC algorithms, as in the kernels of the common Linux distributions.
 - Nothing to compile: the tutorial uses **prebuilt images from Docker Hub**, OpenMCX's `develop` images
   (`openmcx/openmcx-*:develop`, the main branch: IMS AKA needs a version after 1.0.0) and OAI's. To build the OpenMCX
@@ -79,7 +79,7 @@ The dispatcher reaches the system at `HOST_IP`, as the phones do. Two settings o
 
 The P-CSCF (`192.168.72.140`, on the N6 network) is left out of the SNAT: it reaches the UE through the UPF itself,
 with its own address, which its IPsec security associations with the UE are bound to. The script also loads the
-kernel's IPsec modules (`xfrm_user`, `esp4`, `authenc`) if they are not loaded yet.
+kernel's IPsec modules (`xfrm_user`, `esp4`, `authenc`, `gcm`) if they are not loaded yet.
 
 The addresses are fixed in `host-network.sh` and match the 5G core's configuration (`oai/mcx_core_config.yaml`,
 the networks in `docker-compose-5g-core.yaml`): change them only together. `sudo ./host-network.sh remove` undoes the

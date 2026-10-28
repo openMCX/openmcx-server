@@ -8,6 +8,7 @@
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.229, RFC 3325, RFC 3550.
 #pragma once
 #include "mcx/banner.hpp"
+#include "mcx/protocol.hpp"
 #include "mcx/sip.hpp"
 
 #include <nlohmann/json.hpp>
@@ -22,6 +23,13 @@ using Json = nlohmann::json;
 //------------------------------------------------------------------------------
 // Helper: loads and checks the configuration (at most 1 MiB).
 Json load_config(const std::string &path, bool disable_tls = false);
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 6.6.2.3.2 and 6.6.3.3.2 (TS 24.281, TS 24.282 likewise): the signalling protection of the
+// service's service configuration document as the CMS gives it to its servers ("signalling_protection",
+// "protection_between_servers", absent elements already taken as true); nothing when the view carries none, so that
+// a service configuration not read yet is not taken for one without the elements.
+std::optional<ServiceProtection> service_protection_of(const Json &service_config);
 
 //------------------------------------------------------------------------------
 // Helper: the SIP stack settings of the configuration; with TLS disabled, the debug port and core URI over TCP.

@@ -29,8 +29,8 @@ case "${1:-}" in
     # table).
     iptables -t nat -D POSTROUTING -s "$PCSCF" -d "$POOL" -j RETURN 2>/dev/null || true
     iptables -t nat -I POSTROUTING 1 -s "$PCSCF" -d "$POOL" -j RETURN
-    modprobe -a xfrm_user esp4 authenc 2>/dev/null ||
-      echo "the kernel modules xfrm_user, esp4 and authenc could not be loaded: IMS AKA needs them" >&2
+    modprobe -a xfrm_user esp4 authenc gcm 2>/dev/null ||
+      echo "the kernel modules xfrm_user, esp4, authenc and gcm could not be loaded: IMS AKA needs them" >&2
     echo "added: route $POOL via $UPF; SNAT $N6 -> $POOL to $HOST_IP, except the P-CSCF $PCSCF" ;;
   remove)
     ip route del "$POOL" via "$UPF" 2>/dev/null || true

@@ -11,6 +11,13 @@
 
 namespace mcx {
 
+namespace {
+// The floor control SSRC of a side's media description, once known.
+std::optional<std::uint32_t> floor_ssrc_of(const std::optional<MediaDescription> &media) {
+  return media ? std::optional(media->floor_ssrc) : std::nullopt;
+}
+} // namespace
+
 //------------------------------------------------------------------------------
 // TS 24.379 clause 6.3.2.6: call forwarding of a private call; the caller is asked
 // to call the forwarding target, which its follow-up call names with
@@ -46,7 +53,7 @@ void McServer::expire_no_answer(const std::shared_ptr<Session> &session) {
       failure.headers = {{"Warning", warning_value(warn(Warning::call_forwarded))}};
       sip_.answer(leg->dialog, failure);
     } else
-      sip_.bye(leg->dialog);
+      bye(leg->dialog);
   }
   event("no_answer_timer_expired", {{"session_uri", session->uri}, {"user_id", target}});
   forward_private_call(session->initiator, target, session->no_answer_target, "no-answer");
@@ -91,7 +98,7 @@ SipResponse McServer::relay_outgoing(const SipMessage &message, User &user, cons
   // TS 24.379 clause 11.1.2.3.1: an offer without floor control is passed on; the controlling
   // function accepts it only for a private call.
   try {
-    validate_remote(user.id, *message.remote_media, true, true);
+    validate_remote(user.id, *message.remote_media, true);
   } catch (const std::exception &error) {
     event("sdp_rejected", {{"reason", error.what()}});
     response.status_code = 488;
@@ -105,6 +112,12 @@ SipResponse McServer::relay_outgoing(const SipMessage &message, User &user, cons
   auto relay = make_relay(user.id, peer);
   relay->client_dialog = message.dialog_id;
   relay->client_remote = *message.remote_media;
+  // The client's SSRC, which this server sends floor control to the client with under its CSK
+  // (relay_floor_ssrc_refused): an offer with one refused is answered 488 (RFC 3261 section 13.3.1.3).
+  if (relay_floor_ssrc_refused(*relay, true, *message.remote_media, std::nullopt, std::nullopt)) {
+    response.status_code = 488;
+    return response;
+  }
   relay->ambient_party = outgoing.session_type == svc_.ambient && outgoing.ambient_listening_type == "local-init";
   relay->implicit_group = begin_implicit_affiliation(user, outgoing, false);
   auto headers = route_to(peer, relayed_headers(message.headers));
@@ -157,6 +170,12 @@ SipResponse McServer::relay_incoming(const SipMessage &message, const std::strin
   auto relay = make_relay(user.id, peer);
   relay->peer_dialog = message.dialog_id;
   relay->peer_remote = *message.remote_media;
+  // The peer's SSRC, which this server sends floor control to the peer with under the SPK
+  // (relay_floor_ssrc_refused): an offer with one refused is answered 488 (RFC 3261 section 13.3.1.3).
+  if (relay_floor_ssrc_refused(*relay, false, *message.remote_media, std::nullopt, std::nullopt)) {
+    response.status_code = 488;
+    return response;
+  }
   relay->ambient_party = info.session_type == svc_.ambient && info.ambient_listening_type == "remote-init";
   auto headers = relayed_headers(message.headers);
   if (const auto contact = get_header(message.headers, "Contact"); contact.find("isfocus") != std::string_view::npos) {
@@ -215,8 +234,16 @@ void McServer::relay_answer(const std::shared_ptr<Relay> &relay, const SipRespon
     } catch (const std::exception &) {
       // A malformed SDP answer is treated as none, refused below.
     }
-    if (!media) {
-      event("relay_answer_rejected", {{"user_id", relay->user}, {"reason", "answer without SDP"}});
+    // The answer's SSRC, which this server sends floor control with on the answering side's key, apart from the
+    // offer's (relay_floor_ssrc_refused): an answer cannot be refused, so the relay ends both dialogs as for an
+    // answer without SDP.
+    const auto &answering = toward_peer ? relay->client_remote : relay->peer_remote;
+    const auto &offering = toward_peer ? relay->peer_remote : relay->client_remote;
+    const bool ssrc_refused = media && relay_floor_ssrc_refused(*relay, toward_peer, *media, floor_ssrc_of(answering),
+                                                                floor_ssrc_of(offering));
+    if (!media || ssrc_refused) {
+      event("relay_answer_rejected",
+            {{"user_id", relay->user}, {"reason", ssrc_refused ? "floor SSRC refused" : "answer without SDP"}});
       answer = {};
       answer.status_code = 500;
     } else {
@@ -253,7 +280,7 @@ void McServer::end_relay(const std::shared_ptr<Relay> &relay) {
     relays_.erase(dialog);
     if (dialog.empty() || (relay->client_released && dialog == relay->client_dialog)) continue;
     try {
-      sip_.bye(dialog, {}, {}, parts);
+      bye(dialog, {}, {}, parts);
     } catch (const std::exception &error) {
       event("relay_release_failed", {{"reason", error.what()}});
     }
@@ -264,6 +291,9 @@ void McServer::end_relay(const std::shared_ptr<Relay> &relay) {
   relay->floor.reset();
   relay->video.reset();
   event("relay_ended", {{"user_id", relay->user}, {"server", relay->peer}});
+  // T12: a call request waiting for this ambient call's release (release_relayed_ambient) goes on, also when
+  // the relay ends another way, e.g. the controlling function's BYE crossing that release.
+  for (auto &next : std::exchange(relay->after_release, {})) schedule(std::move(next));
 }
 
 //------------------------------------------------------------------------------
@@ -299,7 +329,7 @@ SipResponse McServer::relay_request(const SipMessage &message, const std::shared
     std::vector<BodyPart> onward;
     if (!relay->bye_parts.empty()) onward.push_back(relay->bye_parts.front());
     try {
-      sip_.bye(other, {}, {}, onward);
+      bye(other, {}, {}, onward);
     } catch (const std::exception &error) {
       event("relay_release_failed", {{"reason", error.what()}});
     }
@@ -342,26 +372,39 @@ SipResponse McServer::relay_reinvite(const SipMessage &message, const std::share
   }
   if (!from_peer) {
     try {
-      validate_remote(relay->user, *message.remote_media, true, true);
+      validate_remote(relay->user, *message.remote_media, true);
     } catch (const std::exception &) {
       response.status_code = 488;
       return response;
     }
   }
-  (from_peer ? relay->peer_remote : relay->client_remote) = *message.remote_media;
-  const auto parts = application_parts(message.parts);
+  const auto &offer = *message.remote_media;
+  auto &own = from_peer ? relay->peer_remote : relay->client_remote;
   const auto &opposite = from_peer ? relay->client_remote : relay->peer_remote;
-  if (parts.empty() && opposite) {
-    // A session refresh stays on its own side of the relay.
+  // The offer's floor control SSRC, which this server sends with on this side's key (relay_floor_ssrc_refused): one
+  // refused is answered 488 before the relay changes, so that the session goes on as it was (RFC 3261 section 14.2);
+  // the stream going on with its SSRC is kept.
+  if (relay_floor_ssrc_refused(*relay, !from_peer, offer, floor_ssrc_of(own), floor_ssrc_of(opposite))) {
+    event("reinvite_refused", {{"user_id", relay->user}, {"reason", "floor SSRC refused"}});
+    response.status_code = 488;
+    return response;
+  }
+  const auto parts = application_parts(message.parts);
+  if (parts.empty() && opposite && own && own->floor_ssrc == offer.floor_ssrc) {
+    // A session refresh stays on its own side of the relay. One that changes the floor control SSRC goes on to the
+    // other side like any change: the SSRC is passed on (mirror) and is the one the other side sends floor control
+    // with (TS 24.380 clause 4.3.3.1), which an answer given here would leave unchanged.
+    own = offer;
     response.local_media = mirror(*opposite, relay->local);
     return response;
   }
   try {
     sip_.reinvite(
-        other, mirror(*message.remote_media, relay->local), parts,
-        [this, weak = std::weak_ptr<Relay>(relay), id = message.transaction_id, from_peer](const SipResponse &answer) {
-          schedule([this, weak, id, from_peer, answer] {
-            sip_.respond(id, relayed_reinvite_answer(answer, weak.lock(), from_peer));
+        other, mirror(offer, relay->local), parts,
+        [this, weak = std::weak_ptr<Relay>(relay), id = message.transaction_id, from_peer,
+         offer](const SipResponse &answer) {
+          schedule([this, weak, id, from_peer, offer, answer] {
+            sip_.respond(id, relayed_reinvite_answer(answer, weak.lock(), from_peer, offer));
           });
         },
         headers);
@@ -374,9 +417,10 @@ SipResponse McServer::relay_reinvite(const SipMessage &message, const std::share
 
 //------------------------------------------------------------------------------
 // TS 24.379 clauses 6.3.2.1.6 and 6.3.2.1.9: the other side's answer to a relayed re-INVITE, as the answer to the
-// side that sent it: a refusal is passed on, an accepting answer with its SDP mirrored to the relay's ports.
+// side that sent it: a refusal is passed on and the relay stays as it was (RFC 3261 section 14.2); an accepting
+// answer with its SDP mirrored to the relay's ports, the relay taking the offer and the answer.
 SipResponse McServer::relayed_reinvite_answer(const SipResponse &answer, const std::shared_ptr<Relay> &relay,
-                                              bool from_peer) {
+                                              bool from_peer, const MediaDescription &offer) {
   SipResponse reply;
   reply.status_code = answer.status_code;
   reply.reason = answer.reason;
@@ -399,7 +443,19 @@ SipResponse McServer::relayed_reinvite_answer(const SipResponse &answer, const s
     refusal.status_code = relay ? 500 : 481;
     return refusal;
   }
-  (from_peer ? relay->client_remote : relay->peer_remote) = *media;
+  auto &answering = from_peer ? relay->client_remote : relay->peer_remote;
+  // The answer's floor control SSRC, which this server sends with on the answering side's key, apart from the
+  // offer's (relay_floor_ssrc_refused). An answer cannot be refused: the relay ends both dialogs, the answering side's
+  // with ACK and BYE (RFC 3261 section 13.2.2.4), after the 500 to the offering side.
+  if (relay_floor_ssrc_refused(*relay, from_peer, *media, floor_ssrc_of(answering), offer.floor_ssrc)) {
+    event("relay_answer_rejected", {{"user_id", relay->user}, {"reason", "floor SSRC refused"}});
+    schedule([this, relay] { end_relay(relay); });
+    SipResponse refusal;
+    refusal.status_code = 500;
+    return refusal;
+  }
+  (from_peer ? relay->peer_remote : relay->client_remote) = offer;
+  answering = *media;
   reply.local_media = mirror(*media, relay->local);
   reply.parts = application_parts(answer.parts);
   return reply;

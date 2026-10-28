@@ -175,8 +175,15 @@ void DataServer::ipcon_invite_target(const std::shared_ptr<IpconSession> &tunnel
       {"Contact", focus_contact(tunnel->identity, "ipconn")},                                 // step 7
       {"P-Asserted-Service", icsi}};                                                          // step 11
   const std::vector<BodyPart> clear{{mcdata::info_mime, mcdata::info_xml(info)}};
+  std::vector<BodyPart> sealed;
+  try {
+    sealed = seal_for(sip, clear);
+  } catch (const CskExpired &error) {
+    // TS 33.180 annex E.6.10: the recipient's CSK may no longer be used: this message is not sent (never in the clear).
+    return csk_expired_not_sent(info.request_uri, "ipconn", error);
+  }
   const auto dialog = sip_.invite_sdp(
-      sip, tunnel->target_sdp, seal_for(sip, clear),
+      sip, tunnel->target_sdp, sealed,
       [this, tunnel](const SipResponse &response) {
         if (response.status_code >= 200)
           pending_.push_back([this, tunnel, response] { ipcon_target_answered(tunnel, response); });

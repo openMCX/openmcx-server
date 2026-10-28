@@ -10,7 +10,8 @@ time the system protects what it carries, as TS 33.180 defines it, and a script 
 - a **protected private call**: the PCK in the SDP offer (MIKEY-SAKKE), speech under the PCK, then a second call with a
   new PCK;
 - a **tampered key**: the callee refuses it;
-- **XML protection**: every MCPTT XML body encrypted and signed, between each client and the server.
+- **XML protection**: every MCPTT XML body encrypted and signed, between each client and the server; the group key
+  notifications stay unprotected, as the clients do not ask for identity hiding (TS 24.481 clause 6.3.13.3.2.2).
 
 A capture of the lab network records it all, so you can see in Wireshark what is protected and what stays readable.
 
@@ -126,7 +127,7 @@ docker compose exec client-a mcx-client --config /config/client-a.json --command
 ## 4. Look at the capture
 
 The script `run.sh` copies the capture of your run to `captures/12-protected-media-run.pcap.gz`. The folder also holds a reference run,
-[`captures/12-protected-media-full.pcap.gz`](captures/12-protected-media-full.pcap.gz) (249 KB, 3 745 frames): the frame numbers below and in the call flow are
+[`captures/12-protected-media-full.pcap.gz`](captures/12-protected-media-full.pcap.gz) (236 KB, 3 793 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.12.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -152,7 +153,7 @@ What is protected and what stays readable:
 
 | In the capture | Readable | Protected |
 |---|---|---|
-| SIP | request line, headers (`From`, `To` with the public user identities, `Contact`, …), the SDP | the MCPTT XML bodies: each sensitive element is an `<EncryptedData>` (AES-128-GCM, `KeyName` the CSK-ID), each URI in a list `sip:<ciphertext>;iv=…;key-id=…;alg=128-aes-gcm@…`; every XML body is signed in an `application/vnd.3gpp.mcptt-signed+xml` part |
+| SIP | request line, headers (`From`, `To` with the public user identities, `Contact`, …), the SDP | the MCPTT XML bodies: each sensitive element is an `<EncryptedData>` (AES-128-GCM, `KeyName` the CSK-ID), each URI in a list `sip:<ciphertext>;iv=…;key-id=…;alg=128-aes-gcm@…`; every XML body is signed in an `application/vnd.3gpp.mcptt-signed+xml` part. Not the xcap-diff NOTIFYs with the GMK: the server protects them only if the client sent its CSK in the SUBSCRIBE, for identity hiding (TS 24.481 clause 6.3.13.3.2.2), which these clients do not |
 | MIKEY-SAKKE I_MESSAGE | the header (version, data type 26, the key identifier as CSB-ID), the identities (IDRi, IDRr: e.g. `sip:alice.mcptt@mcx.test`), the KMS names, the timestamp | the key itself (SAKKE-encrypted to the recipient) and the ECCSI signature over the message |
 | SRTP speech | the RTP header (payload type, sequence number, timestamp, SSRC), and at the end the MKI (key identifier) and, for a group call, the ROC | the AMR-WB payload, with a 16-octet AES-GCM tag |
 | SRTCP floor control | the first 8 octets: version, subtype, packet type, length, SSRC; at the end the E flag and SRTCP index and the MKI | the application name (`MCPT`) and the floor message itself, with its tag |
@@ -168,27 +169,28 @@ Two things Wireshark 4.2 shows in a way that may surprise:
 
 What to look for, in the reference run:
 
-- **The CSKs** (frames 42 to 71): client-c's PUBLISH (42), bob's (54), alice's (62), client-d's (71), each with an
+- **The CSKs** (frames 47 to 78): bob's PUBLISH (47), client-d's (58), client-c's (71), alice's (78), each with an
   `application/mikey` part: an I_MESSAGE of data type 26 (SAKKE) whose CSB-ID is the CSK-ID, purpose tag 2 (alice's:
-  `0x2357155e`). The `<mcptt-access-token>` and the client ID next to it are `<EncryptedData>`.
-- **The GMK** (frames 416 to 471): the server's xcap-diff NOTIFYs to client-c (416), bob (420), alice (422) and
-  client-d (471), each with one `<mgktp:GKTP id="7689598">`: the GMK-ID `0x0075557e`, purpose tag 0, the same for all.
-  The I_MESSAGE inside (hex) is different for each member: its CSB-ID is the member's GUK-ID (alice's `0x06ad560a`),
+  `0x2e9aceda`). The `<mcptt-access-token>` and the client ID next to it are `<EncryptedData>`.
+- **The GMK** (frames 483 to 490): the server's xcap-diff NOTIFYs to bob (483), client-d (488), client-c (489) and
+  alice (490), each with one `<mgktp:GKTP id="13756636">`: the GMK-ID `0x00d1e8dc`, purpose tag 0, the same for all.
+  They carry no signature (see the table above).
+  The I_MESSAGE inside (hex) is different for each member: its CSB-ID is the member's GUK-ID (alice's `0x0221afc6`),
   the GMK-ID diversified with the member's identity (TS 33.180 clause 5.2.3).
-- **The group call** (frames 536 to 2106): alice's INVITE (543, after the SIP core's `407` to 536) with
+- **The group call** (frames 595 to 2150): alice's INVITE (602, after the SIP core's `407` to 595) with
   `m=audio 4000 RTP/SAVP 96`, no `a=key-mgmt`, and its `<mcptt-request-uri>` and `<mcptt-client-id>` encrypted;
-  the server's INVITEs to bob (553), client-c (563) and client-d (569), each encrypted under that member's own CSK; the
-  200 OK to alice (582). Floor control: Floor Idle to bob (599) ends with `80000001` (E flag, index 1) and bob's CSK-ID
-  as MKI, to alice (612) with alice's; alice's Floor Ack and Floor Request from 660. alice's first speech packet (745)
-  ends with `0075557e 06ad560a 00000000`: the GMK-ID, her GUK-ID, the ROC. The packet the server sends bob (747) carries
-  the very same payload: the server cannot decrypt it. alice ends the call (2103, 2106).
-- **The private call** (frames 2191 to 3640): alice's INVITE (2198) with `a=key-mgmt:mikey ARoFARBLJ0YA…`, an
-  I_MESSAGE whose CSB-ID is the PCK-ID `0x104b2746` (purpose tag 1), and its resource-lists entry for bob encrypted.
-  The server's INVITE to bob (2208) carries the same I_MESSAGE, octet for octet. bob's 200 OK (2211, to alice 2220)
-  carries no key. alice's speech (from 2236) and bob's (from 2921) end with the PCK-ID as MKI. bob ends the call (3640).
-- **The new PCK** (frame 3660): the next offer's PCK-ID is `0x12bf12b7`.
-- **The tampered key** (frames 3710 to 3739): alice's INVITE (3717), the server's to bob (3727), bob's 488 with
-  `Warning: 399 mcx "136 authentication of the MIKEY-SAKKE I_MESSAGE failed"` (3729), relayed to alice (3739).
+  the server's INVITEs to bob (612), client-c (622) and client-d (628), each encrypted under that member's own CSK; the
+  200 OK to alice (641). Floor control: Floor Idle to bob (654) ends with `80000001` (E flag, index 1) and bob's CSK-ID
+  as MKI, to alice (666) with alice's; alice's Floor Ack and Floor Request from 703. alice's first speech packet (786)
+  ends with `00d1e8dc 0221afc6 00000000`: the GMK-ID, her GUK-ID, the ROC. The packet the server sends bob (791) carries
+  the very same payload: the server cannot decrypt it. alice ends the call (2147, 2150).
+- **The private call** (frames 2239 to 3688): alice's INVITE (2246) with `a=key-mgmt:mikey ARoFARDwXXsA…`, an
+  I_MESSAGE whose CSB-ID is the PCK-ID `0x10f05d7b` (purpose tag 1), and its resource-lists entry for bob encrypted.
+  The server's INVITE to bob (2256) carries the same I_MESSAGE, octet for octet. bob's 200 OK (2259, to alice 2268)
+  carries no key. alice's speech (from 2284) and bob's (from 2969) end with the PCK-ID as MKI. bob ends the call (3688).
+- **The new PCK** (frame 3708): the next offer's PCK-ID is `0x19a4d83c`.
+- **The tampered key** (frames 3758 to 3787): alice's INVITE (3765), the server's to bob (3775), bob's 488 with
+  `Warning: 399 mcx "136 authentication of the MIKEY-SAKKE I_MESSAGE failed"` (3777), relayed to alice (3787).
 
 ## 5. Stop or start over
 
@@ -321,15 +323,15 @@ sequenceDiagram
 
 | Message | Frames |
 |---|---|
-| CSK PUBLISH: client-c, bob, alice, client-d | 42, 54, 62, 71 |
-| GKTP NOTIFY to client-c, bob, alice, client-d | 416, 420, 422, 471 |
-| Group INVITE A → core (after 407), core → S; S → B, C, D | 536, 543; 545; 553, 563, 569 |
-| 200 OK to A | 582 |
-| SRTCP Floor Idle to B, to A; A's floor control from | 599, 612; 660 |
-| SRTP speech A → S, S → B (same bytes) | 745, 747 |
-| BYE from A (after 407) | 2103, 2106 |
-| Private INVITE A → core with the PCK (after 407); core → B, unchanged | 2191, 2198; 2208 |
-| 200 OK from B, to A (no key) | 2211, 2220 |
-| SRTP speech A, B (MKI = PCK-ID) | from 2236, from 2921 |
-| Second private call: INVITE with a new PCK | 3660 |
-| Tampered key: INVITE A, to B; 488 from B, to A | 3717, 3727; 3729, 3739 |
+| CSK PUBLISH: bob, client-d, client-c, alice | 47, 58, 71, 78 |
+| GKTP NOTIFY to bob, client-d, client-c, alice | 483, 488, 489, 490 |
+| Group INVITE A → core (after 407), core → S; S → B, C, D | 595, 602; 604; 612, 622, 628 |
+| 200 OK to A | 641 |
+| SRTCP Floor Idle to B, to A; A's floor control from | 654, 666; 703 |
+| SRTP speech A → S, S → B (same bytes) | 786, 791 |
+| BYE from A (after 407) | 2147, 2150 |
+| Private INVITE A → core with the PCK (after 407); core → B, unchanged | 2239, 2246; 2256 |
+| 200 OK from B, to A (no key) | 2259, 2268 |
+| SRTP speech A, B (MKI = PCK-ID) | from 2284, from 2969 |
+| Second private call: INVITE with a new PCK | 3708 |
+| Tampered key: INVITE A, to B; 488 from B, to A | 3765, 3775; 3777, 3787 |

@@ -100,20 +100,22 @@ func (svc *service) routesCMS(mux *http.ServeMux) {
 // TS 24.482 annex A.2.3 step 2: the HTTP server of the GMS and the CMS (TS 24.484 clause 6.2.4.1) validates the bearer access token (RFC 6750) and takes the MC service ID of the token as the
 // identity of the sender of the request.
 func (svc *service) authenticateBearer(writer http.ResponseWriter, request *http.Request) (TokenClaims, bool) {
-	const prefix = "Bearer "
 	value := request.Header.Get("Authorization")
 	if value == "" {
-		// TS 24.482 annex A.2.3 step 1: no bearer access token.
+		// TS 24.482 annex A.2.3 step 1: no bearer access token: 403, with the challenge RFC 6750 section 3 requires
+		// ("MUST include the HTTP WWW-Authenticate response header field") and no error code (section 3.1).
+		writer.Header().Set("WWW-Authenticate", bearerChallenge)
 		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "no_identity"})
 		return TokenClaims{}, false
 	}
-	if len(value) <= len(prefix) || value[:len(prefix)] != prefix {
-		bearerDenied(writer)
+	token, ok := bearerToken(value)
+	if !ok {
+		bearerDenied(writer, false)
 		return TokenClaims{}, false
 	}
-	claims, err := VerifyAccessToken(value[len(prefix):], svc.verificationKey, svc.cfg.Issuer, svc.cfg.ServerClientID, svc.now())
+	claims, err := VerifyAccessToken(token, svc.verificationKey, svc.cfg.Issuer, svc.cfg.ServerClientID, svc.now())
 	if err != nil {
-		bearerDenied(writer)
+		bearerDenied(writer, true)
 		return TokenClaims{}, false
 	}
 	// TS 33.180 clause 5.1.3.1: the access token is scoped for the service it is presented to.
@@ -188,7 +190,7 @@ func requireScope(writer http.ResponseWriter, claims TokenClaims, scope string) 
 // error code insufficient_scope in the WWW-Authenticate challenge, with the scope attribute when one scope is required
 // (the attribute lists scopes all required, not alternatives).
 func insufficientScope(writer http.ResponseWriter, scopes ...string) {
-	challenge := `Bearer realm="mcx-common", error="insufficient_scope"`
+	challenge := bearerChallenge + `, error="insufficient_scope"`
 	if len(scopes) == 1 {
 		challenge += `, scope="` + scopes[0] + `"`
 	}
@@ -196,12 +198,30 @@ func insufficientScope(writer http.ResponseWriter, scopes ...string) {
 	writeJSON(writer, http.StatusForbidden, map[string]string{"error": "insufficient_scope"})
 }
 
+// RFC 6750 section 3: the challenge of the common services.
+const bearerChallenge = `Bearer realm="mcx-common"`
+
 // ------------------------------------------------------------------------------
-// RFC 6750 section 3.1: a request with an invalid or expired bearer access token, or another authentication scheme,
-// is answered 401 with a WWW-Authenticate challenge (invalid_token: a client signs in again or refreshes its token).
-// A request without a token gets 403 (TS 24.482 annex A.2.3 step 1, authenticateBearer).
-func bearerDenied(writer http.ResponseWriter) {
-	writer.Header().Set("WWW-Authenticate", `Bearer realm="mcx-common"`)
+// RFC 6750 section 2.1: the b64token of the credentials "Bearer" 1*SP b64token, the auth-scheme matched
+// case-insensitively (RFC 7235 section 2.1); false for another scheme or no token.
+func bearerToken(value string) (string, bool) {
+	scheme, token, found := strings.Cut(value, " ")
+	token = strings.TrimLeft(token, " ")
+	return token, found && strings.EqualFold(scheme, "Bearer") && token != ""
+}
+
+// ------------------------------------------------------------------------------
+// RFC 6750 sections 3 and 3.1: a request with an invalid or expired bearer access token (withToken), or another
+// authentication scheme, is answered 401 with a WWW-Authenticate challenge; the error code invalid_token only for a
+// token presented ("If the request lacks any authentication information (...) or attempted using an unsupported
+// authentication method), the resource server SHOULD NOT include an error code"). A client then signs in again or
+// refreshes its token. A request without a token gets 403 (TS 24.482 annex A.2.3 step 1, authenticateBearer).
+func bearerDenied(writer http.ResponseWriter, withToken bool) {
+	challenge := bearerChallenge
+	if withToken {
+		challenge += `, error="invalid_token"`
+	}
+	writer.Header().Set("WWW-Authenticate", challenge)
 	writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "invalid_token"})
 }
 

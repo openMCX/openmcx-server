@@ -60,7 +60,7 @@ json gktp_create(const json &request, const PublicParameters &pub, const Identit
   const auto random = unhex(request.at("random_hex").get<std::string>());
   if (key.size() != 16 || random.size() != 16) throw std::invalid_argument("invalid group key material");
   std::copy(key.begin(), key.end(), message.key.begin());
-  std::copy(random.begin(), random.end(), message.random.begin());
+  message.random.assign(random.begin(), random.end());
   const auto recipient = request.at("recipient").get<std::string>();
   const auto group = request.at("group_id").get<std::string>();
   const auto id = request.at("csb_id").get<std::uint32_t>();

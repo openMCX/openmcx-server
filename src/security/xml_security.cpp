@@ -5,8 +5,9 @@
 // Application signalling security (XML protection): the XPK-derived keys, XML content and URI attribute encryption,
 // re-encryption by a server, and XML signatures over MIME bodies, for MCPTT, MCVideo and MCData.
 //
-// Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), RFC 4648,
-// RFC 5288.
+// Specifications: TS 33.180 V19.5.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), RFC 4648,
+// RFC 5288, RFC 2104, RFC 2392, RFC 3986, RFC 6839, RFC 7303, W3C XML Signature Syntax and Processing (Second Edition)
+// and Version 1.1, W3C Canonical XML 1.0 and 1.1, W3C Exclusive XML Canonicalization 1.0.
 #include "mcx/xml_security.hpp"
 
 #include <libxml/c14n.h>
@@ -17,6 +18,8 @@
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -472,66 +475,16 @@ bool is_protected(std::string_view xml) {
 
 // ---- Integrity (TS 33.180 clause 9.3.5; TS 24.379 clause 6.6.3; TS 24.282 clause 6.5.3) ----
 namespace {
+constexpr const char *c14n_10 = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315";
+constexpr const char *c14n_10_comments = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments";
+constexpr const char *c14n_11 = "http://www.w3.org/2006/12/xml-c14n11";
+constexpr const char *c14n_11_comments = "http://www.w3.org/2006/12/xml-c14n11#WithComments";
 constexpr const char *exclusive_c14n = "http://www.w3.org/2001/10/xml-exc-c14n#";
-constexpr const char *hmac_sha256 = "http://www.w3.org/2001/04/xmldsig-more#hmac-sha256";
+constexpr const char *exclusive_c14n_comments = "http://www.w3.org/2001/10/xml-exc-c14n#WithComments";
+constexpr const char *base64_transform = "http://www.w3.org/2000/09/xmldsig#base64";
+constexpr const char *enveloped_transform = "http://www.w3.org/2000/09/xmldsig#enveloped-signature";
+constexpr const char *hmac_sha256_method = "http://www.w3.org/2001/04/xmldsig-more#hmac-sha256";
 constexpr const char *sha256_digest = "http://www.w3.org/2001/04/xmlenc#sha256";
-
-//------------------------------------------------------------------------------
-// Helper: the base64 SHA-256 digest of the data (the DigestValue of a Reference).
-std::string sha256_base64(std::string_view data) {
-  std::array<std::uint8_t, 32> hash{};
-  unsigned length = 0;
-  require(EVP_Digest(data.data(), data.size(), hash.data(), &length, EVP_sha256(), nullptr) == 1 && length == 32,
-          "SHA-256 failed");
-  return base64(hash.data(), hash.size());
-}
-
-//------------------------------------------------------------------------------
-// Helper: the exclusive canonical form (Exclusive XML Canonicalization 1.0) of an element, taken on its own.
-std::string canonical(xmlNodePtr element) {
-  xmlDocPtr doc = xmlNewDoc(reinterpret_cast<const xmlChar *>("1.0"));
-  require(doc != nullptr, "XML allocation failed");
-  auto *copy = xmlDocCopyNode(element, doc, 1);
-  if (!copy) {
-    xmlFreeDoc(doc);
-    throw std::runtime_error("XML copy failed");
-  }
-  xmlDocSetRootElement(doc, copy);
-  xmlReconciliateNs(doc, copy);
-  xmlChar *out = nullptr;
-  const int size = xmlC14NDocDumpMemory(doc, nullptr, XML_C14N_EXCLUSIVE_1_0, nullptr, 0, &out);
-  xmlFreeDoc(doc);
-  require(size >= 0 && out != nullptr, "XML canonicalisation failed");
-  std::string result(reinterpret_cast<char *>(out), static_cast<std::size_t>(size));
-  xmlFree(out);
-  return result;
-}
-
-//------------------------------------------------------------------------------
-// TS 33.180 clause 9.3.5: the base64 HMAC-SHA-256 of the data under the integrity key (annex F.1.4).
-std::string hmac_base64(const Key &key, std::string_view data) {
-  auto integrity = integrity_key(key);
-  std::array<std::uint8_t, 32> mac{};
-  unsigned length = 0;
-  const bool ok = HMAC(EVP_sha256(), integrity.data(), integrity.size(),
-                       reinterpret_cast<const unsigned char *>(data.data()), data.size(), mac.data(), &length) &&
-                  length == 32;
-  OPENSSL_cleanse(integrity.data(), integrity.size());
-  require(ok, "HMAC-SHA256 failed");
-  return base64(mac.data(), mac.size());
-}
-
-//------------------------------------------------------------------------------
-// TS 24.379 clause 6.6.3.3.3 step 2 a): the SignedInfo for one body, with its Reference to the body's Content-ID
-// and its SHA-256 digest; with its namespace declaration on its own, and without it inside a Signature that declares
-// it. Both have the same exclusive canonical form.
-std::string signed_info(const std::string &content_id, std::string_view body, bool declare) {
-  return std::string("<ds:SignedInfo") + (declare ? std::string(" xmlns:ds=\"") + dsig + "\"" : std::string{}) +
-         "><ds:CanonicalizationMethod Algorithm=\"" + exclusive_c14n + "\"/><ds:SignatureMethod Algorithm=\"" +
-         hmac_sha256 + "\"/><ds:Reference URI=\"cid:" + content_id + "\"><ds:DigestMethod Algorithm=\"" +
-         sha256_digest + "\"/><ds:DigestValue>" + sha256_base64(body) +
-         "</ds:DigestValue></ds:Reference></ds:SignedInfo>";
-}
 
 //------------------------------------------------------------------------------
 // Helper: the value of an attribute, or empty.
@@ -541,24 +494,293 @@ std::string attribute(xmlNodePtr node, const char *name) {
   if (value) xmlFree(value);
   return result;
 }
+
+//------------------------------------------------------------------------------
+// XMLDSig Second Edition clauses 4.3.1, 6.1 and 6.5: a canonicalisation algorithm, as the libxml2 mode and whether
+// comments are kept.
+struct Canonicalization {
+  int mode = XML_C14N_1_0;
+  bool comments = false;
+};
+
+//------------------------------------------------------------------------------
+// XMLDSig Second Edition clause 4.3.1 "Implementations MUST support the REQUIRED canonicalization algorithms" and
+// clause 6.1: the REQUIRED Canonical XML 1.0 and 1.1 (omitting comments), their RECOMMENDED forms with comments, and
+// Exclusive XML Canonicalization 1.0 (clause 6.5: it "may be used"), with and without comments; nothing for any
+// other identifier.
+std::optional<Canonicalization> canonicalization_of(std::string_view algorithm) {
+  if (algorithm == c14n_10) return Canonicalization{XML_C14N_1_0, false};
+  if (algorithm == c14n_10_comments) return Canonicalization{XML_C14N_1_0, true};
+  if (algorithm == c14n_11) return Canonicalization{XML_C14N_1_1, false};
+  if (algorithm == c14n_11_comments) return Canonicalization{XML_C14N_1_1, true};
+  if (algorithm == exclusive_c14n) return Canonicalization{XML_C14N_EXCLUSIVE_1_0, false};
+  if (algorithm == exclusive_c14n_comments) return Canonicalization{XML_C14N_EXCLUSIVE_1_0, true};
+  return std::nullopt;
+}
+
+//------------------------------------------------------------------------------
+// XMLDSig Second Edition clause 4.3.1: the node-set given to an XML based canonicalisation is "originally formed from
+// the document containing the SignedInfo and currently indicating the SignedInfo, its descendants, and the attribute
+// and namespace nodes of SignedInfo and its descendant elements": a node is visible when it is the apex or lies under
+// it (libxml2 passes the owning element as the parent of an attribute or namespace node).
+int in_subtree(void *apex, xmlNodePtr node, xmlNodePtr parent) {
+  const auto *top = static_cast<xmlNodePtr>(apex);
+  if (node == top) return 1;
+  for (auto *ancestor = parent; ancestor; ancestor = ancestor->parent)
+    if (ancestor == top) return 1;
+  return 0;
+}
+
+//------------------------------------------------------------------------------
+// Helper: the canonical form of a document, or of the subtree of one of its elements taken in its document (so that
+// an inclusive canonicalisation carries the namespace declarations and xml: attributes in scope there); for Exclusive
+// XML Canonicalization, the InclusiveNamespaces PrefixList.
+std::string c14n(xmlDocPtr doc, xmlNodePtr apex, const Canonicalization &method,
+                 const std::vector<std::string> &inclusive_prefixes) {
+  std::vector<xmlChar *> prefixes;
+  for (const auto &prefix : inclusive_prefixes)
+    prefixes.push_back(reinterpret_cast<xmlChar *>(const_cast<char *>(prefix.c_str())));
+  prefixes.push_back(nullptr);
+  const std::unique_ptr<xmlOutputBuffer, decltype(&xmlOutputBufferClose)> buffer(xmlAllocOutputBuffer(nullptr),
+                                                                                  &xmlOutputBufferClose);
+  require(buffer != nullptr, "XML allocation failed");
+  const int size = xmlC14NExecute(doc, apex ? in_subtree : nullptr, apex, method.mode,
+                                  inclusive_prefixes.empty() ? nullptr : prefixes.data(), method.comments ? 1 : 0,
+                                  buffer.get());
+  require(size >= 0, "XML canonicalisation failed");
+  const auto *content = xmlOutputBufferGetContent(buffer.get());
+  return content ? std::string(reinterpret_cast<const char *>(content), xmlOutputBufferGetSize(buffer.get()))
+                 : std::string{};
+}
+
+//------------------------------------------------------------------------------
+// Exclusive XML Canonicalization 1.0 clause 3: the prefixes of the ec:InclusiveNamespaces PrefixList of a
+// CanonicalizationMethod or Transform ("#default" names the default namespace); none for the other algorithms.
+std::vector<std::string> inclusive_prefixes(xmlNodePtr method, const Canonicalization &canonicalization) {
+  std::vector<std::string> out;
+  if (canonicalization.mode != XML_C14N_EXCLUSIVE_1_0) return out;
+  auto *list = child(method, "InclusiveNamespaces", exclusive_c14n);
+  if (!list) return out;
+  std::string token;
+  for (const char character : attribute(list, "PrefixList") + " ") {
+    if (character == ' ' || character == '\t' || character == '\r' || character == '\n') {
+      if (!token.empty()) out.push_back(token);
+      token.clear();
+    } else {
+      token.push_back(character);
+    }
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// Helper: the SHA-256 digest of the data (the DigestValue of a Reference, before base64).
+std::array<std::uint8_t, 32> sha256(std::string_view data) {
+  std::array<std::uint8_t, 32> hash{};
+  unsigned length = 0;
+  require(EVP_Digest(data.data(), data.size(), hash.data(), &length, EVP_sha256(), nullptr) == 1 && length == 32,
+          "SHA-256 failed");
+  return hash;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 clause 9.3.5: the HMAC-SHA256 of the data under the integrity key from the XPK (annex F.1.4).
+std::array<std::uint8_t, 32> signature_mac(const Key &key, std::string_view data) {
+  auto integrity = integrity_key(key);
+  const auto mac = hmac_sha256(integrity, data);
+  OPENSSL_cleanse(integrity.data(), integrity.size());
+  return mac;
+}
+
+//------------------------------------------------------------------------------
+// RFC 2392 section 2: a "cid" URL is converted to the Content-ID by "removing the "cid:" prefix, converting the %
+// encoded character to their equivalent US-ASCII characters" (the angle brackets are not part of BodyPart's
+// content_id). A malformed escape fails the reference.
+std::string content_id_of(std::string_view url) {
+  require(url.starts_with("cid:"), "Reference is not a cid URL");
+  std::string out;
+  for (std::size_t at = 4; at < url.size(); ++at) {
+    if (url[at] != '%') {
+      out.push_back(url[at]);
+      continue;
+    }
+    require(at + 2 < url.size() && std::isxdigit(static_cast<unsigned char>(url[at + 1])) &&
+                std::isxdigit(static_cast<unsigned char>(url[at + 2])),
+            "invalid % escape in a cid URL");
+    out.push_back(static_cast<char>(std::stoi(std::string(url.substr(at + 1, 2)), nullptr, 16)));
+    at += 2;
+  }
+  require(!out.empty(), "empty cid URL");
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// RFC 2392 section 2 and RFC 3986 section 2.1: the "cid" URL of a Content-ID, with every character that is not
+// unreserved, a sub-delimiter (other than the "&" an XML attribute would need to escape), ":" or "@" %-encoded.
+std::string cid_url(std::string_view content_id) {
+  static const std::string_view plain = "-._~!$'()*+,;=:@";
+  static const char digits[] = "0123456789ABCDEF";
+  std::string out = "cid:";
+  for (const char character : content_id) {
+    const auto octet = static_cast<unsigned char>(character);
+    if (std::isalnum(octet) || plain.find(character) != std::string_view::npos) {
+      out.push_back(character);
+    } else {
+      out.push_back('%');
+      out.push_back(digits[octet >> 4]);
+      out.push_back(digits[octet & 15]);
+    }
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// XMLDSig Second Edition clause 4.3.3.2 (the Reference Processing Model) and clause 6.6: the octets a Reference
+// digests: the referenced MIME body after the Reference's Transforms. Supported: the canonicalisation algorithms of
+// canonicalization_of(), base64 (clause 6.6.2, over octets) and the enveloped signature (clause 6.6.4, REQUIRED; a
+// signature in the signatures body lies outside the body it references, so nothing is removed). An octet stream that a
+// transform needs as a node-set is parsed; a node-set left at the end becomes octets by Canonical XML 1.0 (clause
+// 4.3.3.2). Any other transform fails the reference.
+std::string referenced_octets(xmlNodePtr reference, std::string_view body) {
+  auto *transforms = child(reference, "Transforms", dsig);
+  if (!transforms) return std::string(body);
+  std::string octets(body);
+  std::unique_ptr<Doc> nodes;
+  for (auto *transform = transforms->children; transform; transform = transform->next) {
+    if (transform->type != XML_ELEMENT_NODE) continue;
+    require(name_of(transform) == "Transform" && in(transform, dsig), "unexpected element in Transforms");
+    const auto algorithm = attribute(transform, "Algorithm");
+    if (const auto method = canonicalization_of(algorithm)) {
+      if (!nodes) nodes = std::make_unique<Doc>(octets);
+      octets = c14n(nodes->doc, nullptr, *method, inclusive_prefixes(transform, *method));
+      nodes.reset();
+    } else if (algorithm == enveloped_transform) {
+      if (!nodes) nodes = std::make_unique<Doc>(octets);
+    } else if (algorithm == base64_transform) {
+      require(!nodes, "unsupported base64 transform of a node-set");
+      const auto decoded = unbase64(octets);
+      octets.assign(decoded.begin(), decoded.end());
+    } else {
+      throw std::runtime_error("unsupported Reference transform");
+    }
+  }
+  if (nodes) octets = c14n(nodes->doc, nullptr, Canonicalization{XML_C14N_1_0, false}, {});
+  return octets;
+}
+
+//------------------------------------------------------------------------------
+// XMLDSig Second Edition clause 6.3.1 and XMLDSig 1.1 clauses 4.4.2 and 6.3.1 (TS 33.180 cites the Second Edition,
+// which sets no lower bound; maintainer decision M10 applies the 1.1 rule): the octets of the HMAC-SHA256 value a
+// signature carries: all 32 without HMACOutputLength; otherwise its truncation length, which must be a multiple of 8
+// ("this specification REQUIRES that the truncation length be a multiple of 8") and not "below the larger of (a)
+// half the underlying hash algorithm's output length, and (b) 80 bits" - for SHA-256 128 bits - nor above the hash.
+std::size_t mac_octets(xmlNodePtr signature_method) {
+  auto *length = signature_method ? child(signature_method, "HMACOutputLength", dsig) : nullptr;
+  if (!length) return 32;
+  auto text = content_of(length);
+  const auto first = text.find_first_not_of(" \t\r\n");
+  require(first != std::string::npos, "empty HMACOutputLength");
+  text = text.substr(first, text.find_last_not_of(" \t\r\n") - first + 1);
+  require(text.size() <= 4 && std::all_of(text.begin(), text.end(),
+                                          [](char digit) { return std::isdigit(static_cast<unsigned char>(digit)); }),
+          "invalid HMACOutputLength");
+  const auto bits = static_cast<std::size_t>(std::stoul(text));
+  require(bits % 8 == 0, "HMACOutputLength is not a multiple of 8");
+  require(bits >= std::max<std::size_t>(80, 256 / 2), "HMACOutputLength below half the hash output");
+  require(bits <= 256, "HMACOutputLength above the hash output");
+  return bits / 8;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 6.6.3.3.3 step 2 a): the SignedInfo for one body: Exclusive XML Canonicalization 1.0 without
+// comments (TS 33.180 clause 9.3.5 and TS 24.379 "an appropriate algorithm"; XMLDSig Second Edition clause 6.5 permits
+// it; clause 6.1 makes Canonical XML 1.0 mandatory to support, which canonicalization_of does on receipt, not to
+// send), HMAC-SHA256, and its Reference to the body's cid URL with the SHA-256 digest of its octets.
+std::string signed_info(const std::string &content_id, std::string_view body) {
+  const auto digest = sha256(body);
+  return std::string("<ds:SignedInfo><ds:CanonicalizationMethod Algorithm=\"") + exclusive_c14n +
+         "\"/><ds:SignatureMethod Algorithm=\"" + hmac_sha256_method + "\"/><ds:Reference URI=\"" +
+         cid_url(content_id) + "\"><ds:DigestMethod Algorithm=\"" + sha256_digest + "\"/><ds:DigestValue>" +
+         base64(digest.data(), digest.size()) + "</ds:DigestValue></ds:Reference></ds:SignedInfo>";
+}
 } // namespace
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 6.6.3.3.3 (TS 24.282 clause 6.5.3.3.3) and TS 33.180 clause 9.3.5: the signatures document
-// of TS 24.379 annex F.6 with one ds:Signature (HMAC-SHA256 under the XPK, the XPK-ID as ds:KeyName) per signed body.
+// RFC 2104 with SHA-256 (TS 33.180 clause 9.3.5: "The HMAC-SHA256 signature method shall be supported").
+std::array<std::uint8_t, 32> hmac_sha256(std::span<const std::uint8_t> key, std::string_view data) {
+  std::array<std::uint8_t, 32> mac{};
+  unsigned length = 0;
+  require(HMAC(EVP_sha256(), key.data(), static_cast<int>(key.size()),
+               reinterpret_cast<const unsigned char *>(data.data()), data.size(), mac.data(), &length) &&
+              length == 32,
+          "HMAC-SHA256 failed");
+  return mac;
+}
+
+//------------------------------------------------------------------------------
+// XMLDSig Second Edition clauses 4.3.1 and 6.5: the canonical form of a document, or of the subtree of its first
+// element with the given local name, taken in its document.
+std::string canonicalize(std::string_view xml, std::string_view algorithm, std::string_view element,
+                         const std::vector<std::string> &inclusive_namespaces) {
+  const auto method = canonicalization_of(algorithm);
+  require(method.has_value(), "unsupported canonicalization method");
+  Doc doc(xml);
+  xmlNodePtr apex = nullptr;
+  if (!element.empty()) {
+    each_element(xmlDocGetRootElement(doc.doc), [&](xmlNodePtr node) {
+      if (!apex && name_of(node) == element) apex = node;
+      return apex != nullptr;
+    });
+    require(apex != nullptr, "no such element");
+  }
+  return c14n(doc.doc, apex, *method, method->mode == XML_C14N_EXCLUSIVE_1_0 ? inclusive_namespaces
+                                                                             : std::vector<std::string>{});
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 clause 9.3.5 "all XML MIME bodies", with RFC 7303 sections 4.1, 4.2 and 9.2 (application/xml, text/xml)
+// and RFC 6839 section 4.1 (the "+xml" structured syntax suffix): whether a MIME type is an XML MIME type.
+bool is_xml_mime(std::string_view content_type) {
+  std::string type(content_type.substr(0, content_type.find(';')));
+  while (!type.empty() && (type.back() == ' ' || type.back() == '\t')) type.pop_back();
+  while (!type.empty() && (type.front() == ' ' || type.front() == '\t')) type.erase(type.begin());
+  for (auto &character : type) character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+  return type == "application/xml" || type == "text/xml" || (type.size() > 4 && type.ends_with("+xml"));
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 6.6.3.3.3 (TS 24.282 clause 6.5.3.3.3) and TS 33.180 clause 9.3.5: the signatures document of
+// TS 24.379 annex F.6 with one ds:Signature (HMAC-SHA256 under the XPK, the XPK-ID as ds:KeyName) per signed body.
+// XMLDSig Second Edition clause 3.1.2: each SignatureValue is the MAC of its SignedInfo canonicalised in the document
+// that carries it (clause 4.3.1), so the document is built first and the values filled in after.
 std::string sign(const std::vector<SignedBody> &bodies, const Key &key, std::string_view root_namespace) {
   require(!bodies.empty() && bodies.size() <= 16, "invalid number of bodies to sign");
-  std::string out =
+  const std::string head =
       "<?xml version=\"1.0\" encoding=\"UTF-8\"?><signatures xmlns=\"" + std::string(root_namespace) + "\">";
+  const std::string open = std::string("<ds:Signature xmlns:ds=\"") + dsig + "\">";
+  const std::string tail = "</ds:SignatureValue><ds:KeyInfo><ds:KeyName>" + key_name(key.id) +
+                           "</ds:KeyName></ds:KeyInfo></ds:Signature>";
+  std::vector<std::string> infos;
+  std::string draft = head;
   for (const auto &body : bodies) {
     require(!body.content_id.empty() && body.content_id.find_first_of("\"<>&") == std::string::npos,
             "invalid Content-ID");
-    Doc doc(signed_info(body.content_id, body.body, true));
-    const auto value = hmac_base64(key, canonical(xmlDocGetRootElement(doc.doc)));
-    out += std::string("<ds:Signature xmlns:ds=\"") + dsig + "\">" + signed_info(body.content_id, body.body, false) +
-           "<ds:SignatureValue>" + value + "</ds:SignatureValue><ds:KeyInfo><ds:KeyName>" + key_name(key.id) +
-           "</ds:KeyName></ds:KeyInfo></ds:Signature>";
+    infos.push_back(signed_info(body.content_id, body.body));
+    draft += open + infos.back() + "<ds:SignatureValue>" + tail;
   }
+  draft += "</signatures>";
+
+  Doc doc(draft);
+  std::string out = head;
+  std::size_t index = 0;
+  for (auto *signature = xmlDocGetRootElement(doc.doc)->children; signature; signature = signature->next) {
+    if (signature->type != XML_ELEMENT_NODE) continue;
+    auto *info = child(signature, "SignedInfo", dsig);
+    require(info != nullptr && index < infos.size(), "signature document construction failed");
+    const auto mac = signature_mac(key, c14n(doc.doc, info, Canonicalization{XML_C14N_EXCLUSIVE_1_0, false}, {}));
+    out += open + infos[index++] + "<ds:SignatureValue>" + base64(mac.data(), mac.size()) + tail;
+  }
+  require(index == infos.size(), "signature document construction failed");
   return out + "</signatures>";
 }
 
@@ -578,8 +800,9 @@ std::optional<std::uint32_t> signature_key_id(std::string_view signatures) {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 6.6.3.4.2 (TS 24.282 clause 6.5.3.4.2): verifies each ds:Signature, reference validation then
-// signature validation; returns the Content-IDs of the verified bodies and throws on any failure.
+// TS 24.379 clause 6.6.3.4.2 (TS 24.282 clause 6.5.3.4.2): verifies each ds:Signature, reference validation of each
+// of its References (XMLDSig Second Edition clause 3.2.1) then signature validation (clause 3.2.2); returns the
+// Content-IDs of the verified bodies and throws on any failure.
 std::set<std::string> verify(std::string_view signatures, const std::vector<SignedBody> &bodies, const Key &key) {
   Doc doc(signatures);
   std::map<std::string, std::string_view> by_id;
@@ -596,25 +819,45 @@ std::set<std::string> verify(std::string_view signatures, const std::vector<Sign
     if (auto *name = keyinfo ? child(keyinfo, "KeyName", dsig) : nullptr)
       require(content_of(name) == key_name(key.id), "signed under another XPK");
 
+    // TS 24.379 clause 6.6.3.4.2 step 1. TS 33.180 clause 9.3.5 lets CanonicalizationMethod be absent when "known
+    // ... through other means" but names no such means (spec defect D4); XMLDSig Second Edition clause 4.3.1:
+    // "CanonicalizationMethod is a required element", so a signature without it fails (maintainer decision M8).
+    auto *canonicalization_method = child(info, "CanonicalizationMethod", dsig);
+    require(canonicalization_method != nullptr, "SignedInfo without CanonicalizationMethod");
+    const auto canonicalization = canonicalization_of(attribute(canonicalization_method, "Algorithm"));
+    require(canonicalization.has_value(), "unsupported canonicalization method");
+    // TS 24.379 annex F.6.3 NOTE 2: "it is assumed that HMAC-SHA256 is supported by the sender and the receiver".
     auto *method = child(info, "SignatureMethod", dsig);
-    require(!method || attribute(method, "Algorithm") == hmac_sha256, "unsupported signature method");
-    auto *reference = child(info, "Reference", dsig);
-    require(reference != nullptr, "Signature without Reference");
-    const auto uri = attribute(reference, "URI");
-    require(uri.starts_with("cid:"), "Reference is not a cid URL");
-    const auto target = by_id.find(uri.substr(4));
-    require(target != by_id.end(), "Reference to a missing body");
-    auto *digest_method = child(reference, "DigestMethod", dsig);
-    require(!digest_method || attribute(digest_method, "Algorithm") == sha256_digest, "unsupported digest method");
-    auto *digest = child(reference, "DigestValue", dsig);
+    require(!method || attribute(method, "Algorithm") == hmac_sha256_method, "unsupported signature method");
+    const auto octets = mac_octets(method);
 
-    // Reference validation (xmldsig clause 3.2.1), then signature validation (clause 3.2.2).
-    require(digest && content_of(digest) == sha256_base64(target->second), "reference digest mismatch");
-    const auto expected = hmac_base64(key, canonical(info));
-    const auto received = content_of(value);
-    require(expected.size() == received.size() && CRYPTO_memcmp(expected.data(), received.data(), expected.size()) == 0,
+    // Reference validation (XMLDSig Second Edition clause 3.2.1), for every Reference of the SignedInfo.
+    std::vector<std::string> targets;
+    for (auto *reference = info->children; reference; reference = reference->next) {
+      if (reference->type != XML_ELEMENT_NODE || name_of(reference) != "Reference" || !in(reference, dsig)) continue;
+      const auto target = by_id.find(content_id_of(attribute(reference, "URI")));
+      require(target != by_id.end(), "Reference to a missing body");
+      auto *digest_method = child(reference, "DigestMethod", dsig);
+      require(!digest_method || attribute(digest_method, "Algorithm") == sha256_digest, "unsupported digest method");
+      auto *digest = child(reference, "DigestValue", dsig);
+      require(digest != nullptr, "Reference without DigestValue");
+      const auto expected = sha256(referenced_octets(reference, target->second));
+      const auto received = unbase64(content_of(digest));
+      require(received.size() == expected.size() &&
+                  CRYPTO_memcmp(received.data(), expected.data(), expected.size()) == 0,
+              "reference digest mismatch");
+      targets.push_back(target->first);
+    }
+    require(!targets.empty(), "Signature without Reference");
+
+    // Signature validation (clause 3.2.2): the SignedInfo canonicalised in this document by its own algorithm.
+    const auto expected =
+        signature_mac(key, c14n(doc.doc, info, *canonicalization,
+                                inclusive_prefixes(canonicalization_method, *canonicalization)));
+    const auto received = unbase64(content_of(value));
+    require(received.size() == octets && CRYPTO_memcmp(expected.data(), received.data(), octets) == 0,
             "signature value mismatch");
-    verified.insert(target->first);
+    verified.insert(targets.begin(), targets.end());
   }
   return verified;
 }

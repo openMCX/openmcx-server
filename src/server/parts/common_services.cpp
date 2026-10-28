@@ -25,8 +25,8 @@ AccessTokens::AccessTokens(const std::string &ca_file, const Json &common)
       audience_(common.value("token_audience", common.value("client_id", ""))) {}
 
 //------------------------------------------------------------------------------
-// TS 33.180 annex B.11.2: the signature, iss, aud and times, scope and client_id (verify_access_token), then the
-// service's scope and MC service ID.
+// TS 33.180 annex B.11.2: the signature, iss and aud where given, times, scope and client_id (verify_access_token),
+// then the service's scope and MC service ID.
 std::optional<Json> AccessTokens::verify(const std::string &token, const ServiceProfile &svc) {
   const auto now = std::chrono::steady_clock::now();
   if (issuer_.empty() || audience_.empty()) throw std::runtime_error("no IdMS configured (common)");

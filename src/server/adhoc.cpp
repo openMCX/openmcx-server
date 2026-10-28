@@ -43,8 +43,8 @@ std::string McServer::adhoc_group_identity() const {
 std::shared_ptr<McServer::Leg> McServer::incoming_leg(const SipMessage &message, const User &user,
                                                       const std::shared_ptr<Session> &session) {
   if (!message.remote_media) return nullptr;
-  auto leg = make_leg(user.id, session);
-  if (leg->local.floor_ssrc == message.remote_media->floor_ssrc) return nullptr;
+  auto leg = make_leg(user.id, session, message.remote_media->floor_ssrc);
+  if (peer_floor_ssrc_refused(*leg, message.remote_media->floor_ssrc)) return nullptr;
   leg->dialog = message.dialog_id;
   leg->incoming_offer = true;
   leg->remote = *message.remote_media;
@@ -92,6 +92,9 @@ SipResponse McServer::adhoc_rejoin(const SipMessage &message, const User &user, 
   response.parts = service_parts(answer);
   add_leg(leg);
   event("adhoc_call_rejoined", {{"user_id", user.id}, {"group_id", session->group}, {"session_uri", session->uri}});
+  // Step 12A, after the 200 (OK) of step 12: back in the ad hoc group emergency alert the call followed.
+  if (adhoc_alerts_.contains(session->group))
+    schedule([this, group = session->group, id = user.id] { adhoc_alert_joined(group, id); });
   return response;
 }
 
@@ -122,7 +125,12 @@ std::optional<SipResponse> McServer::adhoc_alert_group_join(const SipMessage &me
     answer.calling_group = session->group;
     answer.calling_user = session->initiator;
     response.parts = service_parts(answer);
+    // TS 24.379 clause 17.4.7.1.1 step 5 (TS 24.281 clause 22.4.7.1.1 step 5): the 200 (OK) to a join carries the
+    // warning 123 (session already exists).
+    response.headers.push_back({"Warning", warning_value(warn(Warning::session_exists))});
     add_leg(leg);
+    // TS 24.379 clause 17.4.7.1.1 step 4A, before the 200 (OK) of step 5: into the alert the call followed.
+    adhoc_alert_joined(alert->first, user.id);
     return response;
   }
   return std::nullopt;
@@ -367,8 +375,11 @@ SipResponse McServer::adhoc_invite(const SipMessage &message, const User &user, 
   auto leg = incoming_leg(message, user, session);
   if (!leg) return reject(488);
   leg->origin = true;
+  // TS 24.379 clause 17.2.2.1.1 step 14 with TS 24.380 clause 14.3.5: the initiator's implicit floor request (not
+  // for a join of an ongoing ad hoc group call, adhoc_alert_group_join and adhoc_rejoin).
+  accept_implicit_floor_request(*leg, *message.remote_media, true);
   response.status_code = 200;
-  response.local_media = leg->local;
+  response.local_media = initial_answer_media(*leg);
   response.contact_uri = session->uri;
   response.focus = true;
   answer.calling_group = session->group;
@@ -476,7 +487,7 @@ void McServer::remove_adhoc_participant(const std::shared_ptr<Session> &session,
   for (const auto &leg : session_legs(*session))
     if (leg->user == id) {
       leg->active = false;
-      sip_.bye(leg->dialog);
+      bye(leg->dialog);
     }
   event("adhoc_participant_removed", {{"user_id", id}, {"group_id", session->group}});
 }
@@ -643,8 +654,12 @@ void McServer::send_adhoc_alert(const AdhocAlert &alert, const std::string &grou
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 12.1A.3.3: notify users newly meeting the criteria and withdraw the alert
-// from those that no longer do.
+// TS 24.379 clause 12.1A.3.3 (TS 24.281 clause 12.1A.3.3): "When the controlling MCPTT function is notified that a
+// new MCPTT client is meeting the criteria, or that an MCPTT client does not meet the criteria any more": the alert
+// to a user newly meeting the criteria (step 1) and its withdrawal from one that no longer does (step 2), the cache
+// kept (step 3). Only a change of a user's result since the last check is such a notification: a check that finds
+// the same users is no event, so the members who left or joined the alert's call (adhoc_alert_left,
+// adhoc_alert_joined) stay as those procedures left them.
 void McServer::update_adhoc_alert(const std::string &group) {
   auto &alert = adhoc_alerts_.at(group);
   std::set<std::string> now;
@@ -656,10 +671,36 @@ void McServer::update_adhoc_alert(const std::string &group) {
     return;
   }
   for (const auto &id : now)
-    if (!alert.recipients.contains(id)) send_adhoc_alert(alert, group, id, true);
-  for (const auto &id : alert.recipients)
-    if (!now.contains(id)) send_adhoc_alert(alert, group, id, false);
-  alert.recipients = now;
+    if (!alert.matching.contains(id) && alert.recipients.insert(id).second) send_adhoc_alert(alert, group, id, true);
+  for (const auto &id : alert.matching)
+    if (!now.contains(id) && alert.recipients.erase(id)) send_adhoc_alert(alert, group, id, false);
+  alert.matching = std::move(now);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 17.4.3.2 step 2A (TS 24.281 clause 22.4.3.2 step 2A): a member leaves the ad hoc group call set
+// up after the ad hoc group emergency alert: "remove the user from the adhoc group emergency alert by sending a SIP
+// MESSAGE request for emergency alert cancellation" per clause 12.1A.3.3, the member considered "to not meet the
+// criteria anymore". The alert itself stays outstanding; the step names no exception for its initiator.
+void McServer::adhoc_alert_left(const std::string &group, const std::string &id) {
+  const auto found = adhoc_alerts_.find(group);
+  if (found == adhoc_alerts_.end()) return;
+  found->second.recipients.erase(id);
+  send_adhoc_alert(found->second, group, id, false);
+  event("adhoc_alert_member_left", {{"user_id", id}, {"group_id", group}});
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 17.4.7.1.1 step 4A and 17.4.4.1.1 step 12A (TS 24.281 clauses 22.4.7.1.1 step 4A and
+// 22.4.4.1.1 step 12A): a member joins or rejoins the alert's ad hoc group call: "add the user to the adhoc group
+// emergency alert by sending a SIP MESSAGE request for emergency alert initiation" per clause 12.1A.3.3, the member
+// considered "to meet the criteria"; sent on every successful join or rejoin, also to a cached recipient.
+void McServer::adhoc_alert_joined(const std::string &group, const std::string &id) {
+  const auto found = adhoc_alerts_.find(group);
+  if (found == adhoc_alerts_.end()) return;
+  found->second.recipients.insert(id);
+  send_adhoc_alert(found->second, group, id, true);
+  event("adhoc_alert_member_joined", {{"user_id", id}, {"group_id", group}});
 }
 
 //------------------------------------------------------------------------------
@@ -691,7 +732,8 @@ SipResponse McServer::adhoc_alert_message(const SipMessage &message, const User 
       return reject(403, warn(Warning::adhoc_participants_unknown));
     }
     const auto group = adhoc_group_identity();
-    AdhocAlert alert{user.id, user.client, info.participant_criteria, {}, message_location(message), monotonic_ms()};
+    AdhocAlert alert{user.id,       user.client, info.participant_criteria, {}, {}, message_location(message),
+                     monotonic_ms()};
     adhoc_alerts_[group] = alert;
     update_adhoc_alert(group);
     if (adhoc_alerts_.at(group).recipients.empty()) {
@@ -766,7 +808,7 @@ void McServer::revalidate_adhoc(const std::shared_ptr<Session> &session) {
     event("adhoc_call_revoked", {{"reason", error.what()}, {"session_uri", session->uri}});
     for (const auto &leg : session_legs(*session)) {
       leg->active = false;
-      sip_.bye(leg->dialog);
+      bye(leg->dialog);
     }
   }
 }

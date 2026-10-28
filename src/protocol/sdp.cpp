@@ -74,7 +74,7 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
         video_media.profile_level_id.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
       invalid("invalid SDP video configuration");
     if (!media_direction(video_media.direction)) invalid("unsupported SDP media direction");
-  } else if (media.granted || media.granted_audio_ssrc || media.granted_video_ssrc)
+  } else if (media.granted || media.granted_video_ssrc)
     invalid("transmission control parameters in an MCPTT SDP");
   std::ostringstream out;
   out << "v=0\r\no=- " << session_id << " 1 IN IP4 " << media.address << "\r\ns=" << (video ? "MCVideo" : "MCPTT")
@@ -127,7 +127,8 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
   if (media.queueing) out << ";mc_queueing";
   if (media.implicit_request) out << ";mc_implicit_request";
   if (media.granted) out << ";mc_granted";
-  if (media.granted_audio_ssrc) out << ";mc_audio_ssrc=" << media.granted_audio_ssrc;
+  // TS 24.581 clause 14.3.7 (MCVideo "mc_audio_ssrc"), TS 24.380 clause 14.3.6 (MCPTT "mc_ssrc").
+  if (media.granted_audio_ssrc) out << (video ? ";mc_audio_ssrc=" : ";mc_ssrc=") << media.granted_audio_ssrc;
   if (media.granted_video_ssrc) out << ";mc_video_ssrc=" << media.granted_video_ssrc;
   out << "\r\n";
 
@@ -387,6 +388,8 @@ void parse_format_parameter(const std::string &parameter, const std::string &sec
     out.granted_audio_ssrc = number(val, UINT32_MAX);
   else if (transmission && key == "mc_video_ssrc")
     out.granted_video_ssrc = number(val, UINT32_MAX);
+  else if (section == "application" && !transmission && key == "mc_ssrc")
+    out.granted_audio_ssrc = number(val, UINT32_MAX); // TS 24.380 clause 14.4: the offerer uses it
   else if (section == "application" && !transmission && key == "mc_floor_ssrc") {
     if (out.floor_ssrc) invalid("duplicate floor SSRC");
     out.floor_ssrc = number(val, UINT32_MAX);

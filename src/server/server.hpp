@@ -245,6 +245,11 @@ protected:
     std::uint64_t priority_notification_retry = 0;
     std::uint32_t audio_ssrc = random_ssrc();
     std::uint32_t video_ssrc = random_ssrc(); // assigned with the transmission grant (TS 24.581 clause 9.2.5)
+    // MCPTT (TS 24.380 clauses 14.3.5 and 14.3.6): the answer to the initial INVITE accepted the participant's
+    // implicit floor request (processed, and cleared, once the leg is active: initial_service_state), and the
+    // "mc_ssrc" it returned, which the first Floor Granted assigns (0: none).
+    bool implicit_floor = false;
+    std::uint32_t implicit_audio_ssrc = 0;
     // MCVideo reception control (TS 24.581 clause 4.1.1.2): whether this participant accepted
     // the current transmission (Receive Media Request) and gets its video relayed.
     bool receiving = true;
@@ -266,6 +271,7 @@ protected:
     std::uint32_t key_id = 0;
     std::uint64_t next_poll = 0;
     bool pending = false;
+    bool identity_hiding = false; // the CSK came in the initial SUBSCRIBE (subscription_protection)
   };
 
   std::map<std::string, KeySubscription> key_subscriptions_;
@@ -320,7 +326,19 @@ protected:
   // MCPTT-2 (TS 23.379 clause 7.5.2.3, TS 29.283); an MCVideo server reads the profile from the CMS instead
   // (MCVideo-2 is not used), so it runs without "diameter_config".
   std::unique_ptr<DiameterProfileClient> diameter_;
+
   SipEngine sip_;
+  // The dialogs this server ended with its own BYE (bye()), until they are disconnected: a leg that ends otherwise
+  // with a 200 was ended by its user (TS 24.379 clause 17.4.3.2, TS 24.281 clause 22.4.3.2).
+  std::set<std::string> ended_here_;
+
+  // sip_.bye, recording the dialog in ended_here_.
+  void bye(std::string_view dialog, SipResponseHandler handler = {}, const std::vector<SipHeader> &headers = {},
+           const std::vector<BodyPart> &parts = {}) {
+    ended_here_.insert(std::string(dialog));
+    sip_.bye(dialog, std::move(handler), headers, parts);
+  }
+
   std::map<std::string, User> users_;
   std::map<std::string, std::shared_ptr<Leg>> legs_;
   std::map<std::string, std::shared_ptr<Session>> sessions_;
@@ -389,11 +407,13 @@ protected:
   std::map<std::string, std::map<std::string, std::string>> alias_bindings_;
 
   //------------------------------------------------------------------------------
-  // Ad hoc group emergency alerts (TS 24.379 clause 12.1A.3): by generated ad hoc
-  // group identity; recipients are the users currently meeting the criteria.
+  // Ad hoc group emergency alerts (TS 24.379 clause 12.1A.3): by generated ad hoc group identity. recipients: the
+  // cached users of the alert (clause 12.1A.3.3 step 3), changed by criteria events and by members leaving and
+  // joining the alert's ad hoc group call (clauses 17.4.3.2 step 2A, 17.4.4.1.1 step 12A, 17.4.7.1.1 step 4A);
+  // matching: the users the last criteria check found, whose changes are the criteria events of the poll.
   struct AdhocAlert {
     std::string initiator, client, criteria;
-    std::set<std::string> recipients;
+    std::set<std::string> recipients, matching;
     std::optional<EmergencyLocation> location;
     std::uint64_t last_check = 0;
   };
@@ -607,7 +627,8 @@ protected:
   SipResponse relay_reinvite(const SipMessage &message, const std::shared_ptr<Relay> &relay, bool from_peer,
                              const std::string &other, const std::vector<SipHeader> &headers);
 
-  SipResponse relayed_reinvite_answer(const SipResponse &answer, const std::shared_ptr<Relay> &relay, bool from_peer);
+  SipResponse relayed_reinvite_answer(const SipResponse &answer, const std::shared_ptr<Relay> &relay, bool from_peer,
+                                      const MediaDescription &offer);
 
   SipResponse relay_message(const SipMessage &message, const std::string &target, std::vector<SipHeader> headers,
                             std::function<void(int)> done = {});
@@ -669,6 +690,10 @@ protected:
   void refresh_service_config(std::uint64_t now);
 
   Json service_resource_priority() const { return service_config_.value("resource_priority", Json::object()); }
+
+  // TS 24.379 clauses 6.6.2.3.2 and 6.6.3.3.2 (TS 24.281 likewise): the signalling protection of the service
+  // configuration document; nothing until it has been read (service_protection_of).
+  std::optional<ServiceProtection> signalling_protection_;
 
   void schedule(std::function<void()> task) { pending_.push_back(std::move(task)); }
 
@@ -803,10 +828,12 @@ protected:
   // ---- Group calls (group_call.cpp): TS 24.379 clause 10.1 ----
   std::string pre_established_uri() const;
 
-  void validate_remote(const std::string &user, const MediaDescription &media, bool implicit_allowed = false,
-                       bool uncontrolled_allowed = false);
+  void validate_remote(const std::string &user, const MediaDescription &media, bool uncontrolled_allowed = false);
 
-  std::shared_ptr<Leg> make_leg(const std::string &id, const std::shared_ptr<Session> &session);
+  [[nodiscard]] MediaDescription initial_answer_media(const Leg &leg) const;
+
+  std::shared_ptr<Leg> make_leg(const std::string &id, const std::shared_ptr<Session> &session,
+                                std::optional<std::uint32_t> offered = std::nullopt);
 
   bool current_session(const std::shared_ptr<Session> &session) const;
 
@@ -841,6 +868,16 @@ protected:
   bool floor_protected(const Leg &leg) const { return leg.session->policy.value("protect_floor", false); }
 
   ProtectedCall *floor_keys(const User &user) const;
+
+  std::set<std::uint32_t> floor_ssrcs_in_use(const ProtectedCall *keys, const Leg *except = nullptr,
+                                             const Relay *except_relay = nullptr);
+
+  bool relay_floor_ssrc_refused(const Relay &relay, bool toward_client, const MediaDescription &media,
+                                std::optional<std::uint32_t> current, std::optional<std::uint32_t> opposite);
+
+  bool peer_floor_ssrc_refused(const Leg &leg, std::uint32_t ssrc);
+
+  bool offered_floor_ssrc_refused(const User &user, bool protect_floor, std::uint32_t ssrc);
 
   bool floor_key_ready(const Leg &leg);
 
@@ -1058,6 +1095,10 @@ protected:
 
   void update_adhoc_alert(const std::string &group);
 
+  void adhoc_alert_left(const std::string &group, const std::string &id);
+
+  void adhoc_alert_joined(const std::string &group, const std::string &id);
+
   void send_adhoc_alert_receipt(const std::string &group, const std::string &id, const std::string &client, bool active,
                                 const std::string &criteria);
 
@@ -1085,6 +1126,7 @@ protected:
     bool pending = false, initial = true;
     bool server = false; // an MCS server of this system (clause 6.3.13.2.2), which may follow any group
     std::uint64_t next_poll = 0;
+    bool identity_hiding = false; // the CSK came in the initial SUBSCRIBE (subscription_protection)
   };
 
   std::map<std::string, DocSubscription> doc_subscriptions_;
@@ -1191,11 +1233,13 @@ protected:
   // A user's subscription to configuration management documents (TS 24.484 clause 6.3.13.3.2.2).
   struct ConfigSubscription {
     std::string subscriber;
+    std::string sip; // the subscriber's public user identity asserted by the SIP core (its refreshes come from it)
     // AUID, XUI and document name of each followed document -> entity tag last notified.
     std::map<std::tuple<std::string, std::string, std::string>, std::string> etags;
     std::int64_t expires = 0;
     bool pending = false, initial = true;
     std::uint64_t next_poll = 0;
+    bool identity_hiding = false; // the CSK came in the initial SUBSCRIBE (subscription_protection)
   };
 
   std::map<std::string, ConfigSubscription> config_subscriptions_;
@@ -1460,6 +1504,11 @@ protected:
 
   std::optional<xmlsec::Key> user_xml_key(const std::string &sip) const;
 
+  // TS 24.379 clause 7.3.7 (TS 24.281 clause 7.3.7) and TS 33.180 clauses 5.8 and 9.2.1.4: the CSK key download to
+  // the user with this MC service ID, sent on the operator command "csk-download <MC service ID>" (the specifications
+  // give no renewal period).
+  void send_csk_download(const std::string &id);
+
   std::optional<xmlsec::Key> peer_xml_key(const std::string &peer, bool sending) const;
 
   std::vector<BodyPart> protect_outgoing(const SipTransmission &transmission, std::vector<BodyPart> parts);
@@ -1644,6 +1693,13 @@ protected:
   void user_request(const SipMessage &message, User &user, const std::string &event_name, SipResponse &response);
   // TS 24.481 and TS 24.484 clauses 6.3.13.3.2.2: a client's group or configuration document subscription.
   bool client_document_subscribe(const SipMessage &message, const User &user, SipResponse &response);
+
+  bool token_config_subscribe(const SipMessage &message, SipResponse &response);
+  bool config_subscription_in_dialog(const SipMessage &message, SipResponse &response);
+
+  static bool csk_in_subscribe(const SipMessage &message);
+
+  std::optional<bool> subscription_protection(const std::string &dialog) const;
   // RFC 6665 section 4.2.1.2: a refresh (or end) of a group or configuration document subscription in its dialog;
   // a resource list in it is the modified list of group documents (TS 24.481 clauses 6.3.13.2.1, 6.3.13.2.2).
   bool refresh_document_subscription(const SipMessage &message, SipResponse &response);
@@ -1658,6 +1714,8 @@ protected:
   static std::optional<std::uint64_t> refreshed_expires(const SipMessage &message);
   // TS 24.481 clause 7.7: a group member's subscription to the group's GKTP document.
   void key_subscribe(const SipMessage &message, const User &user, SipResponse &response);
+  // RFC 6665 section 4.2.1.2: a re-SUBSCRIBE in the dialog of a key subscription; false when it is none's.
+  bool refresh_key_subscription(const SipMessage &message, const User &user, SipResponse &response);
   // TS 24.379 clause 10.1.3.4.1: subscription to the conference event package of a call.
   void conference_subscribe(const SipMessage &message, const User &user, SipResponse &response);
   // TS 24.379 clause 9A.2.2: functional alias status determination subscription.
@@ -1713,7 +1771,8 @@ protected:
   // The caller's leg of a group call from its SDP offer (nullptr when refused).
   std::shared_ptr<Leg> group_call_leg(const SipMessage &message, const User &user, const McpttInfo &info,
                                       const std::shared_ptr<Session> &session, const Json &profile, bool creating,
-                                      const std::optional<McpttInfo> &correction, SipResponse &response);
+                                      bool initiates, const std::optional<McpttInfo> &correction,
+                                      SipResponse &response);
   // The answer to a group call request; publishes the session and its leg.
   void answer_group_invite(const SipMessage &message, const User &user, McpttInfo &info,
                            const std::shared_ptr<Session> &session, const Json &profile,
@@ -1724,7 +1783,8 @@ protected:
   // TS 24.380 clause 6.3.4: the floor (or transmission) state told to a newly active leg (a scheduled task).
   void initial_floor_state(const std::shared_ptr<Leg> &leg, const std::shared_ptr<Session> &session);
   // TS 24.379 clause 6.3.8.1: a disconnected leg leaves its call.
-  void leg_disconnected(const std::shared_ptr<Leg> &leg, const std::shared_ptr<Session> &session, int code);
+  void leg_disconnected(const std::shared_ptr<Leg> &leg, const std::shared_ptr<Session> &session, int code,
+                        bool ended_here);
   // TS 24.379 clause 6.3.8.1: remove the departed leg and release the call if due (a scheduled task).
   void release_departed_leg(const std::shared_ptr<Leg> &leg, const std::shared_ptr<Session> &session);
   // tick() (server.cpp): TS 24.379 clause 6.3.3.1.16, expiry of TNG2.
@@ -1774,10 +1834,15 @@ protected:
                                      ProtectedCall *csk) = 0;
 
   //------------------------------------------------------------------------------
-  // TS 24.379 clauses 6.2.1 and 11.1.2, TS 24.281 clauses 6.2.1, 6.4 and 10.2.3: the service's rules for a
-  // client's SDP: its media plane control, video, and implicit request; throws when the SDP breaks them.
-  virtual void check_service_media(const MediaDescription &media, bool implicit_allowed,
-                                   bool uncontrolled_allowed) const = 0;
+  // TS 24.379 clauses 6.2.1 and 11.1.2, TS 24.281 clauses 6.2.1 and 10.2.3: the service's rules for a client's
+  // SDP: its media plane control and video; throws when the SDP breaks them.
+  virtual void check_service_media(const MediaDescription &media, bool uncontrolled_allowed) const = 0;
+
+  //------------------------------------------------------------------------------
+  // TS 24.379 clause 6.4 with TS 24.380 clauses 14.3.5 and 14.3.6 (MCPTT): whether the answer to an initial INVITE
+  // accepts the client's implicit floor request (Leg::implicit_floor); initiates: the INVITE initiates the call
+  // (not a join of a chat group call that exists nor a rejoin by session identity).
+  virtual void accept_implicit_floor_request(Leg &leg, const MediaDescription &remote, bool initiates) = 0;
 
   //------------------------------------------------------------------------------
   // TS 24.281 clause 6.2.1: the service's media of a new leg or relay besides speech and floor control (MCVideo:

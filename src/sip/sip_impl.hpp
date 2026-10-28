@@ -255,8 +255,8 @@ struct SipEngine::Impl {
     std::uint16_t port_uc = 0, port_us = 0, port_pc = 0, port_ps = 0;
     std::uint32_t spi_uc = 0, spi_us = 0, spi_pc = 0, spi_ps = 0;
     std::string alg, ealg;
-    // IK_ESP and CK_ESP (TS 33.203 annex I).
-    std::vector<std::uint8_t> integrity_key, encryption_key;
+    // IK_ESP and CK_ESP (TS 33.203 annex I), and the AES-GCM or AES-GMAC salt before the per-SA bits of "-us".
+    std::vector<std::uint8_t> integrity_key, encryption_key, salt;
     // The Security-Server of the 401 that created the set, mirrored in Security-Verify (TS 24.229 clause 5.1.1.4.2 e).
     std::string security_server;
     std::vector<xfrm::SecurityAssociation> sas;
@@ -267,6 +267,9 @@ struct SipEngine::Impl {
     pjsip_transport *udp = nullptr;
     // The SIP level lifetime (TS 24.229 clause 5.1.1.5.1), monotonic milliseconds.
     std::uint64_t expires_ms = 0;
+    // TS 33.203 clause 7.4.1a: the transaction keys of the requests sent or received over the set, those still in the
+    // transaction layer being its pending transactions once it is the old set.
+    std::vector<std::string> transactions;
   };
 
   // How a REGISTER of the AKA procedure is protected (TS 33.203 clause 7.4.1a).
@@ -289,6 +292,8 @@ struct SipEngine::Impl {
     // protected REGISTER) and the proposal it carries.
     aka::SecMechanism offer;
     std::string security_client;
+    // How the last REGISTER went out: its response is taken only on that route (TS 33.203 clause 7.1 rule 4).
+    AkaRoute register_route = AkaRoute::unprotected;
     std::string call_id, from_tag;
     std::uint32_t cseq = 0;
     std::string realm;
@@ -336,6 +341,9 @@ struct SipEngine::Impl {
   static void aka_register_complete(void *token, pjsip_event *event);
   static void aka_timer(pj_timer_heap_t *heap, pj_timer_entry *entry);
   static pj_bool_t aka_filter(pjsip_rx_data *data);
+  static pj_status_t aka_sending(pjsip_tx_data *data);
+  void aka_track(AkaSet &set, pjsip_rx_data *data);
+  void aka_track(AkaSet &set, pjsip_tx_data *data);
   pjsip_module aka_module{};
 
   std::vector<std::string> pending_subscription_cleanup;
@@ -432,6 +440,7 @@ struct SipEngine::Impl {
     transmission.from_uri = bare_header_uri(message, PJSIP_H_FROM);
     transmission.to_uri = bare_header_uri(message, PJSIP_H_TO);
     transmission.headers = result.headers;
+    transmission.call_id = call_id_from(message);
     try {
       auto filtered = incoming_filter(transmission, result.parts);
       if (same_parts(result.parts, filtered)) return;

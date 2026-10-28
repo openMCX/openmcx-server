@@ -142,6 +142,35 @@ int main() {
     xfrm.remove(plain);
     check(!kernel_has(plain), "NULL encryption SA removed");
 
+    // TS 33.203 V19.1.0 annex H/I: HMAC-SHA2-256-128 (256-bit IK_ESP) with AES-CBC, AES-GCM (CK_ESP and salt, alg
+    // null) and AES-GMAC (IK_ESP and salt, ealg null), in the kernel as hmac(sha256)/cbc(aes), rfc4106(gcm(aes)) and
+    // rfc4543(gcm(aes)).
+    auto sha256 = make("10.250.0.1", 31005, "10.250.0.2", 6101, 0x10001005U, true);
+    sha256.alg = "hmac-sha2-256-128";
+    sha256.integrity_key.assign(32, 0x5a);
+    auto gcm = make("10.250.0.1", 31006, "10.250.0.2", 6101, 0x10001006U, true);
+    gcm.alg = "null";
+    gcm.ealg = "aes-gcm-us";
+    gcm.integrity_key.clear();
+    gcm.salt = {0x89, 0x27, 0x3d, 0xb6};
+    auto gmac = make("10.250.0.1", 31007, "10.250.0.2", 6101, 0x10001007U, true);
+    gmac.alg = "aes-gmac-us";
+    gmac.ealg = "null";
+    gmac.integrity_key.resize(16);
+    gmac.encryption_key.clear();
+    gmac.salt = {0xdb, 0xc2, 0xb1, 0xc2};
+    for (const auto *sa : {&sha256, &gcm, &gmac}) {
+      xfrm.add(*sa);
+      check(kernel_has(*sa), (sa->alg + "/" + sa->ealg + " SA in the kernel").c_str());
+      xfrm.remove(*sa);
+    }
+    auto no_salt = gcm;
+    no_salt.salt.clear();
+    rejects([&] { xfrm.add(no_salt); }, "AES-GCM without its salt refused");
+    auto gcm_with_auth = gcm;
+    gcm_with_auth.alg = "hmac-sha-1-96";
+    rejects([&] { xfrm.add(gcm_with_auth); }, "AES-GCM with an integrity algorithm refused (annex H)");
+
     // Annex H algorithms this UE does not offer, a wrong key length and a reserved SPI.
     auto md5 = make("10.250.0.1", 31004, "10.250.0.2", 6101, 0x10001004U, true);
     md5.alg = "hmac-md5-96";

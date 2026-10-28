@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -166,5 +167,62 @@ func TestKMSRunsKeyToolConcurrently(test *testing.T) {
 	wait.Wait()
 	if codes[0] != http.StatusOK || codes[1] != http.StatusOK {
 		test.Fatalf("concurrent key provisioning: %v", codes)
+	}
+}
+
+// ------------------------------------------------------------------------------
+// TS 33.180 annex D.2.4 and RFC 5905 section 6: after the NTP era 0 ends (2036-02-07 06:28:16 UTC), the 64-bit
+// timestamp of a KeyProvision request carries the era offset only; the KMS takes the era nearest to its clock, so a
+// timestamp of the current period is served for its full NTP seconds, and one from the previous era stays refused.
+func TestKMSKeyProvisionTimestampAfterEraZero(test *testing.T) {
+	now := time.Date(2036, 3, 1, 12, 0, 0, 0, time.UTC)
+	nowNTP := uint64(now.Unix()) + ntpUnixOffset
+	if nowNTP>>32 != 1 {
+		test.Fatal("test clock not in NTP era 1")
+	}
+	cfg, key := testConfig(), testKey(test)
+	var served uint64
+	backend := func(input map[string]any) (json.RawMessage, error) {
+		if input["op"] == "authority-generate" {
+			return json.RawMessage(`{"private":"test-only"}`), nil
+		}
+		served = input["ntp_seconds"].(uint64)
+		return json.RawMessage(`{"xml":"<KmsResponse/>"}`), nil
+	}
+	handler, err := NewHandlerWithKeys(RoleKMS, cfg, nil, &key.PublicKey, test.TempDir(),
+		WithClock(func() time.Time { return now }), WithKeyTool(backend))
+	if err != nil {
+		test.Fatal(err)
+	}
+	claims, _ := newClaims(cfg, cfg.Users[0], cfg.ServerClientID, "access", "", now)
+	claims.Scope = scopePTTKeys
+	token, _ := signToken(claims, key)
+	base := "/keymanagement/identity/v1/keyprov/" + strings.ReplaceAll(strings.ReplaceAll(claims.MCPTTID, ":", "%3A"),
+		"@", "%40") + "/"
+	wanted := nowNTP - 1000
+	for _, tc := range []struct {
+		seconds uint64
+		status  int
+	}{{wanted, 200}, {nowNTP - kmsKeyPeriodSeconds - 1, 403}} {
+		served = 0
+		rr := httptest.NewRecorder()
+		path := base + strings.ToUpper(strconv.FormatUint((tc.seconds&0xffffffff)<<32, 16))
+		for len(path)-len(base) < 16 {
+			path = base + "0" + path[len(base):]
+		}
+		handler.ServeHTTP(rr, bearerRequest(http.MethodPost, path, token, nil))
+		if rr.Code != tc.status {
+			test.Fatalf("%s got%d want%d", path, rr.Code, tc.status)
+		}
+		if tc.status == 200 && served != wanted {
+			test.Fatalf("served NTP seconds %d, want %d", served, wanted)
+		}
+	}
+	for _, tc := range []struct{ seconds, now, want uint64 }{
+		{0xfffffff0, 1<<32 + 10, 0xfffffff0}, {5, 0xfffffff0, 1<<32 + 5}, {0xd6b43232, 0xd6b43232 + 7, 0xd6b43232},
+	} {
+		if got := ntpFromWire(uint32(tc.seconds), tc.now); got != tc.want {
+			test.Fatalf("ntpFromWire(%x, %x) = %x, want %x", tc.seconds, tc.now, got, tc.want)
+		}
 	}
 }

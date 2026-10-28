@@ -67,7 +67,8 @@ def sign_in():
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
     query = urllib.parse.urlencode(
         dict(response_type='code', client_id=oauth['client_id'], redirect_uri=oauth['redirect_uri'], scope='openid',
-             state='s1', nonce='n1', code_challenge=challenge, code_challenge_method='S256'))
+             state='s1', nonce='n1', acr_values='3gpp:acr:password', code_challenge=challenge,
+             code_challenge_method='S256'))
     status, _, body = request('GET', f'{IDMS}/authorize?{query}')
     assert status == 200, f'authorize: {status}'
     urlencoded = {'Content-Type': 'application/x-www-form-urlencoded'}

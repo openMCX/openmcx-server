@@ -96,6 +96,20 @@ int main() {
     at = wrong_keys.find('>', at) + 1;
     wrong_keys[at] = wrong_keys[at] == '0' ? '1' : '0';
     rejects([&] { parse_kms_keyprov(wrong_keys, authority.public_parameters, keys.uri, request, now); });
+    // TS 33.180 table D.3.3.2-1, RFC 6090 section 6.2: the SSK integer in more octets (leading zeros) is the same
+    // key; a longer encoding of a larger integer is not.
+    for (const auto *prefix : {"00", "0000"}) {
+      auto padded = keydoc;
+      at = padded.find('>', padded.find("<UserSigningKeySSK")) + 1;
+      padded.insert(at, prefix);
+      check(parse_kms_keyprov(padded, authority.public_parameters, keys.uri, request, now).signing_pair ==
+                keys.signing_pair,
+            "SSK with leading zero octets");
+    }
+    auto longer = keydoc;
+    at = longer.find('>', longer.find("<UserSigningKeySSK")) + 1;
+    longer.insert(at, "01");
+    rejects([&] { parse_kms_keyprov(longer, authority.public_parameters, keys.uri, request, now); });
     auto duplicate = init;
     at = duplicate.find("<UserUri>");
     duplicate.insert(at, "<UserUri>sip:a@example.org</UserUri>");

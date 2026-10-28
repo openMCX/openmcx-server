@@ -449,6 +449,12 @@ def verify(messages, require_refresh=False, require_conference=False):
         ]
         # An ordinary join of an existing session need not trigger new fanout.
         ongoing = '123 ' in reply['headers'].get('warning', '')
+        if ongoing:
+            # TS 24.379 table 4.4.2-2 and clause 10.1.1.4.2 step j): the text of the join's warning 123.
+            check(
+                '"123 MCPTT session already exists"' in reply['headers'].get('warning', ''),
+                prefix + ': the join\'s warning 123 reads "MCPTT session already exists"',
+            )
         check(
             ongoing or rejoin or bool(accepted),
             prefix + ': follows target acceptance (or existing-session join/rejoin)',

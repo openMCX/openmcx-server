@@ -114,7 +114,10 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
   ensure_started();
 
   auto local = pj_view(config.identity);
-  const auto contact_text = sips_target(request_uri) ? as_sips(contact_uri()) : contact_uri();
+  // A Contact override (as for an INVITE) is the dialog's own, so that its re-SUBSCRIBEs carry it too.
+  const auto override_contact = get_header(headers, "Contact");
+  auto contact_text = override_contact.empty() ? contact_uri() : std::string(override_contact);
+  if (sips_target(request_uri)) contact_text = as_sips(contact_text);
   auto contact = pj_view(contact_text);
   auto remote = pj_view(request_uri);
   pjsip_dialog *sip_dialog = nullptr;

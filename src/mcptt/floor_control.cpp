@@ -9,6 +9,8 @@
 
 #include "mcptt_server.hpp"
 
+#include <utility>
+
 namespace mcx {
 
 //------------------------------------------------------------------------------
@@ -66,9 +68,10 @@ void McpttServer::floor_packet(Leg &leg, const Datagram &datagram) {
 // TS 24.380 clauses 6.3.5.3.4 and 6.3.5.4.4: a Floor Request from a participant: a member no longer in the group is
 // disconnected; a request in an ambient listening call (TS 23.379 clause 10.14.1), from a broadcast receiver
 // (clause 6.3.5.3.4 steps 1 and 2) or a receive-only user is denied; otherwise it is arbitrated with its effective
-// floor priority and preemption level.
+// floor priority and preemption level. An implicit floor request (implicit, clause 6.3.5.2.2 item 3b) never
+// pre-empts another participant that sends media.
 void McpttServer::floor_request(Leg &leg, const std::shared_ptr<Session> &session, MediaPlaneController &arbitrator,
-                                std::uint8_t priority) {
+                                std::uint8_t priority, bool implicit) {
   // Private-call authorization is revalidated periodically in tick().
   const bool unprovisioned = session->private_call || session->adhoc;
   const auto policy = unprovisioned ? Json::object() : group_profile(session->group);
@@ -117,9 +120,14 @@ void McpttServer::floor_request(Leg &leg, const std::shared_ptr<Session> &sessio
   const auto &current_priority = call_priority(*session);
   const bool emergency_request = current_priority.emergency_users.contains(leg.user);
   const bool imminent_request = !current_priority.emergency && current_priority.imminent_users.contains(leg.user);
+  // TS 24.380 clause 6.3.5.2.2 NOTE 5: "The initial implicit floor request will not result in pre-emption when an
+  // MCPTT client is joining an ongoing MCPTT call".
+  const auto current_owner = arbitrator.owner();
+  const bool joining_talker = implicit && current_owner && *current_owner != leg.user;
   const std::uint8_t preemptive =
-      emergency_request  ? 3
-      : imminent_request ? 2
+      joining_talker      ? 0
+      : emergency_request ? 3
+      : imminent_request  ? 2
       : (overrider || (priority_allowed(priority_policy, "floor_preemptive_users", leg.user) &&
                        priority >= priority_policy.value("preemptive_priority", 99u)))
           ? 1
@@ -139,8 +147,10 @@ void McpttServer::floor_request(Leg &leg, const std::shared_ptr<Session> &sessio
     notices(*session, arbitrator.request(leg.user, monotonic_ms(), priority, leg.local.queueing && leg.remote->queueing,
                                          preemptive));
 
-  event("floor_request",
-        {{"user_id", leg.user}, {"session_uri", session->uri}, {"owner", arbitrator.owner().value_or("")}});
+  event("floor_request", {{"user_id", leg.user},
+                          {"session_uri", session->uri},
+                          {"owner", arbitrator.owner().value_or("")},
+                          {"implicit", implicit}});
 }
 
 //------------------------------------------------------------------------------
@@ -160,13 +170,16 @@ void McpttServer::send_floor_notice(Leg &leg, const FloorNotice &notice) {
   switch (notice.kind) {
   case FloorNoticeKind::Granted:
     if (!leg.floor_granted) {
-      std::uint32_t candidate;
+      // TS 24.380 clause 14.3.6 (with TS 24.379 clause 6.2.1 NOTE 2): the grant of an implicit floor request
+      // assigns the SSRC the answer returned in "mc_ssrc", unless another leg has taken it since.
+      std::uint32_t candidate = std::exchange(leg.implicit_audio_ssrc, 0);
       bool collision;
       do {
-        candidate = random_ssrc();
+        if (!candidate) candidate = random_ssrc();
         collision = false;
         for (const auto &[id, other] : legs_)
           if (other->audio_ssrc == candidate) collision = true;
+        if (collision) candidate = 0;
       } while (collision);
       leg.audio_ssrc = candidate;
       leg.floor_granted = true;

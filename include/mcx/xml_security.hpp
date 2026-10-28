@@ -6,13 +6,14 @@
 // integrity of whole XML MIME bodies. Between a client and its server the XPK is the client's CSK, and the keys derive
 // from it and the client's MC service user ID (TS 33.180 annex F.1.4).
 //
-// Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.281
-// V19.6.0 (Rel-19).
+// Specifications: TS 33.180 V19.5.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.281
+// V19.6.0 (Rel-19), W3C XML Signature Syntax and Processing (Second Edition), RFC 2392.
 #pragma once
 #include <array>
 #include <cstdint>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -98,8 +99,8 @@ bool is_encrypted_uri(std::string_view uri);
 
 //------------------------------------------------------------------------------
 // TS 33.180 clause 9.3.5, TS 24.379 clause 6.6.3 and TS 24.282 clause 6.5.3: integrity of whole XML MIME bodies. Each
-// body, named by its Content-ID, gets an xmldsig <Signature> (a SHA-256 digest of the body's octets referenced as
-// cid:<id>, and HMAC-SHA256 over the exclusive canonical SignedInfo under the integrity key of TS 33.180 annex F.1.4,
+// body, named by its Content-ID, gets an xmldsig <Signature> (a SHA-256 digest of the body's octets referenced by its
+// cid URL, and HMAC-SHA256 over the SignedInfo in Canonical XML 1.0 under the integrity key of TS 33.180 annex F.1.4,
 // KeyName the XPK-ID) in a <signatures> document in the given namespace (urn:3gpp:ns:mcpttSignedDoc:1.0).
 struct SignedBody {
   std::string content_id;
@@ -115,7 +116,25 @@ std::string sign(const std::vector<SignedBody> &bodies, const Key &key, std::str
 std::optional<std::uint32_t> signature_key_id(std::string_view signatures);
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 6.6.3.4.2: verifies every signature against the body its reference names; throws when one fails
-// (403, warning 139). Returns the Content-IDs verified.
+// TS 24.379 clause 6.6.3.4.2: verifies every signature against the bodies its references name; throws when one fails
+// (403, warning 139). The SignedInfo is canonicalised by its CanonicalizationMethod (Canonical XML 1.0 or 1.1 or
+// Exclusive XML Canonicalization 1.0, each with or without comments); a SignedInfo without one fails, as does an
+// HMACOutputLength below 128 bits. Returns the Content-IDs verified.
 std::set<std::string> verify(std::string_view signatures, const std::vector<SignedBody> &bodies, const Key &key);
+
+//------------------------------------------------------------------------------
+// TS 33.180 clause 9.3.5 "all XML MIME bodies transported in SIP requests and responses are integrity protected":
+// whether a MIME type is an XML one (application/xml, text/xml or a "+xml" type, RFC 7303 and RFC 6839).
+bool is_xml_mime(std::string_view content_type);
+
+//------------------------------------------------------------------------------
+// RFC 2104 HMAC with SHA-256, the signature method of TS 33.180 clause 9.3.5.
+std::array<std::uint8_t, 32> hmac_sha256(std::span<const std::uint8_t> key, std::string_view data);
+
+//------------------------------------------------------------------------------
+// XMLDSig Second Edition clauses 4.3.1 and 6.5: the canonical form of a document by the algorithm identifier, or, with
+// an element name, of the first element of that local name with its subtree, taken in its document as a SignedInfo is;
+// for Exclusive XML Canonicalization, the InclusiveNamespaces prefixes. Throws for an algorithm not supported.
+std::string canonicalize(std::string_view xml, std::string_view algorithm, std::string_view element = {},
+                         const std::vector<std::string> &inclusive_namespaces = {});
 } // namespace mcx::xmlsec

@@ -159,7 +159,7 @@ void McServer::policy_event(af::PolicyClient &client, const af::Event &result) {
         {{"dialog", result.key}, {"user_id", leg->second->user}, {"reason", why}});
   leg->second->active = false;
   try {
-    sip_.bye(result.key, {}, {{"Reason", "SIP ;cause=503 ;text=\"" + why + "\""}});
+    bye(result.key, {}, {{"Reason", "SIP ;cause=503 ;text=\"" + why + "\""}});
   } catch (const std::exception &error) {
     event("sip_error", {{"reason", error.what()}});
   }

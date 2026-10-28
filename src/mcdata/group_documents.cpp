@@ -46,7 +46,10 @@ std::optional<Json> DataServer::group_document(const std::string &group) {
 
 //------------------------------------------------------------------------------
 // TS 24.481 clause 6.3.13.2.2: the MCS server subscribes to the changes of one group document (SIP SUBSCRIBE
-// for xcap-diff with the MCPTT ICSI and a resource list naming the document).
+// for xcap-diff with a resource list naming the document, step a), at mcdata.group_subscription_uri, the
+// configured PSI of the GMS subscription proxy function (step b), with the MCPTT ICSI in a P-Asserted-Service
+// header field (step e) and in the g.3gpp.icsi-ref media feature tag of its Contact (step f), not the MCData
+// server's own ICSIs.
 void DataServer::subscribe_group_document(const std::string &group) {
   const auto uri = cfg_.at("mcdata").value("group_subscription_uri", std::string{});
   if (uri.empty()) return;
@@ -56,7 +59,9 @@ void DataServer::subscribe_group_document(const std::string &group) {
   ++group_docs_["subscriptions"];
   sub.dialog = sip_.subscribe(
       uri, "xcap-diff", 3600,
-      {{"P-Asserted-Service", "urn:urn-7:3gpp-service.ims.icsi.mcptt"}, {"Accept", "application/xcap-diff+xml"}},
+      {{"P-Asserted-Service", mcptt_service.icsi},
+       {"Accept", "application/xcap-diff+xml"},
+       {"Contact", "<" + sip_.contact_target() + ">;+g.3gpp.icsi-ref=\"" + mcptt_service.icsi_encoded + "\""}},
       [this, group](const SipResponse &response) {
         if (response.status_code < 200) return;
         pending_.push_back([this, group, status = response.status_code] {

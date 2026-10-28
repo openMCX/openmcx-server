@@ -379,6 +379,13 @@ def main():
             and saved['sip']['username'] == 'erin',
             saved.get('sip', {}).get('identity'),
         )
+        # TS 24.484 clause 7.2.2.7 items 7 and 8: the package gives the XCAP root URIs as the gms and cms endpoints.
+        roots = {function: clients['client-a']['endpoints'][function] for function in ('cms', 'gms')}
+        check(
+            'ADM-06 the activated configuration has the GMS and CMS XCAP root URIs',
+            {function: saved.get('endpoints', {}).get(function) for function in ('cms', 'gms')} == roots,
+            saved.get('endpoints'),
+        )
         check('ADM-06 the Credential Service wrote erin\'s SIP credential', sip_rows('subscriber', 'erin') == '1')
         # TS 33.180 annex B.5: the device keeps IdMS's refresh token, owner-only, not erin's password.
         session_file = saved.get('oauth', {}).get('refresh_token_file', '')

@@ -89,9 +89,15 @@ void DataServer::media_received(const std::shared_ptr<MediaSession> &session, co
     for (auto &[dialog, other] : media_) {
       if (other->key != session->key || dialog == session->dialog || !other->endpoint) continue;
       other->deadline = monotonic_ms() + idle;
-      if (other->endpoint->connected())
-        other->endpoint->send_parts(seal_msrp(other->owner, forward));
-      else
+      if (other->endpoint->connected()) {
+        try {
+          other->endpoint->send_parts(seal_msrp(other->owner, forward));
+        } catch (const CskExpired &error) {
+          // TS 33.180 annex E.6.10: not relayed to this leg, whose user's CSK may no longer be used.
+          csk_expired_not_sent(other->owner, "media", error);
+          continue;
+        }
+      } else
         other->pending = forward;
       ++relayed;
     }
@@ -395,7 +401,13 @@ std::string DataServer::media_deliver(const std::string &originator, const std::
   std::vector<BodyPart> parts{{mcdata::info_mime, mcdata::info_xml(info)}};
   if (file) parts.push_back({std::string(mcdata::signalling_mime), file->signalling});
   if (alert && !alert_location.empty()) parts.push_back({std::string(mcdata::location_mime), alert_location});
-  parts = seal_for(recipient->sip, std::move(parts));
+  try {
+    parts = seal_for(recipient->sip, std::move(parts));
+  } catch (const CskExpired &error) {
+    // TS 33.180 annex E.6.10: the recipient's CSK may no longer be used: this message is not sent (never in the clear).
+    csk_expired_not_sent(target, "invite", error);
+    return {};
+  }
   const auto dialog = sip_.invite_sdp(
       recipient->sip, leg->sdp, parts,
       [this, message_id, target, answered](const SipResponse &response) {

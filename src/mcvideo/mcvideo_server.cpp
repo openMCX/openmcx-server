@@ -22,8 +22,7 @@ McvideoServer::McvideoServer(Json cfg, bool disable_tls) : McServer(mcvideo_serv
 // TS 24.281 clauses 6.2.1 and 6.3.2: an MCVideo call has transmission control and H.264 video, and a private call
 // may have no transmission control (TS 24.281 clause 10.2.3). TS 24.281 clause 6.4: an MCVideo call's originator
 // may request transmission implicitly.
-void McvideoServer::check_service_media(const MediaDescription &media, bool /*implicit_allowed*/,
-                                        bool /*uncontrolled_allowed*/) const {
+void McvideoServer::check_service_media(const MediaDescription &media, bool /*uncontrolled_allowed*/) const {
   if (!media.video.has_value() || media.control == MediaControl::floor)
     throw std::runtime_error("media of another MC service");
 }

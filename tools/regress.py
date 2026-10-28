@@ -228,6 +228,15 @@ LABS = [
         ['register_authorisation_scenario'],
         ['mcptt', 'mcdata', 'mcvideo', 'common', 'protected'],
     ),
+    # TS 24.379 clause 7.2.1 step 7 (TS 33.180 clause 9.3.5): the client REGISTER inside the third-party REGISTER also
+    # carries the signatures of its XML bodies.
+    lab(
+        'register-auth-integrity',
+        'single',
+        ['--register-auth', '--mcvideo'] + KEYS + ['--xml-protection', '--integrity-protection', '--token-ttl', '120'],
+        ['register_authorisation_scenario'],
+        ['mcptt', 'mcdata', 'mcvideo', 'common', 'protected'],
+    ),
     lab(
         'smoke-mcvideo',
         'single',
@@ -271,6 +280,9 @@ LABS = [
         ['mcvideo', 'location'],
     ),
     lab('mcvideo-protected', 'single', ['--mcvideo'] + KEYS, ['mcvideo_protected_scenario'], ['mcvideo', 'protected']),
+    # TS 24.581 clause 4.3.3.1: an MCVideo call refused for its transmission control SSRC ends only itself while an
+    # MCPTT call goes on (RFC 3261 section 13.2.2.4).
+    lab('mcvideo-refusal', 'single', ['--mcvideo'] + KEYS, ['mcvideo_refusal_scenario'], ['mcvideo', 'protected']),
     # TS 33.180 clause 9.4.5: an SPK between each pair of MCVideo servers protects the transmission
     # control between them; SRTP video passes the participating servers unchanged.
     lab(
@@ -343,6 +355,14 @@ LABS = [
     lab(
         'private-services', 'single', ['--private-call', '--private-services'], ['private_services_scenario'], ['mcptt']
     ),
+    # TS 24.380 clauses 14.2.5, 14.3.5, 6.3.5.2.2 and 6.2.4.2.2: calls set up with an implicit floor request.
+    lab(
+        'implicit-floor',
+        'single',
+        ['--private-call', '--chat', '--adhoc', '--priority'],
+        ['implicit_floor_scenario'],
+        ['mcptt'],
+    ),
     lab('regroup', 'single', ['--regroup'], ['regroup_scenario', 'temporary_group_scenario'], ['mcptt']),
     # RFC 4825 section 8.2.5 with TS 24.481 clause 7.2.4 and TS 24.484 clause 8.3.2.3: schema validation of the documents.
     lab(
@@ -351,6 +371,25 @@ LABS = [
         ['--group-management'],
         ['group_management_scenario', 'xcap_schema_scenario'],
         ['mcptt', 'common'],
+    ),
+    # TS 24.481 clause 6.3.13.2.1 step b: a GMS-URI apart from the MCPTT PSI, so that a client still subscribing to
+    # group documents and group keys at the MCPTT PSI fails (verify_subscription_uris.py).
+    lab(
+        'gms-uri',
+        'single',
+        ['--group-management', '--gms-user', 'gms-proxy'] + KEYS,
+        ['group_management_scenario', 'prearranged_scenario'],
+        ['mcptt', 'common', 'protected'],
+    ),
+    # TS 24.481 clause 6.3.13.2.2: the MCData server subscribing to group documents at a GMS-URI apart from the
+    # MCPTT PSI (step b), with its PSI asserted, the MCPTT ICSI asserted and in its Contact (steps c, e, f;
+    # verify_subscription_uris.py --mcs-server).
+    lab(
+        'gms-uri-mcdata',
+        'single',
+        ['--private-call', '--mcdata', '--group-management', '--gms-user', 'gms-proxy'],
+        ['mcdata_group_subscription_scenario'],
+        ['common', 'mcdata'],
     ),
     # TS 24.481 clause 6.3.13.2.2: the MCData server subscribing to group documents.
     lab(
@@ -372,6 +411,30 @@ LABS = [
     lab(
         'protected-private', 'single', ['--private-call'] + KEYS, ['protected_private_scenario'], ['mcptt', 'protected']
     ),
+    # TS 24.380 clause 4.3.3.1 under the CSK: a re-INVITE (refresh, hold) changing the floor SSRC is refused with 488
+    # and the call goes on unchanged (RFC 3261 section 14.2); a join refused for its floor SSRC preempts nobody (TS
+    # 24.379 clause 10.1.2.4.1.1 step 12a).
+    lab('reinvite-ssrc', 'single', ['--private-call'] + KEYS, ['reinvite_ssrc_scenario'], ['mcptt', 'protected']),
+    # TS 33.180 clauses 9.4.2 and 9.4.5: a participating function's relay refuses a floor SSRC it may not send with
+    # under the client's CSK (488 before relaying).
+    lab('split-ssrc', 'single', ['--split'] + KEYS, ['split_ssrc_scenario'], ['mcptt', 'protected', 'split']),
+    # RFC 3711 section 3.4: a call held during an announced transfer goes on under a downloaded CSK with its SRTCP
+    # index (TS 33.180 clause 5.8.2).
+    lab(
+        'held-rekey',
+        'single',
+        # The key download needs XML protection (McServer::send_csk_download).
+        ['--private-call', '--private-services'] + KEYS + ['--xml-protection'],
+        ['held_rekey_scenario'],
+        ['mcptt', 'protected'],
+    ),
+    lab(
+        'preempt-ssrc',
+        'single',
+        ['--chat', '--chat-protected-floor'] + KEYS,
+        ['preempt_ssrc_scenario'],
+        ['mcptt', 'protected'],
+    ),
     lab(
         'xml-protection',
         'single',
@@ -385,6 +448,71 @@ LABS = [
         ['--split', '--private-call'] + KEYS + ['--xml-protection'],
         ['xml_protection_scenario', 'prearranged_scenario'],
         ['mcptt', 'protected', 'split'],
+    ),
+    # TS 24.379 clauses 6.6.2.3.1 and 6.6.3.3.1, TS 24.282 clauses 6.5.2.3.1 and 6.5.3.3.1: XML protection without
+    # media protection, confidentiality and integrity apart, a client without keys and MCData protection off; never
+    # dropped for want of a key (verify_xml_keys.py).
+    lab(
+        'xml-key-confidentiality',
+        'single',
+        KEYS + ['--xml-protection', '--xml-only', '--kms-unreachable', 'client-c'],
+        ['xml_key_scenario'],
+        ['mcptt', 'protected'],
+    ),
+    lab(
+        'xml-key-integrity',
+        'single',
+        KEYS + ['--integrity-protection', '--xml-only', '--kms-unreachable', 'client-c'],
+        ['xml_key_scenario'],
+        ['mcptt', 'protected'],
+    ),
+    lab(
+        'xml-key-mixed',
+        'single',
+        KEYS + ['--xml-protection', '--integrity-protection', '--xml-only', '--mcdata', '--mcdata-clear-signalling'],
+        ['xml_key_scenario'],
+        ['mcptt', 'mcdata', 'protected'],
+    ),
+    # TS 24.379 clauses 6.6.2.3.1 and 6.6.3.3.1 (TS 24.282 clauses 6.5.2.3.1 and 6.5.3.3.1): service configuration
+    # documents without the protection elements enable both protections, with no local switch left in any
+    # configuration (B4b).
+    # TS 37.579-2 table 5.1.3.2-1 steps 17-19 with XML protection: the configuration subscription before the
+    # service authorisation, whose protection the MCPTT service configuration document decides (B4b Q3).
+    lab(
+        'documents-on-notify',
+        'single',
+        KEYS + ['--xml-protection', '--integrity-protection', '--xml-only', '--documents-on-notify'],
+        ['xml_key_scenario'],
+        ['mcptt', 'protected'],
+    ),
+    # TS 24.484 and TS 24.481 clause 6.3.13 with XML protection: the CMS, GMS and GKTP subscriptions without identity
+    # hiding stay unprotected from the bootstrap before the service authorisation to their termination, through
+    # document updates and refreshes; protection elsewhere is unchanged (verify_subscription_protection.py).
+    lab(
+        'subscription-protection',
+        'single',
+        KEYS
+        + ['--xml-protection', '--integrity-protection', '--group-management', '--documents-on-notify']
+        + ['--group-keys-expires', '60', '--token-ttl', '120'],
+        ['group_management_scenario', 'service_logoff_scenario'],
+        ['mcptt', 'protected', 'common'],
+    ),
+    # A sign-in that fails for want of the service configuration document (CMS stopped) or of the keys (KMS stopped)
+    # sends no authorisation and recovers on a later attempt; the configuration subscription is refreshed and ended
+    # in its dialog while the user holds no authorisation (bootstrap_recovery_scenario.py).
+    lab(
+        'bootstrap-recovery',
+        'single',
+        KEYS + ['--xml-protection', '--integrity-protection', '--xml-only', '--documents-on-notify'],
+        ['bootstrap_recovery_scenario'],
+        ['mcptt', 'protected'],
+    ),
+    lab(
+        'xml-key-documents',
+        'single',
+        KEYS + ['--xml-protection', '--integrity-protection', '--xml-only', '--mcdata', '--protection-documents-only'],
+        ['xml_key_scenario'],
+        ['mcptt', 'mcdata', 'protected'],
     ),
     lab(
         'xml-integrity',
@@ -406,6 +534,16 @@ LABS = [
         'mcdata-xml',
         'single',
         ['--private-call', '--mcdata', '--mcdata-release'] + KEYS,
+        MCDATA_SIX,
+        ['mcdata', 'protected'],
+        no_payload=True,
+    ),
+    # TS 24.282 clause 6.5.3 (TS 33.180 clause 9.3.5): MCData XML bodies signed under each client's CSK; the wire check
+    # verify_xml_signatures.py requires a signature over every XML body after the CSK upload.
+    lab(
+        'mcdata-integrity',
+        'single',
+        ['--private-call', '--mcdata', '--mcdata-release'] + KEYS + ['--integrity-protection'],
         MCDATA_SIX,
         ['mcdata', 'protected'],
         no_payload=True,
@@ -438,13 +576,23 @@ LABS = [
     # register through the P-CSCF over IPsec (NET_ADMIN; the host's xfrm_user, esp4, authenc, hmac(sha1) and
     # cbc(aes) kernel modules), client-c and client-d keep SIP digest. A group call, private calls and SDS to and from
     # the AKA UEs (requests to them through the P-CSCF's security associations), and the refusals of
-    # aka_negative_scenario (421 without sec-agree, digest through the P-CSCF and AKA identities over digest, 403).
+    # aka_negative_scenario (421 without sec-agree, digest through the P-CSCF and AKA identities over digest, 403;
+    # a new challenge deletes the IMPI's registration SAs, TS 33.203 clauses 7.3.1.4 and 7.4.2a);
+    # aka_admission_scenario: lost challenges leave no sets behind, the temporary set expires after reg-await-auth,
+    # and concurrent REGISTERs of one IMPI never hold more than six SAs per direction (TS 33.203 clause 7.1 rule 3);
+    # aka_protected_ports_scenario: plaintext to the P-CSCF's protected ports goes unanswered (TS 33.203 clause 7.1);
+    # aka_reregistration_scenario: a re-registration keeps port_ps, the P-CSCF keeps the old set for outbound
+    # messages until the UE's first message over the new set, and the old set goes at both ends (clause 7.4); the
+    # calls and SDS after it then run over the new set.
     lab(
         'aka',
         'single',
         ['--aka', '--private-call', '--mcdata'],
         [
             'aka_negative_scenario',
+            'aka_admission_scenario',
+            'aka_protected_ports_scenario',
+            'aka_reregistration_scenario',
             'prearranged_scenario',
             'private_call_scenario',
             'mcdata_sds_scenario',
@@ -458,7 +606,15 @@ LABS = [
         'aka-udp',
         'single',
         ['--aka', '--aka-transport', 'udp', '--private-call', '--mcdata'],
-        ['aka_negative_scenario', 'prearranged_scenario', 'private_call_scenario', 'mcdata_sds_scenario'],
+        [
+            'aka_negative_scenario',
+            'aka_admission_scenario',
+            'aka_protected_ports_scenario',
+            'aka_reregistration_scenario',
+            'prearranged_scenario',
+            'private_call_scenario',
+            'mcdata_sds_scenario',
+        ],
         ['aka', 'common'],
     ),
 ]
@@ -660,6 +816,18 @@ def run_lab(spec, args, output, stamp):
             ]
             wire_log = scenario_log.with_name(scenario_log.stem + '.wire.log')
             wire_started = not extra and run(wire[:2] + ['start'] + wire[2:], wire_log, timeout=360) == 0
+            if not extra and not wire_started:
+                # A wire check that could not start is a failure, never a silently missing check.
+                results.append(
+                    dict(
+                        lab=lab_name,
+                        scenario=f'{entry}/wire',
+                        passed=False,
+                        checks=None,
+                        error=(first_error(wire_log) or 'wire_check.py start failed')[:300],
+                        log=str(wire_log),
+                    )
+                )
             run(compose + ['up', '-d', '--wait'], log, timeout=600)
             try:
                 code = run(

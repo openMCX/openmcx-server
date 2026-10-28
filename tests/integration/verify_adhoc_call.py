@@ -14,6 +14,12 @@ emergency and imminent peril ad hoc calls (clause 17.4.2.1.1 steps 6 and 7), acc
 17.2.6.1.1) and releases participants itself (clause 17.4.3.1). Floor messages carry the Floor Indicator 'A' bit, never
 'B' (TS 24.380 table 8.2.3.15-2), and Floor Taken permits requests (TS 24.380 clause 8.2.3.7).
 
+With an ad hoc group emergency alert in the capture, the alert follows the members of its ad hoc group call
+(clauses 17.4.3.2 step 2A, 17.4.4.1.1 step 12A, 17.4.7.1.1 step 4A, with clause 12.1A.3.3): a member whose BYE ends
+its leg gets an alert MESSAGE with <adhoc-alert-ind> "false" after the 200 (OK) to that BYE; a member rejoining the
+call gets one with "true" after the 200 (OK) to the rejoin INVITE; a member joining it gets one with "true" before
+the 200 (OK) to the join INVITE (the first INVITE naming the alert's ad hoc group sets the call up and is no join).
+
 Usage: verify_adhoc_call.py capture.pcap --service sip:mcptt@DOMAIN --output result.json
 
 Self-contained (no tshark); reuses the SIP reassembly of verify_private_call.py and the floor decoder of
@@ -31,7 +37,7 @@ import struct
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from verify_private_call import header, parse, sip_messages, tcp_streams  # noqa: E402
+from verify_private_call import header, parse, sip_messages, tcp_streams, timed_messages  # noqa: E402
 from verify_broadcast_call import floor_messages  # noqa: E402
 from floor_causes import causes, summary  # noqa: E402
 
@@ -155,11 +161,27 @@ def main():
             for response in accepted
         ),
     )
-    identities = {response['info'].get('mcptt-calling-group-id') for response in accepted}
+    # A join of an ongoing call (TS 24.379 clause 17.4.7.1.1 step 5: warning 123) names that call's group: only the
+    # calls set up count.
+    joins = [
+        response for response in accepted if any(re.search(r'"123 ', value) for value in response['headers']['warning'])
+    ]
+    set_up = [response for response in accepted if response not in joins]
+    identities = {response['info'].get('mcptt-calling-group-id') for response in set_up}
     check(
         'each ad hoc call gets a distinct generated group identity',
-        len(identities) == len(accepted) and len(identities) >= 3,
+        len(identities) == len(set_up) and len(identities) >= 3,
     )
+    if joins:
+        check(
+            'the 200 (OK) to a join carries "123 MCPTT session already exists" and the joined call\'s group '
+            '(17.4.7.1.1 step 5)',
+            all(
+                response['info'].get('mcptt-calling-group-id')
+                and any('"123 MCPTT session already exists"' in value for value in response['headers']['warning'])
+                for response in joins
+            ),
+        )
     # A rejoin the SIP core challenges (407) is sent again with the next CSeq in the same Call-ID (RFC 3261
     # section 22.2): the rejoin is accepted when an INVITE of its Call-ID is.
     check(
@@ -235,10 +257,14 @@ def main():
         bool(floor) and not violations,
     )
     reject_causes, cause_violations = causes(args.capture)
-    check('every Floor Deny and Floor Revoke carries a Reject Cause defined for it (TS 24.380 8.2.6.2, 8.2.10.2)',
-          not cause_violations)
-    check('a floor request while another participant has permission is denied with cause #1 (TS 24.380 6.3.5.4.4)',
-          reject_causes[('Deny', 1)] > 0)
+    check(
+        'every Floor Deny and Floor Revoke carries a Reject Cause defined for it (TS 24.380 8.2.6.2, 8.2.10.2)',
+        not cause_violations,
+    )
+    check(
+        'a floor request while another participant has permission is denied with cause #1 (TS 24.380 6.3.5.4.4)',
+        reject_causes[('Deny', 1)] > 0,
+    )
 
     # Priority ad hoc calls (TS 24.379 clause 17.4.2.1.1 steps 6 and 7): invitees learn the state with
     # Resource-Priority.
@@ -304,9 +330,95 @@ def main():
             ),
         ),
     )
+    alert_checks, alert_failures = alert_transitions(args.capture, args.service)
+    result['checks'] += alert_checks
+    result['failures'] += alert_failures
+    result['passed'] = result['passed'] and not alert_failures
     args.output.write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))
     return 0 if result['passed'] else 1
+
+
+# ------------------------------------------------------------------------------
+def alert_transitions(capture, service):
+    """The checks of the alert MESSAGEs around the leave, rejoin and join of the alert's call members, in capture time
+    order across connections: (passed labels, failed labels)."""
+    messages = list(timed_messages(capture))
+    checks, failures = [], []
+
+    def user(value):
+        value = value.split('<', 1)[-1].split('>', 1)[0] if '<' in value else value
+        return value.split(';', 1)[0].strip()
+
+    alerts = [
+        message
+        for message in messages
+        if message['request']
+        and message['method'] == 'MESSAGE'
+        and 'adhoc-alert-ind' in message['info']
+        and 'adhoc-alert-ind-rcvd' not in message['info']
+    ]
+    groups = {message['info'].get('mcptt-calling-group-id') for message in alerts} - {None, ''}
+    if not groups:
+        return checks, failures
+
+    def alert_to(target, group, active, after=None, before=None):
+        return any(
+            user(header(message, 'to')) == target
+            and message['info'].get('mcptt-calling-group-id') == group
+            and message['info'].get('adhoc-alert-ind') == ('true' if active else 'false')
+            and (after is None or message['time'] > after)
+            and (before is None or message['time'] < before)
+            for message in alerts
+        )
+
+    def final_ok(request):
+        return next(
+            (
+                message
+                for message in messages
+                if not message['request']
+                and message['status'] == 200
+                and message['call_id'] == request['call_id']
+                and header(message, 'cseq') == header(request, 'cseq')
+            ),
+            None,
+        )
+
+    # The alert calls: the sessions whose 200 (OK) to a client's INVITE names an alert group.
+    sessions, seen_groups = {}, set()
+    for message in messages:
+        if not (message['request'] and message['method'] == 'INVITE') or re.search(r';\s*tag=', header(message, 'to')):
+            continue
+        answer = final_ok(message)
+        if 'mcptt-server' in header(message, 'via'):
+            # An invitation of the server: the invitee's leg of the alert call.
+            if message['info'].get('mcptt-calling-group-id') in groups and answer:
+                sessions[message['call_id']] = (message['info']['mcptt-calling-group-id'], user(header(message, 'to')))
+            continue
+        group = answer['info'].get('mcptt-calling-group-id') if answer else None
+        if group not in groups:
+            continue
+        member = user(header(message, 'from'))
+        kind = 'rejoin' if ';mcptt-session=' in message['target'] else 'join' if group in seen_groups else 'setup'
+        seen_groups.add(group)
+        if kind == 'rejoin':
+            check_label = f'rejoin of {member}: "true" alert after the 200 (OK) (17.4.4.1.1 step 12A)'
+            (checks if alert_to(member, group, True, after=answer['time']) else failures).append(check_label)
+        elif kind == 'join':
+            check_label = f'join of {member}: "true" alert before the 200 (OK) (17.4.7.1.1 step 4A)'
+            (checks if alert_to(member, group, True, before=answer['time']) else failures).append(check_label)
+        sessions[message['call_id']] = (group, member)
+    for message in messages:
+        if not (message['request'] and message['method'] == 'BYE') or message['call_id'] not in sessions:
+            continue
+        group, member = sessions[message['call_id']]
+        if user(header(message, 'from')) != member:
+            continue
+        answer = final_ok(message)
+        check_label = f'leave of {member}: "false" alert after the 200 (OK) to its BYE (17.4.3.2 step 2A)'
+        (checks if answer and alert_to(member, group, False, after=answer['time']) else failures).append(check_label)
+    return checks, failures
 
 
 if __name__ == '__main__':

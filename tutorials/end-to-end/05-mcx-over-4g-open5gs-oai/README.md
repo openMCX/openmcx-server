@@ -24,7 +24,7 @@ position and the phones keep SIP digest over TLS.
 - **Tutorial 1 done once**: the phones have the app, and you know the steps in MCX Admin. Tutorial 1's system (and
   tutorials 3 and 4) must be **stopped**: tutorial 5 runs its own system with the same ports.
 - **A Linux computer** with Docker and Docker Compose v2, about 8 CPU cores free (the rfsimulator's eNB and UE keep
-  several cores busy), **sudo** (step 3) and the kernel's IPsec (the `xfrm_user`, `esp4` and `authenc` modules, with
+  several cores busy), **sudo** (step 3) and the kernel's IPsec (the `xfrm_user`, `esp4`, `authenc` and `gcm` modules, with
   `hmac(sha1)` and `cbc(aes)`), for the IMS AKA client's security associations.
 - **The images**, from Docker Hub: OpenMCX's (`openmcx/openmcx-*:develop`, the `main` branch: IMS AKA, the P-CSCF and
   the MC client in the UE need a version after 1.0.0) and three patched images:

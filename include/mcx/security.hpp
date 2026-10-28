@@ -73,6 +73,10 @@ public:
   std::vector<std::uint8_t> protect_rtcp(std::span<const std::uint8_t> packet);
   // TS 33.180 clause 9.4.7: verifies and decrypts an inbound SRTCP packet.
   std::vector<std::uint8_t> unprotect_rtcp(std::span<const std::uint8_t> packet);
+  // RFC 3711 sections 3.4 and 8.1: the stream goes on under a new master key (same profile and MKI length); its
+  // SRTCP index continues and its replay lists stay (security.cpp). A failed re-key breaks the stream: it refuses
+  // every later packet in both directions.
+  void rekey(const SecurityMaterial &material);
 
 private:
   struct Impl;

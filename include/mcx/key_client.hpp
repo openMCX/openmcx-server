@@ -9,7 +9,9 @@
 #include "mcx/http.hpp"
 #include "mcx/keying.hpp"
 
+#include <functional>
 #include <memory>
+#include <string_view>
 #include <utility>
 
 namespace mcx {
@@ -25,6 +27,9 @@ public:
   ~KeyClient();
   KeyClient(const KeyClient &) = delete;
   KeyClient &operator=(const KeyClient &) = delete;
+  // Where the warnings about accepted but unusual received keys go (e.g. a MIKEY RAND shorter than RFC 3830 section
+  // 6.11 recommends); none are reported without a handler.
+  void set_warning_handler(std::function<void(std::string_view)> handler);
   // TS 33.180 clause 5.3.3: provisions the identity keys with the user's access token.
   void provision(const std::string &token);
   // TS 33.180 clauses 5.3.2 and 5.3.3: provisions the identity keys of an MC server or the GMS, as a confidential

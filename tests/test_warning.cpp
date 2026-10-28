@@ -4,7 +4,7 @@
 
 // Warning header field texts: the MCPTT and MCVideo warning code tables and the texts built from them.
 //
-// Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19).
+// Specifications: TS 24.379 V19.8.0 (Rel-19), TS 24.281 V19.7.0 (Rel-19).
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -23,8 +23,9 @@ using namespace mcx;
 int main() {
   // Every coded warning mcptt-server sent before the table existed (2026-09-25):
   // the MCPTT table must reproduce each one exactly and add no other.
-  // Plus 101, added with MCVideo V1 as TS 24.379 clause 7.3.3 step 6 requires, and 136, the client's answer to an MBMS
-  // bearer announcement or MuSiK download whose MIKEY-SAKKE I_MESSAGE fails (TS 24.379 clauses 14.3.2 and 14.3.4).
+  // Plus 101, added with MCVideo V1 as TS 24.379 clause 7.3.3 step 6 requires; 123 with the table's text (2026-10-26,
+  // also clause 17.4.7.1.1 step 5), and 139 with its one table text; 136, the client's answer to an MBMS bearer
+  // announcement or MuSiK download whose MIKEY-SAKKE I_MESSAGE fails (TS 24.379 clauses 14.3.2 and 14.3.4).
   const std::set<std::string> before{
       "101 service authorisation failed",
       "102 too many simultaneous affiliations",
@@ -40,14 +41,13 @@ int main() {
       "120 user is not affiliated to this group",
       "121 user is not authorised to join the group call",
       "122 too many participants",
-      "123 joining an ongoing MCPTT group call",
+      "123 MCPTT session already exists",
       "124 maximum number of private calls reached",
       "125 user not authorised to make private call with automatic commencement",
       "126 user not authorised to make private call with manual commencement",
       "127 user not authorised to be called in private call",
       "136 authentication of the MIKEY-SAKKE I_MESSAGE failed",
       "138 subscription of conference events not allowed",
-      "139 no XPK for the signatures",
       "139 integrity protection check failed",
       "140 unable to decrypt XML content",
       "141 user unknown to the participating function",
@@ -99,6 +99,11 @@ int main() {
   assert(warning_text(mcvideo_service, Warning::ambient_not_authorised) ==
          "154 user not authorised to make ambient viewing call");
   assert(warning_text(mcvideo_service, Warning::session_exists) == "123 MCVideo session already exists");
+  // TS 24.281 clause 22.3.2.1.1 step 9: the procedure's 185 text (its table omits "is"), as for MCPTT.
+  assert(warning_text(mcvideo_service, Warning::adhoc_initiation_not_authorised) ==
+         "185 user is not authorised to initiate the adhoc group call");
+  assert(warning_text(mcptt_service, Warning::no_signing_key) == "139 integrity protection check failed" &&
+         warning_text(mcvideo_service, Warning::no_signing_key) == "139 integrity protection check failed");
   assert(warning_text(mcvideo_service, Warning::adhoc_not_supported) ==
          "186 the MCVideo system do not support adhoc group call");
   // TS 24.281 table 4.4.2-2 and TS 24.379 table 4.4.2-2: the functional alias to group binding warnings.

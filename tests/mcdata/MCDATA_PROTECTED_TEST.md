@@ -69,14 +69,14 @@ Values not assigned by the specifications:
 ## Run a separate lab
 
 ```bash
-docker build -t openmcx-dev:0.3 -f docker/Dockerfile.dev .   # pjsip with PJSIP_MAX_PKT_LEN 16000
+docker build -t openmcx-dev:0.4 -f docker/Dockerfile.dev .   # pjsip with PJSIP_MAX_PKT_LEN 16000
 docker build -t openmcx:<tag> -f docker/Dockerfile .
 python3 tools/prepare-prearranged-test.py --directory artifacts/dpp-lab --project openmcx-dpp \
   --debug-sip --private-call --mcdata --protected --key-parameters-iei 0x79 --image openmcx:<tag>
 C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-dpp -f artifacts/dpp-lab/compose.json"
 $C up -d --wait mcdata-server
 docker run -d --rm --name openmcx-dpp-capture --network "container:$($C ps -q mcdata-server)" \
-  --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.3 tcpdump -Z root -i eth0 -U --immediate-mode -s 0 -w /tmp/c.pcap tcp   # SIP and MSRP
+  --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.4 tcpdump -Z root -i eth0 -U --immediate-mode -s 0 -w /tmp/c.pcap tcp   # SIP and MSRP
 $C up -d --wait
 python3 tests/integration/mcdata_protected_scenario.py \
   --compose artifacts/dpp-lab/compose.json --artifacts artifacts/dpp-lab/artifacts --project openmcx-dpp

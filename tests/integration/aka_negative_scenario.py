@@ -9,9 +9,11 @@ Once client-c is authorised, aka_negative.py runs in its container, on the lab's
 credentials: the P-CSCF's 421 (Extension Required) without a Security-Client (RFC 3329 clause 2.3.1), the refusal
 of a SIP digest identity through the P-CSCF and of a SIP digest REGISTER of an IMS AKA identity at the SIP core
 (TS 29.228 clause 6.3.1 step 4, TS 33.180 clause 6.2.1), and the IMS AKA challenge as the UE receives it (TS 24.229
-clauses 5.2.2.2 and 5.4.1.2.1A). Its result is written as integration/aka-negative-results.json.
+clauses 5.2.2.2 and 5.4.1.2.1A), and that a new challenge deletes the IMPI's registration SAs (TS 33.203 clauses
+7.3.1.4 and 7.4.2a; AKA-09: at the P-CSCF only the last challenge's set, protected client port 40130, is left, none of
+the earlier ones of ports 40100, 40110 and 40120). Its result is written as integration/aka-negative-results.json.
 
-Specifications: TS 24.229 V19.7.0, TS 29.228 V19.2.0, TS 33.180 V19.4.0 (Rel-19); RFC 3329.
+Specifications: TS 24.229 V19.7.0, TS 29.228 V19.2.0, TS 33.180 V19.4.0, TS 33.203 V19.1.0 (Rel-19); RFC 3329.
 """
 
 import argparse
@@ -22,6 +24,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
+TOOLS = 'openmcx-dev:0.4'
+
+
+# ------------------------------------------------------------------------------
+def xfrm(cli, service, port):
+    """The SA and policy lines of service's network namespace that name port (ip xfrm state/policy)."""
+    cid = subprocess.run(cli + ['ps', '-q', service], capture_output=True, text=True, check=True).stdout.strip()
+    out = subprocess.run(
+        ['docker', 'run', '--rm', '--cap-add', 'NET_ADMIN', '--network', f'container:{cid}', TOOLS, 'bash', '-c',
+         'ip xfrm state; ip xfrm policy'],
+        capture_output=True, text=True, timeout=60,
+    ).stdout
+    return [line.strip() for line in out.splitlines() if f'port {port} ' in line + ' ']
 
 
 # ------------------------------------------------------------------------------
@@ -72,6 +87,14 @@ def main():
         probe += [] if tls else ['--disable-tls']
         run = subprocess.run(cli + ['exec', '-T', 'client-c'] + probe, capture_output=True, text=True, timeout=120)
         probes = json.loads(run.stdout.strip().splitlines()[-1])
+        # AKA-09 at the P-CSCF: the registration SAs of the earlier challenges are gone, the last one's are there.
+        left = {port: xfrm(cli, 'pcscf', port) for port in (40100, 40110, 40120, 40130)}
+        probes.setdefault('checks', []).append(dict(
+            name='AKA-09 a new challenge deletes the registration SAs of the IMPI (TS 33.203 clause 7.4.2a)',
+            passed=not any(left[port] for port in (40100, 40110, 40120)) and bool(left[40130]),
+            detail='; '.join(f'{port}: {len(lines)} lines' for port, lines in left.items()),
+        ))
+        probes['passed'] = probes.get('passed', False) and probes['checks'][-1]['passed']
         result.update(probes)
         failed = [check['name'] for check in probes.get('checks', []) if not check['passed']]
         if failed or not probes.get('passed'):

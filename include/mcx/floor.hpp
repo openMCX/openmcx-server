@@ -297,7 +297,7 @@ struct FloorParticipantTimerOptions {
 // T100/101/103/104/132.
 // Caller validates/binds incoming peers, filters duplicate/stale state packets,
 // acknowledges messages and reacts to Revoke by sending Release. Does not
-// implement broadcast, dual-floor, implicit request, or user-interface policy.
+// implement broadcast, dual-floor, or user-interface policy.
 // Granted has no sequence/transaction field: a delayed old grant arriving during
 // a new PendingRequest cannot be distinguished here. The server must cancel
 // obsolete grant retries and enforce current floor ownership for every RTP packet.
@@ -306,10 +306,14 @@ public:
   explicit FloorParticipantTimers(FloorParticipantTimerOptions options = {});
   // Caller sends the initial packet; send registers timer/state only.
   void send(const FloorPacket &packet, std::uint64_t now_ms);
-  // A session set up with an implicit floor request, or with an implicit
-  // request to grant the floor to this client (TS 24.379 clause 6.4, TS 24.380 clause 6.2.4.2.2 step 4; ambient
-  // listening): wait for Floor Granted without sending or retrying a request.
+  // A session set up with an implicit request to grant the floor to this client (TS 24.379 clause 6.4; the
+  // terminating client of a remotely initiated ambient listening call): wait for Floor Granted without sending or
+  // retrying a request.
   void expect_implicit_grant();
+  // A session whose 200 (OK) accepted this client's implicit floor request (TS 24.380 clause 6.2.4.2.2 step 4):
+  // 'U: pending Request' with T101 started and C101 at 1, without sending; `request` is the Floor Request that
+  // T101 expiry sends (clause 6.2.4.4.5).
+  void expect_implicit_grant(const FloorPacket &request, std::uint64_t now_ms);
   void receive(const FloorPacket &packet, std::uint64_t now_ms);
   void media_received(std::uint64_t now_ms);
   std::vector<FloorPacket> tick(std::uint64_t now_ms);

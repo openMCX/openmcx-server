@@ -341,7 +341,8 @@ def add_seal_location(fixture):
         if path.stem.startswith(('mcptt-server', 'mcptt-part', 'mcdata-server')) and 'common' in cfg:
             cfg['common']['lms'] = 'https://lms:8443'
         elif path.stem.startswith('client-') and 'endpoints' in cfg:
-            cfg['endpoints']['lms'] = cfg['endpoints']['cms'].rsplit('/', 1)[0] + '/lms'
+            # endpoints.cms is the CMS XCAP root URI (TS 24.484), .../cms/xcap-root behind the HTTP proxy.
+            cfg['endpoints']['lms'] = cfg['endpoints']['cms'].removesuffix('/xcap-root').rsplit('/', 1)[0] + '/lms'
         else:
             continue
         path.write_text(json.dumps(cfg, indent=2) + '\n')
@@ -395,14 +396,37 @@ def add_group_management(fixture):
 
 
 # ------------------------------------------------------------------------------
-def service_configuration(fixture):
+def service_configuration(fixture, documents_only=False):
     """The site's service_config (TS 24.484 clauses 8.4, 9.4 and 10.4): the RFC 8101 Resource-Priority values of
-    each service, and the MCPTT floor settings and MCData file availabilities the lab gave its servers. The clients
-    and servers read them from the CMS, so no other file keeps Resource-Priority values."""
+    each service, the MCPTT floor settings and MCData file availabilities the lab gave its servers, and the signalling
+    protection its servers and clients run (<signalling-protection>, <protection-between-*-servers>). The clients
+    and servers read them from the CMS, so no other file keeps Resource-Priority values. A protection that is on is
+    left out of the document, which means enabled (TS 24.379 clauses 6.6.2.3 and 6.6.3.3, TS 24.484 clause 8.4.2.7
+    NOTE 4); one that is off is written "false". With documents_only (a test aid) the local switches the lab
+    derived them from are removed from every configuration afterwards, so that nothing but the documents can decide."""
     generated = fixture / 'generated'
     resources = dict(emergency='mcpttp.15', imminent='mcpttp.10', normal='mcpttp.0')
     mcptt = dict(resource_priority=resources)
+    mcvideo = dict(resource_priority=resources)
     mcdata = dict(resource_priority=resources)
+
+    def protection(service, confidentiality, integrity, control_name=None, control=False):
+        """The service's <signalling-protection> and <protection-between-*-servers>: false where off, absent where
+        on. Between servers the lab's XML protection is the same as towards the clients (the servers' SPK)."""
+        signalling = {
+            name: False for name, on in (('confidentiality', confidentiality), ('integrity', integrity)) if not on
+        }
+        between = {} if confidentiality or integrity else dict(allow_signalling=False)
+        if control_name and not control:
+            between[control_name] = False
+        if signalling:
+            service['signalling_protection'] = signalling
+        if between:
+            service['protection_between_servers'] = between
+
+    protection(mcptt, False, False, 'allow_floor_control')
+    protection(mcvideo, False, False, 'allow_transmission_control')
+    protection(mcdata, False, False)
     for path in sorted(generated.glob('*.json')):
         if path.name == 'site.json':
             continue
@@ -412,6 +436,26 @@ def service_configuration(fixture):
         for service in ('mcptt', 'mcvideo', 'mcdata'):
             if isinstance(cfg.get(service), dict):
                 cfg[service].pop('resource_priority', None)
+        security = cfg.get('security', {})
+        if path.name in ('mcptt-server.json', 'mcvideo-server.json'):
+            target = mcptt if path.name == 'mcptt-server.json' else mcvideo
+            for key in ('signalling_protection', 'protection_between_servers'):
+                target.pop(key, None)
+            protection(
+                target,
+                security.get('confidentiality_protection', False),
+                security.get('integrity_protection', False),
+                'allow_floor_control' if target is mcptt else 'allow_transmission_control',
+                security.get('protect_floor', False),
+            )
+        if path.name == 'mcdata-server.json':
+            for key in ('signalling_protection', 'protection_between_servers'):
+                mcdata.pop(key, None)
+            protection(
+                mcdata,
+                cfg.get('mcdata', {}).get('confidentiality_protection', False),
+                cfg.get('mcdata', {}).get('integrity_protection', False),
+            )
         if path.name == 'mcptt-server.json':
             # <transmit-time>/<time-limit> (T2) and <floor-control-queue> of the MCPTT service configuration.
             if 'max_talk_ms' in cfg.get('mcptt', {}):
@@ -426,6 +470,11 @@ def service_configuration(fixture):
                 mcdata['default_file_availability_s'] = max(1, fd['default_file_availability_ms'] // 1000)
             if 'max_file_availability_ms' in fd:
                 mcdata['max_file_availability_s'] = max(1, fd['max_file_availability_ms'] // 1000)
+        if documents_only:
+            for section in ('security', 'mcdata'):
+                for key in ('confidentiality_protection', 'integrity_protection'):
+                    if isinstance(cfg.get(section), dict):
+                        cfg[section].pop(key, None)
         path.write_text(json.dumps(cfg, indent=2) + '\n')
     site_file = generated / 'site.json'
     site = json.loads(site_file.read_text())
@@ -433,7 +482,7 @@ def service_configuration(fixture):
         for policy in (group.get('priority_policy'), group.get('mcvideo', {}).get('priority_policy')):
             if isinstance(policy, dict):
                 policy.pop('resource_priority', None)
-    site['service_config'] = dict(mcptt=mcptt, mcvideo=dict(resource_priority=resources), mcdata=mcdata)
+    site['service_config'] = dict(mcptt=mcptt, mcvideo=mcvideo, mcdata=mcdata)
     site_file.write_text(json.dumps(site, indent=2) + '\n')
 
 
@@ -801,15 +850,18 @@ def add_mcvideo_policy(fixture):
 # ------------------------------------------------------------------------------
 def add_group_subscription(fixture):
     """The MCData server subscribes, as an MCS server, to the group documents it reads
-    (TS 24.481 clause 6.3.13.2.2) at the PSI of the GMS's subscription proxy function, which
-    the MCPTT servers provide and which accept the MCData server's PSI."""
+    (TS 24.481 clause 6.3.13.2.2) at the PSI of the GMS's subscription proxy function (step b),
+    which the MCPTT servers provide (their mcptt.gms_subscription_psi when the lab names one apart,
+    else their MCPTT PSI) and which accept the MCData server's PSI."""
     data_path = fixture / 'generated/mcdata-server.json'
     data = json.loads(data_path.read_text())
     for path in sorted((fixture / 'generated').glob('mcptt-*.json')):
         cfg = json.loads(path.read_text())
         cfg['mcptt']['mcs_servers'] = [data['mcdata']['service_uri']]
         if path.name == 'mcptt-server.json':
-            data['mcdata']['group_subscription_uri'] = cfg['mcptt']['service_uri']
+            data['mcdata']['group_subscription_uri'] = cfg['mcptt'].get(
+                'gms_subscription_psi', cfg['mcptt']['service_uri']
+            )
         path.write_text(json.dumps(cfg, indent=2) + '\n')
     data_path.write_text(json.dumps(data, indent=2) + '\n')
 
@@ -1031,7 +1083,7 @@ def add_mcdata_release_policy(fixture):
 
 
 # ------------------------------------------------------------------------------
-def add_chat_group(fixture, source):
+def add_chat_group(fixture, source, protect=False):
     """Add a chat group (TS 24.379 clause 10.1.2) that every fixture user may select."""
     site_file = fixture / 'generated/site.json'
     site = json.loads(site_file.read_text())
@@ -1059,8 +1111,11 @@ def add_chat_group(fixture, source):
             id=chat,
             type='chat',
             members=members,
-            protect_media=False,
-            protect_floor=False,
+            # --chat-protected-floor: protected as the prearranged group of --protected, media under the group's GMK
+            # (which the GMS gives only for a group with protected media) and floor control under each client's
+            # CSK (TS 33.180 clauses 7.3 and 9.4.2).
+            protect_media=protect,
+            protect_floor=protect,
             call_policy=dict(max_participants=3, inactivity_timeout_ms=20000),
             priority_policy=priority,
             user_priorities={members[2]: 10},
@@ -1239,7 +1294,7 @@ def add_mock_pcf(compose, fixture):
     """The mock PCF: tests/integration/mock_pcf.go, run with the Go toolchain of the development image."""
     server = compose['services']['mcptt-server']
     compose['services']['mock-pcf'] = {
-        'image': 'openmcx-dev:0.3',
+        'image': 'openmcx-dev:0.4',
         'init': True,
         'entrypoint': ['go', 'run', '/mock/mock_pcf.go'],
         'command': ['-listen', ':8080', '-record', '/artifacts/mock-pcf/requests.jsonl'],
@@ -1359,7 +1414,7 @@ def add_mock_pcrf(compose, fixture):
     domain = json.loads((fixture / 'generated/site.json').read_text())['domain']
     server = compose['services']['mcptt-server']
     compose['services']['mock-pcrf'] = {
-        'image': 'openmcx-dev:0.3',
+        'image': 'openmcx-dev:0.4',
         'init': True,
         'entrypoint': ['python3', '/mock/mock_pcrf.py'],
         'command': ['--identity', f'mock-pcrf.{domain}', '--realm', domain, '--record',
@@ -1483,7 +1538,13 @@ def add_admin(fixture, compose, args):
         sip_core_uri=client['sip']['core_uri'],
         credentials_url='https://credentials:8443',
         services=dict(mcptt=client['mcptt']['service_uri'], mcdata=client.get('mcdata', {}).get('service_uri', '')),
-        endpoints=client['endpoints'],
+        # TS 24.484 clause 7.2.2.7: the URIs used to contact the GMS and CMS (item 4, through the HTTP proxy, as
+        # provision.py gives them) and, apart, the XCAP root URIs the clients use as their gms and cms (items 7, 8).
+        endpoints={
+            **client['endpoints'],
+            **{function: 'https://http-proxy:8443/' + function for function in ('cms', 'gms')},
+        },
+        xcap_roots={function: client['endpoints'][function] for function in ('cms', 'gms')},
         trust_root_file='/config/tls/ca.crt',
     )
     (gen / 'mcxadmin.json').write_text(
@@ -1882,6 +1943,10 @@ def add_keycloak(fixture, compose, args):
             cfg['common']['issuer'] = issuer
         elif 'oauth' in cfg:
             cfg['oauth']['issuer'] = issuer
+            # Another IdMS: its endpoints come from its discovery document (no configured <idms-auth-endpoint>,
+            # <idms-token-endpoint> or JWKS URI of the lab IdMS).
+            for key in ('idms_auth_endpoint', 'idms_token_endpoint', 'jwks_uri'):
+                cfg['oauth'].pop(key, None)
             for key in ('username', 'password'):
                 cfg['oauth'].pop(key, None)
             cfg['oauth']['refresh_token_file'] = f'/refresh/{path.stem}.json'
@@ -1997,6 +2062,45 @@ def main():
         help='With --protected: MCPTT XML integrity protection (TS 24.379 6.6.3)',
     )
     parser.add_argument(
+        '--group-keys-expires',
+        type=int,
+        help='Test aid: the Expires (seconds) of the clients\' GKTP subscriptions, so that they refresh during a scenario',
+    )
+    parser.add_argument(
+        '--documents-on-notify',
+        action='store_true',
+        help='The clients read their MCPTT documents on the subscription NOTIFYs (mcptt.documents_on_notify), the '
+        'configuration subscription before the service authorisation (TS 37.579-1 order)',
+    )
+    parser.add_argument(
+        '--protection-documents-only',
+        action='store_true',
+        help='Test aid: remove the local confidentiality_protection and integrity_protection switches from every '
+        'configuration once the service configuration documents are written, so that only the documents decide',
+    )
+    parser.add_argument(
+        '--gms-user',
+        help='A GMS-URI apart from the MCPTT PSI: sip:<GMS_USER>@<domain>, routed by the SIP core to the MCPTT server '
+        '(TS 24.481 clause 6.3.13.2.1 step b); the clients subscribe to group documents and group keys there',
+    )
+    parser.add_argument(
+        '--xml-only',
+        action='store_true',
+        help='Test aid, with --protected and --xml-protection or --integrity-protection: XML protection without media '
+        'and floor protection (protect_media and protect_floor false), so the CSK serves the XML protection alone',
+    )
+    parser.add_argument(
+        '--mcdata-clear-signalling',
+        action='store_true',
+        help='Test aid, with --protected and --mcdata: MCData signalling, XML confidentiality and integrity protection '
+        'off (a mixed configuration with MCPTT XML protection on)',
+    )
+    parser.add_argument(
+        '--kms-unreachable',
+        metavar='ROLE',
+        help='Test aid, with --protected: this client is configured with a KMS that cannot be reached',
+    )
+    parser.add_argument(
         '--private-call',
         action='store_true',
         help='Provision differentiated private-call profile policies; with --protected, '
@@ -2022,6 +2126,11 @@ def main():
     )
     parser.add_argument(
         '--chat', action='store_true', help='Add a four-member chat group (max 3 participants, 20 s inactivity)'
+    )
+    parser.add_argument(
+        '--chat-protected-floor',
+        action='store_true',
+        help="With --chat and --protected: the chat group's media under its GMK and floor control under the CSK",
     )
     parser.add_argument(
         '--adhoc',
@@ -2155,6 +2264,12 @@ def main():
     args = parser.parse_args()
     if (args.xml_protection or args.integrity_protection) and not args.protected:
         parser.error("--xml-protection and --integrity-protection require --protected")
+    if args.xml_only and not (args.xml_protection or args.integrity_protection):
+        parser.error('--xml-only requires --xml-protection or --integrity-protection')
+    if args.mcdata_clear_signalling and not (args.protected and args.mcdata):
+        parser.error('--mcdata-clear-signalling requires --protected and --mcdata')
+    if args.kms_unreachable and (not args.protected or args.kms_unreachable not in ('client-c', 'client-d')):
+        parser.error('--kms-unreachable takes client-c or client-d and requires --protected')
     if args.protected and (args.key_parameters_iei is None or not 0 <= args.key_parameters_iei <= 255):
         parser.error('--protected requires an explicit --key-parameters-iei interoperability value')
     if args.project == 'openmcx':
@@ -2173,6 +2288,8 @@ def main():
         if args.token_ttl < 60:
             parser.error('--token-ttl must be at least 60 seconds')
         source['token_ttl_seconds'] = args.token_ttl
+    if args.gms_user:
+        source['gms_user'] = args.gms_user
     if args.admin and not args.admin_image:
         parser.error('--admin needs --admin-image')
     if args.keycloak and args.admin:
@@ -2299,6 +2416,10 @@ def main():
                     num_levels=99,
                 )
                 group['floor_priority_caps'] = {id: (90 if role == 'client-b' else 10) for role, id in users.items()}
+        if args.xml_only:
+            # Test aid: no group asks for media or floor protection, which the clients then do not offer.
+            for entry in site['groups']:
+                entry['protect_media'] = entry['protect_floor'] = False
         site_path.write_text(json.dumps(site, indent=2) + '\n')
         for role in servers + ['client-a', 'client-b', 'client-c', 'client-d']:
             path = fixture / f'generated/{role}.json'
@@ -2315,11 +2436,14 @@ def main():
                     kms_uri=site['endpoints']['kms'],
                     gms_uri=site['endpoints']['gms'] + '/xcap-root/org.openmobilealliance.groups',
                     key_parameter_profile=wire_profile,
-                    protect_media=True,
-                    protect_floor=True,
+                    protect_media=not args.xml_only,
+                    protect_floor=not args.xml_only,
                     confidentiality_protection=args.xml_protection,
                     integrity_protection=args.integrity_protection,
                 )
+                if role == args.kms_unreachable:
+                    # Test aid: a name that does not resolve (RFC 6761 section 6.4, .invalid).
+                    cfg['security']['kms_uri'] = 'https://kms.unreachable.invalid'
                 if role in servers:
                     cfg['common']['kms'] = site['endpoints']['kms']
                     cfg['security']['key_client'] = key_client(site, cfg['mcptt']['service_uri'])
@@ -2334,8 +2458,8 @@ def main():
                     kms_uri=site['endpoints']['kms'],
                     gms_uri=site['endpoints']['gms'] + '/xcap-root/org.openmobilealliance.groups',
                     key_parameter_profile=wire_profile,
-                    protect_media=True,
-                    protect_floor=True,
+                    protect_media=not args.xml_only,
+                    protect_floor=not args.xml_only,
                     confidentiality_protection=args.xml_protection,
                     integrity_protection=args.integrity_protection,
                     key_client=key_client(site, cfg['mcvideo']['service_uri']),
@@ -2370,7 +2494,7 @@ def main():
     if args.manual_only_caller:
         add_manual_only_caller(fixture)
     if args.chat:
-        add_chat_group(fixture, source)
+        add_chat_group(fixture, source, protect=args.chat_protected_floor and args.protected)
     if args.adhoc:
         add_adhoc_policy(fixture)
     if args.regroup:
@@ -2390,8 +2514,11 @@ def main():
             for role in ['client-a', 'client-b', 'client-c', 'client-d', 'mcdata-server']:
                 path = fixture / f'generated/{role}.json'
                 cfg = json.loads(path.read_text())
-                cfg['mcdata']['protect_signalling'] = True
-                cfg['mcdata']['confidentiality_protection'] = True  # TS 24.282 clause 6.5.2 (XML)
+                cfg['mcdata']['protect_signalling'] = not args.mcdata_clear_signalling
+                cfg['mcdata']['confidentiality_protection'] = not args.mcdata_clear_signalling  # TS 24.282 6.5.2 (XML)
+                cfg['mcdata']['integrity_protection'] = (
+                    args.integrity_protection and not args.mcdata_clear_signalling
+                )  # TS 24.282 clause 6.5.3
                 if role == 'mcdata-server':
                     cfg['security'] = dict(
                         kms_uri=client_security['kms_uri'],
@@ -2577,7 +2704,24 @@ def main():
     if args.srsran:
         add_srsran(compose, fixture, args.srsran_image)
     rights_from_group_lists(fixture)
-    service_configuration(fixture)
+    service_configuration(fixture, args.protection_documents_only)
+    if args.documents_on_notify:
+        # TS 37.579-2 table 5.1.3.2-1 steps 17-19: the MCPTT documents read on the configuration and group document
+        # subscriptions' NOTIFYs, the configuration subscription before the service authorisation (TS 37.579-1 table
+        # 5.3.2.5.1-1 NOTE 1).
+        for role in ('client-a', 'client-b', 'client-c', 'client-d'):
+            path = fixture / f'generated/{role}.json'
+            cfg = json.loads(path.read_text())
+            cfg['mcptt']['documents_on_notify'] = True
+            path.write_text(json.dumps(cfg, indent=2) + '\n')
+    if args.group_keys_expires is not None:
+        # The Expires of the clients' GKTP subscriptions (local policy, subscriptions.group_keys_expires_s): a short
+        # one makes them refresh in their dialogs during a scenario.
+        for role in ('client-a', 'client-b', 'client-c', 'client-d'):
+            path = fixture / f'generated/{role}.json'
+            cfg = json.loads(path.read_text())
+            cfg.setdefault('subscriptions', {})['group_keys_expires_s'] = args.group_keys_expires
+            path.write_text(json.dumps(cfg, indent=2) + '\n')
     if args.admin:
         add_admin(fixture, compose, args)
     if args.keycloak:

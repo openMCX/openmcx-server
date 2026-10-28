@@ -9,6 +9,7 @@
 #pragma once
 #include <nlohmann/json.hpp>
 
+#include <functional>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -46,10 +47,14 @@ using HttpAddressMap = std::map<std::string, std::string>;
 // browser, which trusts them too (TS 33.180 annex B.4.2).
 enum class HttpTrust { configured, configured_and_system };
 
+// TS 33.180 clause 6.1.1 with TS 33.310 clauses 6.1.1 and 6.1a: crl_file, when not empty, is a PEM file of the CRLs
+// (version 2, full, not signed with MD2, MD5 or SHA-1) that verify the revocation status of every certificate of the
+// server's chain; it is read again for each request. A certificate without a valid CRL of its issuer in the file, or
+// listed in one, fails the TLS handshake (TS 33.310 clauses 5.2.2.2 and 7.6).
 class HttpClient {
 public:
   explicit HttpClient(std::string ca_file, HttpTimeouts timeouts = {}, HttpAddressMap address_map = {},
-                      HttpTrust trust = HttpTrust::configured);
+                      HttpTrust trust = HttpTrust::configured, std::string crl_file = {});
   // TS 24.482 annex A.2.1.2: sends one HTTP request over TLS, with optional basic authentication and header fields.
   HttpResponse request(std::string_view method, const std::string &url, const std::string &body = {},
                        const std::map<std::string, std::string> &headers = {}, const std::string &user = {},
@@ -60,6 +65,7 @@ private:
   HttpTimeouts timeouts_;
   HttpAddressMap address_map_;
   HttpTrust trust_;
+  std::string crl_file_;
 };
 
 //------------------------------------------------------------------------------
@@ -87,10 +93,18 @@ inline constexpr const char *oidc_default_scope =
     "3gpp:mc:video_key_management_service";
 
 //------------------------------------------------------------------------------
+// TS 24.484 clause 7.2.2.7 item 4: an IdMS endpoint of the IdM client ("authorization_endpoint", "token_endpoint" or
+// "jwks_uri"): the configured <idms-auth-endpoint> (cfg "idms_auth_endpoint"), <idms-token-endpoint>
+// ("idms_token_endpoint") or JWKS URI ("jwks_uri", OpenID Connect Core 1.0 section 10 "by other means"), used as given
+// (an https URI); otherwise the one of the issuer's discovery document, which discovery returns (fetched only then).
+std::string oidc_endpoint(const nlohmann::json &cfg, std::string_view name,
+                          const std::function<nlohmann::json()> &discovery);
+
+//------------------------------------------------------------------------------
 // TS 33.180 annex B.4.2.2: the authorization request of the authorization code grant with PKCE (S256), for the
 // user's browser: "url" (the authorization endpoint with the parameters of table B.4.2.2-1) and the "state",
 // "nonce" and "code_verifier" the client keeps for the response. cfg holds the issuer, client_id, redirect_uri and
-// optionally the scope.
+// optionally the scope and the IdMS endpoints (oidc_endpoint).
 nlohmann::json oidc_authorization_request(const HttpClient &http, const nlohmann::json &cfg);
 
 //------------------------------------------------------------------------------
@@ -173,12 +187,14 @@ struct oidc_unknown_signing_key : std::runtime_error {
 };
 
 //------------------------------------------------------------------------------
-// TS 33.180 clause 8.6.1: the IdMS JWKS, from the "jwks_uri" of the issuer's discovery document.
+// TS 33.180 annex B.11.2 with OpenID Connect Core 1.0 section 10: the IdMS JWKS, from the "jwks_uri" of the issuer's
+// discovery document.
 nlohmann::json oidc_jwks(const HttpClient &http, const std::string &issuer);
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex B.11.2: validates an access token against the IdMS JWKS, its issuer and audience (alone or among
-// others), its times and the scope and client_id claims of table B.2.2.2-1, and returns its claims.
+// others) where the token has them (RFC 7519 sections 4.1.1 and 4.1.3), its times and the scope and client_id claims
+// of table B.2.2.2-1, and returns its claims.
 nlohmann::json verify_access_token(std::string_view token, const nlohmann::json &jwks, std::string_view issuer,
                                    std::string_view audience);
 

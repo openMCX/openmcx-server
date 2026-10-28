@@ -269,6 +269,9 @@ SipResponse DataServer::media_invite(const SipMessage &request) {
   if (await_recipient) {
     // The final answer is sent later, past the protection of the answers in sip_dispatch.cpp: its XML is protected
     // here like any other sent to this client (TS 24.282 clause 6.5.2.4.1).
+    // TS 33.180 annex E.6.10: with the client's CSK past its Expiry time the answer cannot be protected: CskExpired
+    // refuses the request (500 by the SIP engine), with no XML sent.
+    require_csk_in_use(user.sip, response.parts);
     response.parts = encrypt_xml(xml_key(user.sip), std::move(response.parts));
     media_invite_file_recipient(user, invite, *leg, level, request.dialog_id, response);
     // The provisional answer carries the SDP answer and the Contact, so that the SIP engine keeps the dialog, with

@@ -5,8 +5,11 @@ Checks (TS 24.379 clause 7.3.2, TS 24.229 clause 5.4.1.7):
   - every REGISTER the server receives is a third-party REGISTER: From and Contact the SIP core, To a client's public
     user identity, Content-Type message/sip;
   - its message/sip body is the client's REGISTER: the request line, the same To, and an
-    application/vnd.3gpp.mcptt-info+xml body with the access token and the client ID (with --protected, encrypted
-    XML is accepted in their place); the client's Authorization header is not in it;
+    application/vnd.3gpp.mcptt-info+xml body with the access token and the client ID (with --protected both are
+    encrypted, TS 24.379 clause 7.2.1 step 6: type="Encrypted" with an EncryptedData, never in clear); the client's
+    Authorization header is not in it;
+  - with --integrity, the client's REGISTER also carries an application/vnd.3gpp.mcptt-signed+xml body (TS 24.379
+    clause 7.2.1 step 7, clause 6.6.3);
   - each is answered 200 (OK), and no client authorised by a poc-settings PUBLISH (clause 7.2.2) instead;
   - a de-registration (Expires 0, a client's log-off) carries the client's REGISTER with Expires 0 and no Authorization;
   - at least --users users were authorised so.
@@ -19,6 +22,7 @@ Specifications: TS 24.379 V19.7.0 (Rel-19).
 import argparse
 import json
 from pathlib import Path
+import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -32,6 +36,7 @@ def main():
     parser.add_argument('capture', type=Path)
     parser.add_argument('--users', type=int, default=4)
     parser.add_argument('--protected', action='store_true', help='the access token and client ID are encrypted')
+    parser.add_argument('--integrity', action='store_true', help='the client REGISTER bodies are signed')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     messages, seen = [], set()
@@ -77,24 +82,36 @@ def main():
             for message in removals
         ),
     )
+    # ------------------------------------------------------------------------------
+    def encrypted(body, element):
+        """The element is present with type="Encrypted" and an EncryptedData (TS 24.379 clause 6.6.2.3.3)."""
+        match = re.search(rf'<(?:[\w.-]+:)?{element}\b([^>]*)>(.*?)</(?:[\w.-]+:)?{element}\s*>', body, re.S)
+        return bool(match) and 'type="Encrypted"' in match.group(1) and 'EncryptedData' in match.group(2)
+
     inner_ok, users = [], set()
     for message in registers:
         body = message['body']
         to = header(message, 'to')
+        tokens = (
+            encrypted(body, 'mcptt-access-token') and encrypted(body, 'mcptt-client-id')
+            if args.protected
+            else 'mcptt-access-token' in body and 'mcptt-client-id' in body
+        )
         inner_ok.append(
             body.startswith('REGISTER ')
             and to.split(';')[0].strip('<> ') in body
             and 'application/vnd.3gpp.mcptt-info+xml' in body
-            and (
-                ('mcptt-access-token' in body and 'mcptt-client-id' in body)
-                or (args.protected and 'EncryptedData' in body)
-            )
+            and tokens
+            and (not args.integrity or 'application/vnd.3gpp.mcptt-signed+xml' in body)
             and 'authorization:' not in body.lower()
         )
         if finals.get((message['call_id'], header(message, 'cseq'))) == 200:
             users.add(to.split(';')[0].strip('<> '))
     check(
-        'the body is the client REGISTER with its mcptt-info (access token, client ID) and without its Authorization',
+        'the body is the client REGISTER with its mcptt-info (access token, client ID'
+        + (', encrypted' if args.protected else '')
+        + (', signed' if args.integrity else '')
+        + ') and without its Authorization',
         bool(inner_ok) and all(inner_ok),
     )
     check('each third-party REGISTER is answered 200', bool(registers) and all(

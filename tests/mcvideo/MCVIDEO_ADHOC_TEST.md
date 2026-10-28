@@ -44,7 +44,7 @@ The scenario makes 28 checks. Over TLS the wire checks (MV-AH-05) are skipped.
 | MV-AH-01 | client-a calls client-b and client-c. All three share one ad hoc group identity, assigned by the server and different from the preconfigured group; client-d is not invited. client-a transmits, and client-b and client-c decode its pictures, all equal. Then client-b transmits and client-c decodes it, all pictures equal |
 | MV-AH-02 | The originator leaves and the call goes on for the others (TS 24.281 §6.3.8.1 item 3 is for pre-arranged calls only); when one participant is left, the call is released (item 2) |
 | MV-AH-03 | Criteria `affiliated:<MCVideo group>`: every affiliated user is invited, and all four are in one ad hoc call |
-| MV-AH-04 | client-d is refused with 403 `185 user not authorised to initiate the adhoc group call` |
+| MV-AH-04 | client-d is refused with 403 `185 user is not authorised to initiate the adhoc group call` (TS 24.281 clause 22.3.2.1.1 step 9; the table omits "is") |
 | MV-AH-05 | Captured at `mcvideo-server`: ad hoc INVITEs to the MCVideo PSI; the called MCVideo IDs in resource-lists; the criteria in `<call-participants-criteria>`; the 200 (OK) naming the ad hoc group in `<mcvideo-calling-group-id>` |
 | MV-AH-06 | Ad hoc group emergency alert (§12.1A). client-a's alert to the users affiliated to the group is answered 200 with its ad hoc group, confirmed to client-a with `<adhoc-alert-ind-rcvd>` and received by client-b, client-c and client-d; its cancellation clears it everywhere; client-b, without `<allow-activate-adhoc-group-emergency-alert>`, is refused with 403. On the wire the alert carries `<adhoc-alert-ind>true`, the criteria and an MCVideo location body |
 
@@ -58,3 +58,4 @@ The scenario makes 28 checks. Over TLS the wire checks (MV-AH-05) are skipped.
 | Participant limit | Warning 189 is exercised by the MCPTT ad hoc tests on the shared code |
 | Pre-established sessions | §22.2.2.2 and the related clauses: not in present edition |
 | Security | End-to-end security for ad hoc calls is not implemented; the calls are clear |
+| Alert members of the call | §22.4.3.2 step 2A, §22.4.4.1.1 step 12A, §22.4.7.1.1 step 4A run in the server code shared with MCPTT (`src/server/adhoc.cpp`), checked by the MCPTT adhoc lab (AH-18); no MCVideo lab, as the Linux client has no MCVideo call on an alert's ad hoc group |

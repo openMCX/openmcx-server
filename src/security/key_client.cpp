@@ -17,7 +17,10 @@
 #include <openssl/rand.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
+#include <functional>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <set>
@@ -100,6 +103,18 @@ void clear_identity(keying::IdentityKeys &id) {
 }
 
 //------------------------------------------------------------------------------
+// RFC 3830 section 5.4: the allowable clock skew, "set by the local policy": security.mikey_clock_skew_s (seconds),
+// keying::default_mikey_clock_skew_s when absent (default pending maintainer choice, no spec value).
+std::uint32_t clock_skew(const nlohmann::json &security) {
+  if (!security.contains("mikey_clock_skew_s")) return keying::default_mikey_clock_skew_s;
+  const auto &value = security.at("mikey_clock_skew_s");
+  require(value.is_number_integer() && value.get<std::int64_t>() >= 0 &&
+              value.get<std::int64_t>() <= std::numeric_limits<std::uint32_t>::max(),
+          "security.mikey_clock_skew_s must be a number of seconds");
+  return value.get<std::uint32_t>();
+}
+
+//------------------------------------------------------------------------------
 // Helper: an unambiguous replay cache key of an identity and a key identifier.
 std::string cache_key(std::string_view identity, std::uint32_t id) {
   return std::to_string(identity.size()) + ":" + std::string(identity) + ":" + std::to_string(id);
@@ -117,6 +132,13 @@ struct KeyClient::Impl {
   std::string issuer, client_id, client_secret, client_scope;
   std::uint64_t bearer_expiry = 0;
   keying::KeyParameterWireProfile profile;
+  // RFC 3830 section 5.4: the allowable clock skew of received I_MESSAGEs (clock_skew).
+  std::uint32_t skew;
+  // TS 33.180 annex D.2.4: whether a KeyProvision request names the provisioned identity in a "keyprov" subdirectory
+  // ("Optionally, the Request-URI of the POST request may contain a specific user or group URI");
+  // security.kms_keyprov_identity_path, true by default (the form used so far).
+  bool keyprov_identity_path = true;
+  std::function<void(std::string_view)> warn;
   keying::PublicParameters parameters;
   keying::IdentityKeys identity;
   bool provisioned = false;
@@ -137,7 +159,11 @@ struct KeyClient::Impl {
   // Helper: checks the KMS URIs and identity and reads the key parameter wire profile.
   Impl(const HttpClient &client, const nlohmann::json &security, std::string user, std::string account)
       : http(client), kms_uri(security.at("kms_uri").get<std::string>()), user_uri(std::move(user)),
-        account_uri(account.empty() ? user_uri : std::move(account)), profile{} {
+        account_uri(account.empty() ? user_uri : std::move(account)), profile{}, skew(clock_skew(security)) {
+    if (const auto option = security.find("kms_keyprov_identity_path"); option != security.end()) {
+      require(option->is_boolean(), "kms_keyprov_identity_path must be a boolean");
+      keyprov_identity_path = option->get<bool>();
+    }
     require(kms_uri.starts_with("https://") && kms_uri.size() > 8 &&
                 kms_uri.find_first_of("\r\n\t?#") == std::string::npos && kms_uri.find('@') == std::string::npos,
             "KMS must be a direct HTTPS URI without credentials, query or fragment");
@@ -161,8 +187,12 @@ struct KeyClient::Impl {
 
   // TS 33.180 annexes D.2.3 and D.2.4: the request URI of a KMS operation ("init" or "keyprov") at the configured KMS.
   std::string request_uri(std::string_view operation) const {
-    // TS 33.180 annex D.2.4: the key provisioning request names the identity: the user's MCPTT ID or, for its MCData
-    // client, its MCData ID; the public service identity of an MC server, or the GMS URI.
+    // TS 33.180 annex D.2.4: "…/keymanagement/identity/v1/keyprov", optionally with the identity to provision in a
+    // subdirectory: the user's MCPTT ID or, for its MCData client, its MCData ID; the public service identity of an
+    // MC server, or the GMS URI. Without kms_keyprov_identity_path the plain form is used for the identity the
+    // access token names (account_uri); another of the user's MC service IDs can only be named in the subdirectory.
+    if (operation == "keyprov" && !keyprov_identity_path && user_uri == account_uri)
+      return kms_uri + "/keymanagement/identity/v1/keyprov";
     if (operation == "keyprov") return kms_uri + "/keymanagement/identity/v1/keyprov/" + url_encode(user_uri);
     return kms_uri + "/keymanagement/identity/v1/" + std::string(operation);
   }
@@ -187,6 +217,12 @@ struct KeyClient::Impl {
     const auto answer = nlohmann::json::parse(response.body);
     const auto token = answer.at("access_token").get<std::string>();
     const auto lifetime = answer.at("expires_in").get<std::int64_t>();
+    // RFC 6749 section 7.1 ("The client MUST NOT use an access token if it does not understand the token type") with
+    // TS 33.180 annex B.10: a "bearer" token (RFC 6749 section 5.1: "Value is case insensitive").
+    auto type = answer.value("token_type", std::string{});
+    std::transform(type.begin(), type.end(), type.begin(),
+                   [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    require(type == "bearer", "client credentials token not of the bearer type");
     require(!token.empty() && token.find_first_of("\r\n") == std::string::npos && lifetime > 0,
             "invalid client credentials token");
     clear(bearer);
@@ -250,6 +286,14 @@ struct KeyClient::Impl {
     return (identity.period_number + 1) * period.seconds + period.offset - ntp_epoch;
   }
 
+  // RFC 3830 section 6.11: "RAND len ... SHOULD be at least 16"; a shorter RAND is accepted (a SHOULD, not a MUST)
+  // and reported.
+  void check_random(const keying::KeyMessage &key, std::string_view sender) const {
+    if (key.random.size() < 16 && warn)
+      warn("MIKEY RAND of " + std::to_string(key.random.size()) + " octets from " + std::string(sender) +
+           " accepted (RFC 3830 section 6.11: SHOULD be at least 16)");
+  }
+
   // TS 33.180 annex E.6.10: forgets the replay entries and group keys past their expiry time, wiping the keys.
   void remove_expired(std::uint64_t now_unix) {
     std::erase_if(received_csks, [&](const auto &entry) { return entry.second <= now_unix; });
@@ -274,6 +318,13 @@ KeyClient::KeyClient(const HttpClient &http, const nlohmann::json &security, std
 //------------------------------------------------------------------------------
 // Helper: wipes the secrets.
 KeyClient::~KeyClient() = default;
+
+//------------------------------------------------------------------------------
+// Helper: sets where the warnings about accepted keys go.
+void KeyClient::set_warning_handler(std::function<void(std::string_view)> handler) {
+  std::lock_guard lock(impl_->mutex);
+  impl_->warn = std::move(handler);
+}
 
 //------------------------------------------------------------------------------
 // TS 33.180 clause 5.3.3: provisions the identity keys with the user's access token.
@@ -397,7 +448,8 @@ keying::KeyMessage KeyClient::accept_signalling_key(std::string_view expected, s
   auto now = now_ntp();
   impl_->ensure_provisioned(now);
   now = now_ntp();
-  constexpr std::uint32_t skew = 300;
+  // RFC 3830 section 5.4: the allowable clock skew, set by the local policy (clock_skew).
+  const auto skew = impl_->skew;
   auto key = keying::open_mikey(impl_->parameters, impl_->identity, sender, message, now, skew, &impl_->profile);
   require((key.csb_id >> 28) == purpose && key.properties && key.properties->type == purpose,
           "received key is not of the expected purpose");
@@ -410,25 +462,28 @@ keying::KeyMessage KeyClient::accept_signalling_key(std::string_view expected, s
 }
 
 //------------------------------------------------------------------------------
-// TS 33.180 clause 5.4 and annex E.4: opens a CSK upload I_MESSAGE: the key must be an active CSK that expires within
-// the identity key period, and each CSK is accepted once.
+// TS 33.180 clause 5.4 and annex E.4: opens a CSK upload I_MESSAGE: the key must be an active CSK (annex E.6.4,
+// E.6.9, E.6.10; Expiry Time 0: "A value of 0 shall imply the key shall not expire"), and each CSK is accepted once.
+// Annex E.6.10 bounds a CSK's use by its own Expiry Time only; no clause ties it to the identity key period.
 keying::KeyMessage KeyClient::accept_csk(std::string_view sender, std::string_view encoded) {
   const auto message = decode_base64(encoded);
   std::lock_guard lock(impl_->mutex);
   auto now = now_ntp();
   impl_->ensure_provisioned(now);
   now = now_ntp();
-  auto key = keying::open_mikey(impl_->parameters, impl_->identity, sender, message, now, 300, &impl_->profile);
+  const auto skew = impl_->skew;
+  auto key = keying::open_mikey(impl_->parameters, impl_->identity, sender, message, now, skew, &impl_->profile);
   require((key.csb_id >> 28) == 2 && key.properties && key.properties->type == 2, "received key is not a CSK");
   keying::require_active(key, {}, now - ntp_epoch);
-  require(key.properties->expiry_unix_seconds != 0 &&
-              key.properties->expiry_unix_seconds <= impl_->identity_expiry_unix(),
-          "CSK lifetime exceeds identity key period");
+  impl_->check_random(key, sender);
+  const auto expiry = key.properties->expiry_unix_seconds;
   impl_->remove_expired(now - ntp_epoch);
   const auto identity = cache_key(sender, key.csb_id);
   require(!impl_->received_csks.contains(identity), "duplicate or replayed CSK");
   require(impl_->received_csks.size() < maximum_cache_entries, "CSK replay cache capacity reached");
-  impl_->received_csks.emplace(identity, key.properties->expiry_unix_seconds);
+  // A CSK without expiry: a replayed I_MESSAGE stays fresh for the timestamp window (the RFC 3830 section 5.4 clock
+  // skew either side); remember it that long.
+  impl_->received_csks.emplace(identity, expiry ? expiry : key.ntp_seconds - ntp_epoch + 2 * skew);
   return key;
 }
 
@@ -503,7 +558,8 @@ std::pair<std::string, std::string> KeyClient::receiver(std::string_view encoded
 
 //------------------------------------------------------------------------------
 // TS 33.180 clause 7.2.2 and annex E.3: opens a PCK I_MESSAGE from the expected (or any) initiator, keyed by any KMS
-// whose certificate is held; each PCK is accepted once within the timestamp window.
+// whose certificate is held; each PCK is accepted once within the timestamp window. It may carry key parameters
+// (annex E.1.2: "a key parameter payload (specified in Annex E.6)"); then they must be a PCK's and allow its use now.
 std::pair<keying::KeyMessage, std::string> KeyClient::accept_pck(std::string_view expected, std::string_view encoded) {
   const auto message = decode_base64(encoded);
   const auto sender = keying::mikey_initiator(message);
@@ -512,10 +568,14 @@ std::pair<keying::KeyMessage, std::string> KeyClient::accept_pck(std::string_vie
   auto now = now_ntp();
   impl_->ensure_provisioned(now);
   now = now_ntp();
-  constexpr std::uint32_t skew = 300;
-  auto key = keying::open_mikey(impl_->parameters, impl_->lookup(), impl_->identity, sender, message, now, skew);
-  require((key.csb_id >> 28) == 1 && !key.properties, "received key is not a PCK");
-  // A replayed I_MESSAGE stays fresh for the timestamp window; remember it that long.
+  const auto skew = impl_->skew;
+  auto key = keying::open_mikey(impl_->parameters, impl_->lookup(), impl_->identity, sender, message, now, skew,
+                                &impl_->profile);
+  require((key.csb_id >> 28) == 1 && (!key.properties || key.properties->type == 1), "received key is not a PCK");
+  if (key.properties) keying::require_active(key, {}, now - ntp_epoch);
+  impl_->check_random(key, sender);
+  // A replayed I_MESSAGE stays fresh for the timestamp window (the RFC 3830 section 5.4 clock skew either side);
+  // remember it that long.
   impl_->remove_expired(now - ntp_epoch);
   const auto identity = cache_key("pck:" + sender, key.csb_id);
   require(!impl_->received_csks.contains(identity), "duplicate or replayed PCK");
@@ -537,9 +597,10 @@ keying::KeyMessage KeyClient::open_group(std::string_view gms, std::string_view 
   now = now_ntp();
 
   const auto message = keying::parse_gktp_document(xml, group);
-  auto key =
-      keying::open_mikey(impl_->parameters, impl_->lookup(), impl_->identity, gms, message, now, 300, &impl_->profile);
+  auto key = keying::open_mikey(impl_->parameters, impl_->lookup(), impl_->identity, gms, message, now, impl_->skew,
+                                &impl_->profile);
   require((key.csb_id >> 28) == 0 && key.properties && key.properties->type == 0, "received key is not a GMK");
+  impl_->check_random(key, gms);
   // A GMK not yet active is kept: ProtectedCall uses it from its Activation Time (TS 33.180 annex E.6.4).
   keying::require_unexpired(key, group, now - ntp_epoch);
   key.csb_id ^= derive_guk_id(key.key, 0, impl_->user_uri);

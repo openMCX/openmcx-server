@@ -206,15 +206,27 @@ void Xfrm::add(const SecurityAssociation &sa) {
   const auto selector = selector_of(sa, source, destination);
   if (sa.spi < 256) throw XfrmError("XFRM: SPI values 0 to 255 are reserved (RFC 4303 section 2.1)");
 
-  // Annex H "alg": only hmac-sha-1-96 is offered by this UE (TS 33.203 clause 7.1 with annex I: IK_ESP of 160 bits);
-  // its XFRM name is hmac(sha1), truncated to 96 bits (RFC 2404).
-  if (sa.alg != "hmac-sha-1-96" || sa.integrity_key.size() != 20)
-    throw XfrmError("XFRM: unsupported integrity algorithm or key: " + sa.alg);
-  // Annex H "ealg": aes-cbc with CK_ESP of 128 bits (RFC 3602), or the NULL encryption algorithm (RFC 2410) when the
-  // P-CSCF names none (clause 7.2).
+  // Annex H with annex I: the kernel transforms and their keys. AES-GCM (RFC 4106, 16-octet ICV) and AES-GMAC
+  // (RFC 4543) are AEAD transforms keyed with CK_ESP or IK_ESP followed by the salt; HMAC-SHA-1-96 (RFC 2404) and
+  // HMAC-SHA2-256-128 (RFC 4868) authenticate, with AES-CBC (RFC 3602) or the NULL algorithm (RFC 2410).
+  const bool gcm = (sa.ealg == "aes-gcm" || sa.ealg == "aes-gcm-us") && sa.alg == "null";
+  const bool gmac = (sa.alg == "aes-gmac" || sa.alg == "aes-gmac-us") && sa.ealg == "null";
+  const char *auth_name = sa.alg == "hmac-sha-1-96"       ? "hmac(sha1)"
+                          : sa.alg == "hmac-sha2-256-128" ? "hmac(sha256)"
+                                                          : nullptr;
+  const unsigned auth_trunc = sa.alg == "hmac-sha-1-96" ? 96 : 128;
+  const std::size_t auth_key = sa.alg == "hmac-sha-1-96" ? 20 : 32;
   const bool null_encryption = sa.ealg == "null";
-  if (!null_encryption && (sa.ealg != "aes-cbc" || sa.encryption_key.size() != 16))
-    throw XfrmError("XFRM: unsupported encryption algorithm or key: " + sa.ealg);
+  if (gcm || gmac) {
+    const auto &key = gcm ? sa.encryption_key : sa.integrity_key;
+    if (key.size() != 16 || sa.salt.size() != 4)
+      throw XfrmError("XFRM: unsupported AEAD key or salt: " + sa.alg + "/" + sa.ealg);
+  } else {
+    if (auth_name == nullptr || sa.integrity_key.size() != auth_key)
+      throw XfrmError("XFRM: unsupported integrity algorithm or key: " + sa.alg);
+    if (!null_encryption && (sa.ealg != "aes-cbc" || sa.encryption_key.size() != 16))
+      throw XfrmError("XFRM: unsupported encryption algorithm or key: " + sa.ealg);
+  }
 
   Request request(XFRM_MSG_NEWSA, NLM_F_CREATE | NLM_F_EXCL);
   auto *info = request.body<xfrm_usersa_info>();
@@ -230,21 +242,33 @@ void Xfrm::add(const SecurityAssociation &sa) {
   info->lft.soft_byte_limit = info->lft.hard_byte_limit = XFRM_INF;
   info->lft.soft_packet_limit = info->lft.hard_packet_limit = XFRM_INF;
 
-  std::array<unsigned char, sizeof(xfrm_algo_auth) + 64> auth_buffer{};
-  auto *auth = reinterpret_cast<xfrm_algo_auth *>(auth_buffer.data());
-  std::strncpy(auth->alg_name, "hmac(sha1)", sizeof(auth->alg_name) - 1);
-  auth->alg_key_len = static_cast<unsigned>(sa.integrity_key.size() * 8);
-  auth->alg_trunc_len = 96;
-  std::memcpy(auth->alg_key, sa.integrity_key.data(), sa.integrity_key.size());
-  request.attribute(XFRMA_ALG_AUTH_TRUNC, auth, sizeof(xfrm_algo_auth) + sa.integrity_key.size());
+  if (gcm || gmac) {
+    const auto &key = gcm ? sa.encryption_key : sa.integrity_key;
+    std::array<unsigned char, sizeof(xfrm_algo_aead) + 64> aead_buffer{};
+    auto *aead = reinterpret_cast<xfrm_algo_aead *>(aead_buffer.data());
+    std::strncpy(aead->alg_name, gcm ? "rfc4106(gcm(aes))" : "rfc4543(gcm(aes))", sizeof(aead->alg_name) - 1);
+    aead->alg_key_len = static_cast<unsigned>((key.size() + sa.salt.size()) * 8);
+    aead->alg_icv_len = 128;
+    std::memcpy(aead->alg_key, key.data(), key.size());
+    std::memcpy(aead->alg_key + key.size(), sa.salt.data(), sa.salt.size());
+    request.attribute(XFRMA_ALG_AEAD, aead, sizeof(xfrm_algo_aead) + key.size() + sa.salt.size());
+  } else {
+    std::array<unsigned char, sizeof(xfrm_algo_auth) + 64> auth_buffer{};
+    auto *auth = reinterpret_cast<xfrm_algo_auth *>(auth_buffer.data());
+    std::strncpy(auth->alg_name, auth_name, sizeof(auth->alg_name) - 1);
+    auth->alg_key_len = static_cast<unsigned>(sa.integrity_key.size() * 8);
+    auth->alg_trunc_len = auth_trunc;
+    std::memcpy(auth->alg_key, sa.integrity_key.data(), sa.integrity_key.size());
+    request.attribute(XFRMA_ALG_AUTH_TRUNC, auth, sizeof(xfrm_algo_auth) + sa.integrity_key.size());
 
-  std::array<unsigned char, sizeof(xfrm_algo) + 64> crypt_buffer{};
-  auto *crypt = reinterpret_cast<xfrm_algo *>(crypt_buffer.data());
-  std::strncpy(crypt->alg_name, null_encryption ? "ecb(cipher_null)" : "cbc(aes)", sizeof(crypt->alg_name) - 1);
-  const std::size_t crypt_key = null_encryption ? 0 : sa.encryption_key.size();
-  crypt->alg_key_len = static_cast<unsigned>(crypt_key * 8);
-  if (crypt_key != 0) std::memcpy(crypt->alg_key, sa.encryption_key.data(), crypt_key);
-  request.attribute(XFRMA_ALG_CRYPT, crypt, sizeof(xfrm_algo) + crypt_key);
+    std::array<unsigned char, sizeof(xfrm_algo) + 64> crypt_buffer{};
+    auto *crypt = reinterpret_cast<xfrm_algo *>(crypt_buffer.data());
+    std::strncpy(crypt->alg_name, null_encryption ? "ecb(cipher_null)" : "cbc(aes)", sizeof(crypt->alg_name) - 1);
+    const std::size_t crypt_key = null_encryption ? 0 : sa.encryption_key.size();
+    crypt->alg_key_len = static_cast<unsigned>(crypt_key * 8);
+    if (crypt_key != 0) std::memcpy(crypt->alg_key, sa.encryption_key.data(), crypt_key);
+    request.attribute(XFRMA_ALG_CRYPT, crypt, sizeof(xfrm_algo) + crypt_key);
+  }
   transact(request.header(), request.length(), false);
 
   try {
@@ -289,9 +313,10 @@ void Xfrm::add(const SecurityAssociation &sa) {
     char spi[16];
     std::snprintf(spi, sizeof(spi), "0x%08x", sa.spi);
     debug_line("ESP SA " + sa.source + ":" + std::to_string(sa.source_port) + " -> " + sa.destination + ":" +
-               std::to_string(sa.destination_port) + " spi " + spi + " auth hmac-sha-1-96 key " +
-               hex(sa.integrity_key) + " enc " + (null_encryption ? "null" : "aes-cbc") + " key " +
-               (null_encryption ? std::string("-") : hex(sa.encryption_key)));
+               std::to_string(sa.destination_port) + " spi " + spi + " auth " + sa.alg + " key " +
+               (sa.integrity_key.empty() ? std::string("-") : hex(sa.integrity_key)) + " enc " + sa.ealg + " key " +
+               (sa.encryption_key.empty() ? std::string("-") : hex(sa.encryption_key)) +
+               (sa.salt.empty() ? std::string() : " salt " + hex(sa.salt)));
   }
 }
 

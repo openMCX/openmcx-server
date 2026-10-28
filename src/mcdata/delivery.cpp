@@ -71,7 +71,12 @@ void DataServer::deliver(const User &target, mcdata::Info info, const std::vecto
   info.client_id.clear();
   std::vector<BodyPart> parts{{mcdata::info_mime, mcdata::info_xml(info)}};
   parts.insert(parts.end(), binary.begin(), binary.end());
-  parts = seal_for(target.sip, std::move(parts));
+  try {
+    parts = seal_for(target.sip, std::move(parts));
+  } catch (const CskExpired &error) {
+    // TS 33.180 annex E.6.10: the recipient's CSK may no longer be used: this message is not sent (never in the clear).
+    return csk_expired_not_sent(target.id, "message", error);
+  }
   const auto boundary = "mcdata-" + random_id();
 
   // TS 24.282 clause 9.2.2.4.1.1 steps 2 and 3 and clause 10.2.4.4.1 steps 2 and 3: the SDS or FD service

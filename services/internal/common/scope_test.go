@@ -93,3 +93,37 @@ func TestCMSDocumentsRequireTheirServiceScope(test *testing.T) {
 		}
 	}
 }
+
+// ------------------------------------------------------------------------------
+// RFC 6750 sections 2.1, 3 and 3.1 with TS 24.482 annex A.2.3 step 1: no credentials give 403 with the Bearer
+// challenge and no error code; another scheme 401 with no error code; an invalid token 401 with
+// error="invalid_token"; the auth-scheme matches in any case (RFC 7235 section 2.1).
+func TestBearerChallenges(test *testing.T) {
+	cfg, key := testConfig(), testKey(test)
+	handler := roleHandler(test, RoleCMS, cfg, key, test.TempDir())
+	path := "/xcap-root/org.3gpp.mcptt.service-config/global/service-config.xml"
+	valid := scopedToken(test, cfg, key, "alice", "openid "+scopePTTConfig)
+	for _, tc := range []struct {
+		authorization string
+		status        int
+		challenge     string
+	}{
+		{"", http.StatusForbidden, `Bearer realm="mcx-common"`},
+		{"Basic YWxpY2U6c2VjcmV0", http.StatusUnauthorized, `Bearer realm="mcx-common"`},
+		{"Bearer", http.StatusUnauthorized, `Bearer realm="mcx-common"`},
+		{"Bearer not.a.token", http.StatusUnauthorized, `Bearer realm="mcx-common", error="invalid_token"`},
+		{"bearer " + valid, http.StatusOK, ""},
+		{"BEARER  " + valid, http.StatusOK, ""},
+	} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		if tc.authorization != "" {
+			request.Header.Set("Authorization", tc.authorization)
+		}
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, request)
+		if rr.Code != tc.status || rr.Header().Get("WWW-Authenticate") != tc.challenge {
+			test.Fatalf("%.20q: %d %q, want %d %q", tc.authorization, rr.Code, rr.Header().Get("WWW-Authenticate"), tc.status,
+				tc.challenge)
+		}
+	}
+}

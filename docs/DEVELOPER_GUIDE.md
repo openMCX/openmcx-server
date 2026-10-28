@@ -278,7 +278,8 @@ TS 24.379 clause 7.3.3 (TS 24.281 clause 7.3.3), with TS 24.379 clause 6.6.2.
    the XML bodies and decrypts their protected content with it (403 with Warning 139 or 140 on failure).
 4. The asserted identity must equal the From URI; token and client ID must be present.
 5. `service_claims` (`src/server/parts/common_services.cpp`) checks the token (TS 33.180 annex B.11.2): its RS256
-   signature by a key of the IdMS's JWKS, `iss`, `aud` (the MC servers' audience), `exp`, the claims of tables
+   signature by a key of the IdMS's JWKS, `iss` and `aud` (the MC servers' audience) where the token has them
+   (table B.2.2.2-1 requires neither; RFC 7519 sections 4.1.1 and 4.1.3), `exp`, the claims of tables
    B.2.2.2-1 and B.2.2.3-1 (`scope`, which must hold the service's scope, `client_id`, the MC service ID claim). A
    token of OpenMCX's IdMS (it has `mc_id`) binds the SIP URI (`sip_uri`) and the MC client ID (`mc_client_id`) as
    well, and `token_subject_valid` (a service hook) checks its subject; another IdMS's token has the annex B claims
@@ -565,7 +566,7 @@ OpenMCX applies TS 33.180 in four layers. Where each applies in the request pipe
 |---|---|---|---|
 | Transport | TLS certificates | SIP over TLS (port 5061) between clients, SIP core and servers; HTTPS to the common services; Diameter over TLS | `SipTlsConfig`, `HttpClient` (`src/security/http.cpp`: the configured CA only, or with the system's CAs as well for IdMS, `HttpTrust`); `--disable-tls` gives clear SIP over TCP for capture-based tests only |
 | XML confidentiality | XPK: the client's CSK towards a client, the SPK towards a peer server | The SIP engine's body filters: `McServer::protect_outgoing` just before sending, `protect_incoming` on receipt, before `incoming` sees the request (TS 24.379 clauses 6.6.2.3.2 and 6.6.1.4) | `src/server/xml_protection.cpp`, `src/security/xml_security.cpp` (`xmlsec::encrypt`, `decrypt`, the per-service `Profile` of sensitive elements) |
-| XML integrity | integrity key derived from the XPK | Same filters: `sign_parts` adds an `application/vnd.3gpp.mcptt-signed+xml` body; `verify_parts` checks and removes it before decryption (TS 24.379 clause 6.6.3) | `src/server/xml_protection.cpp` |
+| XML integrity | integrity key derived from the XPK | Same filters: `sign_parts` adds an `application/vnd.3gpp.mcptt-signed+xml` body over every XML MIME body; `verify_parts` checks and removes it before decryption (TS 24.379 clause 6.6.3) | `src/server/xml_protection.cpp`, `src/security/xml_security.cpp` (`xmlsec::sign`, `verify`, `canonicalize`) |
 | Media and media plane control | GMK (group media, distributed in GKTP documents by the GMS), PCK (private calls, end to end), CSK (floor and transmission control, SRTCP), SPK (between servers) | `ProtectedCall` per user: `unprotect_floor` in `floor_packet`, `protect_floor` in `transmit_floor` and `send_transmission`; group SRTP is relayed unchanged (`audio_packet`) | `include/mcx/protected_call.hpp`, `src/security/security.cpp` (AEAD_AES_128_GCM), `src/security/keying.cpp` (MIKEY-SAKKE, ECCSI), `src/security/key_client.cpp` |
 
 - **CSK upload.** A client uploads its CSK in the service authorisation PUBLISH (`open_with_uploaded_csk`); the server
@@ -576,9 +577,17 @@ OpenMCX applies TS 33.180 in four layers. Where each applies in the request pipe
 - **Refusals.** Content that cannot be verified or decrypted is refused with 403 and Warning 139 or 140 (section 3.3);
   an I_MESSAGE that fails authentication with 488 and Warning 136.
 - **MCData.** `src/mcdata/protection.cpp`: hop-by-hop signalling protection under the CSK (`open_from`, `seal_for`,
-  `mcdata.protect_signalling`), XML confidentiality (`mcdata.confidentiality_protection`), and payloads protected end
-  to end by the clients, which the server never opens (the protected bit of the DATA PAYLOAD). XML integrity is not
-  implemented for MCData.
+  `mcdata.protect_signalling`), XML confidentiality, and payloads protected end to end by the clients, which the
+  server never opens (the protected bit of the DATA PAYLOAD), and XML integrity, both as the MCData service
+  configuration document's `<signalling-protection>` enables them (`DataServer::signalling_protection_`): the SIP
+  engine's body filters `DataServer::sign_outgoing` and `verify_incoming`,
+  the service authorisation that uploads the CSK verified in `authorise_csk`.
+- **Signatures.** Every XML MIME body is signed (TS 33.180 clause 9.3.5), with Canonical XML 1.0; a verifier
+  canonicalises SignedInfo in its document by its CanonicalizationMethod (Canonical XML 1.0 or 1.1, Exclusive XML
+  Canonicalization, with or without comments), refuses a SignedInfo without one and an HMACOutputLength below 128
+  bits, and %-decodes the cid URLs (`xmlsec::sign`, `verify`).
+- **CSK key download.** `csk-download <MC service ID>` on the control FIFO of the MCPTT or MCVideo server
+  (`McServer::send_csk_download`, TS 24.379 clause 7.3.7); the server uses the new CSK after the client's 200 (OK).
 - **Wire profile.** TS 33.180 annex E.6 leaves the Key Parameters IEI unassigned; the protected labs use an explicitly
   configured value (`--key-parameters-iei 0x79` in `tools/regress.py`). See the [limitations](LIMITATIONS.md).
 
@@ -597,6 +606,15 @@ OpenMCX applies TS 33.180 in four layers. Where each applies in the request pipe
 
 `config/generated/` holds secrets and certificates and is never committed. `tools/provision.py` refuses to
 overwrite an existing output; `tools/prepare-prearranged-test.py` generates a lab of its own in a new directory.
+`--certificate-days` sets how long the lab CA and the certificates it signs last (30 days by default).
+
+The validity and issue periods of OpenMCX's own CA are local policy (RFC 5280 sections 3.3 and 5.1.2.5); their
+defaults are pending the maintainer's choice (no spec value). In the `credentials` block of `site.json`
+(`CredentialsConfig`): `certificate_days`, the lifetime of an issued device certificate (30); `certificate_backdate_s`,
+how far its notBefore lies before its issue (300); `crl_validity_days`, the time from a CRL's issue to its nextUpdate
+(30); `crl_refresh_hours`, how often the CRL is issued again (24), at most the validity, since the next CRL is issued
+no later than nextUpdate (RFC 5280 section 5.1.2.5); `crl_clock_skew_s`, how far its thisUpdate lies before its issue
+(300).
 
 ### 7.2 A server's configuration
 
@@ -649,8 +667,17 @@ then reads:
 - `common`: the common services' URLs and the server's client ID and secret; `issuer` (default: `idms`), the IdMS
   whose access tokens the server accepts, and `token_audience` (default: `client_id`), their audience.
 - `diameter_config`: MCPTT-2; required by the MCPTT server (`McpttServer` constructor), not used by MCVideo.
-- `security`: the KMS client (`KeyClient`) and the switches `confidentiality_protection` and `integrity_protection`
-  of the XML protection (`McServer::xml_protection`, `integrity_protection`); without the block there is neither.
+- `security`: the KMS client (`KeyClient`). The XML protection is not configured here: `McServer::xml_protection` and
+  `integrity_protection` follow `<signalling-protection>` of the service configuration document as the CMS's
+  `/internal/service-config` gives it (an absent element enables it, TS 24.379 clauses 6.6.2.3.2 and 6.6.3.3.2), and
+  server-to-server protection follows `<allow-signalling-protection>`; until the document is read nothing whose
+  protection is unknown is sent (`protect_outgoing`), nor without the recipient's key.
+  `mikey_clock_skew_s` (also read by the Linux client's `KeyClient`) is the allowable clock skew of received MIKEY
+  I_MESSAGEs, which RFC 3830 section 5.4 leaves to local policy; 300 s by default, pending the maintainer's choice
+  (no spec value). `kms_keyprov_identity_path` (also read by the Linux client; default `true`) chooses the KMS
+  KeyProvision Request-URI of TS 33.180 annex D.2.4: `true` names the identity in a `keyprov` subdirectory, `false`
+  sends the plain `…/keyprov` for the identity of the access token (another MC service ID, such as the MCData ID,
+  is still named in the subdirectory).
 - `pcf`, `rx`: policy control ([QoS for call media](POLICY.md)).
 
 `DataServer` reads its own `mcdata` block (aggregation, redelivery, release, media, IP connectivity, protection

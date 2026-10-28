@@ -7,14 +7,16 @@
 
 Sensitive MCPTT XML (the access token of service authorisation, mcptt-info of group and private calls) is encrypted and
 decrypted by every client and server (TS 24.379 clause 6.6.2, TS 33.180 clause 9.3.4) and, with integrity protection
-configured, signed and verified (TS 24.379 clause 6.6.3, TS 33.180 clause 9.3.5); nothing is refused.
+configured, signed and verified (TS 24.379 clause 6.6.3, TS 33.180 clause 9.3.5); nothing is refused. In a single-server
+lab the server then replaces client-a's CSK by a key download (TS 24.379 clauses 7.3.7 and 7.2.5, TS 33.180 clause
+9.2.1.4) and a group call runs under the new CSK.
 
 Run against a fixture prepared with prepare-prearranged-test.py --protected --key-parameters-iei N --xml-protection
 (optionally --split and --private-call), after or instead of the call scenarios: it places a group call and, with
 --private-call, a private call, then checks that every client and server encrypted and decrypted MCPTT XML and refused
 none. Check IDs match tests/mcptt/XML_PROTECTION_TEST.md.
 
-Specifications: TS 24.379 V19.7.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
+Specifications: TS 24.379 V19.7.0 (Rel-19), TS 33.180 V19.5.0 (Rel-19).
 """
 
 import argparse
@@ -76,9 +78,10 @@ def main():
 
     # ------------------------------------------------------------------------------
     def command(role, text):
-        """Run one mcx-client command in the role's container."""
+        """Run one command in the role's container (an MCPTT server's or mcx-client's)."""
+        binary = 'openmcx-mcptt-server' if role.startswith(('mcptt-server', 'mcptt-part')) else 'mcx-client'
         run = subprocess.run(
-            cli + ['exec', '-T', role, 'mcx-client', '--config', f'/config/{role}.json', '--command', text],
+            cli + ['exec', '-T', role, binary, '--config', f'/config/{role}.json', '--command', text],
             capture_output=True,
             text=True,
             timeout=20,
@@ -155,6 +158,39 @@ def main():
                     for role in CLIENTS + servers
                 ),
             )
+        if 'mcptt-server' in servers:
+            # TS 24.379 clause 7.3.7: the participating function updates client-a's CSK; clause 7.2.5: the client
+            # replaces it (TS 33.180 clause 9.2.1.4) and answers 200, after which the server uses it (clause 5.8.2).
+            # In a split lab the participating function serving client-a sends the key download; the controlling
+            # function refuses it.
+            serving = next(
+                (
+                    server
+                    for server in servers
+                    if status(server).get('server_role') == 'participating'
+                    and ids['client-a'] in json.dumps(status(server))
+                ),
+                'mcptt-server',
+            )
+            old = status('client-a').get('csk_id')
+            command(serving, f"csk-download {ids['client-a']}")
+            wait(
+                'XP-07 client-a replaced its CSK with the one of the key download',
+                lambda: status('client-a').get('csk_id') not in (None, old),
+            )
+            command('client-a', 'call')
+            wait('XP-07 a group call under the new CSK', lambda: active(['client-a', 'client-b']), 30)
+            # A plain call offers no implicit floor request (TS 24.380 clause 6.2.1): client-a asks for the floor.
+            command('client-a', 'ptt /artifacts/speech/alpha.wav')
+            wait(
+                'XP-07 floor control and protected XML under the new CSK',
+                lambda: active(['client-a', 'client-b'])
+                and status('client-a').get('floor_state') == 'HasPermission'
+                and status('client-b').get('floor_owner') == ids['client-a'],
+                30,
+            )
+            command('client-a', 'hangup')
+            wait('XP-07 released', idle, 30)
         if not all(counters(role).get('refused', 0) == 0 for role in CLIENTS + servers):
             raise AssertionError('XP-05 content was refused: ' + json.dumps(snapshot()))
         checks.append('XP-05 no protected content was refused')

@@ -17,7 +17,7 @@ Which image runs which program, and which lab container runs it. How to build th
 | `openmcx-kamailio` | Kamailio 6.1.4: SIP core | development image | |
 | `openmcx-sipdb` | MySQL 8.0 for the SIP core | MySQL | |
 | `openmcx-dev` | build and development tools, also the capture container (tcpdump) | Ubuntu 24.04 | |
-| `openmcx-dev:0.3-ubuntu26.04` | the same on Ubuntu 26.04, for `tools/build-images --ubuntu 26.04` (docs/BUILD.md) | Ubuntu 26.04 | |
+| `openmcx-dev:0.4-ubuntu26.04` | the same on Ubuntu 26.04, for `tools/build-images --ubuntu 26.04` (docs/BUILD.md) | Ubuntu 26.04 | |
 | `openmcx-lint` | formatting and lint tools | development image | |
 
 Before the split every container ran the 1.6 GB `openmcx` image with all programs and their debug information.

@@ -17,6 +17,7 @@ namespace mcx {
 // its call; a disconnected leg leaves its call, which is released per TS 24.379 clause 6.3.8.1 (or clauses
 // 11.1.6.4.3 and 11.1.6.4.4 for an ambient listening call).
 void McServer::state(std::string_view dialog, SipCallState state, int code) {
+  const bool ended_here = state == SipCallState::disconnected && ended_here_.erase(std::string(dialog)) > 0;
   if (const auto relay = relays_.find(std::string(dialog)); relay != relays_.end()) {
     // A rejected INVITE disconnects before its final response is dispatched:
     // end the relay one round later, so that the response is relayed first.
@@ -31,7 +32,7 @@ void McServer::state(std::string_view dialog, SipCallState state, int code) {
   if (state == SipCallState::confirmed)
     leg_confirmed(leg, session);
   else if (state == SipCallState::disconnected)
-    leg_disconnected(leg, session, code);
+    leg_disconnected(leg, session, code, ended_here);
 }
 
 //------------------------------------------------------------------------------
@@ -92,10 +93,15 @@ void McServer::initial_floor_state(const std::shared_ptr<Leg> &leg, const std::s
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 6.3.8.1: a disconnected leg becomes inactive and leaves its call in a scheduled task.
-void McServer::leg_disconnected(const std::shared_ptr<Leg> &leg, const std::shared_ptr<Session> &session, int code) {
+void McServer::leg_disconnected(const std::shared_ptr<Leg> &leg, const std::shared_ptr<Session> &session, int code,
+                                bool ended_here) {
   leg->active = false;
   for (const auto &client : policy_clients_) client->close(leg->dialog);
   schedule([this, leg, session] { release_departed_leg(leg, session); });
+  // TS 24.379 clause 17.4.3.2 step 2A (TS 24.281 clause 22.4.3.2 step 2A): the member's own BYE (the dialog ended
+  // with 200 (OK), not by this server) leaves the ad hoc group call, after the 200 (OK) of step 2.
+  if (session->adhoc && code == 200 && !ended_here)
+    schedule([this, group = session->group, id = leg->user] { adhoc_alert_left(group, id); });
   event("participant_left", {{"user_id", leg->user}, {"status", code}, {"session_uri", session->uri}});
 }
 
@@ -118,7 +124,7 @@ void McServer::release_departed_leg(const std::shared_ptr<Leg> &leg, const std::
       for (auto &next : std::exchange(session->after_release, {})) schedule(std::move(next));
     } else
       for (const auto &other : session_legs(*session))
-        if (!other->awaiting_answer) sip_.bye(other->dialog);
+        if (!other->awaiting_answer) bye(other->dialog);
     if (session->dialogs.empty()) {
       sessions_.erase(session->group);
       event("ambient_call_released", {{"session_uri", session->uri}, {"reason", session->ambient_release_reason}});
@@ -128,7 +134,7 @@ void McServer::release_departed_leg(const std::shared_ptr<Leg> &leg, const std::
   }
   if (!session->chat && leg->origin &&
       (!session->established || session->broadcast || session->policy.value("end_when_initiator_leaves", true)))
-    for (const auto &other : session_legs(*session)) sip_.bye(other->dialog);
+    for (const auto &other : session_legs(*session)) bye(other->dialog);
   notify_conference(session, session->dialogs.empty());
   if (session->dialogs.empty()) {
     sessions_.erase(session->group);
@@ -136,7 +142,7 @@ void McServer::release_departed_leg(const std::shared_ptr<Leg> &leg, const std::
              (!session->adhoc || svc_.service == Service::mcvideo)) {
     // TS 24.379 clause 6.3.8.1 item 2 (one participant left) does not list MCPTT ad hoc group calls; TS 24.281
     // clause 6.3.8.1 item 2 applies to every MCVideo group call.
-    sip_.bye(*session->dialogs.begin());
+    bye(*session->dialogs.begin());
   } else
     complete_setup(session);
 }
@@ -157,8 +163,15 @@ void McServer::refresh_service_config(std::uint64_t now) {
   try {
     auto config = internal("cms", std::string("/internal/service-config?service=") + svc_.name);
     if (!config.is_object() || !config.contains("resource_priority")) return;
-    if (config != service_config_) event("service_config_read", Json{{"resource_priority", config.at("resource_priority")}});
+    auto protection = service_protection_of(config);
+    if (!protection) return;
+    if (config != service_config_)
+      event("service_config_read",
+            Json{{"resource_priority", config.at("resource_priority")},
+                 {"signalling_protection", config.at("signalling_protection")},
+                 {"protection_between_servers", config.at("protection_between_servers")}});
     service_config_ = std::move(config);
+    signalling_protection_ = protection;
   } catch (const std::exception &error) {
     if (!known) event("service_config_unavailable", Json{{"reason", error.what()}});
   }
@@ -279,7 +292,7 @@ void McServer::supervise_session(const std::string &group, const std::shared_ptr
        (*broadcast_owner != session->initiator && !session->broadcast_overriders.contains(*broadcast_owner)))) {
     session->broadcast_released = true;
     event("broadcast_transmission_complete", {{"group_id", group}, {"session_uri", session->uri}});
-    for (const auto &leg : session_legs(*session)) sip_.bye(leg->dialog);
+    for (const auto &leg : session_legs(*session)) bye(leg->dialog);
   }
   if (session->private_call && now - session->last_policy_check >= 2000) {
     session->last_policy_check = now;
@@ -319,7 +332,7 @@ void McServer::supervise_call_timers(const std::string &group, const std::shared
       tng2 ||
       (!session->private_call && !session->adhoc &&
        !sufficient_affiliation(group, session->members, session->policy, false)))
-    for (const auto &leg : session_legs(*session)) sip_.bye(leg->dialog);
+    for (const auto &leg : session_legs(*session)) bye(leg->dialog);
 }
 
 //------------------------------------------------------------------------------
@@ -635,10 +648,14 @@ void McServer::media_answered(std::string_view dialog, const MediaDescription &m
   if (it != legs_.end()) {
     try {
       const bool uncontrolled = it->second->session->no_media_control;
-      validate_remote(it->second->user, media, !it->second->session->ambient.empty(), uncontrolled);
+      // TS 24.380 clause 14.4: parameters the answer has that the offer lacked are discarded (an
+      // "mc_implicit_request" is never read from a leg this server offered).
+      validate_remote(it->second->user, media, uncontrolled);
       if ((media.control == MediaControl::none) != uncontrolled)
         throw std::runtime_error("media plane control answer differs from offer");
-      if (!uncontrolled && media.floor_ssrc == it->second->local.floor_ssrc)
+      // The user's SSRC for this server's messages (peer_floor_ssrc_refused); the leg's own, again in a later answer
+      // or in the negotiation of the user's offer, is the stream going on.
+      if (!uncontrolled && peer_floor_ssrc_refused(*it->second, media.floor_ssrc))
         throw std::runtime_error("directional floor SSRC collision");
       if (media.protected_media != it->second->local.protected_media ||
           (media.protected_media && (media.payload_type != it->second->local.payload_type ||
@@ -652,7 +669,7 @@ void McServer::media_answered(std::string_view dialog, const MediaDescription &m
     } catch (const std::exception &error) {
       event("sdp_rejected", {{"reason", error.what()}});
       auto id = std::string(dialog);
-      schedule([this, id] { sip_.bye(id); });
+      schedule([this, id] { bye(id); });
     }
   }
 }
@@ -664,6 +681,7 @@ void McServer::media_answered(std::string_view dialog, const MediaDescription &m
 void McServer::run() {
   if (cfg_.contains("security")) {
     keys_ = std::make_unique<KeyClient>(http_, cfg_.at("security"), cfg_.at(svc_.name).at("service_uri"));
+    keys_->set_warning_handler([](std::string_view text) { event("key_warning", {{"reason", text}}); });
     provision_server_keys(*keys_, cfg_);
   }
   policy_start();
@@ -683,8 +701,8 @@ void McServer::run() {
       if (command == "quit")
         stopping = 1;
       else if (command == "hangup") {
-        for (auto &[dialog, leg] : legs_) sip_.bye(dialog);
-        for (auto &[dialog, relay] : relays_) sip_.bye(dialog);
+        for (auto &[dialog, leg] : legs_) bye(dialog);
+        for (auto &[dialog, relay] : relays_) bye(dialog);
       } else if (command.starts_with("ambient-release ")) {
         // Administrator-triggered release (TS 24.379 clause 11.1.6.4.3) of the calls
         // listening to one user, or of every ambient listening call.
@@ -699,6 +717,8 @@ void McServer::run() {
         } catch (const std::exception &error) {
           event("seal_command_failed", {{"command", command}, {"reason", error.what()}});
         }
+      } else if (command.starts_with("csk-download ")) {
+        send_csk_download(command.substr(13));
       } else if (command.starts_with("regroup-remove ")) {
         // TS 24.379 clause 16.2.3.3: the controlling function decides to remove a regroup.
         const auto id = command.substr(15);
@@ -736,8 +756,8 @@ void McServer::run() {
       }
     tick();
   }
-  for (auto &[dialog, leg] : legs_) sip_.bye(dialog);
-  for (auto &[dialog, relay] : relays_) sip_.bye(dialog);
+  for (auto &[dialog, leg] : legs_) bye(dialog);
+  for (auto &[dialog, relay] : relays_) bye(dialog);
   for (int index = 0; index < 20; index++) sip_.poll(std::chrono::milliseconds(10));
   policy_stop();
   sip_.stop();

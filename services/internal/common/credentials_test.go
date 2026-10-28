@@ -222,6 +222,10 @@ func TestCredentialService(test *testing.T) {
 	if code, _ := certify(request(weak, "x"), token); code != http.StatusBadRequest {
 		test.Fatalf("a 1024-bit RSA key: %d", code)
 	}
+	// TS 33.310 clause 6.1.1: "RSA public exponent shall be no less than 65537".
+	if code, _ := certify(request(smallExponentKey(test), "x"), token); code != http.StatusBadRequest {
+		test.Fatalf("an RSA key of public exponent 3: %d", code)
+	}
 	tampered := request(deviceKey, "x")
 	tampered[len(tampered)/2] ^= 0x10
 	if code, _ := certify(tampered, token); code != http.StatusBadRequest {
@@ -286,5 +290,59 @@ func TestRPCClientRefusesCAFileWithoutCertificate(test *testing.T) {
 	}
 	if _, err := rpcClient(&CredentialsConfig{CAFile: caFile}); err == nil {
 		test.Fatal("a CA file without a certificate was accepted")
+	}
+}
+
+// ------------------------------------------------------------------------------
+// Helper: smallExponentKey: a 2048-bit RSA key of public exponent 3 (rsa.GenerateKey always uses 65537).
+func smallExponentKey(test *testing.T) *rsa.PrivateKey {
+	test.Helper()
+	three, one := big.NewInt(3), big.NewInt(1)
+	prime := func() *big.Int {
+		for {
+			p, err := rand.Prime(rand.Reader, 1024)
+			if err != nil {
+				test.Fatal(err)
+			}
+			if new(big.Int).Mod(new(big.Int).Sub(p, one), three).Sign() != 0 {
+				return p
+			}
+		}
+	}
+	p, q := prime(), prime()
+	phi := new(big.Int).Mul(new(big.Int).Sub(p, one), new(big.Int).Sub(q, one))
+	key := &rsa.PrivateKey{PublicKey: rsa.PublicKey{N: new(big.Int).Mul(p, q), E: 3},
+		D: new(big.Int).ModInverse(three, phi), Primes: []*big.Int{p, q}}
+	key.Precompute()
+	return key
+}
+
+// ------------------------------------------------------------------------------
+// TS 33.310 clause 6.1.1: device keys of RSA at least 2048 bits and public exponent at least 65537, or EC P-256 or
+// P-384, are certified; others are not.
+func TestAcceptableDeviceKey(test *testing.T) {
+	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+	weak, _ := rsa.GenerateKey(rand.Reader, 1024)
+	p256, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	p224, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	for _, check := range []struct {
+		name string
+		key  any
+		want bool
+	}{{"RSA 2048, e 65537", &rsaKey.PublicKey, true}, {"RSA 2048, e 3", &smallExponentKey(test).PublicKey, false},
+		{"RSA 1024", &weak.PublicKey, false}, {"P-256", &p256.PublicKey, true}, {"P-224", &p224.PublicKey, false}} {
+		if acceptableDeviceKey(check.key) != check.want {
+			test.Errorf("%s: accepted %v", check.name, !check.want)
+		}
+	}
+	// The key of public exponent 3 signs a request the service can parse and check.
+	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: "x"}},
+		smallExponentKey(test))
+	if err != nil {
+		test.Fatal(err)
+	}
+	csr, err := x509.ParseCertificateRequest(der)
+	if err != nil || csr.CheckSignature() != nil || acceptableDeviceKey(csr.PublicKey) {
+		test.Fatalf("request of exponent 3: parse %v, accepted %v", err, err == nil && acceptableDeviceKey(csr.PublicKey))
 	}
 }

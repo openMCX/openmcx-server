@@ -44,9 +44,9 @@ enum class Warning {
   mikey_authentication_failed,           // code 136 in TS 24.379 and TS 24.281 table 4.4.2-2
   conference_subscription_not_allowed,   // code 138 in TS 24.379 and TS 24.281 table 4.4.2-2
   integrity_check_failed,                // code 139 in TS 24.379 and TS 24.281 table 4.4.2-2
-  no_signing_key, // code 139 in TS 24.379 table 4.4.2-2, with a text of its own (MCVideo: the table text)
-  decrypt_failed, // code 140 in TS 24.379 and TS 24.281 table 4.4.2-2
-  unknown_user,   // code 141 in TS 24.379 and TS 24.281 table 4.4.2-2
+  no_signing_key,                        // code 139 in TS 24.379 and TS 24.281 table 4.4.2-2 (the table text)
+  decrypt_failed,                        // code 140 in TS 24.379 and TS 24.281 table 4.4.2-2
+  unknown_user,                          // code 141 in TS 24.379 and TS 24.281 table 4.4.2-2
   force_auto_answer_not_authorised,      // code 143 in TS 24.379 and TS 24.281 table 4.4.2-2
   callee_not_authorised,                 // code 144 in TS 24.379 and TS 24.281 table 4.4.2-2
   called_party_unknown,                  // code 145 in TS 24.379 and TS 24.281 table 4.4.2-2
@@ -97,17 +97,16 @@ struct WarningEntry {
 };
 
 //------------------------------------------------------------------------------
-// TS 24.379 table 4.4.2-2: the MCPTT code and text of a warning. The MCPTT texts are those the server has always
-// sent, so MCPTT behaviour does not change; the MCVideo texts (mcvideo_warning) are TS 24.281 table 4.4.2-2 verbatim.
-// Deviations from TS 24.379 table 4.4.2-2, kept on purpose:
-// - 123: "joining an ongoing MCPTT group call" instead of the table's "MCPTT session already exists" (the text clients
-//   and labs have always matched).
-// - 139 no_signing_key: "no XPK for the signatures" is not in the table; it tells a missing signing key apart from a
-//   failed check (the table's 139 text is integrity_check_failed's).
-// - 169: "user not authorised to remove regroup in an emergency state" as TS 24.379 clause 16.2.3.2 (procedure)
-//   words it; the table says "user is not authorised to ...".
-// - 185: "user is not authorised to initiate the adhoc group call" as TS 24.379 clause 17.3.2.1.1 words it;
-//   the table says "user not authorised to ...".
+// TS 24.379 table 4.4.2-2: the MCPTT code and text of a warning; the MCVideo texts (mcvideo_warning) are TS 24.281
+// table 4.4.2-2. Where a procedure sets a warning text worded differently from its table, the text is the
+// procedure's, the procedure that sets it being the normative statement (the wording differences are recorded as
+// specification defects):
+// - 169: TS 24.379 clause 16.2.3.2 step 2a "169 user not authorised to remove regroup in an emergency state"
+//   (table: "user is not authorised to ...").
+// - 185: TS 24.379 clause 17.3.2.1.1 step 9 and TS 24.281 clause 22.3.2.1.1 step 9 "185 user is not authorised to
+//   initiate the adhoc group call" (tables: "user not authorised to ...").
+// no_signing_key (an XML signature with no XPK to verify it) carries the one 139 text of the tables, as
+// integrity_check_failed does.
 constexpr WarningEntry mcptt_warning(Warning warning) {
   switch (warning) {
   case Warning::function_not_allowed: return {100, "function not allowed due to "};
@@ -127,7 +126,7 @@ constexpr WarningEntry mcptt_warning(Warning warning) {
   case Warning::not_affiliated: return {120, "user is not affiliated to this group"};
   case Warning::group_call_join_not_authorised: return {121, "user is not authorised to join the group call"};
   case Warning::too_many_participants: return {122, "too many participants"};
-  case Warning::session_exists: return {123, "joining an ongoing MCPTT group call"}; // deviation, see above
+  case Warning::session_exists: return {123, "MCPTT session already exists"}; // also clause 17.4.7.1.1 step 5
   case Warning::max_private_calls: return {124, "maximum number of private calls reached"};
   case Warning::automatic_commencement_not_authorised:
     return {125, "user not authorised to make private call with automatic commencement"};
@@ -137,7 +136,7 @@ constexpr WarningEntry mcptt_warning(Warning warning) {
   case Warning::mikey_authentication_failed: return {136, "authentication of the MIKEY-SAKKE I_MESSAGE failed"};
   case Warning::conference_subscription_not_allowed: return {138, "subscription of conference events not allowed"};
   case Warning::integrity_check_failed: return {139, "integrity protection check failed"};
-  case Warning::no_signing_key: return {139, "no XPK for the signatures"}; // deviation, see above
+  case Warning::no_signing_key: return {139, "integrity protection check failed"};
   case Warning::decrypt_failed: return {140, "unable to decrypt XML content"};
   case Warning::unknown_user: return {141, "user unknown to the participating function"};
   case Warning::force_auto_answer_not_authorised: return {143, "not authorised to force auto answer"};
@@ -245,7 +244,9 @@ constexpr WarningEntry mcvideo_warning(Warning warning) {
   case Warning::max_authorizations: return {166, "maximum number of service authorizations reached"};
   case Warning::regroup_id_in_use: return {165, "group ID for regroup already in use"};
   case Warning::preconfigured_use_only: return {167, "call is not allowed on the preconfigured group"};
-  case Warning::adhoc_initiation_not_authorised: return {185, "user not authorised to initiate the adhoc group call"};
+  // TS 24.281 clause 22.3.2.1.1 step 9 (the procedure's wording, see above).
+  case Warning::adhoc_initiation_not_authorised:
+    return {185, "user is not authorised to initiate the adhoc group call"};
   case Warning::adhoc_not_supported: return {186, "the MCVideo system do not support adhoc group call"};
   case Warning::adhoc_participants_unknown: return {187, "can't determine the adhoc group participants"};
   case Warning::adhoc_participation_not_allowed: return {188, "user is not allowed to participate in adhoc group call"};

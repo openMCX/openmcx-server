@@ -19,6 +19,7 @@
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <arpa/inet.h>
 #include <charconv>
 #include <netinet/in.h>
@@ -30,9 +31,25 @@ namespace {
 // TS 24.229 table 7.7.1: reg-await-auth, the SIP level lifetime of the temporary set of security associations
 // (clause 5.1.1.5.1 step 2).
 constexpr std::uint64_t reg_await_auth_ms = 4 * 60 * 1000;
-// TS 33.203 clause 7.4.1a: the old set goes once the transactions started on it are over; RFC 3261 section 17.1.2.2
-// Timer F (64*T1) bounds a non-INVITE client transaction.
-constexpr std::uint64_t old_set_release_ms = 64 * 500;
+// TS 33.203 clause 7.4.1a: how often the old set's pending transactions are looked up in the transaction layer until
+// none is left (a polling interval, not a protocol timer: the condition is the spec's, "completed, or timed out").
+constexpr std::uint64_t old_set_poll_ms = 1000;
+
+// The key pjsip's transaction layer files a transaction under (RFC 3261 section 17.1.3 and 17.2.3 matching: role,
+// method except INVITE and ACK, branch).
+std::string transaction_key(bool client, const pjsip_method &method, const pj_str_t &branch) {
+  std::string key = client ? "c$" : "s$";
+  if (method.id != PJSIP_INVITE_METHOD && method.id != PJSIP_ACK_METHOD)
+    key.append(method.name.ptr, static_cast<std::size_t>(method.name.slen)).push_back('$');
+  key.append(branch.ptr, static_cast<std::size_t>(branch.slen));
+  return key;
+}
+
+// Whether the transaction of key still exists (has neither completed nor timed out).
+bool transaction_alive(const std::string &key) {
+  const pj_str_t view{const_cast<char *>(key.data()), static_cast<pj_ssize_t>(key.size())};
+  return pjsip_tsx_layer_find_tsx(&view, PJ_FALSE) != nullptr;
+}
 // TS 24.229 clauses 5.1.1.2.2 and 5.1.1.4.2: the SA lifetime is the registration's plus 30 seconds.
 constexpr std::uint64_t sa_lifetime_margin_ms = 30 * 1000;
 
@@ -215,6 +232,7 @@ void SipEngine::Impl::aka_start(const pj_sockaddr &local, const pjsip_host_port 
   aka_module.priority = PJSIP_MOD_PRIORITY_TSX_LAYER - 1;
   aka_module.on_rx_request = &Impl::aka_filter;
   aka_module.on_rx_response = &Impl::aka_filter;
+  aka_module.on_tx_request = &Impl::aka_sending;
   require_success(pjsip_endpt_register_module(endpoint, &aka_module), "register the IMS AKA receive filter");
   pj_timer_entry_init(&aka->refresh_timer, refresh_timer_id, this, &Impl::aka_timer);
   pj_timer_entry_init(&aka->pending_timer, pending_timer_id, this, &Impl::aka_timer);
@@ -244,10 +262,10 @@ void SipEngine::Impl::aka_stop() noexcept {
 }
 
 //------------------------------------------------------------------------------
-// TS 33.203 clause 7.1 rules 6 and SPI: a new Security-Client proposal: "ipsec-3gpp" with hmac-sha-1-96 and aes-cbc
-// (TS 37.579-1 table 5.5.2.13-1), ESP in transport mode, two fresh SPIs (not those of any existing SA, at least 256:
-// RFC 4303 section 2.1 reserves 1 to 255), a fresh protected client port (not in the SA_table, NOTE 16: random) and
-// the fixed protected server port (NOTE 10).
+// TS 33.203 clause 7.1 rules 6 and SPI: a new Security-Client proposal: "ipsec-3gpp", the SPIs and ports of the
+// mechanisms of aka::esp_offers (one per algorithm combination the UE supports), ESP in transport mode, two fresh
+// SPIs (not those of any existing SA, at least 256: RFC 4303 section 2.1 reserves 1 to 255), a fresh protected client
+// port (not in the SA_table, NOTE 16: random) and the fixed protected server port (NOTE 10).
 aka::SecMechanism SipEngine::Impl::aka_new_offer() const {
   std::set<std::uint32_t> spis;
   std::set<std::uint16_t> ports{5060, 5061, config.listen_port, config.aka.unprotected_port};
@@ -258,8 +276,8 @@ aka::SecMechanism SipEngine::Impl::aka_new_offer() const {
   }
   aka::SecMechanism offer;
   offer.name = "ipsec-3gpp";
-  offer.alg = "hmac-sha-1-96";
-  offer.ealg = "aes-cbc";
+  offer.alg = std::string(aka::supported_esp_algorithms().front().alg);
+  offer.ealg = std::string(aka::supported_esp_algorithms().front().ealg);
   offer.prot = "esp";
   offer.mod = "trans";
   for (auto *spi : {&offer.spi_c, &offer.spi_s}) {
@@ -321,12 +339,13 @@ void SipEngine::Impl::aka_register(unsigned expires, std::string_view content_ty
 void SipEngine::Impl::aka_send_register(AkaRoute route, bool new_offer, const std::string &authorization) {
   if (new_offer) {
     aka->offer = aka_new_offer();
-    aka->security_client = aka::format_sec_mechanism(aka->offer);
+    aka->security_client = aka::format_sec_mechanisms(aka::esp_offers(aka->offer));
   }
   AkaSet *set = route == AkaRoute::current   ? aka->current.get()
                 : route == AkaRoute::pending ? aka->pending.get()
                                              : nullptr;
   if (route != AkaRoute::unprotected && set == nullptr) throw std::logic_error("IMS AKA: no security association set");
+  aka->register_route = route;
 
   const auto registrar = "sip:" + identity_domain(config.identity);
   const auto &instance = config.outbound_instance;
@@ -511,6 +530,10 @@ void SipEngine::Impl::aka_install(AkaSet &set) {
   for (auto &sa : sas) {
     sa.integrity_key = set.integrity_key;
     sa.encryption_key = set.encryption_key;
+    // Annex I unique salt: the direction (to the UE) and the role of the source port (a protected server port).
+    const bool to_ue = !sa.outbound;
+    const bool from_server = to_ue ? sa.source_port == set.port_ps : sa.source_port == set.port_us;
+    sa.salt = aka::sa_salt(set.salt, set.alg, set.ealg, to_ue, from_server);
   }
   set.sas.clear();
   try {
@@ -736,8 +759,9 @@ void SipEngine::Impl::aka_challenge(pjsip_rx_data *data) {
   set->alg = mechanism->alg;
   set->ealg = *mechanism->ealg;
   set->security_server = security_server;
-  set->integrity_key = aka::integrity_key_esp(set->alg, result.ik);
+  set->integrity_key = aka::integrity_key_esp(set->alg, result.ck, result.ik);
   set->encryption_key = aka::encryption_key_esp(set->ealg, result.ck);
+  set->salt = aka::esp_salt(set->alg, set->ealg, result.ck, result.ik);
   try {
     aka_install(*set);
   } catch (const std::exception &error) {
@@ -892,19 +916,27 @@ bool SipEngine::Impl::aka_accept(pjsip_rx_data *data) {
            ((local_port == set->port_uc && remote_port == set->port_ps) ||
             (local_port == set->port_us && remote_port == set->port_pc));
   };
+  // TS 33.203 clause 7.4.1a: "SM12 ... shall be protected with the new inbound SA", the response to the REGISTER
+  // sent on the temporary set comes on that set only; each REGISTER response on the route its REGISTER took.
+  if (register_response && aka->register_route == AkaRoute::pending && !on(aka->pending.get())) return false;
   if (on(aka->current.get())) {
+    if (register_response && aka->register_route != AkaRoute::current) return false;
+    aka_track(*aka->current, data);
     if (aka->old && !aka->old_release_scheduled) {
       aka->old_release_scheduled = true;
-      aka_schedule(aka->old_timer, old_set_release_ms, old_timer_id);
+      aka_schedule(aka->old_timer, old_set_poll_ms, old_timer_id);
     }
     return true;
   }
   if (on(aka->pending.get())) return register_response;
-  if (on(aka->old.get())) return true;
+  if (on(aka->old.get())) {
+    aka_track(*aka->old, data);
+    return true;
+  }
   bool protected_port = local_port == config.listen_port;
   for (const auto *set : {aka->current.get(), aka->pending.get(), aka->old.get()})
     protected_port = protected_port || (set != nullptr && local_port == set->port_uc);
-  return register_response && !protected_port;
+  return register_response && !protected_port && aka->register_route == AkaRoute::unprotected;
 }
 
 //------------------------------------------------------------------------------
@@ -920,6 +952,55 @@ pj_bool_t SipEngine::Impl::aka_filter(pjsip_rx_data *data) {
     debug_line("SIP dropped (IMS AKA: not on its security association, TS 33.203 clause 7.1) from " +
                std::string(data->pkt_info.src_name) + ":" + std::to_string(data->pkt_info.src_port));
   return PJ_TRUE;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.203 clause 7.4.1a: a request received over set starts a server transaction on it, one sent over it a client
+// transaction (ACK starts none); transactions no longer in the transaction layer are dropped from the list.
+namespace {
+void record_transaction(std::vector<std::string> &transactions, std::string key) {
+  std::erase_if(transactions, [](const std::string &known) { return !transaction_alive(known); });
+  if (std::find(transactions.begin(), transactions.end(), key) == transactions.end())
+    transactions.push_back(std::move(key));
+}
+}  // namespace
+
+void SipEngine::Impl::aka_track(AkaSet &set, pjsip_rx_data *data) {
+  const auto *message = data->msg_info.msg;
+  if (message->type != PJSIP_REQUEST_MSG || message->line.req.method.id == PJSIP_ACK_METHOD) return;
+  if (data->msg_info.via == nullptr || data->msg_info.via->branch_param.slen == 0) return;
+  record_transaction(set.transactions,
+                     transaction_key(false, message->line.req.method, data->msg_info.via->branch_param));
+}
+
+void SipEngine::Impl::aka_track(AkaSet &set, pjsip_tx_data *data) {
+  const auto *message = data->msg;
+  if (message->type != PJSIP_REQUEST_MSG || message->line.req.method.id == PJSIP_ACK_METHOD) return;
+  const auto *via = static_cast<const pjsip_via_hdr *>(pjsip_msg_find_hdr(message, PJSIP_H_VIA, nullptr));
+  if (via == nullptr || via->branch_param.slen == 0) return;
+  record_transaction(set.transactions, transaction_key(true, message->line.req.method, via->branch_param));
+}
+
+//------------------------------------------------------------------------------
+// The send hook of the receive filter module: a request leaving over a set (its TCP connection or UDP transport; over
+// UDP from port_us, which sends from the set in use) is recorded on that set.
+pj_status_t SipEngine::Impl::aka_sending(pjsip_tx_data *data) {
+  auto *owner = active.load();
+  if (owner == nullptr || !owner->aka || data == nullptr || data->msg == nullptr) return PJ_SUCCESS;
+  guarded(owner, [&] {
+    auto &state = *owner->aka;
+    const auto *transport = data->tp_info.transport;
+    if (transport == nullptr) return;
+    for (auto *set : {state.current.get(), state.pending.get(), state.old.get()}) {
+      if (set == nullptr) continue;
+      if (transport == set->connection || transport == set->udp ||
+          (set == state.current.get() && transport == state.udp_us)) {
+        owner->aka_track(*set, data);
+        return;
+      }
+    }
+  });
+  return PJ_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
@@ -947,7 +1028,15 @@ void SipEngine::Impl::aka_timer(pj_timer_heap_t * /*heap*/, pj_timer_entry *entr
     } else if (entry == &state.pending_timer) {
       owner->aka_delete(state.pending);
     } else if (entry == &state.old_timer) {
-      owner->aka_delete(state.old);
+      // TS 33.203 clause 7.4.1a: "the old SAs shall be deleted as soon as either all pending SIP transactions have been
+      // completed, or have timed out" ("A SIP transaction is called pending if it was started using an old SA"): the
+      // old set goes when none of the transactions sent or received over it is left in the transaction layer. The SA
+      // lifetime (expiry_timer) deletes it in any case ("The old SAs shall be always deleted when the lifetime is
+      // expired").
+      if (state.old && std::any_of(state.old->transactions.begin(), state.old->transactions.end(), transaction_alive))
+        owner->aka_schedule(state.old_timer, old_set_poll_ms, old_timer_id);
+      else
+        owner->aka_delete(state.old);
     } else if (entry == &state.expiry_timer) {
       owner->aka_delete(state.old);
       owner->aka_delete(state.current);

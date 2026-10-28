@@ -28,7 +28,7 @@ import tempfile
 import time
 from pathlib import Path
 
-TOOLS = 'openmcx-dev:0.3'
+TOOLS = 'openmcx-dev:0.4'
 # Clause 6.2.3 (include/mcx/tls_profile.hpp): ECDHE-ECDSA/RSA with AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305.
 TLS12 = {0xC02B, 0xC02F, 0xC02C, 0xC030, 0xCCA9, 0xCCA8}
 # RFC 8446 section 9.1 / B.4 (clause 6.2.2): the TLS 1.3 AEAD suites; RFC 5746 TLS_EMPTY_RENEGOTIATION_INFO_SCSV.

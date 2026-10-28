@@ -372,7 +372,7 @@ std::optional<SipResponse> McServer::private_call_media_refusal(const SipMessage
       return response;
     }
   try {
-    validate_remote(user.id, *message.remote_media, false, true);
+    validate_remote(user.id, *message.remote_media, true);
   } catch (const std::exception &error) {
     event("sdp_rejected", {{"reason", error.what()}});
     return reject(488);
@@ -520,8 +520,8 @@ McServer::private_caller_answer(const SipMessage &message, const User &user, con
                                 bool first_to_answer, const PrivateCallRequest &request, const PriorityState &priority,
                                 const std::optional<McpttInfo> &correction, const std::shared_ptr<Session> &session,
                                 SipResponse &response) {
-  auto leg = make_leg(user.id, session);
-  if (!session->no_media_control && leg->local.floor_ssrc == message.remote_media->floor_ssrc)
+  auto leg = make_leg(user.id, session, message.remote_media->floor_ssrc);
+  if (!session->no_media_control && peer_floor_ssrc_refused(*leg, message.remote_media->floor_ssrc))
     return private_call_rejected(response, user, 488);
 
   leg->dialog = message.dialog_id;
@@ -536,8 +536,10 @@ McServer::private_caller_answer(const SipMessage &message, const User &user, con
   // permission to transmit in its offer, which the answer accepts (TS 24.581 clause 14.3.5).
   if (session->video_mode == "one-to-one video push")
     leg->local.implicit_request = message.remote_media->implicit_request;
+  // TS 24.379 clause 11.1.1.2.1.1 step 13 with TS 24.380 clause 14.3.5: the caller's implicit floor request (MCPTT).
+  accept_implicit_floor_request(*leg, *message.remote_media, true);
   response.status_code = 200;
-  response.local_media = leg->local;
+  response.local_media = initial_answer_media(*leg);
   response.contact_uri = session->uri;
   response.focus = true;
   McpttInfo answer;
@@ -621,6 +623,12 @@ SipResponse McServer::private_invite(const SipMessage &message, const User &user
   if (!replaces.empty())
     if (auto refused = private_call_replaced(replaces, user, info, first_to_answer, request, response, replaced))
       return *refused;
+
+  // The offer's floor control SSRC (peer_floor_ssrc_refused), before the emergency state or a release of the
+  // target's ambient listening call (private_invitee_check); RFC 3261 section 13.3.1.3: 488 (Not Acceptable Here).
+  if (message.remote_media && message.remote_media->control != MediaControl::none &&
+      offered_floor_ssrc_refused(user, message.remote_media->protected_media, message.remote_media->floor_ssrc))
+    return reject(488);
 
   // Emergency private call and alert authorisation (TS 24.379 clauses 6.3.3.1.13.1 and 6.3.3.1.13.2).
   PriorityState priority;
@@ -794,8 +802,8 @@ std::optional<SipResponse> McServer::private_hold_resume(const SipMessage &messa
       session.private_call && leg->user == user.id && leg->active && session.established && !info.emergency &&
       !info.imminent_peril && old && message.remote_media && old->address == message.remote_media->address &&
       old->audio_port == message.remote_media->audio_port && old->control == message.remote_media->control &&
-      old->floor_port == message.remote_media->floor_port && old->payload_type == message.remote_media->payload_type &&
-      message.remote_media->direction != old->direction &&
+      old->floor_port == message.remote_media->floor_port && old->floor_ssrc == message.remote_media->floor_ssrc &&
+      old->payload_type == message.remote_media->payload_type && message.remote_media->direction != old->direction &&
       (message.remote_media->direction == "sendonly" || message.remote_media->direction == "sendrecv")) {
     SipResponse response;
     leg->held = message.remote_media->direction == "sendonly";
@@ -990,7 +998,7 @@ void McServer::release_not_selected(Leg &leg) {
   McpttInfo reason;
   reason.release_reason = "not selected for call";
   // An early leg is cancelled; the reason is still used if its 2xx crosses the CANCEL.
-  sip_.bye(leg.dialog, {}, {}, service_parts(reason));
+  bye(leg.dialog, {}, {}, service_parts(reason));
   event("first_to_answer_released", {{"user_id", leg.user}, {"confirmed", confirmed}});
 }
 
@@ -1050,7 +1058,7 @@ void McServer::revalidate_private(const std::shared_ptr<Session> &session) {
     event("private_call_revoked", {{"reason", error.what()}, {"session_uri", session->uri}});
     for (const auto &leg : session_legs(*session)) {
       leg->active = false;
-      sip_.bye(leg->dialog);
+      bye(leg->dialog);
     }
   }
 }

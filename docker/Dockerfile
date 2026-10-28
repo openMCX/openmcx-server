@@ -13,7 +13,7 @@
 # image is Ubuntu with only its program's run-time packages and the program stripped of its debug information (the
 # machine code is the same -O2 build), plus curl and Python for the lab's health checks.
 
-ARG DEV_IMAGE=openmcx-dev:0.3
+ARG DEV_IMAGE=openmcx-dev:0.4
 ARG RUNTIME_BASE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
 # The Ubuntu release of RUNTIME_BASE and of the development image; its package names are in docker/packages.
 ARG UBUNTU=24.04
@@ -50,6 +50,9 @@ WORKDIR /workspace
 COPY LICENSE NOTICE /usr/share/doc/openmcx/
 # hostap's licence (BSD), which its MILENAGE (dependencies/hostap) in the SIP library asks binaries to carry.
 COPY dependencies/hostap/README /usr/share/doc/openmcx/hostap-README
+# libsrtp's licence (BSD-3-Clause): the programs link the patched libsrtp of the development image statically
+# (dependencies/libsrtp).
+COPY --from=build /usr/local/share/doc/libsrtp/LICENSE /usr/share/doc/openmcx/libsrtp-LICENSE
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.source="https://github.com/openMCX/openmcx-server"
 

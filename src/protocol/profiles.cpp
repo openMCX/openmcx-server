@@ -144,17 +144,29 @@ McvideoProfile parse_mcvideo_profile(std::string_view xml) {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.484 clauses 8.4.2.1, 9.4.2.1 and 10.4.2.1: the resource priorities of a service configuration document.
-std::map<std::string, std::string> parse_service_resource_priorities(std::string_view xml) {
-  static const char *const namespaces[] = {"urn:3gpp:ns:mcpttServiceConfig:1.0", "urn:3gpp:ns:mcvideoServiceConfig:1.0",
-                                           "urn:3gpp:ns:mcdataServiceConfig:1.0"};
-  auto doc = document(xml);
-  auto root = xmlDocGetRootElement(doc.get());
+// TS 24.484 clauses 8.4.2.1, 9.4.2.1 and 10.4.2.1: the namespaces of the MCPTT, MCVideo and MCData service
+// configuration documents.
+static const char *const service_config_namespaces[] = {"urn:3gpp:ns:mcpttServiceConfig:1.0",
+                                                        "urn:3gpp:ns:mcvideoServiceConfig:1.0",
+                                                        "urn:3gpp:ns:mcdataServiceConfig:1.0"};
+
+//------------------------------------------------------------------------------
+// Helper: the <on-network> element of a service configuration document and the document's namespace.
+static std::pair<xmlNode *, const char *> service_on_network(xmlDoc *doc) {
+  auto root = xmlDocGetRootElement(doc);
   const char *ns = nullptr;
-  for (const auto *candidate : namespaces)
+  for (const auto *candidate : service_config_namespaces)
     if (is(root, "service-configuration-info", candidate)) ns = candidate;
   if (!ns) invalid("not a service configuration document");
-  auto on = unique_child(unique_child(root, "service-configuration-params", ns), "on-network", ns);
+  return {unique_child(unique_child(root, "service-configuration-params", ns), "on-network", ns), ns};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.484 clauses 8.4.2.1, 9.4.2.1 and 10.4.2.1: the resource priorities of a service configuration document.
+std::map<std::string, std::string> parse_service_resource_priorities(std::string_view xml) {
+  const auto *const *namespaces = service_config_namespaces;
+  auto doc = document(xml);
+  const auto [on, ns] = service_on_network(doc.get());
 
   // The MCData document carries them in the <anyExt> of <on-network> (clause 10.4.2.1 item 4).
   auto holder = ns == namespaces[2] ? unique_child(on, "anyExt", ns) : on;
@@ -174,6 +186,55 @@ std::map<std::string, std::string> parse_service_resource_priorities(std::string
   }
 
   return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.484 clauses 8.4.2.1 items 8 and 12, 9.4.2.1 items 1 and 2, 10.4.2.1 items 2 and 3: the signalling protection
+// of a service configuration document. Each value is true when its element is "true" or absent (TS 24.379 clauses
+// 6.6.2.3.1, 6.6.2.3.2, 6.6.3.3.1 and 6.6.3.3.2: "is set to "true" or no <confidentiality-protection> element is
+// present in the Service Configuration document"; TS 24.281 and TS 24.282 likewise; TS 24.484 clause 8.4.2.7 NOTE 4,
+// 9.4.2.7 NOTE 1, 10.4.2.7 NOTE 1: the default values are "true"), false only when it is "false".
+ServiceProtection parse_service_protection(std::string_view xml) {
+  auto doc = document(xml);
+  const auto [on, ns] = service_on_network(doc.get());
+  const auto flag = [ns](xmlNode *parent, const char *name) {
+    auto element = parent ? unique_child(parent, name, ns, false) : nullptr;
+    if (!element) return true;
+    // xs:boolean: "true", "false", "1" or "0".
+    const auto value = scalar(element);
+    if (value != "true" && value != "false" && value != "1" && value != "0")
+      invalid((std::string("invalid ") + name + " value").c_str());
+    return value == "true" || value == "1";
+  };
+  const bool mcptt = ns == service_config_namespaces[0], mcvideo = ns == service_config_namespaces[1];
+  auto signalling = unique_child(on, "signalling-protection", ns, false);
+  auto between = unique_child(on,
+                              mcptt     ? "protection-between-mcptt-servers"
+                              : mcvideo ? "protection-between-mcvideo-servers"
+                                        : "protection-between-mcdata-servers",
+                              ns, false);
+  ServiceProtection out;
+  out.confidentiality = flag(signalling, "confidentiality-protection");
+  out.integrity = flag(signalling, "integrity-protection");
+  out.between_servers = flag(between, "allow-signalling-protection");
+  // MCData has no control signalling between its servers (clause 10.4.2.1 item 3).
+  if (mcptt || mcvideo)
+    out.between_servers_control =
+        flag(between, mcptt ? "allow-floor-control-protection" : "allow-transmission-control-protection");
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 7.2.2.1 item 4: <mcptt-UE-initial-configuration> (clause 7.2.2.2 namespace) / <on-network> /
+// <GMS-URI>, mandatory.
+std::string parse_initial_gms_uri(std::string_view xml) {
+  static constexpr const char *ns = "urn:3gpp:mcptt:mcpttUEinitConfig:1.0";
+  auto doc = document(xml);
+  auto root = xmlDocGetRootElement(doc.get());
+  if (!is(root, "mcptt-UE-initial-configuration", ns)) invalid("wrong UE initial configuration root");
+  const auto uri = scalar(unique_child(unique_child(root, "on-network", ns), "GMS-URI", ns));
+  if (uri.empty()) invalid("empty GMS-URI");
+  return uri;
 }
 
 //------------------------------------------------------------------------------

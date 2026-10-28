@@ -23,6 +23,8 @@ from pathlib import Path
 import subprocess
 import time
 
+from lab_wait import holds
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -41,6 +43,10 @@ def main():
         parser.error('hold must be >=55 and <60 seconds (90-second SIP timer, 60-second inactivity policy)')
     cli = [str(ROOT / '.cache/deps/docker-compose-linux-x86_64'), '-p', args.project, '-f', str(args.compose.resolve())]
     roles = ['client-a', 'client-b', 'client-c', 'client-d']
+    generated = args.compose.resolve().parent / 'generated'
+    configs = {role: json.loads((generated / f'{role}.json').read_text()) for role in roles}
+    ids = {role: configs[role]['mcptt']['user_id'] for role in roles}
+    group = configs['client-a']['mcptt']['group_id']
     checks = []
     observations = []
     result = dict(
@@ -123,20 +129,23 @@ def main():
                 if not status(role).get('affiliated'):
                     command(role, 'affiliate')
 
-        deadline = time.monotonic() + 20
-        while time.monotonic() < deadline and not (
-            all(status(role).get('affiliated') for role in ['client-a', 'client-b'])
-            and not any(status(role).get('affiliated') for role in ['client-c', 'client-d'])
-        ):
+        # The setup holds at the clients and at the server, whose affiliations decide who the call invites (TS 24.379
+        # clause 10.1.1.4.2): a late affiliation of a restarted client otherwise brings client-c or client-d into
+        # the call.
+        def only_a_and_b():
+            affiliations = status('mcptt-server').get('affiliations', {})
+            return (
+                all(status(role).get('affiliated') for role in ['client-a', 'client-b'])
+                and not any(status(role).get('affiliated') for role in ['client-c', 'client-d'])
+                and all(group in affiliations.get(ids[role], []) for role in ['client-a', 'client-b'])
+                and not any(group in affiliations.get(ids[role], []) for role in ['client-c', 'client-d'])
+            )
+
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and not (only_a_and_b() and holds(only_a_and_b, 2)):
             settle()
             time.sleep(2)
-        wait(
-            'only A and B affiliated for setup',
-            lambda: (
-                all(status(role).get('affiliated') for role in ['client-a', 'client-b'])
-                and all(not status(role).get('affiliated') for role in ['client-c', 'client-d'])
-            ),
-        )
+        wait('only A and B affiliated for setup, at the clients and the server', only_a_and_b)
         command('client-b', 'answer-mode manual')
         wait('callee manual answering enabled', lambda: status('client-b').get('answer_mode') == 'manual')
 

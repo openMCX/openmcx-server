@@ -155,6 +155,10 @@ def main():
             cfg['common']['issuer'] = issuer
         elif 'oauth' in cfg:
             cfg['oauth']['issuer'] = issuer
+            # Another IdMS: its endpoints come from its discovery document (no configured <idms-auth-endpoint>,
+            # <idms-token-endpoint> or JWKS URI of the lab IdMS).
+            for key in ('idms_auth_endpoint', 'idms_token_endpoint', 'jwks_uri'):
+                cfg['oauth'].pop(key, None)
         else:
             continue
         path.write_text(json.dumps(cfg, indent=2) + '\n')

@@ -69,6 +69,8 @@ SipResponse McServer::config_subscribe(const SipMessage &message, const std::str
   }
   ConfigSubscription sub;
   sub.subscriber = identity;
+  sub.sip = asserted_identity(message);
+  sub.identity_hiding = csk_in_subscribe(message);
   sub.expires = std::time(nullptr) + static_cast<std::int64_t>(*expires);
   sub.etags = followed_configuration(identity, documents, nullptr);
   if (sub.etags.empty()) {

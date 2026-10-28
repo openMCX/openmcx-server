@@ -309,6 +309,8 @@ def access_token(cfg):
             "state": state,
             "nonce": secrets.token_hex(16),
             "code_challenge": challenge,
+            # TS 33.180 table B.4.2.2-1: REQUIRED.
+            "acr_values": "3gpp:acr:password",
             "code_challenge_method": "S256",
         }
     )

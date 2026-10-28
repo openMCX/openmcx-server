@@ -27,8 +27,14 @@ void DataServer::refresh_service_config(std::uint64_t now) {
   try {
     auto config = internal("cms", "/internal/service-config?service=mcdata");
     if (!config.is_object() || !config.contains("resource_priority")) return;
-    if (config != service_config_) event("service_config_read", Json{{"resource_priority", config.at("resource_priority")}});
+    auto protection = service_protection_of(config);
+    if (!protection) return;
+    if (config != service_config_)
+      event("service_config_read",
+            Json{{"resource_priority", config.at("resource_priority")},
+                 {"signalling_protection", config.at("signalling_protection")}});
     service_config_ = std::move(config);
+    signalling_protection_ = protection;
   } catch (const std::exception &error) {
     if (!known) event("service_config_unavailable", Json{{"reason", error.what()}});
   }
@@ -131,7 +137,10 @@ void DataServer::save_status() {
   status_["xml_protection"] = {{"enabled", protects_xml()},
                                {"encrypted", xml_encrypted_},
                                {"decrypted", xml_decrypted_},
-                               {"refused", xml_refused_}};
+                               {"refused", xml_refused_},
+                               {"integrity", integrity_protection()},
+                               {"signed", xml_signed_},
+                               {"verified", xml_verified_}};
   status_["signalling_protection"] = {{"enabled", protect_signalling()},
                                       {"opened", signalling_opened_},
                                       {"sealed", signalling_sealed_},
@@ -254,8 +263,18 @@ DataServer::DataServer(Json cfg, bool disable_tls)
 void DataServer::run() {
   if (cfg_.contains("security")) {
     keys_ = std::make_unique<KeyClient>(http_, cfg_.at("security"), service_uri_);
+    keys_->set_warning_handler([](std::string_view text) { event("key_warning", {{"reason", text}}); });
     provision_server_keys(*keys_, cfg_);
   }
+  // TS 24.282 clauses 6.5.1.3 and 6.5.1.4: XML integrity protection just before sending and before any other
+  // procedure on receipt.
+  sip_.set_body_filters(
+      [this](const SipTransmission &transmission, std::vector<BodyPart> parts) {
+        return sign_outgoing(transmission, std::move(parts));
+      },
+      [this](const SipTransmission &transmission, std::vector<BodyPart> parts) {
+        return verify_incoming(transmission, std::move(parts));
+      });
   sip_.start();
   event("mcdata_server_started");
   while (!stopping) {

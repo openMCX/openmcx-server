@@ -109,8 +109,8 @@ SipResponse McvideoServer::server_video_invite(const SipMessage &message, const 
   session->server_video = push ? "record" : "stream";
   session->arbitrator = make_media_control(session->members, floor_options());
   session->no_media_control = message.remote_media->control == MediaControl::none;
-  auto leg = make_leg(user.id, session);
-  if (!session->no_media_control && leg->local.floor_ssrc == message.remote_media->floor_ssrc) return reject(488);
+  auto leg = make_leg(user.id, session, message.remote_media->floor_ssrc);
+  if (!session->no_media_control && peer_floor_ssrc_refused(*leg, message.remote_media->floor_ssrc)) return reject(488);
 
   // The recording file is made last, so that no rejection above leaves an empty one behind.
   if (auto refused = open_server_video(*session, user, info, push, response)) return *refused;

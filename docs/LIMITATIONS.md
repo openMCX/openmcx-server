@@ -34,8 +34,59 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   a server or the GMS obtains one or which identity it names; OpenMCX makes each a confidential OAuth client of the
   IdMS that obtains its token with the client credentials grant (RFC 6749 section 4.4), with its public service
   identity (the GMS URI) as subject. A KMS of another vendor serves them if it accepts such tokens of the IdMS.
+- **KMS request security (TrK/InK).** The KMS and the key management clients use direct HTTPS (TS 33.180 clause 5.3.2,
+  where the TrK and InK "may" be used); the KMS refuses a request body. The TrK/InK extension of clause 5.3.2 and annex
+  D.2.2/D.3.1, which clause 5.3.2 requires behind the HTTP proxy, is not implemented, because one detail it needs is
+  open (reported): the key material to wrap, the 257-octet SAKKE RSK and the 65-octet ECCSI PVT, does not meet the
+  input length of the AES-256 key wrap of RFC 3394 (clause 9.3, which says it "shall be supported"); the referenced
+  XML Encryption 1.1 also has a padded key wrap (RFC 5649), but the text does not say which one a KMS uses, and OpenMCX
+  does not pick one. The optional encryption of the whole KMS message with AES-128-GCM under a 256-bit TrK (annex
+  D.3.1) is not applied (reported).
+- **CSK key download** (TS 24.379 and TS 24.281 clauses 7.3.7 and 7.2.5, TS 33.180 clauses 5.8 and 9.2.1.4). The
+  MCPTT and MCVideo servers send it only on the operator command `csk-download <MC service ID>` (the specifications
+  give no renewal period); the MCData server does not send it, because TS 24.282 clause 7.3.7 step 5 requires the
+  MCData signalling algorithm in the MIKEY message and no specification defines where or how it is coded (spec
+  defect, reported). The Linux client accepts it for all three services, but not with identity hiding (an IDRi of
+  type UID, clause 7.2.5 step 1 b)), and keeps DP_AES_128_GCM for MCData signalling (step 1 f), same defect). The
+  Android client does not accept it.
 - **Profile.** The default lab keeps media and floor protection off; the protected fixtures use an explicitly configured
-  E.6 numeric wire profile that has not been qualified against an independent peer.
+  E.6 numeric wire profile that has not been qualified against an independent peer. TS 33.180 assigns no code to
+  DP_AES_128_GCM or DP_AES_256_GCM (table 8.5.4.1-1, spec defect, reported): DP_AES_256_GCM, which OpenMCX accepts for
+  MCData signalling under the CSK (annex F.1.5), is recognised only when the profile names its code
+  (`key_parameter_profile.algorithm_256`), and OpenMCX sends DP_AES_128_GCM (the default of NOTE 6).
+- **SSRCs under shared keys.** Each endpoint keeps the history of RFC 7714 section 8.4: an SSRC it issued, or one it
+  holds a stream for under its keys, is not given out again. The MC client and the MC server both protect SRTCP under
+  the client's CSK. The SSRC the other side allocates for an endpoint's floor or transmission control messages (TS
+  24.380 and TS 24.581 clause 4.3.3.1) is refused for a new stream when it is the endpoint's own or one already used
+  under the key for another stream (an offer with 488 before the request changes anything, an answer by ending the
+  dialog); a call going on keeps its SSRC, and a re-INVITE changing it is refused with 488. An endpoint does not give
+  out an SSRC the other side has allocated for a call under way, even before its first packet. TS 33.180 gives no
+  SSRC partition between client and server (RFC 7714 sections 8.4 and 9.4 ask that no SSRC
+  repeats under one key), so two allocations made at the same time by the two sides cannot be kept apart; a
+  coordinated allocation between the two is not designed yet (open, not a proved spec defect).
+- **Key expiry and CSK renewal.** A key past its Expiry time (TS 33.180 annex E.6.10, "shall no longer be used") is
+  neither used to protect nor to unprotect: media and floor control packets under it are not sent or are dropped, and
+  XML or MCData signalling under an expired CSK is refused, never sent in clear; where the MCData server's answer to a
+  request would need the expired CSK, the SIP engine's local error handling answers 500 (no response is specified)
+  and no XML goes out. Call handling is unchanged: a private
+  call whose PCK expires stays up without media; what a call should do then is not defined by the specifications
+  (reported). The renewal of a CSK before its Expiry time, the end of the identity key period, is not implemented
+  yet: TS 33.180 clauses 9.2.1.2 and 9.2.1.4 define it (the MC server's key download, sent by OpenMCX on the operator
+  command `csk-download` only), and the Linux client's service authorisation PUBLISH carries the CSK only the first
+  time (TS 24.379 clause 7.2.2 item 3 asks for it in each). Until then a client with XML protection loses its service
+  authorisation at the next token renewal after the end of its identity key period.
+- **MCData between servers.** The MCData server has no XML protection towards other MCData servers
+  (`<protection-between-mcdata-servers>` is read but not applied).
+- **CRLs.** Certificates are checked against the CRLs of the configured file (`tls.crl_file`) only; CRLs are not
+  retrieved from the distribution point a certificate names (TS 33.310 clauses 6.1a and 7.1, to be implemented; its
+  fetch timeout, maximum size and cache bound are not chosen yet).
+- **Push and pull of video (protected).** The PCK of an MCVideo push or pull is encrypted to the MCVideo server's PSI:
+  TS 33.180 clauses 7.2.7.2 and 7.2.8.2 name "the identity of the MCVideo server" without defining it (reported).
+- **GMKs of other groups (Linux client).** The client holds the GMKs of its selected group, its monitored groups and the
+  preconfigured groups of the regroups it was told of (TS 33.180 clauses 7.3.11 and 7.3.12), and keys each call with
+  its group's GMK. Not done yet: a protected broadcast hierarchy call on a broadcast group that is none of these (TS
+  33.180 clauses 7.3.4 and 7.3.5, the broadcast group's own GMK) is refused with 488, as the client learns of the
+  broadcast group only from the call; the MCVideo part of the client keys its calls with its selected group's GMK only.
 - **SIP core access.** TS 33.180 clause 6.2.1 requires IMS AKA (TS 33.203) for SIP core access, also with a SIP core
   that is not an IMS, and TS 33.203 annexes N.1 and O.1.1 exclude SIP digest and TLS access security on access networks
   defined by 3GPP. OpenMCX chooses the scheme per private user identity, as the HSS stores it (TS 29.228 clause 6.3.1
@@ -47,11 +98,24 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   3](../tutorials/end-to-end/03-mcx-over-oai-5g/README.md), [4](../tutorials/end-to-end/04-mcx-over-srsran-5g/README.md)
   (5G) and [5](../tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/README.md) (4G) and by the `aka` and `aka-udp`
   regression labs; the SIP core makes the vectors itself (Kamailio `ims_auth`, no HSS over Cx), offering AKAv2-SHA-256
-  and then AKAv1-MD5. Its SQN is kept in memory: after a restart of the SIP core each UE resynchronises once (AUTS). Not
-  done yet: emergency registration (TS 24.229 clause 5.1.6); IPv6 (the IMS AKA path is tested on IPv4 only); a complete
-  clean-up of the old security associations after a re-registration (TS 33.203 clause 7.4); a lab that exercises a
-  resynchronisation (AUTS) over existing security associations, at a re-registration; the discovery of the P-CSCF (TS
-  24.229 clause 9.2.1: its address is configured). The MCX Admin activation and the Credential Service issue digest
+  and then AKAv1-MD5. The UE and the P-CSCF offer and select the integrity and encryption algorithms of TS 33.203
+  annexes H and I (AES-GCM, AES-GMAC, HMAC-SHA-256-128, HMAC-SHA-1-96, AES-CBC, NULL). After a re-registration
+  the P-CSCF keeps sending over the old set until the UE's first message over the new one, and both ends delete the
+  old set once its pending transactions are over; the new set of a failed authentication goes likewise (clause 7.4).
+  A new challenge deletes the earlier incomplete registration SAs of the same UE, and a temporary set ends after
+  reg-await-auth (clause 7.4.2a, TS 24.229 clause 5.2.2.2). The P-CSCF refuses a REGISTER that starts an
+  authentication (400, over the set it came on) while three sets of its IMPI, six SAs per direction, would stay over
+  all its contacts (clause 7.1 rule 3), counted and reserved in one step. Its SQN is kept in memory: after a restart of
+  the SIP core each UE resynchronises once (AUTS). Not done yet: the P-CSCF's early switch to the new set when "the old
+  SAs have only a short time left before expiring" (clause 7.4.2a, open implementation point: the text gives no value
+  for it; the P-CSCF switches at the UE's next message over the new set or at the old set's expiry); the other
+  refusals on a protected port over UDP (403, 404, 430, 480, 488) are sent unprotected from port_ps and do not reach
+  the UE; emergency registration (TS 24.229 clause 5.1.6); IPv6 (the
+  IMS AKA path is tested on IPv4 only); the reg event package, so the S-CSCF cannot start a network-initiated
+  re-authentication (TS 33.203 clauses 5.1.2 and 6.1.4: every re-registration is challenged
+  instead); a lab that exercises a resynchronisation (AUTS) over
+  existing security associations, at a re-registration; the discovery of the P-CSCF (TS 24.229 clause 9.2.1: its
+  address is configured). The MCX Admin activation and the Credential Service issue digest
   credentials only (an identity provisioned for IMS AKA gets none), so the clients that MCX Admin activates keep SIP
   digest over TLS, also where they run on 3GPP access: the dispatcher inside the 5G or 4G UE of tutorials 3, 4 and 5 is
   a deviation from TS 33.180 clause 6.2.1. The Android app would need carrier privileges to run AKA on the phone's SIM.
@@ -92,12 +156,24 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   take-over: deactivated and refused ones are left out.
 - **Temporary groups** formed by the GMS (TS 24.481 6.3.14) are applied as group regroups; merging ongoing calls of the
   constituent groups is not implemented.
+- **Implicit floor request.** The MCPTT server accepts it in the answer to an initial INVITE that initiates a call
+  (TS 24.380 clause 14.3.5) and grants the floor with Floor Granted; it never grants by `mc_granted` in the 200 (OK),
+  which is optional (clause 14.3.4). Not done yet: the implicit floor request of an upgrade to an emergency or imminent
+  peril call by re-INVITE (TS 24.379 clause 6.4, TS 24.380 clauses 6.3.4.3.6 and 6.3.4.4.12), which is handled as a
+  request without it; the 'G: Initialising' state of a temporary group session (TS 24.380 clause 6.3.4.8), so the
+  initiator of a call on a temporary group is granted as in any other call; the location body the Linux client is to
+  send with an implicit floor request when `<allow-location-info-when-talking>` is set (TS 24.379 clause 10.1.1.2.1.1
+  step 16a); the Android client offers no implicit floor request.
 
 ### MCData
 
 - **Data streaming.** TS 24.282 defines no procedure for MCData data streaming, so there is nothing to implement yet.
-- **Protection.** Ad hoc group communications stay clear, and XML integrity protection (xmlsig) is not implemented for
-  MCData (MCPTT signs its XML).
+- **Protection.** Ad hoc group communications stay clear.
+- **Protected files.** A protected file carries a length prefix before its protected payload: TS 33.180 clause 8.5.1
+  and TS 24.282 clause 10.2.2.1 define no framing for it (reported), so another implementation may frame it otherwise.
+- **Protected SDS or file to a functional alias.** The first protected SDS or file to a functional alias that is not
+  yet resolved to an MCData ID is refused locally: no PCK target exists before the resolution (reported); sending it in
+  clear would break the protection rule.
 - **Ad hoc priority over the media plane.** An emergency or imminent-peril ad hoc group communication over the media
   plane is refused with 403: TS 23.282 clause 7.17.2.1 names the indicators, but TS 24.282 defines no procedure for
   them (clause 24 and the upgrade clauses 9.2.4.4.5 and 9.2.4.4.6 cover none).
@@ -110,6 +186,16 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 - **Documents.** The GMS and CMS validate every group and profile document they accept against the full 3GPP and OMA
   schemas, but enforce a documented subset: the `<ruleset>` actions and lists of the user profiles and the group
   elements the services act on.
+- **Service configuration at the servers.** The MC servers read their service configuration document (the
+  Resource-Priority values and the XML signalling protection of `<signalling-protection>` and
+  `<protection-between-*-servers>`) from the CMS's internal view, not by subscribing to it and retrieving it as TS
+  24.484 clauses 6.3.x specify for an MC server. A deviation, to be fixed.
+- **CMS subscription proxy PSI** (spec gap). TS 24.484 clause 6.3.13.2.2 step b) 2) sends the configuration management
+  SUBSCRIBE to "the configured public service identity for performing subscription proxy function of the CMS", but no
+  configuration item for that PSI is defined (TS 24.483 has no CMS counterpart of GMSURI; `<cms>` of TS 24.484 clause
+  7.2.2.7 is "the URI used to contact the configuration management server"). The Linux client sends it to the MCPTT
+  PSI until the specification names the item. The group document and group key subscriptions go to the configured
+  GMS-URI (`gms.subscription_psi`).
 - **Location.** Positions and radio measurements are simulated. The SEAL location management server (TS 24.545) has
   no CoAP, SIP-based subscription, location-based query or trigger other than the periodic one.
 
@@ -121,7 +207,9 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   Not supported: MCPTT chat calls and the conference subscription, first-to-answer calls, ambient listening, call-back,
   transfer and forwarding, location-based functional alias activation, MCPTT media and XML protection, MCData over
   MSRP, IP connectivity, enhanced status and the message store, and the SIP subscriptions to the CMS and GMS documents
-  (it reads them with XCAP).
+  (it reads them with XCAP). As it has no XML signalling protection, it does not start a service whose service
+  configuration document enables confidentiality or integrity protection (an absent element enables it), or whose
+  document it could not read, and shows why.
 
 ## Deployment
 

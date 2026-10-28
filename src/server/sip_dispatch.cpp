@@ -72,6 +72,11 @@ SipResponse McServer::incoming(const SipMessage &message) {
         server_document_subscribe(message, identity, response);
         return response;
       }
+    // TS 24.484 clause 6.3.13.3.2.2: a configuration management subscription from a user not (yet) authorised for the
+    // service, authenticated by its access token; its refreshes and its end in the dialog likewise.
+    if (message.method == "SUBSCRIBE" && event_name == "xcap-diff" && peer.empty() &&
+        (config_subscription_in_dialog(message, response) || token_config_subscribe(message, response)))
+      return response;
     auto &user = authenticated(message);
     user_request(message, user, event_name, response);
     return response;
@@ -496,7 +501,7 @@ void McServer::bind_authorized_user(const Json &claims, const McpttInfo &info, c
     if (uploader != user.id) throw std::runtime_error("CSK uploaded by another identity");
     // The floor or transmission control keys of a call service (configured_service refuses MCData).
     if (!user.protection) user.protection = std::make_shared<ProtectedCall>(svc_.service == Service::mcvideo);
-    user.protection->set_floor(*uploaded);
+    user.protection->set_floor(*uploaded, floor_ssrcs_in_use(user.protection.get()));
     user.csk = uploaded;
   }
   const bool fresh = old == users_.end();
@@ -594,6 +599,59 @@ bool McServer::client_document_subscribe(const SipMessage &message, const User &
 }
 
 //------------------------------------------------------------------------------
+// TS 24.484 clause 6.3.13.3.2.2 step c: the CMS "shall identify the originating MCPTT ID from <mcptt-access-token>
+// element [...] and shall use the originating MCPTT ID as an authenticated identity"; no service authorisation is
+// required first (TS 37.579-2 table 5.1.3.2-1 runs it in parallel with the PUBLISH). An initial SUBSCRIBE to
+// configuration documents from a user without a service authorisation here; false for anything else (an
+// authorised user, a dialog already known, group documents, a GKTP subscription), which goes on as before.
+bool McServer::token_config_subscribe(const SipMessage &message, SipResponse &response) {
+  if (doc_subscriptions_.contains(message.dialog_id) || config_subscriptions_.contains(message.dialog_id)) return false;
+  const auto asserted = asserted_identity(message);
+  if (asserted.empty() || asserted != message.from_uri) return false;
+  if (const auto found = users_.find(asserted); found != users_.end() && found->second.expires > std::time(nullptr))
+    return false;
+  for (const auto &part : message.parts) {
+    if (part.content_type != resource_lists_mime) continue;
+    if (!subscribed_groups(part.body).empty()) return false;
+    const auto configuration = subscribed_configuration(part.body);
+    if (configuration.empty()) return false;
+    // A body this server cannot read here (identity hiding needs the CSK the authorisation brings) goes on as before.
+    std::string token;
+    try {
+      token = message_info(message, svc_).access_token;
+    } catch (const std::exception &) {
+      return false;
+    }
+    const auto claims = tokens_.verify(token, svc_);
+    const auto identity = claims ? claims->value(svc_.id_claim, std::string{}) : std::string{};
+    if (identity.empty()) {
+      response.status_code = 403;
+      return true;
+    }
+    response = config_subscribe(message, identity, configuration);
+    return true;
+  }
+  return false;
+}
+
+//------------------------------------------------------------------------------
+// RFC 6665 sections 4.1.2.2 and 4.1.2.3: a configuration management subscription is refreshed or ended in its dialog
+// by its subscriber. It stands apart from the service authorisation (TS 24.484 clause 6.3.13.3.2.2 step c: the access
+// token of the initial SUBSCRIBE authenticated it), so a subscriber that is not or no longer authorised for the
+// service refreshes and ends it as well; the request comes from the identity the SIP core asserted for the initial
+// SUBSCRIBE, else 403. False when the dialog is no configuration subscription.
+bool McServer::config_subscription_in_dialog(const SipMessage &message, SipResponse &response) {
+  const auto found = config_subscriptions_.find(message.dialog_id);
+  if (found == config_subscriptions_.end()) return false;
+  const auto asserted = asserted_identity(message);
+  if (asserted.empty() || asserted != found->second.sip) {
+    response.status_code = 403;
+    return true;
+  }
+  return refresh_document_subscription(message, response);
+}
+
+//------------------------------------------------------------------------------
 // RFC 6665 section 4.2.1.2 (TS 24.481 clause 6.3.13.3.2.2, TS 24.484 clause 6.3.13.3.2.2): a re-SUBSCRIBE in the
 // dialog of a group or configuration document subscription refreshes it, or ends it with Expires 0 (the final
 // NOTIFY follows). Returns false when the dialog is neither subscription's; a malformed Expires is answered 400.
@@ -685,11 +743,15 @@ std::optional<std::uint64_t> McServer::refreshed_expires(const SipMessage &messa
 
 //------------------------------------------------------------------------------
 // TS 24.481 clause 7.7: a group member's subscription to the group's GKTP document (its group key), checked against
-// the access token and the group membership.
+// the access token and the group membership. TS 24.481 clauses 6.3.13.2.1 step b and 6.3.13.3.1: it is addressed to
+// the PSI this server performs the GMS subscription proxy function under: <service>.gms_subscription_psi, its own
+// service PSI when not configured.
 void McServer::key_subscribe(const SipMessage &message, const User &user, SipResponse &response) {
+  if (refresh_key_subscription(message, user, response)) return;
   const auto info = message_info(message, svc_);
-  if (!keys_ || info.client_id != user.client || info.access_token.empty() ||
-      message.request_uri != cfg_.at(svc_.name).at("service_uri").get<std::string>()) {
+  const auto &service = cfg_.at(svc_.name);
+  const auto proxy_psi = service.value("gms_subscription_psi", service.at("service_uri").get<std::string>());
+  if (!keys_ || info.client_id != user.client || info.access_token.empty() || message.request_uri != proxy_psi) {
     response.status_code = 403;
     return;
   }
@@ -718,8 +780,41 @@ void McServer::key_subscribe(const SipMessage &message, const User &user, SipRes
   }
   key_subscriptions_[message.dialog_id] = {user.id, info.request_uri, message.dialog_id,
                                            std::time(nullptr) + static_cast<std::int64_t>(*expiry)};
+  key_subscriptions_[message.dialog_id].identity_hiding = csk_in_subscribe(message);
   response.headers = {{"Expires", std::to_string(*expiry)}};
   schedule([this, id = message.dialog_id] { notify_key(id); });
+}
+
+//------------------------------------------------------------------------------
+// RFC 6665 section 4.2.1.2 (TS 24.481 clause 6.3.13.2.1, the GMC's "SIP re-SUBSCRIBE request"): a re-SUBSCRIBE in
+// the dialog of a key subscription refreshes it, or ends it with Expires 0 (the final NOTIFY follows); only its
+// subscriber may. A resource list in it is the modified list, checked as at the initial SUBSCRIBE for the
+// subscription's group. RFC 5875 section 4.7: the notifier "MUST re-send the current full XML diff content" on a
+// re-subscription, so the current GKTP is notified again. Returns false when the dialog is no key subscription's.
+bool McServer::refresh_key_subscription(const SipMessage &message, const User &user, SipResponse &response) {
+  const auto found = key_subscriptions_.find(message.dialog_id);
+  if (found == key_subscriptions_.end()) return false;
+  auto &sub = found->second;
+  const auto expires = refreshed_expires(message);
+  if (sub.user != user.id) {
+    response.status_code = 403;
+    return true;
+  }
+  // RFC 3261 section 20.19: a malformed Expires, or one above the subscription limit of this server, is a bad request.
+  if (!expires || *expires > max_subscription_s) {
+    response.status_code = 400;
+    return true;
+  }
+  if (*expires != 0)
+    for (const auto &part : message.parts)
+      if (part.content_type == "application/resource-lists+xml")
+        keying::validate_gktp_resource_list(part.body, sub.group);
+  sub.expires = std::time(nullptr) + static_cast<std::int64_t>(*expires);
+  sub.key_id = 0;
+  // RFC 6665 section 4.2.1.1: the 200 (OK) carries the duration granted.
+  response.headers = {{"Expires", std::to_string(*expires)}};
+  schedule([this, id = message.dialog_id] { notify_key(id); });
+  return true;
 }
 
 //------------------------------------------------------------------------------
@@ -1113,8 +1208,10 @@ void McServer::invite_request(const SipMessage &message, User &user, SipResponse
 // A re-INVITE in the dialog of a call leg that carries no MC service information changes nothing the MC procedures
 // handle: a session refresh (RFC 4028 section 7.4), or a hold or resume of a private call (RFC 5359 section 2.1). The
 // same media, or no offer, is answered 200 (OK) with the current session description (RFC 3264 section 8); a hold or
-// resume goes to private_hold_resume; any other change of the media is refused with 488 (Not Acceptable Here).
-// Returns nothing for a request that is not such a re-INVITE.
+// resume goes to private_hold_resume; any other change of the media, the floor control SSRC among them (TS 24.380
+// clause 4.3.3.1, peer_floor_ssrc_refused), is refused with 488 (Not Acceptable Here) before anything is accepted, so
+// the session goes on unchanged (RFC 3261 section 14.2: a UAS that rejects the offer of a re-INVITE keeps the
+// session as it was). Returns nothing for a request that is not such a re-INVITE.
 std::optional<SipResponse> McServer::plain_reinvite(const SipMessage &message, const User &user) {
   const auto found = legs_.find(message.dialog_id);
   if (found == legs_.end()) return std::nullopt;
@@ -1134,7 +1231,8 @@ std::optional<SipResponse> McServer::plain_reinvite(const SipMessage &message, c
   const auto &offer = message.remote_media;
   const bool same = old && offer && old->address == offer->address && old->audio_port == offer->audio_port &&
                     old->control == offer->control && old->floor_address == offer->floor_address &&
-                    old->floor_port == offer->floor_port && old->payload_type == offer->payload_type &&
+                    old->floor_port == offer->floor_port && old->floor_ssrc == offer->floor_ssrc &&
+                    old->payload_type == offer->payload_type &&
                     old->octet_aligned == offer->octet_aligned && old->direction == offer->direction &&
                     old->protected_media == offer->protected_media &&
                     (!old->video || (offer->video && old->video->port == offer->video->port));
@@ -1238,6 +1336,14 @@ void McServer::group_invite(const SipMessage &message, User &user, McpttInfo &in
   const auto updating = legs_.find(message.dialog_id);
   if (updating != legs_.end())
     return priority_reinvite(message, user, info, session, profile, updating->second, correction, response);
+  // The offer's floor control SSRC, before preemption or a broadcast's release of other calls (group_join_allowed,
+  // create_group_session); RFC 3261 section 13.3.1.3: 488 (Not Acceptable Here).
+  if (message.remote_media->control != MediaControl::none &&
+      offered_floor_ssrc_refused(user, admission_policy.value("protect_floor", false),
+                                 message.remote_media->floor_ssrc)) {
+    response.status_code = 488;
+    return;
+  }
 
   // Clause 6.3.3.1.13.4, local policy: a receiver of a broadcast group call does not cancel its emergency state.
   if (session && session->broadcast && user.id != session->initiator && info.emergency == false) {
@@ -1252,7 +1358,10 @@ void McServer::group_invite(const SipMessage &message, User &user, McpttInfo &in
   if (creating)
     session = create_group_session(user, info, profile, admission_policy, group_type, hierarchy, broadcast_request,
                                    chat_request);
-  const auto leg = group_call_leg(message, user, info, session, profile, creating, correction, response);
+  // TS 24.380 clauses 14.3.5 and 6.3.5.2.2: the request initiates the call (a new one, or one that exists when
+  // the group identity is called), unless it joins a chat group call that exists or rejoins by session identity.
+  const bool initiates = !session_addressed && (creating || !chat_request);
+  const auto leg = group_call_leg(message, user, info, session, profile, creating, initiates, correction, response);
   if (!leg) return;
   answer_group_invite(message, user, info, session, profile, leg, creating, session_addressed, response);
 }
@@ -1572,11 +1681,12 @@ std::shared_ptr<McServer::Session> McServer::create_group_session(const User &us
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 10.1.1.4.2 (TS 24.281 clause 9.2): the caller's leg of the group call from its SDP offer, with
-// its functional alias (clause 10.1.1.3.1.1 step 6a) and floor priority. Returns nullptr when the offer is refused
-// (488 in `response`).
+// its functional alias (clause 10.1.1.3.1.1 step 6a), floor priority and, when it initiates the call (initiates),
+// its implicit floor request (TS 24.380 clause 14.3.5). Returns nullptr when the offer is refused (488 in
+// `response`).
 std::shared_ptr<McServer::Leg> McServer::group_call_leg(const SipMessage &message, const User &user,
                                                         const McpttInfo &info, const std::shared_ptr<Session> &session,
-                                                        const Json &profile, bool creating,
+                                                        const Json &profile, bool creating, bool initiates,
                                                         const std::optional<McpttInfo> &correction,
                                                         SipResponse &response) {
   // TS 24.281 clause 9.2: an MCVideo group call is always under transmission control.
@@ -1584,8 +1694,8 @@ std::shared_ptr<McServer::Leg> McServer::group_call_leg(const SipMessage &messag
     response.status_code = 488;
     return nullptr;
   }
-  auto leg = make_leg(user.id, session);
-  if (leg->local.floor_ssrc == message.remote_media->floor_ssrc) {
+  auto leg = make_leg(user.id, session, message.remote_media->floor_ssrc);
+  if (peer_floor_ssrc_refused(*leg, message.remote_media->floor_ssrc)) {
     response.status_code = 488;
     return nullptr;
   }
@@ -1603,8 +1713,10 @@ std::shared_ptr<McServer::Leg> McServer::group_call_leg(const SipMessage &messag
   leg->local.octet_aligned = message.remote_media->octet_aligned;
   leg->local.queueing = leg->local.queueing && message.remote_media->queueing;
 
-  // The service's part of the answer: MCVideo implicit Transmission Request and video payload type.
+  // The service's part of the answer: MCVideo implicit Transmission Request and video payload type; the MCPTT
+  // implicit floor request (TS 24.380 clause 14.3.5).
   answer_service_media(*leg, *message.remote_media, creating);
+  accept_implicit_floor_request(*leg, *message.remote_media, initiates);
   negotiate_priority(*leg, profile, message.remote_media->floor_priority);
   return leg;
 }
@@ -1618,7 +1730,7 @@ void McServer::answer_group_invite(const SipMessage &message, const User &user, 
                                    const std::shared_ptr<Session> &session, const Json &profile,
                                    const std::shared_ptr<Leg> &leg, bool creating, bool session_addressed,
                                    SipResponse &response) {
-  response.local_media = leg->local;
+  response.local_media = initial_answer_media(*leg);
   response.contact_uri = session->uri;
   response.focus = true;
   const auto requested_priority = info;
@@ -1647,6 +1759,7 @@ void McServer::answer_group_invite(const SipMessage &message, const User &user, 
     response.status_code = 100;
     response.reason = "Trying";
   } else if (!session_addressed && !session->chat) {
+    // TS 24.379 clause 10.1.1.4.2 step j) (TS 24.281 the same): joining an ongoing group call, warning 123.
     response.headers.push_back({"Warning", warning_value(warn(Warning::session_exists))});
   }
   // Do not publish a phantom session if media allocation or response creation fails.

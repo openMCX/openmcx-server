@@ -15,6 +15,7 @@
 #include <functional>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -75,21 +76,31 @@ struct KeyProperties {
 // standard profile.
 struct KeyParameterWireProfile {
   std::uint8_t message_type;
-  std::uint8_t algorithm;
+  std::uint8_t algorithm; // DP_AES_128_GCM (TS 33.180 table 8.5.4.2-1)
   std::uint8_t key_parameters_iei;
   std::uint8_t encrypted_payload_iei;
+  // DP_AES_256_GCM (TS 33.180 table 8.5.4.2-2), which TS 33.180 assigns no code either: only an agreed profile that
+  // names its value sends or accepts it; without one, DP_AES_256_GCM is neither sent nor accepted.
+  std::optional<std::uint8_t> algorithm_256{};
 };
 
 //------------------------------------------------------------------------------
 // TS 33.180 clause 5.2.2 and annex E.1.2: the key a MIKEY-SAKKE I_MESSAGE carries: the key (TGK), RAND, CSB-ID, the
-// timestamp and the key parameters.
+// timestamp and the key parameters. RAND is variable (RFC 3830 section 6.11, "RAND len ... SHOULD be at least 16");
+// OpenMCX writes 16 octets. The timestamp is kept as full NTP seconds (all eras); the wire carries the low 32 bits.
 struct KeyMessage {
   std::array<std::uint8_t, 16> key{};
-  std::array<std::uint8_t, 16> random{};
+  Bytes random = Bytes(16);
   std::uint32_t csb_id = 0;
   std::uint64_t ntp_seconds = 0;
   std::optional<KeyProperties> properties;
 };
+
+//------------------------------------------------------------------------------
+// RFC 5905 section 6: the full NTP seconds of the 32-bit seconds field of an NTP-UTC timestamp (RFC 3830 section 6.6,
+// TS 33.180 annex E.1.2), which holds the era offset only. The era comes from "external means", the local clock
+// (now, full NTP seconds): the era that puts the timestamp nearest to now (adjacent eras within 68 years).
+std::uint64_t ntp_from_wire(std::uint32_t seconds, std::uint64_t now);
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex F.2.1.1: the MIKEY-SAKKE UID of an identity for the key period of the given time. Time is seconds
@@ -136,9 +147,16 @@ Bytes create_mikey(const PublicParameters &parameters, const IdentityKeys &sende
                    const KeyMessage &key, const KeyParameterWireProfile *profile = nullptr);
 
 //------------------------------------------------------------------------------
+// RFC 3830 section 5.4: the allowable clock skew of a received I_MESSAGE's timestamp, "which is set by the local
+// policy"; it also bounds how long the replay cache remembers a message. Configurable (security.mikey_clock_skew_s);
+// 300 s is the default pending maintainer choice (no spec value).
+constexpr std::uint32_t default_mikey_clock_skew_s = 300;
+
+//------------------------------------------------------------------------------
 // TS 33.180 clause 5.2.2: opens a MIKEY-SAKKE I_MESSAGE signed under the receiver's own KMS.
 KeyMessage open_mikey(const PublicParameters &parameters, const IdentityKeys &recipient, std::string_view sender,
-                      std::span<const std::uint8_t> message, std::uint64_t now, std::uint32_t skew = 300,
+                      std::span<const std::uint8_t> message, std::uint64_t now,
+                      std::uint32_t skew = default_mikey_clock_skew_s,
                       const KeyParameterWireProfile *profile = nullptr);
 
 //------------------------------------------------------------------------------
@@ -159,7 +177,8 @@ Bytes create_mikey(const PublicParameters &parameters, const PublicParameters &r
 // resolved through the lookup.
 KeyMessage open_mikey(const PublicParameters &parameters, const KmsLookup &lookup, const IdentityKeys &recipient,
                       std::string_view sender, std::span<const std::uint8_t> message, std::uint64_t now,
-                      std::uint32_t skew = 300, const KeyParameterWireProfile *profile = nullptr);
+                      std::uint32_t skew = default_mikey_clock_skew_s,
+                      const KeyParameterWireProfile *profile = nullptr);
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex E.1.2: the initiator's KMS URI (IDRkmsi) of an I_MESSAGE, read without authenticating it.
@@ -170,9 +189,16 @@ std::string mikey_initiator_kms(std::span<const std::uint8_t> message);
 std::pair<std::string, std::string> mikey_receiver(std::span<const std::uint8_t> message);
 
 //------------------------------------------------------------------------------
-// TS 33.180 clause 8.5.4: the MCData Protected Payload message, AES-128-GCM under a DPCK derived from the DPPK (the
+// TS 33.180 clause 8.5.4: the MCData Protected Payload message, AES-GCM under a DPCK derived from the DPPK (the
 // PCK, GMK or CSK) by annex F.1.5. TS 33.180 V19.4.0 assigns no numeric algorithm ID or Payload IEI, so the wire
 // profile supplies them.
+//
+// TS 33.180 clause 8.5.4.2: the two algorithms. E.1.1: "The GMK, PCK, CSK and MuSiK shall be 16 octets in length", so
+// annex F.1.5 gives a 128-bit DPCK for every DPPK ("Where the DPPK is 128-bits, the DPCK shall be 128-bits") except
+// for the CSK that protects MCData signalling (MCData signalling parameters, Data signalling payload, End to end
+// security parameters) between client and server, where DP_AES_256_GCM takes "the entire output of the KDF".
+enum class PayloadAlgorithm : std::uint8_t { aes_128_gcm, aes_256_gcm };
+
 struct ProtectedPayload {
   std::uint8_t message_type = 0; // TS 24.282 table 15.2.2-1 with bit 7 (0x40) set
   std::uint64_t unix_seconds = 0;
@@ -180,10 +206,14 @@ struct ProtectedPayload {
   std::uint8_t sequence = 0;
   std::uint32_t dppk_id = 0;
   Bytes plain;
+  // Sealing: the algorithm to use; opening: the algorithm the message names. TS 33.180 table 8.5.4.1-1 NOTE 6: the
+  // signalling algorithm "defaults to DP_AES_128_GCM ... if not present".
+  PayloadAlgorithm algorithm = PayloadAlgorithm::aes_128_gcm;
 };
 
 //------------------------------------------------------------------------------
-// TS 33.180 clauses 8.5.4.1 (table 8.5.4.1-1) and 8.5.4.2 (table 8.5.4.2-1): seals a Protected Payload message.
+// TS 33.180 clauses 8.5.4.1 (table 8.5.4.1-1) and 8.5.4.2 (tables 8.5.4.2-1 and 8.5.4.2-2): seals a Protected Payload
+// message; DP_AES_256_GCM only under a CSK (DPPK-ID purpose tag 2, annex G) and with the profile's code for it.
 Bytes seal_payload(const ProtectedPayload &message, std::span<const std::uint8_t, 16> dppk,
                    const KeyParameterWireProfile &profile);
 
@@ -192,9 +222,11 @@ Bytes seal_payload(const ProtectedPayload &message, std::span<const std::uint8_t
 std::uint32_t payload_key_id(std::span<const std::uint8_t> data);
 
 //------------------------------------------------------------------------------
-// TS 33.180 clauses 8.5.4.1 and 8.5.4.2: decrypts and authenticates a Protected Payload message.
+// TS 33.180 clauses 8.5.4.1 and 8.5.4.2: decrypts and authenticates a Protected Payload message. csk_signalling: the
+// message protects MCData signalling under the CSK (annex F.1.5, last paragraph), the only use in which
+// DP_AES_256_GCM is accepted; any other message names DP_AES_128_GCM.
 ProtectedPayload open_payload(std::span<const std::uint8_t> data, std::span<const std::uint8_t, 16> dppk,
-                              const KeyParameterWireProfile &profile);
+                              const KeyParameterWireProfile &profile, bool csk_signalling = false);
 
 //------------------------------------------------------------------------------
 // TS 33.180 table 8.5.4.1-1 NOTE 2: data longer than one Protected Payload message holds (65535 octets) as a series of
@@ -259,4 +291,16 @@ void require_active(const KeyMessage &key, std::string_view group, std::uint64_t
 // As require_active, but a key whose Activation Time is still to come passes: it is kept for that time (annex E.6.4,
 // a GMK sent ahead of a key change, TS 24.481 clause 7.7.8).
 void require_unexpired(const KeyMessage &key, std::string_view group, std::uint64_t now);
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex E.6.10 ("the time in UTC at which the associated key shall no longer be used"; "A value of 0 shall
+// imply the key shall not expire") and annex E.6.9 (Status bit 0: not revoked), checked at each use of a key accepted
+// earlier: throws once the key may no longer be used. A key without Key Parameters has no Expiry time: it passes.
+// Inline, for the header-only users of keys (ProtectedCall).
+inline void require_in_use(const KeyMessage &key, std::uint64_t now) {
+  if (!key.properties) return;
+  if (!(key.properties->status & 1)) throw std::runtime_error("key revoked");
+  if (key.properties->expiry_unix_seconds && now >= key.properties->expiry_unix_seconds)
+    throw std::runtime_error("key expired");
+}
 } // namespace mcx::keying

@@ -129,6 +129,30 @@ func (svc *service) initializeKMS() error {
 }
 
 // ------------------------------------------------------------------------------
+// RFC 5905 section 6: the full NTP seconds of the 32-bit seconds field of an NTP timestamp (TS 33.180 annex D.2.4:
+// "a NTP-UTC 64-bit timestamp as defined in IETF RFC 5905"), which carries the era offset only: "the seconds field
+// is divided into a 32-bit Era Number field and a 32-bit Era Offset field"; eras "can be derived from external
+// means", here the local clock: the era that puts the timestamp nearest to now, "correct values are obtained even if
+// the client and server are in adjacent eras" (within 68 years).
+func ntpFromWire(seconds uint32, now uint64) uint64 {
+	era := now >> 32
+	best := era<<32 | uint64(seconds)
+	distance := func(value uint64) uint64 {
+		if value > now {
+			return value - now
+		}
+		return now - value
+	}
+	if value := (era-1)<<32 | uint64(seconds); era > 0 && distance(value) < distance(best) {
+		best = value
+	}
+	if value := (era+1)<<32 | uint64(seconds); era < 1<<32-1 && distance(value) < distance(best) {
+		best = value
+	}
+	return best
+}
+
+// ------------------------------------------------------------------------------
 // TS 33.180 annex D.2: the KMS request URIs (init, keyprov and certcache).
 func (svc *service) routesKMS(mux *http.ServeMux) {
 	mux.HandleFunc("GET /readyz", func(writer http.ResponseWriter, _ *http.Request) {
@@ -221,7 +245,7 @@ func (svc *service) kmsProvision(writer http.ResponseWriter, request *http.Reque
 			return
 		}
 		// A client cannot request future identity keys or arbitrary historical periods.
-		selected := value >> 32
+		selected := ntpFromWire(uint32(value>>32), now)
 		if selected > now || now-selected > kmsKeyPeriodSeconds {
 			writeJSON(writer, http.StatusForbidden, map[string]string{"error": "unavailable_key_period"})
 			return

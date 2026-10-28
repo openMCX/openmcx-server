@@ -113,34 +113,50 @@ const userAuthPath = "/userauth"
 // "password", posted to userAuthPath); another (the OpenMCX native clients) gets the request ID for POST /login.
 //
 // The nonce is optional (OpenID Connect Core 1.0 section 3.1.2.1, and not in table B.4.2.2-1); when given, the ID
-// token repeats it. acr_values is a voluntary claim request (OpenID Connect Core 1.0 section 3.1.2.1): the
-// user is authenticated by password whatever it names, and the ID token's acr says so (acrPassword).
-// Deviation from TS 33.180 table B.4.2.2-1 (acr_values REQUIRED): a request without acr_values is accepted, as
-// from the Android client of OpenMCX 1.0.0, which did not send it (the OpenMCX clients send it now).
+// token repeats it. TS 33.180 table B.4.2.2-1: acr_values is REQUIRED, so a request without it is refused with
+// "invalid_request" (RFC 6749 section 4.1.2.1: "The request is missing a required parameter"; section 3.1: one
+// "sent without a value MUST be treated as if they were omitted from the request"); its values are a
+// voluntary claim request (OpenID Connect Core 1.0 section 3.1.2.1): the user is authenticated by password whatever
+// they name, and the ID token's acr says so (acrPassword).
+//
+// RFC 6749 section 4.1.2.1 and OpenID Connect Core 1.0 section 3.1.2.6: a request of an unknown client or redirect
+// URI is answered here (JSON 400) and never redirected; any other refusal goes to the redirect URI with the error
+// code and the state (authorizationError).
 func (svc *service) authorize(writer http.ResponseWriter, request *http.Request) {
 	if len(request.URL.RawQuery) > 8192 || parseForm(writer, request) != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
 		return
 	}
 	query := request.Form
+	if query.Get("client_id") != svc.cfg.OAuthClientID || !svc.cfg.redirectAllowed(query.Get("redirect_uri")) {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+		return
+	}
+	refuse := func(code string) {
+		authorizationError(writer, request, query.Get("redirect_uri"), query.Get("state"), code)
+	}
+	if responseType := query.Get("response_type"); responseType != "" && responseType != "code" {
+		refuse("unsupported_response_type")
+		return
+	}
 	if len(query.Get("state")) > maxAuthorizationParameter ||
 		len(query.Get("nonce")) > maxAuthorizationParameter || len(query.Get("acr_values")) > maxAuthorizationParameter ||
-		query.Get("response_type") != "code" || query.Get("client_id") != svc.cfg.OAuthClientID ||
-		!svc.cfg.redirectAllowed(query.Get("redirect_uri")) || !containsWord(query.Get("scope"), "openid") ||
-		query.Get("state") == "" || query.Get("code_challenge_method") != "S256" || !validS256Challenge(query.Get("code_challenge")) {
-		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+		query.Get("response_type") != "code" || !containsWord(query.Get("scope"), "openid") ||
+		query.Get("state") == "" || query.Get("acr_values") == "" ||
+		query.Get("code_challenge_method") != "S256" || !validS256Challenge(query.Get("code_challenge")) {
+		refuse("invalid_request")
 		return
 	}
 	id, err := randomID()
 	if err != nil {
-		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "server_error"})
+		refuse("server_error")
 		return
 	}
 	svc.mu.Lock()
 	svc.sweepAuthorizationState()
 	if len(svc.requests) >= maxAuthorizationState {
 		svc.mu.Unlock()
-		writeJSON(writer, http.StatusTooManyRequests, map[string]string{"error": "temporarily_unavailable"})
+		refuse("temporarily_unavailable")
 		return
 	}
 	svc.requests[id] = authorizationRequest{ClientID: query.Get("client_id"), RedirectURI: query.Get("redirect_uri"), State: query.Get("state"), Nonce: query.Get("nonce"), Challenge: query.Get("code_challenge"), Scope: query.Get("scope"), Expires: svc.now().Add(5 * time.Minute)}
@@ -153,6 +169,24 @@ func (svc *service) authorize(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]string{"request_id": id})
+}
+
+// ------------------------------------------------------------------------------
+// RFC 6749 section 4.1.2.1 (OpenID Connect Core 1.0 section 3.1.2.6): the authorization error response, a redirect
+// to the client's redirect URI with the error code in its query, and the state where the request had one.
+func authorizationError(writer http.ResponseWriter, request *http.Request, redirectURI, state, code string) {
+	redirect, err := url.Parse(redirectURI)
+	if err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": code})
+		return
+	}
+	query := redirect.Query()
+	query.Set("error", code)
+	if state != "" {
+		query.Set("state", state)
+	}
+	redirect.RawQuery = query.Encode()
+	http.Redirect(writer, request, redirect.String(), http.StatusFound)
 }
 
 // ------------------------------------------------------------------------------
@@ -293,6 +327,23 @@ func (svc *service) token(writer http.ResponseWriter, request *http.Request) {
 		svc.clientCredentialsGrant(writer, request)
 		return
 	}
+	// RFC 6749 section 5.2: an unknown grant type is "unsupported_grant_type"; a request without a grant type or a
+	// parameter of table B.4.2.4-1 "invalid_request"; a code, client, redirect URI or verifier that does not match
+	// "invalid_grant".
+	switch grantType := request.Form.Get("grant_type"); {
+	case grantType == "":
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+		return
+	case grantType != "authorization_code":
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "unsupported_grant_type"})
+		return
+	}
+	for _, name := range []string{"code", "client_id", "redirect_uri", "code_verifier"} {
+		if request.Form.Get(name) == "" {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+			return
+		}
+	}
 	codeValue := request.Form.Get("code")
 	svc.mu.Lock()
 	code, ok := svc.codes[codeValue]
@@ -302,7 +353,7 @@ func (svc *service) token(writer http.ResponseWriter, request *http.Request) {
 	svc.mu.Unlock()
 	digest := sha256.Sum256([]byte(request.Form.Get("code_verifier")))
 	actual := base64.RawURLEncoding.EncodeToString(digest[:])
-	if !ok || !code.Expires.After(svc.now()) || request.Form.Get("grant_type") != "authorization_code" || request.Form.Get("client_id") != code.ClientID || request.Form.Get("redirect_uri") != code.RedirectURI || !validPKCEVerifier(request.Form.Get("code_verifier")) || !secureEqual(actual, code.Challenge) {
+	if !ok || !code.Expires.After(svc.now()) || request.Form.Get("client_id") != code.ClientID || request.Form.Get("redirect_uri") != code.RedirectURI || !validPKCEVerifier(request.Form.Get("code_verifier")) || !secureEqual(actual, code.Challenge) {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
 		return
 	}

@@ -427,12 +427,12 @@ def main():
         # is refused with 403 (Forbidden); RFC 6750's 401 is for an invalid token (step 2a).
         check(
             "cms_requires_bearer_token",
-            http("GET", cms + "/xcap-root/org.3gpp.mcptt.user-profile/users/" + user_id + "/mcptt-user-profile-1.xml")[0],
+            http("GET", cms + "/org.3gpp.mcptt.user-profile/users/" + user_id + "/mcptt-user-profile-1.xml")[0],
             {403},
         )
         check(
             "cms_invalid_bearer_token_challenged",
-            http_with("GET", cms + "/xcap-root/org.3gpp.mcptt.user-profile/users/" + user_id + "/mcptt-user-profile-1.xml",
+            http_with("GET", cms + "/org.3gpp.mcptt.user-profile/users/" + user_id + "/mcptt-user-profile-1.xml",
                       {"Authorization": "Bearer invalid-security-probe-token"})[0],
             {401},
         )
@@ -449,6 +449,8 @@ def main():
                 "state": secrets.token_hex(16),
                 "nonce": secrets.token_hex(16),
                 "code_challenge": challenge,
+                # TS 33.180 table B.4.2.2-1: REQUIRED.
+                "acr_values": "3gpp:acr:password",
                 "code_challenge_method": "S256",
             }
         )

@@ -578,9 +578,9 @@ void test_release_state_reordering() {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 6.4 and TS 24.380 clause 6.2.4.2.2: with an implicit floor request the participant
-// waits in 'U: pending Request' without sending or repeating a Floor Request, and enters 'U: has permission'
-// on Floor Granted (clause 6.2.4.4.2).
+// TS 24.379 clause 6.4: the terminating client of a remotely initiated ambient listening call, which the
+// originator's implicit request asks the floor to be granted to, waits in 'U: pending Request' without sending or
+// repeating a Floor Request, and enters 'U: has permission' on Floor Granted (TS 24.380 clause 6.2.4.4.2).
 void test_implicit_grant() {
   mcx::FloorParticipantTimers timers({100, 100, 100, 300, 200, 3});
   const mcx::FloorPacket granted{
@@ -598,6 +598,63 @@ void test_implicit_grant() {
     refused = true;
   }
   assert(refused);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 6.2.4.2.2 step 4: once the 200 (OK) accepts the implicit floor request the participant enters
+// 'U: pending Request' with T101 started and C101 at 1, sending nothing; T101 expiry sends the Floor Request
+// (clause 6.2.4.4.5), the C101-th expiry enters 'U: has no permission' with the request reported failed (clause
+// 6.2.4.4.6); Floor Granted (clause 6.2.4.4.2), Floor Deny (clause 6.2.4.4.4) and Floor Queue Position Info (clause
+// 6.2.4.4.9) end the state as for an explicit request.
+void test_implicit_request_t101() {
+  const mcx::FloorPacket request{mcx::FloorType::Request, false, 7, {mcx::floor_indicator_field(0x1000)}};
+  const mcx::FloorPacket granted{
+      mcx::FloorType::Granted, true, 8, {mcx::duration_field(30), mcx::priority_field(0), mcx::audio_ssrc_field(9)}};
+  {
+    mcx::FloorParticipantTimers timers({100, 100, 100, 300, 200, 3});
+    timers.expect_implicit_grant(request, 0);
+    assert(timers.state() == mcx::FloorParticipantState::PendingRequest);
+    assert(timers.tick(99).empty());                                    // T101 running, nothing sent at the 200 (OK)
+    assert(timers.tick(100) == std::vector<mcx::FloorPacket>{request}); // C101 = 2
+    assert(timers.tick(150).empty());
+    assert(timers.tick(200) == std::vector<mcx::FloorPacket>{request}); // C101 = 3
+    assert(timers.state() == mcx::FloorParticipantState::PendingRequest);
+    assert(timers.tick(300).empty()); // expired by the upper limit of C101
+    assert(timers.state() == mcx::FloorParticipantState::NoPermission);
+    assert(timers.take_failed() == std::vector<mcx::FloorType>{mcx::FloorType::Request});
+  }
+  {
+    mcx::FloorParticipantTimers timers({100, 100, 100, 300, 200, 3});
+    timers.expect_implicit_grant(request, 0);
+    timers.receive(granted, 50);
+    assert(timers.state() == mcx::FloorParticipantState::HasPermission);
+    assert(timers.tick(500).empty()); // T101 stopped
+    assert(timers.take_failed().empty());
+  }
+  {
+    mcx::FloorParticipantTimers timers({100, 100, 100, 300, 200, 3});
+    timers.expect_implicit_grant(request, 0);
+    timers.receive({mcx::FloorType::Deny, true, 8, {mcx::reject_cause_field(1)}}, 50);
+    assert(timers.state() == mcx::FloorParticipantState::NoPermission);
+    assert(timers.tick(500).empty());
+  }
+  {
+    mcx::FloorParticipantTimers timers({100, 100, 100, 300, 200, 3});
+    timers.expect_implicit_grant(request, 0);
+    timers.receive({mcx::FloorType::QueuePositionInfo, true, 8, {mcx::queue_info_field(1, 3)}}, 50);
+    assert(timers.state() == mcx::FloorParticipantState::Queued);
+    assert(timers.tick(500).empty());
+  }
+  {
+    mcx::FloorParticipantTimers timers({100, 100, 100, 300, 200, 3});
+    bool refused = false;
+    try {
+      timers.expect_implicit_grant({mcx::FloorType::Release, true, 7, {}}, 0); // not a Floor Request
+    } catch (const std::runtime_error &) {
+      refused = true;
+    }
+    assert(refused && timers.state() == mcx::FloorParticipantState::NoPermission);
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -832,6 +889,7 @@ int main() {
   test_participant_timers();
   test_release_state_reordering();
   test_implicit_grant();
+  test_implicit_request_t101();
   test_idle_retransmissions();
   test_dynamic_authorization();
   test_departure_releases_owner();

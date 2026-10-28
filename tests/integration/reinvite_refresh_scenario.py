@@ -88,7 +88,10 @@ def main():
         command('client-a', 'call')
         wait('RR-01 a group call with the four clients', in_call(ROLES))
         command('client-b', 'refresh-reinvite')
-        wait('RR-01 client-b\'s refresh re-INVITE is answered 200', lambda: status('client-b').get('last_refresh') == 200)
+        wait(
+            'RR-01 client-b\'s refresh re-INVITE is answered 200',
+            lambda: (status('client-b').get('last_refresh') or {}).get('status') == 200,
+        )
         time.sleep(2)
         wait('RR-01 the call goes on for all four', in_call(ROLES), 5)
         command('client-a', 'hangup')
@@ -98,7 +101,7 @@ def main():
         command('client-a', 'refresh-reinvite')
         wait(
             'RR-02 client-a\'s refresh re-INVITE is answered 200',
-            lambda: status('client-a').get('last_refresh') == 200,
+            lambda: (status('client-a').get('last_refresh') or {}).get('status') == 200,
         )
         time.sleep(2)
         wait('RR-02 the call goes on', in_call(['client-a', 'client-b']), 5)

@@ -73,6 +73,10 @@ func TestClientCredentialsGrant(test *testing.T) {
 		}
 	}
 	rr := grant("mcptt-key", "mcptt-secret", scopePTTKeys, true)
+	// RFC 6749 section 5.1: no-store and "Pragma" no-cache on the token response.
+	if rr.Header().Get("Cache-Control") != "no-store" || rr.Header().Get("Pragma") != "no-cache" {
+		test.Fatalf("token response headers %v", rr.Header())
+	}
 	var answer struct {
 		AccessToken string `json:"access_token"`
 		TokenType   string `json:"token_type"`
@@ -153,6 +157,18 @@ func TestKMSKeyClients(test *testing.T) {
 		if tc.status == 200 && (len(provisioned) != before+1 || provisioned[before] != tc.identity) {
 			test.Fatalf("%s provisioned %v, want %s", tc.path, provisioned[before:], tc.identity)
 		}
+		// RFC 6750 section 3.1: a token presented and refused is challenged with the error code invalid_token.
+		if tc.status == 401 && !strings.Contains(rr.Header().Get("WWW-Authenticate"), `error="invalid_token"`) {
+			test.Fatalf("%s challenge %q", tc.path, rr.Header().Get("WWW-Authenticate"))
+		}
+	}
+	// RFC 6750 section 2.1 with RFC 7235 section 2.1: the auth-scheme is case-insensitive.
+	request := httptest.NewRequest(http.MethodPost, "/keymanagement/identity/v1/init", nil)
+	request.Header.Set("Authorization", "bearer "+own)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, request)
+	if rr.Code != http.StatusOK || provisioned[len(provisioned)-1] != mcptt.Identity {
+		test.Fatalf("lower-case bearer scheme got %d: %s", rr.Code, rr.Body)
 	}
 }
 

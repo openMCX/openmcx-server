@@ -38,7 +38,8 @@ keying::KeyMessage configured_spk(const Json &spk, const std::string &name) {
   key.csb_id = spk.at("id").get<std::uint32_t>();
   if (key.csb_id >> 28 != spk_purpose_tag) throw std::runtime_error("an SPK-ID has purpose tag 3");
   key.key = key_bytes(spk.at("key").get<std::string>(), "an SPK and its RAND are 128 bits");
-  key.random = key_bytes(spk.at("rand").get<std::string>(), "an SPK and its RAND are 128 bits");
+  const auto random = key_bytes(spk.at("rand").get<std::string>(), "an SPK and its RAND are 128 bits");
+  key.random.assign(random.begin(), random.end());
   // Provisioned directly (TS 33.180 clause 5.5): active from now, with no expiry of its own.
   const auto now = static_cast<std::uint64_t>(std::time(nullptr));
   key.properties = keying::KeyProperties{spk_key_type, 1, now - 1, now + provisioned_spk_validity_s, "SPK " + name, {}};

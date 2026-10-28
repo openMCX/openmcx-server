@@ -90,7 +90,7 @@ func beginAuthorization(test *testing.T, handler http.Handler, state string) (re
 	redirectURI = "http://127.0.0.1:19000/callback"
 	query := url.Values{
 		"response_type": {"code"}, "client_id": {"mcx-client"}, "redirect_uri": {redirectURI},
-		"scope": {"openid"}, "state": {state}, "nonce": {"nonce-1"},
+		"scope": {"openid"}, "state": {state}, "nonce": {"nonce-1"}, "acr_values": {acrPassword},
 		"code_challenge": {challenge}, "code_challenge_method": {"S256"},
 	}
 	rr := httptest.NewRecorder()
@@ -144,6 +144,10 @@ func redeem(test *testing.T, handler http.Handler, code, verifier, redirectURI s
 		"grant_type": {"authorization_code"}, "client_id": {"mcx-client"}, "redirect_uri": {redirectURI},
 		"code": {code}, "code_verifier": {verifier},
 	}))
+	// RFC 6749 section 5.1: a token response is never cached.
+	if rr.Code == http.StatusOK && (rr.Header().Get("Cache-Control") != "no-store" || rr.Header().Get("Pragma") != "no-cache") {
+		test.Fatalf("token response cache headers: %v", rr.Header())
+	}
 	return rr.Code, rr.Body.Bytes()
 }
 
@@ -191,21 +195,74 @@ func TestAuthorizationCodePKCEIssuesBoundTokensAndPreservesState(test *testing.T
 
 // ------------------------------------------------------------------------------
 // TS 33.180 annex B.4.2.2: an Authentication Request with a redirect URI that is not the loopback one, without a
-// PKCE challenge, or with a malformed challenge (RFC 7636 section 4.2) is refused.
+// PKCE challenge, or with a malformed challenge (RFC 7636 section 4.2) is refused. RFC 6749 section 4.1.2.1: the
+// unregistered redirect URI (or client) gets a 400 and no redirect; the other refusals go back to the redirect URI
+// with the error code (unsupported_response_type for a response type other than code) and the state.
 func TestAuthorizationRejectsNonLoopbackRedirectAndMissingPKCE(test *testing.T) {
 	handler := newTestHandler(test, RoleIDMS, testConfig(), testKey(test))
-	for name, query := range map[string]url.Values{
-		"non-loopback":        {"response_type": {"code"}, "client_id": {"mcx-client"}, "redirect_uri": {"https://evil.example/cb"}, "scope": {"openid"}, "state": {"s"}, "nonce": {"n"}, "code_challenge": {"x"}, "code_challenge_method": {"S256"}},
-		"missing-pkce":        {"response_type": {"code"}, "client_id": {"mcx-client"}, "redirect_uri": {"http://127.0.0.1:19000/callback"}, "scope": {"openid"}, "state": {"s"}, "nonce": {"n"}},
-		"malformed-challenge": {"response_type": {"code"}, "client_id": {"mcx-client"}, "redirect_uri": {"http://127.0.0.1:19000/callback"}, "scope": {"openid"}, "state": {"s"}, "nonce": {"n"}, "code_challenge": {"short"}, "code_challenge_method": {"S256"}},
+	challenge := strings.Repeat("A", 43)
+	for name, tc := range map[string]struct {
+		query url.Values
+		error string
+	}{
+		"non-loopback":        {url.Values{"response_type": {"code"}, "client_id": {"mcx-client"}, "redirect_uri": {"https://evil.example/cb"}, "scope": {"openid"}, "state": {"s"}, "nonce": {"n"}, "acr_values": {acrPassword}, "code_challenge": {challenge}, "code_challenge_method": {"S256"}}, ""},
+		"unknown-client":      {url.Values{"response_type": {"code"}, "client_id": {"other"}, "redirect_uri": {"http://127.0.0.1:19000/callback"}, "scope": {"openid"}, "state": {"s"}, "nonce": {"n"}, "acr_values": {acrPassword}, "code_challenge": {challenge}, "code_challenge_method": {"S256"}}, ""},
+		"missing-pkce":        {url.Values{"response_type": {"code"}, "client_id": {"mcx-client"}, "redirect_uri": {"http://127.0.0.1:19000/callback"}, "scope": {"openid"}, "state": {"s"}, "nonce": {"n"}, "acr_values": {acrPassword}}, "invalid_request"},
+		"malformed-challenge": {url.Values{"response_type": {"code"}, "client_id": {"mcx-client"}, "redirect_uri": {"http://127.0.0.1:19000/callback"}, "scope": {"openid"}, "state": {"s"}, "nonce": {"n"}, "acr_values": {acrPassword}, "code_challenge": {"short"}, "code_challenge_method": {"S256"}}, "invalid_request"},
+		// TS 33.180 table B.4.2.2-1: acr_values REQUIRED; RFC 6749 section 3.1: an empty one counts as omitted.
+		"missing-acr-values":  {url.Values{"response_type": {"code"}, "client_id": {"mcx-client"}, "redirect_uri": {"http://127.0.0.1:19000/callback"}, "scope": {"openid"}, "state": {"s"}, "nonce": {"n"}, "code_challenge": {challenge}, "code_challenge_method": {"S256"}}, "invalid_request"},
+		"empty-acr-values":    {url.Values{"response_type": {"code"}, "client_id": {"mcx-client"}, "redirect_uri": {"http://127.0.0.1:19000/callback"}, "scope": {"openid"}, "state": {"s"}, "nonce": {"n"}, "acr_values": {""}, "code_challenge": {challenge}, "code_challenge_method": {"S256"}}, "invalid_request"},
+		"token-response-type": {url.Values{"response_type": {"token"}, "client_id": {"mcx-client"}, "redirect_uri": {"http://127.0.0.1:19000/callback"}, "scope": {"openid"}, "state": {"s"}, "nonce": {"n"}, "acr_values": {acrPassword}, "code_challenge": {challenge}, "code_challenge_method": {"S256"}}, "unsupported_response_type"},
 	} {
 		test.Run(name, func(test *testing.T) {
 			rr := httptest.NewRecorder()
-			handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/authorize?"+query.Encode(), nil))
-			if rr.Code != http.StatusBadRequest {
-				test.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/authorize?"+tc.query.Encode(), nil))
+			if tc.error == "" {
+				if rr.Code != http.StatusBadRequest || rr.Header().Get("Location") != "" {
+					test.Fatalf("status=%d location=%q body=%s", rr.Code, rr.Header().Get("Location"), rr.Body.String())
+				}
+				return
+			}
+			location, err := url.Parse(rr.Header().Get("Location"))
+			if rr.Code != http.StatusFound || err != nil || !strings.HasPrefix(location.String(), "http://127.0.0.1:19000/callback?") ||
+				location.Query().Get("error") != tc.error || location.Query().Get("state") != "s" {
+				test.Fatalf("status=%d location=%q", rr.Code, rr.Header().Get("Location"))
 			}
 		})
+	}
+}
+
+// ------------------------------------------------------------------------------
+// RFC 6749 section 5.2: an unknown grant type gets unsupported_grant_type; no grant type or a missing parameter of
+// TS 33.180 table B.4.2.4-1 invalid_request; an unknown code invalid_grant.
+func TestTokenErrorCodes(test *testing.T) {
+	handler := newTestHandler(test, RoleIDMS, testConfig(), testKey(test))
+	complete := url.Values{"grant_type": {"authorization_code"}, "client_id": {"mcx-client"},
+		"redirect_uri": {"http://127.0.0.1:19000/callback"}, "code": {"unknown"}, "code_verifier": {strings.Repeat("v", 43)}}
+	for name, tc := range map[string]struct {
+		change func(url.Values)
+		error  string
+	}{
+		"password grant":   {func(v url.Values) { v.Set("grant_type", "password") }, "unsupported_grant_type"},
+		"no grant type":    {func(v url.Values) { v.Del("grant_type") }, "invalid_request"},
+		"no code":          {func(v url.Values) { v.Del("code") }, "invalid_request"},
+		"no code verifier": {func(v url.Values) { v.Del("code_verifier") }, "invalid_request"},
+		"no redirect URI":  {func(v url.Values) { v.Del("redirect_uri") }, "invalid_request"},
+		"unknown code":     {func(url.Values) {}, "invalid_grant"},
+	} {
+		values := url.Values{}
+		for key, value := range complete {
+			values[key] = append([]string(nil), value...)
+		}
+		tc.change(values)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, formRequest(http.MethodPost, "/token", values))
+		var body struct {
+			Error string `json:"error"`
+		}
+		if rr.Code != http.StatusBadRequest || json.Unmarshal(rr.Body.Bytes(), &body) != nil || body.Error != tc.error {
+			test.Fatalf("%s: %d %s, want %s", name, rr.Code, rr.Body.String(), tc.error)
+		}
 	}
 }
 
@@ -218,7 +275,7 @@ func TestTokenRejectsVerifierOutsidePKCELength(test *testing.T) {
 	digest := sha256.Sum256([]byte(verifier))
 	query := url.Values{
 		"response_type": {"code"}, "client_id": {"mcx-client"}, "redirect_uri": {"http://127.0.0.1:19000/callback"},
-		"scope": {"openid"}, "state": {"state"}, "nonce": {"nonce"},
+		"scope": {"openid"}, "state": {"state"}, "nonce": {"nonce"}, "acr_values": {acrPassword},
 		"code_challenge": {base64.RawURLEncoding.EncodeToString(digest[:])}, "code_challenge_method": {"S256"},
 	}
 	rr := httptest.NewRecorder()
@@ -345,22 +402,28 @@ func TestAuthorizationStateBoundedAndExpired(test *testing.T) {
 	for index := 0; index < 1024; index++ {
 		svc.requests[fmt.Sprint(index)] = authorizationRequest{Expires: now.Add(time.Minute)}
 	}
-	query := url.Values{"response_type": {"code"}, "client_id": {"mcx-client"}, "redirect_uri": {"http://127.0.0.1:19000/callback"}, "scope": {"openid"}, "state": {"state"}, "nonce": {"nonce"}, "code_challenge": {strings.Repeat("A", 43)}, "code_challenge_method": {"S256"}}
+	query := url.Values{"response_type": {"code"}, "client_id": {"mcx-client"}, "redirect_uri": {"http://127.0.0.1:19000/callback"}, "scope": {"openid"}, "state": {"state"}, "nonce": {"nonce"}, "acr_values": {acrPassword}, "code_challenge": {strings.Repeat("A", 43)}, "code_challenge_method": {"S256"}}
+	// RFC 6749 section 4.1.2.1: a refusal goes back to the redirect URI with its error code.
+	var refused string
 	request := func() int {
 		recorder := httptest.NewRecorder()
 		svc.authorize(recorder, httptest.NewRequest("GET", "/authorize?"+query.Encode(), nil))
+		refused = ""
+		if location, err := url.Parse(recorder.Header().Get("Location")); err == nil {
+			refused = location.Query().Get("error")
+		}
 		return recorder.Code
 	}
-	if got := request(); got != http.StatusTooManyRequests {
-		test.Fatalf("full pending state returned %d", got)
+	if got := request(); got != http.StatusFound || refused != "temporarily_unavailable" {
+		test.Fatalf("full pending state returned %d %q", got, refused)
 	}
 	now = now.Add(2 * time.Minute)
 	if got := request(); got != http.StatusOK || len(svc.requests) != 1 {
 		test.Fatalf("expired state not reclaimed: status=%d count=%d", got, len(svc.requests))
 	}
 	query.Set("state", strings.Repeat("x", 4096))
-	if got := request(); got != http.StatusBadRequest {
-		test.Fatalf("oversized state returned %d", got)
+	if got := request(); got != http.StatusFound || refused != "invalid_request" {
+		test.Fatalf("oversized state returned %d %q", got, refused)
 	}
 }
 

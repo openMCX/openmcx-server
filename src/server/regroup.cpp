@@ -580,7 +580,7 @@ void McServer::end_group_calls(const std::string &group) {
   for (const auto &leg : session_legs(*found->second)) {
     leg->active = false;
     try {
-      sip_.bye(leg->dialog, {}, {{"Reason", "SIP ;cause=200 ;text=\"Regroup removed\""}});
+      bye(leg->dialog, {}, {{"Reason", "SIP ;cause=200 ;text=\"Regroup removed\""}});
     } catch (const std::exception &error) {
       event("sip_error", {{"reason", error.what()}});
     }

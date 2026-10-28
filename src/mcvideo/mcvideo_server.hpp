@@ -79,8 +79,12 @@ class McvideoServer final : public McServer {
   bool refuse_remote_request(Relay &relay, UdpSocket &socket, std::span<const std::uint8_t> plain,
                              ProtectedCall *csk) override;
 
-  void check_service_media(const MediaDescription &media, bool implicit_allowed,
-                           bool uncontrolled_allowed) const override;
+  void check_service_media(const MediaDescription &media, bool uncontrolled_allowed) const override;
+
+  //------------------------------------------------------------------------------
+  // TS 24.281 clause 6.4: the implicit Transmission Request of an MCVideo call is answered with the service's part
+  // of the answer (answer_service_media, TS 24.581 clause 14.3.5).
+  void accept_implicit_floor_request(Leg & /*leg*/, const MediaDescription & /*remote*/, bool /*initiates*/) override {}
 
   std::unique_ptr<UdpSocket> service_media(MediaDescription &local, unsigned offset,
                                            const std::string &address) override;

@@ -213,6 +213,7 @@ struct SipTransmission {
   std::string request_uri; // of a request
   std::string from_uri, to_uri;
   std::vector<SipHeader> headers;
+  std::string call_id; // the dialog the message belongs to (the engine's dialog ID)
 };
 
 //------------------------------------------------------------------------------

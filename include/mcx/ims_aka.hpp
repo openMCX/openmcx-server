@@ -210,19 +210,55 @@ struct SecMechanism {
 [[nodiscard]] std::string format_sec_mechanism(const SecMechanism &mechanism);
 
 //------------------------------------------------------------------------------
+// TS 33.203 V19.1.0 annex H and annex I, with TS 33.210 V19.3.0 clauses 5.3.3 and 5.3.4 (the RFC 8221 "MUST"
+// algorithms, AES-GMAC): the integrity ("alg") and encryption ("ealg") algorithm combinations this UE supports, in its
+// order of preference: AES-GCM with unique salt, AES-GCM, HMAC-SHA2-256-128 with AES-CBC, HMAC-SHA-1-96 with AES-CBC
+// (TS 37.579-1 table 5.5.2.13-1), AES-GMAC with unique salt, AES-GMAC, HMAC-SHA2-256-128, HMAC-SHA-1-96 (the last two
+// with the NULL encryption algorithm). "aes-gcm"/"aes-gcm-us" go with alg "null" only, "aes-gmac"/"aes-gmac-us" with
+// ealg "null" only (annex H). The removed hmac-md5-96 and des-ede3-cbc are not supported.
+struct EspAlgorithms {
+  std::string_view alg, ealg;
+};
+[[nodiscard]] std::span<const EspAlgorithms> supported_esp_algorithms();
+
+// TS 33.203 clause 7.2 (SM1: "a list of identifiers for the integrity and encryption algorithms, which the UE
+// supports") and RFC 3329 section 2.2: the Security-Client mechanisms of an offer: one per supported combination with
+// the SPIs and ports of base, q decreasing in the order of preference.
+[[nodiscard]] std::vector<SecMechanism> esp_offers(const SecMechanism &base);
+// The mechanisms as one header field value (comma-separated, RFC 3329 section 2.2).
+[[nodiscard]] std::string format_sec_mechanisms(const std::vector<SecMechanism> &mechanisms);
+
+//------------------------------------------------------------------------------
 // TS 33.203 clause 7.2 and annex H: the UE's choice from a Security-Server: by preference (RFC 3329 section 2.3.1:
-// highest q first, then in order) the first mechanism that is "ipsec-3gpp" (case-insensitive) with ESP ("prot"
-// absent or "esp") in transport mode ("mod" absent or "trans"), the integrity algorithm the UE supports
-// (hmac-sha-1-96) and an encryption algorithm it supports (aes-cbc, or the NULL algorithm when the P-CSCF names none or
-// "null", clause 7.2), with all four SPIs and ports; none when nothing is acceptable (clause 7.3.2.2). The chosen
-// mechanism's ealg is set ("null" when absent).
+// highest q first, then in order, the P-CSCF's list) the first mechanism that is "ipsec-3gpp" (case-insensitive) with
+// ESP ("prot" absent or "esp") in transport mode ("mod" absent or "trans"), an algorithm combination the UE supports
+// (supported_esp_algorithms; ealg absent means "null", clause 7.2), with all four SPIs and ports; none when nothing is
+// acceptable (clause 7.3.2.2). The chosen mechanism's alg and ealg are set in lower case.
 [[nodiscard]] std::optional<SecMechanism> select_mechanism(const std::vector<SecMechanism> &server);
 
 //------------------------------------------------------------------------------
+// TS 33.220 V19.1.0 annex B.2: the key derivation function, HMAC-SHA-256(Key, S) with S = FC || P0 || L0 (L0 the
+// length of P0 in two octets).
+[[nodiscard]] std::array<std::uint8_t, 32> kdf(std::span<const std::uint8_t> key, std::uint8_t fc,
+                                               std::string_view p0);
+
 // TS 33.203 annex I: IK_ESP and CK_ESP from IK_IM and CK_IM: for hmac-sha-1-96 IK followed by 32 zero bits; for
-// aes-cbc CK itself; the NULL encryption algorithm has no key. Other algorithms throw std::invalid_argument.
-[[nodiscard]] std::vector<std::uint8_t> integrity_key_esp(std::string_view alg, const Key &ik);
+// hmac-sha2-256-128 the 256 bits of KDF(CK || IK, FC 0x5A, "HMAC-SHA2-256-128"); for aes-gmac(-us) IK itself; alg
+// "null" (with AES-GCM) has no key. For aes-cbc and aes-gcm(-us) CK itself; the NULL encryption algorithm has no key.
+// Other algorithms throw std::invalid_argument.
+[[nodiscard]] std::vector<std::uint8_t> integrity_key_esp(std::string_view alg, const Key &ck, const Key &ik);
 [[nodiscard]] std::vector<std::uint8_t> encryption_key_esp(std::string_view ealg, const Key &ck);
+
+// TS 33.203 annex I: the salt of AES-GCM (RFC 4106 section 4: KDF(CK || IK, FC 0x59, "AES_GCM_SALT")) or AES-GMAC
+// (RFC 4543 section 3.2: FC 0x58, "AES_GMAC_SALT"): the 32 least significant bits of the KDF output; empty for the
+// other combinations.
+[[nodiscard]] std::vector<std::uint8_t> esp_salt(std::string_view alg, std::string_view ealg, const Key &ck,
+                                                 const Key &ik);
+// TS 33.203 annex I, "aes-gcm-us" and "aes-gmac-us" (unique salt): the salt of one SA: the direction bit ("0" UE to
+// P-CSCF, "1" P-CSCF to UE) XORed with the least significant bit and the role bit of the source ("0" client, "1"
+// server) with the second least significant bit; the other combinations use salt as it is.
+[[nodiscard]] std::vector<std::uint8_t> sa_salt(std::span<const std::uint8_t> salt, std::string_view alg,
+                                                std::string_view ealg, bool to_ue, bool from_server);
 
 //------------------------------------------------------------------------------
 // Helper: 16 or 2 bytes from hexadecimal text (the ISIM configuration's k, opc and amf); throws std::invalid_argument

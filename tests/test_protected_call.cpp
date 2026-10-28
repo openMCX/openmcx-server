@@ -470,10 +470,124 @@ void private_call_context() {
 }
 
 //------------------------------------------------------------------------------
+// The injected clock of the key expiry tests (Unix seconds).
+std::uint64_t test_now = 0;
+
+std::uint64_t test_clock() { return test_now; }
+
+//------------------------------------------------------------------------------
+// Fails unless the action throws PacketKeyExpired (the packet alone is refused).
+template <class Action> void refuses_packet(Action action, const char *message) {
+  bool refused = false;
+  try {
+    action();
+  } catch (const mcx::PacketKeyExpired &) {
+    refused = true;
+  }
+  check(refused, message);
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex E.6.10 at each packet: a PCK with Key Parameters protects and unprotects 1 s before its Expiry time
+// and neither from that time on, while private_ready() (which would end the call) stays true; a PCK without Key
+// Parameters, or with Expiry time 0, never expires.
+void private_key_expiry_per_packet() {
+  const std::uint64_t expiry = 2000000000;
+  auto dated = pck();
+  dated.properties = mcx::keying::KeyProperties{1, 1, 0, expiry, "", {}};
+  mcx::ProtectedCall caller, callee;
+  caller.set_clock(test_clock);
+  callee.set_clock(test_clock);
+  caller.set_private(dated, true);
+  callee.set_private(dated, false);
+  test_now = expiry - 1;
+  auto packet = rtp();
+  auto wire = caller.protect_media(packet, "sip:alice@example.org");
+  check(callee.unprotect_media(wire, "sip:alice@example.org") == packet, "PCK usable 1 s before its Expiry time");
+  packet[3] = 2;
+  wire = caller.protect_media(packet, "sip:alice@example.org");
+  test_now = expiry;
+  refuses_packet([&] { caller.protect_media(rtp(), "sip:alice@example.org"); }, "expired PCK protected a packet");
+  refuses_packet([&] { callee.unprotect_media(wire, "sip:alice@example.org"); }, "expired PCK opened a packet");
+  check(caller.private_ready() && callee.private_ready(), "PCK expiry must not end the call (private_ready)");
+  auto revoked = pck();
+  revoked.csb_id = 0x10000008;
+  revoked.properties = mcx::keying::KeyProperties{1, 0, 0, 0, "", {}};
+  mcx::ProtectedCall withdrawn;
+  withdrawn.set_clock(test_clock);
+  withdrawn.set_private(revoked, true);
+  refuses_packet([&] { withdrawn.protect_media(rtp(), "sip:alice@example.org"); }, "revoked PCK protected a packet");
+  for (const bool parameters : {false, true}) {
+    auto lasting = pck();
+    lasting.csb_id = 0x10000009;
+    if (parameters) lasting.properties = mcx::keying::KeyProperties{1, 1, 0, 0, "", {}};
+    mcx::ProtectedCall call;
+    call.set_clock(test_clock);
+    call.set_private(lasting, true);
+    test_now = 4000000000;
+    check(!call.protect_media(rtp(), "sip:alice@example.org").empty(), "PCK without Expiry time must protect");
+  }
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex E.6.10 at each packet, by the injected clock: a GMK and a CSK are used 1 s before their Expiry time
+// and not from that time on.
+void group_and_floor_key_expiry_per_packet() {
+  const std::uint64_t expiry = 2000000000;
+  auto gmk = key();
+  gmk.properties->activation_unix_seconds = expiry - 60;
+  gmk.properties->expiry_unix_seconds = expiry;
+  auto csk = key(true);
+  csk.properties->activation_unix_seconds = expiry - 60;
+  csk.properties->expiry_unix_seconds = expiry;
+  mcx::ProtectedCall call;
+  call.set_clock(test_clock);
+  test_now = expiry - 1;
+  call.set_group(gmk);
+  call.set_floor(csk);
+  check(call.group_ready() && call.floor_ready(), "GMK and CSK ready 1 s before their Expiry time");
+  check(!call.protect_media(rtp(), "sip:alice@example.org").empty(), "GMK usable 1 s before its Expiry time");
+  check(!call.protect_floor(rtcp()).empty(), "CSK usable 1 s before its Expiry time");
+  test_now = expiry;
+  check(!call.group_ready() && !call.floor_ready(), "GMK and CSK not ready at their Expiry time");
+  auto later = rtp();
+  later[3] = 2;
+  rejects([&] { call.protect_media(later, "sip:alice@example.org"); });
+  rejects([&] { call.protect_floor(rtcp()); });
+}
+
+//------------------------------------------------------------------------------
 // Runs every test and reports the failed ones.
+//------------------------------------------------------------------------------
+// RFC 7714 section 8.4: an SSRC issued once is never given out again (issue_ssrc draws again), and neither is the SSRC
+// of a stream held under the endpoint's keys, the peer's SRTCP stream under the shared CSK included.
+void ssrc_history() {
+  mcx::ProtectedCall call;
+  call.set_floor(key(true));
+  std::vector<std::uint32_t> draws{7, 7, 9, 7, 9, 0x12345678, 11};
+  std::size_t next = 0;
+  const auto draw = [&] { return draws.at(next++); };
+  check(call.issue_ssrc(draw) == 7, "first SSRC issued");
+  check(call.issue_ssrc(draw) == 9, "an issued SSRC is drawn again");
+  // The peer's SRTCP stream under the CSK (SSRC 0x12345678) is held after its first packet.
+  mcx::ProtectedCall peer;
+  peer.set_floor(key(true));
+  check(call.unprotect_floor(peer.protect_floor(rtcp())) == rtcp(), "peer's SRTCP under the shared CSK");
+  check(call.ssrc_taken(0x12345678) && call.ssrc_taken(7) && !call.ssrc_taken(11), "taken SSRCs");
+  check(call.issue_ssrc(draw) == 11, "issued and peer SSRCs are skipped");
+  // A new CSK does not reopen the history: an SSRC in use goes on under the next key.
+  auto next_key = key(true);
+  next_key.csb_id++;
+  next_key.key[0] ^= 1;
+  call.set_floor(next_key);
+  check(call.ssrc_taken(7) && call.ssrc_taken(11), "history kept across keys");
+}
+
 int main() {
   unsigned failures = 0;
   for (auto test : {std::pair<const char *, std::function<void()>>{"private_call_context", private_call_context},
+                    {"private_key_expiry_per_packet", private_key_expiry_per_packet},
+                    {"group_and_floor_key_expiry_per_packet", group_and_floor_key_expiry_per_packet},
                     {"stable_group_context", stable_group_context},
                     {"stable_floor_context", stable_floor_context},
                     {"expiry", expiry},
@@ -485,7 +599,8 @@ int main() {
                     {"unauthenticated_context_does_not_evict", unauthenticated_context_does_not_evict},
                     {"bounded_floor_contexts", bounded_floor_contexts},
                     {"reselect_group_keeps_epoch", reselect_group_keeps_epoch},
-                    {"bounded_group_epoch_cache", bounded_group_epoch_cache}}) {
+                    {"bounded_group_epoch_cache", bounded_group_epoch_cache},
+                    {"ssrc_history", ssrc_history}}) {
     try {
       test.second();
     } catch (const std::exception &error) {

@@ -1,0 +1,59 @@
+OpenMCX patch to libsrtp 2.8.1 (dependencies/libsrtp/README.md): the sender's first SRTCP index is zero, as RFC 3711
+section 3.4 requires ("The SRTCP index MUST be set to zero before the first SRTCP packet is sent, and MUST be
+incremented by one, modulo 2^31, after each SRTCP packet is sent."); libsrtp 2.8.1 increments before it reads, so
+its first SRTCP packet carries index 1. Defines SRTP_OPENMCX_SRTCP_INDEX_ZERO in srtp.h.
+Applied by docker/Dockerfile.dev and docker/Dockerfile.centos with: patch -p1 < 0001-srtcp-index-zero.patch
+
+--- a/include/srtp.h
++++ b/include/srtp.h
+@@ -93,6 +93,13 @@
+  */
+ #define SRTP_MAX_TRAILER_LEN (SRTP_MAX_TAG_LEN + SRTP_MAX_MKI_LEN)
+ 
++/*
++ * Modified by OpenMCX, 2026-10-25 (the first SRTCP index is zero): the sender's
++ * SRTCP index starts at zero (RFC 3711 section 3.4) in srtp_protect_rtcp() and
++ * srtp_protect_rtcp_mki(); defined so that programs can check for the change.
++ */
++#define SRTP_OPENMCX_SRTCP_INDEX_ZERO 1
++
+ /**
+  * SRTP_SRCTP_INDEX_LEN is the size the SRTCP index which is
+  * 4 bytes
+--- a/srtp/srtp.c
++++ b/srtp/srtp.c
+@@ -3959,11 +3959,17 @@
+      * check sequence number for overruns, and copy it into the packet
+      * if its value isn't too big
+      */
++    /*
++     * Modified by OpenMCX, 2026-10-25 (the first SRTCP index is zero): RFC 3711
++     * section 3.4, "The SRTCP index MUST be set to zero before the first SRTCP
++     * packet is sent, and MUST be incremented by one, modulo 2^31, after each
++     * SRTCP packet is sent." The index is read before the increment.
++     */
++    seq_num = srtp_rdb_get_value(&stream->rtcp_rdb);
+     status = srtp_rdb_increment(&stream->rtcp_rdb);
+     if (status) {
+         return status;
+     }
+-    seq_num = srtp_rdb_get_value(&stream->rtcp_rdb);
+     trailer |= htonl(seq_num);
+     debug_print(mod_srtp, "srtcp index: %x", seq_num);
+ 
+@@ -4404,10 +4410,14 @@
+      * check sequence number for overruns, and copy it into the packet
+      * if its value isn't too big
+      */
++    /*
++     * Modified by OpenMCX, 2026-10-25 (the first SRTCP index is zero): RFC 3711
++     * section 3.4, as in srtp_protect_rtcp_aead() above.
++     */
++    seq_num = srtp_rdb_get_value(&stream->rtcp_rdb);
+     status = srtp_rdb_increment(&stream->rtcp_rdb);
+     if (status)
+         return status;
+-    seq_num = srtp_rdb_get_value(&stream->rtcp_rdb);
+     trailer |= htonl(seq_num);
+     debug_print(mod_srtp, "srtcp index: %x", seq_num);
+ 

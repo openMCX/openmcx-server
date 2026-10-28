@@ -171,6 +171,14 @@ void DataServer::notify_alias_dialog(const std::string &dialog, const std::strin
     for (const auto &alias : possible->second)
       if (!functional_aliases_.active(alias, id)) status.entries.push_back({alias, {}, "take-over-possible", {}});
   const auto body = functional_alias_status_xml(status);
+  if (user) {
+    try {
+      require_csk_in_use(user->sip, {{"application/pidf+xml", body}});
+    } catch (const CskExpired &error) {
+      // TS 33.180 annex E.6.10: the subscriber's CSK may no longer be used: this NOTIFY is not sent.
+      return csk_expired_not_sent(id, "functional alias notification", error);
+    }
+  }
   sip_.notify(dialog, "presence", ended ? "terminated;reason=timeout" : "active", "application/pidf+xml",
               user ? encrypt_xml(xml_key(user->sip), {{"application/pidf+xml", body}}).front().body : body);
   event("mcdata_functional_alias_notified",

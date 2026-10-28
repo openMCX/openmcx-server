@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # ------------------------------------------------------------------------------
 def main():
-    """Run the ad hoc group call checks AH-01 to AH-17 and write integration/adhoc-call-results.json."""
+    """Run the ad hoc group call checks AH-01 to AH-18 and write integration/adhoc-call-results.json."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--compose', type=Path, required=True)
     parser.add_argument('--artifacts', type=Path, required=True)
@@ -460,8 +460,10 @@ def main():
         command('client-a', f"adhoc-modify add {ids['client-b']}")
         wait(
             'AH-16 a list change carrying the unchanged criteria is accepted: client-b invited',
-            lambda: adhoc_active(['client-a', 'client-b', 'client-c', 'client-d'])
-            and (status('client-a').get('last_modify_result') or {}).get('status') == 200,
+            lambda: (
+                adhoc_active(['client-a', 'client-b', 'client-c', 'client-d'])
+                and (status('client-a').get('last_modify_result') or {}).get('status') == 200
+            ),
             20,
         )
         # TS 24.379 clause 17.4.5.2.1 steps 4a and 5a: the criteria do not remove a user invited by a modification
@@ -555,8 +557,46 @@ def main():
             ),
             20,
         )
+
+        # AH-18 the alert follows the members of its call (TS 24.379 clauses 17.4.3.2 step 2A, 17.4.4.1.1 step 12A,
+        # 17.4.7.1.1 step 4A, with clause 12.1A.3.3): a member leaving has the alert withdrawn and unchanged criteria
+        # checks do not alert it again; rejoining and joining alert it again; the initiator leaving ends the call but
+        # not the alert. The wire order (after or before the 200 (OK)) is checked by verify_adhoc_call.py.
+        def alerted(client):
+            return group in (status(client).get('received_adhoc_alerts') or {})
+
+        def cached():
+            return set(((status('mcptt-server').get('adhoc_alerts') or {}).get(group) or {}).get('recipients', []))
+
+        command('client-d', 'hangup')
+        wait(
+            'AH-18 a member leaving the alert call has the alert withdrawn',
+            lambda: (
+                status('client-d').get('call_state') == 'idle'
+                and not alerted('client-d')
+                and ids['client-d'] not in cached()
+                and adhoc_active(['client-a', 'client-c'])
+            ),
+            20,
+        )
+        # Two and a half rounds of the server's 2 s criteria check (server.cpp supervise_adhoc_alerts).
+        time.sleep(5)
+        assert not alerted('client-d') and ids['client-d'] not in cached(), 'leaver alerted again by the criteria'
+        checks.append('AH-18 unchanged criteria checks do not alert the leaver again')
+        command('client-d', 'rejoin')
+        wait(
+            'AH-18 a member rejoining the alert call is alerted again',
+            lambda: (
+                adhoc_active(['client-a', 'client-c', 'client-d'])
+                and alerted('client-d')
+                and ids['client-d'] in cached()
+            ),
+            20,
+        )
         command('client-a', 'hangup')
         wait('AH-17 alert-group call released', idle, 20)
+        assert group in (status('mcptt-server').get('adhoc_alerts') or {}), 'the alert ended with its call'
+        checks.append('AH-18 the initiator leaving the call keeps the alert outstanding')
         command('client-a', 'adhoc-alert cancel')
         wait(
             'AH-17 cancellation withdraws the alert from every recipient',
@@ -572,6 +612,72 @@ def main():
         )
         on('client-c', first)
         on('client-d', first)
+
+        # AH-18 join (TS 24.379 clause 17.4.2.2 step 7B, which first authorises the caller, and clause 17.4.7.1.1
+        # step 4A): a second alert on the users affiliated to the first group, so that client-b (authorised for ad hoc
+        # calls) is a member of its call. client-b leaves, a genuine criteria change (out through another of its
+        # groups and back) alerts it again, and it joins the ongoing call: the join alerts it once more although it
+        # is already cached. The wire order (before the 200 (OK)) is checked by verify_adhoc_call.py.
+        command('client-a', f'adhoc-alert affiliated:{first}')
+        wait(
+            'AH-18 a second alert on the first group is confirmed',
+            lambda: (
+                status('client-a').get('adhoc_alert_state', '').startswith('AH-MEA 3')
+                and status('client-a').get('adhoc_alert_group') not in (None, group)
+            ),
+        )
+        second_alert = status('client-a')['adhoc_alert_group']
+
+        def alerted_second(client):
+            return second_alert in (status(client).get('received_adhoc_alerts') or {})
+
+        def cached_second():
+            return set(
+                ((status('mcptt-server').get('adhoc_alerts') or {}).get(second_alert) or {}).get('recipients', [])
+            )
+
+        wait(
+            'AH-18 the first group is alerted',
+            lambda: all(alerted_second(c) for c in ['client-b', 'client-c', 'client-d']),
+        )
+        command('client-a', 'adhoc emergency alert-group')
+        wait(
+            'AH-18 the second alert call invites them',
+            lambda: adhoc_active(['client-a', 'client-b', 'client-c', 'client-d']),
+            20,
+        )
+        command('client-b', 'hangup')
+        wait(
+            'AH-18 client-b left the second alert call',
+            lambda: status('client-b').get('call_state') == 'idle' and not alerted_second('client-b'),
+            20,
+        )
+        on('client-b', 'sip:operations-users@mcx.test')
+        # The criteria check runs every 2 s; a move out and back within one check is no change of its result.
+        time.sleep(5)
+        on('client-b', first)
+        wait('AH-18 a criteria change alerts client-b again', lambda: alerted_second('client-b'), 20)
+        command('client-b', 'adhoc alert-group')
+        wait(
+            'AH-18 a member joining the alert call is in the call and in the alert',
+            lambda: (
+                adhoc_active(['client-a', 'client-b', 'client-c', 'client-d'])
+                and alerted_second('client-b')
+                and ids['client-b'] in cached_second()
+            ),
+            20,
+        )
+        command('client-a', 'hangup')
+        wait('AH-18 second alert call released', idle, 20)
+        command('client-a', 'adhoc-alert cancel')
+        wait(
+            'AH-18 second alert cancelled',
+            lambda: (
+                status('client-a').get('adhoc_alert_state', '').startswith('AH-MEA 1')
+                and not status('mcptt-server').get('adhoc_alerts')
+            ),
+            20,
+        )
 
         # AH-10 TNG3 group call timer releases the ad hoc call (TS 24.379 clause 6.3.8.1 item 5).
         if args.skip_timer:

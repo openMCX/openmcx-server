@@ -44,11 +44,13 @@ type deviceIssuer struct {
 	certPEM []byte
 	key     crypto.Signer
 	days    int
+	// CredentialsConfig: certificate_backdate_s, crl_validity_days, crl_refresh_hours, crl_clock_skew_s.
+	backdate, crlValidity, crlRefresh, crlClockSkew time.Duration
 }
 
 // ------------------------------------------------------------------------------
 // Helper: loads the issuing CA's certificate and key (PKCS#8, PKCS#1 or EC) and the lifetime of the certificates it
-// issues (30 days by default).
+// issues (30 days by default), the certificate backdate and the CRL timing (caTiming).
 func loadDeviceIssuer(cfg *CredentialsConfig) (*deviceIssuer, error) {
 	certPEM, err := os.ReadFile(cfg.IssuerCertFile)
 	if err != nil {
@@ -84,19 +86,62 @@ func loadDeviceIssuer(cfg *CredentialsConfig) (*deviceIssuer, error) {
 	}
 	days := cfg.CertificateDays
 	if days <= 0 {
+		// Default pending maintainer choice (no spec value).
 		days = 30
 	}
-	return &deviceIssuer{cert: cert, certPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: block.Bytes}), key: signer, days: days}, nil
+	issuer := &deviceIssuer{cert: cert, certPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: block.Bytes}), key: signer, days: days}
+	if err := issuer.caTiming(cfg); err != nil {
+		return nil, err
+	}
+	return issuer, nil
 }
 
 // ------------------------------------------------------------------------------
-// Helper: acceptableDeviceKey: EC P-256 or P-384, or RSA of at least 2048 bits.
+// Helper: caTiming: the backdate of issued certificates and the CRL's validity, refresh and clock skew, local policy
+// of OpenMCX's own CA (CredentialsConfig); absent or zero periods take the defaults, which are pending maintainer
+// choice (no spec value).
+func (issuer *deviceIssuer) caTiming(cfg *CredentialsConfig) error {
+	seconds := func(name string, value *int, fallback time.Duration) (time.Duration, error) {
+		if value == nil {
+			return fallback, nil
+		}
+		if *value < 0 {
+			return 0, errors.New("credentials." + name + ": must not be negative")
+		}
+		return time.Duration(*value) * time.Second, nil
+	}
+	var err error
+	if issuer.backdate, err = seconds("certificate_backdate_s", cfg.CertificateBackdateS, 5*time.Minute); err != nil {
+		return err
+	}
+	if issuer.crlClockSkew, err = seconds("crl_clock_skew_s", cfg.CRLClockSkewS, 5*time.Minute); err != nil {
+		return err
+	}
+	issuer.crlValidity = 30 * 24 * time.Hour
+	if cfg.CRLValidityDays > 0 {
+		issuer.crlValidity = time.Duration(cfg.CRLValidityDays) * 24 * time.Hour
+	}
+	issuer.crlRefresh = 24 * time.Hour
+	if cfg.CRLRefreshHours > 0 {
+		issuer.crlRefresh = time.Duration(cfg.CRLRefreshHours) * time.Hour
+	}
+	// RFC 5280 section 5.1.2.5: nextUpdate is "the date by which the next CRL will be issued ... it will not be
+	// issued any later than the indicated date": the CRL is issued again within its validity.
+	if issuer.crlRefresh > issuer.crlValidity {
+		return errors.New("credentials.crl_refresh_hours: longer than crl_validity_days (RFC 5280 section 5.1.2.5)")
+	}
+	return nil
+}
+
+// ------------------------------------------------------------------------------
+// Helper: acceptableDeviceKey: EC P-256 or P-384, or RSA of at least 2048 bits whose public exponent is at least
+// 65537 (TS 33.310 clause 6.1.1: "RSA public exponent shall be no less than 65537").
 func acceptableDeviceKey(key any) bool {
 	switch publicKey := key.(type) {
 	case *ecdsa.PublicKey:
 		return publicKey.Curve == elliptic.P256() || publicKey.Curve == elliptic.P384()
 	case *rsa.PublicKey:
-		return publicKey.N.BitLen() >= 2048
+		return publicKey.N.BitLen() >= 2048 && publicKey.E >= 65537
 	}
 	return false
 }
@@ -150,7 +195,7 @@ func (svc *service) issueClientCertificate(writer http.ResponseWriter, request *
 	template := &x509.Certificate{
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: "mcx-device " + claims.MCClientID},
-		NotBefore:    now.Add(-5 * time.Minute),
+		NotBefore:    now.Add(-svc.creds.issuer.backdate),
 		NotAfter:     now.Add(time.Duration(svc.creds.issuer.days) * 24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		// Client authentication, and server authentication for a listening client the
@@ -260,14 +305,6 @@ func rpcClient(cfg *CredentialsConfig) (*http.Client, error) {
 	return &http.Client{Timeout: 10 * time.Second, Transport: transport}, nil
 }
 
-// OpenMCX: the revocation list is valid for crlValidity (RFC 5280 section 5.1.2.5 nextUpdate), refreshed every
-// crlRefresh, and dated crlClockSkew back for verifiers whose clock is behind.
-const (
-	crlValidity  = 30 * 24 * time.Hour
-	crlRefresh   = 24 * time.Hour
-	crlClockSkew = 5 * time.Minute
-)
-
 // ------------------------------------------------------------------------------
 // RFC 5280 section 5.1.2.6: the revoked device certificates that have not expired. A serial number that does not
 // parse (a damaged row) is logged and left out: the list of the others is still published.
@@ -312,7 +349,8 @@ func (svc *service) publishCRL(ctx context.Context) error {
 		return err
 	}
 	der, err := x509.CreateRevocationList(rand.Reader, &x509.RevocationList{
-		Number: big.NewInt(now.UnixNano()), ThisUpdate: now.Add(-crlClockSkew), NextUpdate: now.Add(crlValidity),
+		Number: big.NewInt(now.UnixNano()), ThisUpdate: now.Add(-store.issuer.crlClockSkew),
+		NextUpdate:                now.Add(store.issuer.crlValidity),
 		RevokedCertificateEntries: entries}, store.issuer.cert, store.issuer.key)
 	if err != nil {
 		return err
@@ -346,7 +384,8 @@ func (svc *service) publishCRL(ctx context.Context) error {
 }
 
 // ------------------------------------------------------------------------------
-// RFC 5280 section 5: refreshCRL keeps the list current: at start, and daily, before its next update.
+// RFC 5280 section 5: refreshCRL keeps the list current: at start, and every crl_refresh_hours (daily by default),
+// before its next update.
 func (svc *service) refreshCRL(ctx context.Context) {
 	for {
 		if err := svc.publishCRL(ctx); err != nil {
@@ -355,7 +394,7 @@ func (svc *service) refreshCRL(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(crlRefresh):
+		case <-time.After(svc.creds.issuer.crlRefresh):
 		}
 	}
 }

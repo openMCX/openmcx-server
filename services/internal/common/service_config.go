@@ -13,6 +13,7 @@ package common
 import (
 	"encoding/xml"
 	"fmt"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -55,10 +56,47 @@ type ResourcePriorities struct {
 }
 
 // ------------------------------------------------------------------------------
+// SignallingProtection is <signalling-protection> (TS 24.484 clauses 8.4.2.1 item 8, 9.4.2.1 item 1, 10.4.2.1 item
+// 2): whether confidentiality and integrity protection of the service's signalling between the clients and the
+// server are enabled. What is not set is not written; an absent element means enabled (TS 24.379 clauses 6.6.2.3.1
+// and 6.6.3.3.1: "is set to "true" or no <confidentiality-protection> element is present"; TS 24.484 clause 8.4.2.7
+// NOTE 4: the default values are "true"), so a deployment that turns protection off sets false.
+type SignallingProtection struct {
+	Confidentiality *bool `json:"confidentiality,omitempty"`
+	Integrity       *bool `json:"integrity,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// MCPTTServerProtection is <protection-between-mcptt-servers> (TS 24.484 clause 8.4.2.1 item 12): whether protection
+// of the signalling and of the floor control signalling between MCPTT servers is enabled; absent means enabled (TS
+// 24.379 clause 6.6.2.3.2, TS 24.484 clause 8.4.2.7 NOTE 4).
+type MCPTTServerProtection struct {
+	AllowSignalling   *bool `json:"allow_signalling,omitempty"`
+	AllowFloorControl *bool `json:"allow_floor_control,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// MCVideoServerProtection is <protection-between-mcvideo-servers> (TS 24.484 clause 9.4.2.1 item 2): signalling and
+// transmission control signalling between MCVideo servers; absent means enabled (TS 24.484 clause 9.4.2.7 NOTE 1).
+type MCVideoServerProtection struct {
+	AllowSignalling          *bool `json:"allow_signalling,omitempty"`
+	AllowTransmissionControl *bool `json:"allow_transmission_control,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// MCDataServerProtection is <protection-between-mcdata-servers> (TS 24.484 clause 10.4.2.1 item 3): signalling
+// between MCData servers; absent means enabled (TS 24.484 clause 10.4.2.7 NOTE 1).
+type MCDataServerProtection struct {
+	AllowSignalling *bool `json:"allow_signalling,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
 // MCPTTServiceConfiguration: the resource priorities and the floor control timers and counters of <on-network>
-// (TS 24.484 clause 8.4.2.1), in milliseconds and counts.
+// (TS 24.484 clause 8.4.2.1), in milliseconds and counts, and the signalling protection.
 type MCPTTServiceConfiguration struct {
-	ResourcePriority ResourcePriorities `json:"resource_priority"`
+	ResourcePriority         ResourcePriorities     `json:"resource_priority"`
+	SignallingProtection     *SignallingProtection  `json:"signalling_protection,omitempty"`
+	ProtectionBetweenServers *MCPTTServerProtection `json:"protection_between_servers,omitempty"`
 	// <transmit-time>/<time-limit>: T2, the longest a user may hold the floor.
 	TransmitTimeLimitMs int `json:"transmit_time_limit_ms,omitempty"`
 	// <floor-control-queue>: queueing of floor requests, and its <depth>.
@@ -69,16 +107,21 @@ type MCPTTServiceConfiguration struct {
 }
 
 // ------------------------------------------------------------------------------
-// MCVideoServiceConfiguration: the resource priorities of <on-network> (TS 24.484 clause 9.4.2.1).
+// MCVideoServiceConfiguration: the resource priorities and the signalling protection of <on-network> (TS 24.484
+// clause 9.4.2.1).
 type MCVideoServiceConfiguration struct {
-	ResourcePriority ResourcePriorities `json:"resource_priority"`
+	ResourcePriority         ResourcePriorities       `json:"resource_priority"`
+	SignallingProtection     *SignallingProtection    `json:"signalling_protection,omitempty"`
+	ProtectionBetweenServers *MCVideoServerProtection `json:"protection_between_servers,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
 // MCDataServiceConfiguration: the resource priorities of the <anyExt> of <on-network> and its <file-availability>
-// (TS 24.484 clause 10.4.2.1).
+// (TS 24.484 clause 10.4.2.1), and the signalling protection.
 type MCDataServiceConfiguration struct {
-	ResourcePriority ResourcePriorities `json:"resource_priority"`
+	ResourcePriority         ResourcePriorities      `json:"resource_priority"`
+	SignallingProtection     *SignallingProtection   `json:"signalling_protection,omitempty"`
+	ProtectionBetweenServers *MCDataServerProtection `json:"protection_between_servers,omitempty"`
 	// <default-file-availability> and <max-file-availability> (TS 24.282 clause 10.2.4.4.2 step 9), in seconds.
 	DefaultFileAvailabilityS int `json:"default_file_availability_s,omitempty"`
 	MaxFileAvailabilityS     int `json:"max_file_availability_s,omitempty"`
@@ -240,6 +283,60 @@ func durationOf(ms int) string {
 }
 
 // ------------------------------------------------------------------------------
+// TS 24.484 clause 8.4.2.3: signalling-protectionType, and server-protectionType of the three services (MCPTT:
+// allow-floor-control-protection; MCVideo: allow-transmission-control-protection). An element not set is not written.
+type signallingProtectionXML struct {
+	Confidentiality *bool `xml:"confidentiality-protection,omitempty"`
+	Integrity       *bool `xml:"integrity-protection,omitempty"`
+}
+
+type serverProtectionXML struct {
+	AllowSignalling          *bool `xml:"allow-signalling-protection,omitempty"`
+	AllowFloorControl        *bool `xml:"allow-floor-control-protection,omitempty"`
+	AllowTransmissionControl *bool `xml:"allow-transmission-control-protection,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the <signalling-protection> element of the site's values, nil (not written) when none is set.
+func signallingProtectionElement(sp *SignallingProtection) *signallingProtectionXML {
+	if sp == nil || (sp.Confidentiality == nil && sp.Integrity == nil) {
+		return nil
+	}
+	return &signallingProtectionXML{Confidentiality: sp.Confidentiality, Integrity: sp.Integrity}
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the <protection-between-*-servers> element, nil (not written) when no value is set.
+func serverProtectionElement(element serverProtectionXML) *serverProtectionXML {
+	if element == (serverProtectionXML{}) {
+		return nil
+	}
+	return &element
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.379 clauses 6.6.2.3.1 and 6.6.3.3.1 (TS 24.281 clauses 6.6.2.3.1 and 6.6.3.3.1, TS 24.282 clauses 6.5.2.3.1
+// and 6.5.3.3.1): a protection value of the service configuration document as its readers take it: true when "set to
+// "true" or no [...] element is present".
+func enabled(value *bool) bool { return value == nil || *value }
+
+// ------------------------------------------------------------------------------
+// Helper: the signalling protection a service's servers apply, from the values of its document (enabled).
+func protectionValues(sp *SignallingProtection, allowSignalling *bool, extra map[string]bool) map[string]any {
+	if sp == nil {
+		sp = &SignallingProtection{}
+	}
+	between := map[string]bool{"allow_signalling": enabled(allowSignalling)}
+	for name, value := range extra {
+		between[name] = value
+	}
+	return map[string]any{
+		"signalling_protection":      map[string]bool{"confidentiality": enabled(sp.Confidentiality), "integrity": enabled(sp.Integrity)},
+		"protection_between_servers": between,
+	}
+}
+
+// ------------------------------------------------------------------------------
 // TS 24.484 clause 8.4.2.1: the MCPTT service configuration document.
 type mcpttServiceConfigXML struct {
 	XMLName xml.Name `xml:"urn:3gpp:ns:mcpttServiceConfig:1.0 service-configuration-info"`
@@ -271,10 +368,12 @@ type mcpttServiceConfigXML struct {
 				C55 int    `xml:"C55-connect"`
 				C56 int    `xml:"C56-disconnect"`
 			} `xml:"fc-timers-counters"`
-			Emergency resourcePriorityXML `xml:"emergency-resource-priority"`
-			Imminent  resourcePriorityXML `xml:"imminent-peril-resource-priority"`
-			Normal    resourcePriorityXML `xml:"normal-resource-priority"`
-			AnyExt    struct {
+			SignallingProtection *signallingProtectionXML `xml:"signalling-protection,omitempty"`
+			BetweenServers       *serverProtectionXML     `xml:"protection-between-mcptt-servers,omitempty"`
+			Emergency            resourcePriorityXML      `xml:"emergency-resource-priority"`
+			Imminent             resourcePriorityXML      `xml:"imminent-peril-resource-priority"`
+			Normal               resourcePriorityXML      `xml:"normal-resource-priority"`
+			AnyExt               struct {
 				MaxAuthorizations int `xml:"max-simultaneous-authorizations"`
 			} `xml:"anyExt"`
 		} `xml:"on-network"`
@@ -288,10 +387,12 @@ type mcvideoServiceConfigXML struct {
 	Params  struct {
 		Domain    string `xml:"domain,attr"`
 		OnNetwork struct {
-			Emergency resourcePriorityXML `xml:"emergency-resource-priority"`
-			Imminent  resourcePriorityXML `xml:"imminent-peril-resource-priority"`
-			Normal    resourcePriorityXML `xml:"normal-resource-priority"`
-			AnyExt    struct {
+			SignallingProtection *signallingProtectionXML `xml:"signalling-protection,omitempty"`
+			BetweenServers       *serverProtectionXML     `xml:"protection-between-mcvideo-servers,omitempty"`
+			Emergency            resourcePriorityXML      `xml:"emergency-resource-priority"`
+			Imminent             resourcePriorityXML      `xml:"imminent-peril-resource-priority"`
+			Normal               resourcePriorityXML      `xml:"normal-resource-priority"`
+			AnyExt               struct {
 				MaxAuthorizations int `xml:"max-simultaneous-authorizations"`
 			} `xml:"anyExt"`
 		} `xml:"on-network"`
@@ -306,7 +407,9 @@ type mcdataServiceConfigXML struct {
 	Params  struct {
 		Domain    string `xml:"domain,attr"`
 		OnNetwork struct {
-			FileAvailability struct {
+			SignallingProtection *signallingProtectionXML `xml:"signalling-protection,omitempty"`
+			BetweenServers       *serverProtectionXML     `xml:"protection-between-mcdata-servers,omitempty"`
+			FileAvailability     struct {
 				Default int `xml:"default-file-availability"`
 				Max     int `xml:"max-file-availability"`
 			} `xml:"file-availability"`
@@ -349,14 +452,25 @@ func (svc *service) serviceConfigDocument(auid string) ([]byte, string, *documen
 		rp := conf.ResourcePriority
 		on.Emergency, on.Imminent, on.Normal = resourcePriorityElement(rp.Emergency), resourcePriorityElement(rp.Imminent), resourcePriorityElement(rp.Normal)
 		on.AnyExt.MaxAuthorizations = maxSimultaneousAuthorizations
+		on.SignallingProtection = signallingProtectionElement(conf.SignallingProtection)
+		if between := conf.ProtectionBetweenServers; between != nil {
+			on.BetweenServers = serverProtectionElement(serverProtectionXML{AllowSignalling: between.AllowSignalling,
+				AllowFloorControl: between.AllowFloorControl})
+		}
 		doc, mime, schema = out, "application/vnd.3gpp.mcptt-service-config+xml", mcpttServiceConfigSchema
 	case "org.3gpp.mcvideo.service-config":
-		rp := sc.mcvideo().ResourcePriority
+		conf := sc.mcvideo()
+		rp := conf.ResourcePriority
 		var out mcvideoServiceConfigXML
 		out.Params.Domain = svc.cfg.Domain
 		on := &out.Params.OnNetwork
 		on.Emergency, on.Imminent, on.Normal = resourcePriorityElement(rp.Emergency), resourcePriorityElement(rp.Imminent), resourcePriorityElement(rp.Normal)
 		on.AnyExt.MaxAuthorizations = maxSimultaneousAuthorizations
+		on.SignallingProtection = signallingProtectionElement(conf.SignallingProtection)
+		if between := conf.ProtectionBetweenServers; between != nil {
+			on.BetweenServers = serverProtectionElement(serverProtectionXML{AllowSignalling: between.AllowSignalling,
+				AllowTransmissionControl: between.AllowTransmissionControl})
+		}
 		doc, mime, schema = out, "application/vnd.3gpp.mcvideo-service-config+xml", mcvideoServiceConfigSchema
 	case "org.3gpp.mcdata.service-config":
 		conf := sc.mcdata()
@@ -367,6 +481,10 @@ func (svc *service) serviceConfigDocument(auid string) ([]byte, string, *documen
 		rp := conf.ResourcePriority
 		on.AnyExt.Emergency, on.AnyExt.Imminent, on.AnyExt.Normal = resourcePriorityElement(rp.Emergency), resourcePriorityElement(rp.Imminent), resourcePriorityElement(rp.Normal)
 		on.AnyExt.MaxAuthorizations = maxSimultaneousAuthorizations
+		on.SignallingProtection = signallingProtectionElement(conf.SignallingProtection)
+		if between := conf.ProtectionBetweenServers; between != nil {
+			on.BetweenServers = serverProtectionElement(serverProtectionXML{AllowSignalling: between.AllowSignalling})
+		}
 		doc, mime, schema = out, "application/vnd.3gpp.mcdata-service-config+xml", mcdataServiceConfigSchema
 	default:
 		return nil, "", nil, false
@@ -407,7 +525,8 @@ func (svc *service) getServiceConfig(writer http.ResponseWriter, request *http.R
 // ------------------------------------------------------------------------------
 // TS 24.379 clause 6.3.3.1.19 (TS 24.281, TS 24.282 likewise) and TS 24.380 clause 11: getInternalServiceConfig
 // gives an MC service server the values of its service configuration document: the Resource-Priority header field
-// values by priority, and for MCPTT the floor control timers.
+// values by priority, for MCPTT the floor control timers, and the signalling protection as the document gives it to
+// its readers (absent = enabled, protectionValues).
 func (svc *service) getInternalServiceConfig(writer http.ResponseWriter, request *http.Request) {
 	if !svc.requireInternal(writer, request) {
 		return
@@ -419,18 +538,38 @@ func (svc *service) getInternalServiceConfig(writer http.ResponseWriter, request
 	switch request.URL.Query().Get("service") {
 	case "mcptt":
 		conf := sc.mcptt()
+		between := conf.ProtectionBetweenServers
+		if between == nil {
+			between = &MCPTTServerProtection{}
+		}
 		// <floor-control-queue>/<depth> as the CMS publishes it to the clients (TS 24.484 clause 8.4.2.7 step 10).
-		writeJSON(writer, http.StatusOK, map[string]any{"resource_priority": values(conf.ResourcePriority),
+		out := map[string]any{"resource_priority": values(conf.ResourcePriority),
 			"transmit_time_limit_ms": conf.TransmitTimeLimitMs, "floor_queue": conf.FloorQueue,
 			"floor_queue_depth": max(conf.FloorQueueDepth, 1), "fc_timers_counters": conf.FloorTimers,
-			"organization": svc.cfg.organization()})
+			"organization": svc.cfg.organization()}
+		maps.Copy(out, protectionValues(conf.SignallingProtection, between.AllowSignalling,
+			map[string]bool{"allow_floor_control": enabled(between.AllowFloorControl)}))
+		writeJSON(writer, http.StatusOK, out)
 	case "mcvideo":
-		writeJSON(writer, http.StatusOK, map[string]any{"resource_priority": values(sc.mcvideo().ResourcePriority),
-			"organization": svc.cfg.organization()})
+		conf := sc.mcvideo()
+		between := conf.ProtectionBetweenServers
+		if between == nil {
+			between = &MCVideoServerProtection{}
+		}
+		out := map[string]any{"resource_priority": values(conf.ResourcePriority), "organization": svc.cfg.organization()}
+		maps.Copy(out, protectionValues(conf.SignallingProtection, between.AllowSignalling,
+			map[string]bool{"allow_transmission_control": enabled(between.AllowTransmissionControl)}))
+		writeJSON(writer, http.StatusOK, out)
 	case "mcdata":
 		conf := sc.mcdata()
-		writeJSON(writer, http.StatusOK, map[string]any{"resource_priority": values(conf.ResourcePriority),
-			"default_file_availability_s": conf.DefaultFileAvailabilityS, "max_file_availability_s": conf.MaxFileAvailabilityS})
+		between := conf.ProtectionBetweenServers
+		if between == nil {
+			between = &MCDataServerProtection{}
+		}
+		out := map[string]any{"resource_priority": values(conf.ResourcePriority),
+			"default_file_availability_s": conf.DefaultFileAvailabilityS, "max_file_availability_s": conf.MaxFileAvailabilityS}
+		maps.Copy(out, protectionValues(conf.SignallingProtection, between.AllowSignalling, nil))
+		writeJSON(writer, http.StatusOK, out)
 	default:
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "unknown service"})
 	}

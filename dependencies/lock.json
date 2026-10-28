@@ -43,6 +43,14 @@
       "use": "image"
     },
     {
+      "file": "libsrtp-2.8.1.tar.gz",
+      "url": "https://github.com/cisco/libsrtp/archive/6ff02afa8d2dc3f2e8896af391d137c1c66ff6fa.tar.gz",
+      "sha256": "1ef3e6315e0ea3cd05f4980c8b5f7a9df369e3d586f5e0616e6cc4c778401d4c",
+      "bytes": 645283,
+      "commit": "6ff02afa8d2dc3f2e8896af391d137c1c66ff6fa (tag v2.8.1)",
+      "use": "image"
+    },
+    {
       "file": "golangci-lint-2.14.0-linux-amd64.tar.gz",
       "url": "https://github.com/golangci/golangci-lint/releases/download/v2.14.0/golangci-lint-2.14.0-linux-amd64.tar.gz",
       "sha256": "ab90aeb7b066f92a33415b638a50fe5344bbb75a0d32ad30cc248d88f81032ab",

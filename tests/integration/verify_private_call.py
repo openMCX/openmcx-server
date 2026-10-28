@@ -98,9 +98,12 @@ def timed_messages(path, port=5060, parser=None):
             stream += payload
         at = 0
         for head, body in sip_messages(stream):
+            # The search goes on after the message found: messages that begin alike (responses with the same Via)
+            # would otherwise all be found at the first of them, and take its time.
             begin = stream.find(head.encode('utf-8', 'replace')[:40], at)
-            at = max(begin, at)
-            stamp = max((time for start, time in starts if start <= at), default=0.0)
+            begin = at if begin < 0 else begin
+            at = begin + 1
+            stamp = max((time for start, time in starts if start <= begin), default=0.0)
             message = (parser or parse)(head, body)
             message['time'] = stamp
             messages.append(message)

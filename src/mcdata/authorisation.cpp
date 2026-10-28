@@ -130,7 +130,18 @@ SipResponse DataServer::third_party_register(const SipMessage &request) {
   inner.headers = {{"P-Asserted-Identity", "<" + identity + ">"}, {"Expires", "4294967295"}};
   if (const auto found = users_.find(identity); found != users_.end() && !found->second.auth_etag.empty())
     inner.headers.push_back({"SIP-If-Match", found->second.auth_etag});
-  // A renewal of an authorised user comes signed and with its XML encrypted, as its PUBLISH would.
+  // A renewal of an authorised user comes signed and with its XML encrypted, as its PUBLISH would. TS 24.282 clause
+  // 6.5.1.4: its signatures first, under the CSK held for the identity; those of a REGISTER that uploads the CSK are
+  // verified when it is accepted (authorise_csk).
+  const bool uploads = std::any_of(inner.parts.begin(), inner.parts.end(),
+                                   [](const auto &body) { return body.content_type == "application/mikey"; });
+  if (!uploads) {
+    const auto found = users_.find(identity);
+    const auto key = found != users_.end() && found->second.csk
+                         ? std::optional<xmlsec::Key>(xml_key_of(*found->second.csk, found->second.id))
+                         : std::nullopt;
+    if (auto refused = verify_signatures(inner.parts, key, identity)) return *refused;
+  }
   if (auto refused = open_signalling(identity, inner)) return *refused;
   response = authorise(inner, true);
   if (response.status_code != 200) return response;
@@ -193,6 +204,10 @@ std::optional<SipResponse> DataServer::authorise_csk(const SipMessage &request, 
       event("mcdata_csk_rejected", {{"user_id", asserted}, {"reason", error.what()}});
       return reject(488, "136 authentication of the MIKEY-SAKKE I_MESSAGE failed", asserted, "authorisation");
     }
+    // TS 24.282 clause 7.3.3 (clause 7.2.2 step 7) and clause 6.5.3.4.2: the signatures of the request under the CSK
+    // it uploads.
+    auto parts = request.parts;
+    if (auto refused = verify_signatures(parts, xml_key_of(*csk, uploader), asserted)) return *refused;
     if (xmlsec::is_protected(info_body)) {
       try {
         info_body = xmlsec::decrypt(info_body, xml_key_of(*csk, uploader));
@@ -204,6 +219,7 @@ std::optional<SipResponse> DataServer::authorise_csk(const SipMessage &request, 
     }
   } else if (const auto known = xml_key(asserted); known && xmlsec::is_protected(info_body)) {
     try {
+      require_xpk_in_use(*known); // TS 33.180 annex E.6.10: refused with warning 140
       info_body = xmlsec::decrypt(info_body, *known);
       ++xml_decrypted_;
     } catch (const std::exception &) {
@@ -286,9 +302,15 @@ SipResponse DataServer::affiliate(const SipMessage &request, User &user) {
 void DataServer::notify_affiliation(const User &user, const std::string &publication, bool terminated) {
   if (user.subscription.empty()) return;
   const auto affiliation = affiliation_status(mcdata_service, user, publication);
-  sip_.notify(
-      user.subscription, "presence", terminated ? "terminated;reason=noresource" : "active", "application/pidf+xml",
-      encrypt_xml(xml_key(user.sip), {{"application/pidf+xml", affiliation_xml(affiliation, true)}}).front().body);
+  const std::vector<BodyPart> clear{{"application/pidf+xml", affiliation_xml(affiliation, true)}};
+  try {
+    require_csk_in_use(user.sip, clear);
+  } catch (const CskExpired &error) {
+    // TS 33.180 annex E.6.10: the recipient's CSK may no longer be used: this message is not sent (never in the clear).
+    return csk_expired_not_sent(user.id, "affiliation notification", error);
+  }
+  sip_.notify(user.subscription, "presence", terminated ? "terminated;reason=noresource" : "active",
+              "application/pidf+xml", encrypt_xml(xml_key(user.sip), clear).front().body);
   event("mcdata_affiliation_notified",
         {{"user_id", user.id}, {"groups", user.groups}, {"p_id", publication}, {"terminated", terminated}});
 }
