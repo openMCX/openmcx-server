@@ -49,8 +49,7 @@ const std::string *McServer::mbms_usage_part(const SipMessage &message) const {
 //------------------------------------------------------------------------------
 // TS 24.379 clauses 14.2.3 and 14.2.4: a "SIP MESSAGE request for an MBMS listening status update" from a served
 // user. A body with an <announcement>, or an mcptt-info naming another MCPTT ID than the asserted user's, is refused
-// with 403 (clause 14.2.4, clause 14.2.3 step 1). A suspension status is accepted without action until the
-// suspension procedures are in place.
+// with 403 (clause 14.2.4, clause 14.2.3 step 1).
 SipResponse McServer::mbms_usage_message(const SipMessage &message, const User &user, const std::string &body) {
   SipResponse response;
   response.status_code = 403;
@@ -67,6 +66,8 @@ SipResponse McServer::mbms_usage_message(const SipMessage &message, const User &
     event("multicast_status_refused", {{"user_id", user.id}, {"reason", "TS 24.379 clause 14.2.4"}});
     return response;
   }
+  // TS 24.379 clause 14.2.3, the suspension status report (src/server/mbms.cpp).
+  if (usage.suspension_status) mbms_suspension(user, *usage.suspension_status);
   // TS 24.379 clause 14.2.3 step 1 a ii and step 1 b ii: the general purpose subchannel of announced bearers
   // (src/server/mbms.cpp); the same report may also name a session.
   if (usage.listening_status && usage.listening_status->general_purpose) {

@@ -221,6 +221,7 @@ void McServer::mbms_musik_download(const User &user) {
 void McServer::mbms_tick(std::uint64_t now) {
   if (!mbms_) return;
   mbms_conversation_tick(now);
+  mbms_group_dynamic_data_tick();
   if (mbms_->bearer_announcement_ms == 0 || now < mbms_next_announcement_) return;
   mbms_next_announcement_ = now + mbms_->bearer_announcement_ms;
   for (const auto &bearer : mbms_->bearers) {
@@ -315,6 +316,7 @@ const MulticastDestination *McServer::mbms_conversation_start(const Session &ses
   std::size_t best = 0;
   const auto legs = session_legs(session);
   for (const auto &bearer : mbms_->bearers) {
+    if (mbms_suspended_.contains(bearer.tmgi)) continue;
     const auto listeners = std::ranges::count_if(legs, [&](const auto &leg) {
       const auto found = mbms_general_purpose_.find(leg->user);
       return mbms_->serves(leg->user) && found != mbms_general_purpose_.end() && found->second.contains(bearer.tmgi);
@@ -471,6 +473,82 @@ bool McServer::mbms_control(Leg &leg, const std::string &kind,
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clause 14.2.3 step 1 a (TS 24.281 clause 16.3.3): a suspension status report. "suspending": the bearer
+// named in <suspended-TMGI> is about to be suspended; the action is implementation specific (step 1 a ii): every
+// conversation on it moves to unicast (TS 24.380 clause 10.2.3.12, Application Paging then Unmap Group To Bearer,
+// clause 4.1.3.6), and it takes no new conversation. "not-suspending": it takes conversations again (step 1 b ii).
+// A TMGI that was not announced is ignored.
+void McServer::mbms_suspension(const User &user, const MbmsSuspensionStatus &status) {
+  if (!mbms_ || !mbms_->bearer(status.suspended_tmgi)) return;
+  event("mbms_suspension", {{"user_id", user.id}, {"tmgi", status.suspended_tmgi}, {"suspending", status.suspending}});
+  if (!status.suspending) {
+    mbms_suspended_.erase(status.suspended_tmgi);
+    publish_mbms_status();
+    return;
+  }
+  if (!mbms_suspended_.insert(status.suspended_tmgi).second) return;
+  const auto now = monotonic_ms();
+  for (auto &[uri, conversation] : mbms_conversations_)
+    if (conversation.bearer->tmgi == status.suspended_tmgi && !conversation.t17) mbms_move_to_unicast(conversation, now);
+  publish_mbms_status();
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 4.1.3.6 and 10.2.3.12 (TS 24.581 clause 10.2.3.13): Application Paging over the conversation's
+// subchannel, so that an idle client gets ready for unicast, then Unmap Group To Bearer: its listeners get the media by
+// unicast at once (mbms_unmap).
+void McServer::mbms_move_to_unicast(MbmsConversation &conversation, std::uint64_t now) {
+  mbms_socket_->send(
+      mbms_protect_control(encode_subchannel(mbms_message(SubchannelMessageType::ApplicationPaging, conversation))),
+      conversation.channel.address, conversation.channel.port);
+  status_["mbms_paging_sent"] = status_.value("mbms_paging_sent", 0u) + 1;
+  event("mbms_moved_to_unicast", {{"session_uri", conversation.session_uri}, {"tmgi", conversation.bearer->tmgi}});
+  mbms_unmap(conversation, now);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 10A.1 and clause 8.5.4 (TS 24.581 clauses 10.5.1 and 9.4.4): a group's dynamic data (whether a call
+// is ongoing; the emergency or imminent peril state and who set it) goes over the general purpose subchannel of each
+// bearer that one of its affiliated members listens to, as Group Dynamic Data Notify, whenever it changes. This server
+// keeps no subscription to group dynamic data (TS 24.379 clause 9.2.1.6), so it sends the notification on every
+// change rather than in place of a SIP NOTIFY. Under a MuSiK it is SRTCP under it (TS 33.180 clause 9.2.2).
+void McServer::mbms_group_dynamic_data_tick() {
+  std::set<std::string> groups;
+  for (const auto &[sip, user] : users_) groups.insert(user.groups.begin(), user.groups.end());
+  for (const auto &group : groups) {
+    GroupDynamicData data;
+    data.ssrc = mbms_ssrc_;
+    data.group = group;
+    data.call_ongoing = std::ranges::any_of(sessions_, [&](const auto &entry) {
+      return entry.second->group == group && !entry.second->private_call;
+    });
+    if (const auto found = priorities_.find(group); found != priorities_.end()) {
+      const auto &state = found->second;
+      if (state.emergency || state.imminent) data.status = state.emergency ? 0 : 1;
+      const auto &setters = state.emergency ? state.emergency_users : state.imminent_users;
+      if (data.status && !setters.empty()) data.status_changer = *setters.begin();
+    }
+    auto &last = mbms_group_data_[group];
+    if (last == data) continue;
+    const bool first = last.group.empty();
+    last = data;
+    if (first && !*data.call_ongoing && !data.status) continue; // nothing to tell yet
+    auto bytes = encode_group_dynamic_data(data);
+    if (mbms_floor_keys_) bytes = mbms_floor_keys_->protect_floor(bytes);
+    for (const auto &bearer : mbms_->bearers) {
+      const bool listened = std::ranges::any_of(users_, [&](const auto &entry) {
+        const auto found = mbms_general_purpose_.find(entry.second.id);
+        return entry.second.groups.contains(group) && found != mbms_general_purpose_.end() &&
+               found->second.contains(bearer.tmgi);
+      });
+      if (!listened) continue;
+      mbms_socket_->send(bytes, bearer.general_purpose.address, bearer.general_purpose.port);
+      status_["mbms_group_data_sent"] = status_.value("mbms_group_data_sent", 0u) + 1;
+    }
+  }
+}
+
+//------------------------------------------------------------------------------
 // Helper: the status shows whom the bearers were announced to, and who listens to which general purpose subchannel.
 void McServer::publish_mbms_status() {
   status_["mbms_announced"] = Json(std::vector<std::string>(mbms_announced_.begin(), mbms_announced_.end()));
@@ -479,6 +557,7 @@ void McServer::publish_mbms_status() {
     listening.push_back({{"user_id", user}, {"tmgis", std::vector<std::string>(tmgis.begin(), tmgis.end())}});
   status_["mbms_general_purpose"] = std::move(listening);
   status_["mbms_musik_users"] = Json(std::vector<std::string>(mbms_musik_users_.begin(), mbms_musik_users_.end()));
+  status_["mbms_suspended"] = Json(std::vector<std::string>(mbms_suspended_.begin(), mbms_suspended_.end()));
   if (mbms_mscck_) status_["mbms_mscck_id"] = mbms_mscck_->csb_id;
   if (mbms_musik_) status_["mbms_musik_id"] = mbms_musik_->csb_id;
   auto conversations = Json::array();

@@ -1400,6 +1400,19 @@ protected:
 
   void mbms_musik_download(const User &user);
 
+  // TS 24.379 clause 14.2.3 step 1 a (suspension): the bearers reported as about to be suspended, whose conversations
+  // moved to unicast and which take no new one until a "not-suspending" report (TS 24.380 clause 10.2.3.12).
+  std::set<std::string> mbms_suspended_;
+
+  void mbms_suspension(const User &user, const MbmsSuspensionStatus &status);
+
+  void mbms_move_to_unicast(MbmsConversation &conversation, std::uint64_t now);
+
+  // TS 24.380 clause 10A.1 (TS 24.581 clause 10.5.1): the group dynamic data last sent over the bearers, by group.
+  std::map<std::string, GroupDynamicData> mbms_group_data_;
+
+  void mbms_group_dynamic_data_tick();
+
   // The "mbms" block, the socket of the general purpose and MBMS subchannels and the SSRC of this participating
   // function on them; none when not configured. The users the bearers were announced to, and the TMGIs whose general
   // purpose subchannel each user reported listening to (TS 24.379 clause 14.2.3).

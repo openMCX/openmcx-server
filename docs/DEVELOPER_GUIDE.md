@@ -634,11 +634,15 @@ then reads:
   clauses 10.2.3.2 and 10.2.3.3). `mscck` (false) puts an MSCCK in the announcement's "a=key-mgmt" and sends the
   subchannel control messages as SRTCP under it; `musik` (false) sends each user a default MuSiK download after the
   announcement, and protected floor control then goes over the subchannel as SRTCP under the MuSiK to the users that
-  took it (unicast to the others). Both need the `security` block (the server's key management client). The former
+  took it (unicast to the others). Both need the `security` block (the server's key management client). A
+  "suspending" report moves the bearer's conversations to unicast (Application Paging, Unmap Group To Bearer) and keeps
+  new ones off it until "not-suspending"; Group Dynamic Data Notify goes over the general purpose subchannels when a
+  group's dynamic data changes (TS 24.380 clause 10A.1). The former
   `multicast` block is refused. MCVideo video goes over the subchannel as the speech does
   (`src/mcvideo/video_media.cpp`, TS 24.581 clause 10.2). Status: `mbms_bearers`, `mbms_announced`,
   `mbms_general_purpose`, `mbms_bearer_announcements`, `mbms_conversations`, `mbms_map_sent`, `mbms_unmap_sent`,
-  `mbms_control_sent`, `mbms_musik_users`, `mbms_mscck_id`, `mbms_musik_id`,
+  `mbms_control_sent`, `mbms_musik_users`, `mbms_mscck_id`, `mbms_musik_id`, `mbms_suspended`, `mbms_paging_sent`,
+  `mbms_group_data_sent`,
   `multicast_forwarded` (packets sent over subchannels), `multicast_listening` (users and sessions).
 - `common`: the common services' URLs and the server's client ID and secret; `issuer` (default: `idms`), the IdMS
   whose access tokens the server accepts, and `token_audience` (default: `client_id`), their audience.

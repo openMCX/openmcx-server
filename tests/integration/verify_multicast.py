@@ -109,7 +109,7 @@ def main():
 
     final = results['status']['mcptt-server']
     general_purpose = tuple(results['general_purpose'].rsplit(':', 1))
-    maps = unmaps = floor = clear_control = 0
+    maps = unmaps = pagings = floor = clear_control = 0
     multicast, unicast, ttls, sources = 0, collections.Counter(), set(), set()
     for source, destination, destination_port, ttl, payload in datagrams(args.capture):
         if destination == group and destination_port == int(port) and is_floor(payload):
@@ -121,6 +121,8 @@ def main():
             maps += 1
         elif subtype == 1 and destination == group and destination_port == int(port):
             unmaps += 1
+        elif subtype == 2 and destination == group and destination_port == int(port):
+            pagings += 1
         if not is_speech(payload):
             continue
         if destination == group and destination_port == int(port):
@@ -148,6 +150,7 @@ def main():
     check(maps == final.get('mbms_map_sent') and maps > 0, f'{maps} Map Group To Bearer to the general purpose subchannel')
     check(unmaps == final.get('mbms_unmap_sent') and unmaps > 0, f'{unmaps} Unmap Group To Bearer to the subchannel')
     check(floor == final.get('mbms_control_sent', 0), f'{floor} floor control messages to the subchannel')
+    check(pagings == final.get('mbms_paging_sent', 0), f'{pagings} Application Paging to the subchannel')
     if final.get('mbms_mscck_id'):
         check(clear_control == 0, f'{clear_control} clear Map or Unmap Group To Bearer under the MSCCK')
     result = dict(capture=str(args.capture), passed=not errors, checks=checks, errors=errors)

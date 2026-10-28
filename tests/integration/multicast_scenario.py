@@ -148,6 +148,11 @@ def main():
         return {role: {key: after[role][key] - before[role][key] for key in after[role]} for role in after}
 
     # ------------------------------------------------------------------------------
+    def group_data(role, group):
+        """The group dynamic data a client received over MBMS (Group Dynamic Data Notify), or {}."""
+        return status(role).get('mbms_group_dynamic_data', {}).get(group, {})
+
+    # ------------------------------------------------------------------------------
     def conversation():
         """The server's MBMS conversation of the call, or {}."""
         conversations = status('mcptt-server').get('mbms_conversations', [])
@@ -287,6 +292,13 @@ def main():
 
         command('client-a', 'call')
         wait('four-participant call', lambda: all(status(role).get('call_state') == 'active' for role in ROLES))
+        group = json.loads((generated / 'client-a.json').read_text())['mcptt']['group_id']
+        wait(
+            'MS-10 Group Dynamic Data Notify over the general purpose subchannel: a call is ongoing (TS 24.380 10A.1)',
+            lambda: all(group_data(role, group).get('call_ongoing') is True for role in OPTED_IN)
+            and not group_data('client-d', group),
+            10,
+        )
         time.sleep(2)
         assert not conversation() and status('mcptt-server').get('mbms_map_sent') == 0, 'mapped before any floor'
         checks.append('MS-01 no MBMS subchannel before the floor is granted')
@@ -358,8 +370,41 @@ def main():
             lambda: all(status(role).get('multicast_joined') == '' for role in ROLES) and not listening(),
             5,
         )
+        # TS 24.379 clause 14.2.3 (suspension) and TS 24.380 clauses 4.1.3.6, 10.2.3.12 and 10.3.5: a new conversation
+        # on the bearer; client-b reports that the bearer is about to be suspended; the server moves the conversation
+        # to unicast (Application Paging, then Unmap Group To Bearer) and maps nothing on the bearer until
+        # "not-suspending".
+        bursts['4 client-a, warm-up again'] = warm_up('client-a', 'alpha.wav')
+        wait(
+            'MS-11 a new conversation is mapped and listened to',
+            lambda: conversation().get('subchannel') == HOST_GROUP and listening() == {ids[r] for r in OPTED_IN},
+        )
+        paged = {role: status(role).get('mbms_paging_received', 0) for role in ROLES}
+        command('client-b', f'mbms suspend {TMGI}')
+        wait(
+            'MS-12 suspension reported: Application Paging to the listeners, the conversation unmapped and released',
+            lambda: TMGI in status('mcptt-server').get('mbms_suspended', [])
+            and all(status(role).get('mbms_paging_received', 0) > paged[role] for role in OPTED_IN)
+            and status('client-d').get('mbms_paging_received', 0) == paged['client-d']
+            and not conversation()
+            and all(status(role).get('multicast_joined') == '' for role in ROLES),
+            10,
+        )
+        maps = status('mcptt-server').get('mbms_map_sent', 0)
+        bursts['5 client-a, bearer suspended'] = suspended = warm_up('client-a', 'alpha.wav')
+        assert suspended['mcptt-server']['multicast'] == 0 and not conversation(), 'mapped while suspended'
+        assert status('mcptt-server').get('mbms_map_sent', 0) == maps, 'Map Group To Bearer while suspended'
+        assert all(suspended[role]['received'] >= MIN_PACKETS for role in ROLES if role != 'client-a'), suspended
+        checks.append('MS-13 while suspended the next talk burst goes by unicast to everyone, nothing is mapped')
+        command('client-b', f'mbms resume {TMGI}')
+        wait('MS-14 "not-suspending": the bearer takes conversations again', lambda: not status('mcptt-server').get('mbms_suspended'))
         command('client-a', 'hangup')
         wait('call released', lambda: all(status(role).get('call_state') == 'idle' for role in ROLES))
+        wait(
+            'MS-15 Group Dynamic Data Notify: no call ongoing',
+            lambda: all(group_data(role, group).get('call_ongoing') is False for role in OPTED_IN),
+            10,
+        )
         wait(
             'subchannel left at the end of the call',
             lambda: all(status(role).get('multicast_joined') == '' for role in ROLES),
