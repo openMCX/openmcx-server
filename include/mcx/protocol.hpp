@@ -223,6 +223,16 @@ ServiceProtection parse_service_protection(std::string_view xml);
 // subscription proxy function of the GMS".
 std::string parse_initial_gms_uri(std::string_view xml);
 //------------------------------------------------------------------------------
+// TS 24.484 clause 7.2.2.1 item 3 and clause 7.2.2.7 item 4 c), g) (TS 24.483 clauses 8.2.41B, 8.2.44B): the home HTTP
+// proxy of <App-Server-Info> (<http-proxy>, empty when the document names none) and whether its TLS tunnel uses
+// mutual authentication (<tls-tunnel-auth-method>/<mutual-authentication>; false: one-way, based on the proxy's
+// certificate).
+struct InitialHttpProxy {
+  std::string uri;
+  bool mutual = false;
+};
+InitialHttpProxy parse_initial_http_proxy(std::string_view xml);
+//------------------------------------------------------------------------------
 // TS 24.481 clause 7.2.4.2: <preconfigured-group-use-only> of a group document (<list-service>): calls on
 // the group are not allowed (TS 24.379 clause 10.1.5.2.1 step 1A, warning 167 of TS 24.379 table 4.4.2-2).
 bool group_preconfigured_use_only(std::string_view xml);

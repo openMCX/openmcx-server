@@ -45,8 +45,14 @@ func WithRequestLog(handler http.Handler, program string) http.Handler {
 		start := time.Now()
 		recorder := &statusRecorder{ResponseWriter: writer, status: http.StatusOK}
 		handler.ServeHTTP(recorder, request)
+		// The target as received: the path, or scheme, authority and path of a request in absolute-form (RFC 9112
+		// section 3.2.2, a client of the HTTP proxy); never the query, which may carry credentials.
+		target := request.URL.Path
+		if request.URL.IsAbs() {
+			target = request.URL.Scheme + "://" + request.URL.Host + request.URL.Path
+		}
 		debugLog.Printf("%s OpenMCX DEBUG [%s] HTTP %s %s | %d | %d ms | %s", start.Format("2006/01/02 15:04:05"),
-			program, request.Method, request.URL.Path, recorder.status, time.Since(start).Milliseconds(), request.RemoteAddr)
+			program, request.Method, target, recorder.status, time.Since(start).Milliseconds(), request.RemoteAddr)
 	})
 }
 

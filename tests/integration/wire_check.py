@@ -61,6 +61,11 @@ def verifiers(scenario, flags):
         if found or cases:
             server, commands = found if found else ('mcptt-server', [])
             found = (server, commands + [['verify_subscription_protection.py'] + (['--require', cases] if cases else [])])
+    # TS 24.482 annex A.2.1.2: in forward mode, the clients' HTTP through the home HTTP proxy, from its request log.
+    if '--http-proxy-mode' in flags and flags[flags.index('--http-proxy-mode') + 1] == 'forward':
+        required = HTTP_PROXY_ROLES.get(scenario, 'gms,cms')
+        found = (found[0] if found else 'http-proxy',
+                 (found[1] if found else []) + [['verify_http_proxy.py', '{proxy_log}', '--require', required]])
     if '--integrity-protection' not in flags:
         return found
     server = found[0] if found else SIGNED_SCENARIO_SERVERS.get(scenario)
@@ -68,6 +73,12 @@ def verifiers(scenario, flags):
         return found
     return server, (found[1] if found else []) + [['verify_xml_signatures.py']]
 
+
+# The servers whose client requests verify_http_proxy.py requires through the proxy, per scenario (gms,cms otherwise).
+HTTP_PROXY_ROLES = {
+    'mcdata_fd_scenario': 'gms,cms,content',
+    'mcdata_msgstore_scenario': 'gms,cms,msgstore',
+}
 
 # The subscription cases verify_subscription_protection.py requires of a scenario in a --documents-on-notify lab.
 SUBSCRIPTION_CASES = {
@@ -301,10 +312,16 @@ def finish(args, cli):
         # tshark reads its preferences from the user's configuration directory; a fresh one keeps them default.
         environment = dict(os.environ, WIRESHARK_CONFIG_DIR=str(Path(scratch) / '.wireshark'))
         Path(environment['WIRESHARK_CONFIG_DIR']).mkdir()
+        # The HTTP proxy's request log, for verify_http_proxy.py.
+        proxy_log = Path(scratch) / 'http-proxy.log'
+        if any('{proxy_log}' in verifier for verifier in found[1]):
+            logs = subprocess.run(cli + ['logs', '--no-color', 'http-proxy'], capture_output=True, text=True)
+            proxy_log.write_text(logs.stdout + logs.stderr)
         for index, verifier in enumerate(found[1]):
             output = report if index == 0 else report.with_name(f'{report.stem}-{index}.json')
+            places = {'{results}': str(results), '{proxy_log}': str(proxy_log)}
             command = [sys.executable, str(HERE / verifier[0]), str(capture)] + [
-                str(results) if part == '{results}' else part for part in verifier[1:]
+                places.get(part, part) for part in verifier[1:]
             ]
             command += ['--output', str(output)]
             run = subprocess.run(command, capture_output=True, text=True, timeout=600, env=environment)

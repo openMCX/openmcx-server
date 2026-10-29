@@ -42,6 +42,14 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   XML Encryption 1.1 also has a padded key wrap (RFC 5649), but the text does not say which one a KMS uses, and OpenMCX
   does not pick one. The optional encryption of the whole KMS message with AES-128-GCM under a 256-bit TrK (annex
   D.3.1) is not applied (reported).
+- **Home HTTP proxy** (TS 24.482 annex A.2.1.2). With `<http-proxy>` configured, the Linux and Android clients send
+  their HTTP requests over a TLS tunnel to the proxy in absolute-form, the IdMS's directly. Not implemented, as the
+  texts leave them open (reported): mutual TLS tunnel authentication with a certificate (TS 24.484 clause 7.2.2.7 g)
+  gives the `<x509>` certificate but no private key) or with a pre-shared key (no PSK identity); a configuration that
+  asks for either is refused. The KMS requests stay direct: TS 24.482 A.2.1.2 sends every request but the IdMS's
+  through the proxy, TS 33.180 clause 5.3.2 lets the KMS be used without it, and no configuration item tells the UE
+  which applies (reported). The MC servers and the GMS reach the other servers directly, not through the proxy with
+  X-3GPP-Asserted-Identity (TS 24.482 annex A.2.1.3).
 - **CSK key download** (TS 24.379 and TS 24.281 clauses 7.3.7 and 7.2.5, TS 33.180 clauses 5.8 and 9.2.1.4). The
   MCPTT and MCVideo servers send it only on the operator command `csk-download <MC service ID>` (the specifications
   give no renewal period); the MCData server does not send it, because TS 24.282 clause 7.3.7 step 5 requires the

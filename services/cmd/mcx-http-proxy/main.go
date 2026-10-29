@@ -12,6 +12,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -20,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -70,6 +72,7 @@ func run() error {
 	}
 	var cfg struct {
 		Endpoints map[string]string `json:"endpoints"`
+		Forward   map[string]string `json:"forward"`
 		LogLevel  string            `json:"log_level"`
 	}
 	if err := json.Unmarshal(raw, &cfg); err != nil {
@@ -94,7 +97,8 @@ func run() error {
 		IdleConnTimeout: 30 * time.Second, MaxIdleConns: 32, MaxIdleConnsPerHost: 8,
 	}
 	handler, err := proxyHandlerWith(cfg.Endpoints, transport,
-		contentOptions{limit: contentRequestLimit, timeout: time.Duration(transferTimeoutMs) * time.Millisecond})
+		contentOptions{limit: contentRequestLimit, timeout: time.Duration(transferTimeoutMs) * time.Millisecond,
+			forward: cfg.Forward})
 	if err != nil {
 		return err
 	}
@@ -120,6 +124,30 @@ const contentLimit = 32 << 20
 type contentOptions struct {
 	limit   int64
 	timeout time.Duration
+	// forward: the authorities of the own MC service provider's servers ("host[:port]" of their URIs) -> the role whose
+	// upstream serves them, for requests in absolute-form (TS 24.482 annex A.2.2.2 step 3).
+	forward map[string]string
+}
+
+// The context key of a request this proxy received in absolute-form (its target authority).
+type forwardedKey struct{}
+
+// ------------------------------------------------------------------------------
+// Helper: RFC 3986 section 6.2.3: an authority with its host in lower case and the scheme's default port (RFC 9110
+// section 4.2.2) left out, so "cms.test:443" of an https URI and "cms.test" name the same server.
+func normalAuthority(scheme, authority string) string {
+	authority = strings.ToLower(authority)
+	host, port, err := net.SplitHostPort(authority)
+	if err != nil {
+		return authority
+	}
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		if strings.Contains(host, ":") {
+			return "[" + host + "]"
+		}
+		return host
+	}
+	return authority
 }
 
 // ------------------------------------------------------------------------------
@@ -128,6 +156,19 @@ type contentOptions struct {
 // caller-supplied proxy assertions, bounds the request bodies, and never logs a body or a credential.
 func proxyHandlerWith(endpoints map[string]string, transport http.RoundTripper, content contentOptions) (http.Handler, error) {
 	proxies := map[string]*httputil.ReverseProxy{}
+	// The forward map, normalised for both schemes a UE may send through the TLS tunnel (TS 24.482 annex A.2.1.2).
+	forward := map[string]string{}
+	for authority, role := range content.forward {
+		switch role {
+		case "gms", "cms", "lms", "kms", "content", "msgstore", "notification":
+		default:
+			return nil, fmt.Errorf("forward %s: unknown role %q", authority, role)
+		}
+		if authority == "" || strings.ContainsAny(authority, "/@?# ") {
+			return nil, fmt.Errorf("forward: %q is not a host[:port]", authority)
+		}
+		forward[normalAuthority("https", authority)] = role
+	}
 	for _, role := range []string{"gms", "cms", "lms", "kms", "content", "msgstore", "notification"} {
 		// The MCData content server, message store and notification server are
 		// configured only where they are deployed.
@@ -149,6 +190,11 @@ func proxyHandlerWith(endpoints map[string]string, transport http.RoundTripper, 
 				proxyRequest.Out.Header.Del("Forwarded")
 				proxyRequest.Out.Header.Del("X-Forwarded-User")
 				proxyRequest.SetXForwarded()
+				if authority, ok := proxyRequest.In.Context().Value(forwardedKey{}).(string); ok {
+					// Absolute-form: the client named the server itself, so the service's own URIs stay as they are.
+					proxyRequest.Out.Header.Set("X-Forwarded-Host", authority)
+					return
+				}
 				// The path prefix this proxy removed, for a service that returns its own URIs.
 				proxyRequest.Out.Header.Set("X-Forwarded-Prefix", prefix)
 			},
@@ -170,6 +216,39 @@ func proxyHandlerWith(endpoints map[string]string, transport http.RoundTripper, 
 			writer.Header().Set("Content-Type", "application/json")
 			_, _ = writer.Write([]byte("{\"ready\":true}\n"))
 			return
+		}
+		// TS 24.482 annex A.2.2.2 step 1: "if the HTTP request method contains an X-3GPP-Asserted-Identity header field
+		// ..., the HTTP proxy shall reject the HTTP request method with an HTTP 403 (Forbidden) response".
+		if _, asserted := request.Header[http.CanonicalHeaderKey("X-3GPP-Asserted-Identity")]; asserted {
+			http.Error(writer, "X-3GPP-Asserted-Identity not accepted from a client", http.StatusForbidden)
+			return
+		}
+		// TS 24.482 annex A.2.2.1 (the proxy role of RFC 9112, section 3.2.2: a server "MUST accept the absolute-form")
+		// and A.2.2.2 step 3: a request for a server of the own MC service provider is passed to it as a reverse
+		// proxy, under the same public-path rules as the path prefixes; the provider has no partner (step 2), so an
+		// authority this proxy does not serve is refused.
+		// Over HTTP/2 the target's authority comes in :authority (RFC 9113 section 8.3.1, A.2.2.2 "server role of
+		// ... IETF RFC 9113"): a request naming a served server there is forwarded the same way.
+		h2Forward := !request.URL.IsAbs() && request.ProtoMajor == 2 && forward[normalAuthority("https", request.Host)] != ""
+		if h2Forward {
+			request.URL.Scheme, request.URL.Host = "https", request.Host
+		}
+		if request.URL.IsAbs() {
+			authority := normalAuthority(request.URL.Scheme, request.URL.Host)
+			role, served := forward[authority]
+			if !served || request.URL.User != nil {
+				http.Error(writer, "no server of this MC service provider", http.StatusForbidden)
+				return
+			}
+			request = request.WithContext(context.WithValue(request.Context(), forwardedKey{}, request.URL.Host))
+			target := request.URL
+			request.URL = &url.URL{Path: "/" + role + target.Path, RawQuery: target.RawQuery}
+			if target.RawPath != "" {
+				request.URL.RawPath = "/" + role + target.RawPath
+			}
+			if request.URL.Path == "/"+role {
+				request.URL.Path += "/"
+			}
 		}
 		// The one backslash allowed is in a message store flag name (\Seen, \Flagged: the
 		// flags resource of OMA NMS clause 6.3), as the last segment of a flags path.

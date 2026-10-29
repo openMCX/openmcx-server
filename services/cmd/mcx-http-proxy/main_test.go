@@ -290,3 +290,72 @@ func TestSlowFileTransferUsesConfiguredTimeout(test *testing.T) {
 func proxyHandler(endpoints map[string]string, transport http.RoundTripper) (http.Handler, error) {
 	return proxyHandlerWith(endpoints, transport, contentOptions{limit: contentLimit})
 }
+
+// ------------------------------------------------------------------------------
+// TS 24.482 annex A.2.2.1 and A.2.2.2 with RFC 9112 section 3.2.2: a request in absolute-form for a server of the own
+// MC service provider reaches the upstream of that server's role with its own path (no prefix header, the target
+// authority as X-Forwarded-Host), under the public-path rules; an authority this proxy does not serve, and a request
+// carrying X-3GPP-Asserted-Identity (step 1, in both forms), get 403 (Forbidden).
+func TestAbsoluteFormForwardingAndAssertedIdentity(test *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, forwarded *http.Request) {
+		if forwarded.Header.Get("X-Forwarded-Prefix") != "" {
+			test.Error("prefix header on an absolute-form request")
+		}
+		_, _ = writer.Write([]byte(forwarded.URL.Path + " " + forwarded.Header.Get("X-Forwarded-Host")))
+	}))
+	defer upstream.Close()
+	endpoints := map[string]string{}
+	for _, role := range []string{"gms", "cms", "lms", "kms"} {
+		endpoints[role] = upstream.URL
+	}
+	handler, err := proxyHandlerWith(endpoints, upstream.Client().Transport,
+		contentOptions{limit: contentLimit, forward: map[string]string{"xcap.cms.test": "cms", "GMS.test:8443": "gms"}})
+	if err != nil {
+		test.Fatal(err)
+	}
+	serve := func(target string, asserted bool) *httptest.ResponseRecorder {
+		request := httptest.NewRequest("GET", target, nil)
+		if asserted {
+			request.Header.Set("X-3GPP-Asserted-Identity", "sip:alice@mcx.test")
+		}
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		return recorder
+	}
+	for target, want := range map[string]string{
+		"http://xcap.cms.test/xcap-root/org.3gpp.mcptt.user-profile/users/x": "/xcap-root/org.3gpp.mcptt.user-profile/users/x xcap.cms.test",
+		"https://xcap.cms.test:443/xcap-root/a":                              "/xcap-root/a xcap.cms.test:443",
+		"https://gms.test:8443/xcap-root/b":                                  "/xcap-root/b gms.test:8443",
+	} {
+		if recorder := serve(target, false); recorder.Code != 200 || recorder.Body.String() != want {
+			test.Errorf("%s: %d %q", target, recorder.Code, recorder.Body.String())
+		}
+	}
+	for _, target := range []string{"https://other.test/xcap-root/a", "https://gms.test/xcap-root/b", "https://u@xcap.cms.test/xcap-root/a"} {
+		if recorder := serve(target, false); recorder.Code != 403 {
+			test.Errorf("an authority outside the own provider served: %s %d", target, recorder.Code)
+		}
+	}
+	for _, target := range []string{"https://xcap.cms.test/internal/user", "https://xcap.cms.test/xcap-root/../internal"} {
+		if recorder := serve(target, false); recorder.Code != 400 && recorder.Code != 404 {
+			test.Errorf("private route %s exposed: %d", target, recorder.Code)
+		}
+	}
+	for _, target := range []string{"https://xcap.cms.test/xcap-root/a", "/cms/xcap-root/a"} {
+		if recorder := serve(target, true); recorder.Code != 403 {
+			test.Errorf("X-3GPP-Asserted-Identity from a client accepted: %s %d", target, recorder.Code)
+		}
+	}
+	// HTTP/2: the target's authority in :authority (RFC 9113 section 8.3.1).
+	h2 := httptest.NewRequest("GET", "/xcap-root/c", nil)
+	h2.ProtoMajor, h2.Host = 2, "xcap.cms.test"
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, h2)
+	if recorder.Code != 200 || recorder.Body.String() != "/xcap-root/c xcap.cms.test" {
+		test.Errorf("HTTP/2 request for a served authority: %d %q", recorder.Code, recorder.Body.String())
+	}
+	if _, err := proxyHandlerWith(endpoints, upstream.Client().Transport,
+		contentOptions{limit: contentLimit, forward: map[string]string{"cms.test": "idms"}}); err == nil {
+		test.Error("a forward entry of an unknown role accepted")
+	}
+}

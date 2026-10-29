@@ -316,6 +316,84 @@ void address_map_and_pin() {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.482 annex A.2.1.2 with RFC 9112 section 3.2.2: through the home HTTP proxy (an openssl s_server whose
+// certificate names proxy.test), the TLS tunnel is checked against the proxy's FQDN and not against the target's,
+// https and http targets both go through it, and the request line carries the target URI in absolute-form with the
+// target's authority in Host; a proxy URI with more than FQDN and port, and a target that is no http(s) URI, are refused.
+void home_http_proxy() {
+  const std::string dir = "/tmp/mcx-test-proxy-" + std::to_string(getpid());
+  const std::string make = "mkdir -p " + dir + " && cd " + dir +
+                           " && openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 1"
+                           " -subj /CN=proxy.test -addext subjectAltName=DNS:proxy.test -keyout key.pem -out cert.pem"
+                           " >/dev/null 2>&1";
+  if (std::system(make.c_str()) != 0) throw std::runtime_error("test certificate");
+  const auto free_port = [] {
+    const int probe = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t length = sizeof(address);
+    bind(probe, reinterpret_cast<sockaddr *>(&address), sizeof(address));
+    getsockname(probe, reinterpret_cast<sockaddr *>(&address), &length);
+    close(probe);
+    return std::to_string(ntohs(address.sin_port));
+  };
+  // One server answers every GET (-www); the other answers nothing and records what it receives.
+  const auto answering = free_port(), recording = free_port();
+  const std::string serve =
+      "cd " + dir + " && (openssl s_server -quiet -www -accept 127.0.0.1:" + answering +
+      " -cert cert.pem -key key.pem >/dev/null 2>&1 & echo $! > www.pid) && (sleep 30 | openssl s_server -quiet"
+      " -naccept 1 -accept 127.0.0.1:" + recording + " -cert cert.pem -key key.pem > received 2>/dev/null &"
+      " echo $! > raw.pid)";
+  if (std::system(serve.c_str()) != 0) throw std::runtime_error("test servers");
+  std::this_thread::sleep_for(std::chrono::milliseconds(700));
+  const auto stop = [&] {
+    if (std::system(("kill $(cat " + dir + "/www.pid) $(cat " + dir + "/raw.pid) 2>/dev/null; rm -rf " + dir).c_str()) != 0)
+      std::cerr << "cleanup\n";
+  };
+  try {
+    mcx::HttpClient proxied(dir + "/cert.pem", {}, {{"proxy.test:8443", "127.0.0.1:" + answering}});
+    proxied.use_proxy("https://proxy.test:8443");
+    if (proxied.request("GET", "https://kms.test/keymanagement/identity/v1/init").status != 200)
+      throw std::runtime_error("an https target through the proxy refused");
+    if (proxied.request("GET", "http://xcap.cms.test/xcap-root/x").status != 200)
+      throw std::runtime_error("an http target through the proxy refused");
+    expect_rejected("a target that is no http(s) URI", [&] { proxied.request("GET", "ftp://kms.test/"); });
+    expect_rejected("a target with a space", [&] { proxied.request("GET", "https://kms.test/a b"); });
+    expect_rejected("a target with userinfo", [&] { proxied.request("GET", "https://user@kms.test/"); });
+    mcx::HttpClient misnamed(dir + "/cert.pem", {}, {{"other.test:8443", "127.0.0.1:" + answering}});
+    misnamed.use_proxy("https://other.test:8443/");
+    expect_rejected("a proxy whose certificate does not carry its FQDN",
+                    [&] { misnamed.request("GET", "https://proxy.test/"); });
+    for (const auto *uri : {"http://proxy.test:8443", "https://proxy.test:8443/path", "https://u@proxy.test", "proxy.test"})
+      expect_rejected(std::string("the proxy URI ") + uri, [&] { mcx::HttpClient(dir + "/cert.pem").use_proxy(uri); });
+
+    mcx::HttpClient recorded(dir + "/cert.pem", {.connect_ms = 1000, .total_ms = 1500},
+                             {{"proxy.test:443", "127.0.0.1:" + recording}});
+    recorded.use_proxy("https://proxy.test");
+    expect_rejected("an answer from the recording server",
+                    [&] { recorded.request("GET", "https://kms.test:8443/keymanagement/identity/v1/init?x=1"); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    std::string received;
+    {
+      std::FILE *file = std::fopen((dir + "/received").c_str(), "r");
+      char buffer[4096] = {};
+      if (!file) throw std::runtime_error("nothing recorded");
+      received.assign(buffer, std::fread(buffer, 1, sizeof buffer - 1, file));
+      std::fclose(file);
+    }
+    if (!received.starts_with("GET https://kms.test:8443/keymanagement/identity/v1/init?x=1 HTTP/1.1\r\n"))
+      throw std::runtime_error("request line not in absolute-form: " + received.substr(0, 120));
+    if (received.find("\r\nHost: kms.test:8443\r\n") == received.npos || received.find("Host: proxy.test") != received.npos)
+      throw std::runtime_error("Host is not the target's authority: " + received.substr(0, 300));
+  } catch (...) {
+    stop();
+    throw;
+  }
+  stop();
+}
+
+//------------------------------------------------------------------------------
 // TS 37.579-1 table 5.3.2.3.2-5 and HTML 4.01 section 17: the IdMS's user authentication form is read, its fields
 // filled and its action resolved: the form of the test view, the OpenMCX IdMS's form (hidden inputs, relative
 // action) and a third-party form (character references, cookies, an unchecked box, script); malformed or unfillable
@@ -430,6 +508,7 @@ int main() {
   expect_rejected("clear HTTP", [] { mcx::HttpClient("unused").request("GET", "http://localhost/"); });
   configured_timeout();
   address_map_and_pin();
+  home_http_proxy();
   html_forms();
 
   SigningKey key;

@@ -59,6 +59,10 @@ public:
   HttpResponse request(std::string_view method, const std::string &url, const std::string &body = {},
                        const std::map<std::string, std::string> &headers = {}, const std::string &user = {},
                        const std::string &password = {}) const;
+  // TS 24.482 annex A.2.1.2: the home HTTP proxy (TS 24.484 clause 7.2.2.7 <http-proxy>, an https URI naming its FQDN
+  // and port, RFC 9110 section 4.2.2 default port 443): every request of this client then goes over a TLS tunnel to
+  // the proxy, checked against the proxy's FQDN, in absolute-form (RFC 9112 section 3.2.2). Empty: direct requests.
+  void use_proxy(const std::string &proxy_uri);
 
 private:
   std::string ca_;
@@ -66,6 +70,7 @@ private:
   HttpAddressMap address_map_;
   HttpTrust trust_;
   std::string crl_file_;
+  std::string proxy_;
 };
 
 //------------------------------------------------------------------------------

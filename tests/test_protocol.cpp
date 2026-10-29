@@ -866,6 +866,25 @@ int main() {
           "GMS-URI of the UE initial configuration");
     rejects([&] { (void)parse_initial_gms_uri(initial("")); });
     rejects([&] { (void)parse_initial_gms_uri(initial("<GMS-URI></GMS-URI>")); });
+    // TS 24.484 clause 7.2.2.1 item 3 c), g): the home HTTP proxy and its TLS tunnel authentication.
+    const auto server_info = [&](const std::string &proxy, const std::string &mutual) {
+      return initial("<App-Server-Info><idms-auth-endpoint>https://idms/a</idms-auth-endpoint><idms-token-endpoint>"
+                     "https://idms/t</idms-token-endpoint>" + proxy + "<gms>https://gms</gms><cms>https://cms</cms>"
+                     "<kms>https://kms</kms><tls-tunnel-auth-method>" + mutual + "</tls-tunnel-auth-method>"
+                     "</App-Server-Info><GMS-URI>sip:gms-proxy@x</GMS-URI>");
+    };
+    const auto proxy = parse_initial_http_proxy(server_info("<http-proxy>https://proxy.x:8443</http-proxy>",
+                                                            "<mutual-authentication>false</mutual-authentication>"));
+    check(proxy.uri == "https://proxy.x:8443" && !proxy.mutual, "home HTTP proxy of the UE initial configuration");
+    check(parse_initial_http_proxy(server_info("<http-proxy/>", "<mutual-authentication>1</mutual-authentication>"
+                                               "<x509>MII</x509>")).mutual,
+          "mutual TLS tunnel authentication");
+    check(parse_initial_http_proxy(server_info("<http-proxy></http-proxy>",
+                                               "<mutual-authentication>0</mutual-authentication>")).uri.empty(),
+          "no home HTTP proxy");
+    rejects([&] { (void)parse_initial_http_proxy(initial("<GMS-URI>sip:gms-proxy@x</GMS-URI>")); });
+    rejects([&] { (void)parse_initial_http_proxy(server_info("", "<mutual-authentication>false</mutual-authentication>")); });
+    rejects([&] { (void)parse_initial_http_proxy(server_info("<http-proxy/>", "<mutual-authentication>yes</mutual-authentication>")); });
   }
   // TS 24.379 clauses 6.6.2.3 and 6.6.3.3, TS 24.484 clauses 8.4.2.1, 9.4.2.1 and 10.4.2.1: the signalling protection
   // of a service configuration document; an absent element (or parent) means enabled, only "false" disables.

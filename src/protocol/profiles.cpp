@@ -238,6 +238,23 @@ std::string parse_initial_gms_uri(std::string_view xml) {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.484 clause 7.2.2.1 item 3 c), g): <on-network> / <App-Server-Info> / <http-proxy> and <tls-tunnel-auth-method>
+// / <mutual-authentication> (xs:boolean, XML Schema Part 2 section 3.2.2: "true", "false", "1", "0").
+InitialHttpProxy parse_initial_http_proxy(std::string_view xml) {
+  static constexpr const char *ns = "urn:3gpp:mcptt:mcpttUEinitConfig:1.0";
+  auto doc = document(xml);
+  auto root = xmlDocGetRootElement(doc.get());
+  if (!is(root, "mcptt-UE-initial-configuration", ns)) invalid("wrong UE initial configuration root");
+  auto server_info = unique_child(unique_child(root, "on-network", ns), "App-Server-Info", ns);
+  InitialHttpProxy out;
+  out.uri = scalar(unique_child(server_info, "http-proxy", ns));
+  const auto mutual = scalar(unique_child(unique_child(server_info, "tls-tunnel-auth-method", ns), "mutual-authentication", ns));
+  if (mutual != "true" && mutual != "false" && mutual != "1" && mutual != "0") invalid("invalid mutual-authentication");
+  out.mutual = mutual == "true" || mutual == "1";
+  return out;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.481 clause 7.2.4.2: the <list-service> of a group document.
 static xmlNode *group_list_service(xmlDoc *doc) {
   auto root = xmlDocGetRootElement(doc);

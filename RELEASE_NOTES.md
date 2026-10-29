@@ -17,6 +17,11 @@ common services, a SIP core, the clients and MCX Admin, as containers that start
   `openmcx-client-develop.apk`) activated through the MCX Admin of release 1.0.0 cannot read its user profile and
   does not sign in: use the MCX Admin of the same images. A system set up with earlier images needs its setup run
   again: MCX Admin needs the XCAP root URIs in its configuration. The 1.0.0 images keep working together.
+- **Home HTTP proxy.** With `activation.http_proxy` set, MCX Admin puts the home HTTP proxy in the `<http-proxy>` of
+  the UE initial configuration (TS 24.484 clause 7.2.2.1 item 3), and the Linux client, the dispatcher and the Android
+  app then send their HTTP requests through it in absolute-form, the IdMS's and the KMS's directly (TS 24.482 annex
+  A.2.1.2). The HTTP proxy passes such requests to the servers it is configured for (`forward`) and refuses a client
+  request carrying `X-3GPP-Asserted-Identity` (A.2.2.2). Without `http_proxy` nothing changes.
 
 ## What 1.0.0 provides
 

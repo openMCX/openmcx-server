@@ -381,6 +381,32 @@ LABS = [
         ['group_management_scenario', 'prearranged_scenario'],
         ['mcptt', 'common', 'protected'],
     ),
+    # TS 24.482 annex A.2.1.2: the clients' HTTP through the home HTTP proxy in absolute-form, the IdMS's and the
+    # KMS's direct (verify_http_proxy.py, from the proxy's request log); group documents, a protected call (keys from
+    # the KMS), and the MCData content server and message store.
+    lab(
+        'http-proxy-forward',
+        'single',
+        ['--http-proxy-mode', 'forward', '--log-level', 'debug', '--group-management'] + KEYS,
+        ['group_management_scenario', 'prearranged_scenario'],
+        ['common', 'protected'],
+    ),
+    lab(
+        'http-proxy-forward-mcdata',
+        'single',
+        ['--http-proxy-mode', 'forward', '--log-level', 'debug', '--private-call', '--mcdata', '--msgstore'],
+        ['mcdata_fd_scenario', 'mcdata_msgstore_scenario'],
+        ['common', 'mcdata'],
+    ),
+    # The same through MCX Admin's activation: the client takes the home HTTP proxy from the <http-proxy> of the
+    # package's UE initial configuration (TS 24.484 clause 7.2.2.1 item 3 c)). Needs --admin-image.
+    lab(
+        'http-proxy-forward-admin',
+        'single',
+        ['--http-proxy-mode', 'forward', '--log-level', 'debug', '--admin'],
+        ['admin_scenario'],
+        ['admin'],
+    ),
     # TS 24.481 clause 6.3.13.2.2: the MCData server subscribing to group documents at a GMS-URI apart from the
     # MCPTT PSI (step b), with its PSI asserted, the MCPTT ICSI asserted and in its Contact (steps c, e, f;
     # verify_subscription_uris.py --mcs-server).

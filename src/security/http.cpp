@@ -251,20 +251,72 @@ HttpClient::HttpClient(std::string ca_file, HttpTimeouts timeouts, HttpAddressMa
   if (ca_.empty()) throw std::invalid_argument("HTTPS trust anchor required");
 }
 
+namespace {
+//------------------------------------------------------------------------------
+// Helper: RFC 3986 section 3.2: the authority of an http or https URI (without userinfo, which RFC 9110 section
+// 4.2.4 forbids a sender to generate); empty when there is none or the URI cannot go on a request line.
+std::string uri_authority(std::string_view uri) {
+  const auto scheme = uri.starts_with("https://") ? 8 : uri.starts_with("http://") ? 7 : 0;
+  if (scheme == 0) return {};
+  for (const char c : uri)
+    if (static_cast<unsigned char>(c) <= 0x20 || c == 0x7f || c == '#') return {};
+  const auto end = uri.find_first_of("/?", scheme);
+  const auto authority = uri.substr(scheme, end == uri.npos ? uri.npos : end - scheme);
+  if (authority.empty() || authority.find('@') != authority.npos) return {};
+  return std::string(authority);
+}
+} // namespace
+
+//------------------------------------------------------------------------------
+// TS 24.482 annex A.2.1.2: the home HTTP proxy, configured as a URI (TS 24.484 clause 7.2.2.7 c), TS 24.483 clause
+// 8.2.41B): https (the TLS tunnel), an FQDN and an optional port, nothing else.
+void HttpClient::use_proxy(const std::string &proxy_uri) {
+  if (proxy_uri.empty()) {
+    proxy_.clear();
+    return;
+  }
+  auto origin = proxy_uri;
+  if (origin.ends_with('/')) origin.pop_back();
+  if (!origin.starts_with("https://") || uri_authority(origin).empty() ||
+      origin.size() != 8 + uri_authority(origin).size())
+    throw std::invalid_argument("HTTP proxy: an https URI with the proxy's FQDN and port only");
+  proxy_ = origin;
+}
+
 //------------------------------------------------------------------------------
 // TS 24.482 annex A.2.1.2: sends one HTTP request over TLS (server certificate and host name verified, no
-// redirects, bounded timeouts), with optional basic authentication and header fields.
+// redirects, bounded timeouts), with optional basic authentication and header fields. With a home HTTP proxy, the
+// TCP connection and the TLS tunnel go to the proxy ("shall check the home HTTP proxy FQDN against the server's
+// identity ... shall not check the portion of dereferenced HTTP URL"), and "all HTTP messages via the TLS tunnel":
+// http targets too, which without a proxy are refused. The request target is the target URI in absolute-form (RFC
+// 9112 section 3.2.2: "When making a request to a proxy ... a client MUST send the target URI in absolute-form"), with
+// the target's authority in Host (RFC 9112 section 3.2); no CONNECT, as the TLS tunnel ends at the proxy (NOTE).
 HttpResponse HttpClient::request(std::string_view method, const std::string &url, const std::string &body,
                                  const std::map<std::string, std::string> &headers, const std::string &user,
                                  const std::string &password) const {
-  if (!url.starts_with("https://")) throw std::invalid_argument("HTTPS required");
+  std::string target_host;
+  if (proxy_.empty()) {
+    if (!url.starts_with("https://")) throw std::invalid_argument("HTTPS required");
+  } else {
+    target_host = uri_authority(url);
+    if (target_host.empty()) throw std::invalid_argument("HTTP request through the proxy: an http or https URI required");
+  }
   std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> handle(curl_easy_init(), curl_easy_cleanup);
   if (!handle) throw std::runtime_error("curl allocation");
   auto *easy = handle.get();
   HttpResponse response;
   std::string verb(method);
 
-  curl_easy_setopt(easy, CURLOPT_URL, url.c_str());
+  if (proxy_.empty()) {
+    curl_easy_setopt(easy, CURLOPT_URL, url.c_str());
+  } else {
+    // libcurl connects to (and verifies) the URL's host: the proxy; the request line carries the target URI.
+    curl_easy_setopt(easy, CURLOPT_URL, (proxy_ + "/").c_str());
+    curl_easy_setopt(easy, CURLOPT_REQUEST_TARGET, url.c_str());
+    // HTTP/1.1 (TS 24.482 annex A.2.1.1, RFC 9112), whose absolute-form names the target; libcurl would otherwise
+    // negotiate HTTP/2 over TLS, which carries the target in :authority instead (RFC 9113 section 8.3.1).
+    curl_easy_setopt(easy, CURLOPT_HTTP_VERSION, static_cast<long>(CURL_HTTP_VERSION_1_1));
+  }
   curl_easy_setopt(easy, CURLOPT_CUSTOMREQUEST, verb.c_str());
   curl_easy_setopt(easy, CURLOPT_CAINFO, ca_.c_str());
   // libcurl adds the CA directory it was built with (on Ubuntu the system's) unless told otherwise.
@@ -314,6 +366,8 @@ HttpResponse HttpClient::request(std::string_view method, const std::string &url
     }
     list = curl_slist_append(list, (name + ": " + value).c_str());
   }
+  // RFC 9112 section 3.2: Host carries the target URI's authority (libcurl would send the proxy's).
+  if (!target_host.empty()) list = curl_slist_append(list, ("Host: " + target_host).c_str());
   std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)> holder(list, curl_slist_free_all);
   curl_easy_setopt(easy, CURLOPT_HTTPHEADER, list);
 

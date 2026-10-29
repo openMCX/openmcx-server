@@ -351,6 +351,12 @@ def main():
     message_store, notification_server = "https://message-store:8443", "https://notification-server:8443"
     endpoints["msgstore"] = "https://http-proxy:8443/msgstore"
     endpoints["notification"] = "https://http-proxy:8443/notification"
+    # TS 24.482 annex A.2.1.2 ("http_proxy_mode": "forward"): the clients name each server by its own URI and send
+    # every request but the IdMS's and the KMS's through the home HTTP proxy in absolute-form; the proxy passes them on
+    # by authority (A.2.2.2 step 3). Default ("path"): the clients reach the servers at path prefixes of the proxy.
+    forward = source.get("http_proxy_mode", "path") == "forward"
+    if forward:
+        endpoints.update(content=content_server, msgstore=message_store, notification=notification_server)
     users = [
         {
             "username": source_user["username"],
@@ -464,7 +470,23 @@ def main():
                 "content": content_server,
                 "msgstore": message_store,
                 "notification": notification_server,
-            }
+            },
+            # The own MC service provider's servers by the authority of their URIs (A.2.2.2 step 3).
+            **(
+                {
+                    "forward": {
+                        "gms:8443": "gms",
+                        "cms:8443": "cms",
+                        "lms:8443": "lms",
+                        "kms:8443": "kms",
+                        "content-server:8443": "content",
+                        "message-store:8443": "msgstore",
+                        "notification-server:8443": "notification",
+                    }
+                }
+                if forward
+                else {}
+            ),
         },
     )
     # Each MCPTT server pulls user profiles from the user database (MCPTT-2).
@@ -643,12 +665,18 @@ TLS_CA = "/config/tls/ca.crt";
                     },
                 },
                 received_wav=f"/artifacts/{role}/received.wav",
+                # TS 24.482 annex A.2.1.2: the home HTTP proxy, one-way TLS tunnel authentication (forward mode).
+                **({"http": {"proxy": "https://http-proxy:8443", "tunnel_auth": "one-way"}} if forward else {}),
                 trusted_core="sip-core",
                 server_address=serving_server(servers, role),
                 endpoints={
                     # TS 24.484 clause 7.2.2.7 items 7 and 8: the GMS and CMS XCAP root URIs, used as given.
-                    **{function: "https://http-proxy:8443/" + function + "/xcap-root" for function in ("cms", "gms")},
-                    "content": "https://http-proxy:8443/content",
+                    **{
+                        function: (f"https://{function}:8443" if forward else "https://http-proxy:8443/" + function)
+                        + "/xcap-root"
+                        for function in ("cms", "gms")
+                    },
+                    "content": endpoints["content"],
                     "msgstore": endpoints["msgstore"],
                     "notification": endpoints["notification"],
                 },

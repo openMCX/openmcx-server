@@ -1542,10 +1542,15 @@ def add_admin(fixture, compose, args):
         # provision.py gives them) and, apart, the XCAP root URIs the clients use as their gms and cms (items 7, 8).
         endpoints={
             **client['endpoints'],
-            **{function: 'https://http-proxy:8443/' + function for function in ('cms', 'gms')},
+            **{
+                function: (f'https://{function}:8443' if 'http' in client else 'https://http-proxy:8443/' + function)
+                for function in ('cms', 'gms')
+            },
         },
         xcap_roots={function: client['endpoints'][function] for function in ('cms', 'gms')},
         trust_root_file='/config/tls/ca.crt',
+        # TS 24.484 clause 7.2.2.1 item 3 c): the home HTTP proxy of the UE initial configuration (forward mode).
+        **({'http_proxy': client['http']['proxy']} if 'proxy' in client.get('http', {}) else {}),
     )
     (gen / 'mcxadmin.json').write_text(
         json.dumps(
@@ -2079,6 +2084,14 @@ def main():
         'configuration once the service configuration documents are written, so that only the documents decide',
     )
     parser.add_argument(
+        '--http-proxy-mode',
+        choices=('path', 'forward'),
+        default='path',
+        help='forward: the clients name every server by its own URI and send their HTTP requests (but the IdMS\'s and '
+        'the KMS\'s) through the home HTTP proxy in absolute-form (TS 24.482 annex A.2.1.2), as MCX Admin\'s '
+        '<http-proxy> says; path (default): the servers at path prefixes of the proxy',
+    )
+    parser.add_argument(
         '--gms-user',
         help='A GMS-URI apart from the MCPTT PSI: sip:<GMS_USER>@<domain>, routed by the SIP core to the MCPTT server '
         '(TS 24.481 clause 6.3.13.2.1 step b); the clients subscribe to group documents and group keys there',
@@ -2290,6 +2303,8 @@ def main():
         source['token_ttl_seconds'] = args.token_ttl
     if args.gms_user:
         source['gms_user'] = args.gms_user
+    if args.http_proxy_mode == 'forward':
+        source['http_proxy_mode'] = 'forward'
     if args.admin and not args.admin_image:
         parser.error('--admin needs --admin-image')
     if args.keycloak and args.admin:
