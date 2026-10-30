@@ -1,0 +1,318 @@
+# Tutorial 3a: tutorial 3 with the openMCX QoS RAN and core (github.com/openMCX/oai), on top of tutorial 3's
+# docker-compose-5g-mcx.yaml: qos.sh runs compose with tutorial 3 as the project directory (./config, ./oai are
+# tutorial 3's) and TUTORIAL3A_DIR set to this directory.
+#
+#   oai-gnb      the QoS gNB (the QoS scheduler), oai-nr-ue* the matching nr-UE, oai-amf/smf/upf the QoS core
+#   oai-nr-ue    IMSI 208990100001100, 192.168.71.150: ue-client (client-d, IMS AKA)                 (tutorial 3)
+#   oai-nr-ue2   IMSI 208990100001101, 192.168.71.151: ue2-client (client-b, IMS AKA)
+#   oai-nr-ue3   IMSI 208990100001102, 192.168.71.152: load only, iperf3 to iperf-server     (profile load)
+#   oai-nr-ue4   IMSI 208990100001103, 192.168.71.153: load only                             (profile load)
+#   iperf-server 192.168.72.150 on N6: iperf3 servers on 5201-5208, a downlink and an uplink port per load UE (3, 4,
+#                and 1, 2 through their internet PDU session)                                 (profile load)
+#
+# Both MC clients reach the P-CSCF over their PDU session (DNN mcptt) and are in the group operations. Every UE also
+# has a best-effort PDU session (DNN internet, 5QI 9, 12.1.2.0/24; the load UEs only that one): setup/internet.py
+# writes the subscription data, core configuration and nr-UE configuration for it into generated/, mounted below
+# over tutorial 3's (compose merges volumes by their target).
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  setup:
+    environment:
+      IMS_AKA_ROLES: client-d,client-b
+      VIDEO_KBPS: ${VIDEO_KBPS:-2048}
+      VIDEO_SIZE: ${VIDEO_SIZE:-640x480}
+      VIDEO_KEY_INTERVAL: ${VIDEO_KEY_INTERVAL:-30}
+      VIDEO_ENCODER_KBPS: ${VIDEO_ENCODER_KBPS:-}
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/setup/ue2-client.py:/tutorial3a/ue2-client.py:ro
+    - ${TUTORIAL3A_DIR:?}/setup/mcvideo.py:/tutorial3a/mcvideo.py:ro
+    entrypoint:
+    - sh
+    - -c
+    - python3 /opt/tutorials/configure.py && python3 /tutorial3/pcf.py && python3 /tutorial3/location.py && python3
+      /tutorial3/ue-client.py && python3 /tutorial3a/ue2-client.py && python3 /tutorial3a/mcvideo.py
+
+  # MCVideo over 5G with N5 (setup/mcvideo.py): the MCVideo server reaches the PCF, and gets its notifications, on the
+  # core network, as the MCPTT server does (192.168.71.141).
+  mcvideo-server:
+    networks:
+      default:
+        gw_priority: 1
+      public:
+        ipv4_address: 192.168.71.142
+
+  oai-gnb:
+    image: ${GNB_IMG:-openmcx/oai-gnb:mcx-qos}
+    # The image's entrypoint attaches gdb on a crash for a backtrace: it needs ptrace
+    cap_add:
+    - SYS_PTRACE
+    environment:
+      # GNB_OPTS: more gNB options, e.g. the small cell: --MACRLCs.[0].dl_max_mcs 4 --MACRLCs.[0].ul_max_mcs 4
+      USE_ADDITIONAL_OPTIONS: -E --rfsim --log_config.global_log_options level,nocolor,time ${GNB_OPTS:-}
+      # The QoS scheduler
+      OAI_MCX_SCHED: qos
+      # OAI_MCX_GBR_ADMISSION: GBR admission threshold, the share of the cell's PRBs per direction, e.g. 0.9; empty or
+      # 0: off (every GBR flow admitted, as in stock OAI)
+      OAI_MCX_GBR_ADMISSION: ${OAI_MCX_GBR_ADMISSION:-}
+      # OAI_MCX_RLC_UM=1: voice DRBs in RLC UM, with a discard timer of twice the PDB; default AM (as stock OAI)
+      OAI_MCX_RLC_UM: ${OAI_MCX_RLC_UM:-}
+
+  # OAI_MCX_UPF_PRIORITY_SUBNETS: the N6 downlink of these UE pools (the mcptt DNN) is served before best
+  # effort; GBR QoS flows before both. Empty: only the GBR flows go first.
+  oai-upf:
+    image: ${UPF_IMG:-openmcx/oai-upf:mcx-qos}
+    environment:
+      OAI_MCX_UPF_PRIORITY_SUBNETS: ${OAI_MCX_UPF_PRIORITY_SUBNETS-12.1.1.0/24}
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/generated/mcx_core_config.yaml:/openair-upf/etc/config.yaml:ro
+
+  # Tutorial 3's dispatcher position (in UE 1) is not used here, and its start fails when it has no account: started
+  # only with the profile dispatcher.
+  dispatcher:
+    profiles:
+    - dispatcher
+
+  oai-nr-ue:
+    image: ${NRUE_IMG:-openmcx/oai-nr-ue:mcx-qos}
+
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/generated/nrue.uicc.internet.yaml:/opt/oai-nr-ue/etc/nr-ue.yaml:ro
+  ue-client:
+    image: ${CLIENT_IMG:-openmcx/openmcx-client:mcx-qos}
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/media:/media:ro
+
+  oai-nr-ue2:
+    logging: *logging
+    container_name: openmcx-oai-nr-ue2
+    image: ${NRUE_IMG:-openmcx/oai-nr-ue:mcx-qos}
+    cap_drop:
+    - ALL
+    cap_add:
+    - NET_ADMIN
+    - NET_RAW
+    - SYS_NICE
+    devices:
+    - /dev/net/tun:/dev/net/tun
+    depends_on:
+    - oai-nr-ue
+    environment:
+      USE_ADDITIONAL_OPTIONS: -E --rfsim -r 106 --numerology 1 --uicc0.imsi 208990100001101 -C 3319680000 --rfsimulator.[0].serveraddr
+        192.168.71.140 --log_config.global_log_options level,nocolor,time
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/generated/nrue.uicc.internet.yaml:/opt/oai-nr-ue/etc/nr-ue.yaml:ro
+    extra_hosts:
+    - sip-core:${HOST_IP:?set HOST_IP in .env}
+    - pcscf:192.168.72.140
+    networks:
+      public:
+        ipv4_address: 192.168.71.151
+    healthcheck:
+      test: /bin/bash -c "pgrep nr-uesoftmodem"
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ue2-route:
+    logging: *logging
+    container_name: openmcx-ue2-route
+    image: ${NRUE_IMG:-openmcx/oai-nr-ue:mcx-qos}
+    network_mode: service:oai-nr-ue2
+    cap_drop:
+    - ALL
+    cap_add:
+    - NET_ADMIN
+    depends_on:
+    - oai-nr-ue2
+    environment:
+      HOST_IP: ${HOST_IP:?set HOST_IP in .env}
+    entrypoint:
+    - bash
+    - -c
+    - until ip -4 -o addr show oaitun_ue1 2>/dev/null | grep -q inet; do sleep 1; done; ip route replace "$$HOST_IP"/32 dev
+      oaitun_ue1; ip route replace 192.168.72.140/32 dev oaitun_ue1; ip -4 -o addr show oaitun_ue1 | awk '{print $$4}' | cut
+      -d/ -f1 > /ue/ip; echo "UE2 address $$(cat /ue/ip), $$HOST_IP and the P-CSCF 192.168.72.140 through oaitun_ue1"; sleep
+      infinity
+    volumes:
+    - ue2:/ue
+    healthcheck:
+      test:
+      - CMD
+      - test
+      - -s
+      - /ue/ip
+      interval: 3s
+      timeout: 2s
+      retries: 100
+
+  ue2-client:
+    logging: *logging
+    container_name: openmcx-ue2-client
+    image: ${CLIENT_IMG:-openmcx/openmcx-client:mcx-qos}
+    network_mode: service:oai-nr-ue2
+    cap_add:
+    - NET_ADMIN
+    depends_on:
+      ue2-route:
+        condition: service_healthy
+      ue-client:
+        condition: service_healthy
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
+    entrypoint:
+    - sh
+    - -c
+    - sed "s/UE_IP/$$(cat /ue/ip)/g" /config/ue-client.json.in > /run/mcx/ue-client.json && exec /usr/local/bin/mcx-client
+      --config /run/mcx/ue-client.json
+    volumes:
+    - ./config/ue2-client.json:/config/ue-client.json.in:ro
+    - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+    - ./config/tls/client-b.crt:/config/tls/client-b.crt:ro
+    - ./config/tls/client-b.key:/config/tls/client-b.key:ro
+    - ./config/artifacts:/artifacts
+    - ue2:/ue:ro
+    - ${TUTORIAL3A_DIR:?}/media:/media:ro
+    tmpfs:
+    - /run/mcx
+    init: true
+    healthcheck:
+      test:
+      - CMD
+      - python3
+      - /healthcheck.py
+      - /artifacts/client-b/status.json
+      - authorized
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 10s
+    restart: unless-stopped
+
+  oai-nr-ue3:
+    logging: *logging
+    container_name: openmcx-oai-nr-ue3
+    image: ${NRUE_IMG:-openmcx/oai-nr-ue:mcx-qos}
+    profiles:
+    - load
+    cap_drop:
+    - ALL
+    cap_add:
+    - NET_ADMIN
+    - NET_RAW
+    - SYS_NICE
+    devices:
+    - /dev/net/tun:/dev/net/tun
+    depends_on:
+    - oai-nr-ue2
+    environment:
+      USE_ADDITIONAL_OPTIONS: -E --rfsim -r 106 --numerology 1 --uicc0.imsi 208990100001102 -C 3319680000 --rfsimulator.[0].serveraddr
+        192.168.71.140 --log_config.global_log_options level,nocolor,time
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/generated/nrue.uicc.load.yaml:/opt/oai-nr-ue/etc/nr-ue.yaml:ro
+    networks:
+      public:
+        ipv4_address: 192.168.71.152
+    healthcheck:
+      test: /bin/bash -c "pgrep nr-uesoftmodem"
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  oai-nr-ue4:
+    logging: *logging
+    container_name: openmcx-oai-nr-ue4
+    image: ${NRUE_IMG:-openmcx/oai-nr-ue:mcx-qos}
+    profiles:
+    - load
+    cap_drop:
+    - ALL
+    cap_add:
+    - NET_ADMIN
+    - NET_RAW
+    - SYS_NICE
+    devices:
+    - /dev/net/tun:/dev/net/tun
+    depends_on:
+    - oai-nr-ue3
+    environment:
+      USE_ADDITIONAL_OPTIONS: -E --rfsim -r 106 --numerology 1 --uicc0.imsi 208990100001103 -C 3319680000 --rfsimulator.[0].serveraddr
+        192.168.71.140 --log_config.global_log_options level,nocolor,time
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/generated/nrue.uicc.load.yaml:/opt/oai-nr-ue/etc/nr-ue.yaml:ro
+    networks:
+      public:
+        ipv4_address: 192.168.71.153
+    healthcheck:
+      test: /bin/bash -c "pgrep nr-uesoftmodem"
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # The far end of the load: on N6, reached by the UEs through the UPF; its route to the UE pools (12.1.1.0/24 mcptt,
+  # 12.1.2.0/24 internet) through the UPF.
+  iperf-server:
+    logging: *logging
+    container_name: openmcx-iperf-server
+    image: ${NRUE_IMG:-openmcx/oai-nr-ue:mcx-qos}
+    profiles:
+    - load
+    cap_drop:
+    - ALL
+    cap_add:
+    - NET_ADMIN
+    networks:
+      default:
+        ipv4_address: 192.168.72.150
+    entrypoint:
+    - bash
+    - -c
+    - ip route replace 12.1.0.0/16 via 192.168.72.134 && for p in 5201 5202 5203 5204 5205 5206 5207; do iperf3 -s -p $$p -D;
+      done && exec iperf3 -s -p 5208
+
+  # The best-effort PDU session (setup/internet.py): the subscription data, the core configuration with the DNN
+  # internet, and (above) the nr-UEs' configuration
+  oai-mysql:
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/generated/oai_db.sql:/docker-entrypoint-initdb.d/oai_db.sql:ro
+
+  oai-nrf:
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/generated/mcx_core_config.yaml:/openair-nrf/etc/config.yaml:ro
+
+  oai-udr:
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/generated/mcx_core_config.yaml:/openair-udr/etc/config.yaml:ro
+
+  oai-udm:
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/generated/mcx_core_config.yaml:/openair-udm/etc/config.yaml:ro
+
+  oai-ausf:
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/generated/mcx_core_config.yaml:/openair-ausf/etc/config.yaml:ro
+
+  oai-pcf:
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/generated/mcx_core_config.yaml:/openair-pcf/etc/config.yaml:ro
+
+  oai-amf:
+    image: ${AMF_IMG:-openmcx/oai-amf:mcx-qos}
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/generated/mcx_core_config.yaml:/openair-amf/etc/config.yaml:ro
+
+  oai-smf:
+    image: ${SMF_IMG:-openmcx/oai-smf:mcx-qos}
+    volumes:
+    - ${TUTORIAL3A_DIR:?}/generated/mcx_core_config.yaml:/openair-smf/etc/config.yaml:ro
+
+volumes:
+  ue2: null

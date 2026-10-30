@@ -1,0 +1,5 @@
+.env
+generated/
+captures/
+results/
+media/tone.wav
