@@ -244,7 +244,8 @@ def main():
                 and sum(status(role).get('call_state') == 'idle' for role in three) == 1
             ),
         )
-        check('PS-04 the join offered a new floor SSRC', status('client-c').get('floor_ssrc') != previous)
+        # client-c's status file is rewritten on its own schedule, so the new SSRC may show after the server's view.
+        wait('PS-04 the join offered a new floor SSRC', lambda: status('client-c').get('floor_ssrc') not in (None, 0, previous))
         same_conditions('PS-04', reference)
         for role in ROLES:
             if status(role).get('call_state') != 'idle':
