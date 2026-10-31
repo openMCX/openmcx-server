@@ -210,7 +210,7 @@ services:
       retries: 20
   # The MC client in the LTE UE (the Linux client, test user client-d; tutorial 3's setup/ue-client.py): IMS AKA with its software
   # ISIM through the P-CSCF, its security associations in the LTE UE's network namespace (NET_ADMIN); the OIDC
-  # sign-in, the HTTP proxy and the KMS at HOST_IP, as for the dispatcher. TS 37.579-2 test 5.1 (tutorial 3's README).
+  # sign-in, the HTTP proxy and the KMS at HOST_IP, as for the dispatcher. TS 37.579-2 test 5.1 (tutorial 7's README).
   ue-client:
     logging: *logging
     container_name: openmcx-ue-client

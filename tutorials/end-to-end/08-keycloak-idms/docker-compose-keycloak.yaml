@@ -1,4 +1,4 @@
-# OpenMCX with Keycloak as its IdMS (tutorials/end-to-end/07-keycloak-idms/README.md).
+# OpenMCX with Keycloak as its IdMS (tutorials/end-to-end/08-keycloak-idms/README.md).
 #
 # The MCPTT and MCData servers, the common services (GMS, CMS, KMS, LMS, content server, message store, notification
 # server, HTTP proxy, user database) and the SIP core, from the OpenMCX images; Keycloak, from its own image, in the
@@ -36,7 +36,7 @@ services:
     logging: *logging
     container_name: openmcx-kc-setup
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-setup:${OPENMCX_TAG:-develop}
-    entrypoint: [python3, /opt/tutorials-07/configure.py]
+    entrypoint: [python3, /opt/tutorials-08/configure.py]
     profiles: [setup]
     environment:
       HOST_IP: ${HOST_IP:?set HOST_IP in .env to this computer's address on the Wi-Fi}

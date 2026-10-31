@@ -8,13 +8,16 @@ registers with IMS AKA.
 The setup provisions the test user client-d for IMS AKA (IMS_AKA_ROLES, TS 33.180 clause 6.2.1: 3GPP access): a
 software ISIM with its own K and OPc, the private user identity client-d@mcx.test, its ims_subscription row in the
 SIP database and the P-CSCF pcscf (config/pcscf.cfg). This script turns the lab configuration of client-d into the
-one of the Linux client that runs in the UE's network namespace (ue-client: in the nr-UE of docker-compose-5g-mcx.yaml,
-srsUE in tutorial 4, the LTE UE in tutorial 5), next to the dispatcher:
+one of the Linux client that runs in the UE's network namespace (ue-client: in the nr-UE of docker-compose-5g-mcx.yaml
+with the profile ims-aka, tutorials 3a and 7; srsUE in tutorial 4 with that profile; the LTE UE in tutorial 5, next to
+the dispatcher):
 
 - SIP: through the P-CSCF at 192.168.72.140 on the N6 network, reached over the UE's PDU session (TS 24.229 clause
   5.1.1.2.2; the P-CSCF's address is preconfigured, not discovered, TS 24.229 clause 9.2.1); the client's address in
   its Via, Contact and security associations is the UE's (UE_IP, filled in when the client starts);
-- HTTP: the IdMS, HTTP proxy and KMS at HOST_IP, the addresses MCX Admin gives the phones and the dispatcher;
+- HTTP: the IdMS, HTTP proxy and KMS at HOST_IP, the addresses MCX Admin gives the phones and the dispatcher; the
+  other servers through the HTTP proxy, as the configuration names them (by path, or by their own URIs in absolute-form
+  with HTTP_PROXY_MODE=forward, tutorial 7);
 - media: the UE's address, on ports of its own (the dispatcher's are 4400, 5400, 4600, 5600 and 6600).
 
 It is preconfigured (TS 37.579-1 table 5.3.2.3.1-1 step 1a: the initial UE configuration data of table 5.5.8.1-1),

@@ -2,9 +2,10 @@
 #
 # Tutorial 3 with another RAN: tutorial 3's OpenMCX system and OAI 5G core (with N5, ../03-mcx-over-oai-5g/
 # docker-compose-5g-core.yaml), its .env and ./config; here the srsRAN Project gNB and srsUE replace the OAI gNB and
-# nr-UE, and the dispatcher position runs inside srsUE. Tutorial 3's steps 1 to 3 come first (README).
+# nr-UE, and the dispatcher position runs inside srsUE. Tutorial 3's steps 1 to 3 come first (README). With the
+# profile ims-aka, as in tutorial 3, the P-CSCF and the MC client of client-d (IMS AKA) run too, in srsUE.
 #
-#   docker compose -f docker-compose-srsran-mcx.yaml up -d
+#   docker compose -f docker-compose-srsran-mcx.yaml up -d             (--profile ims-aka: with client-d)
 #   open https://HOST_IP:8446/ (MCX Admin) and http://localhost:8080/ (the dispatcher)
 
 name: openmcx-5g
@@ -147,6 +148,8 @@ services:
   # (ESP does not cross Docker's port publishing); it examines its UEs' SDP as the SIP core does the others'.
   pcscf:
     logging: *logging
+    profiles:
+    - ims-aka
     container_name: openmcx-pcscf
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-kamailio:${OPENMCX_TAG:-develop}
     cap_add:
@@ -183,6 +186,8 @@ services:
   # The P-CSCF's route to the UE pool through the UPF's N6 address (the Kamailio image has no ip command).
   pcscf-route:
     logging: *logging
+    profiles:
+    - ims-aka
     container_name: openmcx-pcscf-route
     image: ${SRSRAN_IMAGE_PREFIX-openmcx/}openmcx-srsue:${SRSRAN_UE_TAG:-25.10}
     network_mode: service:pcscf
@@ -209,6 +214,8 @@ services:
   # sign-in, the HTTP proxy and the KMS at HOST_IP, as for the dispatcher. TS 37.579-2 test 5.1 (README).
   ue-client:
     logging: *logging
+    profiles:
+    - ims-aka
     container_name: openmcx-ue-client
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-client:${OPENMCX_TAG:-develop}
     network_mode: service:srsue

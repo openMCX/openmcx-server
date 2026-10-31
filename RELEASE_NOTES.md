@@ -22,6 +22,11 @@ common services, a SIP core, the clients and MCX Admin, as containers that start
   app then send their HTTP requests through it in absolute-form, the IdMS's and the KMS's directly (TS 24.482 annex
   A.2.1.2). The HTTP proxy passes such requests to the servers it is configured for (`forward`) and refuses a client
   request carrying `X-3GPP-Asserted-Identity` (A.2.2.2). Without `http_proxy` nothing changes.
+- **Tutorials 7 and 8.** The walk-through of TS 37.579-2 test 5.1 moves from tutorial 3 to the new tutorial 7: one
+  MC client in the nr-UE registering with IMS AKA through a P-CSCF, its HTTP requests through the home HTTP proxy in
+  absolute-form (setup option `HTTP_PROXY_MODE=forward`). Tutorial 3 again runs the dispatcher alone in the nr-UE; the
+  P-CSCF and that client are its compose profile `ims-aka` (tutorials 3a and 4 use it). The Keycloak tutorial is now
+  tutorial 8 (`08-keycloak-idms`), with the setup image of the same version.
 
 ## What 1.0.0 provides
 

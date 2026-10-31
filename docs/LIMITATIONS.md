@@ -103,8 +103,9 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   IPsec ESP security associations in transport mode, SIP over TCP or UDP inside them (UDP: requests of 1300 bytes or
   more over TCP, RFC 3261 section 18.1.1; no SIP outbound over UDP, which would need STUN keepalives); every other
   identity uses SIP digest over TLS. IMS AKA is used by the Linux client inside the UE of [tutorials
-  3](../tutorials/end-to-end/03-mcx-over-oai-5g/README.md), [4](../tutorials/end-to-end/04-mcx-over-srsran-5g/README.md)
-  (5G) and [5](../tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/README.md) (4G) and by the `aka` and `aka-udp`
+  7](../tutorials/end-to-end/07-ims-aka-over-oai-5g/README.md), 3a,
+  [4](../tutorials/end-to-end/04-mcx-over-srsran-5g/README.md) (5G, with the compose profile `ims-aka`) and
+  [5](../tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/README.md) (4G) and by the `aka` and `aka-udp`
   regression labs; the SIP core makes the vectors itself (Kamailio `ims_auth`, no HSS over Cx), offering AKAv2-SHA-256
   and then AKAv1-MD5. The UE and the P-CSCF offer and select the integrity and encryption algorithms of TS 33.203
   annexes H and I (AES-GCM, AES-GMAC, HMAC-SHA-256-128, HMAC-SHA-1-96, AES-CBC, NULL). After a re-registration

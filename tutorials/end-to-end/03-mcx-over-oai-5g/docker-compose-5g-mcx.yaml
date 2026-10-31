@@ -4,15 +4,18 @@
 # UPF; the PCF, SMF and UPF patched for N5, see oai/cn5g/), the OAI gNB and one nr-UE over the
 # rfsimulator, and a dispatcher position inside the nr-UE: its traffic crosses the 5G user plane. The phones stay on
 # the Wi-Fi (HOST_IP), as in tutorial 1. The MCPTT server asks the PCF for MCPTT QoS over N5 for the dispatcher's
-# calls (5QI 65 for its speech). A second MC client in the nr-UE, the Linux client of the test user client-d
-# (ue-client), registers with IMS AKA through the P-CSCF (pcscf, IPsec ESP over the 5G user plane; TS 33.203); the
-# dispatcher and the phones keep SIP digest over TLS (non-3GPP access, TS 33.180 clause 6.2.1).
+# calls (5QI 65 for its speech). The dispatcher and the phones use SIP digest over TLS.
+#
+# The profile ims-aka adds the P-CSCF (pcscf, pcscf-route) and an MC client in the nr-UE, the Linux client of the test
+# user client-d (ue-client), which registers with IMS AKA through the P-CSCF (IPsec ESP over the 5G user plane;
+# TS 33.203, TS 33.180 clause 6.2.1 for 3GPP access). Tutorial 7 (07-ims-aka-over-oai-5g) starts it without the
+# dispatcher, tutorial 3a with its own. The host then needs the xfrm_user, esp4, authenc, hmac(sha1) and cbc(aes)
+# kernel modules.
 #
 #   cp .env.example .env                                             then set HOST_IP in .env
 #   sudo ./host-network.sh add                                       the route to the UE pool, once
 #   docker compose -f docker-compose-5g-mcx.yaml run --rm setup      once: writes ./config
-#   docker compose -f docker-compose-5g-mcx.yaml up -d                (the host needs the xfrm_user, esp4, authenc,
-#                                                                      hmac(sha1) and cbc(aes) kernel modules)
+#   docker compose -f docker-compose-5g-mcx.yaml up -d
 #   open https://HOST_IP:8446/ (MCX Admin) and http://localhost:8080/ (the dispatcher)
 #
 # Networks: openmcx-5g-core 192.168.71.128/26 (N2, N3, N4, SBI, N5), openmcx-5g-n6 192.168.72.128/26 (N6 and the
@@ -161,6 +164,8 @@ services:
   # (ESP does not cross Docker's port publishing); it examines its UEs' SDP as the SIP core does the others'.
   pcscf:
     logging: *logging
+    profiles:
+    - ims-aka
     container_name: openmcx-pcscf
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-kamailio:${OPENMCX_TAG:-develop}
     cap_add:
@@ -197,6 +202,8 @@ services:
   # The P-CSCF's route to the UE pool through the UPF's N6 address (the Kamailio image has no ip command).
   pcscf-route:
     logging: *logging
+    profiles:
+    - ims-aka
     container_name: openmcx-pcscf-route
     image: oaisoftwarealliance/oai-nr-ue:${RAN_TAG:-2026.w39}
     network_mode: service:pcscf
@@ -223,6 +230,8 @@ services:
   # sign-in, the HTTP proxy and the KMS at HOST_IP, as for the dispatcher. TS 37.579-2 test 5.1 (README).
   ue-client:
     logging: *logging
+    profiles:
+    - ims-aka
     container_name: openmcx-ue-client
     image: ${OPENMCX_IMAGE_PREFIX-openmcx/}openmcx-client:${OPENMCX_TAG:-develop}
     network_mode: service:oai-nr-ue

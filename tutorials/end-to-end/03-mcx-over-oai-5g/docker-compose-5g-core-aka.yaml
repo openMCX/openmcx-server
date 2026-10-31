@@ -3,7 +3,8 @@
 #
 # The setup provisions the test user client-d for IMS AKA (TS 33.203; TS 33.180 clause 6.2.1, 3GPP access): its
 # software ISIM keys, its ims_subscription row in the SIP database (the S-CSCF procedures of the SIP core) and the
-# P-CSCF's configuration; setup/ue-client.py makes the configuration of the MC client in the 5G UE from it.
+# P-CSCF's configuration; setup/ue-client.py makes the configuration of the MC client in the 5G UE from it (the
+# services of the profile ims-aka, which tutorials 3a and 7 start).
 
 services:
   setup:

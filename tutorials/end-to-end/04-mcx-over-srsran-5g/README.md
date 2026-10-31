@@ -12,11 +12,12 @@ What differs is the outcome: srsUE supports one QoS flow only, so the RAN cannot
 This tutorial shows what the standards foresee for that case: the RAN refuses the flow, the 5G core removes it and
 tells the MCPTT server, and the call goes on over the PDU session's default flow.
 
-As in tutorial 3, a second MC client runs in the UE: the Linux client of the test user `client-d`
-(`openmcx-ue-client`), here in srsUE, which registers with **IMS AKA** through the **P-CSCF** (`openmcx-pcscf`,
-192.168.72.140) with IPsec ESP security associations over the 5G user plane (TS 33.203; TS 33.180 clause 6.2.1 for
-3GPP access), and goes through TS 37.579-2 test 5.1 at every start
-([walk-through](#walk-through-of-ts-37579-2-test-51)). The Dispatcher Client and the phones keep SIP digest over TLS.
+With the compose profile `ims-aka`, a second MC client runs in the UE, as in [tutorial
+7](../07-ims-aka-over-oai-5g/README.md): the Linux client of the test user `client-d` (`openmcx-ue-client`), here in
+srsUE, which registers with **IMS AKA** through the **P-CSCF** (`openmcx-pcscf`, 192.168.72.140) with IPsec ESP
+security associations over the 5G user plane (TS 33.203; TS 33.180 clause 6.2.1 for 3GPP access), and goes through
+TS 37.579-2 test 5.1 at every start ([walk-through](#walk-through-of-ts-37579-2-test-51)). The reference capture
+(step 7) was taken with it. The Dispatcher Client and the phones use SIP digest over TLS.
 
 ## What you need
 
@@ -63,9 +64,10 @@ docker compose -f docker-compose-srsran-mcx.yaml up -d
 docker compose -f docker-compose-srsran-mcx.yaml ps --format 'table {{.Name}}\t{{.Status}}'
 ```
 
-After about two minutes every service is `(healthy)`: the 30 of the OpenMCX system, the 5G core, the gNB, srsUE,
-`ue-route`, the Dispatcher Client, the P-CSCF (`pcscf`, `pcscf-route`) and the IMS AKA client (`ue-client`, healthy
-once it is authorised). `openmcx-ue-route` shows srsUE's address:
+After about two minutes every service is `(healthy)`: the OpenMCX system, the 5G core, the gNB, srsUE, `ue-route` and
+the Dispatcher Client. With `--profile ims-aka` after `-f docker-compose-srsran-mcx.yaml` (in every command), also the
+P-CSCF (`pcscf`, `pcscf-route`) and the IMS AKA client (`ue-client`, healthy once it is authorised).
+`openmcx-ue-route` shows srsUE's address:
 
 ```bash
 docker logs openmcx-ue-route        # UE address 12.1.1.2, 192.168.179.39 and the P-CSCF 192.168.72.140 through tun_srsue
@@ -130,7 +132,7 @@ registration and every call go through srsUE, the gNB and the 5G user plane.
 ## 7. Look at the capture
 
 The reference capture [`captures/04-mcx-over-srsran-5g-full.pcapng.gz`](captures/04-mcx-over-srsran-5g-full.pcapng.gz) (1.3 MB, 7 908
-frames) records a run of steps 3 to 6: the system starting, srsUE registering over the 5G core, the MC client of
+frames) records a run of steps 3 to 6 with the profile `ims-aka`: the system starting, srsUE registering over the 5G core, the MC client of
 `client-d` registering with IMS AKA through the P-CSCF, the phones and the Dispatcher Client signing in, a group call
 from the Dispatcher Client with PTT, Bob talking back, the hang-up, and the phones' MC log-off. Wireshark opens the
 compressed file directly. The frame numbers below are those of the reference.
@@ -147,7 +149,7 @@ stream stays:
 - the IMS AKA client's SIP: unprotected on 5060 until the 401, then inside **IPsec ESP** between srsUE and the P-CSCF;
   to read it, copy [`captures/04-mcx-over-srsran-5g-full.esp_sa`](captures/04-mcx-over-srsran-5g-full.esp_sa) to
   `~/.config/wireshark/esp_sa` and tick **Edit → Preferences → Protocols → ESP → Attempt to detect/decode encrypted
-  ESP payloads** (as in tutorial 3);
+  ESP payloads** (as in tutorial 7);
 - every UDP flow (speech and floor control) and ICMP.
 
 The ZeroMQ radio sometimes loses a TCP segment of srsUE, which TCP sends again after the ones behind it. For Wireshark
@@ -218,23 +220,26 @@ keys, as secret.
 ## 8. Stop or start over
 
 ```bash
-docker compose -f docker-compose-srsran-mcx.yaml down        # stop; tutorial 3's ./config is kept
-docker compose -f docker-compose-srsran-mcx.yaml down -v     # stop and delete the data
+docker compose -f docker-compose-srsran-mcx.yaml --profile ims-aka down      # stop; tutorial 3's ./config is kept
+docker compose -f docker-compose-srsran-mcx.yaml --profile ims-aka down -v   # stop and delete the data
 sudo ../03-mcx-over-oai-5g/host-network.sh remove
 ```
+
+`--profile ims-aka` also stops the P-CSCF and the IMS AKA client if they run; without it, `down` leaves them.
 
 To run tutorial 3 again, stop tutorial 4 first; both use the same containers.
 
 ## Walk-through of TS 37.579-2 test 5.1
 
-As in [tutorial 3](../03-mcx-over-oai-5g/README.md#walk-through-of-ts-37579-2-test-51), with the MC client of
-`client-d` in srsUE (`openmcx-ue-client`) and srsRAN as the RAN: the same steps, the same P-CSCF and tutorial 3's
-configuration. It runs by itself at every start (step 3); with `MCX_LOG=debug` in tutorial 3's `.env` the logs hold
+As in [tutorial 7](../07-ims-aka-over-oai-5g/README.md#5-walk-through-of-ts-37579-2-test-51), with the MC client of
+`client-d` in srsUE (`openmcx-ue-client`, profile `ims-aka`) and srsRAN as the RAN: the same steps, the same P-CSCF and
+tutorial 3's configuration (here with the HTTP proxy's path mode). It runs by itself at every start (step 3, with
+`--profile ims-aka`); with `MCX_LOG=debug` in tutorial 3's `.env` the logs hold
 every SIP message and HTTP request, and the client's debug log the keys of its IPsec security associations (lines
 `ESP SA`), so that Wireshark can decrypt its SIP: treat it as secret.
 
 ```bash
-docker compose -f docker-compose-srsran-mcx.yaml ps ue-client     # (healthy)
+docker compose -f docker-compose-srsran-mcx.yaml --profile ims-aka ps ue-client     # (healthy)
 docker logs openmcx-ue-client 2>&1 | grep -E '"event":"(sip_registered|oidc_authenticated|signed_in|service_authorized|configuration_subscribed|group_documents_subscribed|group_document_notified|location_configuration_received)"'
 python3 -c 'import json; print(json.dumps(json.load(open("../03-mcx-over-oai-5g/config/artifacts/client-d/status.json"))["sip_security"], indent=1))'
 ```
@@ -243,8 +248,9 @@ python3 -c 'import json; print(json.dumps(json.load(open("../03-mcx-over-oai-5g/
 
 - **Tutorial 3's core, shared**: `docker-compose-srsran-mcx.yaml` includes tutorial 3's `docker-compose-5g-core.yaml`
   with its `docker-compose-5g-core-aka.yaml` (the OpenMCX system on the N6 network and the OAI 5G core, with the same
-  images, and the setup's IMS AKA user) and adds `srsran-gnb`, `srsue`, `ue-route`, the Dispatcher Client and the MC
-  client of `client-d`, which run in srsUE's network namespace, and the P-CSCF with `pcscf-route`. `.env` is a link to
+  images, and the setup's IMS AKA user) and adds `srsran-gnb`, `srsue`, `ue-route` and the Dispatcher Client, which
+  runs in srsUE's network namespace; the profile `ims-aka` adds the MC client of `client-d`, also in srsUE's network
+  namespace, and the P-CSCF with `pcscf-route`. `.env` is a link to
   tutorial 3's; the configuration is tutorial 3's `config/`.
 - **srsRAN configuration** (`srsran/`): the gNB (`gnb.yaml`) has one cell in band 3 (FDD), 20 MHz, 15 kHz subcarrier
   spacing, and connects to the AMF (N2) and the UPF (N3) on the core network with tutorial 3's PLMN 208/99, TAC 1 and

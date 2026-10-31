@@ -22,7 +22,7 @@ services:
       HOST_IP: ${HOST_IP:?set HOST_IP in .env to this computer's address on the Wi-Fi}
       TUTORIAL_COMPOSE: docker-compose-4g-mcx.yaml
       # The test user client-d for IMS AKA (TS 33.203; TS 33.180 clause 6.2.1, 3GPP access): the MC client in the LTE
-      # UE (ue-client), as in tutorial 3.
+      # UE (ue-client), as in tutorial 7.
       IMS_AKA_ROLES: client-d
     volumes:
     - .:/work

@@ -34,9 +34,10 @@ export TUTORIAL3A_DIR=$DIR
 [ -f "$DIR/.env" ] || { echo "cp .env.example .env first (step 2)" >&2; exit 1; }
 [ -f "$DIR/generated/oai_db.sql" ] || python3 "$DIR/setup/internet.py" "$TUT" >&2
 [ -f "$DIR/media/tone.wav" ] || python3 "$DIR/media/make-tone.py" "$DIR/media/tone.wav"
+# Tutorial 3's profile ims-aka: the P-CSCF and the MC client in UE 1.
 compose() {
   docker compose --project-directory "$TUT" --env-file "$TUT/.env" --env-file "$DIR/.env" \
-    -f "$TUT/docker-compose-5g-mcx.yaml" -f "$DIR/docker-compose-qos.yaml" "$@"
+    -f "$TUT/docker-compose-5g-mcx.yaml" -f "$DIR/docker-compose-qos.yaml" --profile ims-aka "$@"
 }
 mc() { docker exec "$1" mcx-client --config /run/mcx/ue-client.json --command "$2"; }  # <container> <command>
 event() { docker logs --since "$2" "$1" 2>&1 | grep -c "\"event\":\"$3\"" || true; }    # <container> <since> <event>

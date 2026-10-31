@@ -3,7 +3,7 @@
 # OpenMCX Licence Information : AGPL-3.0-or-later
 #
 
-"""Write the configuration of tutorial 7's MCX system, with Keycloak as its IdMS, into ./config.
+"""Write the configuration of tutorial 8's MCX system, with Keycloak as its IdMS, into ./config.
 
 It runs the lab's own generator (tools/prepare-prearranged-test.py --keycloak: a new CA and certificates, the users,
 the MCPTT and MCData servers, the common services, and Keycloak's realm with the users, the MC scopes and the claim

@@ -11,15 +11,16 @@ and RANs.
 |---|---|---|
 | 1 | [MCX&nbsp;over&nbsp;WLAN&nbsp;with&nbsp;the&nbsp;Android&nbsp;App](end-to-end/01-mcx-over-wlan-android/README.md) | The OpenMCX servers on one computer; two Android phones on its Wi-Fi make calls, messages and video calls. |
 | 2 | [MCX&nbsp;over&nbsp;WLAN&nbsp;with&nbsp;the&nbsp;Android&nbsp;Phones&nbsp;and&nbsp;Dispatcher&nbsp;client](end-to-end/02-dispatcher-with-android/README.md) | Tutorial 1 plus a dispatcher position in the browser, in group calls with the phones. |
-| 3 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;RAN&nbsp;(RFSIM)](end-to-end/03-mcx-over-oai-5g/README.md) | Tutorial 1 plus the OAI 5G core and RAN (simulated radio); the dispatcher over 5G, with MCPTT QoS over N5; an MC client with IMS AKA and a walk-through of TS 37.579-2 test 5.1. |
+| 3 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;RAN&nbsp;(RFSIM)](end-to-end/03-mcx-over-oai-5g/README.md) | Tutorial 1 plus the OAI 5G core and RAN (simulated radio); the dispatcher over 5G, with MCPTT QoS over N5. |
 | 3a | [MCX&nbsp;QoS&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;RAN&nbsp;(RFSIM)](end-to-end/03a-mcx-qos-over-oai-5g/README.md) | Tutorial 3 with openMCX's QoS RAN and core (built from openMCX/oai): a gNB that schedules by 5QI, GFBR and ARP, with GBR admission, and a UPF that serves MC before best effort; two emulated MC UEs and two load UEs; an MC video in a small cell under load. |
 | 4 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;srsRAN&nbsp;(ZeroMQ)](end-to-end/04-mcx-over-srsran-5g/README.md) | Tutorial 3 with the srsRAN gNB and srsUE (simulated radio); the call falls back to the default QoS flow. |
 | 5 | [MCX&nbsp;over&nbsp;a&nbsp;4G&nbsp;core&nbsp;(Open5GS)&nbsp;and&nbsp;the&nbsp;OAI&nbsp;LTE&nbsp;RAN&nbsp;(RFSIM)](end-to-end/05-mcx-over-4g-open5gs-oai/README.md) | Tutorial 3 on 4G: Open5GS EPC and OAI LTE RAN (simulated radio); MCPTT QoS over Rx, a QCI 65 bearer. |
 | 6 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;RAN&nbsp;(RFSIM)&nbsp;on&nbsp;Kubernetes](end-to-end/06-mcx-over-oai-5g-kubernetes/README.md) | Tutorial 3 on a one-node kind cluster, installed with Helm: the OpenMCX chart and a chart for the OAI 5G core, gNB and nr-UE. |
-| 7 | [Sign&nbsp;in&nbsp;with&nbsp;Keycloak&nbsp;as&nbsp;IdMS](end-to-end/07-keycloak-idms/README.md) | Keycloak in the place of OpenMCX's IdMS: two Android phones and a dispatcher sign in on its page (TS 33.180 annex B.4.2), and the servers accept its tokens. `develop` images. |
+| 7 | [TS&nbsp;37.579-2&nbsp;test&nbsp;5.1&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;RAN&nbsp;(RFSIM),&nbsp;with&nbsp;IMS&nbsp;AKA](end-to-end/07-ims-aka-over-oai-5g/README.md) | Tutorial 3's network with one MC client in the nr-UE, no phones: IMS AKA through a P-CSCF with IPsec, the home HTTP proxy in absolute-form, and a walk-through of TS 37.579-2 test 5.1 from switch-on to service. `develop` images. |
+| 8 | [Sign&nbsp;in&nbsp;with&nbsp;Keycloak&nbsp;as&nbsp;IdMS](end-to-end/08-keycloak-idms/README.md) | Keycloak in the place of OpenMCX's IdMS: two Android phones and a dispatcher sign in on its page (TS 33.180 annex B.4.2), and the servers accept its tokens. `develop` images. |
 
 Each tutorial has its own folder in `end-to-end/` with its Docker Compose file and `.env.example`; tutorial 6 has its
-Helm chart and values instead.
+Helm chart and values instead, and tutorials 3a and 7 build on tutorial 3's folder and `.env`.
 
 ## Unit Test Tutorials
 

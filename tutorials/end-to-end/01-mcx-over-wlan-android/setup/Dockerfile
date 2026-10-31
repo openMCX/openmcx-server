@@ -24,8 +24,8 @@ COPY config/lab.json /opt/mcxserver/config/lab.json
 COPY docker /opt/mcxserver/docker
 COPY tools /opt/mcxserver/tools
 COPY tutorials/end-to-end/01-mcx-over-wlan-android/setup /opt/tutorials
-# Tutorial 7 (Keycloak as IdMS) runs the same image with its own configure.py.
-COPY tutorials/end-to-end/07-keycloak-idms/setup /opt/tutorials-07
+# Tutorial 8 (Keycloak as IdMS) runs the same image with its own configure.py.
+COPY tutorials/end-to-end/08-keycloak-idms/setup /opt/tutorials-08
 COPY LICENSE NOTICE /usr/share/doc/openmcx/
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.source="https://github.com/openMCX/openmcx-server"

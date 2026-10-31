@@ -1,0 +1,4 @@
+"IPv4","12.1.1.2","192.168.72.140","0x00001001","AES-GCM with 16 octet ICV [RFC4106]","0xbc0da584e478bf1b82dd70f8e5d53aa05a36fc99","NULL",""
+"IPv4","12.1.1.2","192.168.72.140","0x00001000","AES-GCM with 16 octet ICV [RFC4106]","0xbc0da584e478bf1b82dd70f8e5d53aa05a36fc9b","NULL",""
+"IPv4","192.168.72.140","12.1.1.2","0xa3540065","AES-GCM with 16 octet ICV [RFC4106]","0xbc0da584e478bf1b82dd70f8e5d53aa05a36fc9a","NULL",""
+"IPv4","192.168.72.140","12.1.1.2","0xbdf69219","AES-GCM with 16 octet ICV [RFC4106]","0xbc0da584e478bf1b82dd70f8e5d53aa05a36fc98","NULL",""

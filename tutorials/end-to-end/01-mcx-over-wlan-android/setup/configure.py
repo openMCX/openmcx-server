@@ -149,6 +149,12 @@ def main():
     # IMS AKA (TS 33.203; TS 33.180 clause 6.2.1, 3GPP access) for the test users IMS_AKA_ROLES names (tutorial 3:
     # client-d, the MC client in the 5G UE); every other user keeps SIP digest over TLS.
     aka_roles = os.environ.get('IMS_AKA_ROLES', '').replace(',', ' ').split()
+    # The clients' use of the home HTTP proxy (TS 24.482 annex A.2.1.2): "forward" (tutorial 7) has them send their
+    # requests to the proxy in absolute-form, the IdMS's and the KMS's excepted; "path", the default, reaches the
+    # servers at path prefixes of the proxy.
+    proxy_mode = os.environ.get('HTTP_PROXY_MODE', '').strip() or 'path'
+    if proxy_mode not in ('path', 'forward'):
+        sys.exit(f'HTTP_PROXY_MODE is {proxy_mode!r}: path or forward')
 
     with tempfile.TemporaryDirectory() as tmp:
         lab = pathlib.Path(tmp) / 'lab'
@@ -172,6 +178,8 @@ def main():
                 '--images',
                 'tutorial',
                 *[arg for role in aka_roles for arg in ('--aka-role', role)],
+                '--http-proxy-mode',
+                proxy_mode,
             ],
             check=True,
         )

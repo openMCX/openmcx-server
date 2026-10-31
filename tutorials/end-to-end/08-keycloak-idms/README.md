@@ -1,10 +1,10 @@
-# Tutorial 7: sign in with Keycloak as IdMS
+# Tutorial 8: sign in with Keycloak as IdMS
 
 An MC system whose identity management server (IdMS) is not OpenMCX's but **Keycloak**, an open-source OpenID Connect
 server. Two phones and a dispatcher sign in **on Keycloak's own page**, and the OpenMCX servers accept the
 tokens Keycloak issues.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 7: two phones on the Wi-Fi and a dispatcher sign in on Keycloak's page at HOST_IP:8443; the MCPTT and MCData servers check Keycloak's tokens against its keys; the common services and the SIP core as in tutorial 1, without MCX Admin"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 8: two phones on the Wi-Fi and a dispatcher sign in on Keycloak's page at HOST_IP:8443; the MCPTT and MCData servers check Keycloak's tokens against its keys; the common services and the SIP core as in tutorial 1, without MCX Admin"></p>
 
 What it shows, with the clauses of TS 33.180:
 
@@ -32,7 +32,7 @@ accounts live in Keycloak.
 ## 1. Set the address
 
 ```bash
-cd tutorials/end-to-end/07-keycloak-idms
+cd tutorials/end-to-end/08-keycloak-idms
 cp .env.example .env
 ```
 

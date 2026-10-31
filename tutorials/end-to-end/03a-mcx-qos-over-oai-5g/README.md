@@ -232,7 +232,8 @@ After `down`, `./qos.sh up` starts the same system again; a setting changed in t
 ## How it is put together
 
 - **One compose file on top of tutorial 3's**: `qos.sh` runs `docker compose` with tutorial 3 as the project
-  directory, `../03-mcx-over-oai-5g/docker-compose-5g-mcx.yaml` and `docker-compose-qos.yaml`, which changes the
+  directory, `../03-mcx-over-oai-5g/docker-compose-5g-mcx.yaml` with its profile `ims-aka` (the P-CSCF and UE 1's MC
+  client) and `docker-compose-qos.yaml`, which changes the
   images and the gNB's and UPF's settings, mounts `generated/` over tutorial 3's subscription data and core and nr-UE
   configuration, and adds UE 2 with `ue2-route` and `ue2-client`, the load UEs 3 and 4 and the iperf server
   (`192.168.72.150` on N6). Tutorial 3's dispatcher position is left out (profile `dispatcher`).

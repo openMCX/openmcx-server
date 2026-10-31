@@ -13,7 +13,7 @@ The phones reach the system on the Wi-Fi as in tutorial 1; their calls get no 4G
 server asks for QoS only for call legs of UEs in the LTE pool (10.45.0.0/16): a UE on another access, such as the
 phones on WLAN, gets no request and its calls work as before (TS 24.379 clause 4.13).
 
-A second MC client runs in the LTE UE, as in tutorial 3: the Linux client of the test user `client-d`
+A second MC client runs in the LTE UE, as in tutorial 7: the Linux client of the test user `client-d`
 (`openmcx-ue-client`), which registers with **IMS AKA** through a **P-CSCF** (`openmcx-pcscf`, 192.168.74.140), with
 IPsec ESP security associations over the LTE user plane (TS 33.203; TS 33.180 clause 6.2.1 for 3GPP access). It goes
 through TS 37.579-2 test 5.1 at every start ([walk-through](#walk-through-of-ts-37579-2-test-51)). The dispatcher
@@ -157,7 +157,7 @@ with the OpenMCX system (`192.168.74.128/26`), and reduced by port so that every
 - the IMS AKA client's SIP: unprotected on 5060 until the 401, then inside **IPsec ESP** between the UE and the P-CSCF;
   to read it, copy [`captures/05-mcx-over-4g-open5gs-oai-full.esp_sa`](captures/05-mcx-over-4g-open5gs-oai-full.esp_sa)
   to `~/.config/wireshark/esp_sa` and tick **Edit → Preferences → Protocols → ESP → Attempt to detect/decode
-  encrypted ESP payloads** (as in tutorial 3);
+  encrypted ESP payloads** (as in tutorial 7);
 - every UDP flow (speech and floor control) and ICMP.
 
 The databases, DNS, the encrypted HTTPS between the OpenMCX services and the simulated radio between the eNB and the
@@ -233,7 +233,7 @@ rm -rf config                                            # with down -v: start o
 
 ## Walk-through of TS 37.579-2 test 5.1
 
-As in [tutorial 3](../03-mcx-over-oai-5g/README.md#walk-through-of-ts-37579-2-test-51), on 4G: the implementation
+As in [tutorial 7](../07-ims-aka-over-oai-5g/README.md#5-walk-through-of-ts-37579-2-test-51), on 4G and with the HTTP proxy's path mode: the implementation
 under test is the MC client of `client-d` in the LTE UE (`openmcx-ue-client`); the Open5GS EPC, the OAI eNB and the
 OpenMCX system take the system simulator's place. It is a walk-through, not a conformance test (no TTCN-3 test suite,
 no validated system simulator, a simulated radio). It runs by itself at every start (step 4); with `MCX_LOG=debug` in
