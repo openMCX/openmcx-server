@@ -1,8 +1,8 @@
-# Tutorial 7: TS 37.579-2 test 5.1 over the OAI 5G core and RAN (rfsim), with IMS AKA
+# Tutorial 7: MC client with IMS AKA over 5GS
 
-[Tutorial 3](../03-mcx-over-oai-5g/README.md)'s 5G network and OpenMCX system, with one MC client in the nr-UE: the
-Linux client of the test user `client-d`. From switch-on to service, it goes through test 5.1 of TS 37.579-2 by
-itself:
+[Tutorial 3](../03-mcx-over-oai-5g/README.md)'s 5G system (the OAI 5G core and RAN, rfsim) and OpenMCX system, with
+one MC client in the nr-UE: OpenMCX's Linux client. From switch-on to service, it goes through test 5.1 of TS
+37.579-2 by itself:
 - the nr-UE registers with the 5G core;
 - the user signs in to the IdMS;
 - the client registers with **IMS AKA** through a **P-CSCF**, with its SIP inside **IPsec ESP**;
@@ -12,10 +12,10 @@ itself:
 Its HTTP requests go through the **home HTTP proxy** in absolute-form, except the IdMS's and the KMS's. There are no
 phones and no dispatcher.
 
-<p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 7: the MC client of client-d runs in the nr-UE; its SIP goes inside IPsec ESP over the rfsim radio, the gNB and the UPF of the OAI 5G core to the P-CSCF on the N6 network, which passes it to the SIP core over TLS; its HTTP requests go to the OpenMCX system at HOST_IP"></p>
+<p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 7: the MC client runs in the nr-UE; its SIP goes inside IPsec ESP over the rfsim radio, the gNB and the UPF of the OAI 5G core to the P-CSCF on the N6 network, which passes it to the SIP core over TLS; its HTTP requests go to the OpenMCX system at HOST_IP"></p>
 
 This tutorial runs in tutorial 3's folder. It starts tutorial 3's services with those of tutorial 3's profile `ims-aka`
-(the P-CSCF and the MC client of `client-d`), without the dispatcher position. The configuration goes into tutorial
+(the P-CSCF and the MC client), without the dispatcher position. The configuration goes into tutorial
 3's `./config`, as tutorial 3's does.
 
 ## What you need
@@ -57,11 +57,12 @@ The setup writes tutorial 3's configuration into `../03-mcx-over-oai-5g/config`
 - the clients use the home HTTP proxy in **forward mode** (TS 24.482 annex A.2.1.2). They name each server by its own
   URI and send their requests to the proxy in absolute-form, over a TLS tunnel. The IdMS's and the KMS's requests go
   directly, not through the proxy. The proxy passes each request on by its authority (annex A.2.2.2);
-- the setup turns the configuration of `client-d` into the one of the MC client in the UE, which registers with IMS
-  AKA (`config/ue-client.json`, made by tutorial 3's `setup/ue-client.py`).
+- the setup writes the configuration of the MC client in the UE, which registers with IMS AKA
+  (`config/ue-client.json`, made by tutorial 3's `setup/ue-client.py`).
 
-The test user `client-d` gets a software ISIM with keys of its own (K, OPc) and the private user identity
-`client-d@mcx.test`. They are stored in its client's configuration and in the SIP database. The setup also writes
+The MC client signs in as one of the setup's test users, `client-d`: its identities (`sip:client-d@mcx.test`, the
+private user identity `client-d@mcx.test`) appear in the logs, the status file and the capture. The setup gives it a
+software ISIM with keys of its own (K, OPc), stored in the client's configuration and in the SIP database. The setup also writes
 the P-CSCF's configuration (`config/pcscf.cfg`). The SIP core is then the S-CSCF of that identity.
 
 If tutorial 3's `./config` already exists, the setup stops. A configuration made by tutorial 3's own setup uses the
@@ -90,7 +91,7 @@ After about two minutes all 32 services are `(healthy)`:
 - the OpenMCX system;
 - the P-CSCF (`pcscf` and `pcscf-route`);
 - the 5G core, the gNB and the nr-UE, with `ue-route`;
-- the MC client of `client-d` (`ue-client`). It is healthy once it has signed in, registered with IMS AKA and been
+- the MC client (`ue-client`). It is healthy once it has signed in, registered with IMS AKA and been
   authorised.
 
 ```bash
@@ -110,7 +111,7 @@ procedures of TS 37.579-1 V18.1.0:
 
 Here it is a walk-through, not a conformance test. There is no TTCN-3 test suite (TS 37.579-5), no validated system
 simulator and no radio. The OAI 5G core and RAN and the OpenMCX system take the system simulator's place. The
-implementation under test is the MC client of `client-d` in the nr-UE (`openmcx-ue-client`).
+implementation under test is the MC client in the nr-UE (`openmcx-ue-client`).
 
 The test runs by itself at every start of the system (step 4). Nothing needs doing in MCX Admin. The client is
 preconfigured with:
@@ -169,7 +170,7 @@ Where the walk-through departs from the test:
 
 The reference capture is [`captures/07-ims-aka-over-oai-5g-full.pcapng.gz`](captures/07-ims-aka-over-oai-5g-full.pcapng.gz)
 (0.5 MB, 2 260 frames). It records a run of steps 4 and 5: the system starting, the UE registering over the 5G core,
-and the MC client of `client-d` signing in, registering with IMS AKA through the P-CSCF, and being authorised and
+and the MC client signing in, registering with IMS AKA through the P-CSCF, and being authorised and
 configured; at the end, the client's MC log-off and SIP de-REGISTER. Wireshark opens the compressed file directly.
 The frame numbers below are those of the reference.
 
@@ -238,7 +239,7 @@ What to look for, in the reference run (frame numbers with GTP off):
   MCVideo (2109), MCData and MCPTT (2115; TS 24.379 clause 7.2.1A NOTE 3, TS 24.281 and TS 24.282 alike), then the
   REGISTER with Expires 0 (2212; TS 24.229 clause 5.1.1.6) and its 200 (2220).
 
-The file holds the SIP core's TLS secrets, and the `.esp_sa` file the IPsec keys of `client-d`. The access tokens of
+The file holds the SIP core's TLS secrets, and the `.esp_sa` file the IPsec keys of the MC client. The access tokens of
 the IdMS travel in SIP for service authorisation. They all belong to a throwaway system: its signing key and users no
 longer exist, and the tokens expired after an hour. Treat a capture of your own system, its TLS secrets and its ESP
 keys as secret.
@@ -274,8 +275,8 @@ run tutorial 3's setup. Its configuration uses the HTTP proxy's path mode.
   6.2.5.1.1.2). See [tutorial 3, How it is put together](../03-mcx-over-oai-5g/README.md#how-it-is-put-together).
 - **IMS AKA** (TS 33.203; TS 33.180 clause 6.2.1 for 3GPP access):
   - The SIP core chooses the scheme by the private user identity, as an HSS stores it (TS 29.228 clause 6.3.1 step 4).
-    `client-d@mcx.test` has an IMS AKA subscription (K, OPc, AMF) in the SIP database; every other identity has a
-    digest password.
+    The MC client's `client-d@mcx.test` has an IMS AKA subscription (K, OPc, AMF) in the SIP database; every other
+    identity has a digest password.
   - The SIP core makes the authentication vectors itself (Kamailio `ims_auth`, MILENAGE, no HSS).
   - The P-CSCF (`pcscf`) is the SIP core's Kamailio image with `docker/pcscf.cfg`. It is on the N6 network at
     192.168.72.140, where the UE reaches it through the UPF without NAT: ESP cannot cross Docker's port publishing. It

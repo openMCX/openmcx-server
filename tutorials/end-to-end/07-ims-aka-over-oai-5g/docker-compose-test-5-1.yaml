@@ -1,11 +1,11 @@
-# OpenMCX: TS 37.579-2 test 5.1 over the OAI 5G core and RAN in rfsimulator mode
+# OpenMCX: MC client with IMS AKA over 5GS (TS 37.579-2 test 5.1), over the OAI 5G core and RAN in rfsimulator mode
 # (tutorials/end-to-end/07-ims-aka-over-oai-5g/README.md).
 #
 # Tutorial 3's system (its docker-compose-5g-mcx.yaml, included with tutorial 3 as the project directory: ./config,
-# ./oai, ./setup and .env are tutorial 3's), with the MC client in the nr-UE only: the Linux client of the test user
-# client-d (ue-client), which registers with IMS AKA through the P-CSCF (pcscf, IPsec ESP over the 5G user plane;
-# TS 33.203, TS 33.180 clause 6.2.1 for 3GPP access) and sends its HTTP requests through the home HTTP proxy in
-# absolute-form (TS 24.482 annex A.2.1.2). No dispatcher, no phones: docker-compose-ims-aka.yaml.
+# ./oai, ./setup and .env are tutorial 3's), with the MC client in the nr-UE only: OpenMCX's Linux client (ue-client,
+# signed in as the setup's test user client-d), which registers with IMS AKA through the P-CSCF (pcscf, IPsec ESP over
+# the 5G user plane; TS 33.203, TS 33.180 clause 6.2.1 for 3GPP access) and sends its HTTP requests through the home
+# HTTP proxy in absolute-form (TS 24.482 annex A.2.1.2). No dispatcher, no phones: docker-compose-ims-aka.yaml.
 #
 #   cp ../03-mcx-over-oai-5g/.env.example ../03-mcx-over-oai-5g/.env      then set HOST_IP in it
 #   sudo ../03-mcx-over-oai-5g/host-network.sh add                        the route to the UE pool, once

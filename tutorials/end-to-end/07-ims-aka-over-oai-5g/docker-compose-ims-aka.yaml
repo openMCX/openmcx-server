@@ -1,7 +1,7 @@
 # OpenMCX: tutorial 7's changes to tutorial 3's services, merged into them by the include of
 # docker-compose-test-5-1.yaml (paths relative to tutorial 3's folder).
 #
-# The services of tutorial 3's profile ims-aka (the P-CSCF and the MC client of client-d in the nr-UE) start with the
+# The services of tutorial 3's profile ims-aka (the P-CSCF and the MC client in the nr-UE) start with the
 # others; the dispatcher position does not (it would be the second MC client in the nr-UE, and starts only with the
 # profile dispatcher). The setup makes the clients use the home HTTP proxy in forward mode (TS 24.482 annex A.2.1.2).
 
