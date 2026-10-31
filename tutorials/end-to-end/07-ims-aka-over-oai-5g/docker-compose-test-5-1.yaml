@@ -1,5 +1,5 @@
-# OpenMCX: MC client with IMS AKA over 5GS (TS 37.579-2 test 5.1), over the OAI 5G core and RAN in rfsimulator mode
-# (tutorials/end-to-end/07-ims-aka-over-oai-5g/README.md).
+# OpenMCX: MC client registration with IMS AKA over 5GS (TS 37.579-2 test 5.1), over the OAI 5G core and RAN in
+# rfsimulator mode (tutorials/end-to-end/07-ims-aka-over-oai-5g/README.md).
 #
 # Tutorial 3's system (its docker-compose-5g-mcx.yaml, included with tutorial 3 as the project directory: ./config,
 # ./oai, ./setup and .env are tutorial 3's), with the MC client in the nr-UE only: OpenMCX's Linux client (ue-client,

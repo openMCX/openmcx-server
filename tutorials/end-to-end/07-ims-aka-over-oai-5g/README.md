@@ -1,4 +1,4 @@
-# Tutorial 7: MC client with IMS AKA over 5GS
+# Tutorial 7: MC client registration with IMS AKA over 5GS
 
 [Tutorial 3](../03-mcx-over-oai-5g/README.md)'s 5G system (the OAI 5G core and RAN, rfsim) and OpenMCX system, with
 one MC client in the nr-UE: OpenMCX's Linux client. From switch-on to service, it goes through test 5.1 of TS
