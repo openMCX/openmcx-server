@@ -306,6 +306,8 @@ struct SipEngine::Impl {
     std::string content_type, body;
     SipResponseHandler handler;
     bool busy = false;
+    // The procedure in progress is a reregistration: started over the set in use, with a non-zero expiry.
+    bool reregistration = false;
     AkaRoute route = AkaRoute::unprotected;
     unsigned resyncs = 0, restarts = 0;
     bool old_release_scheduled = false;

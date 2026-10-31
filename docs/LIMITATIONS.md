@@ -114,16 +114,17 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   A new challenge deletes the earlier incomplete registration SAs of the same UE, and a temporary set ends after
   reg-await-auth (clause 7.4.2a, TS 24.229 clause 5.2.2.2). The P-CSCF refuses a REGISTER that starts an
   authentication (400, over the set it came on) while three sets of its IMPI, six SAs per direction, would stay over
-  all its contacts (clause 7.1 rule 3), counted and reserved in one step. Its SQN is kept in memory: after a restart of
-  the SIP core each UE resynchronises once (AUTS). Not done yet: the P-CSCF's early switch to the new set when "the old
+  all its contacts (clause 7.1 rule 3), counted and reserved in one step. Every refusal of a request received over a
+  set goes back over that set, over UDP from port_pc to the UE's port_us (clause 7.1). The SIP core keeps the
+  registrations and its SQN in memory and has no S-CSCF restoration: after its restart it answers each UE's next
+  reregistration with 500 (TS 24.229 clause 5.4.1.2.3A), the UE registers anew (clause 5.1.1.4.1: initial
+  registration after a 403, 408, 500 or 504 to a reregistration) and resynchronises once (AUTS). An AUTS over the set
+  in use (a stale SQN at a reregistration the core still knows) cannot occur with this SIP core and is not tested. Not done yet: the P-CSCF's early switch to the new set when "the old
   SAs have only a short time left before expiring" (clause 7.4.2a, open implementation point: the text gives no value
-  for it; the P-CSCF switches at the UE's next message over the new set or at the old set's expiry); the other
-  refusals on a protected port over UDP (403, 404, 430, 480, 488) are sent unprotected from port_ps and do not reach
-  the UE; emergency registration (TS 24.229 clause 5.1.6); IPv6 (the
-  IMS AKA path is tested on IPv4 only); the reg event package, so the S-CSCF cannot start a network-initiated
-  re-authentication (TS 33.203 clauses 5.1.2 and 6.1.4: every re-registration is challenged
-  instead); a lab that exercises a resynchronisation (AUTS) over
-  existing security associations, at a re-registration; the discovery of the P-CSCF (TS 24.229 clause 9.2.1: its
+  for it; the P-CSCF switches at the UE's next message over the new set or at the old set's expiry); emergency
+  registration (TS 24.229 clause 5.1.6); IPv6 (the IMS AKA path is tested on IPv4 only); the reg event package, so
+  the S-CSCF cannot start a network-initiated re-authentication (TS 33.203 clauses 5.1.2 and 6.1.4: every
+  re-registration is challenged instead); the discovery of the P-CSCF (TS 24.229 clause 9.2.1: its
   address is configured). The MCX Admin activation and the Credential Service issue digest
   credentials only (an identity provisioned for IMS AKA gets none), so the clients that MCX Admin activates keep SIP
   digest over TLS, also where they run on 3GPP access: the dispatcher inside the 5G or 4G UE of tutorials 3, 4 and 5 is

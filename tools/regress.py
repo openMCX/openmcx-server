@@ -609,7 +609,9 @@ LABS = [
     # aka_protected_ports_scenario: plaintext to the P-CSCF's protected ports goes unanswered (TS 33.203 clause 7.1);
     # aka_reregistration_scenario: a re-registration keeps port_ps, the P-CSCF keeps the old set for outbound
     # messages until the UE's first message over the new set, and the old set goes at both ends (clause 7.4); the
-    # calls and SDS after it then run over the new set.
+    # calls and SDS after it then run over the new set; aka_resync_scenario: after a restart of the SIP core (its SQN in
+    # memory) the UE answers with AUTS over the set in use and authenticates again (TS 24.229 clauses 5.1.1.5.3 and
+    # 5.4.1.2.3A).
     lab(
         'aka',
         'single',
@@ -619,6 +621,7 @@ LABS = [
             'aka_admission_scenario',
             'aka_protected_ports_scenario',
             'aka_reregistration_scenario',
+            'aka_resync_scenario',
             'prearranged_scenario',
             'private_call_scenario',
             'mcdata_sds_scenario',
@@ -627,7 +630,9 @@ LABS = [
         ['aka', 'common'],
     ),
     # The same over UDP (TS 24.229 clause 4.2A, TS 33.203 clause 7.1 UDP case): the AKA UEs send from port_uc to
-    # port_ps over UDP, requests of 1300 bytes or more (INVITEs with their bodies) over TCP (RFC 3261 section 18.1.1).
+    # port_ps over UDP, requests of 1300 bytes or more (INVITEs with their bodies) over TCP (RFC 3261 section 18.1.1);
+    # aka_refusals_scenario: the P-CSCF's refusals of requests received over a set go back over it, from port_pc to
+    # port_us (TS 33.203 clause 7.1, UDP case).
     lab(
         'aka-udp',
         'single',
@@ -637,6 +642,8 @@ LABS = [
             'aka_admission_scenario',
             'aka_protected_ports_scenario',
             'aka_reregistration_scenario',
+            'aka_refusals_scenario',
+            'aka_resync_scenario',
             'prearranged_scenario',
             'private_call_scenario',
             'mcdata_sds_scenario',

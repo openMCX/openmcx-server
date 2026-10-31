@@ -313,6 +313,7 @@ void SipEngine::Impl::aka_register(unsigned expires, std::string_view content_ty
   aka->resyncs = 0;
   aka->restarts = 0;
   aka->busy = true;
+  aka->reregistration = aka->current && expires != 0;
   try {
     if (aka->current) {
       aka_send_register(AkaRoute::current, true, aka->authorization);
@@ -583,8 +584,9 @@ void SipEngine::Impl::aka_register_complete(void * /*token*/, pjsip_event *event
 }
 
 //------------------------------------------------------------------------------
-// TS 24.229 clauses 5.1.1.2.1, 5.1.1.5.1 and 5.1.1.5.3: a 401 is a challenge, a 2xx the registration, a 423 a new
-// REGISTER with at least Min-Expires; any other result ends the procedure.
+// TS 24.229 clauses 5.1.1.2.1, 5.1.1.4.1, 5.1.1.5.1 and 5.1.1.5.3: a 401 is a challenge, a 2xx the registration, a 423
+// a new REGISTER with at least Min-Expires, a 403, 408, 500 or 504 to a reregistration an initial registration; any
+// other result ends the procedure.
 void SipEngine::Impl::aka_registration_result(pjsip_rx_data *data, int status, std::string_view reason) {
   if (status == 401 && data != nullptr) return aka_challenge(data);
   if (status >= 200 && status < 300 && data != nullptr) return aka_registered(data);
@@ -605,6 +607,29 @@ void SipEngine::Impl::aka_registration_result(pjsip_rx_data *data, int status, s
                                "Digest username=\"" + config.aka.impi + "\", realm=\"" + aka->realm +
                                    "\", uri=\"sip:" + aka->realm + "\", nonce=\"\", response=\"\"");
     }
+  }
+  // TS 24.229 V19.7.0 clause 5.1.1.4.1: "On receiving a 408 (Request Timeout) response or 500 (Server Internal Error)
+  // response or 504 (Server Time-Out) response or 403 (Forbidden) response for a reregistration, the UE shall perform
+  // the procedures for initial registration as described in subclause 5.1.1.2" (an S-CSCF without the registration
+  // answers 500, clause 5.4.1.2.3A). The registration and its security associations are given up, and an unprotected
+  // initial REGISTER with a new Call-ID follows, once per reregistration.
+  if (data != nullptr && aka->reregistration && (status == 403 || status == 408 || status == 500 || status == 504)) {
+    aka->reregistration = false;
+    for (auto *entry : {&aka->refresh_timer, &aka->pending_timer, &aka->old_timer, &aka->expiry_timer})
+      if (pj_timer_entry_running(entry)) (void)pjsip_endpt_cancel_timer(endpoint, entry);
+    aka_delete(aka->pending);
+    aka_delete(aka->old);
+    aka_delete(aka->current);
+    aka->authorization.clear();
+    aka->resyncs = 0;
+    aka->restarts = 0;
+    aka->call_id.clear();
+    aka->realm = identity_domain(config.identity);
+    report_error("IMS AKA: reregistration answered " + std::to_string(status) +
+                 "; initial registration (TS 24.229 clause 5.1.1.4.1)");
+    return aka_send_register(AkaRoute::unprotected, true,
+                             "Digest username=\"" + config.aka.impi + "\", realm=\"" + aka->realm + "\", uri=\"sip:" +
+                                 aka->realm + "\", nonce=\"\", response=\"\"");
   }
   // TS 24.229 clause 5.1.1.2.1: a REGISTER protected by the set in use that gets no answer: the SAs are no longer
   // active; the public user identities are deregistered and the next registration is an initial one.
