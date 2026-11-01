@@ -1315,7 +1315,7 @@ int main() {
         "<uri> sip:alice@192.0.2.1:5064;transport=tcp </uri><x:extension/></contact>"
         "<contact id=\"c2\" state=\"terminated\" event=\"deactivated\"><uri>sip:alice@192.0.2.2</uri></contact>"
         "</registration><x:other/></reginfo>");
-    check(info.version == 2 && info.full && info.registrations.size() == 1 &&
+    check(info.version == "2" && info.full && info.registrations.size() == 1 &&
               info.registrations[0].aor == "sip:alice@mcx.test" && info.registrations[0].state == "active" &&
               info.registrations[0].contacts.size() == 2,
           "reginfo registration");
@@ -1328,6 +1328,30 @@ int main() {
     check(!parse_reginfo("<reginfo xmlns=\"urn:ietf:params:xml:ns:reginfo\" version=\"0\" state=\"partial\"/>").full,
           "reginfo partial state");
     rejects([] { (void)parse_reginfo("<reginfo xmlns=\"urn:ietf:params:xml:ns:reginfo\" state=\"full\"/>"); });
+    // RFC 3680 section 5.4: version is an xs:nonNegativeInteger (no upper bound), expires an xs:unsignedLong; the XML
+    // Schema lexical forms ("+", "-" for zero only, leading zeros, collapsed white space).
+    const auto numbers = [](std::string_view version, std::string_view expires) {
+      return parse_reginfo("<reginfo xmlns=\"urn:ietf:params:xml:ns:reginfo\" version=\"" + std::string(version) +
+                           "\" state=\"full\"><registration aor=\"sip:a@x\" id=\"r\" state=\"active\"><contact id=\"c\" "
+                           "state=\"active\" event=\"registered\" expires=\"" + std::string(expires) +
+                           "\"><uri>sip:a@h</uri></contact></registration></reginfo>");
+    };
+    const auto big = numbers("18446744073709551616", "18446744073709551615");
+    check(big.version == "18446744073709551616" && big.registrations[0].contacts[0].expires == 18446744073709551615ull,
+          "reginfo numbers beyond 32 bits");
+    check(numbers(" +007 ", "+0060").version == "7" && numbers("-0", "0").version == "0" &&
+              numbers("+007", "+0060").registrations[0].contacts[0].expires == 60u,
+          "reginfo XML Schema integer forms");
+    rejects([&] { (void)numbers("-1", "0"); });
+    rejects([&] { (void)numbers("1", "18446744073709551616"); });
+    rejects([&] { (void)numbers("1x", "0"); });
+    // RFC 3680 section 5.2: version order and gaps on any number of digits.
+    check(compare_reginfo_version("9", "10") < 0 && compare_reginfo_version("10", "9") > 0 &&
+              compare_reginfo_version("4294967296", "4294967296") == 0,
+          "reginfo version order");
+    check(!reginfo_version_gap("2", "3") && reginfo_version_gap("2", "4") && !reginfo_version_gap("99", "100") &&
+              reginfo_version_gap("99", "101") && !reginfo_version_gap("18446744073709551615", "18446744073709551616"),
+          "reginfo version gap");
     rejects([] { (void)parse_reginfo("<reginfo xmlns=\"urn:other\" version=\"0\" state=\"full\"/>"); });
     rejects([] {
       (void)parse_reginfo("<reginfo xmlns=\"urn:ietf:params:xml:ns:reginfo\" version=\"0\" state=\"full\">"

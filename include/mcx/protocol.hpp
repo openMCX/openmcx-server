@@ -225,21 +225,28 @@ std::string parse_initial_gms_uri(std::string_view xml);
 
 // RFC 3680 section 5: a registration information document (application/reginfo+xml) of the reg event package (TS
 // 24.229 clauses 5.1.1.3, 5.1.1.5A and 5.1.1.7): its version, whether it is the full state, and per registration its
-// address-of-record and state with its contacts (state, event, expires when given, URI).
+// address-of-record and state with its contacts (state, event, expires when given, URI). RFC 3680 section 5.4: the
+// version is an xs:nonNegativeInteger, without an upper bound, held as its canonical decimal digits (no leading zeros);
+// expires is an xs:unsignedLong.
 struct RegInfo {
   struct Contact {
     std::string uri, state, event;
-    std::optional<std::uint32_t> expires;
+    std::optional<std::uint64_t> expires;
   };
   struct Registration {
     std::string aor, state;
     std::vector<Contact> contacts;
   };
-  std::uint32_t version = 0;
+  std::string version = "0";
   bool full = true;
   std::vector<Registration> registrations;
 };
 RegInfo parse_reginfo(std::string_view xml);
+// RFC 3680 section 5.2: the order of two reginfo versions (canonical decimal digits, RegInfo::version): negative when
+// a comes before b, 0 when equal, positive when after.
+int compare_reginfo_version(std::string_view a, std::string_view b);
+// RFC 3680 section 5.2: whether received is "more than one higher than the local version".
+bool reginfo_version_gap(std::string_view local, std::string_view received);
 //------------------------------------------------------------------------------
 // TS 24.484 clause 7.2.2.1 item 3 and clause 7.2.2.7 item 4 c), g) (TS 24.483 clauses 8.2.41B, 8.2.44B): the home HTTP
 // proxy of <App-Server-Info> (<http-proxy>, empty when the document names none) and whether its TLS tunnel uses
