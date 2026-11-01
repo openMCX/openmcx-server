@@ -799,8 +799,13 @@ TLS_CA = "/config/tls/ca.crt";
     template = (ROOT / "docker/kamailio.cfg").read_text()
     users_by_role = {entry["role"]: entry["username"] for entry in source["users"]}
     others = service_servers(mcdata_user, mcvideo_user, list(video_servers))
+    # TS 24.229 clauses 5.2.3 and 5.4.2.1: the IOI "that identifies the sending network" in the P-Charging-Vector of the
+    # reg event dialogs; its form is the operator's (RFC 7315 gen-value): "charging": {"ioi": ...}, the domain by default
+    # (maintainer 2026-11-01).
+    ioi = source.get("charging", {}).get("ioi") or domain
     for old, new in {
         "@DOMAIN@": domain,
+        "@IOI@": ioi,
         "@SERVICE_USER@": source["service_user"],
         "@GMS_USER@": source.get("gms_user", ""),
         "@MCDATA_USER@": mcdata_user,
@@ -826,7 +831,7 @@ TLS_CA = "/config/tls/ca.crt";
         # The P-CSCF: two pairs of protected ports per IMS AKA user, room for a re-registration's new security
         # associations (TS 33.203 clause 7.4); TLS to the SIP core with its own certificate.
         pcscf = (ROOT / "docker/pcscf.cfg").read_text()
-        pcscf = pcscf.replace("@IPSEC_MAX_CONN@", str(2 * len(isims) + 2))
+        pcscf = pcscf.replace("@IPSEC_MAX_CONN@", str(2 * len(isims) + 2)).replace("@IOI@", ioi).replace("@DOMAIN@", domain)
         save("pcscf.cfg", pcscf)
         save(
             "pcscf-tls.cfg",

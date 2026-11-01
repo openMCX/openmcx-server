@@ -170,6 +170,13 @@ contacts of the device being re-authenticated, see LIMITATIONS.md). The Linux cl
 status file (`reg_event`) and as events: `reg_subscribed`, `reg_subscription_refreshed`, `reg_shortened` (with the
 reregistration time), `network_deregistered` (with the event) and `reg_subscription_ended`. After "rejected" it stays
 logged off until the `log-on` command.
+The Android app shows "Deregistered by the network" in Settings after "rejected" or "unregistered", until Log on; its
+debug status has `reg_subscribed` and `network_deregistered`.
+
+The P-CSCF's reg event dialog carries a P-Charging-Vector (TS 24.229 clauses 5.2.3 and 5.4.2.1): a new `icid-value`
+in each of the P-CSCF's SUBSCRIBEs, echoed in the SIP core's 200 (OK) and NOTIFYs, and IOIs that identify the network:
+`"charging": {"ioi": "<value>"}` in `config/lab.json` before `tools/mcx provision` (the form is the operator's; by
+default the domain).
 
 ## 7. Troubleshooting: logs and readable SIP
 

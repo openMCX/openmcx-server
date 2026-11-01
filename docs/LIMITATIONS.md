@@ -147,8 +147,10 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   re-authentication (shortened registration, TS 33.203 clauses 5.1.2 and 6.1.4) with the commands in USAGE.md. Own
   deviations not fixed yet: the Linux client keeps its TLS session after a
   deregistration by the network over SIP digest (clause 5.1.1.7: "the UE shall delete all security associations or
-  TLS sessions towards the P-CSCF"; over IMS AKA the security associations go); the P-CSCF's SUBSCRIBE and its
-  responses to the NOTIFYs carry no P-Charging-Vector (clauses 5.2.3 item 1 g) and 5.2.5.2); reginfo.shorten marks every contact of the address-of-record "shortened"
+  TLS sessions towards the P-CSCF"; over IMS AKA the security associations go); the P-Charging-Vector (charging
+  correlation, TS 32.260) is carried only in the P-CSCF's reg event dialog (clauses 5.2.3, 5.2.4, 5.2.5.2, 5.4.2.1.1
+  and 5.4.2.1.2): the P-CSCF's REGISTER (clause 5.2.2.1 item 3) and the other requests and responses of the P-CSCF
+  and the SIP core carry none, so neither do the UEs' own reg event dialogs; reginfo.shorten marks every contact of the address-of-record "shortened"
   (clause 5.4.1.6 NOTE 2: only the contacts "originally registered by this UE"; the labs and tutorials have one
   contact per user).
 
