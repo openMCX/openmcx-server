@@ -126,7 +126,7 @@ docker compose exec client-c mcx-client --config /config/client-c.json --command
 | Step | Command | What happens (TS 24.379 unless noted) |
 |---|---|---|
 | 1 | `answer-mode auto` on every client | Each client answers incoming private calls automatically. |
-| 2 | `client-c`, `client-d: fa activate patrol-car-12`; `client-c: fa activate duty-officer` | client-c first subscribes to its alias status (clause 9A.2.1.3); the first NOTIFY lists no alias. Its PUBLISH is answered 200, and the NOTIFY with its `<p-id-fa>` lists patrol-car-12 `activated`; the same for client-d (patrol-car-12 allows two). client-c's PUBLISH for duty-officer, whose user list does not name it, is refused by the participating checks: 403 with warning 201 (clause 9A.2.2.2.3 steps 4A and 4B), and no NOTIFY follows. |
+| 2 | `client-c`, `client-d: fa activate patrol-car-12`; `client-c: fa activate duty-officer` | client-c first subscribes to its alias status (clause 9A.2.1.3); the first NOTIFY lists no alias. Its PUBLISH is answered 200, and the NOTIFY with its `<p-id-fa>` lists patrol-car-12 `activated`; the same for client-d (patrol-car-12 allows two). client-c's next PUBLISH, which lists patrol-car-12 and duty-officer (all the aliases it wants active, clause 9A.2.1.2 item 6 a)), is refused for duty-officer, whose user list does not name it by the participating checks: 403 with warning 201 (clause 9A.2.2.2.3 steps 4A and 4B), and no NOTIFY follows. |
 | 3 | `client-a`, `client-b: fa activate duty-officer`; `client-b`, then `client-a: fa takeover duty-officer` | duty-officer allows one user: alice gets it. bob's PUBLISH is answered 200, but the limit is reached (clause 9A.2.2.3.3 step 5), and since the alias and bob allow take-over, his NOTIFY offers duty-officer as `take-over-possible`. bob's next PUBLISH, with `<take-over>true</take-over>`, replaces alice (step 6): bob's NOTIFY lists duty-officer `activated`, and alice's NOTIFY no longer lists it. alice lacks the user right, so she is offered no take-over: her client sends a plain activation, which her NOTIFY leaves out. |
 | 4 | `client-a: private-fa patrol-car-12 auto` | The INVITE names the alias in its resource list with `<call-to-functional-alias-ind>true`. The server picks a user behind it and answers **300 Multiple Choices** with that user in `<mcptt-request-uri>` and a session identity in the Contact (clause 11.1.1.4.2 step 8a). client-a then calls client-c itself, naming the alias in `<called-functional-alias-URI>` and without the indicator (clause 11.1.1.2.1.1), and client-c is told which alias was called. |
 | 5 | `client-b: fa use duty-officer`, `client-b: private <alice>`; `client-a: fa use duty-officer`, `client-a: private <client-c>`; `client-b: call` | A caller's alias goes in `<functional-alias-URI>`. The server presents it only while it is activated for the caller (clause 11.1.1.3.1.1, and 10.1.1.3.1.1 step 6a for a group call): alice sees bob's duty-officer; client-c does not see duty-officer on alice's call, since bob holds it; every member sees it on bob's group call. |
@@ -138,7 +138,7 @@ docker compose exec client-c mcx-client --config /config/client-c.json --command
 ## 4. Look at the capture
 
 The script `run.sh` copies the capture of your run to `captures/11-functional-aliases-run.pcap.gz`. The folder also holds a reference run,
-[`captures/11-functional-aliases-full.pcap.gz`](captures/11-functional-aliases-full.pcap.gz) (151 KB, 2 564 frames): the frame numbers below and in the call flow are
+[`captures/11-functional-aliases-full.pcap.gz`](captures/11-functional-aliases-full.pcap.gz) (162 KB, 2 644 frames): the frame numbers below and in the call flow are
 those of the reference. Wireshark opens the compressed file directly (or `gunzip` it first).
 
 The capture filter is `ip and not host 172.31.11.1 and (tcp port 5060 or (udp and not port 53) or icmp)`:
@@ -166,44 +166,45 @@ request again with credentials); the frames below are those of the request that 
 
 What to look for, in the reference run:
 
-- **The status subscription and activation** (frames 405 to 477): client-c's SUBSCRIBE (405, 408; 409 at the server)
+- **The status subscription and activation** (frames 493 to 566): client-c's SUBSCRIBE (493, 496; 497 at the server)
   has `Event: presence`, `Expires: 4294967295` and `<request-type>functional-alias-status-determination</request-type>`;
-  the server answers 200 (410) and sends the first NOTIFY (412, at client-c 416), with no alias. client-c's PUBLISH
-  (414, 420; 424 at the server) carries `Expires: 4294967295`, a `<p-id-fa>` and
-  `<fa:functionalAlias functionalAliasID="sip:patrol-car-12.alias@mcx.test"/>`; the server's 200 (426, to client-c 428)
-  repeats `Expires`, and its NOTIFY (427, at client-c 429) carries the same `<p-id-fa>` and patrol-car-12 with
-  `status="activated"`. client-d subscribes (439) and activates patrol-car-12 the same way (451; 200 457; NOTIFY 458).
-  client-c's PUBLISH for duty-officer (471) gets 403 with `Warning: 399 mcptt-server "201 user not authorized to change
-  the functional alias status"` (475, 477), and no NOTIFY.
-- **The limit and take-over** (frames 479 to 576): alice subscribes (482) and activates duty-officer (494; 200
-  500; NOTIFY 501, `activated`). bob subscribes (513); his PUBLISH (525) gets 200 (531), and his NOTIFY (532)
-  lists duty-officer with `status="take-over-possible"`. bob's next PUBLISH (545) adds `<fa:take-over>true</fa:take-over>`:
-  200 (549), and the NOTIFY (557) lists duty-officer `activated`; alice's NOTIFY (551, at alice 553) no longer lists it.
-  alice's request (568) has no `<take-over>`, since she was not offered one: 200 (572), and her NOTIFY (574) still
+  the server answers 200 (499) and sends the first NOTIFY (501, at client-c 505), with no alias. client-c's PUBLISH
+  (503, 509; 513 at the server) carries `Expires: 4294967295`, a `<p-id-fa>` and
+  `<fa:functionalAlias functionalAliasID="sip:patrol-car-12.alias@mcx.test"/>`; the server's 200 (515, to client-c 517)
+  repeats `Expires`, and its NOTIFY (516, at client-c 518) carries the same `<p-id-fa>` and patrol-car-12 with
+  `status="activated"`. client-d subscribes (528) and activates patrol-car-12 the same way (540; 200 546; NOTIFY 547).
+  client-c's next PUBLISH (560), which lists patrol-car-12 and duty-officer (every alias it wants active, clause
+  9A.2.1.2 item 6 a)), gets 403 with `Warning: 399 mcptt-server "201 user not authorized to change
+  the functional alias status"` (564, 566), and no NOTIFY.
+- **The limit and take-over** (frames 568 to 665): alice subscribes (571) and activates duty-officer (583; 200
+  589; NOTIFY 590, `activated`). bob subscribes (602); his PUBLISH (614) gets 200 (620), and his NOTIFY (621)
+  lists duty-officer with `status="take-over-possible"`. bob's next PUBLISH (634) adds `<fa:take-over>true</fa:take-over>`:
+  200 (638), and the NOTIFY (640) lists duty-officer `activated`; alice's NOTIFY (646, at alice 647) no longer lists it.
+  alice's request (657) has no `<take-over>`, since she was not offered one: 200 (661), and her NOTIFY (663) still
   lists no alias.
-- **A private call to patrol-car-12** (frames 582 to 644): client-a's INVITE (589) has `<call-to-functional-alias-ind>true` and
-  the resource list `sip:patrol-car-12.alias@mcx.test`. The server answers 300 (593, to client-a 597) with `<mcptt-request-uri>`
-  `sip:client-c.mcptt@mcx.test`, the session identity in the Contact, and nobody invited. client-a's new INVITE (607)
+- **A private call to patrol-car-12** (frames 671 to 733): client-a's INVITE (678) has `<call-to-functional-alias-ind>true` and
+  the resource list `sip:patrol-car-12.alias@mcx.test`. The server answers 300 (682, to client-a 686) with `<mcptt-request-uri>`
+  `sip:client-c.mcptt@mcx.test`, the session identity in the Contact, and nobody invited. client-a's new INVITE (696)
   names client-c in its list, carries `<called-functional-alias-URI>` patrol-car-12 and no indicator; the server's INVITE to
-  client-c (617) carries the called alias too; client-a gets 200 (632) and ends the call (644).
-- **Presentation** (frames 659 to 808): bob's INVITE to alice (666) and the server's INVITE to her (676) carry
-  `<functional-alias-URI>` duty-officer. alice's INVITE (724) asks for duty-officer too, but the server's INVITE to client-c
-  (734) leaves it out: duty-officer is bob's. bob's group call (782) presents duty-officer to alice (792), client-c (802)
-  and client-d (808).
-- **First-to-answer** (frames 1034 to 1095): client-a's INVITE (1041), `<session-type>first-to-answer</session-type>`
-  with the indicator; INVITEs to client-c (1052) and client-d (1058) with `Priv-Answer-Mode: Manual` and the called alias;
-  client-d's 200 (1070), the 200 to client-a (1079), then the CANCEL to client-c (1091) and its 487 (1095).
-- **Ad hoc** (frames 1123 to 1148): client-a's INVITE (1130) lists only `sip:patrol-car-12.alias@mcx.test`; the server invites
-  client-c (1140) and client-d (1148), each with the called alias, and not bob.
-- **Broadcast ad hoc** (frames 1317 to 2430): client-a's INVITE (1324) has `<broadcast-ind>true` and lists bob and
-  client-c, who are invited with it (1334, 1343). bob's Floor Request (1402) is denied (1403, cause 5). client-a's
-  Floor Request (1405), Floor Granted (1406), Floor Taken to bob and client-c (1407, 1408), then about 6.7 s of speech
-  from 1404, 337 RTP packets to each listener. client-a's Floor Release (2423) ends the call: BYEs to bob (2432), alice
-  (2428) and client-c (2430).
-- **Deactivation and an alias nobody holds** (frames 2450 to 2560): client-c's PUBLISH with `Expires: 0` (2454) gets 200
-  (2458), and its NOTIFY (2460) no longer lists patrol-car-12. bob's call to patrol-car-12 now gets a 300 naming client-d (2479), and
-  bob's INVITE (2493) reaches client-d (2503). bob's call to incident-commander (2552) gets 403 with
-  `Warning: 399 mcptt-server "145 unable to determine called party"` (2556, 2560); nobody is invited.
+  client-c (706) carries the called alias too; client-a gets 200 (721) and ends the call (733).
+- **Presentation** (frames 748 to 897): bob's INVITE to alice (755) and the server's INVITE to her (765) carry
+  `<functional-alias-URI>` duty-officer. alice's INVITE (813) asks for duty-officer too, but the server's INVITE to client-c
+  (823) leaves it out: duty-officer is bob's. bob's group call (871) presents duty-officer to alice (881), client-c (891)
+  and client-d (897).
+- **First-to-answer** (frames 1124 to 1185): client-a's INVITE (1131), `<session-type>first-to-answer</session-type>`
+  with the indicator; INVITEs to client-c (1142) and client-d (1146) with `Priv-Answer-Mode: Manual` and the called alias;
+  client-d's 200 (1160), the 200 to client-a (1168), then the CANCEL to client-c (1181) and its 487 (1185).
+- **Ad hoc** (frames 1213 to 1238): client-a's INVITE (1220) lists only `sip:patrol-car-12.alias@mcx.test`; the server invites
+  client-c (1230) and client-d (1238), each with the called alias, and not bob.
+- **Broadcast ad hoc** (frames 1399 to 2513): client-a's INVITE (1406) has `<broadcast-ind>true` and lists bob and
+  client-c, who are invited with it (1416, 1425). bob's Floor Request (1483) is denied (1484, cause 5). client-a's
+  Floor Request (1486), Floor Granted (1487), Floor Taken to bob and client-c (1488, 1489), then about 6.7 s of speech
+  from 1493, 337 RTP packets to each listener. client-a's Floor Release (2504) ends the call: BYEs to bob (2509), alice
+  (2511) and client-c (2513).
+- **Deactivation and an alias nobody holds** (frames 2530 to 2640): client-c's PUBLISH with `Expires: 0` (2534) gets 200
+  (2538), and its NOTIFY (2540) no longer lists patrol-car-12. bob's call to patrol-car-12 now gets a 300 naming client-d (2559), and
+  bob's INVITE (2573) reaches client-d (2583). bob's call to incident-commander (2632) gets 403 with
+  `Warning: 399 mcptt-server "145 unable to determine called party"` (2636, 2640); nobody is invited.
 
 ## 5. Stop or start over
 
@@ -274,7 +275,7 @@ sequenceDiagram
     C->>S: PUBLISH, Expires 4294967295, functionalAlias patrol-car-12, p-id-fa
     S-->>C: 200 OK, Expires 4294967295
     S->>C: NOTIFY, same p-id-fa, patrol-car-12 activated
-    C->>S: PUBLISH, functionalAlias duty-officer
+    C->>S: PUBLISH, functionalAlias patrol-car-12 and duty-officer
     S-->>C: 403 Forbidden, warning 201 (not in its user list)
     Note over A,S: Step 3: limit and take-over (A and B subscribed first)
     A->>S: PUBLISH, functionalAlias duty-officer
@@ -305,14 +306,14 @@ sequenceDiagram
 
 | Message | Frames |
 |---|---|
-| client-c's status SUBSCRIBE; 200; first NOTIFY | 405, 408, 409; 410, 413; 412, 416 |
-| client-c's PUBLISH (patrol-car-12); 200; NOTIFY, patrol-car-12 activated | 414, 420, 424; 426, 428; 427, 429 |
-| client-c's PUBLISH (duty-officer); 403, warning 201 | 467, 471, 473; 475, 477 |
-| alice's PUBLISH (duty-officer); 200; NOTIFY, activated | 488, 494, 498; 500, 502; 501, 503 |
-| bob's PUBLISH (duty-officer); 200; NOTIFY, take-over-possible | 519, 525, 529; 531, 533; 532, 534 |
-| bob's PUBLISH with take-over; 200; NOTIFY, activated; alice's NOTIFY | 541, 545, 547; 549, 552; 557, 558; 551, 553 |
-| alice's PUBLISH (duty-officer, no offer); 200; NOTIFY without it | 564, 568, 570; 572, 575; 574, 576 |
-| alice's INVITE to patrol-car-12; 300 | 589, 591; 593, 597 |
-| alice's INVITE to client-c; INVITE to client-c; 200 to alice | 607, 611; 617; 632 |
-| bob's INVITE to alice; INVITE to alice with duty-officer | 666, 668; 676 |
-| alice's INVITE to client-c; INVITE to client-c without the alias | 724, 726; 734 |
+| client-c's status SUBSCRIBE; 200; first NOTIFY | 493, 496, 497; 499, 502; 501, 505 |
+| client-c's PUBLISH (patrol-car-12); 200; NOTIFY, patrol-car-12 activated | 503, 509, 513; 515, 517; 516, 518 |
+| client-c's PUBLISH (patrol-car-12, duty-officer); 403, warning 201 | 556, 560, 562; 564, 566 |
+| alice's PUBLISH (duty-officer); 200; NOTIFY, activated | 577, 583, 587; 589, 591; 590, 592 |
+| bob's PUBLISH (duty-officer); 200; NOTIFY, take-over-possible | 608, 614, 618; 620, 622; 621, 623 |
+| bob's PUBLISH with take-over; 200; NOTIFY, activated; alice's NOTIFY | 630, 634, 636; 638, 641; 640, 642; 646, 647 |
+| alice's PUBLISH (duty-officer, no offer); 200; NOTIFY without it | 653, 657, 659; 661, 664; 663, 665 |
+| alice's INVITE to patrol-car-12; 300 | 678, 680; 682, 686 |
+| alice's INVITE to client-c; INVITE to client-c; 200 to alice | 696, 700; 706; 721 |
+| bob's INVITE to alice; INVITE to alice with duty-officer | 755, 757; 765 |
+| alice's INVITE to client-c; INVITE to client-c without the alias | 813, 815; 823 |
