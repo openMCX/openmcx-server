@@ -122,9 +122,7 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   in use (a stale SQN at a reregistration the core still knows) cannot occur with this SIP core and is not tested. Not done yet: the P-CSCF's early switch to the new set when "the old
   SAs have only a short time left before expiring" (clause 7.4.2a, open implementation point: the text gives no value
   for it; the P-CSCF switches at the UE's next message over the new set or at the old set's expiry); emergency
-  registration (TS 24.229 clause 5.1.6); IPv6 (the IMS AKA path is tested on IPv4 only); the reg event package, so
-  the S-CSCF cannot start a network-initiated re-authentication (TS 33.203 clauses 5.1.2 and 6.1.4: every
-  re-registration is challenged instead); the discovery of the P-CSCF (TS 24.229 clause 9.2.1: its
+  registration (TS 24.229 clause 5.1.6); IPv6 (the IMS AKA path is tested on IPv4 only); the discovery of the P-CSCF (TS 24.229 clause 9.2.1: its
   address is configured). The MCX Admin activation and the Credential Service issue digest
   credentials only (an identity provisioned for IMS AKA gets none), so the clients that MCX Admin activates keep SIP
   digest over TLS, also where they run on 3GPP access: the dispatcher inside the 5G or 4G UE of tutorials 3, 4 and 5 is
@@ -143,6 +141,24 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   field Diffie-Hellman (include/mcx/tls_profile.hpp; checked by tests/integration/tls_profile_check.py). SIP over TLS of
   the C++ programs offers P-256, P-384 and P-521 but not x25519 (pjproject names no x25519 group). A test system whose
   PIXIT only allows TLS 1.2 RSA, PSK or NULL suites (TS 37.579-5 px_MCX_TLS_CipherSuite) is refused.
+
+- **Reg event package** (RFC 3680; TS 24.229 clauses 5.1.1.3, 5.2.3 and 5.4.2.1) is served by the SIP core to the
+  Linux client and the P-CSCF; the operator starts a network-initiated deregistration or re-authentication
+  (shortened registration, TS 33.203 clauses 5.1.2 and 6.1.4) with the commands in USAGE.md. Own deviations not
+  fixed yet: the Android app does not subscribe (clause 5.1.1.3: a network-initiated deregistration or
+  re-authentication reaches it only when its next request fails); the Linux client keeps its TLS session after a
+  deregistration by the network over SIP digest (clause 5.1.1.7: "the UE shall delete all security associations or
+  TLS sessions towards the P-CSCF"; over IMS AKA the security associations go); the P-CSCF's SUBSCRIBE and its
+  responses to the NOTIFYs carry no P-Charging-Vector (clauses 5.2.3 item 1 g) and 5.2.5.2); Kamailio's
+  ims_registrar_pcscf refreshes the P-CSCF's subscription at every 200 (OK) to a REGISTER, not only after the first
+  initial one, pua's refresh asks for the time left to its first expiry instead of the duration, and a refresh that
+  fails with any error ends the subscription and starts a new one at once with 3 s added (clause 5.2.3: "fails with
+  a non-481 response, the P-CSCF shall still consider the original subscription valid ... Otherwise ... start a new
+  initial subscription"); the SIP core grants at most 3600 s (presence max_expires), less than the P-CSCF's 3761
+  s, so the subscription does not outlast the registration (clause 5.2.3 item 1 e), "a value higher than the
+  registration expiration interval"); reginfo.shorten marks every contact of the address-of-record "shortened"
+  (clause 5.4.1.6 NOTE 2: only the contacts "originally registered by this UE"; the labs and tutorials have one
+  contact per user).
 
 ### Media and floor control
 

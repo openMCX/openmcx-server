@@ -273,6 +273,10 @@ public:
   // RFC 3261 section 10.2.2: removes this engine's registration (its Contact with Expires 0) and stops refreshing it;
   // register_account registers again.
   void unregister_account(SipResponseHandler handler = {});
+  // TS 24.229 clause 5.1.1.7: the network ended this registration (a reg event NOTIFY); the security associations
+  // towards the P-CSCF go and the registration is no longer refreshed; the next register_account is an initial
+  // registration (a new Call-ID; for IMS AKA unprotected, clause 5.1.1.2).
+  void registration_ended();
   // Requests, INVITEs and SUBSCRIBEs go through the SIP core unless their
   // headers include an explicit Route, which then selects the next hop; for an
   // INVITE or SUBSCRIBE it is also the dialog's fixed route set.

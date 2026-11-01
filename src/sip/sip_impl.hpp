@@ -321,6 +321,8 @@ struct SipEngine::Impl {
   void aka_register(unsigned expires, std::string_view content_type, std::string_view body, SipResponseHandler handler);
   void aka_send_register(AkaRoute route, bool new_offer, const std::string &authorization);
   void aka_registration_result(pjsip_rx_data *data, int status, std::string_view reason);
+  void aka_forget_registration();
+  void aka_registration_ended();
   void aka_challenge(pjsip_rx_data *data);
   void aka_registered(pjsip_rx_data *data);
   void aka_failed(const SipResponse &response);

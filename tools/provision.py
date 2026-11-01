@@ -43,6 +43,31 @@ TLS12_CIPHERS = (
 AKA_PROTECTED_SERVER_PORT = 5064
 
 
+# The tables of Kamailio's presence and pua modules (schema versions of Kamailio 6.1.4, which the modules check at
+# start-up), for the reg event package of the SIP core (RFC 3680, TS 24.229 clause 5.4.2.1; docker/kamailio.cfg):
+# the registration state each user's binding publishes, the subscriptions to it and their NOTIFY dialogs.
+PRESENCE_TABLES = """\
+CREATE TABLE presentity (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY NOT NULL, username VARCHAR(64) NOT NULL, domain VARCHAR(64) NOT NULL, event VARCHAR(64) NOT NULL, etag VARCHAR(128) NOT NULL, expires INT NOT NULL, received_time INT NOT NULL, body BLOB NOT NULL, sender VARCHAR(255) NOT NULL, priority INT DEFAULT 0 NOT NULL, ruid VARCHAR(64), CONSTRAINT presentity_idx UNIQUE (username, domain, event, etag), CONSTRAINT ruid_idx UNIQUE (ruid));
+CREATE INDEX presentity_expires ON presentity (expires);
+CREATE INDEX account_idx ON presentity (username, domain, event);
+CREATE TABLE active_watchers (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY NOT NULL, presentity_uri VARCHAR(255) NOT NULL, watcher_username VARCHAR(64) NOT NULL, watcher_domain VARCHAR(64) NOT NULL, to_user VARCHAR(64) NOT NULL, to_domain VARCHAR(64) NOT NULL, event VARCHAR(64) DEFAULT 'presence' NOT NULL, event_id VARCHAR(64), to_tag VARCHAR(128) NOT NULL, from_tag VARCHAR(128) NOT NULL, callid VARCHAR(255) NOT NULL, local_cseq INT NOT NULL, remote_cseq INT NOT NULL, contact VARCHAR(255) NOT NULL, record_route TEXT, expires INT NOT NULL, status INT DEFAULT 2 NOT NULL, reason VARCHAR(64), version INT DEFAULT 0 NOT NULL, socket_info VARCHAR(64) NOT NULL, local_contact VARCHAR(255) NOT NULL, from_user VARCHAR(64) NOT NULL, from_domain VARCHAR(64) NOT NULL, updated INT NOT NULL, updated_winfo INT NOT NULL, flags INT DEFAULT 0 NOT NULL, user_agent VARCHAR(255) DEFAULT '', CONSTRAINT active_watchers_idx UNIQUE (callid, to_tag, from_tag));
+CREATE INDEX active_watchers_expires ON active_watchers (expires);
+CREATE INDEX active_watchers_pres ON active_watchers (presentity_uri, event);
+CREATE INDEX updated_idx ON active_watchers (updated);
+CREATE INDEX updated_winfo_idx ON active_watchers (updated_winfo, presentity_uri);
+CREATE TABLE watchers (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY NOT NULL, presentity_uri VARCHAR(255) NOT NULL, watcher_username VARCHAR(64) NOT NULL, watcher_domain VARCHAR(64) NOT NULL, event VARCHAR(64) DEFAULT 'presence' NOT NULL, status INT NOT NULL, reason VARCHAR(64), inserted_time INT NOT NULL, CONSTRAINT watcher_idx UNIQUE (presentity_uri, watcher_username, watcher_domain, event));
+CREATE INDEX time_status_idx ON watchers (inserted_time, status);
+CREATE TABLE xcap (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY NOT NULL, username VARCHAR(64) NOT NULL, domain VARCHAR(64) NOT NULL, doc MEDIUMBLOB NOT NULL, doc_type INT NOT NULL, etag VARCHAR(128) NOT NULL, source INT NOT NULL, doc_uri VARCHAR(255) NOT NULL, port INT NOT NULL, CONSTRAINT doc_uri_idx UNIQUE (doc_uri));
+CREATE INDEX account_doc_type_idx ON xcap (username, domain, doc_type);
+CREATE TABLE pua (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY NOT NULL, pres_uri VARCHAR(255) NOT NULL, pres_id VARCHAR(255) NOT NULL, event INT NOT NULL, expires INT NOT NULL, desired_expires INT NOT NULL, flag INT NOT NULL, etag VARCHAR(128) NOT NULL, tuple_id VARCHAR(64), watcher_uri VARCHAR(255) NOT NULL, call_id VARCHAR(255) NOT NULL, to_tag VARCHAR(128) NOT NULL, from_tag VARCHAR(128) NOT NULL, cseq INT NOT NULL, record_route TEXT, contact VARCHAR(255) NOT NULL, remote_contact VARCHAR(255) NOT NULL, version INT NOT NULL, extra_headers TEXT NOT NULL, CONSTRAINT pua_idx UNIQUE (etag, tuple_id, call_id, from_tag));
+CREATE INDEX expires_idx ON pua (expires);
+CREATE INDEX dialog1_idx ON pua (pres_id, pres_uri);
+CREATE INDEX dialog2_idx ON pua (call_id, from_tag);
+CREATE INDEX record_idx ON pua (pres_id);
+INSERT INTO version(table_name,table_version) VALUES ('presentity',5),('active_watchers',12),('watchers',3),('xcap',4),('pua',7);
+"""
+
+
 # ------------------------------------------------------------------------------
 def mcptt_servers(source, key="servers", prefix="mcptt", default="mcptt-server"):
     """MCPTT servers by name, in order: {"role": both|participating|controlling,
@@ -744,7 +769,12 @@ TLS_CA = "/config/tls/ca.crt";
     dbpassword = secrets.token_hex(24)
     save("mysql-password", dbpassword)
     save("mysql-root-password", secrets.token_hex(24))
-    sql = "CREATE TABLE version (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, table_name VARCHAR(32) UNIQUE NOT NULL, table_version INT UNSIGNED NOT NULL);\nINSERT INTO version(table_name,table_version) VALUES ('subscriber',7);\nCREATE TABLE subscriber (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, username VARCHAR(64) NOT NULL, domain VARCHAR(64) NOT NULL, password VARCHAR(64) NOT NULL, ha1 VARCHAR(128) NOT NULL DEFAULT '', ha1b VARCHAR(128) NOT NULL DEFAULT '', UNIQUE(username,domain));\n"
+    sql = "CREATE TABLE version (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, table_name VARCHAR(32) UNIQUE NOT NULL, table_version INT UNSIGNED NOT NULL);\nINSERT INTO version(table_name,table_version) VALUES ('subscriber',7);\n"
+    # The presence tables come before the subscriber table: the sip-db healthcheck reads that table, and the SIP core's
+    # presence module checks its tables' versions at start-up (a race otherwise, the import going on while the
+    # healthcheck already passes).
+    sql += PRESENCE_TABLES
+    sql += "CREATE TABLE subscriber (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, username VARCHAR(64) NOT NULL, domain VARCHAR(64) NOT NULL, password VARCHAR(64) NOT NULL, ha1 VARCHAR(128) NOT NULL DEFAULT '', ha1b VARCHAR(128) NOT NULL DEFAULT '', UNIQUE(username,domain));\n"
     # The per-IMPI subscription (TS 29.228 clause 6.3.1 step 4): its public user identity, its authentication scheme
     # and, for IMS AKA, the K, OPc and AMF of the vectors (TS 33.102 clause 6.3.2). Identities not listed use SIP
     # digest from the subscriber table.

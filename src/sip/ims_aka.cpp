@@ -615,16 +615,7 @@ void SipEngine::Impl::aka_registration_result(pjsip_rx_data *data, int status, s
   // initial REGISTER with a new Call-ID follows, once per reregistration.
   if (data != nullptr && aka->reregistration && (status == 403 || status == 408 || status == 500 || status == 504)) {
     aka->reregistration = false;
-    for (auto *entry : {&aka->refresh_timer, &aka->pending_timer, &aka->old_timer, &aka->expiry_timer})
-      if (pj_timer_entry_running(entry)) (void)pjsip_endpt_cancel_timer(endpoint, entry);
-    aka_delete(aka->pending);
-    aka_delete(aka->old);
-    aka_delete(aka->current);
-    aka->authorization.clear();
-    aka->resyncs = 0;
-    aka->restarts = 0;
-    aka->call_id.clear();
-    aka->realm = identity_domain(config.identity);
+    aka_forget_registration();
     report_error("IMS AKA: reregistration answered " + std::to_string(status) +
                  "; initial registration (TS 24.229 clause 5.1.1.4.1)");
     return aka_send_register(AkaRoute::unprotected, true,
@@ -638,6 +629,41 @@ void SipEngine::Impl::aka_registration_result(pjsip_rx_data *data, int status, s
     aka_delete(aka->current);
   }
   aka_failed(response);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.229 clauses 5.1.1.4.1 and 5.1.1.7: the registration and its security associations are given up (timers,
+// sets, the last authorization); the next REGISTER is an initial one, unprotected with a new Call-ID.
+void SipEngine::Impl::aka_forget_registration() {
+  for (auto *entry : {&aka->refresh_timer, &aka->pending_timer, &aka->old_timer, &aka->expiry_timer})
+    if (pj_timer_entry_running(entry)) (void)pjsip_endpt_cancel_timer(endpoint, entry);
+  aka_delete(aka->pending);
+  aka_delete(aka->old);
+  aka_delete(aka->current);
+  aka->authorization.clear();
+  aka->resyncs = 0;
+  aka->restarts = 0;
+  aka->call_id.clear();
+  aka->realm = identity_domain(config.identity);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.229 clause 5.1.1.7: a reg event NOTIFY ended the registration: "the UE shall delete these security associations
+// ... towards the respective P-CSCF when all public user identities have been deregistered and after the server
+// transaction (as defined in RFC 3261 [26]) pertaining to the received NOTIFY request terminates". The set in use
+// becomes the old set, which the old-set timer deletes once none of its transactions (the NOTIFY's among them,
+// aka_track) is left in the transaction layer (polling, as for a reregistration, TS 33.203 clause 7.4.1a); the other
+// sets, the timers and the authorization go now, and the next REGISTER is an initial one. A REGISTER procedure under
+// way keeps its sets: its own outcome decides (clause 5.1.1.4.1).
+void SipEngine::Impl::aka_registration_ended() {
+  if (aka->busy) return;
+  auto ending = std::move(aka->current);
+  aka_forget_registration();
+  if (ending) {
+    aka->old = std::move(ending);
+    aka->old_release_scheduled = true;
+    aka_schedule(aka->old_timer, old_set_poll_ms, old_timer_id);
+  }
 }
 
 //------------------------------------------------------------------------------

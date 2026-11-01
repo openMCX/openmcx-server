@@ -5,9 +5,9 @@
 # The SIP core and the P-CSCF of IMS AKA (docker/pcscf.cfg): upstream Kamailio 6.1.4 with the tls, auth_db, db_mysql
 # and http_client modules, and the IMS modules of IMS AKA (TS 33.203): ims_auth (AKA vectors made locally from K,
 # OPc and AMF, through gcrypt; cdp and cdp_avp only for its build), ims_ipsec_pcscf, ims_registrar_pcscf and
-# ims_usrloc_pcscf. Two pinned changes, dependencies/kamailio (ims_auth: the locally made IMS AKA vectors and HTTP
-# Digest AKAv2-SHA-256; ims_ipsec_pcscf and ims_usrloc_pcscf: initial registrations with any Via port), each checked
-# against its SHA-256 and applied to the verified source. Built on the development
+# ims_usrloc_pcscf; and presence, presence_reginfo, pua and pua_reginfo for the reg event package (RFC 3680, TS
+# 24.229 clause 5.4.2.1). Pinned changes, dependencies/kamailio/README.md (0001-0004), each checked against its
+# SHA-256 and applied to the verified source. Built on the development
 # image, run on a slim Ubuntu image with only Kamailio's run-time libraries (docker/packages).
 #
 #   docker build -t openmcx-kamailio:6.1.4-7 -f docker/Dockerfile.kamailio .
@@ -33,9 +33,11 @@ COPY docker/fetch /usr/local/bin/fetch
 ARG KAMAILIO_PATCH2=0002-ims_ipsec_pcscf-any-Via-port-and-flags.patch
 ARG KAMAILIO_PATCH2_SHA256=1090846a2ba9a2b408a00d1238be2986bcc7d290188c57ee362535e210507d32
 ARG KAMAILIO_PATCH3=0003-ims_ipsec_pcscf-Rel-19-algorithms-and-port-guards.patch
-ARG KAMAILIO_PATCH3_SHA256=acde9008d8759957f6fd6f808a9885ba63a92d4798816f05cc0ffb84f8f6a87d
+ARG KAMAILIO_PATCH3_SHA256=6991470876586f2fc278f93519c60285dcf426ed90a53c006951a19ac3d1d1fb
+ARG KAMAILIO_PATCH4=0004-presence-reginfo-RFC-3680-and-TS-24.229-reg-event.patch
+ARG KAMAILIO_PATCH4_SHA256=b114671b2ccc84d22d41bf30318e263df8f2f8603fb10820c9f1a330d57fefff
 COPY dependencies/kamailio/${KAMAILIO_PATCH} dependencies/kamailio/${KAMAILIO_PATCH2} dependencies/kamailio/${KAMAILIO_PATCH3} \
-     /src/kamailio-patches/
+     dependencies/kamailio/${KAMAILIO_PATCH4} /src/kamailio-patches/
 COPY docker/packages /usr/local/bin/packages
 # The IMS modules' build libraries the development image lacks (libmnl for ims_ipsec_pcscf).
 RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UBUNTU" kamailio-dev) \
@@ -46,10 +48,12 @@ RUN mkdir -p /src && fetch "$KAMAILIO_FILE" "$KAMAILIO_URL" "$KAMAILIO_SHA256" /
  && echo "$KAMAILIO_PATCH_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH" | sha256sum -c - \
  && echo "$KAMAILIO_PATCH2_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH2" | sha256sum -c - \
  && echo "$KAMAILIO_PATCH3_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH3" | sha256sum -c - \
+ && echo "$KAMAILIO_PATCH4_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH4" | sha256sum -c - \
  && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH \
  && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH2 \
  && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH3 \
- && make cfg prefix=/opt/kamailio include_modules="tls auth_db db_mysql http_client ims_auth ims_ipsec_pcscf ims_registrar_pcscf ims_usrloc_pcscf cdp cdp_avp gcrypt" \
+ && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH4 \
+ && make cfg prefix=/opt/kamailio include_modules="tls auth_db db_mysql http_client ims_auth ims_ipsec_pcscf ims_registrar_pcscf ims_usrloc_pcscf cdp cdp_avp gcrypt presence presence_reginfo pua pua_reginfo" \
  && make -j4 all && make install \
  && mkdir -p /install/doc && cp COPYING /install/doc/COPYING \
  && rm -rf /tmp/kamailio
@@ -67,6 +71,8 @@ COPY --from=build /src/${KAMAILIO_FILE} /usr/src/${KAMAILIO_FILE}
 COPY --from=build /src/kamailio-patches /usr/src/kamailio-patches
 # TS 33.210 clause 6.2: the TLS groups of the 3GPP profile (docker/openssl-3gpp.cnf).
 COPY docker/openssl-3gpp.cnf /etc/ssl/openssl-3gpp.cnf
+# The operator's network-initiated deregistration (TS 24.229 clause 5.4.1.5): sessions released, then the reg event.
+COPY docker/sipcore-deregister /usr/local/bin/sipcore-deregister
 ENV OPENSSL_CONF=/etc/ssl/openssl-3gpp.cnf
 LABEL org.opencontainers.image.title="openmcx-kamailio" \
       org.opencontainers.image.version="6.1.4" \

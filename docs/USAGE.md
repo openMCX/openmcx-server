@@ -147,6 +147,30 @@ the user's SIP identity and client; a Keycloak token has the claims of annex B.2
 The tests are described in the [MCPTT](../tests/MCPTT_TEST.md), [MCData](../tests/MCDATA_TEST.md) and
 [MCVideo](../tests/MCVIDEO_TEST.md) test indexes.
 
+### The reg event package: network-initiated re-authentication and deregistration
+
+The SIP core serves the reg event package (RFC 3680, TS 24.229 clause 5.4.2.1): a client or its P-CSCF subscribes to a
+user's registration state and is notified of every change. Two operator commands act on a registered user from the
+SIP core's container (`docker exec <sip-core container> ...`); the operator decides when (TS 24.229 clause 5.4.1.6:
+"operator settable triggers"):
+
+```bash
+# Re-authentication (TS 24.229 clause 5.4.1.6): every contact of the user expires after <seconds>, given by the
+# operator; the subscribers are notified with the event "shortened" and the user registers again, with a new
+# authentication, before then.
+kamcmd -s unix:/tmp/kamailio_ctl reginfo.shorten location alice@mcx.test 60
+
+# Deregistration (TS 24.229 clause 5.4.1.5): the user's sessions are released, then its registration is removed and
+# the subscribers are notified with the event "deactivated" (the user is expected to register again) or "rejected".
+sipcore-deregister alice@mcx.test deactivated
+```
+
+`reginfo.shorten` marks every contact of the user (one per device; TS 24.229 clause 5.4.1.6 NOTE 2 asks for only the
+contacts of the device being re-authenticated, see LIMITATIONS.md). The Linux client reports the subscription in its
+status file (`reg_event`) and as events: `reg_subscribed`, `reg_subscription_refreshed`, `reg_shortened` (with the
+reregistration time), `network_deregistered` (with the event) and `reg_subscription_ended`. After "rejected" it stays
+logged off until the `log-on` command.
+
 ## 7. Troubleshooting: logs and readable SIP
 
 ### Debug log

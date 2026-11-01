@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+
+# Network-initiated deregistration by the SIP core (TS 24.229 V19.7.0 clause 5.4.1.5), run in the SIP core's container:
+#
+#   sipcore-deregister <AOR> deactivated|rejected       e.g. sipcore-deregister alice@mcx.test deactivated
+#
+# First the user's sessions are released: every dialog the core tracks with the AOR in its From or To URI gets a BYE
+# to both sides (dialog module, dlg.end_dlg). The clause asks for all sessions of the contact for "rejected" and for
+# those that include the contact for "deactivated"; with one contact per user these are the same dialogs. Then every
+# contact of the AOR is removed and the subscribers to its reg event get the document with the registration
+# terminated and the event deactivated (the user is expected to register again) or rejected (pua_reginfo
+# reginfo.deregister, dependencies/kamailio patch 0004). The network-initiated re-authentication of clause 5.4.1.6 is
+# kamcmd -s unix:/tmp/kamailio_ctl reginfo.shorten location <AOR> <seconds> (docs/USAGE.md).
+set -eu
+[ $# -eq 2 ] || { echo "usage: sipcore-deregister <AOR> deactivated|rejected" >&2; exit 2; }
+aor=$1
+event=$2
+case $event in deactivated|rejected) ;; *) echo "the event must be deactivated or rejected" >&2; exit 2 ;; esac
+kc="/opt/kamailio/sbin/kamcmd -s unix:/tmp/kamailio_ctl"
+released=0
+for field in furi turi; do
+    for dialog in $($kc dlg.list_match "$field" eq "sip:$aor" 2>/dev/null |
+                    awk '/h_entry:/ {e = $2} /h_id:/ {print e ":" $2}'); do
+        $kc dlg.end_dlg "${dialog%%:*}" "${dialog##*:}" >/dev/null && released=$((released + 1))
+    done
+done
+echo "sessions released: $released"
+$kc reginfo.deregister location "$aor" "$event"

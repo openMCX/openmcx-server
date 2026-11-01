@@ -75,15 +75,24 @@ Subject: [PATCH] ims_ipsec_pcscf: TS 33.203 Rel-19 algorithms, algorithm list,
 - ipsec_reply_over_sa(): a stateful reply to a request received over a set
   leaves over UDP from the set's port_pc to the UE's port_us (clause 7.1;
   clauses 7.4.1a/7.4.2a, failure messages over the old SAs).
+- ipsec_forward(), spi_set_outbound_by_us(): a request to the UE whose
+  matched contact's set is gone (a reregistration over TCP leaves the old
+  contact with its port_uc) goes over the set the UE uses for outbound
+  messages, found by the UE address and port_us (clause 7.4.0: port_us
+  "shall remain unchanged"; clause 7.1, TCP case: "from its port_pc to the
+  port port_us of the UE"), not from the deleted set's port_pc.
 
 The modified files carry a notice of the change (GPL-2.0 section 2(a)).
 ---
 diff --git a/src/modules/ims_ipsec_pcscf/cmd.c b/src/modules/ims_ipsec_pcscf/cmd.c
-index dc66a5f..481bbe5 100644
+index dc66a5f..3f761a8 100644
 --- a/src/modules/ims_ipsec_pcscf/cmd.c
 +++ b/src/modules/ims_ipsec_pcscf/cmd.c
-@@ -1,4 +1,18 @@
+@@ -1,4 +1,21 @@
  /*
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): a request to the UE whose matched contact's set is gone
++ * goes over the set the UE uses for outbound messages, found by UE address and port_us (TS 33.203 clauses 7.1, 7.4.0).
++ *
 + * Modified by OpenMCX on 2026-10-25 (GPL-2.0 section 2(a)): every new set of security associations is recorded with
 + * the private user identity of its REGISTER, temporary until its registration completes (ipsec_set_completed()); a
 + * new challenge deletes the temporary sets of the same UE registration and a temporary set ends after its lifetime
@@ -101,7 +110,7 @@ index dc66a5f..481bbe5 100644
   * Modified by OpenMCX on 2026-10-23 (GPL-2.0 section 2(a)): an initial registration
   * is told by the unprotected port its REGISTER arrived on, not by the UE's Via port
   * 5060; the earlier temporary set of a pending registration is deleted when a new
-@@ -50,6 +64,7 @@
+@@ -50,6 +67,7 @@
   */
  
  #include "../../core/parser/msg_parser.h"
@@ -109,7 +118,7 @@ index dc66a5f..481bbe5 100644
  #include "../../core/socket_info.h"
  #include "../../lib/ims/ims_getters.h"
  #include "../../modules/tm/tm_load.h"
-@@ -64,6 +79,7 @@
+@@ -64,6 +82,7 @@
  #include <string.h>
  
  #include <arpa/inet.h>
@@ -117,7 +126,7 @@ index dc66a5f..481bbe5 100644
  
  
  extern str ipsec_listen_addr;
-@@ -71,7 +87,11 @@ extern str ipsec_listen_addr6;
+@@ -71,7 +90,11 @@ extern str ipsec_listen_addr6;
  extern int ipsec_reuse_server_port;
  extern int ipsec_client_port;
  extern int ipsec_server_port;
@@ -129,7 +138,7 @@ index dc66a5f..481bbe5 100644
  extern ip_addr_t ipsec_listen_ip_addr;
  extern ip_addr_t ipsec_listen_ip_addr6;
  
-@@ -109,6 +129,13 @@ extern struct tm_binds tmb;
+@@ -109,6 +132,13 @@ extern struct tm_binds tmb;
  /* if set - try TCP if corresponding UDP socket is not found */
  #define IPSEC_FORWARD_TRYTCP (1 << 9)
  
@@ -143,7 +152,7 @@ index dc66a5f..481bbe5 100644
  /* if set - delete unused tunnels before every registration */
  #define IPSEC_CREATE_DELETE_UNUSED_TUNNELS 0x01
  
-@@ -452,8 +479,8 @@ static int get_ck_ik(const struct sip_msg *m, str *ck, str *ik)
+@@ -452,8 +482,8 @@ static int get_ck_ik(const struct sip_msg *m, str *ck, str *ik)
  	return 0;
  }
  
@@ -154,7 +163,7 @@ index dc66a5f..481bbe5 100644
  {
  	// Get CK and IK
  	str ck, ik;
-@@ -497,20 +524,46 @@ static int update_contact_ipsec_params(
+@@ -497,20 +527,46 @@ static int update_contact_ipsec_params(
  		}
  	}
  
@@ -209,7 +218,7 @@ index dc66a5f..481bbe5 100644
  static int create_ipsec_tunnel(const struct ip_addr *remote_addr, ipsec_t *s)
  {
  	struct mnl_socket *sock = init_mnl_socket();
-@@ -553,71 +606,70 @@ static int create_ipsec_tunnel(const struct ip_addr *remote_addr, ipsec_t *s)
+@@ -553,71 +609,70 @@ static int create_ipsec_tunnel(const struct ip_addr *remote_addr, ipsec_t *s)
  			s->spi_pc, s->spi_ps, s->spi_uc, s->spi_us, s->r_alg.len,
  			s->r_alg.s, s->r_ealg.len, s->r_ealg.s);
  
@@ -320,7 +329,7 @@ index dc66a5f..481bbe5 100644
  	struct mnl_socket *sock = init_mnl_socket();
  	if(sock == NULL) {
  		return -1;
-@@ -634,6 +686,18 @@ static int destroy_ipsec_tunnel(
+@@ -634,6 +689,18 @@ static int destroy_ipsec_tunnel(
  		return -1;
  	}
  
@@ -339,7 +348,7 @@ index dc66a5f..481bbe5 100644
  	if(ip_addr.af == AF_INET6) {
  		ipsec_addr = ipsec_listen_addr6;
  	} else {
-@@ -698,6 +762,8 @@ static int destroy_ipsec_tunnel(
+@@ -698,6 +765,8 @@ static int destroy_ipsec_tunnel(
  
  	// Release SPIs
  	release_spi(s->spi_pc, s->spi_ps, s->port_pc, s->port_ps);
@@ -348,7 +357,7 @@ index dc66a5f..481bbe5 100644
  
  	close_mnl_socket(sock);
  	return 0;
-@@ -799,16 +865,31 @@ int add_security_server_header(struct sip_msg *m, ipsec_t *s)
+@@ -799,16 +868,31 @@ int add_security_server_header(struct sip_msg *m, ipsec_t *s)
  	}
  	memset(sec_header, 0, sizeof(str));
  
@@ -389,7 +398,7 @@ index dc66a5f..481bbe5 100644
  
  	// copy to the header and add
  	if((sec_header->s = pkg_malloc(sec_header->len)) == NULL) {
-@@ -868,6 +949,142 @@ static int ipsec_protected_port(unsigned short port)
+@@ -868,6 +952,142 @@ static int ipsec_protected_port(unsigned short port)
  				   && port < ipsec_server_port + ipsec_max_connections);
  }
  
@@ -532,7 +541,7 @@ index dc66a5f..481bbe5 100644
  int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
  {
  	pcontact_t *pcontact = NULL;
-@@ -879,6 +1096,7 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+@@ -879,6 +1099,7 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
  	security_t *req_sec_params = NULL;
  	ipsec_t *s = NULL;
  	ipsec_t *old_s = NULL;
@@ -540,7 +549,7 @@ index dc66a5f..481bbe5 100644
  	// set to 1 once req_sec_params->data.ipsec is handed to the contact (initial
  	// registration); if it stays 0 that ipsec_t was only used to build the
  	// tunnel and must be freed before returning, otherwise it leaks
-@@ -886,6 +1104,7 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+@@ -886,6 +1107,7 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
  	// TS 24.229 clause 5.2.2.2 item 2: an initial registration's REGISTER is
  	// received unprotected; the UE's Via port may be any value
  	int initial = 0;
@@ -548,7 +557,7 @@ index dc66a5f..481bbe5 100644
  
  	if(m->first_line.type == SIP_REPLY) {
  		t = tmb.t_gett();
-@@ -962,9 +1181,14 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+@@ -962,9 +1184,14 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
  		old_s = (ipsec_reuse_server_port && pcontact->security_temp)
  						? pcontact->security_temp->data.ipsec
  						: NULL;
@@ -564,7 +573,7 @@ index dc66a5f..481bbe5 100644
  		LM_ERR("Could not update ipsec params in contact.\n");
  		goto cleanup;
  	}
-@@ -974,6 +1198,17 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
+@@ -974,6 +1201,17 @@ int ipsec_create(struct sip_msg *m, udomain_t *d, int _cflags)
  		LM_ERR("IPSEC tunnel creation failed.\n");
  		goto cleanup;
  	}
@@ -582,14 +591,19 @@ index dc66a5f..481bbe5 100644
  
  	if(initial) {
  		if(req_sec_params != NULL) {
-@@ -1150,6 +1385,33 @@ int ipsec_forward(struct sip_msg *m, udomain_t *d, int _cflags)
+@@ -1150,6 +1388,39 @@ int ipsec_forward(struct sip_msg *m, udomain_t *d, int _cflags)
  
  	ipsec_t *s = pcontact->security_temp->data.ipsec;
  
 +	/* OpenMCX, 2026-10-25: TS 33.203 V19.1.0 clause 7.4.2a, which set: a response over the set its request came on
 +	 * ("when a SIP message is part of a pending SIP transaction it may still be sent over the old SA"); a request to
 +	 * the UE over the set its UE registration uses for outbound messages (spi_set_outbound_of(): the old set until
-+	 * the UE's first message over the new one, or until the old set's end), whichever contact matched. */
++	 * the UE's first message over the new one, or until the old set's end), whichever contact matched.
++	 * OpenMCX, 2026-10-31: when the matched contact's own set is gone (the old set of a reregistration over TCP,
++	 * whose contact stays with its port_uc), the set its UE uses for outbound messages is that of the UE address and
++	 * port_us (clause 7.4.0: port_us "shall remain unchanged"; clause 7.1, TCP case: "from its port_pc to the port
++	 * port_us of the UE"), not the deleted set's port_pc, whose block policy would stop the request ("No unprotected
++	 * messages shall be sent from ... port_pc"). */
 +	ipsec_t chosen;
 +	spi_set_t use, ref;
 +	int have_set = 0;
@@ -598,7 +612,8 @@ index dc66a5f..481bbe5 100644
 +				   && spi_set_find(&req->rcv.src_ip, req->rcv.src_port, &use);
 +	} else {
 +		have_set = spi_set_find_by_spi(s->spi_pc, s->spi_ps, &ref)
-+				   && spi_set_outbound_of(&ref.ue, ref.port_uc, &use);
++					   ? spi_set_outbound_of(&ref.ue, ref.port_uc, &use)
++					   : spi_set_outbound_by_us(&via_host, s->port_us, &use);
 +	}
 +	if(have_set) {
 +		chosen = *s;
@@ -616,7 +631,7 @@ index dc66a5f..481bbe5 100644
  	// Update the destination
  	//
  	//       from sec-agree
-@@ -1510,3 +1772,626 @@ int ipsec_cleanall()
+@@ -1510,3 +1781,626 @@ int ipsec_cleanall()
  
  	return 0;
  }
@@ -2405,11 +2420,14 @@ index a53b6d8..d466724 100644
 +	return select_mechanism(mechs, n);
  }
 diff --git a/src/modules/ims_ipsec_pcscf/spi_gen.c b/src/modules/ims_ipsec_pcscf/spi_gen.c
-index 5b632a7..9645cb1 100644
+index 5b632a7..9d1f82d 100644
 --- a/src/modules/ims_ipsec_pcscf/spi_gen.c
 +++ b/src/modules/ims_ipsec_pcscf/spi_gen.c
-@@ -1,4 +1,10 @@
+@@ -1,4 +1,13 @@
  /*
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): spi_set_outbound_by_us(), the outbound set of a UE address
++ * and protected server port (TS 33.203 clauses 7.1 and 7.4.0).
++ *
 + * Modified by OpenMCX on 2026-10-25 (GPL-2.0 section 2(a)): the pool is guarded by a Kamailio shared-memory lock
 + * (the POSIX mutex was not shared between the processes); a pair is given back once only (a second release_spi()
 + * of a pair no longer in use put it twice in the free list, TS 33.203 clause 7.1: distinct SPIs); each pair in use
@@ -2419,7 +2437,7 @@ index 5b632a7..9645cb1 100644
   * IMS IPSEC PCSCF module
   *
   * Copyright (C) 2018 Tsvetomir Dimitrov
-@@ -25,14 +31,15 @@
+@@ -25,14 +34,15 @@
  
  #include "spi_gen.h"
  #include "spi_list.h"
@@ -2437,7 +2455,7 @@ index 5b632a7..9645cb1 100644
  	spi_list_t used_spis[MAX_HASH_SPI];
  	spi_list_t free_spi;
  	uint32_t spi_val;
-@@ -41,10 +48,46 @@ typedef struct spi_generator
+@@ -41,10 +51,46 @@ typedef struct spi_generator
  	uint32_t sport_start_val;
  	uint32_t cport_start_val;
  	uint32_t port_range;
@@ -2484,7 +2502,7 @@ index 5b632a7..9645cb1 100644
  static int init_free_spi()
  {
  	uint32_t sport_start_val, cport_start_val, port_range, sport, cport, j;
-@@ -100,14 +143,15 @@ int init_spi_gen(uint32_t spi_start_val, uint32_t spi_range,
+@@ -100,14 +146,15 @@ int init_spi_gen(uint32_t spi_start_val, uint32_t spi_range,
  		return 4;
  	}
  
@@ -2504,7 +2522,7 @@ index 5b632a7..9645cb1 100644
  
  	for(j = 0; j < MAX_HASH_SPI; j++) {
  		spi_data->used_spis[j] = create_list();
-@@ -119,11 +163,20 @@ int init_spi_gen(uint32_t spi_start_val, uint32_t spi_range,
+@@ -119,11 +166,20 @@ int init_spi_gen(uint32_t spi_start_val, uint32_t spi_range,
  	spi_data->cport_start_val = cport_start_val;
  	spi_data->port_range = port_range;
  
@@ -2526,7 +2544,7 @@ index 5b632a7..9645cb1 100644
  
  	return 0;
  }
-@@ -136,15 +189,12 @@ uint32_t acquire_spi(
+@@ -136,15 +192,12 @@ uint32_t acquire_spi(
  		return 0;
  	}
  
@@ -2544,7 +2562,7 @@ index 5b632a7..9645cb1 100644
  		return 0;
  	}
  
-@@ -155,7 +205,8 @@ uint32_t acquire_spi(
+@@ -155,7 +208,8 @@ uint32_t acquire_spi(
  	spi_remove_head(&spi_data->free_spi);
  	spi_add(&spi_data->used_spis[*spi_cid % MAX_HASH_SPI], *spi_cid, *spi_sid,
  			*cport, *sport);
@@ -2554,7 +2572,7 @@ index 5b632a7..9645cb1 100644
  
  	LM_DBG("spi acquired spi_cid:%u spi_sid:%u sport:%u cport:%u \n", *spi_cid,
  			*spi_sid, *sport, *cport);
-@@ -173,17 +224,22 @@ int release_spi(
+@@ -173,17 +227,22 @@ int release_spi(
  		return 1;
  	}
  
@@ -2582,7 +2600,7 @@ index 5b632a7..9645cb1 100644
  
  	return 0;
  }
-@@ -196,9 +252,7 @@ int clean_spi_list()
+@@ -196,9 +255,7 @@ int clean_spi_list()
  		return 1;
  	}
  
@@ -2593,7 +2611,7 @@ index 5b632a7..9645cb1 100644
  
  	for(j = 0; j < MAX_HASH_SPI; j++) {
  		destroy_list(&spi_data->used_spis[j]);
-@@ -206,10 +260,20 @@ int clean_spi_list()
+@@ -206,10 +263,20 @@ int clean_spi_list()
  
  	destroy_list(&spi_data->free_spi);
  	init_free_spi();
@@ -2615,7 +2633,7 @@ index 5b632a7..9645cb1 100644
  
  	return 0;
  }
-@@ -221,8 +285,432 @@ int destroy_spi_gen()
+@@ -221,8 +288,465 @@ int destroy_spi_gen()
  	}
  
  	clean_spi_list();
@@ -3020,6 +3038,39 @@ index 5b632a7..9645cb1 100644
 +	return ref != NULL;
 +}
 +
++/* OpenMCX, 2026-10-31: TS 33.203 V19.1.0 clauses 7.1 and 7.4.0: the set used for outbound messages towards the UE at
++ * ue whose protected server port is port_us (the same in every set of its registration), for a contact whose own set
++ * is gone: the completed set taken into use (outbound), otherwise the latest completed one. 1 and a copy in out, 0 if
++ * the UE has no completed set left. */
++int spi_set_outbound_by_us(struct ip_addr *ue, uint16_t port_us, spi_set_t *out)
++{
++	spi_slot_t *best = NULL;
++	uint32_t j;
++
++	if(!spi_data || spi_data->slots == NULL) {
++		return 0;
++	}
++	lock_get(spi_data->lock);
++	for(j = 0; j < spi_data->slot_count; j++) {
++		spi_slot_t *o = &spi_data->slots[j];
++		if(!o->recorded || o->set.temporary || o->set.port_us != port_us || !ip_addr_cmp(&o->set.ue, ue)) {
++			continue;
++		}
++		if(o->set.outbound) {
++			best = o;
++			break;
++		}
++		if(best == NULL || o->set.seq > best->set.seq) {
++			best = o;
++		}
++	}
++	if(best != NULL) {
++		*out = best->set;
++	}
++	lock_release(spi_data->lock);
++	return best != NULL;
++}
++
 +/* OpenMCX, 2026-10-25: the next temporary set from *cursor on: of impi and ue (not the one of exclude_uc, 0 for
 + * none) if impi is given, otherwise one whose expiry time is not after now. 1 and a copy in out, 0 when there is
 + * none left. */
@@ -3051,18 +3102,20 @@ index 5b632a7..9645cb1 100644
 +	return found;
 +}
 diff --git a/src/modules/ims_ipsec_pcscf/spi_gen.h b/src/modules/ims_ipsec_pcscf/spi_gen.h
-index 3f80b78..da0db22 100644
+index 3f80b78..8745d8f 100644
 --- a/src/modules/ims_ipsec_pcscf/spi_gen.h
 +++ b/src/modules/ims_ipsec_pcscf/spi_gen.h
-@@ -1,4 +1,7 @@
+@@ -1,4 +1,9 @@
  /*
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): spi_set_outbound_by_us() (TS 33.203 clauses 7.1, 7.4.0).
++ *
 + * Modified by OpenMCX on 2026-10-25 (GPL-2.0 section 2(a)): the record of the set of security associations of each
 + * SPI pair in use (TS 33.203 clauses 7.1 and 7.4.2a).
 + *
   * IMS IPSEC PCSCF module
   *
   * Copyright (C) 2018 Tsvetomir Dimitrov
-@@ -26,6 +29,41 @@
+@@ -26,6 +31,41 @@
  #ifndef _SPI_GEN_H_
  
  #include <stdint.h>
@@ -3104,7 +3157,7 @@ index 3f80b78..da0db22 100644
  
  //
  // SPI GEN is based on SPI list.
-@@ -42,5 +80,22 @@ uint32_t acquire_spi(
+@@ -42,5 +82,23 @@ uint32_t acquire_spi(
  		uint32_t *spi_cid, uint32_t *spi_sid, uint16_t *cport, uint16_t *sport);
  int release_spi(
  		uint32_t spi_cid, uint32_t spi_sid, uint16_t cport, uint16_t sport);
@@ -3123,6 +3176,7 @@ index 3f80b78..da0db22 100644
 +int spi_set_use_outbound(struct ip_addr *ue, uint16_t port_uc);
 +int spi_set_wait_switch(struct ip_addr *ue, uint16_t port_uc);
 +int spi_set_outbound_of(struct ip_addr *ue, uint16_t port_uc, spi_set_t *out);
++int spi_set_outbound_by_us(struct ip_addr *ue, uint16_t port_us, spi_set_t *out);
 +int spi_set_next_temporary(uint32_t *cursor, str *impi, struct ip_addr *ue,
 +		uint16_t exclude_uc, time_t now, spi_set_t *out);
  

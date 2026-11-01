@@ -1,0 +1,686 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: OpenMCX <noreply@openmcx.invalid>
+Date: Sat, 31 Oct 2026 20:00:00 +0100
+Subject: [PATCH] presence, presence_reginfo, pua, pua_reginfo,
+ ims_registrar_pcscf: RFC 3680 documents and the reg event of TS 24.229
+
+- pua_reginfo build_reginfo_full(): a contact added by a REGISTER has the
+  event "registered" (RFC 3680 section 4.7.1; "created" is an administrative
+  addition); no "unknown" event, which the reginfo schema does not have; no
+  "received", "path" and "user_agent" attributes, which the contact element
+  of the RFC 3680 schema does not have (the document was not schema-valid).
+- pua_reginfo RPC commands (TS 24.229 V19.7.0):
+  reginfo.shorten <usrloc domain> <AOR> <seconds> shortens every contact of
+  the AOR to the given expiry and publishes one document with the event
+  "shortened" (clause 5.4.1.6, network-initiated re-authentication);
+  reginfo.deregister <usrloc domain> <AOR> deactivated|rejected removes every
+  contact of the AOR and publishes it as terminated with that event (clause
+  5.4.1.5, network-initiated deregistration). The event of the document is
+  set for the usrloc callbacks of the command (reginfo_event_override).
+- presence_reginfo reginfo_body_setversion(): the first document sent to a
+  subscriber has the version 0 (RFC 3680 section 5.1); the presence module
+  counts from 1.
+- presence: an event may declare a notification body final
+  (is_final_body); such a NOTIFY is sent with Subscription-State
+  "terminated" and the subscription is then deleted. presence_reginfo
+  declares final a document whose every registration is terminated (TS
+  24.229 clause 5.4.2.1.2: "When sending a final NOTIFY request with all
+  <registration> element(s) having their state attribute set to
+  "terminated" ... the S-CSCF shall also terminate the subscription"). A
+  terminated Subscription-State has no empty reason parameter.
+- pua: the parameter refresh_before, the time before its expiry at which a
+  record is refreshed (default update_period, as before), apart from the
+  timer's period: the P-CSCF refreshes its reg event subscription "600
+  seconds before the expiration time" (TS 24.229 clause 5.2.3); and a
+  SUBSCRIBE's Expires is the requested value (10 s were added to it).
+- ims_registrar_pcscf reginfo_parse_event(): every contact event of RFC
+  3680; "shortened", "rejected" and "probation" were refused as unknown, so
+  the P-CSCF skipped the contact of a network-initiated re-authentication or
+  deregistration (TS 24.229 clauses 5.4.1.6, 5.4.1.5 and 5.2.5.2).
+
+The modified files carry a notice of the change (GPL-2.0 section 2(a)).
+---
+diff --git a/src/modules/ims_registrar_pcscf/notify.c b/src/modules/ims_registrar_pcscf/notify.c
+index d068a57..1e61360 100644
+--- a/src/modules/ims_registrar_pcscf/notify.c
++++ b/src/modules/ims_registrar_pcscf/notify.c
+@@ -22,6 +22,10 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+  *
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): reginfo_parse_event() knows every contact event of RFC 3680
++ * (shortened, rejected and probation were refused as unknown, so a NOTIFY of a network-initiated re-authentication or
++ * deregistration, TS 24.229 clauses 5.4.1.6 and 5.4.1.5, was not processed).
++ *
+  * * History:
+  * ========
+  *
+@@ -72,6 +76,9 @@
+ #define EVENT_REFRESHED 4
+ #define EVENT_EXPIRED 5
+ #define EVENT_DEACTIVATED 6
++#define EVENT_SHORTENED 7
++#define EVENT_REJECTED 8
++#define EVENT_PROBATION 9
+ 
+ #define RESULT_ERROR -1
+ #define RESULT_CONTACTS_FOUND 1
+@@ -291,9 +298,17 @@ int reginfo_parse_event(char *s)
+ 			if(strncmp(s, "expired", 7) == 0)
+ 				return EVENT_EXPIRED;
+ 			break;
++		case 8:
++			if(strncmp(s, "rejected", 8) == 0)
++				return EVENT_REJECTED;
++			break;
+ 		case 9:
+ 			if(strncmp(s, "refreshed", 9) == 0)
+ 				return EVENT_CREATED;
++			if(strncmp(s, "shortened", 9) == 0)
++				return EVENT_SHORTENED;
++			if(strncmp(s, "probation", 9) == 0)
++				return EVENT_PROBATION;
+ 			break;
+ 		case 10:
+ 			if(strncmp(s, "registered", 10) == 0)
+diff --git a/src/modules/presence/event_list.c b/src/modules/presence/event_list.c
+index 4b84bf6..9f0d7ce 100644
+--- a/src/modules/presence/event_list.c
++++ b/src/modules/presence/event_list.c
+@@ -19,6 +19,8 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+  *
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): the event's is_final_body is kept.
++ *
+  */
+ 
+ /*!
+@@ -229,6 +231,7 @@ int add_event(pres_ev_t *event)
+ 	ev->etag_not_new = event->etag_not_new;
+ 	ev->aux_body_processing = event->aux_body_processing;
+ 	ev->aux_free_body = event->aux_free_body;
++	ev->is_final_body = event->is_final_body;
+ 	ev->free_body = event->free_body;
+ 	ev->default_expires = event->default_expires;
+ 
+diff --git a/src/modules/presence/event_list.h b/src/modules/presence/event_list.h
+index d4b715d..9676105 100644
+--- a/src/modules/presence/event_list.h
++++ b/src/modules/presence/event_list.h
+@@ -19,6 +19,9 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+  *
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): is_final_body: an event may declare a notification body
++ * final, which ends the subscription (Subscription-State terminated).
++ *
+  */
+ 
+ /*!
+@@ -65,6 +68,13 @@ typedef str *(aux_body_processing_t)(struct subscription *subs, str *body);
+  *                  done directly in the original body
+  *           pointer: a pointer to str for the "per watcher" body. gets freed by aux_free_body()
+  *	*/
++/* params for is_final_body_t
++ *	body= the body of a notification
++ *
++ * return value: 1 if the body ends the subscription (sent with Subscription-State
++ *              "terminated", then the subscription is deleted), 0 otherwise
++ *	*/
++typedef int(is_final_body_t)(str *body);
+ typedef int(is_allowed_t)(struct subscription *subs);
+ typedef int(get_rules_doc_t)(str *user, str *domain, str **rules_doc);
+ typedef int(get_pidf_doc_t)(
+@@ -123,6 +133,8 @@ struct pres_ev
+ 	 */
+ 	aux_body_processing_t *aux_body_processing;
+ 	free_body_t *aux_free_body;
++	/* optional: whether a notification body ends the subscription */
++	is_final_body_t *is_final_body;
+ 	struct pres_ev *wipeer;
+ 	struct pres_ev *next;
+ };
+diff --git a/src/modules/presence/notify.c b/src/modules/presence/notify.c
+index 717b7db..0311ba8 100644
+--- a/src/modules/presence/notify.c
++++ b/src/modules/presence/notify.c
+@@ -21,6 +21,9 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+  *
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): a body the event declares final (is_final_body) is sent
++ * with Subscription-State "terminated" and the subscription is then deleted; no empty reason parameter.
++ *
+  */
+ 
+ /*! \file
+@@ -49,6 +52,7 @@
+ #include "notify.h"
+ #include "utils_func.h"
+ #include "presence_dmq.h"
++#include "subscribe.h"
+ #include "../../core/receive.h"
+ 
+ #define ALLOC_SIZE 3000
+@@ -246,7 +250,8 @@ int build_str_hdr(subs_t *subs, int is_body, str *hdr)
+ 
+ 	if(subs->status == TERMINATED_STATUS) {
+ 		LM_DBG("state = terminated\n");
+-		p += sprintf(p, ";reason=%.*s", subs->reason.len, subs->reason.s);
++		if(subs->reason.len > 0)
++			p += sprintf(p, ";reason=%.*s", subs->reason.len, subs->reason.s);
+ 	} else {
+ 		p += sprintf(p, ";expires=%.*s", expires.len, expires.s);
+ 	}
+@@ -1617,6 +1622,10 @@ done:
+ 	return ret_code;
+ }
+ 
++/* set by send_notify_request() when the event declared the body final; read
++ * and reset by notify(), which then deletes the subscription */
++static int notify_final_body = 0;
++
+ int send_notify_request(
+ 		subs_t *subs, subs_t *watcher_subs, str *n_body, int force_null_body)
+ {
+@@ -1704,6 +1713,16 @@ int send_notify_request(
+ 
+ jump_over_body:
+ 
++	notify_final_body = 0;
++	if(notify_body && notify_body->len > 0 && subs->status == ACTIVE_STATUS
++			&& subs->event->is_final_body
++			&& subs->event->is_final_body(notify_body) == 1) {
++		subs->status = TERMINATED_STATUS;
++		subs->reason.s = NULL;
++		subs->reason.len = 0;
++		notify_final_body = 1;
++	}
++
+ 	if(subs->expires <= 0) {
+ 		subs->expires = 0;
+ 		subs->status = TERMINATED_STATUS;
+@@ -1834,6 +1853,7 @@ int notify(subs_t *subs, subs_t *watcher_subs, str *n_body, int force_null_body,
+ 		aux_body = aux_body_processing(subs, n_body);
+ 	}
+ 
++	notify_final_body = 0;
+ 	if(send_notify_request(subs, watcher_subs, aux_body ? aux_body : n_body,
+ 			   force_null_body)
+ 			< 0) {
+@@ -1847,6 +1867,12 @@ int notify(subs_t *subs, subs_t *watcher_subs, str *n_body, int force_null_body,
+ 		return -1;
+ 	}
+ 
++	if(notify_final_body) {
++		notify_final_body = 0;
++		delete_subs(&subs->pres_uri, &subs->event->name, &subs->to_tag,
++				&subs->from_tag, &subs->callid);
++	}
++
+ 	if(aux_body != NULL) {
+ 		if(aux_body->s) {
+ 			subs->event->aux_free_body(aux_body->s);
+diff --git a/src/modules/presence_reginfo/add_events.c b/src/modules/presence_reginfo/add_events.c
+index fd6cd1e..f595678 100644
+--- a/src/modules/presence_reginfo/add_events.c
++++ b/src/modules/presence_reginfo/add_events.c
+@@ -21,6 +21,8 @@
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ *
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): is_final_body (TS 24.229 clause 5.4.2.1.2).
+  */
+ 
+ #include <stdio.h>
+@@ -58,6 +60,9 @@ int reginfo_add_events(void)
+ 		event.aux_body_processing = reginfo_body_setversion;
+ 		event.aux_free_body = free_xml_body;
+ 	}
++	/* TS 24.229 clause 5.4.2.1.2: the final NOTIFY, every registration
++	 * terminated, ends the subscription */
++	event.is_final_body = reginfo_is_final_body;
+ 
+ 	if(pres_add_event(&event) < 0) {
+ 		LM_ERR("failed to add event \"reginfo\"\n");
+diff --git a/src/modules/presence_reginfo/notify_body.c b/src/modules/presence_reginfo/notify_body.c
+index 55cbd8e..13587e2 100644
+--- a/src/modules/presence_reginfo/notify_body.c
++++ b/src/modules/presence_reginfo/notify_body.c
+@@ -23,6 +23,12 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+  *
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): the first document sent to a subscriber has the version 0
++ * (RFC 3680 section 5.1: "Versions start at 0, and increment by one for each new document sent to a subscriber"); the
++ * presence module counts the documents of a subscription from 1; reginfo_is_final_body: a document whose every
++ * registration is terminated is the final NOTIFY of the subscription (TS 24.229 clause 5.4.2.1.2: "When sending a final
++ * NOTIFY request with all <registration> element(s) having their state attribute set to "terminated" ... the S-CSCF
++ * shall also terminate the subscription").
+  */
+ 
+ /*! \file
+@@ -261,7 +267,8 @@ str *reginfo_body_setversion(subs_t *subs, str *body)
+ 	if(strncmp(version_start, "00000000000\"", 12) != 0)
+ 		return NULL;
+ 
+-	version_len = snprintf(version, MAX_INT_LEN + 2, "%d\"", subs->version);
++	version_len = snprintf(version, MAX_INT_LEN + 2, "%d\"",
++			subs->version > 0 ? subs->version - 1 : 0);
+ 	if(version_len >= MAX_INT_LEN + 2) {
+ 		LM_ERR("failed to convert 'version' to string (truncated output)\n");
+ 		return NULL;
+@@ -311,3 +318,35 @@ str *reginfo_body_setversion(subs_t *subs, str *body)
+ 
+ 	return aux_body;
+ }
++
++/*!
++ * \brief 1 if the reginfo document has at least one registration element and
++ * every registration element has the state "terminated"
++ */
++int reginfo_is_final_body(str *body)
++{
++	xmlDocPtr doc;
++	xmlNodePtr node;
++	xmlChar *state;
++	int registrations = 0, terminated = 0;
++
++	if(body == NULL || body->s == NULL || body->len <= 0)
++		return 0;
++	doc = xmlParseMemory(body->s, body->len);
++	if(doc == NULL)
++		return 0;
++	node = xmlDocGetRootElement(doc);
++	for(node = node ? node->children : NULL; node; node = node->next) {
++		if(node->type != XML_ELEMENT_NODE
++				|| xmlStrcmp(node->name, BAD_CAST "registration") != 0)
++			continue;
++		registrations++;
++		state = xmlGetProp(node, BAD_CAST "state");
++		if(state && xmlStrcmp(state, BAD_CAST "terminated") == 0)
++			terminated++;
++		if(state)
++			xmlFree(state);
++	}
++	xmlFreeDoc(doc);
++	return registrations > 0 && registrations == terminated;
++}
+diff --git a/src/modules/presence_reginfo/notify_body.h b/src/modules/presence_reginfo/notify_body.h
+index 81103b6..d9b5687 100644
+--- a/src/modules/presence_reginfo/notify_body.h
++++ b/src/modules/presence_reginfo/notify_body.h
+@@ -23,6 +23,8 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+  *
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): reginfo_is_final_body.
++ *
+  */
+ 
+ /*! \file
+@@ -42,4 +44,6 @@ str *reginfo_body_setversion(subs_t *subs, str *body);
+ 
+ void free_xml_body(char *body);
+ 
++int reginfo_is_final_body(str *body);
++
+ #endif
+diff --git a/src/modules/pua/pua.c b/src/modules/pua/pua.c
+index 6b8d426..d61c454 100644
+--- a/src/modules/pua/pua.c
++++ b/src/modules/pua/pua.c
+@@ -21,6 +21,10 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+  *
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): the parameter refresh_before, the time before its expiry
++ * at which a record is refreshed (default: update_period, as before), apart from the timer's period (TS 24.229
++ * clause 5.2.3: the P-CSCF refreshes its reg event subscription "600 seconds before the expiration time").
++ *
+  */
+ 
+ 
+@@ -64,6 +68,8 @@ int pua_default_expires = 3600;
+ static str db_url = str_init(DEFAULT_DB_URL);
+ str db_table = str_init("pua");
+ int update_period = 100;
++/* seconds before the expiry at which a record is refreshed; -1: update_period */
++int refresh_before = -1;
+ str outbound_proxy = {0, 0};
+ int check_remote_contact = 1;
+ int startup_time = 0;
+@@ -129,6 +135,7 @@ static param_export_t params[] = {
+ 	{"min_expires", PARAM_INT, &min_expires},
+ 	{"default_expires", PARAM_INT, &pua_default_expires},
+ 	{"update_period", PARAM_INT, &update_period},
++	{"refresh_before", PARAM_INT, &refresh_before},
+ 	{"outbound_proxy", PARAM_STR, &outbound_proxy},
+ 	{"dlginfo_increase_version", PARAM_INT, &dlginfo_increase_version},
+ 	{"reginfo_increase_version", PARAM_INT, &reginfo_increase_version},
+@@ -627,7 +634,8 @@ static void hashT_clean(unsigned int ticks, void *param)
+ 		p = HashT->p_records[i].entity->next;
+ 		while(p) {
+ 			print_ua_pres(p);
+-			if(p->expires - update_period < now) {
++			if(p->expires - (refresh_before >= 0 ? refresh_before : update_period)
++					< now) {
+ 				if((p->desired_expires > p->expires + min_expires)
+ 						|| (p->desired_expires == 0)) {
+ 					if(update_pua(p) < 0) {
+diff --git a/src/modules/pua/send_subscribe.c b/src/modules/pua/send_subscribe.c
+index db2c099..af1ba3e 100644
+--- a/src/modules/pua/send_subscribe.c
++++ b/src/modules/pua/send_subscribe.c
+@@ -20,6 +20,10 @@
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ *
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): the SUBSCRIBE's Expires is the requested value; 10 s were
++ * added to it (the P-CSCF's reg event subscription carries the Expires its configuration names, TS 24.229 clause 5.2.3
++ * item e).
+  */
+ 
+ 
+@@ -108,7 +112,7 @@ str *subs_build_hdr(str *contact, int expires, int event, str *extra_headers)
+ 	if(expires <= min_expires)
+ 		subs_expires = int2str(min_expires, &len);
+ 	else
+-		subs_expires = int2str(expires + 10, &len);
++		subs_expires = int2str(expires, &len);
+ 
+ 	if(subs_expires == NULL || len == 0) {
+ 		LM_ERR("while converting int to str\n");
+diff --git a/src/modules/pua_reginfo/pua_reginfo.c b/src/modules/pua_reginfo/pua_reginfo.c
+index 573b6ef..ed853cc 100644
+--- a/src/modules/pua_reginfo/pua_reginfo.c
++++ b/src/modules/pua_reginfo/pua_reginfo.c
+@@ -21,6 +21,9 @@
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ *
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): the RPC commands reginfo.shorten and reginfo.deregister
++ * (network-initiated re-authentication and deregistration, TS 24.229 clauses 5.4.1.6 and 5.4.1.5).
+  */
+ 
+ /* Bindings to PUA */
+@@ -28,6 +31,8 @@
+ /* Bindings to usrloc */
+ #include "../usrloc/usrloc.h"
+ #include "../../core/utils/sruid.h"
++#include "../../core/rpc.h"
++#include "../../core/rpc_lookup.h"
+ 
+ #include "pua_reginfo.h"
+ #include "subscribe.h"
+@@ -58,6 +63,25 @@ static int domain_fixup(void **param, int param_no);
+ /** module functions */
+ static int mod_init(void);
+ 
++static const char *rpc_shorten_doc[2] = {
++		"Shorten every contact of an address-of-record to the given expiry and "
++		"publish it with the event \"shortened\": usrloc domain, AOR, seconds",
++		0};
++static const char *rpc_deregister_doc[2] = {
++		"Remove every contact of an address-of-record and publish it with the "
++		"event \"deactivated\" or \"rejected\": usrloc domain, AOR, event",
++		0};
++static void rpc_shorten(rpc_t *rpc, void *ctx);
++static void rpc_deregister(rpc_t *rpc, void *ctx);
++
++/* clang-format off */
++static rpc_export_t rpc_cmds[] = {
++	{"reginfo.shorten", rpc_shorten, rpc_shorten_doc, 0},
++	{"reginfo.deregister", rpc_deregister, rpc_deregister_doc, 0},
++	{0, 0, 0, 0}
++};
++/* clang-format on */
++
+ /* clang-format off */
+ /* Commands */
+ static cmd_export_t cmds[] = {
+@@ -174,6 +198,11 @@ static int mod_init(void)
+ 	if(sruid_init(&_reginfo_sruid, (char)'-', "regi", SRUID_INC) < 0)
+ 		return -1;
+ 
++	if(rpc_register_array(rpc_cmds) != 0) {
++		LM_ERR("failed to register RPC commands\n");
++		return -1;
++	}
++
+ 	/*
+ 	 * Import use_domain parameter from usrloc
+ 	 */
+@@ -199,3 +228,108 @@ static int domain_fixup(void **param, int param_no)
+ 	}
+ 	return 0;
+ }
++
++/*!
++ * \brief The record of an address-of-record in a usrloc domain, locked; NULL
++ * (and an RPC fault) when there is none
++ */
++static urecord_t *rpc_record(rpc_t *rpc, void *ctx, str *table, str *aor,
++		udomain_t **domain)
++{
++	urecord_t *record = NULL;
++	char name[64];
++
++	if(table->len <= 0 || table->len >= (int)sizeof(name)) {
++		rpc->fault(ctx, 400, "Invalid usrloc domain");
++		return NULL;
++	}
++	memcpy(name, table->s, table->len);
++	name[table->len] = '\0';
++	if(ul.get_udomain(name, domain) < 0) {
++		rpc->fault(ctx, 404, "Unknown usrloc domain");
++		return NULL;
++	}
++	ul.lock_udomain(*domain, aor);
++	if(ul.get_urecord(*domain, aor, &record) != 0 || record == NULL
++			|| record->contacts == NULL) {
++		ul.unlock_udomain(*domain, aor);
++		rpc->fault(ctx, 404, "No contact registered for the AOR");
++		return NULL;
++	}
++	return record;
++}
++
++/*!
++ * \brief reginfo.shorten <domain> <aor> <seconds>: every contact of the AOR
++ * expires after <seconds> (TS 24.229 clause 5.4.1.6: "shorten the validity of
++ * all registration lifetimes"); one document with the event "shortened" and
++ * the new expiry ("an operator defined value", given by the operator here)
++ */
++static void rpc_shorten(rpc_t *rpc, void *ctx)
++{
++	str table = {0, 0}, aor = {0, 0};
++	int seconds = 0;
++	udomain_t *domain = NULL;
++	urecord_t *record;
++	ucontact_t *c;
++	time_t now = time(0);
++
++	if(rpc->scan(ctx, "SSd", &table, &aor, &seconds) < 3) {
++		rpc->fault(ctx, 400, "Expected: usrloc domain, AOR, seconds");
++		return;
++	}
++	if(seconds <= 0) {
++		rpc->fault(ctx, 400, "The expiry must be positive");
++		return;
++	}
++	record = rpc_record(rpc, ctx, &table, &aor, &domain);
++	if(record == NULL)
++		return;
++	for(c = record->contacts; c; c = c->next) {
++		if(VALID_CONTACT(c, now) && c->expires > now + seconds)
++			c->expires = now + seconds;
++	}
++	reginfo_event_override = "shortened";
++	reginfo_usrloc_cb(record->contacts, UL_CONTACT_UPDATE, NULL);
++	reginfo_event_override = NULL;
++	ul.release_urecord(record);
++	ul.unlock_udomain(domain, &aor);
++	rpc->rpl_printf(ctx, "shortened");
++}
++
++/*!
++ * \brief reginfo.deregister <domain> <aor> <event>: every contact of the AOR
++ * is removed, published as terminated with the event "deactivated" (the user
++ * is expected to register again) or "rejected" (not) (TS 24.229 clause
++ * 5.4.1.5); the release of the user's sessions before it is the caller's
++ */
++static void rpc_deregister(rpc_t *rpc, void *ctx)
++{
++	str table = {0, 0}, aor = {0, 0}, event = {0, 0};
++	udomain_t *domain = NULL;
++	urecord_t *record;
++	ucontact_t *c, *next;
++
++	if(rpc->scan(ctx, "SSS", &table, &aor, &event) < 3) {
++		rpc->fault(ctx, 400, "Expected: usrloc domain, AOR, event");
++		return;
++	}
++	if(!(event.len == 11 && strncmp(event.s, "deactivated", 11) == 0)
++			&& !(event.len == 8 && strncmp(event.s, "rejected", 8) == 0)) {
++		rpc->fault(ctx, 400, "The event must be deactivated or rejected");
++		return;
++	}
++	record = rpc_record(rpc, ctx, &table, &aor, &domain);
++	if(record == NULL)
++		return;
++	reginfo_event_override =
++			event.s[0] == 'd' ? "deactivated" : "rejected";
++	for(c = record->contacts; c; c = next) {
++		next = c->next;
++		ul.delete_ucontact(record, c);
++	}
++	reginfo_event_override = NULL;
++	ul.release_urecord(record);
++	ul.unlock_udomain(domain, &aor);
++	rpc->rpl_printf(ctx, "deregistered");
++}
+diff --git a/src/modules/pua_reginfo/usrloc_cb.c b/src/modules/pua_reginfo/usrloc_cb.c
+index dff68b6..c01f174 100644
+--- a/src/modules/pua_reginfo/usrloc_cb.c
++++ b/src/modules/pua_reginfo/usrloc_cb.c
+@@ -21,6 +21,13 @@
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ *
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): the reginfo document follows RFC 3680 (a contact added by
++ * a REGISTER has the event "registered", not "created"; no "received", "path" or "user_agent" attributes, which the
++ * reginfo schema does not have; no "unknown" event); the RPC commands reginfo.shorten and reginfo.deregister change the
++ * contacts of an address-of-record and publish one document with the event "shortened" (the network-initiated
++ * re-authentication of TS 24.229 clause 5.4.1.6) or "deactivated" or "rejected" (the network-initiated deregistration
++ * of TS 24.229 clause 5.4.1.5).
+  */
+ 
+ #include "usrloc_cb.h"
+@@ -53,6 +60,10 @@ Call-ID: 9ad9f89f-164d-bb86-1072-52e7e9eb5025.
+ 
+ static int _pua_reginfo_self_op = 0;
+ 
++/* The event of the contacts of the next document, set by the RPC commands of pua_reginfo.c (NULL: from the usrloc
++ * callback type). Process-local: the RPC command and the callbacks it triggers run in the same process. */
++const char *reginfo_event_override = NULL;
++
+ #define BUF_LEN 256
+ int ki_reginfo_disable_publish(sip_msg_t *msg)
+ {
+@@ -137,9 +148,11 @@ str *build_reginfo_full(urecord_t *record, str uri, ucontact_t *c, int type)
+ 			memset(buf, 0, sizeof(buf));
+ 			snprintf(buf, sizeof(buf), "%p", ptr);
+ 			xmlNewProp(contact_node, BAD_CAST "id", BAD_CAST buf);
+-			/* Check, if this is the modified contact: */
+-			if((c->ruid.len == ptr->ruid.len)
+-					&& !memcmp(c->ruid.s, ptr->ruid.s, c->ruid.len)) {
++			/* Check, if this is the modified contact (every contact of the
++			 * address-of-record for an RPC command): */
++			if(reginfo_event_override
++					|| ((c->ruid.len == ptr->ruid.len)
++							&& !memcmp(c->ruid.s, ptr->ruid.s, c->ruid.len))) {
+ 				if((type & UL_CONTACT_INSERT) || (type & UL_CONTACT_UPDATE)) {
+ 					reg_active = 1;
+ 					xmlNewProp(
+@@ -147,21 +160,23 @@ str *build_reginfo_full(urecord_t *record, str uri, ucontact_t *c, int type)
+ 				} else
+ 					xmlNewProp(contact_node, BAD_CAST "state",
+ 							BAD_CAST "terminated");
+-				if(type & UL_CONTACT_INSERT)
+-					xmlNewProp(
+-							contact_node, BAD_CAST "event", BAD_CAST "created");
++				/* RFC 3680 section 4.7.1: "registered" for a contact added by a
++				 * REGISTER ("created" is an administrative addition) */
++				if(reginfo_event_override)
++					xmlNewProp(contact_node, BAD_CAST "event",
++							BAD_CAST reginfo_event_override);
++				else if(type & UL_CONTACT_INSERT)
++					xmlNewProp(contact_node, BAD_CAST "event",
++							BAD_CAST "registered");
+ 				else if(type & UL_CONTACT_UPDATE)
+ 					xmlNewProp(contact_node, BAD_CAST "event",
+ 							BAD_CAST "refreshed");
+ 				else if(type & UL_CONTACT_EXPIRE)
+ 					xmlNewProp(
+ 							contact_node, BAD_CAST "event", BAD_CAST "expired");
+-				else if(type & UL_CONTACT_DELETE)
++				else
+ 					xmlNewProp(contact_node, BAD_CAST "event",
+ 							BAD_CAST "unregistered");
+-				else
+-					xmlNewProp(
+-							contact_node, BAD_CAST "event", BAD_CAST "unknown");
+ 				memset(buf, 0, sizeof(buf));
+ 				snprintf(
+ 						buf, sizeof(buf), "%i", (int)(ptr->expires - cur_time));
+@@ -192,22 +207,8 @@ str *build_reginfo_full(urecord_t *record, str uri, ucontact_t *c, int type)
+ 			snprintf(buf, sizeof(buf), "%d", ptr->cseq);
+ 			xmlNewProp(contact_node, BAD_CAST "cseq", BAD_CAST buf);
+ 
+-			/* received Attribute */
+-			memset(buf, 0, sizeof(buf));
+-			snprintf(buf, sizeof(buf), "%.*s", ptr->received.len,
+-					ptr->received.s);
+-			xmlNewProp(contact_node, BAD_CAST "received", BAD_CAST buf);
+-
+-			/* path Attribute */
+-			memset(buf, 0, sizeof(buf));
+-			snprintf(buf, sizeof(buf), "%.*s", ptr->path.len, ptr->path.s);
+-			xmlNewProp(contact_node, BAD_CAST "path", BAD_CAST buf);
+-
+-			/* user_agent Attribute */
+-			memset(buf, 0, sizeof(buf));
+-			snprintf(buf, sizeof(buf), "%.*s", ptr->user_agent.len,
+-					ptr->user_agent.s);
+-			xmlNewProp(contact_node, BAD_CAST "user_agent", BAD_CAST buf);
++			/* No "received", "path" or "user_agent": the contact element of
++			 * the RFC 3680 schema has no such attributes. */
+ 
+ 			/* URI-Node */
+ 			memset(buf, 0, sizeof(buf));
+diff --git a/src/modules/pua_reginfo/usrloc_cb.h b/src/modules/pua_reginfo/usrloc_cb.h
+index 6b83d72..d73b509 100644
+--- a/src/modules/pua_reginfo/usrloc_cb.h
++++ b/src/modules/pua_reginfo/usrloc_cb.h
+@@ -21,6 +21,8 @@
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ *
++ * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): reginfo_event_override.
+  */
+ 
+ #ifndef __PUA_REGINFO_USRLOC_CB__
+@@ -31,4 +33,6 @@
+ void reginfo_usrloc_cb(ucontact_t *c, int type, void *param);
+ void pua_reginfo_update_self_op(int v);
+ 
++extern const char *reginfo_event_override;
++
+ #endif

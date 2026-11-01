@@ -19,6 +19,8 @@ lab. After its first re-registration over a new set of security associations:
   network namespace (clauses 7.4.1a and 7.4.2a: "deleted as soon as all pending SIP transactions have been completed,
   or have timed out"). The check waits at most as long as a transaction can last: 64*T1 (RFC 3261 Timers F and J),
   plus the P-CSCF's transaction wait timer (Kamailio tm wait_timer, 5 s) and each end's 1 s look-up.
+- after that, a request in a dialog relayed by the P-CSCF to the UE (the conference NOTIFY of a group call) reaches it
+  over the set in use (clause 7.1, TCP case: "from its port_pc to the port port_us of the UE").
 The scenarios after this one (calls and SDS to the AKA UEs) then run over the new set. The result is written as
 integration/aka-reregistration-results.json.
 
@@ -127,6 +129,23 @@ def main():
         check('7.4.2a old set gone at the P-CSCF', not pcscf, '; '.join(pcscf[:4]) or 'none left')
         check('client-a still registered and authorised', status(args.artifacts).get('authorized'),
               json.dumps(status(args.artifacts).get('sip_security'))[:200])
+        # TS 33.203 clause 7.1 (TCP case: "from its port_pc to the port port_us of the UE") and clause 7.4.0 (port_us
+        # unchanged): once the old set is gone, a request the P-CSCF relays to the UE inside a dialog still reaches
+        # it over the set in use. A group call of client-a: the MCPTT server's conference NOTIFY (RFC 4575) in the
+        # dialog of client-a's SUBSCRIBE, which the client records as conference_version (absent until then: client-a
+        # was restarted above and has had no call since).
+        def command(text):
+            subprocess.run(cli + ['exec', '-T', 'client-a', 'mcx-client', '--config', '/config/client-a.json',
+                                  '--command', text], capture_output=True, timeout=60)
+        command('call')
+        try:
+            version = wait_for(lambda: status(args.artifacts).get('conference_version') is not None, WAIT_OLD_SET,
+                               'a conference NOTIFY')
+        except AssertionError:
+            version = False
+        check('7.1 a request in a dialog reaches the UE after the old set\'s end', version,
+              f"conference_version {status(args.artifacts).get('conference_version')}")
+        command('hangup')
         failed = [c['name'] + ' (' + c['detail'] + ')' for c in result['checks'] if not c['passed']]
         if failed:
             result['error'] = 'failed: ' + '; '.join(failed)

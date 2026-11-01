@@ -169,6 +169,17 @@ void SipEngine::unregister_account(SipResponseHandler handler) {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.229 clause 5.1.1.7: the S-CSCF ended the registration (reg event NOTIFY): SIP digest: the registration client
+// goes with its refresh, and the next register_account starts a new one; IMS AKA: aka_registration_ended().
+void SipEngine::registration_ended() {
+  if (impl_->aka) return impl_->aka_registration_ended();
+  if (impl_->registration != nullptr) {
+    (void)pjsip_regc_destroy(impl_->registration);
+    impl_->registration = nullptr;
+  }
+}
+
+//------------------------------------------------------------------------------
 // RFC 3261 section 8.1: sends an out-of-dialog request (SipEngine::Impl::send_request).
 void SipEngine::request(std::string_view method, std::string_view request_uri, std::string_view content_type,
                         std::string_view body, const std::vector<SipHeader> &headers, SipResponseHandler handler) {
