@@ -143,10 +143,9 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   PIXIT only allows TLS 1.2 RSA, PSK or NULL suites (TS 37.579-5 px_MCX_TLS_CipherSuite) is refused.
 
 - **Reg event package** (RFC 3680; TS 24.229 clauses 5.1.1.3, 5.2.3 and 5.4.2.1) is served by the SIP core to the
-  Linux client and the P-CSCF; the operator starts a network-initiated deregistration or re-authentication
-  (shortened registration, TS 33.203 clauses 5.1.2 and 6.1.4) with the commands in USAGE.md. Own deviations not
-  fixed yet: the Android app does not subscribe (clause 5.1.1.3: a network-initiated deregistration or
-  re-authentication reaches it only when its next request fails); the Linux client keeps its TLS session after a
+  Linux client, the Android app and the P-CSCF; the operator starts a network-initiated deregistration or
+  re-authentication (shortened registration, TS 33.203 clauses 5.1.2 and 6.1.4) with the commands in USAGE.md. Own
+  deviations not fixed yet: the Linux client keeps its TLS session after a
   deregistration by the network over SIP digest (clause 5.1.1.7: "the UE shall delete all security associations or
   TLS sessions towards the P-CSCF"; over IMS AKA the security associations go); the P-CSCF's SUBSCRIBE and its
   responses to the NOTIFYs carry no P-Charging-Vector (clauses 5.2.3 item 1 g) and 5.2.5.2); Kamailio's
