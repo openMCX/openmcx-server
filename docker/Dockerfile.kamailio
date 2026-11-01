@@ -6,11 +6,11 @@
 # and http_client modules, and the IMS modules of IMS AKA (TS 33.203): ims_auth (AKA vectors made locally from K,
 # OPc and AMF, through gcrypt; cdp and cdp_avp only for its build), ims_ipsec_pcscf, ims_registrar_pcscf and
 # ims_usrloc_pcscf; and presence, presence_reginfo, pua and pua_reginfo for the reg event package (RFC 3680, TS
-# 24.229 clause 5.4.2.1). Pinned changes, dependencies/kamailio/README.md (0001-0004), each checked against its
+# 24.229 clause 5.4.2.1). Pinned changes, dependencies/kamailio/README.md (0001-0005), each checked against its
 # SHA-256 and applied to the verified source. Built on the development
 # image, run on a slim Ubuntu image with only Kamailio's run-time libraries (docker/packages).
 #
-#   docker build -t openmcx-kamailio:6.1.4-7 -f docker/Dockerfile.kamailio .
+#   docker build -t openmcx-kamailio:6.1.4-9 -f docker/Dockerfile.kamailio .
 #
 # Kamailio is GPL-2.0 (its tls module ISC). The image carries the licence (/usr/share/doc/kamailio/COPYING) and the
 # exact source it was built from (/usr/src/kamailio-6.1.4.tar.gz, pinned in dependencies/lock.json) and the patch
@@ -36,8 +36,10 @@ ARG KAMAILIO_PATCH3=0003-ims_ipsec_pcscf-Rel-19-algorithms-and-port-guards.patch
 ARG KAMAILIO_PATCH3_SHA256=6991470876586f2fc278f93519c60285dcf426ed90a53c006951a19ac3d1d1fb
 ARG KAMAILIO_PATCH4=0004-presence-reginfo-RFC-3680-and-TS-24.229-reg-event.patch
 ARG KAMAILIO_PATCH4_SHA256=b114671b2ccc84d22d41bf30318e263df8f2f8603fb10820c9f1a330d57fefff
+ARG KAMAILIO_PATCH5=0005-pua-TS-24.229-5.2.3-reg-event-subscription.patch
+ARG KAMAILIO_PATCH5_SHA256=bbef36860baaef9fb5b90f833441f07c503f9424c849a32de47fcf903a1d1657
 COPY dependencies/kamailio/${KAMAILIO_PATCH} dependencies/kamailio/${KAMAILIO_PATCH2} dependencies/kamailio/${KAMAILIO_PATCH3} \
-     dependencies/kamailio/${KAMAILIO_PATCH4} /src/kamailio-patches/
+     dependencies/kamailio/${KAMAILIO_PATCH4} dependencies/kamailio/${KAMAILIO_PATCH5} /src/kamailio-patches/
 COPY docker/packages /usr/local/bin/packages
 # The IMS modules' build libraries the development image lacks (libmnl for ims_ipsec_pcscf).
 RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UBUNTU" kamailio-dev) \
@@ -49,10 +51,12 @@ RUN mkdir -p /src && fetch "$KAMAILIO_FILE" "$KAMAILIO_URL" "$KAMAILIO_SHA256" /
  && echo "$KAMAILIO_PATCH2_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH2" | sha256sum -c - \
  && echo "$KAMAILIO_PATCH3_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH3" | sha256sum -c - \
  && echo "$KAMAILIO_PATCH4_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH4" | sha256sum -c - \
+ && echo "$KAMAILIO_PATCH5_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH5" | sha256sum -c - \
  && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH \
  && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH2 \
  && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH3 \
  && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH4 \
+ && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH5 \
  && make cfg prefix=/opt/kamailio include_modules="tls auth_db db_mysql http_client ims_auth ims_ipsec_pcscf ims_registrar_pcscf ims_usrloc_pcscf cdp cdp_avp gcrypt presence presence_reginfo pua pua_reginfo" \
  && make -j4 all && make install \
  && mkdir -p /install/doc && cp COPYING /install/doc/COPYING \

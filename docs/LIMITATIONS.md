@@ -148,12 +148,7 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   deviations not fixed yet: the Linux client keeps its TLS session after a
   deregistration by the network over SIP digest (clause 5.1.1.7: "the UE shall delete all security associations or
   TLS sessions towards the P-CSCF"; over IMS AKA the security associations go); the P-CSCF's SUBSCRIBE and its
-  responses to the NOTIFYs carry no P-Charging-Vector (clauses 5.2.3 item 1 g) and 5.2.5.2); Kamailio's
-  ims_registrar_pcscf refreshes the P-CSCF's subscription at every 200 (OK) to a REGISTER, not only after the first
-  initial one, pua's refresh asks for the time left to its first expiry instead of the duration, and a refresh that
-  fails with any error ends the subscription and starts a new one at once with 3 s added (clause 5.2.3: "fails with
-  a non-481 response, the P-CSCF shall still consider the original subscription valid ... Otherwise ... start a new
-  initial subscription"); reginfo.shorten marks every contact of the address-of-record "shortened"
+  responses to the NOTIFYs carry no P-Charging-Vector (clauses 5.2.3 item 1 g) and 5.2.5.2); reginfo.shorten marks every contact of the address-of-record "shortened"
   (clause 5.4.1.6 NOTE 2: only the contacts "originally registered by this UE"; the labs and tutorials have one
   contact per user).
 

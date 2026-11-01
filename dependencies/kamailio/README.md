@@ -1,7 +1,7 @@
 # Kamailio patches
 
 The SIP core and the P-CSCF run Kamailio 6.1.4 ([source](https://github.com/kamailio/kamailio/tree/6.1.4), archive
-SHA-256 `d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6`, dependencies/lock.json) with four changes,
+SHA-256 `d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6`, dependencies/lock.json) with five changes,
 applied by docker/Dockerfile.kamailio after each is checked against its SHA-256:
 
 - [0001-ims_auth-local-vectors-and-AKAv2-SHA-256.patch](0001-ims_auth-local-vectors-and-AKAv2-SHA-256.patch),
@@ -43,3 +43,10 @@ applied by docker/Dockerfile.kamailio after each is checked against its SHA-256:
 
 Kamailio and the patches are GPL-2.0-or-later (the patched files carry a notice of the change, GPL-2.0 section 2(a)).
 The image carries the source archive and the patches in /usr/src.
+- [0005-pua-TS-24.229-5.2.3-reg-event-subscription.patch](0005-pua-TS-24.229-5.2.3-reg-event-subscription.patch),
+  SHA-256 `bbef36860baaef9fb5b90f833441f07c503f9424c849a32de47fcf903a1d1657`: pua keeps the P-CSCF's reg event subscription as TS 24.229 clause 5.2.3
+  asks: made once, upon the 200 (OK) to the first initial REGISTER (a later REGISTER no longer refreshes it); every
+  refresh asks for the Expires of the initial SUBSCRIBE, 600 s before the expiry of a subscription granted for more
+  than 1200 s, else at half time; a refresh that fails with a non-481 response (or gets none) leaves the subscription
+  valid until its last known expiry, without a further refresh, and a new initial subscription follows (the record
+  keeps its outbound proxy for it); a 481 makes a new initial subscription at once.

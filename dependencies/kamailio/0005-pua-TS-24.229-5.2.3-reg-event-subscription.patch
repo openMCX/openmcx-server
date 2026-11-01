@@ -1,0 +1,393 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: OpenMCX <noreply@openmcx.invalid>
+Date: Sun, 1 Nov 2026 12:00:00 +0100
+Subject: [PATCH] pua: the P-CSCF's reg event subscription of TS 24.229 clause
+ 5.2.3
+
+- The subscription is made "upon receipt of a 200 (OK) response to the first
+  initial REGISTER request": a later REGISTER that finds the established
+  record leaves it (it was refreshed at every REGISTER).
+- "If continued subscription is required the P-CSCF shall automatically
+  refresh the subscription": a reg event record has no end of its own, and
+  every refresh asks for the Expires of the initial SUBSCRIBE (it asked for
+  the time left to the first expiry).
+- The refresh is sent "600 seconds before the expiration time if the initial
+  subscription was for greater than 1200 seconds, or when half of the time
+  has expired if the initial subscription was for 1200 seconds or less", from
+  the duration granted (refresh_before until that is known).
+- "If a SUBSCRIBE request to refresh a subscription fails with a non-481
+  response, the P-CSCF shall still consider the original subscription valid
+  for the duration of the most recently known "Expires" value": the record
+  stays, no further refresh, and a new initial subscription follows its
+  expiry (the record keeps its outbound proxy for it); no answer counts as
+  such a failure. "Otherwise" (481) a new initial
+  subscription at once, with the initial Expires, to the public user identity
+  (it was made again after any error, for the time left plus 3 s, to the
+  ended dialog's remote target).
+---
+diff --git a/src/modules/pua/hash.h b/src/modules/pua/hash.h
+index ae19357..fa57711 100644
+--- a/src/modules/pua/hash.h
++++ b/src/modules/pua/hash.h
+@@ -20,6 +20,10 @@
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ *
++ * Modified by OpenMCX on 2026-11-01 (GPL-2.0 section 2(a)): the P-CSCF's reg event subscription (TS 24.229 clause
++ * 5.2.3): made once, refreshed with the initial Expires 600 s before its expiry (half time for 1200 s or less), kept
++ * after a non-481 failure until its expiry, then made again; a 481 makes it again at once.
+  */
+ 
+ 
+@@ -106,6 +110,13 @@ typedef struct ua_pres
+ 	str remote_contact;
+ 	str contact;
+ 
++	/* OpenMCX: a reg event subscription (TS 24.229 clause 5.2.3), when reg_requested > 0: the Expires of its initial
++	 * SUBSCRIBE, asked for again at every refresh; the duration granted to its last SUBSCRIBE; and whether a refresh
++	 * failed with a non-481 response (valid until expires, then a new initial subscription). */
++	unsigned int reg_requested;
++	unsigned int reg_granted;
++	int reg_refresh_failed;
++
+ 	/*?? should this be long? */
+ } ua_pres_t;
+ 
+diff --git a/src/modules/pua/pua.c b/src/modules/pua/pua.c
+index d61c454..e720094 100644
+--- a/src/modules/pua/pua.c
++++ b/src/modules/pua/pua.c
+@@ -25,6 +25,10 @@
+  * at which a record is refreshed (default: update_period, as before), apart from the timer's period (TS 24.229
+  * clause 5.2.3: the P-CSCF refreshes its reg event subscription "600 seconds before the expiration time").
+  *
++ * Modified by OpenMCX on 2026-11-01 (GPL-2.0 section 2(a)): the P-CSCF's reg event subscription (TS 24.229 clause
++ * 5.2.3): refreshed with the initial Expires 600 s before its expiry (half time for 1200 s or less), not refreshed
++ * again after a non-481 failure, and made again once it expires.
++ *
+  */
+ 
+ 
+@@ -617,11 +621,102 @@ error:
+ 	return -1;
+ }
+ 
++/* A reg event subscription to make again (TS 24.229 clause 5.2.3), copied out of its expired record. */
++typedef struct reg_resubscribe
++{
++	str pres_uri, watcher_uri, contact, outbound_proxy, extra_headers, id;
++	int event, flag;
++	unsigned int expires;
++	void *cb_param;
++	struct reg_resubscribe *next;
++} reg_resubscribe_t;
++
++static reg_resubscribe_t *reg_resubscribe_copy(ua_pres_t *p)
++{
++	reg_resubscribe_t *r;
++	int size = sizeof(reg_resubscribe_t) + p->pres_uri->len + p->watcher_uri->len + p->contact.len + p->id.len
++			   + (p->outbound_proxy ? p->outbound_proxy->len : 0)
++			   + (p->extra_headers ? p->extra_headers->len : 0);
++	char *at;
++
++	r = (reg_resubscribe_t *)pkg_malloc(size);
++	if(r == NULL) {
++		PKG_MEM_ERROR;
++		return NULL;
++	}
++	memset(r, 0, size);
++	at = (char *)r + sizeof(reg_resubscribe_t);
++#define REG_COPY(field, src)                    \
++	do {                                        \
++		r->field.s = at;                        \
++		memcpy(at, (src).s, (src).len);         \
++		r->field.len = (src).len;               \
++		at += (src).len;                        \
++	} while(0)
++	REG_COPY(pres_uri, *p->pres_uri);
++	REG_COPY(watcher_uri, *p->watcher_uri);
++	REG_COPY(contact, p->contact);
++	if(p->id.s)
++		REG_COPY(id, p->id);
++	if(p->outbound_proxy && p->outbound_proxy->s)
++		REG_COPY(outbound_proxy, *p->outbound_proxy);
++	if(p->extra_headers && p->extra_headers->s)
++		REG_COPY(extra_headers, *p->extra_headers);
++#undef REG_COPY
++	r->event = p->event;
++	r->flag = p->flag;
++	r->expires = p->reg_requested;
++	r->cb_param = p->cb_param;
++	return r;
++}
++
++/* TS 24.229 clause 5.2.3: after its last known expiry a new initial subscription; sent with no hash lock held. */
++static void reg_resubscribe_send(reg_resubscribe_t *list)
++{
++	reg_resubscribe_t *r;
++	subs_info_t subs;
++
++	while(list) {
++		r = list;
++		list = list->next;
++		memset(&subs, 0, sizeof(subs_info_t));
++		subs.pres_uri = &r->pres_uri;
++		subs.watcher_uri = &r->watcher_uri;
++		subs.contact = &r->contact;
++		subs.id = r->id;
++		if(r->outbound_proxy.s)
++			subs.outbound_proxy = &r->outbound_proxy;
++		if(r->extra_headers.s)
++			subs.extra_headers = &r->extra_headers;
++		subs.event = r->event;
++		subs.source_flag = r->flag;
++		subs.flag = INSERT_TYPE;
++		subs.expires = r->expires;
++		subs.cb_param = r->cb_param;
++		LM_INFO("reg event subscription to %.*s expired after a failed refresh: subscribing again\n",
++				r->pres_uri.len, r->pres_uri.s);
++		if(send_subscribe(&subs) < 0)
++			LM_ERR("while sending the new reg event SUBSCRIBE\n");
++		pkg_free(r);
++	}
++}
++
++/* TS 24.229 clause 5.2.3: a reg event subscription is refreshed "600 seconds before the expiration time if the initial
++ * subscription was for greater than 1200 seconds, or when half of the time has expired if the initial subscription was
++ * for 1200 seconds or less" (the duration granted; refresh_before until it is known, e.g. after a restore). */
++static int refresh_lead(ua_pres_t *p)
++{
++	if(p->reg_requested && p->reg_granted)
++		return p->reg_granted > 1200 ? 600 : (int)(p->reg_granted / 2);
++	return refresh_before >= 0 ? refresh_before : update_period;
++}
++
+ static void hashT_clean(unsigned int ticks, void *param)
+ {
+ 	int i;
+ 	time_t now;
+ 	ua_pres_t *p = NULL, *q = NULL;
++	reg_resubscribe_t *again = NULL, *r;
+ 
+ 	if(dbmode == PUA_DB_ONLY) {
+ 		clean_puadb(update_period, min_expires);
+@@ -634,13 +729,28 @@ static void hashT_clean(unsigned int ticks, void *param)
+ 		p = HashT->p_records[i].entity->next;
+ 		while(p) {
+ 			print_ua_pres(p);
+-			if(p->expires - (refresh_before >= 0 ? refresh_before : update_period)
+-					< now) {
++			if(p->reg_requested && p->reg_refresh_failed) {
++				/* TS 24.229 clause 5.2.3: valid "for the duration of the most recently known "Expires" value",
++				 * no further refresh; then a new initial subscription */
++				if(p->expires < now) {
++					q = p->next;
++					if((r = reg_resubscribe_copy(p)) != NULL) {
++						r->next = again;
++						again = r;
++					}
++					delete_htable(p, i);
++					p = q;
++				} else
++					p = p->next;
++				continue;
++			}
++			if(p->expires - refresh_lead(p) < now) {
+ 				if((p->desired_expires > p->expires + min_expires)
+ 						|| (p->desired_expires == 0)) {
+ 					if(update_pua(p) < 0) {
+ 						LM_ERR("while updating record\n");
+ 						lock_release(&HashT->p_records[i].lock);
++						reg_resubscribe_send(again);
+ 						return;
+ 					}
+ 					p = p->next;
+@@ -659,6 +769,7 @@ static void hashT_clean(unsigned int ticks, void *param)
+ 		}
+ 		lock_release(&HashT->p_records[i].lock);
+ 	}
++	reg_resubscribe_send(again);
+ }
+ 
+ int update_pua(ua_pres_t *p)
+@@ -670,7 +781,10 @@ int update_pua(ua_pres_t *p)
+ 	int ret_code = 0;
+ 	dlg_t *td = NULL;
+ 
+-	if(p->desired_expires == 0)
++	if(p->reg_requested)
++		/* TS 24.229 clause 5.2.3: the refresh asks for the subscription's duration again */
++		expires = p->reg_requested;
++	else if(p->desired_expires == 0)
+ 		expires = pua_default_expires;
+ 	else
+ 		expires = p->desired_expires - (int)time(NULL);
+diff --git a/src/modules/pua/send_subscribe.c b/src/modules/pua/send_subscribe.c
+index af1ba3e..0474719 100644
+--- a/src/modules/pua/send_subscribe.c
++++ b/src/modules/pua/send_subscribe.c
+@@ -24,6 +24,10 @@
+  * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): the SUBSCRIBE's Expires is the requested value; 10 s were
+  * added to it (the P-CSCF's reg event subscription carries the Expires its configuration names, TS 24.229 clause 5.2.3
+  * item e).
++ *
++ * Modified by OpenMCX on 2026-11-01 (GPL-2.0 section 2(a)): the P-CSCF's reg event subscription (TS 24.229 clause
++ * 5.2.3): made once, refreshed with the initial Expires 600 s before its expiry (half time for 1200 s or less), kept
++ * after a non-481 failure until its expiry, then made again; a 481 makes it again at once.
+  */
+ 
+ 
+@@ -261,10 +265,30 @@ static void find_and_update_dialog(
+ 
+ 		update_htable(presentity, dialog->desired_expires, lexpire, NULL,
+ 				hash_code, contact);
++		if(presentity->reg_requested) {
++			presentity->reg_granted = lexpire;
++			presentity->reg_refresh_failed = 0;
++		}
+ 		lock_release(&HashT->p_records[hash_code].lock);
+ 	}
+ }
+ 
++/* TS 24.229 clause 5.2.3: "If a SUBSCRIBE request to refresh a subscription fails with a non-481 response, the P-CSCF
++ * shall still consider the original subscription valid for the duration of the most recently known "Expires" value":
++ * the record stays, and hashT_clean makes a new initial subscription once it expires. */
++static void reg_refresh_failed(ua_pres_t *dialog, int hash_code)
++{
++	ua_pres_t *presentity;
++
++	if(dbmode == PUA_DB_ONLY)
++		return;
++	lock_get(&HashT->p_records[hash_code].lock);
++	presentity = get_dialog(dialog, hash_code);
++	if(presentity != NULL)
++		presentity->reg_refresh_failed = 1;
++	lock_release(&HashT->p_records[hash_code].lock);
++}
++
+ void subs_cback_func(struct cell *t, int cb_type, struct tmcb_params *ps)
+ {
+ 	struct sip_msg *msg = NULL;
+@@ -307,6 +331,13 @@ void subs_cback_func(struct cell *t, int cb_type, struct tmcb_params *ps)
+ 		goto error;
+ 	}
+ 
++	if(msg == FAKED_REPLY && hentity->reg_requested && hentity->to_tag.len > 0) {
++		/* TS 24.229 clause 5.2.3: no answer to a refresh is a non-481 failure */
++		LM_INFO("reg event refresh unanswered: valid until its expiry\n");
++		reg_refresh_failed(hentity, hash_code);
++		goto done;
++	}
++
+ 	if(msg == FAKED_REPLY) {
+ 		struct hdr_field *callid = NULL, *from = NULL;
+ 		struct to_body FROM = {0};
+@@ -423,6 +454,13 @@ void subs_cback_func(struct cell *t, int cb_type, struct tmcb_params *ps)
+ 		hentity->to_tag = pto->tag_value;
+ 	}
+ 
++	if(ps->code >= 300 && hentity->reg_requested && ps->code != 481) {
++		/* TS 24.229 clause 5.2.3: a refresh failed with a non-481 response */
++		LM_INFO("reg event refresh failed with %d: valid until its expiry\n", ps->code);
++		reg_refresh_failed(hentity, hash_code);
++		goto done;
++	}
++
+ 	if(ps->code
+ 			>= 300) { /* if an error code and a stored dialog delete it and try to send
+ 		   a subscription with type= INSERT_TYPE, else return*/
+@@ -448,10 +486,15 @@ void subs_cback_func(struct cell *t, int cb_type, struct tmcb_params *ps)
+ 		subs.watcher_uri = hentity->watcher_uri;
+ 		subs.contact = &hentity->contact;
+ 
+-		if(hentity->remote_contact.s)
++		/* a new initial reg event SUBSCRIBE goes to the default public user identity (TS 24.229 clause 5.2.3 item a)),
++		 * not to the ended dialog's remote target */
++		if(hentity->remote_contact.s && !hentity->reg_requested)
+ 			subs.remote_target = &hentity->remote_contact;
+ 
+-		if(hentity->desired_expires == 0)
++		if(hentity->reg_requested)
++			/* TS 24.229 clause 5.2.3, a 481: "start a new initial subscription" */
++			subs.expires = hentity->reg_requested;
++		else if(hentity->desired_expires == 0)
+ 			subs.expires = -1;
+ 		else if(hentity->desired_expires < (int)time(NULL))
+ 			subs.expires = 0;
+@@ -529,6 +572,8 @@ void subs_cback_func(struct cell *t, int cb_type, struct tmcb_params *ps)
+ 
+ 	if(hentity->extra_headers)
+ 		size += sizeof(str) + hentity->extra_headers->len * sizeof(char);
++	if(hentity->reg_requested && hentity->outbound_proxy && hentity->outbound_proxy->s)
++		size += sizeof(str) + hentity->outbound_proxy->len * sizeof(char);
+ 
+ 	presentity = (ua_pres_t *)shm_malloc(size);
+ 	if(presentity == NULL) {
+@@ -599,6 +644,17 @@ void subs_cback_func(struct cell *t, int cb_type, struct tmcb_params *ps)
+ 		size += hentity->extra_headers->len;
+ 	}
+ 
++	/* a reg event subscription keeps its outbound proxy, for a new initial SUBSCRIBE after its expiry (TS 24.229
++	 * clause 5.2.3) */
++	if(hentity->reg_requested && hentity->outbound_proxy && hentity->outbound_proxy->s) {
++		presentity->outbound_proxy = (str *)((char *)presentity + size);
++		size += sizeof(str);
++		presentity->outbound_proxy->s = (char *)presentity + size;
++		memcpy(presentity->outbound_proxy->s, hentity->outbound_proxy->s, hentity->outbound_proxy->len);
++		presentity->outbound_proxy->len = hentity->outbound_proxy->len;
++		size += hentity->outbound_proxy->len;
++	}
++
+ 	/* write the remote contact filed */
+ 	presentity->remote_contact.s =
+ 			(char *)shm_malloc(contact.len * sizeof(char));
+@@ -616,6 +672,8 @@ void subs_cback_func(struct cell *t, int cb_type, struct tmcb_params *ps)
+ 	presentity->cseq = cseq;
+ 	presentity->desired_expires = hentity->desired_expires;
+ 	presentity->expires = lexpire + (int)time(NULL);
++	presentity->reg_requested = hentity->reg_requested;
++	presentity->reg_granted = lexpire;
+ 	if(BLA_SUBSCRIBE & presentity->flag) {
+ 		LM_DBG("BLA_SUBSCRIBE FLAG inserted\n");
+ 	}
+@@ -751,6 +809,12 @@ ua_pres_t *subscribe_cbparam(subs_info_t *subs, int ua_flag)
+ 		hentity->desired_expires = 0;
+ 	else
+ 		hentity->desired_expires = subs->expires + (int)time(NULL);
++	if((subs->event & REGINFO_EVENT) && subs->expires > 0) {
++		/* TS 24.229 clause 5.2.3: "If continued subscription is required the P-CSCF shall automatically refresh the
++		 * subscription": no end of its own; every refresh asks for this Expires again */
++		hentity->reg_requested = subs->expires;
++		hentity->desired_expires = 0;
++	}
+ 
+ 	if(subs->id.s) {
+ 		CONT_COPY(hentity, hentity->id, subs->id);
+@@ -856,6 +920,11 @@ ua_pres_t *subs_cbparam_indlg(ua_pres_t *subs, int expires, int ua_flag)
+ 		hentity->desired_expires = 0;
+ 	else
+ 		hentity->desired_expires = expires + (int)time(NULL);
++	if(subs->reg_requested && expires > 0) {
++		/* a refresh of a reg event subscription (TS 24.229 clause 5.2.3): it stays without an end of its own */
++		hentity->reg_requested = subs->reg_requested;
++		hentity->desired_expires = 0;
++	}
+ 
+ 	hentity->flag = subs->flag;
+ 	hentity->event = subs->event;
+@@ -1071,6 +1140,14 @@ int send_subscribe(subs_info_t *subs)
+ 		tmb.free_dlg(uac_r.dialog);
+ 		uac_r.dialog = 0;
+ 	} else {
++		if(presentity->reg_requested && subs->expires > 0) {
++			/* TS 24.229 clause 5.2.3: the P-CSCF subscribes "upon receipt of a 200 (OK) response to the first initial
++			 * REGISTER request"; a later REGISTER leaves the subscription, which this module refreshes */
++			LM_DBG("reg event subscription already held for %.*s\n", subs->pres_uri->len, subs->pres_uri->s);
++			if(dbmode != PUA_DB_ONLY)
++				lock_release(&HashT->p_records[hash_code].lock);
++			goto done;
++		}
+ 		if(subs->internal_update_flag == INTERNAL_UPDATE_TRUE) {
+ 			LM_INFO("attempting to re-SUBSCRIBE on internal "
+ 					"(rls_update_subs()) update - skipping\n");
