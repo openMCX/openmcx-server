@@ -154,9 +154,7 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   initial one, pua's refresh asks for the time left to its first expiry instead of the duration, and a refresh that
   fails with any error ends the subscription and starts a new one at once with 3 s added (clause 5.2.3: "fails with
   a non-481 response, the P-CSCF shall still consider the original subscription valid ... Otherwise ... start a new
-  initial subscription"); the SIP core grants at most 3600 s (presence max_expires), less than the P-CSCF's 3761
-  s, so the subscription does not outlast the registration (clause 5.2.3 item 1 e), "a value higher than the
-  registration expiration interval"); reginfo.shorten marks every contact of the address-of-record "shortened"
+  initial subscription"); reginfo.shorten marks every contact of the address-of-record "shortened"
   (clause 5.4.1.6 NOTE 2: only the contacts "originally registered by this UE"; the labs and tutorials have one
   contact per user).
 
