@@ -6,6 +6,10 @@ common services, a SIP core, the clients and MCX Admin, as containers that start
 
 ## Since 1.0.0 (main and the `develop` images)
 
+- **Android 11 and 12.** The Android app of release 1.0.0 (`openmcx-client-v1.apk`) needs Android 13 or later. It
+  installs on Android 11 and 12, but its activation fails there ("No virtual method readNBytes(I)[B in class
+  Ljava/io/InputStream;"): it calls a method that Android has only from Android 13. Fixed after 1.0.0:
+  `openmcx-client-develop.apk` runs on Android 11 and later, with the `develop` images (see the next two items).
 - **Access token scopes.** The CMS, GMS, LMS, KMS and the MCData content server, message store and notification server
   check the scope of the access token (TS 33.180 clause 5.1.3.1 and table B.4.2.2-1). The clients of release 1.0.0
   (the Linux client, the dispatcher and the Android app `openmcx-client-v1.apk`) do not ask for the configuration and
@@ -57,7 +61,7 @@ versions the code follows are in [docs/SPECS.md](docs/SPECS.md).
 | Part | Repository | What it is | Images (Docker Hub `openmcx/`) |
 |---|---|---|---|
 | Servers and common services | [openmcx-server](https://github.com/openMCX/openmcx-server) | MCPTT, MCVideo and MCData servers (participating and controlling functions); IdMS, GMS, CMS, KMS, LMS, Credential Service, content server, message store, notification server; HTTP proxy; user database; the tutorials and the lab tools | `openmcx-mcptt-server`, `openmcx-mcvideo-server`, `openmcx-mcdata-server`, `openmcx-common`, `openmcx-http-proxy`, `openmcx-user-db`, `openmcx-setup`, `openmcx-kamailio` |
-| Clients | [openmcx-client](https://github.com/openMCX/openmcx-client) | The Android app (`android/apk/openmcx-client-v1.apk`), the dispatcher position in the browser, and `mcx-client`, the headless Linux client | `openmcx-client`, `openmcx-dispatcher` |
+| Clients | [openmcx-client](https://github.com/openMCX/openmcx-client) | The Android app (`android/apk/openmcx-client-v1.apk`, Android 13 or later), the dispatcher position in the browser, and `mcx-client`, the headless Linux client | `openmcx-client`, `openmcx-dispatcher` |
 | MCX Admin | [openmcx-admin](https://github.com/openMCX/openmcx-admin) | MC user profiles, groups and rights, client activation | `openmcx-admin` |
 | Helm chart (experimental) | [openmcx-server `helm/openmcx`](helm/openmcx/README.md) | The tutorial 1 system on Kubernetes or OpenShift; validated with `helm lint`, `helm template` and kubeconform, **not yet installed on a cluster** | (the images above) |
 

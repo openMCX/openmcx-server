@@ -14,7 +14,7 @@ on the same Wi-Fi as the computer activate with them. Then they call, chat and m
 
 - A computer with Docker and Docker Compose v2 (Linux, or Docker Desktop on macOS or Windows), on the same Wi-Fi as
   the phones. Its firewall must let the phones reach the ports below.
-- Two Android phones (Android 11 or later) with the OpenMCX app. Phones and computer on the same network, with no
+- Two Android phones (Android 13 or later; for Android 11 and 12 see [6](#6-activate-the-phones)) with the OpenMCX app. Phones and computer on the same network, with no
   client isolation between devices (guest networks often have it).
 - Nothing to compile: the tutorial uses the **prebuilt OpenMCX images from Docker Hub** (`openmcx/openmcx-*:1.0.0`).
   To build the images yourself, see [Images](#images) and [Building OpenMCX](../../../docs/BUILD.md).
@@ -128,6 +128,12 @@ Install the OpenMCX app on both phones: download
 [`openmcx-client-v1.apk`](https://github.com/openMCX/openmcx-client/raw/main/android/apk/openmcx-client-v1.apk) from
 the [openmcx-client](https://github.com/openMCX/openmcx-client) repository (`android/apk/`) on the phone, or install it
 from the computer with `adb install openmcx-client-v1.apk`.
+
+> **Android 11 and 12.** The 1.0.0 app needs Android 13 or later: on Android 11 and 12 its activation fails ("No
+> virtual method readNBytes"). This is fixed after 1.0.0 in
+> [`openmcx-client-develop.apk`](https://github.com/openMCX/openmcx-client/raw/main/android/apk/openmcx-client-develop.apk), which goes with the
+> `develop` images: stop the system and remove `./config` (step 9), set `OPENMCX_TAG=develop` in `.env`, go through
+> steps 2 to 5 again, and activate the phones with that app.
 
 > **Test use only.** The APK is a debug build of the OpenMCX app, installed from outside the Play Store
 > ("sideloaded") and not reviewed by Google. Install it only on phones kept for testing, not on a phone with personal
