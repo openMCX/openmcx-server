@@ -287,6 +287,12 @@ run tutorial 3's setup. Its configuration uses the HTTP proxy's path mode.
   - The MC client (`ue-client`, `setup/ue-client.py` of tutorial 3) is the Linux client in the nr-UE's network
     namespace, with `NET_ADMIN` for its security associations there. It reaches the P-CSCF at a configured address
     (TS 24.229 clause 9.2.1 allows that instead of discovery). SIP runs over TCP inside the security associations.
+  - The MC client holds its IMS AKA credentials (IMPI, K, OPc) in its own configuration, as a software ISIM
+    separate from the nr-UE's USIM (`oai/nrue.uicc.mcptt.yaml`, used for 5G AKA only), and makes the AKA
+    calculations a card would make. A real UE keeps them on its UICC, in the ISIM or USIM application (TS 33.203
+    clause 4: "IMS authentication keys and functions at the user side shall be stored on a UICC"): a deviation of
+    this test bed ([Known limitations](../../../docs/LIMITATIONS.md), "SIP core access"; [call flow](CALL_FLOW.md),
+    G10).
 - **The home HTTP proxy** (TS 24.482 annex A): the client reaches the proxy, the IdMS and the KMS at `HOST_IP`.
   - The CMS and the GMS (the configuration and group documents) and the MCData content server, message store and
     notification server are named by their own URIs (`https://cms:8443/xcap-root`, ...). The requests go through a

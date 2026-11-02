@@ -34,7 +34,7 @@ answers at log-off. Where today's client sends more or answers differently, the 
 | 5.1 step | TS 37.579-1 procedure | Frames | Gaps |
 |---|---|---|---|
 | 1 | 5.4.2 initial registration (5GS), 5.4.1B MCX PDU session | 3-314 | G8 |
-| in parallel to 3-16 | table 5.3.2.4.1-1 SIP registration | 505-678 | G1, G9 |
+| in parallel to 3-16 | table 5.3.2.4.1-1 SIP registration | 505-678 | G1, G9, G10 |
 | 3-12 | table 5.3.2.3.1-1 steps 1-10 (initial configuration, user authentication) | 512-811 | - |
 | 13-16 | table 5.3.2.3.1-1 steps 11-14 (key material) | 1457-1538 | G2, G3, G4, G5 |
 | 17 | table 5.3.2.5.1-1 publication of MCX service settings | 1628-1823 | G5 |
@@ -111,6 +111,7 @@ sequenceDiagram
     SC->>PC: 401 (642): AKAv2-SHA-256 and AKAv1-MD5 challenges, ck and ik
     PC->>UE: (2) 401 (643): both challenges (ck, ik removed)<br/>Security-Server: spi-c 4096, spi-s 4097, port-c 5100, port-s 6100
     Note over UE: checks AUTN (MAC, SQN), computes RES, CK, IK<br/>sets up the temporary SAs (ESP, transport mode)
+    Note over UE: ⚠ G10: the AKA calculations run in the client (software ISIM), not on a UICC
     Note over UE,PC: ⚠ G1: the client answers the first challenge, AKAv2-SHA-256
     UE->>PC: (3b1) REGISTER inside ESP, port_uc 40708 to port_ps 6100 (670)<br/>Security-Verify (the P-CSCF's list), Authorization with RES, AKAv2-SHA-256
     PC->>SC: REGISTER over TLS (675)
@@ -303,7 +304,8 @@ Each gap is one of:
   reports it ([Known limitations](../../../docs/LIMITATIONS.md));
 - **tutorial**: a choice of this tutorial or its test bed, not of the MC client;
 - **order**: the client does what the test checks, in another order;
-- **capture**: the reference capture shows an older client.
+- **capture**: the reference capture shows an older client;
+- **test bed**: the emulated UE departs from a real one.
 
 | Gap | Kind | Step | What | Where described |
 |---|---|---|---|---|
@@ -316,3 +318,4 @@ Each gap is one of:
 | G7 | tutorial | 19 | No GKTP subscription: the group `operations` is not protected; the GMK retrieval is optional (table 5.3.2.7.1-2). | README step 5 |
 | G8 | tutorial | 1 | rfsim carries the 5QI but does not enforce it; no radio, no system simulator, no TTCN-3 test suite. | README step 5 |
 | G9 | capture | SIP registration, log-off | The reference capture predates the reg event subscriptions of the client and the P-CSCF (TS 24.229 clauses 5.1.1.3 and 5.2.3; not part of table 5.3.2.4.1-1) and the client's 200 to the final NOTIFYs at log-off (RFC 6665 clause 4.1.2.3; it answered 403, and 481 after the de-REGISTER). | this page |
+| G10 | test bed | SIP registration, and every IMS AKA run | The MC client holds its IMS AKA credentials (IMPI, K, OPc) in its own configuration, a software ISIM separate from the nr-UE's USIM, and runs the AKA calculations itself. A real UE keeps them on its UICC, in the ISIM or USIM application (TS 33.203 clause 4: "IMS authentication keys and functions at the user side shall be stored on a UICC"); the IM credentials of clause 9 (keys in the device) are only for a terminal without 3GPP access and "shall not used if ISIM or USIM is present". The test USIM of TS 37.579-1 clause 5.2.2.2.1 is a card. | Known limitations, "SIP core access" |

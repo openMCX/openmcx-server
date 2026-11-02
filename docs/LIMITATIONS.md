@@ -121,7 +121,7 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   that is not an IMS, and TS 33.203 annexes N.1 and O.1.1 exclude SIP digest and TLS access security on access networks
   defined by 3GPP. OpenMCX chooses the scheme per private user identity, as the HSS stores it (TS 29.228 clause 6.3.1
   step 4): an identity provisioned for IMS AKA registers through the P-CSCF with a software ISIM (K and OPc of its own,
-  MILENAGE, or the test algorithm of TS 34.108 clause 8.1.2 for a conformance test system), the security agreement and
+  MILENAGE, or the test algorithm of TS 34.108 clause 8.1.2 for a conformance test system; see below), the security agreement and
   IPsec ESP security associations in transport mode, SIP over TCP or UDP inside them (UDP: requests of 1300 bytes or
   more over TCP, RFC 3261 section 18.1.1; no SIP outbound over UDP, which would need STUN keepalives); every other
   identity uses SIP digest over TLS. IMS AKA is used by the Linux client inside the UE of [tutorials
@@ -149,6 +149,12 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   credentials only (an identity provisioned for IMS AKA gets none), so the clients that MCX Admin activates keep SIP
   digest over TLS, also where they run on 3GPP access: the dispatcher inside the 5G or 4G UE of tutorials 3, 4 and 5 is
   a deviation from TS 33.180 clause 6.2.1. The Android app would need carrier privileges to run AKA on the phone's SIM.
+  Own deviation not fixed yet: the Linux client's IMS AKA keys and functions are in software (its configuration and
+  the software ISIM), not on a UICC: TS 33.203 clause 4 says "IMS authentication keys and functions at the user side
+  shall be stored on a UICC", and the IM credentials of its clause 9 (keys in the device) are only for a terminal that
+  does not support 3GPP access and "shall not used if ISIM or USIM is present". This applies wherever the client runs
+  inside a UE (tutorials 3a, 4, 5 and 7, next to the UE's own USIM) and in the `aka` and `aka-udp` labs. A fix needs
+  the client to use a card for the AKA calculations (through a smart-card reader, or the UICC of a 3GPP modem).
   On non-3GPP access (Wi-Fi, a control room, the labs) TS 33.180 allows SIP digest with TLS (TS 33.203 annexes N and O;
   ETSI TS 103 765-2 clause 6.1.1 does the same for FRMCS on-board applications), but OpenMCX departs from those annexes
   in three points: the challenge offers MD5 only, without SHA-256, and without qop "auth" (annex N.2.1.1, TS 24.229
