@@ -1989,6 +1989,50 @@ def add_keycloak(fixture, compose, args):
 
 
 # ------------------------------------------------------------------------------
+TRANSPORT_KEY_ROLES = {'client-a': ('trk', 'ink'), 'client-b': ('trk',)}
+
+
+def add_transport_keys(fixture, site_path, users):
+    """TS 33.180 clause 5.3.2: the TrK and InK pre-provisioned to the KM clients of client-a (both: the InK signs) and
+    client-b (a TrK only: it signs and wraps, annexes D.2.2 and D.3.1), and shared with the KMS (security.transport_keys
+    of both sides, mcx::transport::load: owner-only files with the hexadecimal key, 32-bit identifiers). The KMS's
+    request time window (annex D.2.2, "e.g. 5 seconds", left to the KMS) is the lab's 30 s."""
+    import secrets as transport_random
+
+    directory = fixture / 'generated/transport-keys'
+    directory.mkdir(mode=0o700, exist_ok=True)
+    site = json.loads(site_path.read_text())
+    site.setdefault('security', {})['transport_keys'] = {}
+    site['security']['kms_request_window_seconds'] = 30
+    for role, kinds in TRANSPORT_KEY_ROLES.items():
+        entry = {}
+        for kind in kinds:
+            name = f'{role}-{kind}'
+            path = directory / name
+            path.write_text(transport_random.token_hex(32) + '\n')
+            path.chmod(0o600)
+            entry[kind] = dict(file=f'/config/transport-keys/{name}', id=transport_random.randbits(32))
+        site['security']['transport_keys'][users[role]] = entry
+        client_path = fixture / f'generated/{role}.json'
+        cfg = json.loads(client_path.read_text())
+        cfg.setdefault('security', {})['transport_keys'] = {users[role]: entry}
+        client_path.write_text(json.dumps(cfg, indent=2) + '\n')
+    site_path.write_text(json.dumps(site, indent=2) + '\n')
+
+
+def mount_transport_keys(compose, fixture):
+    """The key files of add_transport_keys: all of them in the KMS, each client's own in its container."""
+    directory = fixture / 'generated/transport-keys'
+    compose['services']['kms']['volumes'].append(
+        dict(type='bind', source=str(directory), target='/config/transport-keys', read_only=True))
+    for role, kinds in TRANSPORT_KEY_ROLES.items():
+        for kind in kinds:
+            compose['services'][role]['volumes'].append(
+                dict(type='bind', source=str(directory / f'{role}-{kind}'),
+                     target=f'/config/transport-keys/{role}-{kind}', read_only=True))
+
+
+# ------------------------------------------------------------------------------
 def add_pcscf(compose, args, roles):
     """IMS AKA (TS 33.203 clauses 6 and 7, TS 24.229 clause 5.2.2): the P-CSCF pcscf (docker/pcscf.cfg, the SIP
     core's Kamailio image) in front of the SIP core, and the clients of roles, which register through it. The
@@ -2056,6 +2100,12 @@ def main():
     parser.add_argument('--srsran-image', default='openmcx-srsran:23.11', help='image of docker/srsran for --srsran')
     parser.add_argument('--priority', action='store_true')
     parser.add_argument('--protected', action='store_true')
+    parser.add_argument(
+        '--transport-keys',
+        action='store_true',
+        help='TS 33.180 clause 5.3.2: client-a gets an InK and a TrK, client-b a TrK only, shared with the KMS (signed '
+        'KMS requests and responses, key sets wrapped under the TrK); requires --protected',
+    )
     parser.add_argument(
         '--xml-protection',
         action='store_true',
@@ -2283,6 +2333,8 @@ def main():
         parser.error('--mcdata-clear-signalling requires --protected and --mcdata')
     if args.kms_unreachable and (not args.protected or args.kms_unreachable not in ('client-c', 'client-d')):
         parser.error('--kms-unreachable takes client-c or client-d and requires --protected')
+    if args.transport_keys and not args.protected:
+        parser.error('--transport-keys requires --protected')
     if args.protected and (args.key_parameters_iei is None or not 0 <= args.key_parameters_iei <= 255):
         parser.error('--protected requires an explicit --key-parameters-iei interoperability value')
     if args.project == 'openmcx':
@@ -2463,6 +2515,8 @@ def main():
                     cfg['common']['kms'] = site['endpoints']['kms']
                     cfg['security']['key_client'] = key_client(site, cfg['mcptt']['service_uri'])
             path.write_text(json.dumps(cfg, indent=2) + '\n')
+        if args.transport_keys:
+            add_transport_keys(fixture, site_path, users)
         if args.protected and args.mcvideo:
             # TS 24.281 clauses 4.7 and 6.6: the MCVideo server keys its own identity, holds its
             # users' CSKs, and protects MCVideo signalling as the MCPTT server does.
@@ -2672,6 +2726,8 @@ def main():
                 mount['source'] = str(fixture / 'artifacts')
             else:
                 raise RuntimeError(f'unexpected bind source {old}')
+    if args.transport_keys:
+        mount_transport_keys(compose, fixture)
     client_default = compose['services']['client-a']['image']
     if args.images:
         lab_images.use_program_images(compose['services'], compose['services']['mcptt-server']['image'], args.images)

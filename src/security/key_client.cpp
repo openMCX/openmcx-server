@@ -8,6 +8,7 @@
 // Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.481 V19.3.0 (Rel-19), RFC 6509,
 // RFC 4648.
 #include "mcx/key_client.hpp"
+#include "mcx/transport_keys.hpp"
 
 #include "mcx/key_documents.hpp"
 #include "mcx/security.hpp"
@@ -127,6 +128,13 @@ std::string cache_key(std::string_view identity, std::uint32_t id) {
 struct KeyClient::Impl {
   const HttpClient &http;
   std::string kms_uri, user_uri, account_uri, bearer;
+  // TS 33.180 clause 3.1 ("KMS URI: A unique identifier for a security domain") and annexes D.2.2/D.3.1: the KMS URI
+  // the KMS's documents carry (KmsUri), apart from the HTTPS address it is contacted at (kms_uri, TS 24.484 clause
+  // 7.2.2.7 <kms>); security.kms_id, by default the address (the form used so far).
+  std::string kms_id;
+  // TS 33.180 clause 5.3.2: the security configuration whose transport_keys give this user's TrK and InK, loaded only
+  // for a KMS exchange (clause 5.11.1: not kept in memory while not in use).
+  nlohmann::json security_config;
   // The key management client of an MC server or the GMS: its IdMS, OAuth client credentials and scope, and when its
   // access token expires (Unix seconds).
   std::string issuer, client_id, client_secret, client_scope;
@@ -160,6 +168,7 @@ struct KeyClient::Impl {
   Impl(const HttpClient &client, const nlohmann::json &security, std::string user, std::string account)
       : http(client), kms_uri(security.at("kms_uri").get<std::string>()), user_uri(std::move(user)),
         account_uri(account.empty() ? user_uri : std::move(account)), profile{}, skew(clock_skew(security)) {
+    security_config = security;
     if (const auto option = security.find("kms_keyprov_identity_path"); option != security.end()) {
       require(option->is_boolean(), "kms_keyprov_identity_path must be a boolean");
       keyprov_identity_path = option->get<bool>();
@@ -168,6 +177,14 @@ struct KeyClient::Impl {
                 kms_uri.find_first_of("\r\n\t?#") == std::string::npos && kms_uri.find('@') == std::string::npos,
             "KMS must be a direct HTTPS URI without credentials, query or fragment");
     while (kms_uri.ends_with('/')) kms_uri.pop_back();
+    kms_id = kms_uri;
+    if (const auto option = security.find("kms_id"); option != security.end()) {
+      require(option->is_string() && !option->get<std::string>().empty() &&
+                  option->get<std::string>().find_first_of("\r\n<>&\"") == std::string::npos,
+              "kms_id must be a KMS URI");
+      kms_id = option->get<std::string>();
+    }
+    (void)transport::load_for(security, user_uri);
     require(kms_uri.size() > 8 && !user_uri.empty() && user_uri.size() <= 65535 &&
                 user_uri.find_first_of("\r\n") == std::string::npos && user_uri.find('\0') == std::string::npos,
             "invalid KMS or service identity");
@@ -230,12 +247,14 @@ struct KeyClient::Impl {
     bearer_expiry = unix_now + static_cast<std::uint64_t>(lifetime);
   }
 
-  // TS 33.180 clause 5.3.3 steps 1 and 2: a POST request for key material, authenticated with the access token;
-  // returns the KMS response XML.
-  std::string fetch(std::string_view operation) const {
-    const std::map<std::string, std::string> headers{
+  // TS 33.180 clause 5.3.3 steps 1 and 2: a POST request for key material, authenticated with the access token, with
+  // the signed KMS request when there is one (annex D.2.2: "accompanied with an XML payload MIME type"); returns the
+  // KMS response XML.
+  std::string fetch(std::string_view operation, const std::string &signed_request = {}) const {
+    std::map<std::string, std::string> headers{
         {"Accept", "application/xml"}, {"Cache-Control", "no-store"}, {"Authorization", "Bearer " + bearer}};
-    const auto response = http.request("POST", request_uri(operation), {}, headers);
+    if (!signed_request.empty()) headers["Content-Type"] = "application/xml";
+    const auto response = http.request("POST", request_uri(operation), signed_request, headers);
     require(response.status == 200, "KMS provisioning HTTP request rejected");
     require(!response.body.empty() && response.body.size() <= 262144, "invalid KMS response size");
     return response.body;
@@ -246,13 +265,23 @@ struct KeyClient::Impl {
   void refresh() {
     renew_token();
     require(!bearer.empty(), "KMS credentials have not been provisioned");
+    // TS 33.180 clause 5.3.2 and annex D.2.2: with this user's InK or TrK, signed requests, and the responses verified
+    // and their keys unwrapped with them (key_documents.hpp); the keys live only for this exchange.
+    const auto keys = transport::load_for(security_config, user_uri);
+    const bool protected_exchange = transport::integrity_xpk(keys).has_value();
     // Keep existing identity until both authenticated responses and key validation succeed.
-    const auto init = fetch("init");
+    const auto init = fetch("init", protected_exchange ? keying::kms_request_xml(account_uri, kms_id, request_uri("init"),
+                                                                                 now_ntp(), keys)
+                                                       : std::string());
     // The init request names no identity: the KMS answers for the token's user.
-    const auto public_parameters = keying::parse_kms_init(init, account_uri, kms_uri, request_uri("init"), now_ntp());
-    const auto keyprov = fetch("keyprov");
+    const auto public_parameters =
+        keying::parse_kms_init(init, account_uri, kms_id, request_uri("init"), now_ntp(), &keys);
+    const auto keyprov =
+        fetch("keyprov", protected_exchange
+                             ? keying::kms_request_xml(user_uri, kms_id, request_uri("keyprov"), now_ntp(), keys)
+                             : std::string());
     auto next_identity =
-        keying::parse_kms_keyprov(keyprov, public_parameters, user_uri, request_uri("keyprov"), now_ntp());
+        keying::parse_kms_keyprov(keyprov, public_parameters, user_uri, request_uri("keyprov"), now_ntp(), &keys);
     try {
       keying::validate_identity(public_parameters, next_identity, now_ntp());
     } catch (...) {

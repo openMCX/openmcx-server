@@ -30,6 +30,13 @@ struct Key {
 };
 
 //------------------------------------------------------------------------------
+// TS 33.180 annex F.1.4 with TS 33.220 annex B: the key derived from an XPK of 128 bits (the CSK) or 256 bits (the
+// TrK of KMS traffic, clause 9.3.3) with FC 0x51 (confidentiality) or 0x52 (integrity), P0 the MC service user ID and
+// P1 the XPK-ID; as long as the XPK.
+std::vector<std::uint8_t> protection_key(std::span<const std::uint8_t> xpk, std::uint32_t xpk_id, std::string_view user,
+                                         std::uint8_t fc);
+
+//------------------------------------------------------------------------------
 // TS 33.180 annex F.1.4 with TS 33.220 annex B: FC 0x51 (confidentiality), P0 the MC service user ID, P1 the XPK-ID;
 // the 128 least significant bits.
 std::array<std::uint8_t, 16> confidentiality_key(const Key &key);

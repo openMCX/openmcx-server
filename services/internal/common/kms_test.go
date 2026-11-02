@@ -226,3 +226,83 @@ func TestKMSKeyProvisionTimestampAfterEraZero(test *testing.T) {
 		}
 	}
 }
+
+// ------------------------------------------------------------------------------
+// TS 33.180 clause 5.3.2 and annex D.2.2: a signed KMS request body only for a user with transport keys, checked by
+// the key tool (refused: 403); the responses of that user carry its keys for signing and wrapping; without
+// security.kms_request_window_seconds the configuration is refused.
+func TestKMSSignedRequestsForUsersWithTransportKeys(test *testing.T) {
+	cfg, key := testConfig(), testKey(test)
+	alice := cfg.Users[0].MCPTTID
+	cfg.Security.TransportKeys = map[string]json.RawMessage{alice: json.RawMessage(`{"trk":{"file":"/keys/alice-trk","id":1}}`)}
+	cfg.Security.KMSRequestWindowSeconds = 5
+	var verified []map[string]any
+	var responses []map[string]any
+	accept := true
+	backend := func(input map[string]any) (json.RawMessage, error) {
+		switch input["op"] {
+		case "authority-generate":
+			return json.RawMessage(`{"private":"test-only"}`), nil
+		case "kms-verify-request":
+			verified = append(verified, input)
+			if !accept {
+				return nil, errors.New("signature")
+			}
+			return json.RawMessage(`{"user_uri":"` + alice + `"}`), nil
+		}
+		responses = append(responses, input)
+		return json.RawMessage(`{"xml":"<KmsResponse/>"}`), nil
+	}
+	handler, err := NewHandlerWithKeys(RoleKMS, cfg, nil, &key.PublicKey, test.TempDir(),
+		WithClock(func() time.Time { return testNow }), WithKeyTool(backend))
+	if err != nil {
+		test.Fatal(err)
+	}
+	claims, _ := newClaims(cfg, cfg.Users[0], cfg.ServerClientID, "access", "", testNow)
+	claims.Scope = "openid 3gpp:mc:ptt_key_management_service"
+	token, _ := signToken(claims, key)
+	post := func(body string) int {
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, bearerRequest(http.MethodPost, "/keymanagement/identity/v1/init", token, strings.NewReader(body)))
+		return rr.Code
+	}
+	if code := post("<SignedKmsRequest/>"); code != 200 || len(verified) != 1 {
+		test.Fatalf("signed request of a user with keys: %d, %d checks", code, len(verified))
+	}
+	check := verified[0]
+	if check["request_xml"] != "<SignedKmsRequest/>" || check["window_seconds"] != 5 || check["user_uri"] != alice ||
+		!strings.HasSuffix(check["request_uri"].(string), "/keymanagement/identity/v1/init") {
+		test.Fatalf("verification input %v", check)
+	}
+	if responses[0]["security"] == nil {
+		test.Fatal("response of a user with keys without its keys")
+	}
+	accept = false
+	if code := post("<SignedKmsRequest/>"); code != 403 {
+		test.Fatalf("refused signed request answered %d", code)
+	}
+	accept = true
+	// An unsigned request of the same user (the signature is an optional extension): answered, with its keys.
+	if code := post(""); code != 200 || responses[len(responses)-1]["security"] == nil {
+		test.Fatalf("unsigned request of a user with keys: %d", code)
+	}
+	// A user without keys: no body.
+	cfg.Security.TransportKeys = map[string]json.RawMessage{"sip:other@mcx.test": json.RawMessage(`{}`)}
+	handler, err = NewHandlerWithKeys(RoleKMS, cfg, nil, &key.PublicKey, test.TempDir(),
+		WithClock(func() time.Time { return testNow }), WithKeyTool(backend))
+	if err != nil {
+		test.Fatal(err)
+	}
+	if code := post("<SignedKmsRequest/>"); code != 400 {
+		test.Fatalf("body of a user without keys answered %d", code)
+	}
+	before := len(responses)
+	if code := post(""); code != 200 || responses[before]["security"] != nil {
+		test.Fatalf("user without keys: %d", code)
+	}
+	// The window is required with transport keys.
+	cfg.Security.KMSRequestWindowSeconds = 0
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "kms_request_window_seconds") {
+		test.Fatalf("config without the request window: %v", err)
+	}
+}

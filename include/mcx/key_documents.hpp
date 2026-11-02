@@ -8,31 +8,57 @@
 // Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.481 V19.3.0 (Rel-19), RFC 4826, RFC 5874, RFC 5875.
 #pragma once
 #include "mcx/keying.hpp"
+#include "mcx/transport_keys.hpp"
+
+#include <functional>
 
 namespace mcx::keying {
-// The KMS documents of TS 33.180 annex D below are the TLS profile: the transport must authenticate the KMS (TLS).
-// XML signatures and encrypted-key extensions are not accepted by these parsers.
+// The KMS documents of TS 33.180 annex D below. Without transport keys (keys null or empty) they are the TLS profile:
+// the transport must authenticate the KMS (TLS), and XML signatures and encrypted keys are refused. With the user's
+// pre-provisioned TrK and InK (TS 33.180 clause 5.3.2, annex D.1): KMS messages signed under the InK, else the TrK
+// (annexes D.2.2 and D.3.1), and key sets whose keys are wrapped under the TrK (clause 9.3.4.2, annex D.3.3.2). A signed
+// response is verified with the key its KeyName names, which must be that integrity key; no Signature-ID or TrK-ID
+// element is written or read (annex D.3.5.3 gives no text form, a spec defect). The readings of the ETSI test suite for
+// TS 37.579 used where TS 33.180 is silent (key-wrap padding, the schema's Id as reference target): transport_keys.hpp,
+// kms_xml_signature.hpp.
 
 //------------------------------------------------------------------------------
 // TS 33.180 annexes D.3.1 and D.3.2: the KmsInit response with the Root KMS certificate.
 std::string kms_init_xml(const PublicParameters &parameters, std::string_view user, std::string_view request,
-                         std::uint64_t now);
+                         std::uint64_t now, const transport::TransportKeys *keys = nullptr);
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex D.3.3: the KmsKeyProv response with the user's key set for the current key period.
 std::string kms_keyprov_xml(const PublicParameters &parameters, const IdentityKeys &keys, std::string_view request,
-                            std::uint64_t now);
+                            std::uint64_t now, const transport::TransportKeys *transport_keys = nullptr);
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex D.3.2 and clause 5.3.5: reads the Root KMS certificate of a KmsInit response.
 PublicParameters parse_kms_init(std::string_view xml, std::string_view user, std::string_view kms,
-                                std::string_view request, std::uint64_t now);
+                                std::string_view request, std::uint64_t now,
+                                const transport::TransportKeys *keys = nullptr);
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex D.3.3 and clause 5.3.6: reads the user's key set of a KmsKeyProv response and validates it against
 // the KMS certificate.
 IdentityKeys parse_kms_keyprov(std::string_view xml, const PublicParameters &parameters, std::string_view user,
-                               std::string_view request, std::uint64_t now);
+                               std::string_view request, std::uint64_t now,
+                               const transport::TransportKeys *keys = nullptr);
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex D.2.2 (table D.2.2-1): the SignedKmsRequest a KM client posts with a KMS request when it holds an
+// InK or TrK: UserUri, KmsUri (the KMS URI, the security domain identifier of clause 3.1), Time and ClientReqUrl (the
+// request URI), signed under the integrity key.
+std::string kms_request_xml(std::string_view user, std::string_view kms, std::string_view request, std::uint64_t now,
+                            const transport::TransportKeys &keys);
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex D.2.2: the KMS's checks of a SignedKmsRequest: the signature, under the integrity key of the keys
+// that keys_of gives for the request's UserUri ("based on the UserUri and the InK or TrK"); the XML; the KmsUri is
+// this KMS's; the Time is within window seconds of now (the clause's "recent time window (e.g. 5 seconds)" is left to
+// the KMS); the ClientReqUrl is the request URI. Returns the UserUri; throws on any failure.
+std::string verify_kms_request(std::string_view xml, const std::function<transport::TransportKeys(const std::string &)> &keys_of,
+                               std::string_view kms, std::string_view request, std::uint64_t now, std::uint64_t window);
 
 //------------------------------------------------------------------------------
 // TS 33.180 annexes D.2.5 and D.3.2: the KmsCertCache response of a KMS without External KMSs: no certificates.

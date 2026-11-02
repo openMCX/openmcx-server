@@ -35,13 +35,28 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   IdMS that obtains its token with the client credentials grant (RFC 6749 section 4.4), with its public service
   identity (the GMS URI) as subject. A KMS of another vendor serves them if it accepts such tokens of the IdMS.
 - **KMS request security (TrK/InK).** The KMS and the key management clients use direct HTTPS (TS 33.180 clause 5.3.2,
-  where the TrK and InK "may" be used); the KMS refuses a request body. The TrK/InK extension of clause 5.3.2 and annex
-  D.2.2/D.3.1, which clause 5.3.2 requires behind the HTTP proxy, is not implemented, because one detail it needs is
-  open (reported): the key material to wrap, the 257-octet SAKKE RSK and the 65-octet ECCSI PVT, does not meet the
-  input length of the AES-256 key wrap of RFC 3394 (clause 9.3, which says it "shall be supported"); the referenced
-  XML Encryption 1.1 also has a padded key wrap (RFC 5649), but the text does not say which one a KMS uses, and OpenMCX
-  does not pick one. The optional encryption of the whole KMS message with AES-128-GCM under a 256-bit TrK (annex
-  D.3.1) is not applied (reported).
+  where the TrK and InK "may" be used). With a user's pre-provisioned TrK and InK (the Linux client's and the KMS's
+  `security.transport_keys`), KMS requests are signed and the KMS verifies them (annex D.2.2; the time window is the
+  KMS's `security.kms_request_window_seconds`, which the clause leaves to the KMS), and KMS responses are signed and
+  their key set wrapped under the TrK (annexes D.3.1 and D.3.3.2); the InK signs, else the TrK. Where the texts leave
+  details open (reported):
+  - the Signature-ID and TrK-ID elements are not sent and, when received, not read: annexes D.2.2 and D.3.1 say
+    Signature-ID "shall be present" when a signature is applied (TrK-ID when confidentiality is required), but annex
+    D.3.5.3 types them xsd:string and no clause gives their text form; the signing key is named by the KeyName (the
+    base64 XPK-ID, clause 9.3.5);
+  - the 257-octet SAKKE RSK and the 65-octet ECCSI PVT do not meet the input length of the AES-256 key wrap of
+    RFC 3394 (clause 9.3, which says it "shall be supported"), and the text does not say which other wrap a KMS uses:
+    the padding of the ETSI test suite for TS 37.579 is used (n - 1 zero octets and one octet n before RFC 3394), as
+    that test system's reading, not a 3GPP rule;
+  - the References of signed KMS messages point to the schema's Id attribute, which annex D.3.5.1 types xsd:string
+    rather than xsd:ID: it is resolved as an ID, as the ETSI test suite does (that test system's reading);
+  - AES-128-GCM "shall be supported" for an encrypted KmsResponse (annex D.3.1) under the 256-bit TrK, and the text
+    does not say which 128-bit key it uses: not implemented, such a response is refused;
+  - a Time without a time zone (xsd:dateTime allows it; the annex D examples use it) is refused: it names no instant
+    and the text does not say which zone it is in;
+  - the KMS URI the KMS's documents carry (clause 3.1, a security domain identifier) and the address the KMS is
+    contacted at (TS 24.484 clause 7.2.2.7 `<kms>`) can differ, and no configuration item gives the first: the Linux
+    client's `security.kms_id`, by default the address.
 - **Home HTTP proxy** (TS 24.482 annex A.2.1.2). With `<http-proxy>` configured, the Linux and Android clients send
   their HTTP requests over a TLS tunnel to the proxy in absolute-form, the IdMS's directly. Not implemented, as the
   texts leave them open (reported): mutual TLS tunnel authentication with a certificate (TS 24.484 clause 7.2.2.7 g)

@@ -9,10 +9,14 @@
 // (XCAP diff).
 
 #include "mcx/key_documents.hpp"
+#include "mcx/transport_keys.hpp"
+
+#include <string>
 
 #include <iostream>
 #include <stdexcept>
 using namespace mcx::keying;
+namespace transport = mcx::transport;
 
 //------------------------------------------------------------------------------
 // Throws the message when the condition does not hold.
@@ -110,6 +114,110 @@ int main() {
     at = longer.find('>', longer.find("<UserSigningKeySSK")) + 1;
     longer.insert(at, "01");
     rejects([&] { parse_kms_keyprov(longer, authority.public_parameters, keys.uri, request, now); });
+    // TS 33.180 annex D.3.5.1: the KmsResponse Version attribute is optional (fixed="1.0.0"); another value is refused.
+    {
+      const auto request_init = "https://kms.example.org/keymanagement/identity/v1/init";
+      auto unversioned = init;
+      unversioned.erase(unversioned.find(" Version=\"1.0.0\">"), 16);
+      check(parse_kms_init(unversioned, "sip:a@example.org", home_kms.period.kms_uri, request_init, now)
+                    .authentication_key == home_kms.authentication_key,
+            "KmsResponse without Version");
+      auto other_version = init;
+      other_version.replace(other_version.find("Version=\"1.0.0\">"), 16, "Version=\"2.0.0\">");
+      rejects([&] { parse_kms_init(other_version, "sip:a@example.org", home_kms.period.kms_uri, request_init, now); });
+      // xsd:dateTime: the Time with a zone offset is the same instant; a fraction is dropped; no zone is refused.
+      const auto time_at = init.find("<Time>") + 6;
+      const auto utc = init.substr(time_at, 20);
+      const int hour = std::stoi(utc.substr(11, 2));
+      check(hour <= 21, "test time");
+      auto offset = init;
+      offset.replace(time_at, 20, utc.substr(0, 11) + (hour + 2 < 10 ? "0" : "") + std::to_string(hour + 2) +
+                                      utc.substr(13, 6) + ".250+02:00");
+      check(parse_kms_init(offset, "sip:a@example.org", home_kms.period.kms_uri, request_init, now).encryption_key ==
+                home_kms.encryption_key,
+            "Time with a zone offset and a fraction");
+      auto unzoned = init;
+      unzoned.replace(time_at, 20, utc.substr(0, 19));
+      rejects([&] { parse_kms_init(unzoned, "sip:a@example.org", home_kms.period.kms_uri, request_init, now); });
+      auto bad_zone = init;
+      bad_zone.replace(time_at, 20, utc.substr(0, 19) + "+25:00");
+      rejects([&] { parse_kms_init(bad_zone, "sip:a@example.org", home_kms.period.kms_uri, request_init, now); });
+
+      // TS 33.180 clause 5.3.2, annexes D.1, D.2.2, D.3.1 and D.3.3.2: the protected exchange with an InK and a TrK.
+      const std::string user = "sip:a@example.org";
+      Bytes trk(32), ink(32), other(32, 0x77);
+      for (int i = 0; i < 32; ++i) trk[i] = std::uint8_t(i), ink[i] = std::uint8_t(0x80 + i);
+      transport::TransportKeys both{transport::Xpk{trk, 0x0a0b0c0d}, transport::Xpk{ink, 0x01020304}, user};
+      transport::TransportKeys trk_only{transport::Xpk{trk, 0x0a0b0c0d}, std::nullopt, user};
+      transport::TransportKeys ink_only{std::nullopt, transport::Xpk{ink, 0x01020304}, user};
+      transport::TransportKeys wrong_ink{transport::Xpk{trk, 0x0a0b0c0d}, transport::Xpk{other, 0x01020304}, user};
+      transport::TransportKeys none{std::nullopt, std::nullopt, user};
+      const auto signed_init = kms_init_xml(home_kms, user, request_init, now, &both);
+      check(signed_init.find("<SignedKmsResponse") != std::string::npos &&
+                signed_init.find("<ds:KeyName>AQIDBA==</ds:KeyName>") != std::string::npos &&
+                signed_init.find("Signature-ID") == std::string::npos && signed_init.find("TrK-ID") == std::string::npos,
+            "signed KmsInit under the InK, KeyName base64 InK-ID, no Signature-ID or TrK-ID element");
+      check(parse_kms_init(signed_init, user, home_kms.period.kms_uri, request_init, now, &both).authentication_key ==
+                home_kms.authentication_key,
+            "signed KmsInit verified");
+      rejects([&] { parse_kms_init(signed_init, user, home_kms.period.kms_uri, request_init, now); });
+      rejects([&] { parse_kms_init(signed_init, user, home_kms.period.kms_uri, request_init, now, &none); });
+      rejects([&] { parse_kms_init(signed_init, user, home_kms.period.kms_uri, request_init, now, &wrong_ink); });
+      rejects([&] { parse_kms_init(signed_init, user, home_kms.period.kms_uri, request_init, now, &trk_only); });
+      auto tampered = signed_init;
+      tampered[tampered.find("<PubAuthKey>") + 14] ^= 1;
+      rejects([&] { parse_kms_init(tampered, user, home_kms.period.kms_uri, request_init, now, &both); });
+      // Without an InK the TrK signs (annexes D.2.2 and D.3.1).
+      const auto trk_signed = kms_init_xml(home_kms, user, request_init, now, &trk_only);
+      check(trk_signed.find("<ds:KeyName>CgsMDQ==</ds:KeyName>") != std::string::npos &&
+                parse_kms_init(trk_signed, user, home_kms.period.kms_uri, request_init, now, &trk_only)
+                        .encryption_key == home_kms.encryption_key,
+            "KmsInit signed under the TrK");
+      // An unsigned response stays the TLS profile, also with transport keys.
+      check(parse_kms_init(init, user, home_kms.period.kms_uri, request_init, now, &both).authentication_key ==
+                home_kms.authentication_key,
+            "unsigned KmsInit with transport keys");
+      // The key set wrapped under the TrK (EncKeyContentType, kw-aes256, KeyName base64 TrK-ID) and signed.
+      const auto protected_keys = kms_keyprov_xml(authority.public_parameters, keys, request, now, &both);
+      check(protected_keys.find("EncKeyContentType") != std::string::npos &&
+                protected_keys.find("\"KeyContentType\"") == std::string::npos &&
+                protected_keys.find("<ds:KeyName>CgsMDQ==</ds:KeyName>") != std::string::npos,
+            "key set wrapped under the TrK");
+      const auto unwrapped = parse_kms_keyprov(protected_keys, authority.public_parameters, user, request, now, &both);
+      check(unwrapped.signing_pair == keys.signing_pair && unwrapped.receiver_secret == keys.receiver_secret,
+            "TrK-wrapped key set unwrapped and validated");
+      const auto wrapped_unsigned = kms_keyprov_xml(authority.public_parameters, keys, request, now, &trk_only);
+      rejects([&] { parse_kms_keyprov(wrapped_unsigned, authority.public_parameters, user, request, now, &ink_only); });
+      rejects([&] { parse_kms_keyprov(wrapped_unsigned, authority.public_parameters, user, request, now); });
+      transport::TransportKeys other_trk{transport::Xpk{other, 0x0a0b0c0d}, std::nullopt, user};
+      rejects([&] { parse_kms_keyprov(wrapped_unsigned, authority.public_parameters, user, request, now, &other_trk); });
+
+      // TS 33.180 annex D.2.2: the signed KMS request and the KMS's checks.
+      const auto signed_request = kms_request_xml(user, home_kms.period.kms_uri, request_init, now, both);
+      check(signed_request.find("<SignedKmsRequest") != std::string::npos &&
+                signed_request.find("<KmsRequest xmlns=\"urn:3gpp:ns:mcsecKMSInterface:1.0\" Id=\"xmldoc\" "
+                                    "Version=\"1.1.0\"><UserUri>sip:a@example.org</UserUri>") != std::string::npos &&
+                signed_request.find("Signature-ID") == std::string::npos,
+            "SignedKmsRequest");
+      const auto keys_of = [&](const std::string &who) { return who == user ? both : none; };
+      check(verify_kms_request(signed_request, keys_of, home_kms.period.kms_uri, request_init, now + 5, 5) == user,
+            "signed request verified by the KMS");
+      rejects([&] { verify_kms_request(signed_request, keys_of, home_kms.period.kms_uri, request_init, now + 6, 5); });
+      rejects([&] { verify_kms_request(signed_request, keys_of, "https://other.example.org", request_init, now, 5); });
+      rejects([&] { verify_kms_request(signed_request, keys_of, home_kms.period.kms_uri, request, now, 5); });
+      rejects([&] {
+        verify_kms_request(signed_request, [&](const std::string &) { return none; }, home_kms.period.kms_uri,
+                           request_init, now, 5);
+      });
+      rejects([&] {
+        verify_kms_request(signed_request, [&](const std::string &) { return wrong_ink; }, home_kms.period.kms_uri,
+                           request_init, now, 5);
+      });
+      auto forged = signed_request;
+      forged.replace(forged.find("sip:a@example.org"), 17, "sip:b@example.org");
+      rejects([&] { verify_kms_request(forged, keys_of, home_kms.period.kms_uri, request_init, now, 5); });
+      rejects([&] { (void)kms_request_xml(user, home_kms.period.kms_uri, request_init, now, none); });
+    }
     auto duplicate = init;
     at = duplicate.find("<UserUri>");
     duplicate.insert(at, "<UserUri>sip:a@example.org</UserUri>");

@@ -10,6 +10,7 @@
 #include "mcx/key_documents.hpp"
 #include "mcx/keying_json.hpp"
 #include "mcx/security.hpp"
+#include "mcx/transport_keys.hpp"
 
 #include <algorithm>
 #include <array>
@@ -31,9 +32,31 @@ json kms_response(const std::string &op, const json &request) {
   const auto user = request.at("user_uri").get<std::string>();
   const auto uri = request.at("request_uri").get<std::string>();
   const auto now = request.at("ntp_seconds").get<std::uint64_t>();
+  // TS 33.180 clause 5.3.2, annexes D.3.1 and D.3.3.2: for a user with a TrK or InK ("security", whose transport_keys
+  // name this user), the response signed and the key set wrapped under them; the keys live only for this response.
+  const auto keys = mcx::transport::load_for(request.value("security", json::object()), user);
   result["xml"] = op == "kms-init"
-                      ? kms_init_xml(authority.public_parameters, user, uri, now)
-                      : kms_keyprov_xml(authority.public_parameters, issue(authority, user, now), uri, now);
+                      ? kms_init_xml(authority.public_parameters, user, uri, now, &keys)
+                      : kms_keyprov_xml(authority.public_parameters, issue(authority, user, now), uri, now, &keys);
+  return result;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex D.2.2: verifies the SignedKmsRequest of a KMS request ("kms-verify-request") for the user the
+// access token names: the signature under that user's integrity key, the KmsUri (this KMS's KMS URI), the Time within
+// window_seconds and the ClientReqUrl. Another UserUri has no keys here and is refused.
+json kms_verify_request(const json &request) {
+  const auto authority = request.at("authority").get<Authority>();
+  const auto user = request.at("user_uri").get<std::string>();
+  const auto security = request.value("security", json::object());
+  const auto keys_of = [&](const std::string &who) {
+    return who == user ? mcx::transport::load_for(security, user) : mcx::transport::load(nullptr, who);
+  };
+  json result;
+  result["user_uri"] =
+      verify_kms_request(request.at("request_xml").get<std::string>(), keys_of, authority.public_parameters.period.kms_uri,
+                         request.at("request_uri").get<std::string>(), request.at("ntp_seconds").get<std::uint64_t>(),
+                         request.at("window_seconds").get<std::uint64_t>());
   return result;
 }
 
@@ -104,8 +127,8 @@ std::string read_input() {
 } // namespace
 
 //------------------------------------------------------------------------------
-// TS 33.180 clauses 5.3 and 5.7: runs one key operation ("authority-generate", "kms-init", "kms-keyprov",
-// "kms-certcache", "gktp" or "issue") and writes its JSON result to stdout.
+// TS 33.180 clauses 5.3 and 5.7: runs one key operation ("authority-generate", "kms-verify-request", "kms-init",
+// "kms-keyprov", "kms-certcache", "gktp" or "issue") and writes its JSON result to stdout.
 int main() {
   std::string op;
   try {
@@ -117,6 +140,8 @@ int main() {
     if (op == "authority-generate") {
       result = create_authority(
           {request.at("kms_uri"), request.value("key_period", 2592000u), request.value("key_offset", 0u)});
+    } else if (op == "kms-verify-request") {
+      result = kms_verify_request(request);
     } else if (op == "kms-init" || op == "kms-keyprov") {
       result = kms_response(op, request);
     } else if (op == "kms-certcache") {

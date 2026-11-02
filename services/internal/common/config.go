@@ -41,6 +41,15 @@ const (
 
 type SecurityConfig struct {
 	KeyParameterProfile map[string]uint8 `json:"key_parameter_profile,omitempty"`
+	// TS 33.180 clause 5.3.2: the TrK and InK the KMS shares with the KM client of each MC service user, keyed by the
+	// exact MC service user URI, each {"trk": {"file", "id"}, "ink": {"file", "id"}} as in the clients'
+	// security.transport_keys (mcx::transport::load: owner-only files, hexadecimal keys). For such a user the KMS
+	// verifies a signed KMS request (annex D.2.2) and signs its responses and wraps the key set (annexes D.3.1,
+	// D.3.3.2); every other user gets the TLS profile.
+	TransportKeys map[string]json.RawMessage `json:"transport_keys,omitempty"`
+	// TS 33.180 annex D.2.2: the "recent time window (e.g. 5 seconds)" in which the Time of a signed KMS request must
+	// lie, in seconds; the clause leaves it to the KMS. Required with transport_keys; no default.
+	KMSRequestWindowSeconds int `json:"kms_request_window_seconds,omitempty"`
 }
 
 type Config struct {
@@ -508,6 +517,9 @@ func LoadConfig(path string) (Config, error) {
 // Helper: checks the configuration: the required values, unique and known identities (MCPTT, MCData and MCVideo
 // IDs, functional aliases), the users' rulesets, the groups and their protection.
 func (cfg Config) Validate() error {
+	if len(cfg.Security.TransportKeys) > 0 && cfg.Security.KMSRequestWindowSeconds <= 0 {
+		return errors.New("security.kms_request_window_seconds is required with security.transport_keys (TS 33.180 annex D.2.2)")
+	}
 	if admin := cfg.AdminAccounts; admin != nil && (!strings.HasPrefix(admin.URL, "https://") || !strings.HasPrefix(admin.LinkBaseURL, "https://")) {
 		return errors.New("admin_accounts needs an https:// url and link_base_url")
 	}

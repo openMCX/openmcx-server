@@ -230,14 +230,36 @@ func (svc *service) kmsProvision(writer http.ResponseWriter, request *http.Reque
 			user = id
 		}
 	}
-	// This direct-TLS profile does not implement the optional TrK/InK extension (TS 33.180 annex D.2.2);
-	// reject submitted protected request bodies instead of pretending to verify them.
+	// TS 33.180 clause 5.3.2 and annex D.2.2: a user with a TrK or InK (security.transport_keys) may send a signed
+	// KMS request; the key tool verifies it (signature under that user's integrity key, KmsUri, Time within
+	// security.kms_request_window_seconds, ClientReqUrl). Any other user's request has no body (TLS profile).
 	body, err := io.ReadAll(io.LimitReader(request.Body, kmsMaxRequestBody))
-	if err != nil || len(body) > 0 {
+	transportKeys, protectedUser := svc.cfg.Security.TransportKeys[user]
+	if err != nil || len(body) >= kmsMaxRequestBody || (len(body) > 0 && !protectedUser) {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "unsupported_request_body"})
 		return
 	}
 	now := uint64(svc.now().Unix() + ntpUnixOffset)
+	requestURI := svc.cfg.Endpoints.KMS + request.URL.RequestURI()
+	var transport map[string]any
+	if protectedUser {
+		transport = map[string]any{"transport_keys": map[string]json.RawMessage{user: transportKeys}}
+	}
+	if len(body) > 0 {
+		if svc.kmsError != nil || len(svc.kmsAuthority) == 0 {
+			writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": "kms_unavailable"})
+			return
+		}
+		check := map[string]any{"op": "kms-verify-request", "authority": svc.kmsAuthority, "user_uri": user,
+			"request_uri": requestURI, "ntp_seconds": now, "request_xml": string(body), "security": transport,
+			"window_seconds": svc.cfg.Security.KMSRequestWindowSeconds}
+		if _, verifyErr := svc.runKeyTool(check); verifyErr != nil {
+			svc.logEvent("kms_signed_request_refused", map[string]any{"user": user, "operation": operation})
+			writeJSON(writer, http.StatusForbidden, map[string]string{"error": "invalid_signed_request"})
+			return
+		}
+		svc.logEvent("kms_signed_request", map[string]any{"user": user, "operation": operation})
+	}
 	if requested := request.PathValue("timestamp"); requested != "" {
 		value, parseErr := strconv.ParseUint(requested, 16, 64)
 		if parseErr != nil || len(requested) != 16 {
@@ -256,7 +278,10 @@ func (svc *service) kmsProvision(writer http.ResponseWriter, request *http.Reque
 		writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": "kms_unavailable"})
 		return
 	}
-	input := map[string]any{"op": "kms-" + operation, "authority": svc.kmsAuthority, "user_uri": user, "ntp_seconds": now, "request_uri": svc.cfg.Endpoints.KMS + request.URL.RequestURI()}
+	input := map[string]any{"op": "kms-" + operation, "authority": svc.kmsAuthority, "user_uri": user, "ntp_seconds": now, "request_uri": requestURI}
+	if transport != nil {
+		input["security"] = transport
+	}
 	raw, err := svc.runKeyTool(input)
 	var result struct {
 		XML string `json:"xml"`
@@ -264,6 +289,10 @@ func (svc *service) kmsProvision(writer http.ResponseWriter, request *http.Reque
 	if err != nil || json.Unmarshal(raw, &result) != nil || result.XML == "" {
 		writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": "key_provision_failed"})
 		return
+	}
+	if transport != nil {
+		// TS 33.180 annexes D.3.1 and D.3.3.2: the response signed and its key set wrapped with the user's keys.
+		svc.logEvent("kms_protected_response", map[string]any{"user": user, "operation": operation})
 	}
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.Header().Set("Content-Type", "application/xml")

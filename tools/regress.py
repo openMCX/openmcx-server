@@ -533,6 +533,15 @@ LABS = [
         ['bootstrap_recovery_scenario'],
         ['mcptt', 'protected'],
     ),
+    # TS 33.180 clause 5.3.2, annexes D.2.2, D.3.1 and D.3.3.2: the signed KMS exchange with key sets wrapped under the
+    # TrK (client-a with an InK and a TrK, client-b with a TrK only), then a protected call with the keys provisioned.
+    lab(
+        'kms-transport-keys',
+        'single',
+        KEYS + ['--transport-keys'],
+        ['kms_transport_keys_scenario', 'prearranged_scenario'],
+        ['mcptt', 'protected', 'kms'],
+    ),
     lab(
         'xml-key-documents',
         'single',

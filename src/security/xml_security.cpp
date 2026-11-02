@@ -40,25 +40,11 @@ void require(bool condition, const char *what) {
 }
 
 //------------------------------------------------------------------------------
-// TS 33.180 annex F.1.4: a signalling protection key from the XPK with the KDF of TS 33.220 annex B, FC = 0x51
-// (confidentiality) or 0x52 (integrity), P0 = MC service user ID, P1 = XPK-ID; the 128 least significant bits of
-// the output.
+// TS 33.180 annex F.1.4: the protection key of a 128-bit XPK (the CSK).
 std::array<std::uint8_t, 16> derive(const Key &key, std::uint8_t fc) {
-  require(!key.user.empty() && key.user.size() <= 65535, "XML protection needs the MC service user ID");
-  Bytes input{fc};
-  input.insert(input.end(), key.user.begin(), key.user.end());
-  input.push_back(static_cast<std::uint8_t>(key.user.size() >> 8));
-  input.push_back(static_cast<std::uint8_t>(key.user.size()));
-  for (int shift = 24; shift >= 0; shift -= 8) input.push_back(static_cast<std::uint8_t>(key.id >> shift));
-  input.push_back(0);
-  input.push_back(4);
-  std::array<std::uint8_t, 32> out{};
-  unsigned length = 0;
-  require(HMAC(EVP_sha256(), key.xpk.data(), key.xpk.size(), input.data(), input.size(), out.data(), &length) &&
-              length == 32,
-          "XPK key derivation failed");
+  auto out = protection_key(key.xpk, key.id, key.user, fc);
   std::array<std::uint8_t, 16> result{};
-  std::copy(out.begin() + 16, out.end(), result.begin());
+  std::copy(out.begin(), out.end(), result.begin());
   OPENSSL_cleanse(out.data(), out.size());
   return result;
 }
@@ -207,6 +193,35 @@ template <class Visitor> void each_element(xmlNodePtr node, Visitor &&visitor) {
   }
 }
 } // namespace
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex F.1.4: a signalling protection key from the XPK with the KDF of TS 33.220 annex B, FC = 0x51
+// (confidentiality) or 0x52 (integrity), P0 = MC service user ID, P1 = XPK-ID (4 octets, L1 = 0x00 0x04); "Where the
+// XPK is 128-bits ... the 128 least significant bits of the 256 bits of the KDF output", "Where the XPK is 256-bits
+// ... the entire output of the KDF". L0 and L1 are the actual lengths (TS 33.220 annex B.2.0): F.1.4's "(i.e. 0x00
+// 0x17)" for both is a spec defect (reported); for the 4-octet XPK-ID, L1 = 0x00 0x04.
+std::vector<std::uint8_t> protection_key(std::span<const std::uint8_t> xpk, std::uint32_t xpk_id, std::string_view user,
+                                         std::uint8_t fc) {
+  require(xpk.size() == 16 || xpk.size() == 32, "the XPK must be 128 or 256 bits");
+  require(fc == 0x51 || fc == 0x52, "unknown FC for an XPK-derived key");
+  require(!user.empty() && user.size() <= 65535, "XML protection needs the MC service user ID");
+  Bytes input{fc};
+  input.insert(input.end(), user.begin(), user.end());
+  input.push_back(static_cast<std::uint8_t>(user.size() >> 8));
+  input.push_back(static_cast<std::uint8_t>(user.size()));
+  for (int shift = 24; shift >= 0; shift -= 8) input.push_back(static_cast<std::uint8_t>(xpk_id >> shift));
+  input.push_back(0);
+  input.push_back(4);
+  std::array<std::uint8_t, 32> out{};
+  unsigned length = 0;
+  require(
+      HMAC(EVP_sha256(), xpk.data(), static_cast<int>(xpk.size()), input.data(), input.size(), out.data(), &length) &&
+          length == 32,
+      "XPK key derivation failed");
+  Bytes result(out.end() - static_cast<std::ptrdiff_t>(xpk.size()), out.end());
+  OPENSSL_cleanse(out.data(), out.size());
+  return result;
+}
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex F.1.4: the signalling plane confidentiality key (FC = 0x51).
