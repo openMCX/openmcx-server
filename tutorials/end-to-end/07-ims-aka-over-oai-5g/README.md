@@ -147,7 +147,8 @@ docker exec openmcx-ue-client mcx-client --config /run/mcx/ue-client.json --comm
 docker logs openmcx-ue-client 2>&1 | grep -E '"event":"(service_logged_off|logged_off|sip_deregistered)"'
 ```
 
-Step by step:
+Step by step (the messages of each step, with the frame numbers of the reference capture and where OpenMCX or this
+tutorial differs from the test's procedure: [call flow](CALL_FLOW.md)):
 
 | 5.1 step | TS 37.579-1 | What the client does | Where to see it | Normative clauses |
 |---|---|---|---|---|

@@ -57,6 +57,13 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   - the KMS URI the KMS's documents carry (clause 3.1, a security domain identifier) and the address the KMS is
     contacted at (TS 24.484 clause 7.2.2.7 `<kms>`) can differ, and no configuration item gives the first: the Linux
     client's `security.kms_id`, by default the address.
+- **MIKEY-SAKKE UID form** (spec defect, reported). TS 33.180 annex F.2.1.1 says "The full 256-bit output shall be
+  used as the identifier within MIKEY-SAKKE (referred to as 'ID' in IETF RFC 6507 [9] and 'a' or 'b' within IETF
+  RFC 6508 [10]. The resulting UID shall be base64 encoded." It does not say whether ECCSI (RFC 6507) and SAKKE
+  (RFC 6508) take the 32 octets of the SHA-256 output or their base64 text. The KMS, the MC servers and the clients
+  use the base64 text, as the KMS key set's UserID carries it (annex D.3.3.2); the ETSI test suite for TS 37.579 uses
+  the 32 octets. Keys and MIKEY-SAKKE messages of OpenMCX therefore do not interwork with a KMS or peer that uses the
+  32 octets.
 - **Home HTTP proxy** (TS 24.482 annex A.2.1.2). With `<http-proxy>` configured, the Linux and Android clients send
   their HTTP requests over a TLS tunnel to the proxy in absolute-form, the IdMS's directly. Not implemented, as the
   texts leave them open (reported): mutual TLS tunnel authentication with a certificate (TS 24.484 clause 7.2.2.7 g)
