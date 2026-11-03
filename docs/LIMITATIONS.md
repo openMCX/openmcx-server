@@ -149,12 +149,17 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   credentials only (an identity provisioned for IMS AKA gets none), so the clients that MCX Admin activates keep SIP
   digest over TLS, also where they run on 3GPP access: the dispatcher inside the 5G or 4G UE of tutorials 3, 4 and 5 is
   a deviation from TS 33.180 clause 6.2.1. The Android app would need carrier privileges to run AKA on the phone's SIM.
-  Own deviation not fixed yet: the Linux client's IMS AKA keys and functions are in software (its configuration and
-  the software ISIM), not on a UICC: TS 33.203 clause 4 says "IMS authentication keys and functions at the user side
-  shall be stored on a UICC", and the IM credentials of its clause 9 (keys in the device) are only for a terminal that
-  does not support 3GPP access and "shall not used if ISIM or USIM is present". This applies wherever the client runs
-  inside a UE (tutorials 3a, 4, 5 and 7, next to the UE's own USIM) and in the `aka` and `aka-udp` labs. A fix needs
-  the client to use a card for the AKA calculations (through a smart-card reader, or the UICC of a 3GPP modem).
+  The Linux client is a research and test client, not a client for operational use. It uses SIP digest over TLS for
+  identities provisioned with a digest password, on non-3GPP access (the regression labs, tutorials 1 and 2, the
+  unit-test tutorials), and IMS AKA for identities provisioned with an IMS AKA subscription, with its credentials held
+  in software. On a terminal without 3GPP access (the `aka` labs, a PC, a VPN to a test system) and on a device behind
+  an MC gateway UE that routes for it (TS 23.280 clause 11, TS 33.180 clause 5.12.1), these are the IM credentials that
+  TS 33.180 clause 6.2.1 allows for "non-3GPP-only MC UEs not equipped with UICC" (TS 33.203 clause 9, TS 24.229
+  clause 5.1.1.1B.1). **For testing and debugging only**, the client also runs inside the emulated UEs of tutorials 3a,
+  4, 5 and 7, which emulate their own USIM in software: there its software credentials are a deviation from TS 33.203
+  clauses 4 ("IMS authentication keys and functions at the user side shall be stored on a UICC") and 9 ("The IMC
+  shall not used if ISIM or USIM is present"), a deviation of these test beds, never a configuration for operational
+  use.
   On non-3GPP access (Wi-Fi, a control room, the labs) TS 33.180 allows SIP digest with TLS (TS 33.203 annexes N and O;
   ETSI TS 103 765-2 clause 6.1.1 does the same for FRMCS on-board applications), but OpenMCX departs from those annexes
   in three points: the challenge offers MD5 only, without SHA-256, and without qop "auth" (annex N.2.1.1, TS 24.229

@@ -305,7 +305,7 @@ Each gap is one of:
 - **tutorial**: a choice of this tutorial or its test bed, not of the MC client;
 - **order**: the client does what the test checks, in another order;
 - **capture**: the reference capture shows an older client;
-- **test bed**: the emulated UE departs from a real one.
+- **test bed**: the emulated UE departs from a real one (for testing and debugging only).
 
 | Gap | Kind | Step | What | Where described |
 |---|---|---|---|---|
@@ -318,4 +318,4 @@ Each gap is one of:
 | G7 | tutorial | 19 | No GKTP subscription: the group `operations` is not protected; the GMK retrieval is optional (table 5.3.2.7.1-2). | README step 5 |
 | G8 | tutorial | 1 | rfsim carries the 5QI but does not enforce it; no radio, no system simulator, no TTCN-3 test suite. | README step 5 |
 | G9 | capture | SIP registration, log-off | The reference capture predates the reg event subscriptions of the client and the P-CSCF (TS 24.229 clauses 5.1.1.3 and 5.2.3; not part of table 5.3.2.4.1-1) and the client's 200 to the final NOTIFYs at log-off (RFC 6665 clause 4.1.2.3; it answered 403, and 481 after the de-REGISTER). | this page |
-| G10 | test bed | SIP registration, and every IMS AKA run | The MC client holds its IMS AKA credentials (IMPI, K, OPc) in its own configuration, a software ISIM separate from the nr-UE's USIM, and runs the AKA calculations itself. A real UE keeps them on its UICC, in the ISIM or USIM application (TS 33.203 clause 4: "IMS authentication keys and functions at the user side shall be stored on a UICC"); the IM credentials of clause 9 (keys in the device) are only for a terminal without 3GPP access and "shall not used if ISIM or USIM is present". The test USIM of TS 37.579-1 clause 5.2.2.2.1 is a card. | Known limitations, "SIP core access" |
+| G10 | test bed | SIP registration, and every IMS AKA run | The MC client holds its IMS AKA credentials (IMPI, K, OPc) in its own configuration, a software ISIM separate from the nr-UE's USIM, and runs the AKA calculations itself. A real UE keeps them on its UICC, in the ISIM or USIM application (TS 33.203 clause 4: "IMS authentication keys and functions at the user side shall be stored on a UICC"); the IM credentials of clause 9 (keys in the device) are only for a terminal without 3GPP access and "shall not used if ISIM or USIM is present". The test USIM of TS 37.579-1 clause 5.2.2.2.1 is a card. A deviation of this test bed, for testing and debugging only, never for operational use. | Known limitations, "SIP core access" |
