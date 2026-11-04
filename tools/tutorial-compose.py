@@ -70,6 +70,9 @@ ADDRESSES = {
 # MCVideo; their ports come from the SDP), and ICMP (media sent to a closed port). DNS and HTTPS (TLS) are left out,
 # and so is the host's own traffic on the bridge (its gateway address .1: mDNS, WS-Discovery).
 DEFAULT_FILTER = 'tcp port 5060 or (udp and not port 53) or icmp'
+# A lab with a P-CSCF (--aka-role): its IMS AKA client's SIP goes inside IPsec ESP after the 401 (TS 33.203 clause 7),
+# so the capture keeps ESP; and HTTPS on 8443 (encrypted), to show the client's sign-in, KMS and document requests.
+AKA_FILTER = DEFAULT_FILTER + ' or esp or tcp port 8443'
 
 
 # ------------------------------------------------------------------------------
@@ -149,7 +152,7 @@ def main():
     parser.add_argument('--number', required=True, help='the unit test tutorial number, e.g. 1')
     parser.add_argument('--title', required=True)
     parser.add_argument('--capture', required=True, help='the capture file name, without .pcap')
-    parser.add_argument('--filter', default=DEFAULT_FILTER, help='the tcpdump capture filter')
+    parser.add_argument('--filter', help='the tcpdump capture filter (default: DEFAULT_FILTER, AKA_FILTER with a P-CSCF)')
     parser.add_argument('--tag', default=OPENMCX_TAG, help='the image tag (default the release; develop for later features)')
     parser.add_argument('--name', help='the project and bridge name (default openmcx-utNN)')
     parser.add_argument('--subnet', help='the first three octets of the /24 (default 172.31.N)')
@@ -165,6 +168,9 @@ def main():
     subnet = args.subnet or f'172.31.{int(args.number)}'
     bridge = args.name or f'openmcx-ut{number}'
     flags = ' '.join(['--debug-sip', *args.flags])
+    protocols = args.filter or (AKA_FILTER if 'pcscf' in lab['services'] else DEFAULT_FILTER)
+    # The tutorial's path in the repository: tutorials/unit-tests/NN-... or tutorials/end-to-end/NN-...
+    folder = f'tutorials/{args.tutorial.resolve().parent.name}/{args.tutorial.name}'
 
     services = {
         # One-off: the lab's generator, as the regression runs it, writes ./config. Not started by `up`.
@@ -198,7 +204,7 @@ def main():
                 '0',
                 '-w',
                 f'/captures/{args.capture}.pcap',
-                capture_filter(args.filter, subnet),
+                capture_filter(protocols, subnet),
             ],
             'volumes': ['captures:/captures'],
             'depends_on': {'sip-core': {'condition': 'service_started'}},
@@ -247,16 +253,21 @@ def main():
         if name in lab['services']
     ]
     roles = ('sip-core', 'mcptt-server', *(['mcvideo-server'] if 'mcvideo-server' in lab['services'] else []),
-             'client-a', 'client-b', 'client-c', 'client-d')
+             *(['pcscf'] if 'pcscf' in lab['services'] else []), 'client-a', 'client-b', 'client-c', 'client-d')
     first_line = len(roles) - 3
     header = [
-        f'# OpenMCX: {args.title} (tutorials/unit-tests/{args.tutorial.name}/README.md).',
+        f'# OpenMCX: {args.title} ({folder}/README.md).',
         '#',
-        '# The regression lab of this feature, from the published images: the '
+        ('# The regression lab of this feature' if 'unit-tests' in folder else '# A lab of the regression\'s generator')
+        + ', from the published images: the '
         + ' and '.join([', '.join(servers[:-1]), servers[-1]] if len(servers) > 1 else servers)
         + ' servers, the common',
-        '# services, the SIP core and four headless clients (client-a to client-d), with SIP in clear (5060/tcp, no',
-        f'# TLS) and a capture of the lab network ({bridge}) for Wireshark. Nothing is published on this computer.',
+        *(['# services, the SIP core, a P-CSCF and four headless clients (client-a to client-d). SIP is in clear (5060/tcp,',
+           '# no TLS) but for the IMS AKA client\'s, which goes through the P-CSCF and, after the 401, inside IPsec ESP. A',
+           f'# capture of the lab network ({bridge}) is kept for Wireshark. Nothing is published on this computer.']
+          if 'pcscf' in lab['services'] else
+          ['# services, the SIP core and four headless clients (client-a to client-d), with SIP in clear (5060/tcp, no',
+           f'# TLS) and a capture of the lab network ({bridge}) for Wireshark. Nothing is published on this computer.']),
         '#',
         '#   docker compose run --rm setup      once: writes ./config',
         '#   docker compose up -d --wait',
