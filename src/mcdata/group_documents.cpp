@@ -75,7 +75,7 @@ void DataServer::subscribe_group_document(const std::string &group) {
         });
       },
       "application/resource-lists+xml",
-      xcap_resource_list({"org.openmobilealliance.groups/global/byGroupID/" + url_encode(group)}));
+      xcap_resource_list({"org.openmobilealliance.groups/global/byGroupID/" + xcap_segment(group)}));
   event("mcdata_group_subscription", {{"group", group}});
 }
 

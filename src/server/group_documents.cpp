@@ -117,7 +117,7 @@ std::string McServer::xcap_diff(const std::string &root,
       "<?xml version=\"1.0\" encoding=\"UTF-8\"?><xcap-diff xmlns=\"urn:ietf:params:xml:ns:xcap-diff\" xcap-root=\"" +
       xml_escape(root) + "/\">";
   for (const auto &[group, previous, next] : docs) {
-    out += "<document sel=\"" + xml_escape(std::string(groups_auid) + url_encode(group)) + "\"";
+    out += "<document sel=\"" + xml_escape(std::string(groups_auid) + xcap_segment(group)) + "\"";
     if (!previous.empty()) out += " previous-etag=\"" + xml_escape(previous) + "\"";
     if (!next.empty()) out += " new-etag=\"" + xml_escape(next) + "\"";
     out += "/>";

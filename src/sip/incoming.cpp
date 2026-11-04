@@ -223,6 +223,7 @@ void SipEngine::Impl::follow_invite_state(pjsip_inv_session *invite, pjsip_event
         if (!dialog->bye_parts.empty())
           bye->msg->body =
               make_text_body(bye->pool, dialog->bye_parts.front().content_type, dialog->bye_parts.front().body);
+        before_send(bye);
         require_success(pjsip_inv_send_msg(invite, bye), "send BYE after crossed CANCEL");
       }
     } catch (const std::exception &error) {

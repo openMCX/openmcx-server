@@ -39,11 +39,18 @@ PublicParameters parse_kms_init(std::string_view xml, std::string_view user, std
                                 const transport::TransportKeys *keys = nullptr);
 
 //------------------------------------------------------------------------------
+// TS 33.180 annex F.2.1.1 (the UID form is not stated, spec defect): which UID forms a key set may be validated for.
+// text_only: the base64 text (OpenMCX's form; the MC servers, the GMS and the KMS). raw_then_text: the 32 octets first
+// (the ETSI test suite's reading for TS 37.579), then the text; asked for by the Linux client only.
+enum class UidDetection : std::uint8_t { text_only, raw_then_text };
+
+//------------------------------------------------------------------------------
 // TS 33.180 annex D.3.3 and clause 5.3.6: reads the user's key set of a KmsKeyProv response and validates it against
-// the KMS certificate.
+// the KMS certificate, for the UID forms detection allows; the form it validates for is returned in uid_form.
 IdentityKeys parse_kms_keyprov(std::string_view xml, const PublicParameters &parameters, std::string_view user,
                                std::string_view request, std::uint64_t now,
-                               const transport::TransportKeys *keys = nullptr);
+                               const transport::TransportKeys *keys = nullptr,
+                               UidDetection detection = UidDetection::text_only);
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex D.2.2 (table D.2.2-1): the SignedKmsRequest a KM client posts with a KMS request when it holds an

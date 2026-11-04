@@ -27,6 +27,8 @@ import yaml
 # for every image.
 HUB = 'docker.io/openmcx'
 OPENMCX_TAG = '1.0.0'
+# The tag the tutorial uses (--tag): the release by default; a tutorial of a feature after it uses develop.
+TAG = OPENMCX_TAG
 # The published image of each program of the lab's all-in-one image.
 PROGRAMS = {
     'mcx-common': 'openmcx-common',
@@ -57,6 +59,7 @@ ADDRESSES = {
     'notification-server': 48,
     'credentials': 49,
     'mcxadmin': 50,
+    'pcscf': 60,
     'client-a': 101,
     'client-b': 102,
     'client-c': 103,
@@ -96,10 +99,10 @@ def image(name, entrypoint):
         return 'docker.io/library/' + name
     program, tag = name.split(':', 1)
     if program == 'openmcx-kamailio':
-        return f'{HUB}/openmcx-kamailio:{OPENMCX_TAG}'
+        return f'{HUB}/openmcx-kamailio:{TAG}'
     if program == 'openmcx':
         program = PROGRAMS[Path(entrypoint[0]).name]
-    return f'{HUB}/{program}:{OPENMCX_TAG}'
+    return f'{HUB}/{program}:{TAG}'
 
 
 # ------------------------------------------------------------------------------
@@ -147,21 +150,26 @@ def main():
     parser.add_argument('--title', required=True)
     parser.add_argument('--capture', required=True, help='the capture file name, without .pcap')
     parser.add_argument('--filter', default=DEFAULT_FILTER, help='the tcpdump capture filter')
+    parser.add_argument('--tag', default=OPENMCX_TAG, help='the image tag (default the release; develop for later features)')
+    parser.add_argument('--name', help='the project and bridge name (default openmcx-utNN)')
+    parser.add_argument('--subnet', help='the first three octets of the /24 (default 172.31.N)')
     parser.add_argument('flags', nargs='*', help='the generator flags of the lab (after --)')
     args = parser.parse_args()
+    global TAG
+    TAG = args.tag
     lab = json.loads(args.lab.read_text())
     # The generator ran in the setup image with --directory /work/lab.
     generated = '/work/lab/generated'
     # Unit test tutorial N: project openmcx-utNN on 172.31.N.0/24, bridge openmcx-utNN; tutorials can run side by side.
     number = f'{int(args.number):02d}'
-    subnet = f'172.31.{int(args.number)}'
-    bridge = f'openmcx-ut{number}'
+    subnet = args.subnet or f'172.31.{int(args.number)}'
+    bridge = args.name or f'openmcx-ut{number}'
     flags = ' '.join(['--debug-sip', *args.flags])
 
     services = {
         # One-off: the lab's generator, as the regression runs it, writes ./config. Not started by `up`.
         'setup': {
-            'image': f'{HUB}/openmcx-setup:{OPENMCX_TAG}',
+            'image': f'{HUB}/openmcx-setup:{TAG}',
             'profiles': ['setup'],
             'entrypoint': ['sh', '-c'],
             'command': [
@@ -198,7 +206,8 @@ def main():
     }
     for name, lab_service in sorted(lab['services'].items(), key=lambda item: ADDRESSES[item[0]]):
         service = {'image': image(lab_service['image'], lab_service.get('entrypoint') or [''])}
-        for key in ('profiles', 'entrypoint', 'command', 'environment', 'init', 'tmpfs', 'healthcheck'):
+        # cap_add: NET_ADMIN of the IMS AKA client and the P-CSCF, for their IPsec security associations (TS 33.203).
+        for key in ('profiles', 'entrypoint', 'command', 'environment', 'init', 'tmpfs', 'healthcheck', 'cap_add'):
             value = lab_service.get(key)
             # The debug log switch of the OpenMCX programs (docs/USAGE.md section 7): off unless the reader sets
             # MCX_LOG=debug when running the tutorial.
@@ -222,7 +231,7 @@ def main():
     services['client-a']['depends_on']['capture'] = {'condition': 'service_started'}
 
     compose = {
-        'name': f'openmcx-ut{number}',
+        'name': bridge,
         'services': services,
         'networks': {
             'mcx': {

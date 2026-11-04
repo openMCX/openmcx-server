@@ -338,6 +338,10 @@ struct SipEngine::Impl {
   void aka_use_current();
   void aka_apply(pjsip_tx_data *data);
   void aka_apply(pjsip_dialog *dialog);
+  void aka_sec_agree(pjsip_tx_data *data);
+  [[nodiscard]] bool add_access_network_info(pjsip_tx_data *data) const;
+  void before_send(pjsip_tx_data *data);
+  static pj_status_t access_network_info_outgoing(pjsip_tx_data *data);
   [[nodiscard]] std::vector<std::string> aka_routes() const;
   [[nodiscard]] bool aka_accept(pjsip_rx_data *data);
   [[nodiscard]] aka::SecMechanism aka_new_offer() const;
@@ -400,6 +404,8 @@ struct SipEngine::Impl {
   pjsip_module module{};
   // Rewrites outgoing bodies just before the transport layer prints them.
   pjsip_module protection_module{};
+  // Adds SipConfig::access_network_info to outgoing messages, when configured.
+  pjsip_module access_network_info_module{};
   SipBodyFilter outgoing_filter, incoming_filter;
   std::unordered_map<std::string, std::unique_ptr<Dialog>> dialogs;
   std::vector<PendingResponse> pending_responses;

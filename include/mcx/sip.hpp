@@ -109,6 +109,18 @@ struct SipConfig {
   // The media feature tags of the REGISTER Contact, each with its leading ';'
   // (TS 24.379 clause 7.2.1AA, TS 24.282 clause 7.2.1AA). Empty: the MCPTT ones.
   std::string registration_features;
+  // A UE's media feature tags of RFC 3840 for its supported streaming media types, each with its leading ';' (e.g.
+  // ";audio;video"): TS 24.229 clause 5.1.1.2.1 c) "The UE shall include the media feature tags defined in RFC 3840
+  // [62] and RFC 5688 [120] for all supported streaming media types" in the REGISTER Contact, clause 5.1.3.1 in the
+  // initial INVITE and clause 5.1.4.1 in the responses to an INVITE other than 100 (Trying). Empty for servers.
+  std::string media_feature_tags;
+  // A UE's P-Access-Network-Info header field value (RFC 7315 section 5.4, TS 24.229 clause 7.2A.4), given by its
+  // configuration for a test system (TS 24.229 clause 5.1.2A.1.1: "If available to the UE ... the UE shall insert" it;
+  // the access technology specific annexes define when it is available, and none does for plain IP or a VPN). When
+  // set, it goes in every request but CANCEL and ACK (ACK optional) and in every response but those to CANCEL,
+  // REGISTER included (TS 24.229 clause 5.1.1.2.1 h) asks for it there only with a security association or TLS
+  // session; the ETSI test suite for TS 37.579 expects it in the initial REGISTER too: its reading). Empty: never sent.
+  std::string access_network_info;
   // RFC 5626 (SIP Outbound), for a client: its instance identifier (a URN, the MC client ID). When set, the REGISTER
   // Contact carries +sip.instance and reg-id=1 and every Contact URI ;ob, so that the SIP core reaches this endpoint
   // over the connection it registered on, never by connecting to its Contact (a client behind NAT, or on the

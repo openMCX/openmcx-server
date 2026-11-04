@@ -509,7 +509,8 @@ PublicParameters parse_kms_init(std::string_view xml, std::string_view user, std
 // TS 33.180 annex D.3.3 (table D.3.3.2-1) and clause 5.3.6: reads the user's key set of a KmsKeyProv response and
 // validates it against the KMS certificate.
 IdentityKeys parse_kms_keyprov(std::string_view xml, const PublicParameters &parameters, std::string_view user,
-                               std::string_view request, std::uint64_t now, const transport::TransportKeys *transport_keys) {
+                               std::string_view request, std::uint64_t now, const transport::TransportKeys *transport_keys,
+                               UidDetection detection) {
   auto doc = open_response(xml, user, transport_keys);
   auto *message = envelope(doc.get(), user, parameters.period.kms_uri, request, now);
   auto *prov = one(message, "KmsKeyProv");
@@ -534,7 +535,26 @@ IdentityKeys parse_kms_keyprov(std::string_view xml, const PublicParameters &par
   require(!ssk.empty() && ssk.size() <= 32, "invalid SSK size");
   ssk.insert(ssk.begin(), 32 - ssk.size(), 0);
   out.signing_pair.insert(out.signing_pair.end(), pvt.begin() + 1, pvt.end());
-  validate_identity(parameters, out, now);
+  // TS 33.180 annex F.2.1.1 does not say which UID form enters ECCSI and SAKKE (spec defect, reported): with
+  // raw_then_text, the key set is validated for the 32 octets first (the ETSI test suite's reading,
+  // f_ECCSI_GenerateSskPvtPair; maintainer decision 2026-11-02, a labelled exception to rule 7), then for the base64
+  // text (OpenMCX's form). The RFC 6507 5.1.2 and RFC 6508 6.1.2 checks are the ones made in any case; a key set
+  // valid in neither form is refused.
+  if (detection == UidDetection::raw_then_text) {
+    auto raw = parameters;
+    raw.uid_form = UidForm::raw;
+    try {
+      validate_identity(raw, out, now);
+      out.uid_form = UidForm::raw;
+      return out;
+    } catch (const std::exception &) {
+      // not keys for the 32 octets: the text form below
+    }
+  }
+  auto text = parameters;
+  text.uid_form = UidForm::text;
+  validate_identity(text, out, now);
+  out.uid_form = UidForm::text;
   return out;
 }
 
@@ -688,7 +708,8 @@ Bytes parse_gktp_document(std::string_view xml, std::string_view group) {
 
 //------------------------------------------------------------------------------
 // TS 24.481 clauses 6.3.13.2.1, 7.7.3 and 7.7.10: the XCAP path of the <GKTPs> element of the MCS GKTP document of a
-// group (relative to the XCAP root), the group ID percent-encoded.
+// group (relative to the XCAP root), the group ID percent-encoded where RFC 4825 section 6.2 asks it (characters not
+// permitted in a path segment; ':' and '@' are permitted, RFC 3986 section 3.3, and stay as in TS 24.481 annex A).
 std::string gktp_selector(std::string_view group) {
   require(!group.empty(), "empty group URI");
   const char *digits = "0123456789ABCDEF";
@@ -696,7 +717,7 @@ std::string gktp_selector(std::string_view group) {
   for (unsigned char character : group) {
     if ((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
         (character >= '0' && character <= '9') || character == '-' || character == '.' || character == '_' ||
-        character == '~')
+        character == '~' || character == ':' || character == '@')
       encoded += character;
     else {
       encoded += '%';

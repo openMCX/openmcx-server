@@ -30,6 +30,12 @@ public:
   // Where the warnings about accepted but unusual received keys go (e.g. a MIKEY RAND shorter than RFC 3830 section
   // 6.11 recommends); none are reported without a handler.
   void set_warning_handler(std::function<void(std::string_view)> handler);
+  // TS 33.180 annex F.2.1.1 (the UID form is not stated, spec defect): whether provision() also accepts a key set for
+  // the UID's 32 octets (the ETSI test suite's reading), tried before the base64 text; the form found serves every
+  // ECCSI and SAKKE operation under that KMS. Off by default (the MC servers, the GMS); the Linux client turns it on.
+  void set_uid_form_detection(bool enabled);
+  // The UID form the provisioned identity keys are for ("text" or "raw").
+  std::string_view uid_form() const;
   // TS 33.180 clause 5.3.3: provisions the identity keys with the user's access token.
   void provision(const std::string &token);
   // TS 33.180 clauses 5.3.2 and 5.3.3: provisions the identity keys of an MC server or the GMS, as a confidential

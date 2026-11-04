@@ -93,6 +93,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
   add_core_route(data.get(), headers);
   add_headers(data.get(), headers);
   aka_apply(data.get());
+  before_send(data.get());
 
   auto token = make_token(std::move(handler));
   initialize_auth(*token);
@@ -164,6 +165,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
     initialize_auth(*token);
     dialogs[id] = std::move(entry);
     auto *request_token = token.get();
+    before_send(data.get());
     send_owned(
         std::move(token), [&] { return pjsip_dlg_send_request(sip_dialog, data.release(), module.id, request_token); },
         "send SUBSCRIBE request");
@@ -199,6 +201,7 @@ void SipEngine::Impl::send_dialog_request(std::string_view dialog_id, const pjsi
                                     get_header(headers, "Subscription-State").starts_with("terminated");
   initialize_auth(*token);
   auto *request_token = token.get();
+  before_send(data.get());
   send_owned(
       std::move(token), [&] { return pjsip_dlg_send_request(sip_dialog, data.release(), module.id, request_token); },
       "send in-dialog SIP request");
@@ -215,7 +218,9 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
   ensure_started();
   auto local = pj_view(config.identity);
   const auto override_contact = get_header(headers, "Contact");
-  auto contact_text = override_contact.empty() ? contact_uri() : std::string(override_contact);
+  // TS 24.229 clause 5.1.3.1: the initial INVITE's Contact with the media feature tags (SipConfig::media_feature_tags).
+  auto contact_text =
+      override_contact.empty() ? contact_uri() + config.media_feature_tags : std::string(override_contact);
   if (sips_target(request_uri)) contact_text = as_sips(contact_text);
   auto contact = pj_view(contact_text);
   auto remote = pj_view(request_uri);
@@ -281,6 +286,7 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
     }
     add_headers(data.get(), without_route(headers));
     add_answer_headers(data.get(), config.invite_request_headers);
+    before_send(data.get());
     require_success(pjsip_inv_send_msg(invite_session, data.release()), "send INVITE request");
   } catch (...) {
     if (invite_session != nullptr)

@@ -12,6 +12,46 @@
 namespace mcx {
 
 //------------------------------------------------------------------------------
+// SipConfig::access_network_info: the P-Access-Network-Info header field of a message about to be sent (TS 24.229
+// clause 5.1.2A.1.1: not in CANCEL requests or their responses; optional in ACK, left out). False when there is none
+// to add or the message has it already (a retransmission, or added before the send).
+bool SipEngine::Impl::add_access_network_info(pjsip_tx_data *data) const {
+  const auto &value = config.access_network_info;
+  if (value.empty() || data == nullptr || data->msg == nullptr) return false;
+  const auto *message = data->msg;
+  if (message->type == PJSIP_REQUEST_MSG) {
+    const auto method = message->line.req.method.id;
+    if (method == PJSIP_CANCEL_METHOD || method == PJSIP_ACK_METHOD) return false;
+  } else {
+    const auto *cseq = static_cast<const pjsip_cseq_hdr *>(pjsip_msg_find_hdr(message, PJSIP_H_CSEQ, nullptr));
+    if (cseq == nullptr || cseq->method.id == PJSIP_CANCEL_METHOD) return false;
+  }
+  static const pj_str_t name = pj_str(const_cast<char *>("P-Access-Network-Info"));
+  if (pjsip_msg_find_hdr_by_name(message, &name, nullptr) != nullptr) return false;
+  pj_str_t text{};
+  pj_strdup2_with_null(data->pool, &text, value.c_str());
+  pjsip_msg_add_hdr(data->msg, reinterpret_cast<pjsip_hdr *>(pjsip_generic_string_hdr_create(data->pool, &name, &text)));
+  return true;
+}
+
+//------------------------------------------------------------------------------
+// The header fields a request gets before pjsip encodes it, so that its size decides between UDP and TCP (RFC 3261
+// section 18.1.1): the sec-agree ones of IMS AKA (aka_sec_agree) and P-Access-Network-Info. The send hooks add them
+// to the messages pjsip makes itself.
+void SipEngine::Impl::before_send(pjsip_tx_data *data) {
+  aka_sec_agree(data);
+  (void)add_access_network_info(data);
+}
+
+//------------------------------------------------------------------------------
+// The send hook of SipConfig::access_network_info (requests and responses), before the transport layer prints them.
+pj_status_t SipEngine::Impl::access_network_info_outgoing(pjsip_tx_data *data) {
+  auto *owner = active.load();
+  if (owner != nullptr && owner->add_access_network_info(data)) pjsip_tx_data_invalidate_msg(data);
+  return PJ_SUCCESS;
+}
+
+//------------------------------------------------------------------------------
 // RFC 3261 section 8.1.1.8: the bare Contact URI of this endpoint, a sip: URI with the transport in use
 // (transport=tls, or transport=tcp for debug), with ;ob for an RFC 5626 outbound client (section 5.4). IMS uses no
 // SIPS (TS 24.229): TLS protects the hop, and a SIPS Contact is only sent where RFC 3261 requires it (as_sips).
@@ -38,8 +78,8 @@ namespace mcx {
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 8.1.1.8 and RFC 4579: the Contact of a response: this endpoint's, or the checked public URI with
-// the service tags (or the response's own), with ;isfocus for a conference focus.
+// RFC 3261 section 8.1.1.8 and RFC 4579: the Contact of an INVITE response: this endpoint's, or the checked public URI
+// with the service tags (or the response's own), with ;isfocus for a conference focus.
 [[nodiscard]] std::string SipEngine::Impl::response_contact(const SipResponse &response) const {
   std::string contact = contact_uri();
   if (!response.contact_uri.empty()) {
@@ -51,7 +91,8 @@ namespace mcx {
     contact = "<" + uri + ">" + (response.contact_tags.empty() ? service_tags() : response.contact_tags);
   }
   if (response.focus) contact += ";isfocus";
-  return contact;
+  // TS 24.229 clause 5.1.4.1: a UE's responses to an INVITE carry its media feature tags (SipConfig::media_feature_tags).
+  return contact + config.media_feature_tags;
 }
 
 //------------------------------------------------------------------------------

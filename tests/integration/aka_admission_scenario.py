@@ -82,6 +82,9 @@ def main():
               f'{left}')
         before = refusals()
         codes = probe('parallel')
+        # The parallel sets were challenged when probe returned: the expiry is measured from here, not after the
+        # checks below (docker exec and log reads take seconds each under load).
+        challenged_parallel = time.monotonic()
         stored = sum(bool(xfrm(cli, 'pcscf', port)) for port in codes)
         check('concurrent admission: each REGISTER answered 401 or 400',
               all(code in (401, 400) for code in codes.values()), f'{codes}')
@@ -93,7 +96,8 @@ def main():
             raise AssertionError('no challenged REGISTER for the expiry check')
         # The expiry check follows the last set challenged in the lost step if no parallel one stayed.
         watch = next((port for port in reversed(last) if xfrm(cli, 'pcscf', port)), None)
-        start = time.monotonic() if watch else challenged
+        start = challenged_parallel if watch else challenged
+        measured_from = time.monotonic() - start
         watch = watch or 40220
         gone = None
         while time.monotonic() - start < LIFETIME + 20:
@@ -102,7 +106,8 @@ def main():
                 break
             time.sleep(2)
         check('temporary expiry: the uncompleted set goes after reg-await-auth',
-              gone is not None and LIFETIME - 10 <= gone <= LIFETIME + 10, f'port {watch}, gone after {gone} s')
+              gone is not None and LIFETIME - 10 <= gone <= LIFETIME + 10,
+              f'port {watch}, gone after {gone} s (watching from {measured_from:.1f} s after the challenge)')
         failed = [c['name'] + ' (' + c['detail'] + ')' for c in result['checks'] if not c['passed']]
         if failed:
             result['error'] = 'failed: ' + '; '.join(failed)

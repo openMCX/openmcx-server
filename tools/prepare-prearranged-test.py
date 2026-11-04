@@ -46,6 +46,27 @@ MBMS_VIDEO_BEARER = dict(
 
 
 # ------------------------------------------------------------------------------
+def drop_absent_debug_servers(fixture, names):
+    """Removes the debug-transport application-server checks (SIP_DEBUG_NO_TLS: source address against a DNS lookup
+    of each server name) for servers this lab does not run. The lookup of a name absent from the lab network goes
+    through Docker's resolver to the host's, and a slow host resolver then holds a SIP core worker for every request
+    from a UE (lab-only debug mode; the TLS checks match the certificate name first and are left as they are)."""
+    path = fixture / 'generated/kamailio.cfg'
+    text = path.read_text()
+    for name in names:
+        block = (
+            f'    dns_query("{name}", "as");\n'
+            f'    if ($si == $dns(as=>addr[0])) {{ $var(from_as) = 1; $var(as_user) = '
+        )
+        start = text.find(block)
+        if start < 0:
+            raise SystemExit(f'kamailio.cfg: no debug application-server check for {name}')
+        end = text.index('\n', start + len(block)) + 1
+        text = text[:start] + text[end:]
+    path.write_text(text)
+
+
+# ------------------------------------------------------------------------------
 def add_parallel_group(fixture, source):
     """Extend only the separately generated fixture, preserving its credentials: a second
     prearranged group of client-c and client-d, which both may select."""
@@ -1992,7 +2013,7 @@ def add_keycloak(fixture, compose, args):
 TRANSPORT_KEY_ROLES = {'client-a': ('trk', 'ink'), 'client-b': ('trk',)}
 
 
-def add_transport_keys(fixture, site_path, users):
+def add_transport_keys(fixture, site_path, users, roles=TRANSPORT_KEY_ROLES):
     """TS 33.180 clause 5.3.2: the TrK and InK pre-provisioned to the KM clients of client-a (both: the InK signs) and
     client-b (a TrK only: it signs and wraps, annexes D.2.2 and D.3.1), and shared with the KMS (security.transport_keys
     of both sides, mcx::transport::load: owner-only files with the hexadecimal key, 32-bit identifiers). The KMS's
@@ -2004,7 +2025,7 @@ def add_transport_keys(fixture, site_path, users):
     site = json.loads(site_path.read_text())
     site.setdefault('security', {})['transport_keys'] = {}
     site['security']['kms_request_window_seconds'] = 30
-    for role, kinds in TRANSPORT_KEY_ROLES.items():
+    for role, kinds in roles.items():
         entry = {}
         for kind in kinds:
             name = f'{role}-{kind}'
@@ -2020,12 +2041,26 @@ def add_transport_keys(fixture, site_path, users):
     site_path.write_text(json.dumps(site, indent=2) + '\n')
 
 
-def mount_transport_keys(compose, fixture):
+def transport_key_roles(args):
+    """The roles --transport-key-role names (ROLE=trk or ROLE=trk+ink, repeated), or by default TRANSPORT_KEY_ROLES."""
+    if not args.transport_key_role:
+        return TRANSPORT_KEY_ROLES
+    roles = {}
+    for item in args.transport_key_role:
+        role, _, kinds = item.partition('=')
+        kinds = tuple(kinds.split('+'))
+        if role not in ('client-a', 'client-b', 'client-c', 'client-d') or not kinds or set(kinds) - {'trk', 'ink'}:
+            raise SystemExit(f'--transport-key-role {item!r}: ROLE=trk or ROLE=trk+ink, ROLE one of client-a..client-d')
+        roles[role] = kinds
+    return roles
+
+
+def mount_transport_keys(compose, fixture, roles=TRANSPORT_KEY_ROLES):
     """The key files of add_transport_keys: all of them in the KMS, each client's own in its container."""
     directory = fixture / 'generated/transport-keys'
     compose['services']['kms']['volumes'].append(
         dict(type='bind', source=str(directory), target='/config/transport-keys', read_only=True))
-    for role, kinds in TRANSPORT_KEY_ROLES.items():
+    for role, kinds in roles.items():
         for kind in kinds:
             compose['services'][role]['volumes'].append(
                 dict(type='bind', source=str(directory / f'{role}-{kind}'),
@@ -2105,6 +2140,13 @@ def main():
         action='store_true',
         help='TS 33.180 clause 5.3.2: client-a gets an InK and a TrK, client-b a TrK only, shared with the KMS (signed '
         'KMS requests and responses, key sets wrapped under the TrK); requires --protected',
+    )
+    parser.add_argument(
+        '--transport-key-role',
+        action='append',
+        default=[],
+        help='with --transport-keys: the roles that get transport keys instead of the default ones, as ROLE=trk or '
+        'ROLE=trk+ink (repeatable; e.g. client-d=trk+ink for the IMS AKA client of the IP-only test 5.1 tutorial)',
     )
     parser.add_argument(
         '--xml-protection',
@@ -2335,6 +2377,8 @@ def main():
         parser.error('--kms-unreachable takes client-c or client-d and requires --protected')
     if args.transport_keys and not args.protected:
         parser.error('--transport-keys requires --protected')
+    if args.transport_key_role and not args.transport_keys:
+        parser.error('--transport-key-role requires --transport-keys')
     if args.protected and (args.key_parameters_iei is None or not 0 <= args.key_parameters_iei <= 255):
         parser.error('--protected requires an explicit --key-parameters-iei interoperability value')
     if args.project == 'openmcx':
@@ -2430,6 +2474,10 @@ def main():
         ],
         check=True,
     )
+    if not args.mcvideo:
+        drop_absent_debug_servers(
+            fixture, [spec['name'] for spec in source.get('mcvideo_servers', [dict(name='mcvideo-server')])]
+        )
     add_parallel_group(fixture, source)
     if args.admission_groups:
         add_admission_groups(fixture)
@@ -2516,7 +2564,7 @@ def main():
                     cfg['security']['key_client'] = key_client(site, cfg['mcptt']['service_uri'])
             path.write_text(json.dumps(cfg, indent=2) + '\n')
         if args.transport_keys:
-            add_transport_keys(fixture, site_path, users)
+            add_transport_keys(fixture, site_path, users, transport_key_roles(args))
         if args.protected and args.mcvideo:
             # TS 24.281 clauses 4.7 and 6.6: the MCVideo server keys its own identity, holds its
             # users' CSKs, and protects MCVideo signalling as the MCPTT server does.
@@ -2727,7 +2775,7 @@ def main():
             else:
                 raise RuntimeError(f'unexpected bind source {old}')
     if args.transport_keys:
-        mount_transport_keys(compose, fixture)
+        mount_transport_keys(compose, fixture, transport_key_roles(args))
     client_default = compose['services']['client-a']['image']
     if args.images:
         lab_images.use_program_images(compose['services'], compose['services']['mcptt-server']['image'], args.images)

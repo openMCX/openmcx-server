@@ -122,7 +122,7 @@ void McServer::notify_configuration(const std::string &dialog) {
         // RFC 5875 section 4.1: the document's path relative to the XCAP root; a user profile under the name of
         // the profile in use.
         const auto document = reply.json().value("document", name);
-        const auto sel = auid + (xui.empty() ? "/global/" : "/users/" + url_encode(xui) + "/") + url_encode(document);
+        const auto sel = auid + (xui.empty() ? "/global/" : "/users/" + xcap_segment(xui) + "/") + xcap_segment(document);
         changes.emplace_back(sel, sub.initial ? std::string{} : last, current);
         last = current;
       }

@@ -80,6 +80,7 @@ void SipEngine::register_account(unsigned expires, std::string_view content_type
   require_success(pjsip_regc_register(impl_->registration, PJ_TRUE, &created), "create REGISTER request");
   TxData data(created);
   data->msg->body = make_text_body(data->pool, content_type, body);
+  impl_->before_send(data.get());
   require_success(pjsip_regc_send(impl_->registration, data.release()), "send REGISTER request");
 }
 
@@ -116,6 +117,7 @@ void SipEngine::register_account(unsigned expires, SipResponseHandler handler) {
     const auto contact_text = (impl_->config.registration_features.empty()
                                    ? impl_->contact_uri()
                                    : "<" + impl_->contact_target() + ">" + impl_->config.registration_features) +
+                              impl_->config.media_feature_tags +
                               (instance.empty() ? "" : ";+sip.instance=\"<" + instance + ">\";reg-id=1");
     const auto register_contact = impl_->sips_target(registrar) ? Impl::as_sips(contact_text) : contact_text;
     auto contact = pj_view(register_contact);
@@ -152,6 +154,7 @@ void SipEngine::register_account(unsigned expires, SipResponseHandler handler) {
   impl_->registration_handler = std::move(handler);
   pjsip_tx_data *data = nullptr;
   require_success(pjsip_regc_register(impl_->registration, PJ_TRUE, &data), "create REGISTER request");
+  impl_->before_send(data);
   require_success(pjsip_regc_send(impl_->registration, data), "send REGISTER request");
 }
 
@@ -165,6 +168,7 @@ void SipEngine::unregister_account(SipResponseHandler handler) {
   impl_->registration_handler = std::move(handler);
   pjsip_tx_data *data = nullptr;
   require_success(pjsip_regc_unregister(impl_->registration, &data), "create de-REGISTER request");
+  impl_->before_send(data);
   require_success(pjsip_regc_send(impl_->registration, data), "send de-REGISTER request");
 }
 
@@ -356,6 +360,7 @@ void SipEngine::Impl::send_reinvite(std::string_view dialog_id,
   if (cseq == nullptr) throw std::runtime_error("re-INVITE without CSeq");
   entry.reinvite_cseq = cseq->cseq;
   entry.reinvite_handler = handler ? std::move(handler) : [](const SipResponse &) {};
+  before_send(data.get());
   const auto result = pjsip_inv_send_msg(entry.invite, data.release());
   if (result != PJ_SUCCESS) entry.reinvite_handler = {};
   require_success(result, "send re-INVITE");
@@ -415,6 +420,7 @@ void SipEngine::bye(std::string_view dialog_id, SipResponseHandler handler, cons
       add_headers(data.get(), headers);
       if (cause == 200 && !parts.empty())
         data->msg->body = make_text_body(data->pool, parts.front().content_type, parts.front().body);
+      impl_->before_send(data.get());
       require_success(pjsip_inv_send_msg(invite, data.release()), "send call termination");
       if (bye && impl_->bye_references.insert(invite).second) return;
     }

@@ -150,6 +150,34 @@ void add_raw_header(pjsip_tx_data *data, std::string_view name, std::string_view
 }
 
 //------------------------------------------------------------------------------
+// Helper: RFC 3329 section 2.3.1, after the agreement: "All the subsequent SIP requests sent by the client to that
+// server ... MUST contain a Security-Verify header field that mirrors the server's list received previously in the
+// Security-Server header field. These requests MUST also have both a Require and Proxy-Require header fields with the
+// value "sec-agree"" (TS 24.229 annex A: Security-Verify and Require "m" for the UE, with reference [48] 2.3.1). Not
+// REGISTER (its own procedure, aka_register). Not ACK and CANCEL: RFC 3329 table 1 gives Security-Verify "-" there,
+// TS 24.229 tables A.7 and A.23 have no Security-Verify and give Require and Proxy-Require "n/a" (RFC 3261 sections
+// 8.2.2.3 and 9.1). Not PRACK: table 1 gives "-" against the section 2.3.1 "all", and TS 24.229 table A.91 has no
+// Security-Verify (a contradiction, today's behaviour kept). Proxy-Require only in INVITE and OPTIONS: TS 24.229
+// annex A gives it "n/a" for the UE in the other methods against the RFC 3329 MUST, with no text for the weaker status
+// that clause A.1.1 asks for (a contradiction in the specification, Known limitations "sec-agree option-tag in
+// Proxy-Require"; today's behaviour kept). False when the request already has its Security-Verify (a retransmission,
+// or added before the send).
+bool add_sec_agree(pjsip_tx_data *data, const std::string &security_server) {
+  auto *message = data->msg;
+  if (message == nullptr || message->type != PJSIP_REQUEST_MSG || security_server.empty()) return false;
+  const auto method = message->line.req.method.id;
+  if (method == PJSIP_REGISTER_METHOD || method == PJSIP_ACK_METHOD || method == PJSIP_CANCEL_METHOD) return false;
+  static const pj_str_t prack_name = pj_str(const_cast<char *>("PRACK"));
+  if (pj_stricmp(&message->line.req.method.name, &prack_name) == 0) return false;
+  static const pj_str_t verify_name = pj_str(const_cast<char *>("Security-Verify"));
+  if (pjsip_msg_find_hdr_by_name(message, &verify_name, nullptr) != nullptr) return false;
+  add_raw_header(data, "Security-Verify", security_server);
+  add_raw_header(data, "Require", "sec-agree");
+  if (method == PJSIP_INVITE_METHOD || method == PJSIP_OPTIONS_METHOD) add_raw_header(data, "Proxy-Require", "sec-agree");
+  return true;
+}
+
+//------------------------------------------------------------------------------
 // Helper: the transport selector naming one transport.
 pjsip_tpselector transport_selector(pjsip_transport *transport) {
   pjsip_tpselector selector{};
@@ -360,6 +388,7 @@ void SipEngine::Impl::aka_send_register(AkaRoute route, bool new_offer, const st
                               : contact_target();
   const auto contact_text = "<" + target_uri + ">" +
                             (config.registration_features.empty() ? service_tags() : config.registration_features) +
+                            config.media_feature_tags +
                             (instance.empty() ? "" : ";+sip.instance=\"<" + instance + ">\";reg-id=1");
   auto target = pj_view(registrar);
   auto identity = pj_view(config.identity);
@@ -385,6 +414,7 @@ void SipEngine::Impl::aka_send_register(AkaRoute route, bool new_offer, const st
   add_raw_header(data.get(), "Require", "sec-agree");
   add_raw_header(data.get(), "Proxy-Require", "sec-agree");
   add_raw_header(data.get(), "Supported", "path");
+  (void)add_access_network_info(data.get());
   if (!aka->content_type.empty()) data->msg->body = make_text_body(data->pool, aka->content_type, aka->body);
 
   // The P-CSCF's unprotected port, or its protected server port port_ps from port_uc: over the set's connection, or
@@ -922,8 +952,26 @@ void SipEngine::Impl::aka_use_current() {
 void SipEngine::Impl::aka_apply(pjsip_tx_data *data) {
   if (!aka) return;
   if (!aka->current) throw std::runtime_error("IMS AKA: not registered, no security associations (TS 33.203 7.4.1a)");
-  const auto selector = transport_selector(aka_request_transport(*aka->current));
+  auto *transport = aka_request_transport(*aka->current);
+  const auto selector = transport_selector(transport);
   require_success(pjsip_tx_data_set_transport(data, &selector), "select the protected connection");
+  // TS 24.229 clause 5.1.2A.1.1 b), for every request but REGISTER: "include the protected server port and the
+  // respective contact address in the Via header field entry relating to the UE". Over TCP the request leaves the
+  // connection from port_uc, whose own name pjsip would put in Via; over UDP the transport is published with port_us.
+  if (!config.aka.udp) {
+    pj_strdup(data->pool, &data->via_addr.host, &transport->local_name.host);
+    data->via_addr.port = aka->current->port_us;
+    data->via_tp = transport;
+  }
+}
+
+//------------------------------------------------------------------------------
+// RFC 3329 section 2.3.1: the sec-agree header fields of a request about to be sent over the set in use (add_sec_agree),
+// before pjsip encodes it, so that its size decides between UDP and TCP (RFC 3261 section 18.1.1). The send hook
+// (aka_sending) adds them to the requests pjsip sends itself.
+void SipEngine::Impl::aka_sec_agree(pjsip_tx_data *data) {
+  if (!aka || !aka->current || data == nullptr) return;
+  (void)add_sec_agree(data, aka->current->security_server);
 }
 
 //------------------------------------------------------------------------------
@@ -931,8 +979,16 @@ void SipEngine::Impl::aka_apply(pjsip_tx_data *data) {
 void SipEngine::Impl::aka_apply(pjsip_dialog *dialog) {
   if (!aka) return;
   if (!aka->current) throw std::runtime_error("IMS AKA: not registered, no security associations (TS 33.203 7.4.1a)");
-  const auto selector = transport_selector(aka_request_transport(*aka->current));
+  auto *transport = aka_request_transport(*aka->current);
+  const auto selector = transport_selector(transport);
   require_success(pjsip_dlg_set_transport(dialog, &selector), "select the dialog's protected connection");
+  // TS 24.229 clause 5.1.2A.1.1 b): the protected server port in the Via of the dialog's requests (see above).
+  if (!config.aka.udp) {
+    pjsip_host_port via{};
+    pj_strdup(dialog->pool, &via.host, &transport->local_name.host);
+    via.port = aka->current->port_us;
+    require_success(pjsip_dlg_set_via_sent_by(dialog, &via, transport), "set the dialog's Via sent-by");
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -1046,6 +1102,8 @@ pj_status_t SipEngine::Impl::aka_sending(pjsip_tx_data *data) {
       if (set == nullptr) continue;
       if (transport == set->connection || transport == set->udp ||
           (set == state.current.get() && transport == state.udp_us)) {
+        // RFC 3329 section 2.3.1: a request without its sec-agree header fields yet (add_sec_agree); encoded again.
+        if (add_sec_agree(data, set->security_server)) pjsip_tx_data_invalidate_msg(data);
         owner->aka_track(*set, data);
         return;
       }

@@ -84,6 +84,12 @@ HttpResponse http_get_pinned(const std::string &url, std::string_view pin, HttpT
 std::string url_encode(std::string_view input);
 
 //------------------------------------------------------------------------------
+// RFC 4825 section 6.2: a path segment of an XCAP document selector (an XUI such as sip:joe@example.com, a group ID):
+// characters "not permitted in HTTP URI path segments" percent-encoded; ':' and '@' are permitted (RFC 3986 section
+// 3.3, pchar) and stay, as in the URI templates of TS 24.484 clauses 8.2.1A and 8.3.1A and TS 24.481 clause 7.2.10.2.
+std::string xcap_segment(std::string_view input);
+
+//------------------------------------------------------------------------------
 // Helper: 256 random bits, base64url encoded: the OIDC state, nonce and PKCE code verifier (RFC 7636 section 4.1).
 std::string random_id();
 

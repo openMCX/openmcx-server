@@ -623,8 +623,9 @@ std::uint64_t ntp_from_wire(std::uint32_t seconds, std::uint64_t now) {
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex F.2.1.1: the MIKEY-SAKKE UID, SHA-256 of FC 0x00, "MIKEY-SAKKE-UID", the identifier, the KMS URI,
-// the key period length and offset and the current key period number, base64 encoded.
-std::string uid(std::string_view identity, const Period &period, std::uint64_t time) {
+// the key period length and offset and the current key period number: "The full 256-bit output".
+namespace {
+std::array<byte, 32> uid_digest(std::string_view identity, const Period &period, std::uint64_t time) {
   const auto number = period_number(period, time);
   Bytes input{0};
   string_parameter(input, "MIKEY-SAKKE-UID");
@@ -637,12 +638,46 @@ std::string uid(std::string_view identity, const Period &period, std::uint64_t t
   unsigned length = 0;
   require(EVP_Digest(input.data(), input.size(), hash.data(), &length, EVP_sha256(), nullptr) == 1,
           "UID SHA256 failed");
+  return hash;
+}
+} // namespace
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex F.2.1.1: "The resulting UID shall be base64 encoded": the UID's text form (the UserID of a key set,
+// annex D.3.3.2, and the identifier OpenMCX's KMS issues keys for).
+std::string uid(std::string_view identity, const Period &period, std::uint64_t time) {
+  const auto hash = uid_digest(identity, period, time);
   std::string encoded(45, '\0');
   const int count = EVP_EncodeBlock(reinterpret_cast<byte *>(encoded.data()), hash.data(), hash.size());
   require(count == 44, "UID base64 failed");
   encoded.resize(count);
   return encoded;
 }
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex F.2.1.1: the 32 octets of the UID ("The full 256-bit output shall be used as the identifier within
+// MIKEY-SAKKE (referred to as 'ID' in IETF RFC 6507 [9] and 'a' or 'b' within IETF RFC 6508 [10]").
+Bytes uid_raw(std::string_view identity, const Period &period, std::uint64_t time) {
+  const auto hash = uid_digest(identity, period, time);
+  return Bytes(hash.begin(), hash.end());
+}
+
+namespace {
+//------------------------------------------------------------------------------
+// Helper: the identifier that enters ECCSI (RFC 6507 "ID") and SAKKE (RFC 6508 "a"/"b") under a KMS, in the form of
+// that KMS's keys (PublicParameters::uid_form). TS 33.180 annex F.2.1.1 does not say whether the 32 octets or their
+// base64 text is that identifier (spec defect, reported; Known limitations "MIKEY-SAKKE UID form"): the text form is
+// OpenMCX's; the 32 octets are the reading of the ETSI test suite for TS 37.579 (f_MCX_MIKEY_SAKKE_GenerateUID,
+// f_ECCSI_GenerateSskPvtPair, f_MIKEY_SAKKE_Signature_Validate, fx_SAKKE_EncapsulateKey, fx_SAKKE_GenerateRSK), used
+// only where the KMS's keys are for them (maintainer decision 2026-11-02, a labelled exception to rule 7).
+std::string identifier(std::string_view identity, const PublicParameters &parameters, std::uint64_t time) {
+  if (parameters.uid_form == UidForm::raw) {
+    const auto hash = uid_digest(identity, parameters.period, time);
+    return std::string(reinterpret_cast<const char *>(hash.data()), hash.size());
+  }
+  return uid(identity, parameters.period, time);
+}
+} // namespace
 
 //------------------------------------------------------------------------------
 // TS 33.180 clauses 5.3.1.1 and 5.3.5: creates the KMS master secrets and the public keys of its certificate
@@ -671,7 +706,7 @@ Authority create_authority(const Period &period) {
 // TS 33.180 clause 5.3.6: the KMS provisioned key set of a user for the key period of the given time: SSK and PVT
 // (RFC 6507) and RSK (RFC 6508) for the UID of the user's URI.
 IdentityKeys issue(const Authority &authority, std::string_view uri, std::uint64_t time) {
-  const auto identity = uid(uri, authority.public_parameters.period, time);
+  const auto identity = identifier(uri, authority.public_parameters, time);
   Random rng;
   Eccsi auth;
   Sakke enc;
@@ -705,7 +740,7 @@ IdentityKeys issue(const Authority &authority, std::string_view uri, std::uint64
 // Z_T) for the UID of the key period of the given time.
 void validate_identity(const PublicParameters &parameters, const IdentityKeys &id, std::uint64_t time) {
   check_identity_period(parameters, id, time);
-  const auto identity = uid(id.uri, parameters.period, time);
+  const auto identity = identifier(id.uri, parameters, time);
   Eccsi auth;
   Sakke enc;
   Scalar ssk;
@@ -738,7 +773,7 @@ Bytes sign(const PublicParameters &parameters, const IdentityKeys &id, std::uint
   Point pvt;
   public_auth(auth, parameters);
   import_pair(auth, id, ssk, pvt);
-  identity_hash(auth, uid(id.uri, parameters.period, time), pvt.value);
+  identity_hash(auth, identifier(id.uri, parameters, time), pvt.value);
   checked(wc_SetEccsiPair(&auth.value, &ssk.value, pvt.value), "set ECCSI signing pair");
   return export_key(129, [&](auto *buffer, auto *size) {
     return wc_SignEccsiHash(&auth.value, &rng.value, WC_HASH_TYPE_SHA256, message.data(), message.size(), buffer, size);
@@ -756,7 +791,7 @@ bool verify(const PublicParameters &parameters, std::string_view uri, std::uint6
     public_auth(auth, parameters);
     checked(wc_DecodeEccsiPvtFromSig(&auth.value, signature.data(), signature.size(), pvt.value),
             "decode signature PVT");
-    identity_hash(auth, uid(uri, parameters.period, time), pvt.value);
+    identity_hash(auth, identifier(uri, parameters, time), pvt.value);
     int valid = 0;
     checked(wc_VerifyEccsiHash(&auth.value, WC_HASH_TYPE_SHA256, message.data(), message.size(), signature.data(),
                                signature.size(), &valid),
@@ -774,7 +809,7 @@ Bytes encapsulate(const PublicParameters &parameters, std::string_view recipient
                   std::span<const byte, 16> key) {
   Sakke enc;
   public_enc(enc, parameters);
-  const auto identity = uid(recipient, parameters.period, time);
+  const auto identity = identifier(recipient, parameters, time);
   checked(wc_SetSakkeIdentity(&enc.value, bytes(identity), identity.size()), "set SAKKE recipient");
   Bytes result(273);
   std::copy(key.begin(), key.end(), result.begin() + 257);
@@ -793,7 +828,7 @@ std::array<byte, 16> decapsulate(const PublicParameters &parameters, const Ident
   require(data.size() == 273, "invalid SAKKE encapsulation size");
   Sakke enc;
   public_enc(enc, parameters);
-  const auto identity = uid(id.uri, parameters.period, time);
+  const auto identity = identifier(id.uri, parameters, time);
   checked(wc_SetSakkeIdentity(&enc.value, bytes(identity), identity.size()), "set SAKKE recipient");
   require(id.receiver_secret.size() == 257, "invalid SAKKE receiver key size");
   Point rsk;

@@ -158,6 +158,18 @@ void SipEngine::Impl::start() {
     protection_module.on_tx_request = &Impl::protect_outgoing;
     protection_module.on_tx_response = &Impl::protect_outgoing;
     require_success(pjsip_endpt_register_module(endpoint, &protection_module), "register body protection");
+    if (!config.access_network_info.empty()) {
+      if (config.access_network_info.find_first_of("\r\n") != std::string::npos)
+        throw std::invalid_argument("invalid P-Access-Network-Info value");
+      access_network_info_module.name = pj_view("mod-openmcx-access-network-info");
+      access_network_info_module.id = -1;
+      // Above the body protection: before the transport layer prints the message.
+      access_network_info_module.priority = PJSIP_MOD_PRIORITY_TRANSPORT_LAYER + 2;
+      access_network_info_module.on_tx_request = &Impl::access_network_info_outgoing;
+      access_network_info_module.on_tx_response = &Impl::access_network_info_outgoing;
+      require_success(pjsip_endpt_register_module(endpoint, &access_network_info_module),
+                      "register P-Access-Network-Info");
+    }
     ack_module.name = pj_view("mod-openmcx-ack");
     ack_module.id = -1;
     ack_module.priority = PJSIP_MOD_PRIORITY_DIALOG_USAGE - 1;

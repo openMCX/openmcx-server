@@ -83,7 +83,7 @@ int main() {
     check(parse_gktp_document(gktp_document_xml("sip:g@example.org", "key2", mikey, now + 3600), "sip:g@example.org") ==
               mikey,
           "GKTP ahead of its activation time");
-    check(gktp_selector("sip:g@example.org").find("org.3gpp.MCPTT-GKTP/global/byGroupID/sip%3Ag%40example.org/~~/") ==
+    check(gktp_selector("sip:g@example.org").find("org.3gpp.MCPTT-GKTP/global/byGroupID/sip:g@example.org/~~/") ==
               0,
           "standard GKTP selector");
     check(gktp_resource_list("sip:g@example.org").find("urn:ietf:params:xml:ns:resource-lists") != std::string::npos,

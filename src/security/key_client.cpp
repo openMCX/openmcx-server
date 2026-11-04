@@ -150,6 +150,8 @@ struct KeyClient::Impl {
   keying::PublicParameters parameters;
   keying::IdentityKeys identity;
   bool provisioned = false;
+  // set_uid_form_detection: the UID forms a key set may be validated for (key_documents.hpp UidDetection).
+  keying::UidDetection uid_detection = keying::UidDetection::text_only;
   mutable std::mutex mutex;
   std::map<std::string, std::uint64_t> received_csks;
   std::map<std::string, keying::KeyMessage> received_groups;
@@ -274,14 +276,16 @@ struct KeyClient::Impl {
                                                                                  now_ntp(), keys)
                                                        : std::string());
     // The init request names no identity: the KMS answers for the token's user.
-    const auto public_parameters =
-        keying::parse_kms_init(init, account_uri, kms_id, request_uri("init"), now_ntp(), &keys);
+    auto public_parameters = keying::parse_kms_init(init, account_uri, kms_id, request_uri("init"), now_ntp(), &keys);
     const auto keyprov =
         fetch("keyprov", protected_exchange
                              ? keying::kms_request_xml(user_uri, kms_id, request_uri("keyprov"), now_ntp(), keys)
                              : std::string());
-    auto next_identity =
-        keying::parse_kms_keyprov(keyprov, public_parameters, user_uri, request_uri("keyprov"), now_ntp(), &keys);
+    auto next_identity = keying::parse_kms_keyprov(keyprov, public_parameters, user_uri, request_uri("keyprov"),
+                                                   now_ntp(), &keys, uid_detection);
+    // The KMS's keys are for the UID form the key set validated for: every ECCSI and SAKKE operation under this KMS
+    // uses it (keying.hpp PublicParameters::uid_form).
+    public_parameters.uid_form = next_identity.uid_form;
     try {
       keying::validate_identity(public_parameters, next_identity, now_ntp());
     } catch (...) {
@@ -353,6 +357,20 @@ KeyClient::~KeyClient() = default;
 void KeyClient::set_warning_handler(std::function<void(std::string_view)> handler) {
   std::lock_guard lock(impl_->mutex);
   impl_->warn = std::move(handler);
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex F.2.1.1: see key_client.hpp; takes effect at the next provision().
+void KeyClient::set_uid_form_detection(bool enabled) {
+  std::lock_guard lock(impl_->mutex);
+  impl_->uid_detection = enabled ? keying::UidDetection::raw_then_text : keying::UidDetection::text_only;
+}
+
+//------------------------------------------------------------------------------
+// The UID form of the provisioned identity keys.
+std::string_view KeyClient::uid_form() const {
+  std::lock_guard lock(impl_->mutex);
+  return impl_->parameters.uid_form == keying::UidForm::raw ? "raw" : "text";
 }
 
 //------------------------------------------------------------------------------

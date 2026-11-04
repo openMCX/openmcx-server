@@ -32,12 +32,18 @@ struct Period {
 };
 
 //------------------------------------------------------------------------------
+// TS 33.180 annex F.2.1.1: the form of the UID that enters ECCSI and SAKKE: its base64 text (OpenMCX's form) or its
+// 32 octets (the ETSI test suite's reading for TS 37.579). The text does not say which (spec defect, reported).
+enum class UidForm : std::uint8_t { text, raw };
+
+//------------------------------------------------------------------------------
 // TS 33.180 clause 5.3.5: the public parameters of a KMS certificate: the key period, the KPAK (RFC 6507) and Z_T
-// (RFC 6508).
+// (RFC 6508); uid_form, the UID form the KMS's keys are for (found at key provisioning, parse_kms_keyprov).
 struct PublicParameters {
   Period period;
   Bytes authentication_key;
   Bytes encryption_key;
+  UidForm uid_form = UidForm::text;
 };
 
 //------------------------------------------------------------------------------
@@ -56,6 +62,7 @@ struct IdentityKeys {
   std::uint64_t period_number = 0;
   Bytes signing_pair; // wolfCrypt serialization of SSK and PVT; never send to peers.
   Bytes receiver_secret;
+  UidForm uid_form = UidForm::text; // the UID form these keys validated for (parse_kms_keyprov)
 };
 
 //------------------------------------------------------------------------------
@@ -103,9 +110,13 @@ struct KeyMessage {
 std::uint64_t ntp_from_wire(std::uint32_t seconds, std::uint64_t now);
 
 //------------------------------------------------------------------------------
-// TS 33.180 annex F.2.1.1: the MIKEY-SAKKE UID of an identity for the key period of the given time. Time is seconds
-// since 1900-01-01 (NTP), without the fractional word.
+// TS 33.180 annex F.2.1.1: the MIKEY-SAKKE UID of an identity for the key period of the given time, base64 encoded
+// (the UserID and Signing UID text). Time is seconds since 1900-01-01 (NTP), without the fractional word.
 std::string uid(std::string_view identity, const Period &period, std::uint64_t time);
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex F.2.1.1: the 32 octets of the UID ("The full 256-bit output").
+Bytes uid_raw(std::string_view identity, const Period &period, std::uint64_t time);
 
 //------------------------------------------------------------------------------
 // TS 33.180 clauses 5.3.1.1 and 5.3.5: creates the KMS master secrets and the public keys of its certificate.

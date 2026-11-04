@@ -505,6 +505,11 @@ void configured_idms_endpoints() {
 int main() {
   configured_idms_endpoints();
   if (mcx::url_encode("sip:a+b@example.test") != "sip%3Aa%2Bb%40example.test") throw std::runtime_error("URI escaping");
+  // RFC 4825 section 6.2: an XUI as an XCAP path segment keeps ':' and '@'; '/', '?' and other characters not
+  // permitted in a path segment are percent-encoded.
+  if (mcx::xcap_segment("sip:a+b/c?d@example.test") != "sip:a%2Bb%2Fc%3Fd@example.test" ||
+      mcx::xcap_segment("") != "" || mcx::xcap_segment("@:") != "@:")
+    throw std::runtime_error("XCAP path segment");
   expect_rejected("clear HTTP", [] { mcx::HttpClient("unused").request("GET", "http://localhost/"); });
   configured_timeout();
   address_map_and_pin();

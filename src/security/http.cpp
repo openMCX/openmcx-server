@@ -484,6 +484,21 @@ std::string url_encode(std::string_view input) {
 }
 
 //------------------------------------------------------------------------------
+// RFC 4825 section 6.2: as url_encode, ':' and '@' kept (RFC 3986 section 3.3, pchar).
+std::string xcap_segment(std::string_view input) {
+  std::string out;
+  std::size_t start = 0;
+  for (std::size_t at = 0; at <= input.size(); ++at) {
+    if (at == input.size() || input[at] == ':' || input[at] == '@') {
+      out += url_encode(input.substr(start, at - start));
+      if (at < input.size()) out += input[at];
+      start = at + 1;
+    }
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
 // Helper: 256 random bits, base64url encoded: the OIDC state, nonce and PKCE code verifier (RFC 7636 section 4.1).
 std::string random_id() {
   std::array<unsigned char, 32> bytes{};

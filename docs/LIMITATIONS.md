@@ -62,15 +62,20 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   RFC 6508 [10]. The resulting UID shall be base64 encoded." It does not say whether ECCSI (RFC 6507) and SAKKE
   (RFC 6508) take the 32 octets of the SHA-256 output or their base64 text. The KMS, the MC servers and the clients
   use the base64 text, as the KMS key set's UserID carries it (annex D.3.3.2); the ETSI test suite for TS 37.579 uses
-  the 32 octets. Keys and MIKEY-SAKKE messages of OpenMCX therefore do not interwork with a KMS or peer that uses the
-  32 octets.
+  the 32 octets. The KMS, the MC servers, the GMS and the Android app therefore do not interwork with a KMS or peer
+  that uses the 32 octets. The Linux client finds the form at key provisioning: it validates the key set (RFC 6507
+  clause 5.1.2, RFC 6508 clause 6.1.2) for the 32 octets first, then for the text, and uses the form that validates
+  for every ECCSI and SAKKE operation under that KMS (the ETSI test suite's reading where the KMS's keys are for the 32
+  octets, not a 3GPP rule; the status file's `key_management.uid_form`).
 - **Home HTTP proxy** (TS 24.482 annex A.2.1.2). With `<http-proxy>` configured, the Linux and Android clients send
   their HTTP requests over a TLS tunnel to the proxy in absolute-form, the IdMS's directly. Not implemented, as the
   texts leave them open (reported): mutual TLS tunnel authentication with a certificate (TS 24.484 clause 7.2.2.7 g)
   gives the `<x509>` certificate but no private key) or with a pre-shared key (no PSK identity); a configuration that
   asks for either is refused. The KMS requests stay direct: TS 24.482 A.2.1.2 sends every request but the IdMS's
   through the proxy, TS 33.180 clause 5.3.2 lets the KMS be used without it, and no configuration item tells the UE
-  which applies (reported). The MC servers and the GMS reach the other servers directly, not through the proxy with
+  which applies (reported). The Linux client's `security.kms_via_proxy` (off by default) sends them through the proxy,
+  as the ETSI test system for TS 37.579 expects (that test system's reading, not a 3GPP rule), and then requires a
+  TrK for each MC service user (clause 5.3.2: "for public safety users the TrK shall be used"). The MC servers and the GMS reach the other servers directly, not through the proxy with
   X-3GPP-Asserted-Identity (TS 24.482 annex A.2.1.3).
 - **CSK key download** (TS 24.379 and TS 24.281 clauses 7.3.7 and 7.2.5, TS 33.180 clauses 5.8 and 9.2.1.4). The
   MCPTT and MCVideo servers send it only on the operator command `csk-download <MC service ID>` (the specifications
@@ -186,6 +191,30 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   and the SIP core carry none, so neither do the UEs' own reg event dialogs; reginfo.shorten marks every contact of the address-of-record "shortened"
   (clause 5.4.1.6 NOTE 2: only the contacts "originally registered by this UE"; the labs and tutorials have one
   contact per user).
+- **sec-agree option-tag in Proxy-Require** (spec defect, to report). After the security agreement the Linux client
+  sends Security-Verify and `Require: sec-agree` in every request (RFC 3329 section 2.3.1) but ACK and CANCEL (RFC 3329
+  table 1, TS 24.229 tables A.7 and A.23, RFC 3261 sections 8.2.2.3 and 9.1) and PRACK, and `Proxy-Require: sec-agree`
+  in INVITE and OPTIONS only: for the other methods TS 24.229 annex A gives Proxy-Require "n/a" for the UE, against
+  the RFC 3329 MUST it imports, with no text for the weaker status (clause A.1.1); for PRACK RFC 3329 contradicts itself
+  (section 2.3.1 "all the subsequent SIP requests", table 1 "-") and TS 24.229 table A.91 has no Security-Verify. The P-CSCF removes the sec-agree option-tags and Security-Verify before the
+  SIP core (TS 24.229 annex A, proxy role: Security-Verify "x"). Own deviation not fixed yet: the P-CSCF checks
+  Security-Verify only in a REGISTER, not in the later requests (RFC 3329 section 2.3.1: "The server MUST check that
+  the security mechanisms listed in the Security-Verify header field of incoming requests correspond to its static
+  list"; 494 otherwise).
+- **P-Access-Network-Info** (TS 24.229 clauses 5.1.1.2.1 h) and 5.1.2A.1.1, "if available to the UE (as defined in the
+  access technology specific annexes)"). The clients never send it: on 5GS and EPS (annexes U and L, "The UE shall
+  always include the P-Access-Network-Info header field where indicated") it needs the serving cell, which the Linux
+  client inside the UE of the tutorials cannot read from the modem (own deviation, tutorials 3a, 4, 5 and 7); no
+  annex defines it for plain IP or a VPN. For a test system, `sip.access_network_info` (off by default) gives the
+  value the Linux client inserts in every request but CANCEL and ACK and every response but those to CANCEL, the
+  initial REGISTER included as the ETSI test suite for TS 37.579 expects (its reading; TS 24.229 asks for it there
+  only with a security association or TLS session).
+- **Media feature tags of RFC 3840** (spec gap). The Linux client registers, and offers and answers INVITEs, with
+  `audio` and, with MCVideo, `video` (TS 24.229 clauses 5.1.1.2.1 c), 5.1.3.1 and 5.1.4.1: the tags "for all
+  supported streaming media types"). Whether the MCPTT floor control and MCVideo transmission control streams
+  (`m=application`) count as streaming media for `application` or `control` (RFC 3840 section 10.4 names floor
+  control under `control`), and what MCData's MSRP (`m=message`, no RFC 3840 tag) needs, the texts do not settle: none
+  is sent. The Android app sends none yet (own deviation).
 
 ### Media and floor control
 
@@ -247,7 +276,8 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   SUBSCRIBE to "the configured public service identity for performing subscription proxy function of the CMS", but no
   configuration item for that PSI is defined (TS 24.483 has no CMS counterpart of GMSURI; `<cms>` of TS 24.484 clause
   7.2.2.7 is "the URI used to contact the configuration management server"). The Linux client sends it to the MCPTT
-  PSI until the specification names the item. The group document and group key subscriptions go to the configured
+  PSI until the specification names the item, or to `cms.subscription_psi` where that is configured, as the ETSI test
+  system for TS 37.579 names such a PSI (that test system's reading, not a 3GPP rule). The group document and group key subscriptions go to the configured
   GMS-URI (`gms.subscription_psi`).
 - **Location.** Positions and radio measurements are simulated. The SEAL location management server (TS 24.545) has
   no CoAP, SIP-based subscription, location-based query or trigger other than the periodic one.
