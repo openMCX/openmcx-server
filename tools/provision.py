@@ -211,6 +211,50 @@ def participating_routes(servers, users_by_role):
 
 
 # ------------------------------------------------------------------------------
+def iwf_config(iwf_source, iwf_psi, iwf_mcptt_id, service, group, domain, mcptt_server, spk):
+    """The configuration of openmcx-iwf (its config/iwf.example.json layout): SIP towards the MCPTT server directly,
+    the lab group bound to a TETRA GSSI controlled by the MC system, the TETRA MSs, and the annex A.1 decisions of
+    TS 100 392-19-1 as the lab sets them."""
+    tetra = iwf_source["tetra"]
+    return {
+        "sip": {
+            "listen": "0.0.0.0",
+            "advertise": "iwf",
+            "port": 5061,
+            "identity": iwf_psi,
+            "core_uri": "sip:sip-core:5061;transport=tls",
+            "username": "",
+            "password": "",
+        },
+        "tls": {"ca_file": "/config/tls/ca.crt", "cert_file": "/config/tls/iwf.crt", "key_file": "/config/tls/iwf.key"},
+        "trusted_core": "sip-core",
+        "mcptt": {
+            "service_uri": iwf_psi,
+            "controlling_psi": service,
+            "route": f"<sip:{mcptt_server}:5061;transport=tls;lr>",
+            "spk": {"id": spk["id"], "key": spk["key"]},
+        },
+        "swmi": {"listen": "0.0.0.0", "port": 15000},
+        "tetra_system": {"mni": tetra["mni"]},
+        "mc_system": {
+            "mni": tetra["mc_system_mni"],
+            "iwf_mcptt_id": iwf_mcptt_id,
+            "iwf_mcptt_client_id": f"urn:uuid:{uuid.uuid4()}",
+            "iwf_mcdata_id": iwf_mcptt_id,
+            "iwf_mcdata_client_id": f"urn:uuid:{uuid.uuid4()}",
+        },
+        "decisions": iwf_source["decisions"],
+        "identities": {
+            "tetra_users": [
+                {"issi": issi, "mcptt_id": f"sip:tetra-{issi}@{domain}"} for issi in tetra["issis"]
+            ],
+            "mc_users": [],
+            "groups": [{"gssi": tetra["gssi"], "control": "mc_system", "mcptt_group_id": group}],
+        },
+    }
+
+
+# ------------------------------------------------------------------------------
 def positive_days(text):
     """--certificate-days: a whole number of days, at least 1."""
     days = int(text)
@@ -311,6 +355,7 @@ def main():
         ]
         + [source_user["role"] for source_user in source["users"]]
         + list(source.get("extra_roles", []))
+        + (["iwf"] if "iwf" in source else [])
         + (["pcscf"] if aka else [])
     )
     for role in roles:
@@ -365,6 +410,19 @@ def main():
     # MCVideo server public service identity (TS 24.281 clause 4.2).
     mcvideo_service = f"sip:{mcvideo_user}@{domain}"
     group = f"sip:{source['group_user']}@{domain}"
+    # An interworking function with a TETRA system (TS 23.283, TS 29.379; the openMCX iwf repository), when the lab
+    # names one: its PSI, the MCPTT ID with which it affiliates on behalf of the TETRA MSs (TS 100 392-19-1 clause 9.2.1,
+    # a group member, NOTE 5), and its TETRA identities.
+    iwf_source = source.get("iwf")
+    iwf_psi = f"sip:{iwf_source['psi_user']}@{domain}" if iwf_source else ""
+    iwf_mcptt_id = f"sip:{iwf_source['mcptt_user']}@{domain}" if iwf_source else ""
+    # TS 29.379 clause 6.8.1.4 and TS 33.180 clause 5.5: the SPK the IWF and the MCPTT servers share, provisioned
+    # directly; its SPK-ID carries purpose tag 3.
+    iwf_spk = (
+        {"id": (3 << 28) | secrets.randbelow(1 << 28), "key": secrets.token_hex(16), "rand": secrets.token_hex(16)}
+        if iwf_source
+        else None
+    )
     endpoints = {function: f"https://{function}:8443" for function in ("idms", "gms", "cms", "lms", "kms")}
     # <MCDataContentServerURI>: the media storage function (TS 24.282 clause 10.2.2.1).
     # Clients and file URLs use the HTTP proxy (TS 24.482 annex A); the servers reach
@@ -463,11 +521,29 @@ def main():
             )
         ],
         "token_ttl_seconds": source["token_ttl_seconds"],
-        "users": users,
+        # The IWF's MCPTT ID is a user of the MC system (TS 100 392-19-1 clause 9.2.1 NOTE 5: a group member); no client
+        # signs in with it.
+        "users": users
+        + (
+            [
+                {
+                    "username": iwf_source["mcptt_user"],
+                    "password": secrets.token_hex(20),
+                    "mc_id": f"sip:{iwf_source['mcptt_user']}.mc@{domain}",
+                    "mcptt_id": iwf_mcptt_id,
+                    "sip_uri": iwf_mcptt_id,
+                    "sip_password": secrets.token_hex(20),
+                    "client_id": f"urn:uuid:{uuid.uuid4()}",
+                    "groups": [group],
+                }
+            ]
+            if iwf_source
+            else []
+        ),
         "groups": [
             {
                 "id": group,
-                "members": [source_user["mcptt_id"] for source_user in users],
+                "members": [source_user["mcptt_id"] for source_user in users] + ([iwf_mcptt_id] if iwf_source else []),
                 "protect_media": False,
                 "protect_floor": False,
                 "mcdata": {
@@ -642,6 +718,14 @@ TLS_CA = "/config/tls/ca.crt";
                 peers={source_user["mcptt_id"]: entry["role"] for source_user, entry in zip(users, source["users"])},
             )
             cfg["mcptt"].update(server_roles(servers, role, service))
+            # TS 23.283 IWF-1: the IWF is a peer of the MCPTT servers, trusted by its address (TS 29.379 clause 4.1).
+            if iwf_source:
+                cfg["mcptt"].setdefault("servers", {})["iwf"] = {
+                    "host": "iwf",
+                    "service_uri": iwf_psi,
+                    "controlling": False,
+                    "spk": iwf_spk,
+                }
         else:
             user = users[[source_user["role"] for source_user in source["users"]].index(role)]
             cfg["sip"].update(identity=user["sip_uri"], username=user["username"], password=user["sip_password"])
@@ -717,6 +801,11 @@ TLS_CA = "/config/tls/ca.crt";
                 cfg["trusted_core"] = "pcscf"
         save(f"{role}.json", cfg)
         (ROOT / "artifacts" / role).mkdir(parents=True, exist_ok=True)
+    if iwf_source:
+        save(
+            "iwf.json",
+            iwf_config(iwf_source, iwf_psi, iwf_mcptt_id, service, group, domain, next(iter(servers)), iwf_spk),
+        )
     # The MCVideo server: the openmcx-mcvideo-server executable, on the same core as the
     # MCPTT server, with the MCVideo service profile
     # It has no

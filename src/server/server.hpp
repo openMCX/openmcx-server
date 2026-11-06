@@ -1319,6 +1319,19 @@ protected:
   PartsGlue parts_glue_{*this};
   LocationService location_{parts_glue_, svc_, core_location_traits};
   PeerRegistration peer_registration_{parts_glue_, svc_};
+  // TS 24.379 clause 9.2.2.3.2: for the standard per-group affiliations received from other servers, each group's
+  // users with their clients, serving peer and expiry; and the subscriptions to a user's status in a group
+  // (clause 9.2.2.3.4), by dialog.
+  struct StandardAffiliation {
+    std::vector<std::string> clients;
+    std::string peer;
+    std::int64_t expires = 0;
+  };
+  struct StandardSubscription {
+    std::string group, user, peer;
+  };
+  std::map<std::string, std::map<std::string, StandardAffiliation>> standard_affiliations_;
+  std::map<std::string, StandardSubscription> group_affiliation_subscriptions_;
 
   std::string own_service_uri() const { return cfg_.at(svc_.name).at("service_uri"); }
 
@@ -1663,6 +1676,16 @@ protected:
                     SipResponse &response);
   // TS 24.379 clauses 9.2.2.3.3 and 9A.2.2.3: affiliation or functional alias PUBLISH from a peer server.
   bool peer_presence_publish(const SipMessage &message, const std::string &peer, SipResponse &response);
+  // TS 24.379 clauses 9.2.2.3.3 to 9.2.2.3.5: the standard per-group affiliation PUBLISH and SUBSCRIBE from another
+  // server, such as an IWF (peer_group_affiliation.cpp).
+  bool standard_group_request(const SipMessage &message);
+  std::optional<SipResponse> standard_group_refusal(const SipMessage &message, std::string &group, std::string &user,
+                                                    std::uint64_t &expires);
+  SipResponse group_affiliation_publish(const SipMessage &message, const std::string &peer);
+  SipResponse group_affiliation_subscribe(const SipMessage &message, const std::string &peer);
+  [[nodiscard]] GroupAffiliation group_affiliation_state(const std::string &group, const std::string &user_id,
+                                                         const std::string &p_id) const;
+  void notify_group_affiliation(const std::string &group, const std::string &user_id, const std::string &p_id);
   // The terminating participating function: an INVITE or MESSAGE from a peer for a user served here.
   bool terminating_request(const SipMessage &message, const std::string &peer, SipResponse &response);
   // TS 24.379 clause 7.3.3: service authorisation (PUBLISH of poc-settings).

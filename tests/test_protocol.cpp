@@ -36,7 +36,44 @@ static void rejects(const std::function<void()> &operation) {
 
 //------------------------------------------------------------------------------
 // The codecs of the MCPTT and MCVideo bodies: each round trip, its schema order, and the refusal of malformed input.
+//------------------------------------------------------------------------------
+// TS 24.379 clause 9.3.1.2, per-group affiliation information (TS 29.379 clauses 9.2.1.2.6 and 9.2.1.2.7): written
+// and read back, the notification form with "expires" and p-id, a tuple without clients (a de-affiliation), and the
+// per-group form told apart from the per-user one.
+static void test_group_affiliation() {
+  GroupAffiliation request;
+  request.group_id = "sip:fire@mcx.test";
+  request.publication_id = "p-7";
+  request.members = {{"sip:tetra-iwf@mcx.test", {{"urn:uuid:1", ""}}}};
+  const auto xml = group_affiliation_xml(request);
+  const auto read = parse_group_affiliation(xml);
+  check(read.group_id == "sip:fire@mcx.test" && read.publication_id == "p-7", "per-group PIDF group or p-id lost");
+  check(read.members.size() == 1 && read.members[0].user_id == "sip:tetra-iwf@mcx.test" &&
+            read.members[0].clients.size() == 1 && read.members[0].clients[0].client_id == "urn:uuid:1" &&
+            read.members[0].clients[0].expires.empty(),
+        "per-group PIDF tuple lost");
+  check(xml.find("expires") == std::string::npos, "a request carries no expires");
+  check(is_group_affiliation_pidf(xml), "per-group PIDF not recognised");
+  Affiliation per_user;
+  per_user.user_id = "sip:alice@mcx.test";
+  per_user.client_id = "urn:uuid:2";
+  per_user.groups = {"sip:fire@mcx.test"};
+  check(!is_group_affiliation_pidf(affiliation_xml(per_user, false)), "per-user PIDF taken for per-group");
+
+  request.members[0].clients = {{"urn:uuid:1", "2099-01-01T00:00:00Z"}};
+  check(parse_group_affiliation(group_affiliation_xml(request)).members[0].clients[0].expires == "2099-01-01T00:00:00Z",
+        "notification expires lost");
+  request.members[0].clients.clear();
+  check(parse_group_affiliation(group_affiliation_xml(request)).members[0].clients.empty(),
+        "de-affiliation tuple gained a client");
+  rejects([] { parse_group_affiliation("<presence xmlns=\"urn:ietf:params:xml:ns:pidf\"/>"); });
+  rejects([] {
+    parse_group_affiliation("<presence xmlns=\"urn:ietf:params:xml:ns:pidf\" entity=\"sip:g@x\"><tuple/></presence>");
+  });
+}
+
 int main() {
+  test_group_affiliation();
   // TS 24.379 clause 6.2.9.1 and annex F.3: the emergency location report, <ReportType> "Emergency".
   EmergencyLocation location{0, 16777215};
   const auto location_xml = emergency_location_xml(location);

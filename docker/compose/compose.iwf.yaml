@@ -1,0 +1,21 @@
+# The lab with an interworking function to a TETRA system (TS 23.283, TS 29.379; the openMCX iwf repository):
+# the openmcx-iwf container, a peer of the MCPTT server over IWF-1, with its SwMI adapter on port 15000 for
+# openmcx-swmi-sim. Use with compose.yaml after provisioning config/lab-iwf.json:
+#   tools/mcx provision --input config/lab-iwf.json
+#   .cache/deps/docker-compose-linux-x86_64 -f docker/compose/compose.yaml -f docker/compose/compose.iwf.yaml up -d iwf
+services:
+  iwf:
+    image: openmcx-iwf:0.1
+    init: true
+    networks: [mcx]
+    command: [--config, /config/iwf.json]
+    depends_on:
+      mcptt-server: {condition: service_healthy}
+    volumes:
+      - ../../config/generated/iwf.json:/config/iwf.json:ro
+      - ../../config/generated/tls/ca.crt:/config/tls/ca.crt:ro
+      - ../../config/generated/tls/iwf.crt:/config/tls/iwf.crt:ro
+      - ../../config/generated/tls/iwf.key:/config/tls/iwf.key:ro
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}

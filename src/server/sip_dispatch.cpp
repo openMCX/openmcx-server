@@ -129,6 +129,13 @@ bool McServer::peer_request(const SipMessage &message, const std::string &peer, 
       response = std::move(*handled);
       return true;
     }
+  // TS 24.379 clauses 9.2.2.3.3 and 9.2.2.3.4: the standard per-group form, from an IWF or another server using it.
+  if ((message.method == "PUBLISH" || message.method == "SUBSCRIBE") && event_name == "presence" &&
+      standard_group_request(message)) {
+    response = message.method == "PUBLISH" ? group_affiliation_publish(message, peer)
+                                           : group_affiliation_subscribe(message, peer);
+    return true;
+  }
   if (message.method == "PUBLISH" && event_name == "presence" && peer_presence_publish(message, peer, response))
     return true;
 

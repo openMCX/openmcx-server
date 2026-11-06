@@ -96,6 +96,74 @@ Affiliation parse_affiliation(std::string_view xml, std::string_view client) {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clause 9.3.1.2, per-group affiliation information, items 1 to 9.
+std::string group_affiliation_xml(const GroupAffiliation &affiliation) {
+  std::string out = "<?xml version=\"1.0\"?><presence xmlns=\"" + std::string(pidf_ns) + "\" xmlns:mc=\"" +
+                    affiliation_ns + "\" entity=\"" + xml_escape(affiliation.group_id) + "\">";
+  for (const auto &member : affiliation.members) {
+    out += "<tuple id=\"" + xml_escape(member.user_id) + "\"><status>";
+    for (const auto &client : member.clients) {
+      out += "<mc:affiliation client=\"" + xml_escape(client.client_id) + "\"";
+      if (!client.expires.empty()) out += " expires=\"" + xml_escape(client.expires) + "\"";
+      out += "/>";
+    }
+    out += "</status></tuple>";
+  }
+  if (!affiliation.publication_id.empty())
+    out += "<mc:p-id>" + xml_escape(affiliation.publication_id) + "</mc:p-id>";
+  out += "</presence>";
+  bounded(out);
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 9.3.1.2, per-group affiliation information: the group, every tuple with its clients, the p-id.
+GroupAffiliation parse_group_affiliation(std::string_view xml) {
+  auto doc = document(xml);
+  auto root = xmlDocGetRootElement(doc.get());
+  if (!is(root, "presence", pidf_ns)) invalid("wrong PIDF namespace");
+  GroupAffiliation affiliation;
+  affiliation.group_id = attr(root, "entity");
+  if (affiliation.group_id.empty()) invalid("missing PIDF entity");
+  for (auto node = root->children; node; node = node->next) {
+    if (!is(node, "tuple", pidf_ns)) continue;
+    GroupAffiliation::Member member{attr(node, "id"), {}};
+    if (member.user_id.empty()) invalid("per-group affiliation tuple without id");
+    for (auto status = node->children; status; status = status->next) {
+      if (!is(status, "status", pidf_ns)) continue;
+      for (auto entry = status->children; entry; entry = entry->next) {
+        if (!is(entry, "affiliation", affiliation_ns)) continue;
+        GroupAffiliation::Client client{attr(entry, "client"), attr(entry, "expires")};
+        if (client.client_id.empty()) invalid("per-group affiliation without client");
+        member.clients.push_back(std::move(client));
+      }
+    }
+    affiliation.members.push_back(std::move(member));
+  }
+  if (auto id = unique_child(root, "p-id", affiliation_ns, false)) affiliation.publication_id = text(id);
+  return affiliation;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 9.3.1.2: the per-group form has <affiliation client>, the per-user form <affiliation group>.
+bool is_group_affiliation_pidf(std::string_view xml) {
+  try {
+    auto doc = document(xml);
+    auto root = xmlDocGetRootElement(doc.get());
+    if (!is(root, "presence", pidf_ns)) return false;
+    for (auto node = root->children; node; node = node->next)
+      if (is(node, "tuple", pidf_ns))
+        for (auto status = node->children; status; status = status->next)
+          if (is(status, "status", pidf_ns))
+            for (auto entry = status->children; entry; entry = entry->next)
+              if (is(entry, "affiliation", affiliation_ns)) return !attr(entry, "client").empty();
+    return false;
+  } catch (const std::exception &) {
+    return false;
+  }
+}
+
+//------------------------------------------------------------------------------
 // TS 24.379 clause 7.2.3 with clause 7.4.1.2.2: writes the application/poc-settings+xml of a client: automatic
 // answer mode, the selected user profile index and multiplex support.
 std::string poc_settings_xml(std::string_view client_id, unsigned profile_index) {

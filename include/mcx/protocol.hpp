@@ -288,6 +288,23 @@ struct Affiliation {
 };
 
 //------------------------------------------------------------------------------
+// TS 24.379 clause 9.3.1.2: the per-group affiliation information, exchanged between a participating function (or
+// an IWF serving its users, TS 29.379 clause 9.2.1.2.6) and the controlling function owning the group: the group,
+// one tuple per MCPTT user with one <affiliation client=".."> per client ("expires" only in a notification), and
+// the p-id of the publication. A notification without the user's tuple means the user is not affiliated.
+struct GroupAffiliation {
+  struct Client {
+    std::string client_id, expires;
+  };
+  struct Member {
+    std::string user_id;
+    std::vector<Client> clients;
+  };
+  std::string group_id, publication_id;
+  std::vector<Member> members;
+};
+
+//------------------------------------------------------------------------------
 // RFC 2046 section 5.1: one part of a multipart body, its content type, body and Content-ID.
 struct BodyPart {
   std::string content_type, body;
@@ -479,6 +496,17 @@ std::string affiliation_xml(const Affiliation &affiliation, bool notification);
 // TS 24.379 clause 9.3.1.2 (TS 24.282 clause 8.4.1, TS 24.281 clause 8.3.1): reads an affiliation PIDF: a request
 // (its one tuple), or with `client` a notification, of whose tuples that client's is read (none: no group).
 Affiliation parse_affiliation(std::string_view xml, std::string_view client = {});
+//------------------------------------------------------------------------------
+// TS 24.379 clause 9.3.1.2 (per-group affiliation information): writes the document.
+std::string group_affiliation_xml(const GroupAffiliation &affiliation);
+//------------------------------------------------------------------------------
+// TS 24.379 clause 9.3.1.2 (per-group affiliation information): reads the document; a <presence> whose entity is
+// not a group, a tuple without id or an affiliation without client is refused.
+GroupAffiliation parse_group_affiliation(std::string_view xml);
+//------------------------------------------------------------------------------
+// Helper: whether a PIDF is in the per-group form (its <tuple> elements carry <affiliation client>, not <affiliation
+// group>) rather than the per-user form of the same clause.
+bool is_group_affiliation_pidf(std::string_view xml);
 //------------------------------------------------------------------------------
 // TS 24.379 clause 7.2.3 with clause 7.4.1.2.2: writes the application/poc-settings+xml of a client.
 std::string poc_settings_xml(std::string_view client_id, unsigned profile_index = 0);

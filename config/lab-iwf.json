@@ -1,0 +1,89 @@
+{
+  "domain": "mcx.test",
+  "service_user": "mcptt",
+  "group_user": "operations",
+  "oauth_client_id": "mcx-lab-client",
+  "server_client_id": "mcx-lab-server",
+  "oauth_redirect_uri": "http://127.0.0.1:8900/callback",
+  "token_ttl_seconds": 3600,
+  "users": [
+    {
+      "role": "client-a",
+      "username": "alice",
+      "mcptt_user": "alice.mcptt",
+      "private_call": {
+        "allow": true,
+        "automatic_commencement": true,
+        "manual_commencement": true,
+        "targets": [
+          "bob.mcptt"
+        ]
+      },
+      "adhoc_call": {
+        "allow": true
+      }
+    },
+    {
+      "role": "client-b",
+      "username": "bob",
+      "mcptt_user": "bob.mcptt",
+      "private_call": {
+        "allow": true,
+        "automatic_commencement": true,
+        "manual_commencement": true,
+        "targets": [
+          "alice.mcptt"
+        ]
+      },
+      "adhoc_call": {
+        "allow": true
+      }
+    }
+  ],
+  "iwf": {
+    "psi_user": "iwf",
+    "mcptt_user": "tetra-iwf",
+    "tetra": {
+      "mni": {
+        "mcc": 208,
+        "mnc": 1234
+      },
+      "mc_system_mni": {
+        "mcc": 208,
+        "mnc": 4321
+      },
+      "issis": [
+        1001,
+        1002
+      ],
+      "gssi": 9001
+    },
+    "decisions": {
+      "emergency": {
+        "send_emergency_alert_with_emergency_call": true,
+        "send_tetra_emergency_status_for_mc_emergency_call": true,
+        "imminent_peril_call_priority": 14
+      },
+      "group": {
+        "call_type": "prearranged",
+        "affiliation": "on_behalf_of_members"
+      },
+      "codec": {
+        "codec_termination": "tetra_codec_end_to_end",
+        "tetra_e2ee": "end_to_end_to_mc_ue",
+        "use_3gpp_e2ee_in_private_call": false
+      },
+      "sds": {
+        "tetra_max_bits": 2047,
+        "mcdata_max_bytes": 1000,
+        "tetra_concatenation_threshold_bits": 2047,
+        "mcdata_media_plane_threshold_bytes": 1000,
+        "block_individual_dispositions": false,
+        "block_group_dispositions": true,
+        "block_individual_dispositions_above_load_percent": null,
+        "block_group_dispositions_above_load_percent": null,
+        "long_sds_from_mcdata": "udh"
+      }
+    }
+  }
+}
