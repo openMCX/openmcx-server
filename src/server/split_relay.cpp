@@ -122,7 +122,7 @@ SipResponse McServer::relay_outgoing(const SipMessage &message, User &user, cons
   relay->implicit_group = begin_implicit_affiliation(user, outgoing, false);
   auto relayed = relayed_headers(message.headers);
   auto parts = application_parts(message.parts);
-  if (peers_.at(peer).standard_affiliation && svc_.name == "mcptt") {
+  if (peers_.at(peer).standard_affiliation && svc_.service == Service::mcptt) {
     // TS 24.379 clause 10.1.1.3.1 towards a standard peer (an IWF controlling the group): Answer-Mode and
     // Priv-Answer-Mode not copied (step 4), the <mcptt-calling-user-id> set to the caller's MCPTT ID (step 5), and
     // this function's PSI asserted (clause 6.3.2.1.3 step 4).
@@ -137,7 +137,7 @@ SipResponse McServer::relay_outgoing(const SipMessage &message, User &user, cons
       }
   }
   auto headers = route_to(peer, relayed);
-  headers.push_back({"P-Asserted-Identity", "<" + (peers_.at(peer).standard_affiliation && svc_.name == "mcptt"
+  headers.push_back({"P-Asserted-Identity", "<" + (peers_.at(peer).standard_affiliation && svc_.service == Service::mcptt
                                                         ? own_service_uri()
                                                         : user.sip) +
                                                 ">"});
@@ -529,7 +529,7 @@ SipResponse McServer::relay_subscription(const SipMessage &message, const User &
   // function's condition 1, TS 29.379 clause 10.3.3.1), as the client asked for it in P-Preferred-Service. openmcx's own
   // split link is unchanged.
   std::string type, body;
-  if (peers_.at(target.peer).standard_affiliation && svc_.name == "mcptt") {
+  if (peers_.at(target.peer).standard_affiliation && svc_.service == Service::mcptt) {
     if (get_header(headers, "P-Asserted-Service").empty()) headers.push_back({"P-Asserted-Service", svc_.icsi});
     auto info = message_info(message, svc_);
     info.calling_user = user.id;

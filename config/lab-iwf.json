@@ -16,7 +16,8 @@
         "automatic_commencement": true,
         "manual_commencement": true,
         "targets": [
-          "bob.mcptt"
+          "bob.mcptt",
+          "tetra-1001"
         ]
       },
       "adhoc_call": {

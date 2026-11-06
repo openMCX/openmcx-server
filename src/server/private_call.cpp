@@ -12,6 +12,9 @@
 
 #include "server.hpp"
 
+#include <algorithm>
+#include <cctype>
+
 namespace mcx {
 
 //------------------------------------------------------------------------------
@@ -717,11 +720,36 @@ void McServer::invite_private_target(const std::shared_ptr<Session> &session, co
   headers.push_back({"Contact", focus_contact(*session)});
   if (!session->replaces_header.empty()) headers.push_back({"Replaces", session->replaces_header});
   leg->local.key_mgmt = session->private_key_mgmt;
+  // TS 29.379 clause 11.1.2.2: a user served by a standard peer (an interworking function) is invited at the peer's
+  // PSI, the terminating participating function, the user named in <mcptt-request-uri>.
+  const auto peer = peers_.find(callee->peer);
+  const bool standard_peer = peer != peers_.end() && peer->second.standard_affiliation;
   leg->dialog = sip_.invite(
-      callee->sip, leg->local, priority_parts(info, &session->priority),
-      [this, weak = std::weak_ptr<Session>(session)](const SipResponse &response) {
+      standard_peer ? peer->second.service_uri : callee->sip, leg->local, priority_parts(info, &session->priority),
+      [this, weak = std::weak_ptr<Session>(session), target](const SipResponse &response) {
         const auto session = weak.lock();
         if (!session) return;
+        // TS 100 392-19-1 clause 11.3.4.2: the called MS (through its IWF) asks for the other commencement mode, 403
+        // "Automatic answer forbidden" or "Manual answer forbidden": the second INVITE with that Answer-Mode. The
+        // setup waits for it (its first leg departs meanwhile).
+        if (const auto mode = renegotiated_answer_mode(response);
+            !mode.empty() && !session->commencement_renegotiated && !session->first_to_answer &&
+            session->ambient.empty()) {
+          session->commencement_renegotiated = true;
+          session->invitation_deferred = true;
+          std::erase_if(session->answer_headers, [](const SipHeader &header) {
+            return header.name == "Answer-Mode" || header.name == "Priv-Answer-Mode";
+          });
+          session->answer_headers.push_back({"Answer-Mode", mode});
+          event("private_call_renegotiated", {{"session_uri", session->uri}, {"user_id", target}, {"answer_mode", mode}});
+          schedule([this, session, target] {
+            if (!current_session(session)) return;
+            session->invitation_deferred = false;
+            invite_private_target(session, target);
+            complete_setup(session);
+          });
+          return;
+        }
         // TS 24.379 clause 11.1.1.4.2: the first invitee's 180 (Ringing) brings the caller 180 (Ringing) in a
         // private call, 183 (Session Progress) in a first-to-answer call.
         if (response.status_code == 180 && !session->progress_sent) {
@@ -757,6 +785,18 @@ void McServer::invite_private_target(const std::shared_ptr<Session> &session, co
   add_leg(leg);
   event("private_call_invite",
         {{"user_id", target}, {"session_uri", session->uri}, {"first_to_answer", session->first_to_answer}});
+}
+
+//------------------------------------------------------------------------------
+// TS 100 392-19-1 clause 11.3.4.2 (RFC 5373 section 2): the Answer-Mode a callee's 403 asks for with its reason
+// phrase, "Automatic answer forbidden" (Manual) or "Manual answer forbidden" (Auto); empty for any other response.
+std::string McServer::renegotiated_answer_mode(const SipResponse &response) {
+  if (response.status_code != 403) return {};
+  std::string reason = response.reason;
+  std::transform(reason.begin(), reason.end(), reason.begin(), [](unsigned char c) { return std::tolower(c); });
+  if (reason == "automatic answer forbidden") return "Manual";
+  if (reason == "manual answer forbidden") return "Auto";
+  return {};
 }
 
 //------------------------------------------------------------------------------

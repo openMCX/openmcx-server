@@ -866,6 +866,9 @@ TLS_CA = "/config/tls/ca.crt";
                     "spk": iwf_spk,
                     # TS 29.379 clause 9.2.1.3: the IWF takes affiliations to its groups in the standard form.
                     "standard_affiliation": True,
+                    # TS 100 392-19-1 clause 8.2.1 with TS 29.379 clause 11.1.2.2: the TETRA MSs' MCPTT IDs, reached
+                    # through the IWF (a private call to an MS).
+                    "users": [f"sip:tetra-{issi}@{domain}" for issi in iwf_source["tetra"]["issis"]],
                 }
                 for owned in (tetra_group, tetra_chat_group):
                     if owned:

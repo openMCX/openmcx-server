@@ -378,8 +378,14 @@ void McServer::complete_setup(const std::shared_ptr<Session> &session) {
     // A private call has one callee: relay its decline/busy outcome and warning
     // (e.g. 480 warn(Warning::declined)). Other codes map to 480.
     static const std::set<int> relayed{480, 486, 488, 603};
+    // TS 100 392-19-1 clause 11.3.4.2: a called MS (through its IWF) that requires floor control, or requires none
+    // (403, warnings 181 and 182 of TS 24.379 table 4.4.2-2): this server does not renegotiate the media, the caller
+    // is told.
+    const bool floor_required = session->failure_status == 403 &&
+                                (session->failure_warning.find("\"181 ") != std::string::npos ||
+                                 session->failure_warning.find("\"182 ") != std::string::npos);
     if (session->private_call && !session->first_to_answer && session->ambient.empty() && !pending &&
-        relayed.contains(session->failure_status)) {
+        (relayed.contains(session->failure_status) || floor_required)) {
       failure.status_code = session->failure_status;
       failure.reason.clear();
       if (!session->failure_warning.empty()) failure.headers = {{"Warning", session->failure_warning}};

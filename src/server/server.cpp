@@ -619,6 +619,14 @@ McServer::McServer(const ServiceProfile &service, Json cfg, bool disable_tls)
   const auto servers = mcptt.value("servers", Json::object());
   for (const auto &[name, entry] : servers.items())
     peers_[name] = configured_peer(name, entry, disable_tls);
+  // The users a peer serves: reachable through it for as long as this server runs (ServicePeer::users).
+  for (const auto &[name, peer] : peers_)
+    for (const auto &id : peer.users) {
+      auto &user = users_[id];
+      user.id = user.sip = id;
+      user.peer = name;
+      user.expires = std::time(nullptr) + static_cast<std::int64_t>(4294967295LL); // as a standard peer's caller
+    }
   controller_ = mcptt.value("controller", "");
   if (const auto owner = mcptt.value("functional_alias_controller", std::string{});
       !owner.empty() && !peers_.contains(owner))

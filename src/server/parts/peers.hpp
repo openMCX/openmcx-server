@@ -33,6 +33,10 @@ struct ServicePeer {
   // A peer that owns groups and takes affiliations to them in the standard per-group form of TS 24.379 clauses
   // 9.2.2.2.6 and 9.2.2.2.7, such as an interworking function (TS 29.379 clause 9.2.1.3).
   bool standard_affiliation = false;
+  // The MCPTT IDs of the users the peer serves (an interworking function's TETRA users, TS 100 392-19-1 clause
+  // 8.2.1): reached through it, such as in a private call (TS 29.379 clause 11.1.2.2; how the peer is found for them
+  // is left to the implementation, TS 29.379 clause 11.1.3.1 NOTE 1).
+  std::vector<std::string> users;
   // TS 33.180 clauses 5.5 and 9.4.5: the SPK as the KFC of the floor and media control between the two servers.
   std::shared_ptr<ProtectedCall> spk;
   // TS 33.180 clauses 5.5 and 11.1.3: the SPK of the signalling bodies and XML exchanged with the peer (the XPK).

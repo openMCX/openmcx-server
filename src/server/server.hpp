@@ -112,6 +112,9 @@ protected:
     // the first to answer becomes private_request.target and the others are
     // cancelled or released with "not selected for call".
     bool first_to_answer = false, progress_sent = false;
+    // TS 100 392-19-1 clause 11.3.4.2: the callee's 403 asked for the other commencement mode and the second INVITE
+    // went (once per call).
+    bool commencement_renegotiated = false;
     // MCVideo one-to-one video push or pull (TS 24.281 clauses 13.2 and 12.2): a private call
     // whose <session-type> the callee also receives; the pushing caller, or the
     // pulled callee, is the one that transmits. Empty for any other private call.
@@ -1056,6 +1059,7 @@ protected:
   SipResponse private_invite(const SipMessage &message, const User &user, const McpttInfo &info);
 
   void invite_private_target(const std::shared_ptr<Session> &session, const std::string &target);
+  static std::string renegotiated_answer_mode(const SipResponse &response);
 
   bool private_resource_priority_allowed(const SipMessage &message, const PriorityState &state,
                                          bool emergency_requested) const;
