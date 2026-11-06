@@ -68,6 +68,7 @@ ServicePeer configured_peer(const std::string &name, const Json &entry, bool dis
   peer.service_uri = entry.at("service_uri");
   peer_keys(peer, name, entry);
   peer.controlling = entry.value("controlling", false);
+  peer.standard_affiliation = entry.value("standard_affiliation", false);
   return peer;
 }
 

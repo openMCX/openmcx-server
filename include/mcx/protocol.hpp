@@ -508,6 +508,10 @@ GroupAffiliation parse_group_affiliation(std::string_view xml);
 // group>) rather than the per-user form of the same clause.
 bool is_group_affiliation_pidf(std::string_view xml);
 //------------------------------------------------------------------------------
+// TS 24.379 clause 9.3.2.2 (per-user restriction) with RFC 4661: the filter of an affiliation status subscription
+// naming one MCPTT ID's tuple, with the pidf and mcpttPI10 bindings.
+std::string affiliation_user_filter_xml(const std::string &user);
+//------------------------------------------------------------------------------
 // TS 24.379 clause 7.2.3 with clause 7.4.1.2.2: writes the application/poc-settings+xml of a client.
 std::string poc_settings_xml(std::string_view client_id, unsigned profile_index = 0);
 //------------------------------------------------------------------------------

@@ -30,6 +30,9 @@ struct ServicePeer {
   std::string host, media_host, route, service_uri;
   // A controlling server of this system.
   bool controlling = false;
+  // A peer that owns groups and takes affiliations to them in the standard per-group form of TS 24.379 clauses
+  // 9.2.2.2.6 and 9.2.2.2.7, such as an interworking function (TS 29.379 clause 9.2.1.3).
+  bool standard_affiliation = false;
   // TS 33.180 clauses 5.5 and 9.4.5: the SPK as the KFC of the floor and media control between the two servers.
   std::shared_ptr<ProtectedCall> spk;
   // TS 33.180 clauses 5.5 and 11.1.3: the SPK of the signalling bodies and XML exchanged with the peer (the XPK).

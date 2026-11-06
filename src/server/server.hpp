@@ -1332,6 +1332,14 @@ protected:
   };
   std::map<std::string, std::map<std::string, StandardAffiliation>> standard_affiliations_;
   std::map<std::string, StandardSubscription> group_affiliation_subscriptions_;
+  // TS 24.379 clauses 9.2.2.2.6 and 9.2.2.2.7: this server's users' affiliations to groups standard peers own, by
+  // (MCPTT ID, group): the subscription dialog, the p-id awaiting its outcome and the state; and the dialogs.
+  struct StandardOutgoing {
+    std::string dialog, pending_pid;
+    bool subscribed = false, confirmed = false, leaving = false;
+  };
+  std::map<std::pair<std::string, std::string>, StandardOutgoing> standard_outgoing_;
+  std::map<std::string, std::pair<std::string, std::string>> standard_outgoing_dialogs_;
 
   std::string own_service_uri() const { return cfg_.at(svc_.name).at("service_uri"); }
 
@@ -1686,6 +1694,15 @@ protected:
   [[nodiscard]] GroupAffiliation group_affiliation_state(const std::string &group, const std::string &user_id,
                                                          const std::string &p_id) const;
   void notify_group_affiliation(const std::string &group, const std::string &user_id, const std::string &p_id);
+  // TS 24.379 clauses 9.2.2.2.6 and 9.2.2.2.7 towards a peer owning a group in the standard form.
+  [[nodiscard]] std::string standard_controller(const std::string &group) const;
+  void sync_standard_affiliations(const User &user);
+  void subscribe_standard_affiliation(const User &user, const std::string &group, const std::string &peer);
+  void publish_standard_affiliation(const std::string &id, const std::string &client, const std::string &group,
+                                    bool affiliating);
+  SipResponse standard_affiliation_notify(const SipMessage &message);
+  void standard_affiliation_lost(const std::string &id, const std::string &group, const std::string &reason);
+  void end_standard_affiliation(const std::string &id, const std::string &group);
   // The terminating participating function: an INVITE or MESSAGE from a peer for a user served here.
   bool terminating_request(const SipMessage &message, const std::string &peer, SipResponse &response);
   // TS 24.379 clause 7.3.3: service authorisation (PUBLISH of poc-settings).

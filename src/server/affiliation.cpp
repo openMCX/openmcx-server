@@ -208,6 +208,7 @@ void McServer::apply_affiliation(User &user, std::set<std::string> groups) {
     if (auto *target = by_id(id)) {
       notify(*target);
       register_with_controllers(*target);
+      sync_standard_affiliations(*target);
       for (const auto &[group, priority] : priorities_) {
         if (!target->groups.contains(group)) continue;
         if (priority.emergency || priority.imminent) {

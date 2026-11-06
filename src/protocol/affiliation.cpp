@@ -164,6 +164,21 @@ bool is_group_affiliation_pidf(std::string_view xml) {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clause 9.3.2.2, per-user restriction of presence event package notification information.
+std::string affiliation_user_filter_xml(const std::string &user) {
+  conference_uri(user);
+  if (user.find('"') != std::string::npos) invalid("invalid affiliation filter user");
+  std::string out = "<?xml version=\"1.0\"?><filter-set xmlns=\"urn:ietf:params:xml:ns:simple-filter\">"
+                    "<ns-bindings><ns-binding prefix=\"pidf\" urn=\"" +
+                    std::string(pidf_ns) + "\"/><ns-binding prefix=\"mcpttPI10\" urn=\"" + affiliation_ns +
+                    "\"/></ns-bindings><filter id=\"affiliation-user\"><what><include>" +
+                    xml_escape("//pidf:presence/pidf:tuple[@id=\"" + user + "\"]") +
+                    "</include></what></filter></filter-set>";
+  bounded(out);
+  return out;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.379 clause 7.2.3 with clause 7.4.1.2.2: writes the application/poc-settings+xml of a client: automatic
 // answer mode, the selected user profile index and multiplex support.
 std::string poc_settings_xml(std::string_view client_id, unsigned profile_index) {

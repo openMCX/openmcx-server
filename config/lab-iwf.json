@@ -84,6 +84,10 @@
         "block_group_dispositions_above_load_percent": null,
         "long_sds_from_mcdata": "udh"
       }
+    },
+    "tetra_group": {
+      "user": "tetra-9002",
+      "gssi": 9002
     }
   }
 }
