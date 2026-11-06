@@ -120,10 +120,29 @@ SipResponse McServer::relay_outgoing(const SipMessage &message, User &user, cons
   }
   relay->ambient_party = outgoing.session_type == svc_.ambient && outgoing.ambient_listening_type == "local-init";
   relay->implicit_group = begin_implicit_affiliation(user, outgoing, false);
-  auto headers = route_to(peer, relayed_headers(message.headers));
-  headers.push_back({"P-Asserted-Identity", "<" + user.sip + ">"});
+  auto relayed = relayed_headers(message.headers);
+  auto parts = application_parts(message.parts);
+  if (peers_.at(peer).standard_affiliation && svc_.name == "mcptt") {
+    // TS 24.379 clause 10.1.1.3.1 towards a standard peer (an IWF controlling the group): Answer-Mode and
+    // Priv-Answer-Mode not copied (step 4), the <mcptt-calling-user-id> set to the caller's MCPTT ID (step 5), and
+    // this function's PSI asserted (clause 6.3.2.1.3 step 4).
+    std::erase_if(relayed, [](const SipHeader &header) {
+      return header.name == "Answer-Mode" || header.name == "Priv-Answer-Mode";
+    });
+    for (auto &part : parts)
+      if (part.content_type == svc_.info_mime) {
+        auto info = parse_mcptt_info(part.body);
+        info.calling_user = user.id;
+        part.body = mcptt_info_xml(info);
+      }
+  }
+  auto headers = route_to(peer, relayed);
+  headers.push_back({"P-Asserted-Identity", "<" + (peers_.at(peer).standard_affiliation && svc_.name == "mcptt"
+                                                        ? own_service_uri()
+                                                        : user.sip) +
+                                                ">"});
   relay->peer_dialog = sip_.invite(
-      target, mirror(*message.remote_media, relay->local), application_parts(message.parts),
+      target, mirror(*message.remote_media, relay->local), parts,
       [this, weak = std::weak_ptr<Relay>(relay)](const SipResponse &answer) {
         schedule([this, weak, answer] {
           if (auto relay = weak.lock()) relay_answer(relay, answer, false);
