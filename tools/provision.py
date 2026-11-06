@@ -231,6 +231,8 @@ def iwf_config(iwf_source, iwf_psi, iwf_mcptt_id, service, group, domain, mcptt_
         "mcptt": {
             "service_uri": iwf_psi,
             "controlling_psi": service,
+            # TS 29.379 clause 10.1.4.1.1 step 2: one openmcx server is the users' participating function too.
+            "participating_psi": service,
             "route": f"<sip:{mcptt_server}:5061;transport=tls;lr>",
             "spk": {"id": spk["id"], "key": spk["key"]},
         },

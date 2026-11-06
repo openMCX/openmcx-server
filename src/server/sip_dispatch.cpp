@@ -215,6 +215,22 @@ bool McServer::terminating_request(const SipMessage &message, const std::string 
         response = relay_incoming(message, peer, *invited);
         return true;
       }
+  // TS 29.379 clause 10.1.4.1.1 step 2 and TS 24.379 clause 10.1.1.3.2: a standard peer controlling a group (an IWF)
+  // addresses a group call's invitation to this PSI, the invited user in <mcptt-request-uri>; the Contact has to be a
+  // conference focus (step 2).
+  if (message.method == "INVITE" && !legs_.contains(message.dialog_id) && message.request_uri == own_service_uri() &&
+      peers_.contains(peer) && peers_.at(peer).standard_affiliation)
+    if (const auto info = message_info(message, svc_);
+        (info.session_type == "prearranged" || info.session_type == "chat") && !info.calling_group.empty())
+      if (const auto *invited = by_id(info.request_uri); invited && invited->peer.empty()) {
+        if (get_header(message.headers, "Contact").find("isfocus") == std::string_view::npos) {
+          response.status_code = 403;
+          response.headers.push_back({"Warning", warning_value("104 isfocus not assigned")});
+          return true;
+        }
+        response = relay_incoming(message, peer, *invited);
+        return true;
+      }
   // A request for a user served here: this server's terminating participating function.
   if ((message.method == "INVITE" || message.method == "MESSAGE") && !legs_.contains(message.dialog_id))
     if (const auto local = users_.find(message.request_uri); local != users_.end() && local->second.peer.empty()) {

@@ -109,7 +109,9 @@
           2,
           3
         ],
-        "floor_queueing": false
+        "floor_queueing": false,
+        "hang_time_ms": 5000,
+        "transmission_time_limit_ms": 30000
       }
     },
     "tetra_group": {
