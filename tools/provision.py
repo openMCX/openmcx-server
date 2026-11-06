@@ -211,7 +211,9 @@ def participating_routes(servers, users_by_role):
 
 
 # ------------------------------------------------------------------------------
-def iwf_config(iwf_source, iwf_psi, iwf_mcptt_id, service, group, domain, mcptt_server, spk, tetra_group, members):
+def iwf_config(
+    iwf_source, iwf_psi, iwf_mcptt_id, service, group, domain, mcptt_server, spk, tetra_group, members, chat_group
+):
     """The configuration of openmcx-iwf (its config/iwf.example.json layout): SIP towards the MCPTT server directly,
     the lab group bound to a TETRA GSSI controlled by the MC system, the TETRA MSs, and the annex A.1 decisions of
     TS 100 392-19-1 as the lab sets them."""
@@ -254,6 +256,19 @@ def iwf_config(iwf_source, iwf_psi, iwf_mcptt_id, service, group, domain, mcptt_
             ],
             "mc_users": [],
             "groups": [{"gssi": tetra["gssi"], "control": "mc_system", "mcptt_group_id": group}]
+            # TS 100 392-19-1 clause 9.3.1.2.2: a GSSI mapped to an MCPTT chat group, joined rather than affiliated.
+            + (
+                [
+                    {
+                        "gssi": iwf_source["chat_group"]["gssi"],
+                        "control": "mc_system",
+                        "mcptt_group_id": chat_group,
+                        "call_type": "chat",
+                    }
+                ]
+                if chat_group
+                else []
+            )
             + (
                 [
                     {
@@ -437,6 +452,11 @@ def main():
     tetra_group = (
         f"sip:{iwf_source['tetra_group']['user']}@{domain}" if iwf_source and "tetra_group" in iwf_source else ""
     )
+    # A chat group of the MC system (TS 24.379 clause 10.1.2) that a TETRA GSSI is mapped to (TS 100 392-19-1 clause
+    # 9.3.1.2.2): the IWF joins it for the MSs that attach.
+    chat_group = (
+        f"sip:{iwf_source['chat_group']['user']}@{domain}" if iwf_source and "chat_group" in iwf_source else ""
+    )
     # TS 29.379 clause 6.8.1.4 and TS 33.180 clause 5.5: the SPK the IWF and the MCPTT servers share, provisioned
     # directly; its SPK-ID carries purpose tag 3.
     iwf_spk = (
@@ -470,7 +490,7 @@ def main():
             "sip_uri": f"sip:{source_user['username']}@{domain}",
             "sip_password": secrets.token_hex(20),
             "client_id": f"urn:uuid:{uuid.uuid4()}",
-            "groups": [group] + ([tetra_group] if tetra_group else []),
+            "groups": [group] + ([tetra_group] if tetra_group else []) + ([chat_group] if chat_group else []),
         }
         for source_user in source["users"]
     ]
@@ -555,7 +575,7 @@ def main():
                     "sip_uri": iwf_mcptt_id,
                     "sip_password": secrets.token_hex(20),
                     "client_id": f"urn:uuid:{uuid.uuid4()}",
-                    "groups": [group],
+                    "groups": [group] + ([chat_group] if chat_group else []),
                 }
             ]
             # The MC identities of the TETRA MSs (TS 100 392-19-1 clause 8.2.1): users of the MC system with a
@@ -599,6 +619,22 @@ def main():
                 }
             ]
             if tetra_group
+            else []
+        )
+        + (
+            [
+                {
+                    "id": chat_group,
+                    "type": "chat",
+                    # The IWF's MCPTT ID joins on behalf of the MSs (TS 100 392-19-1 clause 9.3.1.2.2 NOTE 2).
+                    "members": [source_user["mcptt_id"] for source_user in users] + [iwf_mcptt_id],
+                    "protect_media": False,
+                    "protect_floor": False,
+                    # A short inactivity timer (TS 24.379 T4), so the lab sees the release and the IWF's join again.
+                    "call_policy": {"inactivity_timeout_ms": 20000},
+                }
+            ]
+            if chat_group
             else []
         ),
         "endpoints": {
@@ -801,6 +837,8 @@ TLS_CA = "/config/tls/ca.crt";
                     "client_id": user["client_id"],
                     "service_uri": service,
                     "group_id": group,
+                    # The interworking chat group may be selected as well (mcx-client "group").
+                    **({"allowed_groups": [group, chat_group]} if chat_group else {}),
                     # TS 24.484 clause 8.2.1A: the MCSUEID of the UE configuration document's XCAP URI.
                     "ue_instance_id": user["ues"][0],
                 },
@@ -892,7 +930,7 @@ TLS_CA = "/config/tls/ca.crt";
             "iwf.json",
             iwf_config(
                 iwf_source, iwf_psi, iwf_mcptt_id, service, group, domain, next(iter(servers)), iwf_spk,
-                tetra_group, [source_user["mcptt_id"] for source_user in users],
+                tetra_group, [source_user["mcptt_id"] for source_user in users], chat_group,
             ),
         )
     # The MCVideo server: the openmcx-mcvideo-server executable, on the same core as the

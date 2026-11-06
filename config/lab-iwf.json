@@ -117,6 +117,10 @@
     "tetra_group": {
       "user": "tetra-9002",
       "gssi": 9002
+    },
+    "chat_group": {
+      "user": "operations-chat",
+      "gssi": 9004
     }
   }
 }
