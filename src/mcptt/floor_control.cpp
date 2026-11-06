@@ -43,8 +43,11 @@ void McpttServer::floor_packet(Leg &leg, const Datagram &datagram) {
     FloorPacket ack{FloorType::Ack, false, leg.remote->floor_ssrc, {source_field(2), message_type_field(packet.type)}};
     transmit_floor(leg, ack);
   }
-  if (!id.empty() && id != leg.user) throw std::runtime_error("floor identity mismatch");
+  // TS 29.380 clause 6.4.4.4 step 1c: an IWF affiliated on behalf of its users names the one it requests for.
+  const bool named_by_peer = !id.empty() && id != leg.user && standard_peer_names(leg.user, id);
+  if (!id.empty() && id != leg.user && !named_by_peer) throw std::runtime_error("floor identity mismatch");
   if (packet.type == FloorType::Request) {
+    leg.floor_talker = named_by_peer ? id : std::string();
     floor_request(leg, session, arbitrator, priority);
   } else if (packet.type == FloorType::Release) {
     if (leg.floor_retries) leg.floor_retries->cancel(FloorType::Granted);
@@ -201,7 +204,14 @@ void McpttServer::send_floor_notice(Leg &leg, const FloorNotice &notice) {
     leg.released_floor = false; // now 'U: not permitted and Floor Taken' (clause 6.3.5.4.2)
     packet.type = FloorType::Taken;
     packet.fields.push_back(message_sequence_field(++leg.floor_sequence));
-    packet.fields.push_back(granted_party_identity_field(notice.participant));
+    {
+      // The user a standard peer named for its own leg (TS 29.380 clause 6.4.4.4 step 1c) is the granted party.
+      std::string party = notice.participant;
+      for (auto &[dialog, granted] : legs_)
+        if (granted->session == leg.session && granted->user == notice.participant && !granted->floor_talker.empty())
+          party = granted->floor_talker;
+      packet.fields.push_back(granted_party_identity_field(party));
+    }
     // TS 24.380 clause 6.3.4.4.2: Permission to Request the floor is '0' in a broadcast group call.
     // Nor may the listening user request it in an ambient listening call (TS 23.379 clause 10.14.1).
     packet.fields.push_back(permission_to_request_field(!leg.session->broadcast && leg.session->ambient.empty()));

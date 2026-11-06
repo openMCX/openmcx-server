@@ -261,6 +261,9 @@ protected:
     // clause 6.3.5.3.8.
     bool sends_without_permission = false, released_floor = false;
     std::uint64_t unpermitted_revoke_ms = 0, unpermitted_media_ms = 0;
+    // TS 29.380 clause 6.4.4.4 step 1c: on the leg of a standard peer's own identity (an IWF affiliated on behalf of
+    // its users), the user its last Floor Request named, shown as the granted party; empty otherwise.
+    std::string floor_talker;
   };
 
   //------------------------------------------------------------------------------
@@ -1691,6 +1694,7 @@ protected:
   User *standard_peer_caller(const SipMessage &message, const std::string &peer, const std::string &asserted);
   [[nodiscard]] bool standard_affiliated(const std::string &id) const;
   [[nodiscard]] bool standard_peer_vouched(const User &user, const std::string &group, const Json &profile) const;
+  [[nodiscard]] bool standard_peer_names(const std::string &leg_user, const std::string &named);
   [[nodiscard]] std::vector<std::string> call_members(const Json &profile, const std::string &group) const;
   std::optional<SipResponse> standard_group_refusal(const SipMessage &message, std::string &group, std::string &user,
                                                     std::uint64_t &expires);

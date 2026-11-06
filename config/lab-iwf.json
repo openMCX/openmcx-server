@@ -102,7 +102,14 @@
           0,
           0,
           15
-        ]
+        ],
+        "floor_priority": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "floor_queueing": false
       }
     },
     "tetra_group": {

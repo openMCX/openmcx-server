@@ -77,6 +77,19 @@ bool McServer::standard_peer_vouched(const User &user, const std::string &group,
 }
 
 //------------------------------------------------------------------------------
+// TS 29.380 clause 6.4.4.4 step 1c: an IWF's floor participant names the LMR user it requests the floor for. On the
+// leg of a standard peer's own identity, a User ID naming a user that no other server or registration serves is
+// that peer's user (the trust of standard_peer_caller).
+bool McServer::standard_peer_names(const std::string &leg_user, const std::string &named) {
+  const auto *own = by_id(leg_user);
+  if (own == nullptr || own->peer.empty()) return false;
+  const auto peer = peers_.find(own->peer);
+  if (peer == peers_.end() || !peer->second.standard_affiliation) return false;
+  const auto *user = by_id(named);
+  return user == nullptr || user->peer == own->peer;
+}
+
+//------------------------------------------------------------------------------
 // The members of a group call: those of the group document, and the users a standard peer vouches for in the group
 // (TS 100 392-19-1 clause 9.2.1 NOTES 3 and 5), so that they stay in the call and take part in floor arbitration.
 std::vector<std::string> McServer::call_members(const Json &profile, const std::string &group) const {
