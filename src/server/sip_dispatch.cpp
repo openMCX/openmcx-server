@@ -217,11 +217,13 @@ bool McServer::terminating_request(const SipMessage &message, const std::string 
       }
   // TS 29.379 clause 10.1.4.1.1 step 2 and TS 24.379 clause 10.1.1.3.2: a standard peer controlling a group (an IWF)
   // addresses a group call's invitation to this PSI, the invited user in <mcptt-request-uri>; the Contact has to be a
-  // conference focus (step 2).
+  // conference focus (step 2). TS 29.379 clause 11.1.3.1 step 5 with TS 24.379 clause 11.1.1.3.2: a standard peer
+  // controlling a private call (an IWF, for its MS's call) invites the called user the same way.
   if (message.method == "INVITE" && !legs_.contains(message.dialog_id) && message.request_uri == own_service_uri() &&
       peers_.contains(peer) && peers_.at(peer).standard_affiliation)
     if (const auto info = message_info(message, svc_);
-        (info.session_type == "prearranged" || info.session_type == "chat") && !info.calling_group.empty())
+        ((info.session_type == "prearranged" || info.session_type == "chat") && !info.calling_group.empty()) ||
+        info.session_type == "private")
       if (const auto *invited = by_id(info.request_uri); invited && invited->peer.empty()) {
         if (get_header(message.headers, "Contact").find("isfocus") == std::string_view::npos) {
           response.status_code = 403;

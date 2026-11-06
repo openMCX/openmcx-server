@@ -56,6 +56,9 @@
         1001,
         1002
       ],
+      "mc_users": {
+        "alice.mcptt": 2001
+      },
       "gssi": 9001
     },
     "decisions": {
@@ -111,7 +114,8 @@
         ],
         "floor_queueing": false,
         "hang_time_ms": 5000,
-        "transmission_time_limit_ms": 30000
+        "transmission_time_limit_ms": 30000,
+        "private_call_limit_ms": 600000
       }
     },
     "tetra_group": {

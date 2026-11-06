@@ -266,7 +266,10 @@ def iwf_config(
             "tetra_users": [
                 {"issi": issi, "mcptt_id": f"sip:tetra-{issi}@{domain}"} for issi in tetra["issis"]
             ],
-            "mc_users": [],
+            # TS 100 392-19-1 clause 8.2.1: the SSIs that represent MCPTT users to the TETRA MSs (individual calls).
+            "mc_users": [
+                {"ssi": ssi, "mcptt_id": f"sip:{name}@{domain}"} for name, ssi in tetra.get("mc_users", {}).items()
+            ],
             "groups": [{"gssi": tetra["gssi"], "control": "mc_system", "mcptt_group_id": group}]
             # TS 100 392-19-1 clause 9.3.1.2.2: a GSSI mapped to an MCPTT chat group, joined rather than affiliated.
             + (
