@@ -124,7 +124,8 @@
     },
     "tetra_chat_group": {
       "user": "tetra-chat-9003",
-      "gssi": 9003
+      "gssi": 9003,
+      "max_participants": 1
     }
   }
 }

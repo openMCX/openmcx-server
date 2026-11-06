@@ -240,6 +240,17 @@ def iwf_config(
             "spk": {"id": spk["id"], "key": spk["key"]},
         },
         "swmi": {"listen": "0.0.0.0", "port": 15000},
+        # IWF-3 (TS 23.283 clause 7.4.3; TS 24.481 clauses 6.2.5.1, 6.2.5.3): the IWF serves the group documents of its
+        # groups over XCAP; the MCPTT PSI stands for this lab's GMS subscription proxy and its MCS server.
+        "group_management": {
+            "listen": "0.0.0.0",
+            "port": 8443,
+            "xcap_root": "https://iwf:8443/xcap-root",
+            "documents_psi": f"sip:iwf-documents@{domain}",
+            "authorized_gms": [service],
+            "authorized_servers": [service],
+            "maximum_duration_s": 3600,
+        },
         # The IWF's speech and floor control ports (TS 29.379 clause 6.1.1), advertised by name as the servers do.
         "media": {"address": "iwf", "port_base": 40000},
         "tetra_system": {"mni": tetra["mni"]},
@@ -292,6 +303,12 @@ def iwf_config(
                         "call_type": "chat",
                         "mc_members": members,
                     }
+                    # <on-network-max-participant-count> (TS 24.481 clause 7.2.4.2), which the IWF enforces.
+                    | (
+                        {"max_participants": iwf_source["tetra_chat_group"]["max_participants"]}
+                        if "max_participants" in iwf_source["tetra_chat_group"]
+                        else {}
+                    )
                 ]
                 if tetra_chat_group
                 else []
