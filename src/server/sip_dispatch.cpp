@@ -1480,8 +1480,9 @@ bool McServer::group_call_type_allowed(const User &user, const McpttInfo &info, 
     response.headers = {{"Warning", warning_value(warn(Warning::group_disabled))}};
     return false;
   }
-  // Step 5b: the caller is not in the group's <list>.
-  if (!member(profile, user.id)) {
+  // Step 5b: the caller is not in the group's <list>; TS 100 392-19-1 clause 9.2.1 NOTE 5: a TETRA MS calling through
+  // an IWF that affiliates on behalf of its MSs need not be listed, the IWF's own identity is.
+  if (!member(profile, user.id) && !standard_peer_vouched(user, info.request_uri, profile)) {
     response.status_code = 403;
     response.headers = {{"Warning", warning_value(warn(Warning::not_group_member))}};
     return false;
@@ -1685,7 +1686,7 @@ std::shared_ptr<McServer::Session> McServer::create_group_session(const User &us
   session->broadcast = broadcast_request;
   session->chat = chat_request;
   session->created = session->last_media = session->normal_since = monotonic_ms();
-  session->members = profile.at("members").get<std::vector<std::string>>();
+  session->members = call_members(profile, info.request_uri);
   if (hierarchy) prepare_broadcast_hierarchy(*session, profile, group_type, user.id);
   session->arbitrator = make_media_control(session->members, floor_options());
   return session;

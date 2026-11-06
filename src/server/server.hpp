@@ -1687,6 +1687,11 @@ protected:
   // TS 24.379 clauses 9.2.2.3.3 to 9.2.2.3.5: the standard per-group affiliation PUBLISH and SUBSCRIBE from another
   // server, such as an IWF (peer_group_affiliation.cpp).
   bool standard_group_request(const SipMessage &message);
+  // TS 100 392-19-1 clause 9.2.1 NOTE 3: the calling user of a standard peer's request (users.cpp).
+  User *standard_peer_caller(const SipMessage &message, const std::string &peer, const std::string &asserted);
+  [[nodiscard]] bool standard_affiliated(const std::string &id) const;
+  [[nodiscard]] bool standard_peer_vouched(const User &user, const std::string &group, const Json &profile) const;
+  [[nodiscard]] std::vector<std::string> call_members(const Json &profile, const std::string &group) const;
   std::optional<SipResponse> standard_group_refusal(const SipMessage &message, std::string &group, std::string &user,
                                                     std::uint64_t &expires);
   SipResponse group_affiliation_publish(const SipMessage &message, const std::string &peer);

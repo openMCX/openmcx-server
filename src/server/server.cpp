@@ -381,14 +381,14 @@ void McServer::revalidate_group_call(const std::string &group, const std::shared
     session->policy = policy.value("call_policy", cfg_.at(svc_.name).value("call_policy", Json::object()));
     session->policy["protect_floor"] = policy.value("protect_floor", false);
     if (session->hierarchy.empty()) {
-      const auto members = policy.at("members").get<std::vector<std::string>>();
+      const auto members = call_members(policy, group);
       for (const auto &id : session->members)
         if (std::find(members.begin(), members.end(), id) == members.end())
           notices(*session, session->arbitrator->remove(id, now));
       for (const auto &id : members) notices(*session, session->arbitrator->add(id));
       session->members = members;
       for (const auto &leg : session_legs(*session))
-        if (!member(policy, leg->user)) revoked.push_back(leg->user);
+        if (std::find(members.begin(), members.end(), leg->user) == members.end()) revoked.push_back(leg->user);
     } else if (!member(policy, session->initiator)) {
       // A hierarchy call keeps its resolved receivers; losing the initiator ends it.
       for (const auto &leg : session_legs(*session)) revoked.push_back(leg->user);

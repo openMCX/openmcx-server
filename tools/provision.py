@@ -235,6 +235,8 @@ def iwf_config(iwf_source, iwf_psi, iwf_mcptt_id, service, group, domain, mcptt_
             "spk": {"id": spk["id"], "key": spk["key"]},
         },
         "swmi": {"listen": "0.0.0.0", "port": 15000},
+        # The IWF's speech and floor control ports (TS 29.379 clause 6.1.1), advertised by name as the servers do.
+        "media": {"address": "iwf", "port_base": 40000},
         "tetra_system": {"mni": tetra["mni"]},
         "mc_system": {
             "mni": tetra["mc_system_mni"],
@@ -553,6 +555,21 @@ def main():
                     "client_id": f"urn:uuid:{uuid.uuid4()}",
                     "groups": [group],
                 }
+            ]
+            # The MC identities of the TETRA MSs (TS 100 392-19-1 clause 8.2.1): users of the MC system with a
+            # profile for their calls, not group members (clause 9.2.1 NOTE 5: the IWF affiliates on their behalf).
+            + [
+                {
+                    "username": f"tetra-{issi}",
+                    "password": secrets.token_hex(20),
+                    "mc_id": f"sip:tetra-{issi}.mc@{domain}",
+                    "mcptt_id": f"sip:tetra-{issi}@{domain}",
+                    "sip_uri": f"sip:tetra-{issi}@{domain}",
+                    "sip_password": secrets.token_hex(20),
+                    "client_id": f"urn:uuid:{uuid.uuid4()}",
+                    "groups": [],
+                }
+                for issi in iwf_source["tetra"]["issis"]
             ]
             if iwf_source
             else []

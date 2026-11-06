@@ -69,8 +69,8 @@
         "affiliation": "on_behalf_of_members"
       },
       "codec": {
-        "codec_termination": "tetra_codec_end_to_end",
-        "tetra_e2ee": "end_to_end_to_mc_ue",
+        "codec_termination": "transcode_at_iwf",
+        "tetra_e2ee": "not_supported",
         "use_3gpp_e2ee_in_private_call": false
       },
       "sds": {
@@ -83,6 +83,26 @@
         "block_individual_dispositions_above_load_percent": null,
         "block_group_dispositions_above_load_percent": null,
         "long_sds_from_mcdata": "udh"
+      },
+      "calls": {
+        "resource_priority": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          15
+        ]
       }
     },
     "tetra_group": {

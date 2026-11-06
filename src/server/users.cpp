@@ -21,10 +21,79 @@ McServer::User &McServer::authenticated(const SipMessage &message) {
     throw std::runtime_error("asserted SIP identity mismatch");
   if (!peer.empty() && role_ == "participating")
     throw std::runtime_error("a participating server does not control calls");
+  if (auto *standard = standard_peer_caller(message, peer, asserted)) return *standard;
   auto found = users_.find(asserted);
   if (found == users_.end() || found->second.expires <= std::time(nullptr)) throw UnknownUser();
   if (found->second.peer != peer) throw std::runtime_error("user is not served by the requesting server");
   return found->second;
+}
+
+//------------------------------------------------------------------------------
+// TS 100 392-19-1 clause 9.2.1 NOTE 3 (TS 29.379 clause 10.1.3.1.1): a peer taking the standard affiliation, an IWF,
+// asserts its own PSI and names the calling user in <mcptt-calling-user-id>; where the IWF affiliates on behalf of its
+// users, the MCPTT system "will need to accept call setup and floor control requests" from users it has no
+// affiliation of. The calling user is then a user served by the peer, holding the groups the peer's affiliated
+// identities hold. Returns nullptr for any other request.
+McServer::User *McServer::standard_peer_caller(const SipMessage &message, const std::string &peer,
+                                               const std::string &asserted) {
+  if (peer.empty()) return nullptr;
+  const auto found_peer = peers_.find(peer);
+  if (found_peer == peers_.end() || !found_peer->second.standard_affiliation ||
+      bare_uri(asserted) != found_peer->second.service_uri)
+    return nullptr;
+  const auto info = message_info(message, svc_);
+  if (info.calling_user.empty()) throw UnknownUser();
+  std::set<std::string> groups;
+  for (const auto &[sip, user] : users_)
+    if (user.peer == peer && user.id != info.calling_user && user.expires > std::time(nullptr))
+      groups.insert(user.groups.begin(), user.groups.end());
+  auto &caller = users_[info.calling_user];
+  if (!caller.peer.empty() && caller.peer != peer) throw std::runtime_error("user is served by another server");
+  if (caller.id.empty()) {
+    caller.id = caller.sip = info.calling_user;
+    caller.peer = peer;
+    caller.expires = std::time(nullptr) + static_cast<std::int64_t>(4294967295LL);
+    event("standard_peer_caller", {{"user_id", caller.id}, {"server", peer}});
+  }
+  if (!info.client_id.empty()) caller.client = info.client_id;
+  // A caller individually affiliated keeps its own groups; one admitted through the peer's affiliation, those.
+  if (!standard_affiliated(caller.id)) caller.groups = std::move(groups);
+  return &caller;
+}
+
+//------------------------------------------------------------------------------
+// TS 100 392-19-1 clause 9.2.1 NOTES 3 and 5: a user served by a standard peer is vouched for in a group when another
+// identity of that peer, a member of the group (the IWF's own), is affiliated to it.
+bool McServer::standard_peer_vouched(const User &user, const std::string &group, const Json &profile) const {
+  if (user.peer.empty()) return false;
+  const auto peer = peers_.find(user.peer);
+  if (peer == peers_.end() || !peer->second.standard_affiliation) return false;
+  const auto members = profile.value("members", std::vector<std::string>{});
+  for (const auto &[sip, other] : users_)
+    if (other.peer == user.peer && other.id != user.id && other.groups.contains(group) &&
+        std::find(members.begin(), members.end(), other.id) != members.end())
+      return true;
+  return false;
+}
+
+//------------------------------------------------------------------------------
+// The members of a group call: those of the group document, and the users a standard peer vouches for in the group
+// (TS 100 392-19-1 clause 9.2.1 NOTES 3 and 5), so that they stay in the call and take part in floor arbitration.
+std::vector<std::string> McServer::call_members(const Json &profile, const std::string &group) const {
+  auto members = profile.at("members").get<std::vector<std::string>>();
+  for (const auto &[sip, user] : users_)
+    if (user.groups.contains(group) && std::find(members.begin(), members.end(), user.id) == members.end() &&
+        standard_peer_vouched(user, group, profile))
+      members.push_back(user.id);
+  return members;
+}
+
+//------------------------------------------------------------------------------
+// Helper: whether the user has standard per-group affiliations of its own (peer_group_affiliation.cpp).
+bool McServer::standard_affiliated(const std::string &id) const {
+  for (const auto &[group, members] : standard_affiliations_)
+    if (members.contains(id)) return true;
+  return false;
 }
 
 //------------------------------------------------------------------------------

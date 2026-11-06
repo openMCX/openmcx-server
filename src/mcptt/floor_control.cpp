@@ -78,9 +78,12 @@ void McpttServer::floor_request(Leg &leg, const std::shared_ptr<Session> &sessio
   // A broadcast hierarchy reaches users through other groups; its membership
   // was resolved at setup.
   const bool member_now =
-      unprovisioned || (session->hierarchy.empty() ? member(policy, leg.user)
-                                                   : std::find(session->members.begin(), session->members.end(),
-                                                               leg.user) != session->members.end());
+      unprovisioned ||
+      (session->hierarchy.empty()
+           // TS 100 392-19-1 clause 9.2.1 NOTE 3: a user a standard peer vouches for may request the floor.
+           ? member(policy, leg.user) ||
+                 (by_id(leg.user) != nullptr && standard_peer_vouched(*by_id(leg.user), session->group, policy))
+           : std::find(session->members.begin(), session->members.end(), leg.user) != session->members.end());
   if (!member_now) {
     if (auto *requester = by_id(leg.user)) requester->groups.erase(session->group);
     disconnect_user(leg.user, session);
