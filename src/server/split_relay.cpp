@@ -524,6 +524,17 @@ SipResponse McServer::relay_subscription(const SipMessage &message, const User &
   auto headers = route_to(target.peer, relayed_headers(message.headers));
   headers.push_back({"P-Asserted-Identity", "<" + user.sip + ">"});
   headers.push_back({"Accept", std::string(get_header(message.headers, "Accept"))});
+  // TS 24.379 clause 10.1.3.3 step 5 towards a standard peer (an IWF controlling the session): the mcptt-info with the
+  // served user's MCPTT ID in <mcptt-calling-user-id>, and the MCPTT ICSI asserted (RFC 6050; the controlling
+  // function's condition 1, TS 29.379 clause 10.3.3.1), as the client asked for it in P-Preferred-Service. openmcx's own
+  // split link is unchanged.
+  std::string type, body;
+  if (peers_.at(target.peer).standard_affiliation && svc_.name == "mcptt") {
+    if (get_header(headers, "P-Asserted-Service").empty()) headers.push_back({"P-Asserted-Service", svc_.icsi});
+    auto info = message_info(message, svc_);
+    info.calling_user = user.id;
+    std::tie(type, body) = message_body(service_parts(info), "mcx-" + random_id());
+  }
   relay->upstream_dialog = sip_.subscribe(
       target.remote, "conference", static_cast<unsigned>(*expires), headers,
       [this, weak = std::weak_ptr<ConferenceRelay>(relay), id = message.transaction_id](const SipResponse &answer) {
@@ -554,7 +565,7 @@ SipResponse McServer::relay_subscription(const SipMessage &message, const User &
           }
         });
       },
-      message.content_type, message.body);
+      type.empty() ? message.content_type : type, type.empty() ? message.body : body);
   conference_relays_[relay->client_dialog] = relay;
   conference_relays_[relay->upstream_dialog] = relay;
   response.deferred = true;
