@@ -70,6 +70,20 @@ static void test_group_affiliation() {
   rejects([] {
     parse_group_affiliation("<presence xmlns=\"urn:ietf:params:xml:ns:pidf\" entity=\"sip:g@x\"><tuple/></presence>");
   });
+
+  // TS 24.282 clause 8.4.1 (TS 29.582 clauses 8.3.2.6 and 8.3.2.7): the MCData form, in its own namespace.
+  check(!parse_group_affiliation(xml).mcdata, "MCPTT per-group PIDF read as MCData");
+  request.mcdata = true;
+  request.members[0].clients = {{"urn:uuid:3", ""}};
+  const auto data_xml = group_affiliation_xml(request);
+  check(data_xml.find("urn:3gpp:ns:mcdataPresInfo:1.0") != std::string::npos &&
+            data_xml.find("mcpttPresInfo") == std::string::npos,
+        "MCData per-group PIDF not in the MCData namespace");
+  const auto data = parse_group_affiliation(data_xml);
+  check(data.mcdata && data.publication_id == "p-7" && data.members.size() == 1 &&
+            data.members[0].clients.size() == 1 && data.members[0].clients[0].client_id == "urn:uuid:3",
+        "MCData per-group PIDF lost");
+  check(is_group_affiliation_pidf(data_xml), "MCData per-group PIDF not recognised");
 }
 
 int main() {

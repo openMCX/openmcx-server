@@ -20,8 +20,12 @@ SipResponse DataServer::incoming(const SipMessage &request) {
     event("mcdata_xml_refused", {{"method", request.method}, {"reason", request.protection_error}});
     return reject(403, "139 integrity protection check failed", asserted_identity(request), "integrity");
   }
-  // Only the SIP core is a trusted source (dispatch refuses any other).
-  if (request.source_address != core_address_) return dispatch(request);
+  // A configured peer (peer_group_affiliation.cpp); otherwise only the SIP core is a trusted source (dispatch refuses
+  // any other).
+  if (request.source_address != core_address_) {
+    if (const auto peer = peer_at(peers_, request.source_address); !peer.empty()) return peer_request(request, peer);
+    return dispatch(request);
+  }
   // TS 24.282 clause 7.3.2: the SIP core's third-party REGISTER asserts no identity; third_party_register opens the
   // client's REGISTER it carries.
   if (request.method == "REGISTER") return dispatch(request);

@@ -302,6 +302,8 @@ struct GroupAffiliation {
   };
   std::string group_id, publication_id;
   std::vector<Member> members;
+  // The MCData form (TS 24.282 clause 8.4.1, urn:3gpp:ns:mcdataPresInfo:1.0) rather than the MCPTT one.
+  bool mcdata = false;
 };
 
 //------------------------------------------------------------------------------
@@ -497,11 +499,13 @@ std::string affiliation_xml(const Affiliation &affiliation, bool notification);
 // (its one tuple), or with `client` a notification, of whose tuples that client's is read (none: no group).
 Affiliation parse_affiliation(std::string_view xml, std::string_view client = {});
 //------------------------------------------------------------------------------
-// TS 24.379 clause 9.3.1.2 (per-group affiliation information): writes the document.
+// TS 24.379 clause 9.3.1.2 (per-group affiliation information; TS 24.282 clause 8.4.1 for MCData): writes the
+// document in the namespace of its service.
 std::string group_affiliation_xml(const GroupAffiliation &affiliation);
 //------------------------------------------------------------------------------
-// TS 24.379 clause 9.3.1.2 (per-group affiliation information): reads the document; a <presence> whose entity is
-// not a group, a tuple without id or an affiliation without client is refused.
+// TS 24.379 clause 9.3.1.2 (per-group affiliation information; TS 24.282 clause 8.4.1 for MCData): reads the
+// document, its service from the namespace of its <affiliation> elements (MCPTT when it has none); a <presence> whose
+// entity is not a group, a tuple without id or an affiliation without client is refused.
 GroupAffiliation parse_group_affiliation(std::string_view xml);
 //------------------------------------------------------------------------------
 // Helper: whether a PIDF is in the per-group form (its <tuple> elements carry <affiliation client>, not <affiliation

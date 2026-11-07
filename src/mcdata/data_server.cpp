@@ -254,6 +254,7 @@ DataServer::DataServer(Json cfg, bool disable_tls)
       core_address_(resolve_ipv4(cfg_.at("trusted_core"))) {
   service_uri_ = cfg_.at("mcdata").at("service_uri").get<std::string>();
   session_service_ = service_uri_;
+  load_peers(disable_tls);
   status_ = {{"sip_transport", disable_tls ? "tcp" : "tls"}, {"instance_id", random_id()}, {"role", "mcdata-server"}};
 }
 

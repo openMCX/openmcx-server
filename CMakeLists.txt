@@ -230,6 +230,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/mcdata/media_session.cpp
         src/mcdata/message.cpp
         src/mcdata/message_store.cpp
+        src/mcdata/peer_group_affiliation.cpp
         src/mcdata/protection.cpp
         src/mcdata/release.cpp
         src/mcdata/sds.cpp

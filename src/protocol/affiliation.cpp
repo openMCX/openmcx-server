@@ -99,7 +99,8 @@ Affiliation parse_affiliation(std::string_view xml, std::string_view client) {
 // TS 24.379 clause 9.3.1.2, per-group affiliation information, items 1 to 9.
 std::string group_affiliation_xml(const GroupAffiliation &affiliation) {
   std::string out = "<?xml version=\"1.0\"?><presence xmlns=\"" + std::string(pidf_ns) + "\" xmlns:mc=\"" +
-                    affiliation_ns + "\" entity=\"" + xml_escape(affiliation.group_id) + "\">";
+                    affiliation_namespace(affiliation.mcdata, false) + "\" entity=\"" +
+                    xml_escape(affiliation.group_id) + "\">";
   for (const auto &member : affiliation.members) {
     out += "<tuple id=\"" + xml_escape(member.user_id) + "\"><status>";
     for (const auto &client : member.clients) {
@@ -125,6 +126,16 @@ GroupAffiliation parse_group_affiliation(std::string_view xml) {
   GroupAffiliation affiliation;
   affiliation.group_id = attr(root, "entity");
   if (affiliation.group_id.empty()) invalid("missing PIDF entity");
+  // The service: the namespace of the <affiliation> elements (or of the <p-id>).
+  for (auto node = root->children; node; node = node->next) {
+    if (is(node, "p-id", mcdata_affiliation_ns)) affiliation.mcdata = true;
+    if (is(node, "tuple", pidf_ns))
+      for (auto status = node->children; status; status = status->next)
+        if (is(status, "status", pidf_ns))
+          for (auto entry = status->children; entry; entry = entry->next)
+            if (is(entry, "affiliation", mcdata_affiliation_ns)) affiliation.mcdata = true;
+  }
+  const char *ns = affiliation_namespace(affiliation.mcdata, false);
   for (auto node = root->children; node; node = node->next) {
     if (!is(node, "tuple", pidf_ns)) continue;
     GroupAffiliation::Member member{attr(node, "id"), {}};
@@ -132,7 +143,7 @@ GroupAffiliation parse_group_affiliation(std::string_view xml) {
     for (auto status = node->children; status; status = status->next) {
       if (!is(status, "status", pidf_ns)) continue;
       for (auto entry = status->children; entry; entry = entry->next) {
-        if (!is(entry, "affiliation", affiliation_ns)) continue;
+        if (!is(entry, "affiliation", ns)) continue;
         GroupAffiliation::Client client{attr(entry, "client"), attr(entry, "expires")};
         if (client.client_id.empty()) invalid("per-group affiliation without client");
         member.clients.push_back(std::move(client));
@@ -140,7 +151,7 @@ GroupAffiliation parse_group_affiliation(std::string_view xml) {
     }
     affiliation.members.push_back(std::move(member));
   }
-  if (auto id = unique_child(root, "p-id", affiliation_ns, false)) affiliation.publication_id = text(id);
+  if (auto id = unique_child(root, "p-id", ns, false)) affiliation.publication_id = text(id);
   return affiliation;
 }
 
@@ -156,7 +167,8 @@ bool is_group_affiliation_pidf(std::string_view xml) {
         for (auto status = node->children; status; status = status->next)
           if (is(status, "status", pidf_ns))
             for (auto entry = status->children; entry; entry = entry->next)
-              if (is(entry, "affiliation", affiliation_ns)) return !attr(entry, "client").empty();
+              if (is(entry, "affiliation", affiliation_ns) || is(entry, "affiliation", mcdata_affiliation_ns))
+                return !attr(entry, "client").empty();
     return false;
   } catch (const std::exception &) {
     return false;

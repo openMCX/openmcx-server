@@ -1,0 +1,266 @@
+//
+// OpenMCX Licence Information : AGPL-3.0-or-later
+//
+
+// The MCData server's peers and the standard per-group affiliation it receives from them.
+//
+// A peer is another server configured in mcdata.servers (the layout of the MCPTT server's mcptt.servers,
+// parts/peers.hpp), trusted by its address. The one such peer so far is an interworking function (TS 23.283 IWF-2),
+// which affiliates the users homed in it to MCData groups owned here in the standard form: one PUBLISH per group and
+// user, with an mcdata-info body naming the group and the user and a per-group PIDF, and a subscription to learn the
+// outcome (TS 29.582 clauses 8.3.2.6 and 8.3.2.7). This file is the receiving side of that form, the MCData server
+// owning the group (TS 24.282 clauses 8.3.3.3 to 8.3.3.5); the users so affiliated are kept as users served by that
+// peer (ServedUser.peer), keyed by their MCData ID.
+//
+// Not yet: the SPK protection of MCData signalling and XML with a peer (TS 29.582 clauses 6.5, 6.6; TS 24.282 clause
+// 6.6.3), and data, alerts and notices for the peer's users, which need routing to the peer.
+//
+// Specifications: TS 24.282 V19.7.0 (Rel-19), TS 29.582 V19.0.0 (Rel-19), RFC 3903, RFC 6665.
+#include "data_server.hpp"
+
+#include <ctime>
+#include <optional>
+
+namespace mcx {
+
+namespace {
+
+// TS 24.282 clauses 8.3.3.3 step 3 and 8.3.3.4 step 3: the only nonzero Expires accepted, 2^32 - 1.
+constexpr std::uint64_t standard_expires = 4294967295ULL;
+
+//------------------------------------------------------------------------------
+// Helper: an xs:dateTime in UTC, for the "expires" attribute of a notification (TS 24.282 clause 8.3.3.5 step 3a).
+std::string date_time(std::int64_t seconds) {
+  const std::time_t time = static_cast<std::time_t>(seconds);
+  std::tm utc{};
+  gmtime_r(&time, &utc);
+  char text[32];
+  std::strftime(text, sizeof text, "%Y-%m-%dT%H:%M:%SZ", &utc);
+  return text;
+}
+
+//------------------------------------------------------------------------------
+// Helper: the body part of a type, a part of a multipart body or the whole body; nullopt when there is none.
+std::optional<std::string> body_of(const SipMessage &message, std::string_view type) {
+  for (const auto &part : message.parts)
+    if (part.content_type == type) return part.body;
+  if (message.content_type == type) return message.body;
+  return std::nullopt;
+}
+
+} // namespace
+
+//------------------------------------------------------------------------------
+// The peers of mcdata.servers (parts/peers.hpp).
+void DataServer::load_peers(bool disable_tls) {
+  const auto servers = cfg_.at("mcdata").value("servers", Json::object());
+  for (const auto &[name, entry] : servers.items()) peers_[name] = configured_peer(name, entry, disable_tls);
+}
+
+//------------------------------------------------------------------------------
+// A request from a peer: OPTIONS, and the PUBLISH and SUBSCRIBE of TS 24.282 clauses 8.3.3.3 and 8.3.3.4 (an
+// in-dialog SUBSCRIBE of a subscription created so too). Anything else is not yet taken from a peer (403).
+SipResponse DataServer::peer_request(const SipMessage &request, const std::string &peer) {
+  SipResponse response;
+  response.status_code = 200;
+  try {
+    if (request.method == "OPTIONS") return response;
+    const auto event_name = get_header(request.headers, "Event");
+    if (request.method == "SUBSCRIBE" && group_affiliation_subscriptions_.contains(request.dialog_id))
+      return group_affiliation_subscribe(request, peer);
+    // Conditions 1, 2 and 4 of clauses 8.3.3.3 and 8.3.3.4: the PSI of this controlling function, an mcdata-info
+    // body, the presence event package.
+    if ((request.method == "PUBLISH" || request.method == "SUBSCRIBE") && event_name == "presence" &&
+        request.request_uri == service_uri_ && body_of(request, mcdata::info_mime))
+      return request.method == "PUBLISH" ? group_affiliation_publish(request, peer)
+                                         : group_affiliation_subscribe(request, peer);
+    event("mcdata_peer_request_refused", {{"method", request.method}, {"server", peer}});
+    response.status_code = 403;
+    return response;
+  } catch (const std::exception &error) {
+    event("mcdata_peer_request_rejected", {{"method", request.method}, {"server", peer}, {"reason", error.what()}});
+    response.status_code = 400;
+    return response;
+  }
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 8.3.3.3 conditions 2 and 3 and steps 1 to 5 (clause 8.3.3.4 the same): the group and user named
+// (<mcdata-request-uri>, <mcdata-calling-user-id>), the MCData ICSI in P-Asserted-Service, the Expires check (423 with
+// Min-Expires 4294967295), the group's existence and the user's membership (403). Returns the refusal, or nothing with
+// the group, user and Expires read.
+std::optional<SipResponse> DataServer::standard_group_refusal(const SipMessage &request, std::string &group,
+                                                              std::string &user, std::uint64_t &expires) {
+  SipResponse response;
+  response.status_code = 403;
+  const auto info = mcdata::parse_info(*body_of(request, mcdata::info_mime));
+  group = info.request_uri;
+  user = info.calling_user;
+  if (group.empty() || user.empty() || get_header(request.headers, "P-Asserted-Service") != mcdata::icsi)
+    return response;
+  const auto parsed = parse_expires(get_header(request.headers, "Expires"));
+  if (!parsed || (*parsed != 0 && *parsed < standard_expires)) {
+    response.status_code = 423;
+    response.headers = {{"Min-Expires", std::to_string(standard_expires)}};
+    return response;
+  }
+  expires = *parsed;
+  const auto document = group_document(group);
+  if (!document || !document->contains("mcdata") ||
+      !listed(document->at("mcdata").value("members", Json::array()), user))
+    return response;
+  return std::nullopt;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 8.3.3.3: a group affiliation status change of one user from a peer.
+SipResponse DataServer::group_affiliation_publish(const SipMessage &request, const std::string &peer) {
+  std::string group, user_id;
+  std::uint64_t expires = 0;
+  if (auto refusal = standard_group_refusal(request, group, user_id, expires)) {
+    event("mcdata_standard_affiliation_refused",
+          {{"user_id", user_id}, {"group", group}, {"server", peer}, {"status", refusal->status_code}});
+    return *refusal;
+  }
+  SipResponse refused;
+  refused.status_code = 403;
+  // A user served here is not taken over by a peer.
+  if (const auto *local = by_id(user_id); local && local->peer.empty()) return refused;
+  // Condition 5: the per-group PIDF.
+  const auto pidf = body_of(request, "application/pidf+xml");
+  if (!pidf) {
+    refused.status_code = 400;
+    return refused;
+  }
+  const auto document = parse_group_affiliation(*pidf);
+
+  // Step 6: 200 (OK) with the selected expiration time.
+  SipResponse response;
+  response.status_code = 200;
+  response.headers = {{"Expires", std::to_string(expires)}};
+  // Steps 7 and 8: a PIDF of another group or user, or of the other service, changes nothing.
+  if (!document.mcdata || document.group_id != group || document.members.size() != 1 ||
+      document.members.front().user_id != user_id)
+    return response;
+
+  // Steps 9 to 11: the user's entry in the group, with its clients and expiration time, or none.
+  auto &members = standard_affiliations_[group];
+  std::vector<std::string> clients;
+  for (const auto &client : document.members.front().clients) clients.push_back(client.client_id);
+  if (expires == 0 || clients.empty())
+    members.erase(user_id);
+  else
+    members[user_id] = {clients, peer, std::time(nullptr) + static_cast<std::int64_t>(expires)};
+
+  // The user as a user served by the peer: its groups are those its standard affiliations name; its service is the
+  // peer's to vouch for, so its entry lasts as long as a standard affiliation may.
+  auto &entry = users_[user_id];
+  entry.id = user_id;
+  entry.sip = user_id;
+  entry.peer = peer;
+  if (!clients.empty()) entry.client = clients.front();
+  entry.expires = std::time(nullptr) + static_cast<std::int64_t>(standard_expires);
+  std::set<std::string> groups;
+  for (const auto &[affiliated_group, affiliated] : standard_affiliations_)
+    if (affiliated.contains(user_id)) groups.insert(affiliated_group);
+  entry.groups = std::move(groups);
+  event("mcdata_standard_affiliation", {{"user_id", user_id},
+                                        {"group", group},
+                                        {"server", peer},
+                                        {"affiliated", entry.groups.contains(group)},
+                                        {"groups", entry.groups}});
+
+  // Steps 12 and 13: the notification carries the handled p-id. Step 14 (an outstanding MCData emergency alert on the
+  // group, clause 16.2.3.3) needs the alert routed to the peer, which comes with the peer's data (TS 29.582 cl. 18).
+  pending_.push_back([this, group, user_id, p_id = document.publication_id] {
+    notify_group_affiliation(group, user_id, p_id);
+  });
+  return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 8.3.3.4: a subscription to one user's affiliation status in a group; an in-dialog SUBSCRIBE
+// refreshes it or, with Expires 0, ends it (RFC 6665 section 4.2.1.4: a final NOTIFY "terminated"). An initial
+// SUBSCRIBE with Expires 0 fetches the state once (TS 29.582 clause 8.3.2.7).
+SipResponse DataServer::group_affiliation_subscribe(const SipMessage &request, const std::string &peer) {
+  SipResponse response;
+  response.status_code = 200;
+  const auto terminate = [this](const std::string &dialog, const std::string &group, const std::string &user) {
+    pending_.push_back([this, dialog, group, user] {
+      sip_.notify(dialog, "presence", "terminated;reason=timeout", "application/pidf+xml",
+                  group_affiliation_xml(group_affiliation_state(group, user, {})));
+    });
+  };
+  if (const auto found = group_affiliation_subscriptions_.find(request.dialog_id);
+      found != group_affiliation_subscriptions_.end()) {
+    if (get_header(request.headers, "Expires") == "0") {
+      const auto subscription = found->second;
+      group_affiliation_subscriptions_.erase(found);
+      response.headers = {{"Expires", "0"}};
+      terminate(request.dialog_id, subscription.group, subscription.user);
+      event("mcdata_standard_affiliation_unsubscribed", {{"user_id", subscription.user}, {"group", subscription.group}});
+      return response;
+    }
+    response.headers = {{"Expires", std::to_string(standard_expires)}};
+    return response;
+  }
+  std::string group, user_id;
+  std::uint64_t expires = 0;
+  if (auto refusal = standard_group_refusal(request, group, user_id, expires)) return *refusal;
+  // Condition 5: the per-user restriction (clause 8.4.2) names the same MCData ID.
+  const auto filter = body_of(request, simple_filter_mime);
+  if (!filter || parse_functional_alias_filter(*filter) != user_id) {
+    response.status_code = 403;
+    return response;
+  }
+  if (expires == 0) {
+    response.headers = {{"Expires", "0"}};
+    terminate(request.dialog_id, group, user_id);
+    return response;
+  }
+  // Step 6, and the subscription kept for clause 8.3.3.5.
+  group_affiliation_subscriptions_[request.dialog_id] = {group, user_id, peer};
+  response.headers = {{"Expires", std::to_string(standard_expires)}};
+  event("mcdata_standard_affiliation_subscribed", {{"user_id", user_id}, {"group", group}, {"server", peer}});
+  // RFC 6665 section 4.2.1.2: the notifier sends a NOTIFY at once.
+  pending_.push_back([this, dialog = request.dialog_id, group, user_id] {
+    if (group_affiliation_subscriptions_.contains(dialog))
+      sip_.notify(dialog, "presence", "active;expires=" + std::to_string(standard_expires), "application/pidf+xml",
+                  group_affiliation_xml(group_affiliation_state(group, user_id, {})));
+  });
+  return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 8.3.3.5 step 3: the user's entry in the group as a per-group PIDF in the MCData namespace, with
+// "expires" on each client (step 3a) and the handled p-id when a PUBLISH caused it (step 3b); no tuple when the user
+// is not affiliated.
+GroupAffiliation DataServer::group_affiliation_state(const std::string &group, const std::string &user,
+                                                     const std::string &p_id) const {
+  GroupAffiliation document;
+  document.mcdata = true;
+  document.group_id = group;
+  document.publication_id = p_id;
+  if (const auto members = standard_affiliations_.find(group); members != standard_affiliations_.end())
+    if (const auto entry = members->second.find(user); entry != members->second.end()) {
+      GroupAffiliation::Member member{user, {}};
+      for (const auto &client : entry->second.clients)
+        member.clients.push_back({client, date_time(entry->second.expires)});
+      document.members.push_back(std::move(member));
+    }
+  return document;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 8.3.3.5 step 4: a NOTIFY on every subscription to the user's status in the group.
+void DataServer::notify_group_affiliation(const std::string &group, const std::string &user, const std::string &p_id) {
+  const auto body = group_affiliation_xml(group_affiliation_state(group, user, p_id));
+  for (const auto &[dialog, subscription] : group_affiliation_subscriptions_)
+    if (subscription.group == group && subscription.user == user) {
+      sip_.notify(dialog, "presence", "active;expires=" + std::to_string(standard_expires), "application/pidf+xml",
+                  body);
+      event("mcdata_standard_affiliation_notified", {{"user_id", user}, {"group", group}, {"p_id", p_id}});
+    }
+}
+
+} // namespace mcx

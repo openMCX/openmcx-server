@@ -37,6 +37,7 @@
 #include "parts/counters.hpp"
 #include "parts/location_service.hpp"
 #include "parts/message_parts.hpp"
+#include "parts/peers.hpp"
 #include "parts/program.hpp"
 #include "parts/served_users.hpp"
 #include "parts/task_queue.hpp"
@@ -500,6 +501,36 @@ class DataServer {
   bool affiliated(const std::string &id, const std::string &group);
 
   const User *affiliated_member(const Json &member, const std::string &group, const std::string &except);
+
+  // ---- Peers and the standard per-group affiliation (peer_group_affiliation.cpp): TS 24.282 clauses 8.3.3.3 to
+  // 8.3.3.5, TS 29.582 clauses 8.3.2.6 and 8.3.2.7 ----
+  // The configured peers (mcdata.servers), such as an interworking function (TS 23.283 IWF-2), trusted by their
+  // address as the MCPTT servers trust theirs (parts/peers.hpp).
+  PeerMap peers_;
+  // TS 24.282 clause 8.3.3.2: the MCData user information entries of each group, as standard per-group PUBLISH
+  // requests set them: the clients, the peer serving the user and the expiration time.
+  struct StandardAffiliation {
+    std::vector<std::string> clients;
+    std::string peer;
+    std::int64_t expires = 0;
+  };
+  std::map<std::string, std::map<std::string, StandardAffiliation>> standard_affiliations_; // group -> MCData ID
+  // TS 24.282 clause 8.3.3.4: the subscriptions to one user's affiliation status in a group, by dialog.
+  struct GroupAffiliationSubscription {
+    std::string group, user, peer;
+  };
+  std::map<std::string, GroupAffiliationSubscription> group_affiliation_subscriptions_;
+
+  void load_peers(bool disable_tls);
+  // A request from a peer (not through the SIP core): the procedures it may use.
+  SipResponse peer_request(const SipMessage &request, const std::string &peer);
+  std::optional<SipResponse> standard_group_refusal(const SipMessage &request, std::string &group, std::string &user,
+                                                    std::uint64_t &expires);
+  SipResponse group_affiliation_publish(const SipMessage &request, const std::string &peer);
+  SipResponse group_affiliation_subscribe(const SipMessage &request, const std::string &peer);
+  GroupAffiliation group_affiliation_state(const std::string &group, const std::string &user,
+                                           const std::string &p_id) const;
+  void notify_group_affiliation(const std::string &group, const std::string &user, const std::string &p_id);
 
   // ---- Standalone SDS over the signalling control plane (sds.cpp): TS 24.282 clause 9.2.2 ----
   SipResponse sds(const SipMessage &sip_request, const User &sender, mcdata::Info info, const BodyPart &signalling,
