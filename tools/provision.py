@@ -684,6 +684,8 @@ def main():
                     "protect_floor": False,
                     # A short inactivity timer (TS 24.379 T4), so the lab sees the release and the IWF's join again.
                     "call_policy": {"inactivity_timeout_ms": 20000},
+                    # <allow-MCPTT-emergency-call> for every member: the chat group's emergency calls with TETRA MSs.
+                    "allow_emergency_call": True,
                 }
             ]
             if chat_group
