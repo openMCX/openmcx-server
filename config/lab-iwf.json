@@ -29,7 +29,13 @@
       },
       "group_call": {
         "emergency": true,
-        "emergency_cancel": true
+        "emergency_cancel": true,
+        "alert": true,
+        "alert_cancel": true
+      },
+      "emergency_location": {
+        "latitude": 1,
+        "longitude": 2
       }
     },
     {

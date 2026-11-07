@@ -293,8 +293,10 @@ def iwf_config(
                         "control": "tetra_system",
                         "mcptt_group_id": tetra_group,
                         "mc_members": members,
-                        # The IWF as controlling function authorises emergency calls (TS 29.379 clause 6.6.3.1.8.2).
+                        # The IWF as controlling function authorises emergency calls and alerts (TS 29.379 clauses
+                        # 6.6.3.1.8.1 and 6.6.3.1.8.2).
                         "allow_emergency_call": True,
+                        "allow_emergency_alert": True,
                     }
                 ]
                 if tetra_group
@@ -676,8 +678,9 @@ def main():
                     "members": [source_user["mcptt_id"] for source_user in users],
                     "protect_media": False,
                     "protect_floor": False,
-                    # As the IWF's own document states it (<allow-MCPTT-emergency-call>).
+                    # As the IWF's own document states it (<allow-MCPTT-emergency-call>, <allow-MCPTT-emergency-alert>).
                     "allow_emergency_call": True,
+                    "allow_emergency_alert": True,
                 }
             ]
             if tetra_group
@@ -976,6 +979,11 @@ TLS_CA = "/config/tls/ca.crt";
             )
             if user["username"] in isims:
                 cfg["trusted_core"] = "pcscf"
+            # TS 24.379 clause 6.2.8.1.1 (with annex F.3): the location an emergency alert carries, when the lab
+            # gives the user one.
+            source_entry = source["users"][[source_user["role"] for source_user in source["users"]].index(role)]
+            if "emergency_location" in source_entry:
+                cfg["mcptt"]["emergency_location"] = dict(source_entry["emergency_location"])
             if iwf_source:
                 # The service configuration enables signalling protection when it names none (TS 24.379 clause
                 # 6.6.2.3.1), so the client provisions its keys at sign-in (TS 33.180 clause 5.3.3), as tutorial 3

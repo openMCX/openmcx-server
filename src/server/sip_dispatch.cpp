@@ -233,6 +233,17 @@ bool McServer::terminating_request(const SipMessage &message, const std::string 
         response = relay_incoming(message, peer, *invited);
         return true;
       }
+  // TS 24.379 clauses 6.3.3.1.11 and 6.3.3.1.20 with TS 29.379 clauses 12.2.1 and 12.2.2: a standard peer controlling
+  // a group (an IWF) addresses its notices of a group's emergency, imminent peril or alert state, and the receipt of an
+  // alert, to this PSI, the member in <mcptt-request-uri>, as it does its invitations.
+  if (message.method == "MESSAGE" && message.request_uri == own_service_uri() && peers_.contains(peer) &&
+      peers_.at(peer).standard_affiliation)
+    if (const auto info = message_info(message, svc_); !info.calling_group.empty())
+      if (const auto *member = by_id(info.request_uri); member && member->peer.empty()) {
+        remember_service_mapping(member->id, info);
+        response = relay_message(message, member->sip, {});
+        return true;
+      }
   // A request for a user served here: this server's terminating participating function.
   if ((message.method == "INVITE" || message.method == "MESSAGE") && !legs_.contains(message.dialog_id))
     if (const auto local = users_.find(message.request_uri); local != users_.end() && local->second.peer.empty()) {
@@ -1134,6 +1145,23 @@ bool McServer::message_to_controller(const SipMessage &message, User &user, cons
     }
   if (!controller.empty()) {
     const auto implicit = call_service ? std::string{} : begin_implicit_affiliation(user, info, true);
+    // TS 24.379 clause 12.1.2.1 steps 9 and 11 towards a standard peer (an IWF controlling the group): the
+    // <mcptt-calling-user-id> set to the sender's MCPTT ID and this function's PSI asserted, as for its INVITEs.
+    if (peers_.at(controller).standard_affiliation && svc_.service == Service::mcptt) {
+      SipMessage onward = message;
+      for (auto &part : onward.parts)
+        if (part.content_type == svc_.info_mime) {
+          auto relayed_info = parse_mcptt_info(part.body);
+          relayed_info.calling_user = user.id;
+          part.body = mcptt_info_xml(relayed_info);
+        }
+      std::tie(onward.content_type, onward.body) = message_body(onward.parts, "mcx-relay-" + random_id());
+      response = relay_message(
+          onward, peers_.at(controller).service_uri,
+          route_to(controller, {{"P-Asserted-Identity", "<" + own_service_uri() + ">"}}),
+          [this, id = user.id, implicit](int status) { end_implicit_affiliation(id, implicit, status < 300); });
+      return true;
+    }
     response = relay_message(
         message, peers_.at(controller).service_uri,
         route_to(controller, {{"P-Asserted-Identity", "<" + user.sip + ">"}}),
