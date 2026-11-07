@@ -262,7 +262,8 @@ SipResponse DataServer::group_affiliation_subscribe(const SipMessage &request, c
 //------------------------------------------------------------------------------
 // TS 29.582 clause 9.2.2.3.1 steps 6 to 10 as received: the request names the peer's user in
 // <mcdata-calling-user-id> (step 8) and asserts the peer's PSI (step 10); it is then the procedure of TS 24.282
-// clause 9.2.2.4.2 for that user as sender. Only a group SDS ("group-sds") so far; one-to-one SDS comes later.
+// clause 9.2.2.4.2 for that user as sender: a group SDS ("group-sds") or a one-to-one SDS ("one-to-one-sds", its target
+// in the resource list, TS 29.582 clause 9.2.2.2.1 step 1).
 SipResponse DataServer::peer_sds(const SipMessage &request, const std::string &peer) {
   const auto asserted = asserted_identity(request);
   const auto *info_part = part(request, mcdata::info_mime);
@@ -274,7 +275,7 @@ SipResponse DataServer::peer_sds(const SipMessage &request, const std::string &p
   const auto found = users_.find(info.calling_user);
   if (found == users_.end() || found->second.peer != peer)
     return reject(404, "141 user unknown to the participating function", info.calling_user, "message");
-  if (info.request_type != "group-sds" ||
+  if ((info.request_type != "group-sds" && info.request_type != "one-to-one-sds") ||
       mcdata::message_type(signalling->body) != mcdata::MessageType::SdsSignalling)
     return reject(403, "", info.calling_user, "message");
   // The client the peer names for its user (TS 100 392-19-1 clause 13.2.3.2: how it determines it is its own).
