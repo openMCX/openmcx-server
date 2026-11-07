@@ -73,7 +73,9 @@
       ],
       "group_call": {
         "emergency": true,
-        "emergency_cancel": true
+        "emergency_cancel": true,
+        "alert": true,
+        "alert_cancel": true
       },
       "mc_users": {
         "alice.mcptt": 2001
@@ -84,6 +86,7 @@
       "emergency": {
         "send_emergency_alert_with_emergency_call": false,
         "send_tetra_emergency_status_for_mc_emergency_call": true,
+        "convert_tetra_emergency_status_to_mc_alert": true,
         "imminent_peril_call_priority": 14
       },
       "group": {

@@ -329,7 +329,11 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
     return false;
   };
   const auto location = message_location(message);
-  if (info.alert == true && !location)
+  // A client includes its location (TS 24.379 clause 6.2.9.1); an IWF includes one only when it has it (TS 29.379
+  // clause 12.1.1 step 9: an LMR user's location is often unknown), so a standard peer's user goes without.
+  const auto served_by = peers_.find(user.peer);
+  const bool standard_peer_user = served_by != peers_.end() && served_by->second.standard_affiliation;
+  if (info.alert == true && !location && !standard_peer_user)
     return reject(warn(Warning::function_not_allowed, "emergency alert requires CurrentCoordinate location"));
 
   // Broadcast is a call-setup indication; an alert MESSAGE never carries it. An
@@ -473,9 +477,12 @@ void McServer::apply_priority(const std::string &group, const std::string &user,
   if (info.alert) {
     const auto target = info.originated_by.empty() ? user : info.originated_by;
     if (*info.alert) {
-      if (!location) throw std::runtime_error("missing admitted emergency alert location");
+      // A standard peer's user may have no location (validate_priority); its alert is kept without one.
       state.alerts.insert(target);
-      state.alert_locations[target] = *location;
+      if (location)
+        state.alert_locations[target] = *location;
+      else
+        state.alert_locations.erase(target);
     } else if (info.emergency != true) {
       state.alerts.erase(target);
       state.alert_locations.erase(target);

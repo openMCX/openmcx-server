@@ -664,6 +664,9 @@ def main():
                 # With an IWF: <allow-MCPTT-emergency-call> for every member (TS 24.481 clause 7.2.12.1), for the
                 # emergency calls of the TETRA MSs and of the MC users towards them (TS 100 392-19-1 clause 4.4).
                 **({"allow_emergency_call": True} if iwf_source else {}),
+                # With an IWF: <allow-MCPTT-emergency-alert> (TS 24.481 clause 7.2.12.1), for the alerts of the TETRA
+                # MSs (TS 29.379 clause 12.1.1).
+                **({"allow_emergency_alert": True} if iwf_source else {}),
                 "mcdata": {
                     "members": [source_user["mcdata_id"] for source_user in users],
                     "sds_supported": True,

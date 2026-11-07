@@ -1185,9 +1185,11 @@ void McServer::group_alert_message(const SipMessage &message, User &user, McpttI
   if (!user.groups.contains(info.request_uri) && !regrouped_member && info.alert == true &&
       info.client_id == user.client)
     (void)implicitly_affiliate(user, info.request_uri, profile, response, implicit);
+  // TS 100 392-19-1 clause 9.2.1 NOTE 5: a TETRA MS raising an alert through an IWF that affiliates on behalf of its
+  // MSs need not be listed in the group, the IWF's own identity is (as for its calls, TS 29.379 clause 12.1.1).
   if (info.client_id != user.client || (!user.groups.contains(info.request_uri) && !regrouped_member) ||
-      !member(profile, user.id) || message.request_uri != cfg_.at(svc_.name).at("service_uri").get<std::string>() ||
-      !accepts_mcptt(message)) {
+      (!member(profile, user.id) && !standard_peer_vouched(user, info.request_uri, profile)) ||
+      message.request_uri != cfg_.at(svc_.name).at("service_uri").get<std::string>() || !accepts_mcptt(message)) {
     response.status_code = 403;
     return;
   }
