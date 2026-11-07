@@ -632,6 +632,13 @@ def main():
                     "sip_password": secrets.token_hex(20),
                     "client_id": f"urn:uuid:{uuid.uuid4()}",
                     "groups": [],
+                    # Their emergency rights (TS 24.379 clause 6.3.3.1.13.2): a TETRA emergency call becomes an MCPTT
+                    # emergency group call (TS 29.379 clause 6.4.1.1).
+                    **(
+                        {"group_call": dict(iwf_source["tetra"]["group_call"])}
+                        if "group_call" in iwf_source["tetra"]
+                        else {}
+                    ),
                 }
                 for issi in iwf_source["tetra"]["issis"]
             ]
@@ -644,6 +651,9 @@ def main():
                 "members": [source_user["mcptt_id"] for source_user in users] + ([iwf_mcptt_id] if iwf_source else []),
                 "protect_media": False,
                 "protect_floor": False,
+                # With an IWF: <allow-MCPTT-emergency-call> for every member (TS 24.481 clause 7.2.12.1), for the
+                # emergency calls of the TETRA MSs and of the MC users towards them (TS 100 392-19-1 clause 4.4).
+                **({"allow_emergency_call": True} if iwf_source else {}),
                 "mcdata": {
                     "members": [source_user["mcdata_id"] for source_user in users],
                     "sds_supported": True,
