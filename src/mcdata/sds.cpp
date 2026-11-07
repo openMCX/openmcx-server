@@ -399,7 +399,8 @@ SipResponse DataServer::notification(const SipMessage &request, const User &noti
     const auto document = group_document(info.calling_group);
     if (!document)
       return reject(404, "163 the group identity indicated in the request does not exist", notifier.id, "notification");
-    if (!listed(document->value("mcdata", Json::object()).value("members", Json::array()), notifier.id))
+    if (!listed(document->value("mcdata", Json::object()).value("members", Json::array()), notifier.id) &&
+        !peer_vouched(notifier, info.calling_group))
       return reject(403, "116 user is not part of the MCData group", notifier.id, "notification");
   }
 

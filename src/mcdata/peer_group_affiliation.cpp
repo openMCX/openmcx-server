@@ -262,19 +262,27 @@ SipResponse DataServer::group_affiliation_subscribe(const SipMessage &request, c
 //------------------------------------------------------------------------------
 // TS 29.582 clause 9.2.2.3.1 steps 6 to 10 as received: the request names the peer's user in
 // <mcdata-calling-user-id> (step 8) and asserts the peer's PSI (step 10); it is then the procedure of TS 24.282
-// clause 9.2.2.4.2 for that user as sender: a group SDS ("group-sds") or a one-to-one SDS ("one-to-one-sds", its target
+// clause 9.2.2.4.2 for that user as sender (or, for an SDS NOTIFICATION, TS 24.282 clause 12.2.3 for that user as
+// notifier): a group SDS ("group-sds") or a one-to-one SDS ("one-to-one-sds", its target
 // in the resource list, TS 29.582 clause 9.2.2.2.1 step 1).
 SipResponse DataServer::peer_sds(const SipMessage &request, const std::string &peer) {
   const auto asserted = asserted_identity(request);
   const auto *info_part = part(request, mcdata::info_mime);
   const auto *signalling = part(request, mcdata::signalling_mime);
   const auto *data = part(request, mcdata::payload_mime);
-  if (asserted != peers_.at(peer).service_uri || !info_part || !signalling || !data)
+  if (asserted != peers_.at(peer).service_uri || !info_part || !signalling)
     return reject(403, "199 expected MIME bodies not in the request", asserted, "message");
   auto info = mcdata::parse_info(info_part->body);
   const auto found = users_.find(info.calling_user);
   if (found == users_.end() || found->second.peer != peer)
     return reject(404, "141 user unknown to the participating function", info.calling_user, "message");
+  // TS 29.582 clause 12.2.1.2: a disposition notification from the peer's user, to the originator in the resource
+  // list (TS 24.282 clauses 12.2.2.1 and 12.2.3).
+  if (mcdata::message_type(signalling->body) == mcdata::MessageType::SdsNotification) {
+    event("mcdata_peer_notification", {{"user_id", info.calling_user}, {"server", peer}});
+    return notification(request, found->second, info, *signalling);
+  }
+  if (!data) return reject(403, "199 expected MIME bodies not in the request", asserted, "message");
   if ((info.request_type != "group-sds" && info.request_type != "one-to-one-sds") ||
       mcdata::message_type(signalling->body) != mcdata::MessageType::SdsSignalling)
     return reject(403, "", info.calling_user, "message");
