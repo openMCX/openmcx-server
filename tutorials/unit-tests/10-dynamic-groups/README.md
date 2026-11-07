@@ -18,7 +18,7 @@ The tutorial is built on two scenarios of the OpenMCX regression tests, `tests/i
 explains a prearranged group call, which is what a call on a regroup is.
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
-> Wireshark shows every message, its SDP and its MCPTT XML. A real system uses TLS (tutorials 1 to 5). Speech and
+> Wireshark shows every message, its SDP and its MCPTT XML. A real system uses TLS (tutorials 1 to 6). Speech and
 > floor control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common services
 > (sign-in, configuration, keys, and here the XCAP requests to the GMS that form a temporary group) stays encrypted and
 > is not captured.

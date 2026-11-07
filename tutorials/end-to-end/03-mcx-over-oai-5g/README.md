@@ -4,7 +4,7 @@ Tutorial 1's system and phones, plus a 5G network: the OAI 5G core, the OAI gNB 
 rfsimulator (a simulated radio, no radio hardware). The dispatcher position runs inside the nr-UE, so all its traffic
 crosses the 5G radio and core. When it calls, the MCPTT server asks the 5G core, over **N5**, for the QoS of
 mission-critical voice: the core sets up a dedicated QoS flow (**5QI 65**) for the dispatcher's speech.
-[Tutorial 7](../07-ims-aka-over-oai-5g/README.md) runs the same network with an MC client that registers with **IMS
+[Tutorial 8](../08-ims-aka-over-oai-5g/README.md) runs the same network with an MC client that registers with **IMS
 AKA** through a P-CSCF, and walks through test 5.1 of TS 37.579-2.
 
 <p align="center"><img src="images/architecture.svg" width="900" alt="Tutorial 3: the phones reach the OpenMCX system over the Wi-Fi; the dispatcher runs inside the nr-UE and reaches it over the rfsim radio, the gNB, the UPF (N3, N6) of the OAI 5G core; the MCPTT server asks the PCF for MCPTT QoS over N5"></p>
@@ -57,8 +57,8 @@ docker compose -f docker-compose-5g-mcx.yaml run --rm setup
 As in tutorial 1 (a new system in `./config`), plus the MCPTT server's N5 settings: the PCF's address on the 5G core
 network and the UE pool 12.1.1.0/24, and a location reporting configuration in the MCPTT, MCVideo and MCData servers,
 which they send each client in a SIP MESSAGE once it is authorised. The setup also provisions the test user
-`client-d` for IMS AKA and writes the P-CSCF's configuration, for the services of the profile `ims-aka` (tutorials 3a
-and 7); the phones and the dispatcher use SIP digest over TLS.
+`client-d` for IMS AKA and writes the P-CSCF's configuration, for the services of the profile `ims-aka` (tutorials 4
+and 8); the phones and the dispatcher use SIP digest over TLS.
 
 ## 3. Connect this computer to the UE pool
 
@@ -73,7 +73,7 @@ The dispatcher reaches the system at `HOST_IP`, as the phones do. Two settings o
 - **SNAT** for packets from the N6 network `192.168.72.128/26` to the UE pool: they leave from `HOST_IP`, so the UE
   sees one address both ways and the 5G core's packet filters (`permit out 17 from HOST_IP ...`) match the speech.
 
-For the P-CSCF of tutorials 3a and 7 (`192.168.72.140`, on the N6 network), the script also leaves it out of the
+For the P-CSCF of tutorials 4 and 8 (`192.168.72.140`, on the N6 network), the script also leaves it out of the
 SNAT and loads the kernel's IPsec modules.
 
 The addresses are fixed in `host-network.sh` and match the 5G core's configuration (`oai/mcx_core_config.yaml`,
@@ -231,12 +231,12 @@ included; then run `sudo ./host-network.sh add` again (step 3): its route goes w
 
 - **Three compose files**: `docker-compose-5g-core.yaml` has tutorial 1's OpenMCX services, unchanged, on the 5G core's
   **N6 network** (`openmcx-5g-n6`, 192.168.72.128/26) and the OAI 5G core on the **core network** (`openmcx-5g-core`,
-  192.168.71.128/26); [tutorial 4](../04-mcx-over-srsran-5g/README.md) uses it too. `docker-compose-5g-mcx.yaml`
+  192.168.71.128/26); [tutorial 5](../05-mcx-over-srsran-5g/README.md) uses it too. `docker-compose-5g-mcx.yaml`
   includes it, with tutorial 3's change to its setup (`docker-compose-5g-core-aka.yaml`: the IMS AKA user), and adds the
   gNB and the nr-UE (IMSI 208990100001100, DNN `mcptt`), the dispatcher in the nr-UE's network namespace, and
   `ue-route`, which routes `HOST_IP` and the P-CSCF through the UE's tunnel (`oaitun_ue1`) once its PDU session is up.
-  The profile `ims-aka` adds the P-CSCF and the MC client of `client-d` in the nr-UE, which tutorials 3a and
-  [7](../07-ims-aka-over-oai-5g/README.md) start. The OAI configuration is in `oai/`, the N5 patches of the AMF, PCF,
+  The profile `ims-aka` adds the P-CSCF and the MC client of `client-d` in the nr-UE, which tutorials 4 and
+  [8](../08-ims-aka-over-oai-5g/README.md) start. The OAI configuration is in `oai/`, the N5 patches of the AMF, PCF,
   SMF and UPF in `oai/cn5g/`.
 - **N5**: the MCPTT server is also on the core network (192.168.71.141). With the `pcf` block that the setup adds
   (`setup/pcf.py`), it creates an `Npcf_PolicyAuthorization` app session (TS 29.514) for each call leg of a UE in

@@ -23,7 +23,7 @@ The tutorial is built on the scenarios `tests/integration/mcvideo_pull_push_scen
 ambient viewing call is modelled.
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
-> Wireshark shows every message, its SDP and its MCVideo XML. A real system uses TLS (End to End Tutorials 1 to 5).
+> Wireshark shows every message, its SDP and its MCVideo XML. A real system uses TLS (End to End Tutorials 1 to 6).
 > Video and transmission control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common
 > services (sign-in, configuration, keys) stays encrypted and is not captured.
 

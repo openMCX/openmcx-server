@@ -124,5 +124,5 @@ sequenceDiagram
 | Location | The alert carries the configured `emergency_location`, not a reported position. Location triggers, including the emergency ones, are covered in the [location tests](LOCATION_TEST.md), and encrypted location XML in the [XML protection tests](XML_PROTECTION_TEST.md). Positions are simulated; there is no GPS acquisition or freshness check. |
 | Persistence | Emergency state is held in memory; a server restart loses it. |
 | Multiple servers | Covered: the group emergency scenario and the emergency private, first-to-answer, chat, broadcast and ad hoc variants also run with separate participating and controlling servers. |
-| Radio priority | In this lab Resource-Priority is signalled only. The request for QoS over N5 and Rx is checked in the `pcf-n5` and `rx` labs and in end-to-end tutorials 3 to 5. |
+| Radio priority | In this lab Resource-Priority is signalled only. The request for QoS over N5 and Rx is checked in the `pcf-n5` and `rx` labs and in end-to-end tutorials 3 to 6. |
 | Wire qualification | In-repository decoders only; no independent-peer run. |

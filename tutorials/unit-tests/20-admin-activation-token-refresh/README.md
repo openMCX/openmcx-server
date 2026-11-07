@@ -20,7 +20,7 @@ The tutorial is built on two scenarios of the OpenMCX regression tests, `tests/i
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
 > Wireshark shows every message and its XML, and here even the **access tokens** in the PUBLISH bodies. An access
-> token is a bearer token: whoever holds it can use it until it expires. A real system uses TLS (tutorials 1 to 5),
+> token is a bearer token: whoever holds it can use it until it expires. A real system uses TLS (tutorials 1 to 6),
 > and can also encrypt the token in the body (XML protection, Unit Test Tutorial 12). The HTTPS traffic to MCX Admin,
 > IdMS, the Credential Service and the other common services stays encrypted and is not captured.
 

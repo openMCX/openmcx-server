@@ -19,7 +19,7 @@ The tutorial is built on the emergency, imminent peril and alert parts of the re
 [Unit Test Tutorial 2](../02-floor-queue-priority/README.md) floor control with priorities.
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
-> Wireshark shows every message, its headers and its MCPTT XML. A real system uses TLS (tutorials 1 to 5). Speech and
+> Wireshark shows every message, its headers and its MCPTT XML. A real system uses TLS (tutorials 1 to 6). Speech and
 > floor control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common services
 > (sign-in, configuration, keys) stays encrypted and is not captured.
 

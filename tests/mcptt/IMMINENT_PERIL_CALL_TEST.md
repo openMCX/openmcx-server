@@ -95,4 +95,4 @@ sequenceDiagram
 | Imminent-peril broadcast | Implemented as a local Floor Indicator policy (B+E); no stage-3 procedure exists, so interoperability cannot be claimed. |
 | Persistence | Held in memory; lost on server restart. |
 | Multiple servers | Covered: the imminent-peril chat, ad hoc and broadcast variants also run with separate participating and controlling servers. |
-| Radio priority | In this lab Resource-Priority is signalled only. The request for QoS over N5 and Rx is checked in the `pcf-n5` and `rx` labs and in end-to-end tutorials 3 to 5. |
+| Radio priority | In this lab Resource-Priority is signalled only. The request for QoS over N5 and Rx is checked in the `pcf-n5` and `rx` labs and in end-to-end tutorials 3 to 6. |

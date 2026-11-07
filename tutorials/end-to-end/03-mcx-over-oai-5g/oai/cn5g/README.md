@@ -3,7 +3,7 @@
 Tutorial 3's 5G core is OAI CN5G v2.2.1. Four of its network functions need changes so that the MCPTT server can
 ask for MCPTT QoS over N5 (TS 29.514): the PCF turns the AF's media components into a PCC rule with 5QI 65, the SMF
 modifies the PDU session for it (a new QoS flow, TS 23.502 clause 4.3.3.2), and the UPF keeps all the flow's packet
-rules. When the RAN cannot set the flow up (tutorial 4's srsUE has one QoS flow only), the AMF passes its PDU Session
+rules. When the RAN cannot set the flow up (tutorial 5's srsUE has one QoS flow only), the AMF passes its PDU Session
 Resource Modify Response on (TS 38.413 9.2.1.6), the SMF removes the flow at the UPF and reports the PCC rule as
 inactive (RES_ALLO_FAIL, TS 29.512), and the PCF notifies the AF (FAILED_RESOURCES_ALLOCATION, TS 29.514 4.2.5): the
 traffic stays on the session's default flow. The other network functions and the RAN are OAI's unmodified images.

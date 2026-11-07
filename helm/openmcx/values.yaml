@@ -90,7 +90,7 @@ sipCore:
 mcptt:
   # N5 (TS 29.514): the MCPTT server as application function asks a 5G core's PCF for the QoS of its UEs' call legs.
   # The setup Job writes this object as the "pcf" block of mcptt-server.json (docs/POLICY.md); empty: no N5,
-  # as in tutorial 1. Tutorial 6 sets it (tutorials/end-to-end/06-mcx-over-oai-5g-kubernetes/openmcx-values.yaml).
+  # as in tutorial 1. Tutorial 7 sets it (tutorials/end-to-end/07-mcx-over-oai-5g-kubernetes/openmcx-values.yaml).
   # Like the rest of the configuration it is written once, with the Secret.
   pcf: {}
 

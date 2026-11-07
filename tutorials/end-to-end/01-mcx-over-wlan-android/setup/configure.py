@@ -149,7 +149,7 @@ def main():
     # IMS AKA (TS 33.203; TS 33.180 clause 6.2.1, 3GPP access) for the test users IMS_AKA_ROLES names (tutorial 3:
     # client-d, the MC client in the 5G UE); every other user keeps SIP digest over TLS.
     aka_roles = os.environ.get('IMS_AKA_ROLES', '').replace(',', ' ').split()
-    # The clients' use of the home HTTP proxy (TS 24.482 annex A.2.1.2): "forward" (tutorial 7) has them send their
+    # The clients' use of the home HTTP proxy (TS 24.482 annex A.2.1.2): "forward" (tutorial 8) has them send their
     # requests to the proxy in absolute-form, the IdMS's and the KMS's excepted; "path", the default, reaches the
     # servers at path prefixes of the proxy.
     proxy_mode = os.environ.get('HTTP_PROXY_MODE', '').strip() or 'path'

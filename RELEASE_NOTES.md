@@ -6,6 +6,20 @@ common services, a SIP core, the clients and MCX Admin, as containers that start
 
 ## Since 1.0.0 (main and the `develop` images)
 
+- **Tutorials renumbered.** The end-to-end tutorials after tutorial 3 have new numbers and folders:
+
+  | Old | New | Folder |
+  |---|---|---|
+  | 3a | 4 | `03a-mcx-qos-over-oai-5g` → `04-mcx-qos-over-oai-5g` |
+  | 4 | 5 | `04-mcx-over-srsran-5g` → `05-mcx-over-srsran-5g` |
+  | 5 | 6 | `05-mcx-over-4g-open5gs-oai` → `06-mcx-over-4g-open5gs-oai` |
+  | 6 | 7 | `06-mcx-over-oai-5g-kubernetes` → `07-mcx-over-oai-5g-kubernetes` |
+  | 7 | 8 | `07-ims-aka-over-oai-5g` → `08-ims-aka-over-oai-5g` |
+  | 8 | 9 | `08-keycloak-idms` → `09-keycloak-idms` |
+  | 9 | 10 | `09-openmcx-ue-conformance-check` → `10-openmcx-ue-conformance-check` |
+
+  Links to the old folders on GitHub no longer work; the `v1.0.0` tag keeps the old numbering (tutorials 1 to 5 of
+  release 1.0.0, linked below under "Try it").
 - **Android 11 and 12.** The Android app of release 1.0.0 (`openmcx-client-v1.apk`) needs Android 13 or later. It
   installs on Android 11 and 12, but its activation fails there ("No virtual method readNBytes(I)[B in class
   Ljava/io/InputStream;"): it calls a method that Android has only from Android 13. Fixed after 1.0.0:
@@ -26,11 +40,11 @@ common services, a SIP core, the clients and MCX Admin, as containers that start
   app then send their HTTP requests through it in absolute-form, the IdMS's and the KMS's directly (TS 24.482 annex
   A.2.1.2). The HTTP proxy passes such requests to the servers it is configured for (`forward`) and refuses a client
   request carrying `X-3GPP-Asserted-Identity` (A.2.2.2). Without `http_proxy` nothing changes.
-- **Tutorials 7 and 8.** The walk-through of TS 37.579-2 test 5.1 moves from tutorial 3 to the new tutorial 7: one
+- **Tutorials 8 and 9.** The walk-through of TS 37.579-2 test 5.1 moves from tutorial 3 to the new tutorial 8: one
   MC client in the nr-UE registering with IMS AKA through a P-CSCF, its HTTP requests through the home HTTP proxy in
   absolute-form (setup option `HTTP_PROXY_MODE=forward`). Tutorial 3 again runs the dispatcher alone in the nr-UE; the
-  P-CSCF and that client are its compose profile `ims-aka` (tutorials 3a and 4 use it). The Keycloak tutorial is now
-  tutorial 8 (`08-keycloak-idms`), with the setup image of the same version.
+  P-CSCF and that client are its compose profile `ims-aka` (tutorials 4 and 5 use it). The Keycloak tutorial is now
+  tutorial 9 (`09-keycloak-idms`), with the setup image of the same version.
 
 ## What 1.0.0 provides
 
@@ -113,8 +127,8 @@ The [tutorials](tutorials/README.md) run the whole system on one computer from t
 - End to end: [1, MCX over Wi-Fi with two Android phones](tutorials/end-to-end/01-mcx-over-wlan-android/README.md);
   [2, the dispatcher](tutorials/end-to-end/02-dispatcher-with-android/README.md);
   [3, over an OAI 5G core with QoS over N5](tutorials/end-to-end/03-mcx-over-oai-5g/README.md);
-  [4, over srsRAN 5G](tutorials/end-to-end/04-mcx-over-srsran-5g/README.md);
-  [5, over a 4G core with QoS over Rx](tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/README.md). The RAN of
+  [4, over srsRAN 5G](https://github.com/openMCX/openmcx-server/blob/v1.0.0/tutorials/end-to-end/04-mcx-over-srsran-5g/README.md);
+  [5, over a 4G core with QoS over Rx](https://github.com/openMCX/openmcx-server/blob/v1.0.0/tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/README.md). The RAN of
   tutorials 3 to 5 is simulated.
 - [Unit test tutorials](tutorials/unit-tests): one feature each, with its SIP and media flow captured and explained
   against the specification.

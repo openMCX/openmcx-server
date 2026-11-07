@@ -8,8 +8,8 @@
 #
 # The profile ims-aka adds the P-CSCF (pcscf, pcscf-route) and an MC client in the nr-UE, the Linux client of the test
 # user client-d (ue-client), which registers with IMS AKA through the P-CSCF (IPsec ESP over the 5G user plane;
-# TS 33.203, TS 33.180 clause 6.2.1 for 3GPP access). Tutorial 7 (07-ims-aka-over-oai-5g) starts it without the
-# dispatcher, tutorial 3a with its own. The host then needs the xfrm_user, esp4, authenc, hmac(sha1) and cbc(aes)
+# TS 33.203, TS 33.180 clause 6.2.1 for 3GPP access). Tutorial 8 (08-ims-aka-over-oai-5g) starts it without the
+# dispatcher, tutorial 4 with its own. The host then needs the xfrm_user, esp4, authenc, hmac(sha1) and cbc(aes)
 # kernel modules.
 #
 #   cp .env.example .env                                             then set HOST_IP in .env

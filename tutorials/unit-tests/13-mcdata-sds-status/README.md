@@ -17,7 +17,7 @@ The tutorial is built on two scenarios of the OpenMCX regression tests, `tests/i
 `tests/integration/mcdata_status_scenario.py`, and uses the same images.
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
-> Wireshark shows every message and its bodies. A real system uses TLS (End to End Tutorials 1 to 5). Here every SDS,
+> Wireshark shows every message and its bodies. A real system uses TLS (End to End Tutorials 1 to 6). Here every SDS,
 > notification and status travels **inside SIP MESSAGE requests** (the signalling control plane, TS 24.282 clause
 > 9.2.2), so the capture holds all of MCData. The HTTPS traffic to the common services (sign-in, the group documents
 > and the MCData rules) stays encrypted and is not captured.

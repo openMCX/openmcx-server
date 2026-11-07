@@ -19,10 +19,10 @@ The tutorial is built on the regression scenario `tests/integration/functional_a
 images. [Unit Test Tutorial 3](../03-private-calls/README.md) explains private calls,
 [Unit Test Tutorial 4](../04-private-call-services/README.md) first-to-answer calls and
 [Unit Test Tutorial 8](../08-adhoc-group-calls/README.md) ad hoc calls. A real deployment with phones is in the End to
-End Tutorials 1 to 5.
+End Tutorials 1 to 6.
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
-> Wireshark shows every message, its SDP and its MCPTT XML. A real system uses TLS (End to End Tutorials 1 to 5). Speech
+> Wireshark shows every message, its SDP and its MCPTT XML. A real system uses TLS (End to End Tutorials 1 to 6). Speech
 > and floor control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common services
 > (sign-in, configuration, keys) stays encrypted and is not captured.
 

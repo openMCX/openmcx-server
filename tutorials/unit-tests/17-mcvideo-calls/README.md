@@ -18,7 +18,7 @@ The tutorial is built on two scenarios of the OpenMCX regression tests,
 the same images.
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
-> Wireshark shows every message, its SDP and its MCVideo XML. A real system uses TLS (tutorials 1 to 5). Video and
+> Wireshark shows every message, its SDP and its MCVideo XML. A real system uses TLS (tutorials 1 to 6). Video and
 > transmission control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common services
 > (sign-in, configuration, keys) stays encrypted and is not captured.
 

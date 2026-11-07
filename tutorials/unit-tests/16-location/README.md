@@ -21,7 +21,7 @@ The tutorial is built on `tests/integration/location_scenario.py` of the OpenMCX
 and uses the same images.
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
-> Wireshark shows every message and its location XML. A real system uses TLS (End to End Tutorials 1 to 5), and
+> Wireshark shows every message and its location XML. A real system uses TLS (End to End Tutorials 1 to 6), and
 > with XML protection on, the location XML is encrypted as well
 > ([Unit Test Tutorial 12](../12-protected-media/README.md)). Location management travels **inside SIP MESSAGE
 > requests**, so the capture holds all of it. The HTTPS traffic to the common services stays encrypted and is not

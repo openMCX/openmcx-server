@@ -16,7 +16,7 @@ The tutorial is built on three scenarios of the OpenMCX regression tests, `tests
 see the [End to End Tutorials](../../README.md).
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
-> Wireshark shows every message and its MCData XML. A real system uses TLS (End to End Tutorials 1 to 5). MSRP is in
+> Wireshark shows every message and its MCData XML. A real system uses TLS (End to End Tutorials 1 to 6). MSRP is in
 > clear in this tutorial. The HTTPS traffic to the common services stays encrypted: the capture keeps only the first
 > packet (SYN) of each connection to the HTTP proxy, the content server and the message store, so you can see when a
 > file is uploaded, downloaded or deposited, but not its content.

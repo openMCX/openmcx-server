@@ -12,16 +12,16 @@ and RANs.
 | 1 | [MCX&nbsp;over&nbsp;WLAN&nbsp;with&nbsp;the&nbsp;Android&nbsp;App](end-to-end/01-mcx-over-wlan-android/README.md) | The OpenMCX servers on one computer; two Android phones on its Wi-Fi make calls, messages and video calls. |
 | 2 | [MCX&nbsp;over&nbsp;WLAN&nbsp;with&nbsp;the&nbsp;Android&nbsp;Phones&nbsp;and&nbsp;Dispatcher&nbsp;client](end-to-end/02-dispatcher-with-android/README.md) | Tutorial 1 plus a dispatcher position in the browser, in group calls with the phones. |
 | 3 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;RAN&nbsp;(RFSIM)](end-to-end/03-mcx-over-oai-5g/README.md) | Tutorial 1 plus the OAI 5G core and RAN (simulated radio); the dispatcher over 5G, with MCPTT QoS over N5. |
-| 3a | [MCX&nbsp;QoS&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;RAN&nbsp;(RFSIM)](end-to-end/03a-mcx-qos-over-oai-5g/README.md) | Tutorial 3 with openMCX's QoS RAN and core (built from openMCX/oai): a gNB that schedules by 5QI, GFBR and ARP, with GBR admission, and a UPF that serves MC before best effort; two emulated MC UEs and two load UEs; an MC video in a small cell under load. |
-| 4 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;srsRAN&nbsp;(ZeroMQ)](end-to-end/04-mcx-over-srsran-5g/README.md) | Tutorial 3 with the srsRAN gNB and srsUE (simulated radio); the call falls back to the default QoS flow. |
-| 5 | [MCX&nbsp;over&nbsp;a&nbsp;4G&nbsp;core&nbsp;(Open5GS)&nbsp;and&nbsp;the&nbsp;OAI&nbsp;LTE&nbsp;RAN&nbsp;(RFSIM)](end-to-end/05-mcx-over-4g-open5gs-oai/README.md) | Tutorial 3 on 4G: Open5GS EPC and OAI LTE RAN (simulated radio); MCPTT QoS over Rx, a QCI 65 bearer. |
-| 6 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;RAN&nbsp;(RFSIM)&nbsp;on&nbsp;Kubernetes](end-to-end/06-mcx-over-oai-5g-kubernetes/README.md) | Tutorial 3 on a one-node kind cluster, installed with Helm: the OpenMCX chart and a chart for the OAI 5G core, gNB and nr-UE. |
-| 7 | [MC&nbsp;client&nbsp;registration&nbsp;with&nbsp;IMS&nbsp;AKA&nbsp;over&nbsp;5GS](end-to-end/07-ims-aka-over-oai-5g/README.md) | Tutorial 3's network with one MC client in the nr-UE, no phones: IMS AKA through a P-CSCF with IPsec, the home HTTP proxy in absolute-form, and a walk-through of TS 37.579-2 test 5.1 from switch-on to service. `develop` images. |
-| 8 | [Sign&nbsp;in&nbsp;with&nbsp;Keycloak&nbsp;as&nbsp;IdMS](end-to-end/08-keycloak-idms/README.md) | Keycloak in the place of OpenMCX's IdMS: two Android phones and a dispatcher sign in on its page (TS 33.180 annex B.4.2), and the servers accept its tokens. `develop` images. |
-| 9 | [OpenMCX&nbsp;UE&nbsp;conformance&nbsp;check](end-to-end/09-openmcx-ue-conformance-check/README.md) | TS 37.579-2 test 5.1 for OpenMCX's own MC clients, no 3GPP access: the Linux client against OpenMCX (IMS AKA through a P-CSCF with IPsec, the KMS exchange signed with TrK-wrapped keys, the home HTTP proxy in absolute-form, switch-on to MC log-off), the same client alone against a conformance test system over a VPN, and what each client is ready for (the Android app planned). `develop` images. |
+| 4 | [MCX&nbsp;QoS&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;RAN&nbsp;(RFSIM)](end-to-end/04-mcx-qos-over-oai-5g/README.md) | Tutorial 3 with openMCX's QoS RAN and core (built from openMCX/oai): a gNB that schedules by 5QI, GFBR and ARP, with GBR admission, and a UPF that serves MC before best effort; two emulated MC UEs and two load UEs; an MC video in a small cell under load. |
+| 5 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;srsRAN&nbsp;(ZeroMQ)](end-to-end/05-mcx-over-srsran-5g/README.md) | Tutorial 3 with the srsRAN gNB and srsUE (simulated radio); the call falls back to the default QoS flow. |
+| 6 | [MCX&nbsp;over&nbsp;a&nbsp;4G&nbsp;core&nbsp;(Open5GS)&nbsp;and&nbsp;the&nbsp;OAI&nbsp;LTE&nbsp;RAN&nbsp;(RFSIM)](end-to-end/06-mcx-over-4g-open5gs-oai/README.md) | Tutorial 3 on 4G: Open5GS EPC and OAI LTE RAN (simulated radio); MCPTT QoS over Rx, a QCI 65 bearer. |
+| 7 | [MCX&nbsp;over&nbsp;the&nbsp;OAI&nbsp;5G&nbsp;core&nbsp;and&nbsp;RAN&nbsp;(RFSIM)&nbsp;on&nbsp;Kubernetes](end-to-end/07-mcx-over-oai-5g-kubernetes/README.md) | Tutorial 3 on a one-node kind cluster, installed with Helm: the OpenMCX chart and a chart for the OAI 5G core, gNB and nr-UE. |
+| 8 | [MC&nbsp;client&nbsp;registration&nbsp;with&nbsp;IMS&nbsp;AKA&nbsp;over&nbsp;5GS](end-to-end/08-ims-aka-over-oai-5g/README.md) | Tutorial 3's network with one MC client in the nr-UE, no phones: IMS AKA through a P-CSCF with IPsec, the home HTTP proxy in absolute-form, and a walk-through of TS 37.579-2 test 5.1 from switch-on to service. `develop` images. |
+| 9 | [Sign&nbsp;in&nbsp;with&nbsp;Keycloak&nbsp;as&nbsp;IdMS](end-to-end/09-keycloak-idms/README.md) | Keycloak in the place of OpenMCX's IdMS: two Android phones and a dispatcher sign in on its page (TS 33.180 annex B.4.2), and the servers accept its tokens. `develop` images. |
+| 10 | [OpenMCX&nbsp;UE&nbsp;conformance&nbsp;check](end-to-end/10-openmcx-ue-conformance-check/README.md) | TS 37.579-2 test 5.1 for OpenMCX's own MC clients, no 3GPP access: the Linux client against OpenMCX (IMS AKA through a P-CSCF with IPsec, the KMS exchange signed with TrK-wrapped keys, the home HTTP proxy in absolute-form, switch-on to MC log-off), the same client alone against a conformance test system over a VPN, and what each client is ready for (the Android app planned). `develop` images. |
 
-Each tutorial has its own folder in `end-to-end/` with its Docker Compose file and `.env.example`; tutorial 6 has its
-Helm chart and values instead, tutorials 3a and 7 build on tutorial 3's folder and `.env`, and tutorial 9 needs no
+Each tutorial has its own folder in `end-to-end/` with its Docker Compose file and `.env.example`; tutorial 7 has its
+Helm chart and values instead, tutorials 4 and 8 build on tutorial 3's folder and `.env`, and tutorial 10 needs no
 `.env` (it runs on its own network, like the unit-test tutorials).
 
 ## Unit Test Tutorials
@@ -72,7 +72,7 @@ Each has its own folder in `agents/` with its Docker Compose file and `.env.exam
 
 ## Good to know
 
-- **Captures**: tutorials 3, 4 and 5 link a reference capture (core signalling, GTP-U and SIP), explained in their step
+- **Captures**: tutorials 3, 5 and 6 link a reference capture (core signalling, GTP-U and SIP), explained in their step
   "Look at the capture".
 - **Debug log**: set `MCX_LOG=debug` in the tutorial's `.env` (end to end) or run `MCX_LOG=debug ./run.sh` (unit
   tests); each program then logs one line per SIP message and HTTP request (`docker logs <container>`), without bodies

@@ -17,7 +17,7 @@ and the first-to-answer part of `tests/integration/private_call_scenario.py`, an
 first-to-answer call of `tests/integration/first_to_answer_emergency_scenario.py` is left to the emergency tutorial.
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
-> Wireshark shows every message, its SDP and its MCPTT XML. A real system uses TLS (tutorials 1 to 5). Speech and
+> Wireshark shows every message, its SDP and its MCPTT XML. A real system uses TLS (tutorials 1 to 6). Speech and
 > floor control are not encrypted in this tutorial in either mode. The HTTPS traffic to the common services
 > (sign-in, configuration, keys) stays encrypted and is not captured.
 

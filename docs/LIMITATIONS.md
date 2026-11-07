@@ -130,9 +130,9 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   IPsec ESP security associations in transport mode, SIP over TCP or UDP inside them (UDP: requests of 1300 bytes or
   more over TCP, RFC 3261 section 18.1.1; no SIP outbound over UDP, which would need STUN keepalives); every other
   identity uses SIP digest over TLS. IMS AKA is used by the Linux client inside the UE of [tutorials
-  7](../tutorials/end-to-end/07-ims-aka-over-oai-5g/README.md), 3a,
-  [4](../tutorials/end-to-end/04-mcx-over-srsran-5g/README.md) (5G, with the compose profile `ims-aka`) and
-  [5](../tutorials/end-to-end/05-mcx-over-4g-open5gs-oai/README.md) (4G) and by the `aka` and `aka-udp`
+  8](../tutorials/end-to-end/08-ims-aka-over-oai-5g/README.md), 4,
+  [5](../tutorials/end-to-end/05-mcx-over-srsran-5g/README.md) (5G, with the compose profile `ims-aka`) and
+  [6](../tutorials/end-to-end/06-mcx-over-4g-open5gs-oai/README.md) (4G) and by the `aka` and `aka-udp`
   regression labs; the SIP core makes the vectors itself (Kamailio `ims_auth`, no HSS over Cx), offering AKAv2-SHA-256
   and then AKAv1-MD5. The UE and the P-CSCF offer and select the integrity and encryption algorithms of TS 33.203
   annexes H and I (AES-GCM, AES-GMAC, HMAC-SHA-256-128, HMAC-SHA-1-96, AES-CBC, NULL). After a re-registration
@@ -152,17 +152,17 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   registration (TS 24.229 clause 5.1.6); IPv6 (the IMS AKA path is tested on IPv4 only); the discovery of the P-CSCF (TS 24.229 clause 9.2.1: its
   address is configured). The MCX Admin activation and the Credential Service issue digest
   credentials only (an identity provisioned for IMS AKA gets none), so the clients that MCX Admin activates keep SIP
-  digest over TLS, also where they run on 3GPP access: the dispatcher inside the 5G or 4G UE of tutorials 3, 4 and 5 is
+  digest over TLS, also where they run on 3GPP access: the dispatcher inside the 5G or 4G UE of tutorials 3, 5 and 6 is
   a deviation from TS 33.180 clause 6.2.1. The Android app would need carrier privileges to run AKA on the phone's SIM.
   The Linux client is a research and test client, not a client for operational use. It uses SIP digest over TLS for
   identities provisioned with a digest password, on non-3GPP access (the regression labs, tutorials 1 and 2, the
   unit-test tutorials), and IMS AKA for identities provisioned with an IMS AKA subscription, with its credentials held
   in software. On a terminal without 3GPP access (the `aka` labs,
-  [tutorial 9](../tutorials/end-to-end/09-openmcx-ue-conformance-check/README.md), a PC, a VPN to a test system) and on a device behind
+  [tutorial 10](../tutorials/end-to-end/10-openmcx-ue-conformance-check/README.md), a PC, a VPN to a test system) and on a device behind
   an MC gateway UE that routes for it (TS 23.280 clause 11, TS 33.180 clause 5.12.1), these are the IM credentials that
   TS 33.180 clause 6.2.1 allows for "non-3GPP-only MC UEs not equipped with UICC" (TS 33.203 clause 9, TS 24.229
-  clause 5.1.1.1B.1). **For testing and debugging only**, the client also runs inside the emulated UEs of tutorials 3a,
-  4, 5 and 7, which emulate their own USIM in software: there its software credentials are a deviation from TS 33.203
+  clause 5.1.1.1B.1). **For testing and debugging only**, the client also runs inside the emulated UEs of tutorials 4,
+  5, 6 and 8, which emulate their own USIM in software: there its software credentials are a deviation from TS 33.203
   clauses 4 ("IMS authentication keys and functions at the user side shall be stored on a UICC") and 9 ("The IMC
   shall not used if ISIM or USIM is present"), a deviation of these test beds, never a configuration for operational
   use.
@@ -205,7 +205,7 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 - **P-Access-Network-Info** (TS 24.229 clauses 5.1.1.2.1 h) and 5.1.2A.1.1, "if available to the UE (as defined in the
   access technology specific annexes)"). The clients never send it: on 5GS and EPS (annexes U and L, "The UE shall
   always include the P-Access-Network-Info header field where indicated") it needs the serving cell, which the Linux
-  client inside the UE of the tutorials cannot read from the modem (own deviation, tutorials 3a, 4, 5 and 7); no
+  client inside the UE of the tutorials cannot read from the modem (own deviation, tutorials 4, 5, 6 and 8); no
   annex defines it for plain IP or a VPN. For a test system, `sip.access_network_info` (off by default) gives the
   value the Linux client inserts in every request but CANCEL and ACK and every response but those to CANCEL, the
   initial REGISTER included as the ETSI test suite for TS 37.579 expects (its reading; TS 24.229 asks for it there
@@ -297,7 +297,7 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 
 ## Deployment
 
-MCX runs over 5G SA cores with QoS over N5 and over a 4G core with QoS over Rx in tutorials 3 to 6, with a simulated
-RAN; it has not been run on a production network. The Helm chart is experimental: tutorial 6 installs it on a one-node
+MCX runs over 5G SA cores with QoS over N5 and over a 4G core with QoS over Rx in tutorials 3 to 7, with a simulated
+RAN; it has not been run on a production network. The Helm chart is experimental: tutorial 7 installs it on a one-node
 kind cluster; it has not been run on a cluster of several nodes or on OpenShift. It is not an interoperability-certified implementation: it has not yet been tested
 against independent implementations.

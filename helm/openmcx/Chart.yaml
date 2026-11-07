@@ -3,7 +3,7 @@ name: openmcx
 description: >-
   OpenMCX, 3GPP Release 19 mission-critical services: MCPTT, MCData and MCVideo servers, the common services
   (IdMS, GMS, CMS, KMS, LMS, Credential Service, content server, message store, notification server), the SIP core
-  and MCX Admin. Experimental: installed on a one-node kind cluster (tutorial 6), not yet on a cluster of several
+  and MCX Admin. Experimental: installed on a one-node kind cluster (tutorial 7), not yet on a cluster of several
   nodes or on OpenShift.
 type: application
 version: 0.2.0

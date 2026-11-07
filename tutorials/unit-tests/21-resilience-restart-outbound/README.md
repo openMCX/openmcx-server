@@ -21,7 +21,7 @@ The tutorial is built on three scenarios of the OpenMCX regression tests, `tests
 `tests/integration/outbound_flow_scenario.py` (the client without a listener), and uses the same images.
 
 > **SIP in clear, for learning.** The system runs in its debug mode: SIP goes over TCP without TLS (port 5060), so
-> Wireshark shows every message and its XML. A real system uses TLS (tutorials 1 to 5). The HTTPS traffic to the
+> Wireshark shows every message and its XML. A real system uses TLS (tutorials 1 to 6). The HTTPS traffic to the
 > common services (sign-in, token renewal, configuration, keys) stays encrypted and is not captured.
 
 <p align="center"><img src="images/architecture.svg" width="900" alt="Unit Test Tutorial 21: four headless clients and the OpenMCX system (SIP core, MCPTT server, MCData server, common services) on one computer, on the lab network 172.31.21.0/24; client-a and the MCPTT server restart, and the clients sign in again by themselves; bob's device is replaced by a client without a SIP listener that the SIP core reaches over one TCP flow"></p>

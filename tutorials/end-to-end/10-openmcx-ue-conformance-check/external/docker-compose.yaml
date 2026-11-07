@@ -1,0 +1,28 @@
+#
+# OpenMCX Licence Information : AGPL-3.0-or-later
+#
+# OpenMCX Tutorial 10, part B: the MC client alone, for a conformance test system reached over a VPN (README.md, part
+# B). It shares this computer's network, so it uses the VPN's interface and address; its IPsec security associations
+# are set up in this computer's kernel and removed at the SIP de-REGISTER (TS 33.203 clause 7.4.1a).
+name: openmcx-t10-external
+services:
+  client-d:
+    image: docker.io/openmcx/openmcx-client:develop
+    entrypoint: [/usr/local/bin/mcx-client]
+    command: [--config, /config/client.json]
+    environment:
+      MCX_LOG: ${MCX_LOG:-info}
+    init: true
+    network_mode: host
+    cap_add: [NET_ADMIN]
+    tmpfs: [/run/mcx]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    volumes:
+      - status:/artifacts
+      - ./config/client.json:/config/client.json:ro
+      - ./config/tls/ca.crt:/config/tls/ca.crt:ro
+      - ./config/transport-keys:/config/transport-keys:ro
+volumes:
+  status:

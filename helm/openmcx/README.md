@@ -6,7 +6,7 @@ core and MCX Admin. It runs what
 Compose service, from the same images and with the same configuration. Android phones (the OpenMCX app) and a browser
 reach it on one address, `externalAddress`, the tutorial's `HOST_IP`.
 
-> **Status: experimental** (in release 1.0.0 as such). [Tutorial 6](../../tutorials/end-to-end/06-mcx-over-oai-5g-kubernetes/README.md)
+> **Status: experimental** (in release 1.0.0 as such). [Tutorial 7](../../tutorials/end-to-end/07-mcx-over-oai-5g-kubernetes/README.md)
 > installs it on a one-node kind cluster (Kubernetes 1.37, Helm 4), with the OAI 5G core next to it: the
 > configuration Job, the hostPorts, the SIP core's address checks and N5 work there. It has not yet run on a cluster of
 > several nodes, with `LoadBalancer` or `NodePort`, or on OpenShift.
@@ -50,8 +50,8 @@ The chart exposes 100 (`expose.media.portsPerBase`).
 ## Tutorial 1 on Kubernetes
 
 A one-node cluster on the computer that shares the Wi-Fi with the phones (k3s, MicroK8s and similar, whose CNI
-supports `hostPort`; or kind, whose node publishes the ports: tutorial 6's
-[`kind-cluster.sh`](../../tutorials/end-to-end/06-mcx-over-oai-5g-kubernetes/kind-cluster.sh) makes one):
+supports `hostPort`; or kind, whose node publishes the ports: tutorial 7's
+[`kind-cluster.sh`](../../tutorials/end-to-end/07-mcx-over-oai-5g-kubernetes/kind-cluster.sh) makes one):
 
 ```bash
 helm install openmcx helm/openmcx -n openmcx --create-namespace \
@@ -185,8 +185,8 @@ helm install openmcx helm/openmcx -n openmcx \
 | `expose.service.*` | | Annotations, `loadBalancerClass`, `loadBalancerIP` of the external Service. |
 | `expose.ports.*` | 5061, 8443-8447 | `sip`, `idms`, `httpProxy`, `kms`, `admin`, `credentials`. |
 | `expose.media.*` | 4000/5000, 7000/7200/7400 | First port of each media range; `portsPerBase` 100. |
-| `sipCore.tlsKeylog` | `false` | Troubleshooting only: the SIP core writes its TLS secrets to `/tmp/kamailio-tls-keylog.txt`, for Wireshark to decrypt a capture; tutorial 6, step 7. Never in production. |
-| `mcptt.pcf` | `{}` | The MCPTT server's N5 block (`pcf` of `mcptt-server.json`, [POLICY.md](../../docs/POLICY.md)), written by the setup Job; tutorial 6 sets it. |
+| `sipCore.tlsKeylog` | `false` | Troubleshooting only: the SIP core writes its TLS secrets to `/tmp/kamailio-tls-keylog.txt`, for Wireshark to decrypt a capture; tutorial 7, step 7. Never in production. |
+| `mcptt.pcf` | `{}` | The MCPTT server's N5 block (`pcf` of `mcptt-server.json`, [POLICY.md](../../docs/POLICY.md)), written by the setup Job; tutorial 7 sets it. |
 | `mcdata.enabled`, `mcvideo.enabled` | `true` | The MCData and MCVideo servers. |
 | `persistence.*` | enabled, RWO | `storageClass`, `accessMode`, `sharedAccessMode`, `keep`, `sizes.<volume>`. |
 | `openshift.enabled`, `openshift.scc.create` | `false`, `true` | The chart's SecurityContextConstraints. |
@@ -199,5 +199,5 @@ helm install openmcx helm/openmcx -n openmcx \
 - One replica per component, as in the Compose file; the MC servers keep call state in memory.
 - One release per namespace (fixed Service names).
 - WLAN, as tutorial 1, unless `mcptt.pcf` is set: then the MCPTT server asks a 5G core's PCF for its UEs' QoS over N5,
-  as in tutorial 6. No Rx (4G) or network location from a core.
+  as in tutorial 7. No Rx (4G) or network location from a core.
 - The images run as root; running them under OpenShift's `restricted-v2` (random user ID) has not been tried.
