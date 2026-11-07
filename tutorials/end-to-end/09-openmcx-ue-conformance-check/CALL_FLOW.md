@@ -1,9 +1,9 @@
-# Tutorial 9: call flow of TS 37.579-2 test 5.1 over IP, step by step
+# Tutorial 9: call flow of TS 37.579-2 test 5.1 with the Linux client (part A), step by step
 
 This page follows the [walk-through of test 5.1](README.md#3-walk-through-of-ts-37579-2-test-51) message by message:
 - for each step of TS 37.579-2 V18.1.0 table 5.1.3.2-1, the procedure of TS 37.579-1 V18.1.0 it refers to;
 - the messages the MC client sends and receives, with the frame numbers of the
-  [reference capture](captures/09-test-5-1-over-ip-full.pcap.gz) (ESP decrypted, see
+  [reference capture](captures/09-openmcx-ue-conformance-check-full.pcap.gz) (ESP decrypted, see
   [Look at the capture](README.md#4-look-at-the-capture));
 - where OpenMCX or this tutorial **differs from the test's procedure**, marked **⚠ G*n*** and listed in
   [Gaps](#gaps) at the end.

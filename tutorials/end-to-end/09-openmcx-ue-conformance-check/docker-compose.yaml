@@ -1,4 +1,4 @@
-# OpenMCX: Tutorial 9, test 5.1 over IP (tutorials/end-to-end/09-test-5-1-over-ip/README.md).
+# OpenMCX: Tutorial 9, OpenMCX UE conformance check (TS 37.579-2 test 5.1) (tutorials/end-to-end/09-openmcx-ue-conformance-check/README.md).
 #
 # A lab of the regression's generator, from the published images: the MCPTT and MCData servers, the common
 # services, the SIP core, a P-CSCF and four headless clients (client-a to client-d). SIP is in clear (5060/tcp,
@@ -48,7 +48,7 @@ services:
     - -s
     - '0'
     - -w
-    - /captures/09-test-5-1-over-ip-full.pcap
+    - /captures/09-openmcx-ue-conformance-check-full.pcap
     - ip and not host 172.31.109.1 and (tcp port 5060 or (udp and not port 53) or icmp or esp or tcp port 8443)
     volumes: ['captures:/captures']
     depends_on:

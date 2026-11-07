@@ -1,22 +1,48 @@
-# Tutorial 9: Test 5.1 over IP
+# Tutorial 9: OpenMCX UE conformance check
 
-The OpenMCX system on one computer, with OpenMCX's Linux client as the MC client under test. The client has no 3GPP
-access, no 5G core and no radio: it reaches the P-CSCF over plain IP, as it would over a VPN to a test system. From
-switch-on to service, it goes through test 5.1 of TS 37.579-2 by itself:
-- the user signs in to the IdMS;
-- the client registers with **IMS AKA** through a **P-CSCF**, with its SIP inside **IPsec ESP**;
-- it gets its key material from the KMS, with the exchange **signed and the keys wrapped under a transport key
-  (TrK)**;
-- the MCPTT and MCData servers authorise the service;
-- the client subscribes to its configuration and group documents, and to the group's key (GMK).
+*TS 37.579-2 test 5.1, for OpenMCX's own MC clients*
 
-Its HTTP requests go through the **home HTTP proxy** in absolute-form, except the IdMS's and the KMS's. At the end it
-logs off (the MC log-off) and de-registers.
+This tutorial takes OpenMCX's MC clients through test 5.1 of TS 37.579-2 on IP access (no 5G core and no radio). From
+switch-on to service, the client under test:
+- signs the user in to the IdMS;
+- registers with **IMS AKA** through a **P-CSCF**, with its SIP inside **IPsec ESP**;
+- gets its key material from the KMS, with the exchange **signed and the keys wrapped under a transport key (TrK)**;
+- has the MCPTT and MCData servers authorise the service;
+- subscribes to its configuration and group documents, and to the group's key (GMK);
+- sends its HTTP requests through the **home HTTP proxy** in absolute-form, except the IdMS's and the KMS's;
+- at the end logs off (the MC log-off) and de-registers.
 
-[Tutorial 7](../07-ims-aka-over-oai-5g/README.md) runs the same test with the client inside a 5G UE. Here the client's
+| Part | Client under test | Network side | Status |
+|---|---|---|---|
+| A, [steps 1 to 5](#1-make-the-configuration) | the Linux client (`client-d`), a terminal without 3GPP access | OpenMCX on this computer | runs |
+| A2, [step 7](#7-the-android-app-as-the-client-under-test-planned) | the Android app on a phone with an ISIM card, over Wi-Fi | OpenMCX on this computer | planned |
+| B, [step 6](#6-against-a-conformance-test-system) | the Linux client alone | a conformance test system over a VPN | template |
+
+Against OpenMCX (parts A and A2), OpenMCX takes the place of the test system, and it is not a validated one: the
+verdicts are a self-check of the clients, not a conformance result. Only a conformance test system (part B) gives one.
+What each client is ready for, its own deviations and the spec defects met on the way are summed up at the end:
+[Results and learnings](#results-and-learnings).
+
+```mermaid
+flowchart LR
+    subgraph host["This computer: OpenMCX (the test network)"]
+        PC["P-CSCF"] --- SC["SIP core"]
+        SC --- AS["MCPTT and MCData servers"]
+        IDMS["IdMS"]
+        KMS["KMS"]
+        PX["Home HTTP proxy"] --- DOCS["CMS, GMS, MCData content"]
+    end
+    D["Part A: Linux client (client-d)<br/>software IM credentials"] -- "IPsec ESP" --> PC
+    D -- "HTTPS" --> IDMS & KMS & PX
+    PH["Part A2 (planned): Android app<br/>ISIM card, Wi-Fi"] -. "IPsec ESP" .-> PC
+    PH -. "HTTPS" .-> IDMS & KMS & PX
+    D2["Part B: Linux client alone"] == "VPN" ==> TS["Conformance test system"]
+```
+
+[Tutorial 7](../07-ims-aka-over-oai-5g/README.md) runs the same test with the Linux client inside a 5G UE. Here its
 container is a terminal without 3GPP access, so its software IMS AKA credentials are the IM credentials that TS 33.180
 clause 6.2.1 allows for "non-3GPP-only MC UEs not equipped with UICC" (TS 33.203 clause 9, TS 24.229 clause
-5.1.1.1B.1).
+5.1.1.1B.1). The Android app on a phone holds them on its card (TS 33.203 clause 4).
 
 ## What you need
 
@@ -32,7 +58,7 @@ clause 6.2.1 allows for "non-3GPP-only MC UEs not equipped with UICC" (TS 33.203
 ## 1. Make the configuration
 
 ```bash
-cd tutorials/end-to-end/09-test-5-1-over-ip
+cd tutorials/end-to-end/09-openmcx-ue-conformance-check
 docker compose run --rm setup
 ```
 
@@ -96,9 +122,9 @@ P-CSCF and the identities) and with the user name and password (NOTE 1 of that t
 7. with `MCX_LOG=debug`: every request through the HTTP proxy in absolute-form, none in origin-form;
 8. the MC log-off (a PUBLISH with Expires 0 per service, TS 24.379 clause 7.2.1A NOTE 3), then the SIP de-REGISTER
    (TS 24.229 clause 5.1.1.6);
-9. the capture, copied to `captures/09-test-5-1-over-ip-run.pcap.gz`, and with `MCX_LOG=debug` the keys of the
-   client's security associations, as `captures/09-test-5-1-over-ip-run.esp_sa`. Before the log-off (check 8) it saves
-   `client-d`'s status as the test left it, as `captures/09-test-5-1-over-ip-run.status.json`.
+9. the capture, copied to `captures/09-openmcx-ue-conformance-check-run.pcap.gz`, and with `MCX_LOG=debug` the keys of the
+   client's security associations, as `captures/09-openmcx-ue-conformance-check-run.esp_sa`. Before the log-off (check 8) it saves
+   `client-d`'s status as the test left it, as `captures/09-openmcx-ue-conformance-check-run.status.json`.
 
 To run the test again, start over (step 5): the client has logged off.
 
@@ -128,7 +154,7 @@ Where the walk-through departs from the test, in short (the full list: [call flo
 
 ## 4. Look at the capture
 
-The reference capture is [`captures/09-test-5-1-over-ip-full.pcap.gz`](captures/09-test-5-1-over-ip-full.pcap.gz)
+The reference capture is [`captures/09-openmcx-ue-conformance-check-full.pcap.gz`](captures/09-openmcx-ue-conformance-check-full.pcap.gz)
 (1.0 MB, 4 541 frames). It records a run of steps 2 and 3: the system starting, `client-d` signing in, registering
 with IMS AKA, getting its keys and being authorised and configured, then its MC log-off and SIP de-REGISTER.
 Wireshark opens the compressed file directly. The frame numbers below are those of the reference.
@@ -143,12 +169,12 @@ It was captured on the tutorial's network (`172.31.109.0/24`) and keeps:
 It leaves out DNS, the databases and the computer's own traffic on the bridge.
 
 To read the SIP inside ESP, give Wireshark the run's security associations:
-1. copy [`captures/09-test-5-1-over-ip-full.esp_sa`](captures/09-test-5-1-over-ip-full.esp_sa) to
+1. copy [`captures/09-openmcx-ue-conformance-check-full.esp_sa`](captures/09-openmcx-ue-conformance-check-full.esp_sa) to
    `~/.config/wireshark/esp_sa`, or import it in **Edit → Preferences → Protocols → ESP → ESP SAs**;
 2. tick **Attempt to detect/decode encrypted ESP payloads** there.
 
 They are the keys of this throwaway run (CK and IK of one AKA challenge). A run of your own has others, in
-`captures/09-test-5-1-over-ip-run.esp_sa` (with `MCX_LOG=debug`).
+`captures/09-openmcx-ue-conformance-check-run.esp_sa` (with `MCX_LOG=debug`).
 
 Addresses: the SIP core `.10`, the MCPTT server `.20`, the MCData server `.21`, the IdMS `.40`, the KMS `.43`, the HTTP
 proxy `.45`, the P-CSCF `.60`, `client-d` `.104`.
@@ -199,6 +225,103 @@ rm -rf config               # then start over at step 1
 `docker compose down` (without `-v`) keeps the data: `MCX_LOG=debug docker compose up -d --wait` starts the same
 system again, and `client-d` signs in and registers again.
 
+## 6. Against a conformance test system
+
+The folder `external/` runs the same client alone, on a computer connected over a VPN to a conformance test system
+for TS 37.579-2. The test system takes the place of everything else in steps 1 to 5: the P-CSCF and SIP core, the
+IdMS, the KMS, the CMS and GMS, the home HTTP proxy. It drives the test and gives the verdict; `external/run.sh` only
+follows the client through the same steps from its status file.
+
+### What you need
+
+- The VPN to the test system up on this computer, and this computer's address on it.
+- The kernel modules of [What you need](#what-you-need), and Docker as above.
+- The test system's values, as its PIXIT (TS 37.579-5) gives them:
+
+| In `config/client.json` | Value |
+| --- | --- |
+| `sip.advertise`, `media.advertise` | this computer's address on the VPN |
+| `sip.port` | the client's protected server port: any free port (5064 in the template) |
+| `sip.identity`, `sip.isim.impi` | the public and private user identities of the test USIM's ISIM application |
+| `sip.isim.k`, `algorithm`, `res_length` | K, and `"test"` for the test algorithm of TS 34.108 clause 8.1.2 (or remove both and give `opc` and `amf` for MILENAGE) |
+| `sip.pcscf`, `trusted_core` | the P-CSCF's address and port |
+| `mcptt` | the MCPTT ID, the MCPTT server's PSI, the group, and two `urn:uuid:` values of your own for the client and the UE |
+| `oauth` | the IdMS's issuer, authorization and token endpoints, key set, the client ID with its redirect URI, the user name and password |
+| `http.proxy` | the home HTTP proxy |
+| `endpoints.cms`, `endpoints.gms`, `gms.subscription_psi` | the CMS and GMS XCAP roots and the GMS-URI |
+| `cms.subscription_psi` | the target of the configuration SUBSCRIBE |
+| `server_address` | the MCPTT server's media address |
+| `security.kms_uri`, `kms_id` | the KMS's address, and the KMS URI its documents carry |
+| `security.gms_uri` | the GMS identity the GMK messages are signed by (the initiator, IDRi, of their MIKEY I_MESSAGE) |
+| `security.transport_keys` | the MCPTT ID as the key, with the TrK-ID and InK-ID (32-bit numbers) |
+| `security.key_parameter_profile` | the MIKEY wire profile, as numbers: TS 33.180 annex E.6 leaves the Key Parameters IEI unassigned, so it is the test system's |
+| `config/tls/ca.crt` | the CA certificate of the test system's HTTPS servers |
+| `config/transport-keys/trk`, `ink` | the TrK and InK in hexadecimal, readable by their owner only |
+
+### Run it
+
+```bash
+cd tutorials/end-to-end/09-openmcx-ue-conformance-check/external
+mkdir -p config/tls config/transport-keys
+cp client.json config/client.json          # then replace every <...> in it
+cp <test system CA> config/tls/ca.crt
+printf '%s' '<TrK hex>' > config/transport-keys/trk
+printf '%s' '<InK hex>' > config/transport-keys/ink
+chmod 600 config/transport-keys/*
+MCX_LOG=debug docker compose up -d
+./run.sh
+```
+
+If the test system's names are not in this computer's DNS, give them in a second compose file, for example
+`hosts.yaml`:
+
+```yaml
+services:
+  client-d:
+    extra_hosts:
+      <name in a URI>: <address>
+```
+
+and start with `docker compose -f docker-compose.yaml -f hosts.yaml up -d` and `OVERRIDE=hosts.yaml ./run.sh`.
+
+`run.sh` waits for each step and prints what the client did: the registration and its security associations, the
+sign-in, the KMS exchange (`uid_form` shows the UID form the KMS's keys are for), the service authorisation, the
+configuration and group documents and the keys. It saves the client's status as `status-before-log-off.json`, then
+asks before the MC log-off and the SIP de-REGISTER, so they come when the test system expects them.
+
+To capture, run `tcpdump` or Wireshark on the VPN interface. With `MCX_LOG=debug` the client logs the keys of each
+IPsec security association (`docker compose logs client-d | grep 'ESP SA'`), for Wireshark's ESP SA table as in
+[step 4](#4-look-at-the-capture).
+
+Stop with `docker compose down -v` after the de-REGISTER.
+
+### How it differs from steps 1 to 5
+
+- **The computer's network.** The client shares it (`network_mode: host`), so its SIP, its IPsec security associations
+  and its media use the VPN's interface and address, which the P-CSCF sees in Via and Contact; a NAT of a container
+  network would change them. The security associations are in this computer's kernel; the client removes them at the
+  SIP de-REGISTER (TS 33.203 clause 7.4.1a). If it stops without one, list them with `sudo ip xfrm state` and delete
+  only the client's (its address and ports): the VPN may use IPsec itself.
+- **Settings for the test system.** The template turns on what such a test system expects where the texts leave a
+  choice; each is described with the Linux client's settings ([client README](https://github.com/openMCX/openmcx-client/blob/main/linux/README.md#transport-and-integrity-keys-trk-ink)):
+  - `security.kms_via_proxy`: the KMS requests through the home HTTP proxy, which needs the TrK;
+  - `security.kms_keyprov_identity_path` `false`: the KeyProvision request to `…/keyprov` without the identity
+    subdirectory (TS 33.180 annex D.2.4 allows both);
+  - `cms.subscription_psi`: the configuration SUBSCRIBE to the test system's PSI;
+  - the UID form, found from the KMS's key set.
+
+  The readings behind them are in [Known limitations](../../../docs/LIMITATIONS.md). `sip.access_network_info` stays
+  out: TS 24.229 defines no P-Access-Network-Info value for plain IP or a VPN.
+- **MCPTT only.** The template has no MCData user and no location settings: test 5.1 of TS 37.579-2 is an MCPTT test.
+
+## 7. The Android app as the client under test (planned)
+
+The same walk-through with the Android app on a phone, over Wi-Fi, as part A2. The phone holds its IMS AKA credentials
+on its card: an ISIM whose access rules give the app carrier privileges, so that the app asks the card to run the
+authentication and never sees its key. The P-CSCF then runs in this computer's network, as the client does in step 6:
+the phone's ESP cannot pass the NAT of a container network. This part waits for the app's IMS AKA and the other items
+of its column in [Results and learnings](#results-and-learnings).
+
 ## How it is put together
 
 - **One compose file**, `docker-compose.yaml`, made by `tools/tutorial-compose.py` from a lab of the generator, like the
@@ -228,3 +351,54 @@ system again, and `client-d` signs in and registers again.
   way. Mutual tunnel authentication is not implemented, and the KMS requests go directly (the Linux client's
   `security.kms_via_proxy`, off by default, sends them through the proxy; [Known
   limitations](../../../docs/LIMITATIONS.md), "Home HTTP proxy").
+
+## Results and learnings
+
+### What each client is ready for
+
+Against OpenMCX (part A for the Linux client); the Android column is the app's state today, not yet run.
+
+| 5.1 step | Linux client | Android app |
+|---|---|---|
+| 1, the access | IP network instead of the MCX PDU session ([call flow, G1](CALL_FLOW.md#gaps)) | Wi-Fi, the same |
+| SIP registration with IMS AKA, IPsec | passes; offers every algorithm pair of TS 33.203 annex H | SIP digest over TLS today; IMS AKA with the card in development |
+| 3-12, sign-in | passes (the IdMS form) | OIDC sign-in in the phone's browser; not run against the test |
+| 13-16, KMS | passes: signed with the InK, key set wrapped under the TrK | KMS requests without TrK and InK |
+| 17, service authorisation | passes | PUBLISH with the access token, as in the test |
+| 18, configuration documents | passes: one SUBSCRIBE for the three documents, GETs through the proxy | reads the documents with XCAP, no SUBSCRIBE |
+| 19, group document and GMK | passes: SUBSCRIBE to the group and GKTP documents | reads the group document with XCAP, no SUBSCRIBE |
+| MC log-off, de-REGISTER | passes | MC log-off per service, then SIP de-REGISTER |
+
+So the Android app is not ready for the full test yet. Before part A2 it needs IMS AKA with the card, the TrK and InK
+for its KMS requests, the SIP subscriptions of steps 18 and 19, and the UID form of the test system's reading (below).
+It has no XML signalling protection either: a service configuration that enables it stops the service, with the
+reason shown ([Known limitations](../../../docs/LIMITATIONS.md), "Android app").
+
+### Own deviations
+
+- **Linux client**: none in the test's sequence; the walk-through's departures from the test's set-up are listed in
+  [call flow, Gaps](CALL_FLOW.md#gaps) (the access, the challenge order, the KMS reached directly).
+- **Android app**: no AES-GMAC for the security associations. TS 33.203 clause 7.1 makes the UE adhere to TS 33.210
+  clause 5.3.4, "AES-GMAC with AES-128 shall be supported", and Android's IPsec API offers no AES-GMAC (up to
+  Android 17). The app offers the other pairs; OpenMCX's P-CSCF selects AES-GCM with the unique salt first, which both
+  clients support.
+
+### Spec defects and gaps met on the way
+
+Each is described, with the spec's version, clause and text, in [Known limitations](../../../docs/LIMITATIONS.md):
+
+- "MIKEY-SAKKE UID form" (spec defect, reported): whether the identifier of ECCSI and SAKKE is the raw UID or its
+  base64 text.
+- "KMS request security (TrK/InK)": the details of the signed KMS exchange that the texts leave open.
+- "Home HTTP proxy": the KMS behind the proxy, and the mutual authentication of the tunnel.
+- "CMS subscription proxy PSI" (spec gap): no configuration item for that PSI.
+- "sec-agree option-tag in Proxy-Require" (spec defect, to report).
+- "P-Access-Network-Info": TS 24.229 defines no value for plain IP or a VPN.
+- "Media feature tags of RFC 3840" (spec gap).
+
+### Readings of a conformance test system
+
+For part B the Linux client can follow a test system's reading where the texts leave a choice: the key-wrap padding
+and the schema's `Id` of the KMS exchange, the raw UID, the KMS requests through the home HTTP proxy and the CMS
+subscription PSI. Each is a setting of the Linux client, off by default, and each reading is listed in [Known
+limitations](../../../docs/LIMITATIONS.md) with the text it rests on.

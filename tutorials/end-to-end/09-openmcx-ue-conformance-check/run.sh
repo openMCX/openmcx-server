@@ -5,20 +5,20 @@
 
 # OpenMCX Tutorial 9: the walk-through of TS 37.579-2 test 5.1 (README.md, step 3), each check before the next.
 # Usage: ./run.sh            (the system must be up: docker compose up -d --wait)
-# Writes captures/09-test-5-1-over-ip-run.pcap.gz and, when the system runs with MCX_LOG=debug, the keys of the MC
-# client's IPsec security associations as captures/09-test-5-1-over-ip-run.esp_sa (README.md, step 4), and client-d's
-# status before the log-off as captures/09-test-5-1-over-ip-run.status.json.
-# captures/09-test-5-1-over-ip-full.pcap.gz is the reference run of README.md. Set COMPOSE to another command than
+# Writes captures/09-openmcx-ue-conformance-check-run.pcap.gz and, when the system runs with MCX_LOG=debug, the keys of the MC
+# client's IPsec security associations as captures/09-openmcx-ue-conformance-check-run.esp_sa (README.md, step 4), and client-d's
+# status before the log-off as captures/09-openmcx-ue-conformance-check-run.status.json.
+# captures/09-openmcx-ue-conformance-check-full.pcap.gz is the reference run of README.md. Set COMPOSE to another command than
 # "docker compose" if needed, and OVERRIDE to a second compose file (other images).
 set -euo pipefail
 cd "$(dirname "$0")"
 read -r -a DC <<<"${COMPOSE:-docker compose}"
 DC+=(-f docker-compose.yaml)
 if [ -n "${OVERRIDE:-}" ]; then DC+=(-f "$OVERRIDE"); fi
-CAPTURE=09-test-5-1-over-ip-full.pcap   # in the capture container
-OUT=captures/09-test-5-1-over-ip-run.pcap.gz
-ESP_SA=captures/09-test-5-1-over-ip-run.esp_sa
-STATUS=captures/09-test-5-1-over-ip-run.status.json
+CAPTURE=09-openmcx-ue-conformance-check-full.pcap   # in the capture container
+OUT=captures/09-openmcx-ue-conformance-check-run.pcap.gz
+ESP_SA=captures/09-openmcx-ue-conformance-check-run.esp_sa
+STATUS=captures/09-openmcx-ue-conformance-check-run.status.json
 UE=client-d
 
 # Wait until a Python condition on client-d's status holds; st() is its status.json.

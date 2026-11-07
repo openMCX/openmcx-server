@@ -1,0 +1,92 @@
+{
+  "sip": {
+    "listen": "0.0.0.0",
+    "advertise": "<this computer's address on the VPN>",
+    "port": 5064,
+    "identity": "<public user identity, sip:...>",
+    "auth": "aka",
+    "isim": {
+      "impi": "<private user identity>",
+      "algorithm": "test",
+      "k": "<K, 32 hexadecimal digits>",
+      "res_length": 16
+    },
+    "pcscf": {
+      "address": "<P-CSCF address>",
+      "port": 5060
+    }
+  },
+  "tls": {
+    "ca_file": "/config/tls/ca.crt"
+  },
+  "media": {
+    "bind": "0.0.0.0",
+    "advertise": "<this computer's address on the VPN>",
+    "rtp_port": 4000,
+    "floor_port": 5000,
+    "mode": 0
+  },
+  "control_fifo": "/run/mcx/control",
+  "status_file": "/artifacts/client-d/status.json",
+  "mcptt": {
+    "user_id": "<MCPTT ID, sip:...>",
+    "client_id": "<urn:uuid:... of this client>",
+    "service_uri": "<MCPTT server PSI, sip:...>",
+    "group_id": "<MCPTT group ID, sip:...>",
+    "ue_instance_id": "<urn:uuid:... of this UE>",
+    "documents_on_notify": true
+  },
+  "oauth": {
+    "issuer": "<IdMS issuer, https://...>",
+    "idms_auth_endpoint": "<IdMS authorization endpoint, https://...>",
+    "idms_token_endpoint": "<IdMS token endpoint, https://...>",
+    "jwks_uri": "<IdMS key set, https://...>",
+    "username": "<MC user name at the IdMS>",
+    "password": "<MC user password at the IdMS>",
+    "client_id": "<OAuth client ID of the MC client>",
+    "redirect_uri": "<redirect URI registered for that client ID>"
+  },
+  "http": {
+    "proxy": "<home HTTP proxy, https://...>",
+    "tunnel_auth": "one-way"
+  },
+  "trusted_core": "<P-CSCF address>",
+  "server_address": "<MCPTT server media address>",
+  "endpoints": {
+    "cms": "<CMS XCAP root, https://...>",
+    "gms": "<GMS XCAP root, https://...>"
+  },
+  "gms": {
+    "subscription_psi": "<GMS-URI for the group SUBSCRIBE, sip:...>"
+  },
+  "cms": {
+    "subscription_psi": "<CMS subscription PSI for the configuration SUBSCRIBE, sip:...>"
+  },
+  "security": {
+    "kms_uri": "<KMS address, https://...>",
+    "kms_id": "<KMS URI the KMS documents carry>",
+    "gms_uri": "<GMS identity of the GMK messages>",
+    "kms_via_proxy": true,
+    "kms_keyprov_identity_path": false,
+    "protect_media": true,
+    "protect_floor": true,
+    "transport_keys": {
+      "<MCPTT ID, sip:...>": {
+        "trk": {
+          "file": "/config/transport-keys/trk",
+          "id": "<TrK-ID, 32-bit number>"
+        },
+        "ink": {
+          "file": "/config/transport-keys/ink",
+          "id": "<InK-ID, 32-bit number>"
+        }
+      }
+    },
+    "key_parameter_profile": {
+      "message_type": "<number, from the test system>",
+      "algorithm": "<number, from the test system>",
+      "key_parameters_iei": "<number, from the test system>",
+      "encrypted_payload_iei": "<number, from the test system>"
+    }
+  }
+}

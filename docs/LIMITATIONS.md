@@ -158,7 +158,7 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   identities provisioned with a digest password, on non-3GPP access (the regression labs, tutorials 1 and 2, the
   unit-test tutorials), and IMS AKA for identities provisioned with an IMS AKA subscription, with its credentials held
   in software. On a terminal without 3GPP access (the `aka` labs,
-  [tutorial 9](../tutorials/end-to-end/09-test-5-1-over-ip/README.md), a PC, a VPN to a test system) and on a device behind
+  [tutorial 9](../tutorials/end-to-end/09-openmcx-ue-conformance-check/README.md), a PC, a VPN to a test system) and on a device behind
   an MC gateway UE that routes for it (TS 23.280 clause 11, TS 33.180 clause 5.12.1), these are the IM credentials that
   TS 33.180 clause 6.2.1 allows for "non-3GPP-only MC UEs not equipped with UICC" (TS 33.203 clause 9, TS 24.229
   clause 5.1.1.1B.1). **For testing and debugging only**, the client also runs inside the emulated UEs of tutorials 3a,
