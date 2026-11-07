@@ -390,6 +390,13 @@ SipResponse DataServer::notification(const SipMessage &request, const User &noti
 
   // TS 24.282 clause 12.2.2.1 step 6: a positive notification ends any stored re-delivery.
   held_.erase({notifier.id, mcdata::uuid_text(notice.message)});
+  // A notification about a group a peer owns goes to the peer as its controlling function (TS 24.282 clause 12.2.2.1
+  // steps 7 to 11; TS 29.582 clause 12.2.2), with the notifier as calling user.
+  if (!info.calling_group.empty())
+    if (const auto peer = standard_controller(info.calling_group); !peer.empty()) {
+      info.calling_user = notifier.id;
+      return relay_sds_to_peer(request, notifier, info, peer, {signalling});
+    }
   if (const auto adhoc = adhoc_groups_.find(info.calling_group); adhoc != adhoc_groups_.end()) {
     // TS 24.282 clause 12.2.3 step 15b for an ad hoc group: the notifier must be one of its members.
     if (!adhoc->second.members.contains(notifier.id))

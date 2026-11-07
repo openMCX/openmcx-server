@@ -498,6 +498,8 @@ void DataServer::end_standard_affiliation(const std::string &id, const std::stri
 SipResponse DataServer::relay_sds_to_peer(const SipMessage &request, const User &sender, const mcdata::Info &info,
                                           const std::string &peer, const std::vector<BodyPart> &binary) {
   std::vector<BodyPart> parts{{mcdata::info_mime, mcdata::info_xml(info)}};
+  // A disposition notification keeps the resource list naming the originator (TS 24.282 clause 12.2.2.1 step 5).
+  if (const auto *resources = part(request, resource_lists_mime)) parts.push_back(*resources);
   parts.insert(parts.end(), binary.begin(), binary.end());
   const auto [type, body] = message_body(parts, "mcdata-" + random_id());
   const std::string sds_icsi = mcdata::sds_icsi;
@@ -531,8 +533,18 @@ SipResponse DataServer::peer_sds_to_user(const SipMessage &request, User &target
                                          const std::string &peer) {
   const auto *signalling = part(request, mcdata::signalling_mime);
   const auto *data = part(request, mcdata::payload_mime);
-  if (asserted_identity(request) != peers_.at(peer).service_uri || !signalling || !data)
+  if (asserted_identity(request) != peers_.at(peer).service_uri || !signalling)
     return reject(403, "199 expected MIME bodies not in the request", target.id, "message");
+  // TS 24.282 clause 12.2.2.1 at the terminating side: the peer as controlling function relays a disposition
+  // notification to the originator served here (TS 29.582 clause 12.2.2 step 10).
+  if (mcdata::message_type(signalling->body) == mcdata::MessageType::SdsNotification) {
+    deliver(target, info, {*signalling}, "notification");
+    event("mcdata_peer_notification_delivered", {{"user_id", target.id}, {"server", peer}, {"from", info.calling_user}});
+    SipResponse response;
+    response.status_code = 200;
+    return response;
+  }
+  if (!data) return reject(403, "199 expected MIME bodies not in the request", target.id, "message");
   deliver(target, info, {*signalling, *data}, "sds");
   event("mcdata_peer_sds_delivered",
         {{"user_id", target.id}, {"server", peer}, {"group_id", info.calling_group}, {"from", info.calling_user}});
