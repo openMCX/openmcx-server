@@ -250,6 +250,8 @@ def iwf_config(
             "authorized_gms": [service],
             "authorized_servers": [service],
             "maximum_duration_s": 3600,
+            # TNG2, <on-network-in-progress-emergency-state-cancellation-timeout> (TS 29.379 clause 6.6.3.1.10).
+            "emergency_cancellation_timeout_s": 600,
         },
         # The IWF's speech and floor control ports (TS 29.379 clause 6.1.1), advertised by name as the servers do.
         "media": {"address": "iwf", "port_base": 40000},
@@ -291,6 +293,8 @@ def iwf_config(
                         "control": "tetra_system",
                         "mcptt_group_id": tetra_group,
                         "mc_members": members,
+                        # The IWF as controlling function authorises emergency calls (TS 29.379 clause 6.6.3.1.8.2).
+                        "allow_emergency_call": True,
                     }
                 ]
                 if tetra_group
@@ -668,6 +672,8 @@ def main():
                     "members": [source_user["mcptt_id"] for source_user in users],
                     "protect_media": False,
                     "protect_floor": False,
+                    # As the IWF's own document states it (<allow-MCPTT-emergency-call>).
+                    "allow_emergency_call": True,
                 }
             ]
             if tetra_group
