@@ -25,7 +25,9 @@
         ]
       },
       "adhoc_call": {
-        "allow": true
+        "allow": true,
+        "alert": true,
+        "alert_cancel": true
       },
       "group_call": {
         "emergency": true,
