@@ -210,6 +210,18 @@ def participating_routes(servers, users_by_role):
     return "\n".join(lines)
 
 
+# The Enhanced Status operational values of the IWF lab's groups (TS 24.481 clause 7.2.4.2), numbered as TETRA pre-coded
+# statuses.
+IWF_ENHANCED_STATUS = {
+    "allow_enhanced_status": True,
+    "enhanced_status_values": [
+        {"id": "1", "value": "On scene"},
+        {"id": "2", "value": "En route"},
+        {"id": "3", "value": "Available"},
+    ],
+}
+
+
 # ------------------------------------------------------------------------------
 def iwf_config(
     iwf_source, iwf_psi, iwf_mcptt_id, iwf_mcdata_id, service, group, domain, mcptt_server, spk, tetra_group,
@@ -239,6 +251,12 @@ def iwf_config(
             "route": f"<sip:{mcptt_server}:5061;transport=tls;lr>",
             "spk": {"id": spk["id"], "key": spk["key"]},
         },
+        # TS 100 392-19-1 clause 13.4.2: the SDS applications the IWF carries: LIP (clause 13.4.5) as a binary payload
+        # with Application ID 5, OTAK key management (clause 13.4.3) as the native TETRA message.
+        "sds_applications": [
+            {"protocol_identifier": 10, "application_id": 5, "format": "binary"},
+            {"protocol_identifier": 1, "format": "lmr_message"},
+        ],
         # IWF-2 (TS 29.582 clauses 8.3.2.6 and 8.3.2.7): the MCData server directly, the IWF's PSI the same.
         "mcdata": {
             "service_uri": iwf_psi,
@@ -702,6 +720,9 @@ def main():
                     # With an IWF: <mcdata-allow-transmit-data-in-this-group> for every member (TS 24.481 clause 7.2.4.2),
                     # for the group SDS between the MSs and the MCData users (TS 100 392-19-1 clause 13.2).
                     **({"transmit_all": True} if iwf_source else {}),
+                    # With an IWF: Enhanced Status (TS 24.282 clause 14.2), whose operational value ids are the TETRA
+                    # pre-coded statuses (TS 100 392-19-1 clause 13.4.4).
+                    **(IWF_ENHANCED_STATUS if iwf_source else {}),
                 },
             }
         ]
@@ -715,6 +736,16 @@ def main():
                     # As the IWF's own document states it (<allow-MCPTT-emergency-call>, <allow-MCPTT-emergency-alert>).
                     "allow_emergency_call": True,
                     "allow_emergency_alert": True,
+                    # Its MCData group, which the IWF owns too (TS 29.582 clause 8.3.3): the members and the Enhanced
+                    # Status values the clients read.
+                    "mcdata": {
+                        "members": [source_user["mcdata_id"] for source_user in users],
+                        "sds_supported": True,
+                        "allow_sds": True,
+                        "transmit_all": True,
+                        "allow_emergency_alert": True,
+                        **IWF_ENHANCED_STATUS,
+                    },
                 }
             ]
             if tetra_group
@@ -1006,6 +1037,8 @@ TLS_CA = "/config/tls/ca.crt";
                     "group_id": group,
                     # The MCData group of the group the IWF controls (TS 29.582 clause 8.3.3), affiliated too.
                     **({"groups": [tetra_group]} if tetra_group else {}),
+                    # The IWF's LIP application (TS 100 392-19-1 clauses 13.4.2, 13.4.5), Application ID 5.
+                    **({"applications": [5]} if iwf_source else {}),
                     "fd": {"auto_receive_bytes": 0},
                     "ipconn": {
                         "address": f"10.77.0.{[source_user['role'] for source_user in source['users']].index(role) + 1}"

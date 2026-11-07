@@ -38,6 +38,15 @@
       "emergency_location": {
         "latitude": 1,
         "longitude": 2
+      },
+      "mcdata": {
+        "transmit_data": true,
+        "incoming_any": true,
+        "adhoc": true,
+        "adhoc_participation": true,
+        "emergency_alert": true,
+        "alert_cancel": true,
+        "alert_cancel_any_user": true
       }
     },
     {
@@ -54,6 +63,15 @@
       },
       "adhoc_call": {
         "allow": true
+      },
+      "mcdata": {
+        "transmit_data": true,
+        "incoming_any": true,
+        "adhoc": true,
+        "adhoc_participation": true,
+        "emergency_alert": true,
+        "alert_cancel": true,
+        "alert_cancel_any_user": true
       }
     }
   ],

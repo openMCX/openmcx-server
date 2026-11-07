@@ -80,6 +80,24 @@ SipResponse DataServer::peer_request(const SipMessage &request, const std::strin
   try {
     if (request.method == "OPTIONS") return response;
     // TS 29.582 clause 9.2.2.3.1 (TS 24.282 clause 6.3.1.1): a group standalone SDS for one of the peer's users.
+    // TS 24.282 clauses 6.3.7.1.2 and 6.3.7.1.5 from a peer as controlling function (TS 29.582 clause 18.2.1): an
+    // emergency alert notice or receipt for a user served here, passed to its client.
+    if (request.method == "MESSAGE" && request.request_uri == service_uri_ && accepts(request, mcdata::icsi) &&
+        !part(request, mcdata::signalling_mime))
+      if (const auto *info_part = part(request, mcdata::info_mime)) {
+        const auto info = mcdata::parse_info(info_part->body);
+        if (info.alert || info.emergency) {
+          auto *target = by_id(info.request_uri);
+          if (!target || !target->peer.empty() || asserted_identity(request) != peers_.at(peer).service_uri)
+            return reject(404, "", info.request_uri, "emergency-alert");
+          const auto *location = part(request, mcdata::location_mime);
+          alert_message(*target, info, location ? location->body : std::string{});
+          event("mcdata_peer_alert_delivered", {{"user_id", target->id}, {"server", peer}, {"from", info.calling_user}});
+          SipResponse delivered;
+          delivered.status_code = 200;
+          return delivered;
+        }
+      }
     if (request.method == "MESSAGE" && request.request_uri == service_uri_ && accepts(request, mcdata::sds_icsi)) {
       // TS 24.282 clause 9.2.2.3.2: an SDS for a user served here (the peer as controlling function); otherwise one of
       // the peer's users sending (clause 9.2.2.3.1 at the peer).
@@ -198,10 +216,13 @@ SipResponse DataServer::group_affiliation_publish(const SipMessage &request, con
                                         {"affiliated", entry.groups.contains(group)},
                                         {"groups", entry.groups}});
 
-  // Steps 12 and 13: the notification carries the handled p-id. Step 14 (an outstanding MCData emergency alert on the
-  // group, clause 16.2.3.3) needs the alert routed to the peer, which comes with the peer's data (TS 29.582 cl. 18).
-  pending_.push_back([this, group, user_id, p_id = document.publication_id] {
+  // Steps 12 and 13: the notification carries the handled p-id. Step 14: an outstanding MCData emergency alert on the
+  // group is sent to the newly affiliated user (clause 16.2.3.3), at the peer (TS 29.582 clause 18.1.2).
+  const bool newly = entry.groups.contains(group) && !document.members.front().clients.empty();
+  pending_.push_back([this, group, user_id, p_id = document.publication_id, newly] {
     notify_group_affiliation(group, user_id, p_id);
+    if (newly)
+      if (const auto *member = by_id(user_id)) late_alerts(*member, group);
   });
   return response;
 }
@@ -496,17 +517,18 @@ void DataServer::end_standard_affiliation(const std::string &id, const std::stri
 // and ICSI, this server's PSI asserted (step 13), the SDS bodies unchanged; the peer's final answer is passed on to
 // the client with its Warning.
 SipResponse DataServer::relay_sds_to_peer(const SipMessage &request, const User &sender, const mcdata::Info &info,
-                                          const std::string &peer, const std::vector<BodyPart> &binary) {
+                                          const std::string &peer, const std::vector<BodyPart> &binary, bool alert) {
   std::vector<BodyPart> parts{{mcdata::info_mime, mcdata::info_xml(info)}};
   // A disposition notification keeps the resource list naming the originator (TS 24.282 clause 12.2.2.1 step 5).
   if (const auto *resources = part(request, resource_lists_mime)) parts.push_back(*resources);
   parts.insert(parts.end(), binary.begin(), binary.end());
   const auto [type, body] = message_body(parts, "mcdata-" + random_id());
-  const std::string sds_icsi = mcdata::sds_icsi;
+  const std::string sds_icsi = alert ? mcdata::icsi : mcdata::sds_icsi;
   const auto transaction = request.transaction_id;
   sip_.request("MESSAGE", peers_.at(peer).service_uri, type, body,
                peer_route(peers_, peer,
-                          {{"Accept-Contact", "*;+g.3gpp.mcdata.sds;require;explicit"},
+                          {{"Accept-Contact", alert ? "*;+g.3gpp.mcdata;require;explicit"
+                                                    : "*;+g.3gpp.mcdata.sds;require;explicit"},
                            {"Accept-Contact", "*;+g.3gpp.icsi-ref=\"" + url_encode(sds_icsi) + "\";require;explicit"},
                            {"P-Asserted-Service", sds_icsi},
                            {"P-Asserted-Identity", "<" + service_uri_ + ">"}}),

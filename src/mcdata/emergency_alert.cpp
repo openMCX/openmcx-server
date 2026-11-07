@@ -26,12 +26,19 @@ void DataServer::alert_message(const User &target, mcdata::Info info, const std:
     return csk_expired_not_sent(target.id, "alert", error);
   }
   const auto boundary = "mcdata-" + random_id();
-  sip_.request("MESSAGE", target.sip,
+  std::vector<SipHeader> headers{
+      {"Accept-Contact", "*;+g.3gpp.mcdata;require;explicit"},
+      {"Accept-Contact", "*;+g.3gpp.icsi-ref=\"" + url_encode(mcdata::icsi) + "\";require;explicit"},
+      {"P-Asserted-Service", std::string(mcdata::icsi)}};
+  // A user a peer serves is reached at the peer's PSI (TS 29.582 clause 18.1.2; peer_group_affiliation.cpp).
+  auto uri = target.sip;
+  if (const auto peer = peers_.find(target.peer); peer != peers_.end()) {
+    uri = peer->second.service_uri;
+    headers = peer_route(peers_, target.peer, std::move(headers));
+  }
+  sip_.request("MESSAGE", uri,
                parts.size() == 1 ? std::string(mcdata::info_mime) : "multipart/mixed; boundary=" + boundary,
-               parts.size() == 1 ? parts.front().body : multipart_body(parts, boundary),
-               {{"Accept-Contact", "*;+g.3gpp.mcdata;require;explicit"},
-                {"Accept-Contact", "*;+g.3gpp.icsi-ref=\"" + url_encode(mcdata::icsi) + "\";require;explicit"},
-                {"P-Asserted-Service", std::string(mcdata::icsi)}},
+               parts.size() == 1 ? parts.front().body : multipart_body(parts, boundary), headers,
                [this, id = target.id](const SipResponse &response) {
                  if (response.status_code >= 200)
                    event("mcdata_alert_delivery_result", {{"user_id", id}, {"status", response.status_code}});
@@ -96,6 +103,14 @@ SipResponse DataServer::emergency_alert(const SipMessage &request, User &user, m
 
   // TS 24.282 clause 16.2.3.1 step 2: the MCData ICSI (or an MCData sub-service ICSI) in Accept-Contact.
   if (!accepts(request, mcdata::icsi)) return reject(403, "", user.id, "emergency-alert");
+  // TS 24.282 clause 16.2.2.1: for a group a peer owns (an IWF's, TS 29.582 clause 18.2.1), the request goes to the
+  // peer as the controlling function, with its location.
+  if (const auto peer = standard_controller(group); !peer.empty()) {
+    info.calling_user = user.id;
+    std::vector<BodyPart> location;
+    if (const auto *body = part(request, mcdata::location_mime)) location.push_back(*body);
+    return relay_sds_to_peer(request, user, info, peer, location, true);
+  }
   Json policy;
   try {
     policy = profile(user.id).value("mcdata", Json::object());

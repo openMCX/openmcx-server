@@ -551,8 +551,9 @@ class DataServer {
   void end_standard_affiliation(const std::string &id, const std::string &group);
   // TS 24.282 clause 9.2.2.3.1 steps 9 to 13: a served user's group SDS for a group a peer owns, relayed to the peer;
   // the peer's final answer is passed on (a deferred response).
+  // With the MCData ICSI (an emergency alert, TS 24.282 clause 16.2.2.1) instead of the SDS one when `alert`.
   SipResponse relay_sds_to_peer(const SipMessage &request, const User &sender, const mcdata::Info &info,
-                                const std::string &peer, const std::vector<BodyPart> &binary);
+                                const std::string &peer, const std::vector<BodyPart> &binary, bool alert = false);
   // TS 24.282 clause 9.2.2.3.2: a peer's SDS for a user served here.
   SipResponse peer_sds_to_user(const SipMessage &request, User &target, const mcdata::Info &info,
                                const std::string &peer);
