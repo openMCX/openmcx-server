@@ -15,7 +15,7 @@ switch-on to service, the client under test:
 | Part | Client under test | Network side | Status |
 |---|---|---|---|
 | A, [steps 1 to 5](#1-make-the-configuration) | the Linux client (`client-d`), a terminal without 3GPP access | OpenMCX on this computer | runs |
-| A2, [step 7](#7-the-android-app-as-the-client-under-test-planned) | the Android app on a phone with an ISIM card, over Wi-Fi | OpenMCX on this computer | planned |
+| A2, [step 7](#7-the-android-app-as-the-client-under-test-planned) | the Android app on a phone with an ISIM card, over Wi-Fi | OpenMCX on this computer | planned (its IMS AKA registration runs) |
 | B, [step 6](#6-against-a-conformance-test-system) | the Linux client alone | a conformance test system over a VPN | template |
 
 Against OpenMCX (parts A and A2), OpenMCX takes the place of the test system, and it is not a validated one: the
@@ -317,10 +317,33 @@ Stop with `docker compose down -v` after the de-REGISTER.
 ## 7. The Android app as the client under test (planned)
 
 The same walk-through with the Android app on a phone, over Wi-Fi, as part A2. The phone holds its IMS AKA credentials
-on its card: an ISIM whose access rules give the app carrier privileges, so that the app asks the card to run the
-authentication and never sees its key. The P-CSCF then runs in this computer's network, as the client does in step 6:
-the phone's ESP cannot pass the NAT of a container network. This part waits for the app's IMS AKA and the other items
-of its column in [Results and learnings](#results-and-learnings).
+on its card: an ISIM whose access rules (ARA-M) give the app carrier privileges, so that the app asks the card to run
+the authentication and never sees its key. The app's IMS AKA registration runs today; the whole walk-through waits for
+the other items of its column in [Results and learnings](#results-and-learnings). What the registration needs:
+
+- **The card.** An ISIM with its private user identity in the IMSI form (`<IMSI>@<domain>`), a public user identity
+  `sip:<IMSI>@<domain>` and the home domain (TS 23.003 clause 13), and an access rule for the app's signing
+  certificate. The rule for a debug build's certificate is for a lab only; a release needs the operator's rule for the
+  release certificate.
+- **The subscription.** The card's public user identity is barred, and its registration binds the MC user's identity,
+  the default one of the subscription's implicit set (TS 23.228 clauses 4.3.3.3 and 4.3.3.4): the network names only
+  the MC user's identity in P-Associated-URI. `tools/load-card-keys.py --card <ICCID> --default-impu <the MC user's
+  identity>` puts the subscription and the card's K and OPc into the SIP database, from a key file readable by its
+  owner only; no key is in the generated configuration.
+- **The offer.** The MCX Admin activation names the P-CSCF (`activation.ims_aka.pcscf` in `config/mcxadmin.json`,
+  host and port; TS 24.229 clause 9.2.1 allows a configured address). The app then registers with IMS AKA, on Wi-Fi as
+  on mobile data, when its card gives it carrier privileges and its ISIM holds the identities; otherwise it uses SIP
+  digest over TLS on Wi-Fi and does not register on mobile data. Settings shows the decision: the card used, the
+  registration, the reason, the last authentication and the protection.
+- **The P-CSCF** runs in this computer's network namespace, as the client does in step 6: the phone's ESP cannot pass
+  the NAT of a container network. Its IPsec module deletes every security association and policy of that namespace at
+  start-up: on a computer that has its own IPsec (an IPsec VPN), run it elsewhere.
+
+Checked on an Android 16 phone with a sysmoISIM-SJA5 card over Wi-Fi: the registration (AES-GCM with the unique salt,
+no integrity algorithm of its own), a private call, SDS both ways with a second phone on SIP digest, a reregistration
+on a new set of security associations after a network-initiated re-authentication (the old set closed after its
+transactions), then the MC log-off and the SIP de-REGISTER. In the capture, every SIP message of the phone after the
+initial REGISTER was inside ESP.
 
 ## How it is put together
 
@@ -356,12 +379,13 @@ of its column in [Results and learnings](#results-and-learnings).
 
 ### What each client is ready for
 
-Against OpenMCX (part A for the Linux client); the Android column is the app's state today, not yet run.
+Against OpenMCX (part A for the Linux client); the Android column is the app's state today: its IMS AKA registration
+checked on a phone ([step 7](#7-the-android-app-as-the-client-under-test-planned)), the whole test not yet run.
 
 | 5.1 step | Linux client | Android app |
 |---|---|---|
 | 1, the access | IP network instead of the MCX PDU session ([call flow, G1](CALL_FLOW.md#gaps)) | Wi-Fi, the same |
-| SIP registration with IMS AKA, IPsec | passes; offers every algorithm pair of TS 33.203 annex H | SIP digest over TLS today; IMS AKA with the card in development |
+| SIP registration with IMS AKA, IPsec | passes; offers every algorithm pair of TS 33.203 annex H | passes with the card over Wi-Fi, also the reregistration on a new set; no AES-GMAC (below) |
 | 3-12, sign-in | passes (the IdMS form) | OIDC sign-in in the phone's browser; not run against the test |
 | 13-16, KMS | passes: signed with the InK, key set wrapped under the TrK | KMS requests without TrK and InK |
 | 17, service authorisation | passes | PUBLISH with the access token, as in the test |
@@ -369,8 +393,7 @@ Against OpenMCX (part A for the Linux client); the Android column is the app's s
 | 19, group document and GMK | passes: SUBSCRIBE to the group and GKTP documents | reads the group document with XCAP, no SUBSCRIBE |
 | MC log-off, de-REGISTER | passes | MC log-off per service, then SIP de-REGISTER |
 
-So the Android app is not ready for the full test yet. Before part A2 it needs IMS AKA with the card, the TrK and InK
-for its KMS requests, the SIP subscriptions of steps 18 and 19, and the UID form of the test system's reading (below).
+So the Android app is not ready for the full test yet. Before part A2 it needs the TrK and InK for its KMS requests, the SIP subscriptions of steps 18 and 19, and the UID form of the test system's reading (below).
 It has no XML signalling protection either: a service configuration that enables it stops the service, with the
 reason shown ([Known limitations](../../../docs/LIMITATIONS.md), "Android app").
 
