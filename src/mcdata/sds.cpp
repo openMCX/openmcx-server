@@ -43,6 +43,11 @@ SipResponse DataServer::sds(const SipMessage &sip_request, const User &sender, m
   // TS 24.282 clause 9.2.2.2.1 step 2c: the PCK of a one-to-one SDS travels to the recipient unchanged.
   if (const auto *key = part(sip_request, "application/mikey"); key && request == "one-to-one-sds")
     binary.push_back(*key);
+  // A group a peer owns (an IWF's group controlled by a TETRA system, TS 29.582 clause 9.2.2.4.2): the controlling
+  // function is the peer (peer_group_affiliation.cpp).
+  if (request == "group-sds")
+    if (const auto peer = standard_controller(info.request_uri); !peer.empty())
+      return relay_sds_to_peer(sip_request, sender, info, peer, binary);
   if (request == "one-to-one-sds") {
     if (auto rejected = sds_one_to_one(sip_request, sender, info, request, policy, size, targets))
       return *rejected;

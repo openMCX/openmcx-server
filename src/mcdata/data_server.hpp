@@ -549,6 +549,13 @@ class DataServer {
   SipResponse standard_affiliation_notify(const SipMessage &request);
   void standard_affiliation_lost(const std::string &id, const std::string &group, const std::string &reason);
   void end_standard_affiliation(const std::string &id, const std::string &group);
+  // TS 24.282 clause 9.2.2.3.1 steps 9 to 13: a served user's group SDS for a group a peer owns, relayed to the peer;
+  // the peer's final answer is passed on (a deferred response).
+  SipResponse relay_sds_to_peer(const SipMessage &request, const User &sender, const mcdata::Info &info,
+                                const std::string &peer, const std::vector<BodyPart> &binary);
+  // TS 24.282 clause 9.2.2.3.2: a peer's SDS for a user served here.
+  SipResponse peer_sds_to_user(const SipMessage &request, User &target, const mcdata::Info &info,
+                               const std::string &peer);
   SipResponse group_affiliation_subscribe(const SipMessage &request, const std::string &peer);
   GroupAffiliation group_affiliation_state(const std::string &group, const std::string &user,
                                            const std::string &p_id) const;

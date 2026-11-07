@@ -80,8 +80,16 @@ SipResponse DataServer::peer_request(const SipMessage &request, const std::strin
   try {
     if (request.method == "OPTIONS") return response;
     // TS 29.582 clause 9.2.2.3.1 (TS 24.282 clause 6.3.1.1): a group standalone SDS for one of the peer's users.
-    if (request.method == "MESSAGE" && request.request_uri == service_uri_ && accepts(request, mcdata::sds_icsi))
+    if (request.method == "MESSAGE" && request.request_uri == service_uri_ && accepts(request, mcdata::sds_icsi)) {
+      // TS 24.282 clause 9.2.2.3.2: an SDS for a user served here (the peer as controlling function); otherwise one of
+      // the peer's users sending (clause 9.2.2.3.1 at the peer).
+      if (const auto *info_part = part(request, mcdata::info_mime)) {
+        const auto info = mcdata::parse_info(info_part->body);
+        if (auto *target = by_id(info.request_uri); target && target->peer.empty())
+          return peer_sds_to_user(request, *target, info, peer);
+      }
       return peer_sds(request, peer);
+    }
     const auto event_name = get_header(request.headers, "Event");
     if (request.method == "SUBSCRIBE" && group_affiliation_subscriptions_.contains(request.dialog_id))
       return group_affiliation_subscribe(request, peer);
@@ -471,6 +479,57 @@ void DataServer::end_standard_affiliation(const std::string &id, const std::stri
   else
     standard_outgoing_dialogs_.erase(found->second.dialog);
   standard_outgoing_.erase(found);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 9.2.2.3.1 steps 9 to 13 with the peer as the controlling function: the request to the peer's PSI
+// (step 9), the mcdata-info with the sender's MCData ID (step 12) and the client's other elements, the SDS feature tag
+// and ICSI, this server's PSI asserted (step 13), the SDS bodies unchanged; the peer's final answer is passed on to
+// the client with its Warning.
+SipResponse DataServer::relay_sds_to_peer(const SipMessage &request, const User &sender, const mcdata::Info &info,
+                                          const std::string &peer, const std::vector<BodyPart> &binary) {
+  std::vector<BodyPart> parts{{mcdata::info_mime, mcdata::info_xml(info)}};
+  parts.insert(parts.end(), binary.begin(), binary.end());
+  const auto [type, body] = message_body(parts, "mcdata-" + random_id());
+  const std::string sds_icsi = mcdata::sds_icsi;
+  const auto transaction = request.transaction_id;
+  sip_.request("MESSAGE", peers_.at(peer).service_uri, type, body,
+               peer_route(peers_, peer,
+                          {{"Accept-Contact", "*;+g.3gpp.mcdata.sds;require;explicit"},
+                           {"Accept-Contact", "*;+g.3gpp.icsi-ref=\"" + url_encode(sds_icsi) + "\";require;explicit"},
+                           {"P-Asserted-Service", sds_icsi},
+                           {"P-Asserted-Identity", "<" + service_uri_ + ">"}}),
+               [this, transaction, id = sender.id, group = info.request_uri](const SipResponse &answer) {
+                 if (answer.status_code < 200) return;
+                 SipResponse reply;
+                 reply.status_code = answer.status_code;
+                 reply.reason = answer.reason;
+                 if (const auto warning = get_header(answer.headers, "Warning"); !warning.empty())
+                   reply.headers = {{"Warning", std::string(warning)}};
+                 pending_.push_back([this, transaction, reply] { sip_.respond(transaction, reply); });
+                 event("mcdata_sds_peer_answer", {{"user_id", id}, {"group_id", group}, {"status", answer.status_code}});
+               });
+  event("mcdata_sds_relayed_to_peer", {{"user_id", sender.id}, {"group_id", info.request_uri}, {"server", peer}});
+  SipResponse response;
+  response.deferred = true;
+  return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 9.2.2.3.2 for a peer's SDS: the user named in <mcdata-request-uri> served here gets the SDS (the
+// peer's mcdata-info with the calling user and group, the signalling and payload unchanged); 200 (OK) once sent.
+SipResponse DataServer::peer_sds_to_user(const SipMessage &request, User &target, const mcdata::Info &info,
+                                         const std::string &peer) {
+  const auto *signalling = part(request, mcdata::signalling_mime);
+  const auto *data = part(request, mcdata::payload_mime);
+  if (asserted_identity(request) != peers_.at(peer).service_uri || !signalling || !data)
+    return reject(403, "199 expected MIME bodies not in the request", target.id, "message");
+  deliver(target, info, {*signalling, *data}, "sds");
+  event("mcdata_peer_sds_delivered",
+        {{"user_id", target.id}, {"server", peer}, {"group_id", info.calling_group}, {"from", info.calling_user}});
+  SipResponse response;
+  response.status_code = 200;
+  return response;
 }
 
 } // namespace mcx
