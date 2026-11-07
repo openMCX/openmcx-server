@@ -567,8 +567,10 @@ def main():
         if "private_call" in entry:
             policy = dict(entry["private_call"])
             policy["targets"] = [f"sip:{name}@{domain}" for name in policy.get("targets", [])]
-            if "incoming_from" in policy:
-                policy["incoming_from"] = [f"sip:{name}@{domain}" for name in policy["incoming_from"]]
+            # TS 24.379 clauses 6.3.3.1.13.1 and 6.3.3.1.13.2: the recipients of emergency private calls and alerts.
+            for listed in ("incoming_from", "emergency_recipients", "alert_recipients"):
+                if listed in policy:
+                    policy[listed] = [f"sip:{name}@{domain}" for name in policy[listed]]
             user["private_call"] = policy
         if "adhoc_call" in entry:
             user["adhoc_call"] = dict(entry["adhoc_call"])

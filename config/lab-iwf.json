@@ -18,6 +18,10 @@
         "targets": [
           "bob.mcptt",
           "tetra-1001"
+        ],
+        "emergency": true,
+        "emergency_recipients": [
+          "tetra-1001"
         ]
       },
       "adhoc_call": {
