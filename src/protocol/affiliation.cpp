@@ -177,12 +177,14 @@ bool is_group_affiliation_pidf(std::string_view xml) {
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 9.3.2.2, per-user restriction of presence event package notification information.
-std::string affiliation_user_filter_xml(const std::string &user) {
+std::string affiliation_user_filter_xml(const std::string &user, bool mcdata) {
   conference_uri(user);
   if (user.find('"') != std::string::npos) invalid("invalid affiliation filter user");
+  // TS 24.282 clause 8.4.2: for MCData, the mcdataPI10 binding.
   std::string out = "<?xml version=\"1.0\"?><filter-set xmlns=\"urn:ietf:params:xml:ns:simple-filter\">"
                     "<ns-bindings><ns-binding prefix=\"pidf\" urn=\"" +
-                    std::string(pidf_ns) + "\"/><ns-binding prefix=\"mcpttPI10\" urn=\"" + affiliation_ns +
+                    std::string(pidf_ns) + "\"/><ns-binding prefix=\"" + (mcdata ? "mcdataPI10" : "mcpttPI10") +
+                    "\" urn=\"" + affiliation_namespace(mcdata, false) +
                     "\"/></ns-bindings><filter id=\"affiliation-user\"><what><include>" +
                     xml_escape("//pidf:presence/pidf:tuple[@id=\"" + user + "\"]") +
                     "</include></what></filter></filter-set>";

@@ -184,6 +184,7 @@ void DataServer::remove_binding(std::map<std::string, User>::iterator found, con
   auto &user = found->second;
   user.groups.clear();
   notify_affiliation(user, {}, true);
+  sync_standard_affiliations(user);
   deactivate_aliases(user.id);
   event("mcdata_binding_removed", {{"user_id", user.id}, {"client_id", user.client}, {"reason", reason}});
   users_.erase(found);
@@ -267,6 +268,11 @@ SipResponse DataServer::affiliate(const SipMessage &request, User &user) {
   std::set<std::string> groups;
   if (!removing)
     for (const auto &group : affiliation.groups) {
+      // A group a peer owns: shown affiliated now, the owner's answer arriving later (sync_standard_affiliations).
+      if (!standard_controller(group).empty()) {
+        groups.insert(group);
+        continue;
+      }
       const auto document = group_document(group);
       // Clause 8.3.2.3 step 8: the PUBLISH is answered 200 (OK) whatever the outcome per group; a group the user is
       // not a member of is refused by its controlling function and removed, so the notified status does not list it.
@@ -285,6 +291,7 @@ SipResponse DataServer::affiliate(const SipMessage &request, User &user) {
   if (!removing) response.headers.push_back({"SIP-ETag", user.affiliation_etag});
   event(removing ? "mcdata_deaffiliated" : "mcdata_affiliated", {{"user_id", user.id}, {"groups", user.groups}});
   schedule_notify(user, affiliation.publication_id);
+  sync_standard_affiliations(user);
   for (const auto &group : user.groups)
     if (!previous.contains(group))
       pending_.push_back([this, id = user.id, group] {

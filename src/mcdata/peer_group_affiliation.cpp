@@ -12,6 +12,9 @@
 // owning the group (TS 24.282 clauses 8.3.3.3 to 8.3.3.5); the users so affiliated are kept as users served by that
 // peer (ServedUser.peer), keyed by their MCData ID.
 //
+// The other way round, this server's users affiliate to groups a peer owns in the same form (TS 24.282 clauses
+// 8.3.2.6 and 8.3.2.7; mcdata.group_controllers).
+//
 // Not yet: the SPK protection of MCData signalling and XML with a peer (TS 29.582 clauses 6.5, 6.6; TS 24.282 clause
 // 6.6.3), and data, alerts and notices for the peer's users, which need routing to the peer.
 //
@@ -82,6 +85,9 @@ SipResponse DataServer::peer_request(const SipMessage &request, const std::strin
     const auto event_name = get_header(request.headers, "Event");
     if (request.method == "SUBSCRIBE" && group_affiliation_subscriptions_.contains(request.dialog_id))
       return group_affiliation_subscribe(request, peer);
+    // TS 24.282 clause 8.3.2.7: a NOTIFY of this server's subscription to a user's status at a group the peer owns.
+    if (request.method == "NOTIFY" && standard_outgoing_dialogs_.contains(request.dialog_id))
+      return standard_affiliation_notify(request);
     // Conditions 1, 2 and 4 of clauses 8.3.3.3 and 8.3.3.4: the PSI of this controlling function, an mcdata-info
     // body, the presence event package.
     if ((request.method == "PUBLISH" || request.method == "SUBSCRIBE") && event_name == "presence" &&
@@ -310,6 +316,161 @@ void DataServer::notify_group_affiliation(const std::string &group, const std::s
                   body);
       event("mcdata_standard_affiliation_notified", {{"user_id", user}, {"group", group}, {"p_id", p_id}});
     }
+}
+
+//------------------------------------------------------------------------------
+// Helper: the peer owning a group in the standard form (mcdata.group_controllers naming a peer with
+// standard_affiliation), or empty.
+std::string DataServer::standard_controller(const std::string &group) const {
+  const auto controllers = cfg_.at("mcdata").value("group_controllers", Json::object());
+  if (!controllers.contains(group)) return {};
+  const auto name = controllers.at(group).get<std::string>();
+  const auto peer = peers_.find(name);
+  return peer != peers_.end() && peer->second.standard_affiliation ? name : std::string{};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clauses 8.3.2.6 and 8.3.2.7 (TS 29.582 clauses 8.3.3.3 and 8.3.3.4 at the peer): after the user's
+// affiliations changed, each group owned by a standard peer that the user joined gets a subscription and then an
+// affiliation PUBLISH; each one it left a de-affiliation PUBLISH (Expires 0).
+void DataServer::sync_standard_affiliations(const User &user) {
+  if (!user.peer.empty()) return;
+  for (const auto &group : user.groups) {
+    const auto peer = standard_controller(group);
+    if (peer.empty() || standard_outgoing_.contains({user.id, group})) continue;
+    standard_outgoing_[{user.id, group}] = {};
+    subscribe_standard_affiliation(user, group, peer);
+  }
+  for (auto &[key, outgoing] : standard_outgoing_) {
+    if (key.first != user.id || outgoing.leaving || user.groups.contains(key.second)) continue;
+    outgoing.leaving = true;
+    if (outgoing.subscribed) publish_standard_affiliation(user.id, user.client, key.second, false);
+  }
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 8.3.2.7: the subscription to the user's affiliation status at the group's owner, with the
+// mcdata-info naming the group and the user and the per-user filter (clause 8.4.2).
+void DataServer::subscribe_standard_affiliation(const User &user, const std::string &group, const std::string &peer) {
+  mcdata::Info info;
+  info.request_uri = group;
+  info.calling_user = user.id;
+  const auto [type, body] = message_body({{mcdata::info_mime, mcdata::info_xml(info)},
+                                          {std::string(simple_filter_mime), affiliation_user_filter_xml(user.id, true)}},
+                                         "mcdata-" + random_id());
+  const auto dialog = sip_.subscribe(
+      peers_.at(peer).service_uri, "presence", static_cast<unsigned>(standard_expires),
+      peer_route(peers_, peer, {{"P-Asserted-Service", mcdata::icsi}, {"Accept", "application/pidf+xml"}}),
+      [this, id = user.id, client = user.client, group](const SipResponse &response) {
+        if (response.status_code < 200) return;
+        pending_.push_back([this, id, client, group, refused = response.status_code >= 300] {
+          const auto found = standard_outgoing_.find({id, group});
+          if (found == standard_outgoing_.end()) return;
+          if (refused) {
+            standard_affiliation_lost(id, group, "subscription refused");
+            return;
+          }
+          found->second.subscribed = true;
+          publish_standard_affiliation(id, client, group, !found->second.leaving);
+        });
+      },
+      type, body);
+  standard_outgoing_[{user.id, group}].dialog = dialog;
+  standard_outgoing_dialogs_[dialog] = {user.id, group};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 8.3.2.6: the PUBLISH of an affiliation (Expires 4294967295, the client listed) or a de-affiliation
+// (Expires 0, no client), with this server's PSI asserted and a new p-id; a refused affiliation removes the group, a
+// de-affiliation ends the subscription whatever the answer.
+void DataServer::publish_standard_affiliation(const std::string &id, const std::string &client,
+                                              const std::string &group, bool affiliating) {
+  const auto peer = standard_controller(group);
+  auto &outgoing = standard_outgoing_.at({id, group});
+  outgoing.pending_pid = random_id();
+  mcdata::Info info;
+  info.request_uri = group;
+  info.calling_user = id;
+  GroupAffiliation document;
+  document.mcdata = true;
+  document.group_id = group;
+  document.publication_id = outgoing.pending_pid;
+  document.members = {{id, {}}};
+  if (affiliating) document.members.front().clients.push_back({client, ""});
+  const auto [type, body] = message_body(
+      {{mcdata::info_mime, mcdata::info_xml(info)}, {"application/pidf+xml", group_affiliation_xml(document)}},
+      "mcdata-" + random_id());
+  sip_.publish(peers_.at(peer).service_uri, type, body,
+               peer_route(peers_, peer,
+                          {{"Event", "presence"},
+                           {"Expires", affiliating ? std::to_string(standard_expires) : "0"},
+                           {"P-Asserted-Service", mcdata::icsi},
+                           {"P-Asserted-Identity", "<" + service_uri_ + ">"}}),
+               [this, id, group, affiliating](const SipResponse &response) {
+                 if (response.status_code < 200) return;
+                 pending_.push_back([this, id, group, affiliating, failed = response.status_code >= 300] {
+                   if (!standard_outgoing_.contains({id, group})) return;
+                   if (!affiliating)
+                     end_standard_affiliation(id, group);
+                   else if (failed)
+                     standard_affiliation_lost(id, group, "affiliation refused");
+                 });
+               });
+  event("mcdata_standard_affiliation_sent",
+        {{"user_id", id}, {"group", group}, {"server", peer}, {"affiliating", affiliating}});
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 8.3.2.7, on receiving a NOTIFY: the user's client listed is the affiliation confirmed; not listed
+// while confirmed, or in the notification of the affiliation's own p-id, the affiliation is gone or refused.
+SipResponse DataServer::standard_affiliation_notify(const SipMessage &request) {
+  SipResponse response;
+  response.status_code = 200;
+  const auto key = standard_outgoing_dialogs_.at(request.dialog_id);
+  if (get_header(request.headers, "Subscription-State").starts_with("terminated"))
+    standard_outgoing_dialogs_.erase(request.dialog_id);
+  const auto found = standard_outgoing_.find(key);
+  const auto pidf = body_of(request, "application/pidf+xml");
+  if (found == standard_outgoing_.end() || !pidf || found->second.leaving) return response;
+  const auto document = parse_group_affiliation(*pidf);
+  const auto *user = by_id(key.first);
+  bool listed = false;
+  for (const auto &member : document.members)
+    if (member.user_id == key.first)
+      for (const auto &client : member.clients) listed = listed || (user && client.client_id == user->client);
+  if (listed && !found->second.confirmed) {
+    found->second.confirmed = true;
+    event("mcdata_standard_affiliation_confirmed", {{"user_id", key.first}, {"group", key.second}});
+  } else if (!listed && (found->second.confirmed || (!document.publication_id.empty() &&
+                                                     document.publication_id == found->second.pending_pid))) {
+    pending_.push_back([this, key] { standard_affiliation_lost(key.first, key.second, "not affiliated at the owner"); });
+  }
+  return response;
+}
+
+//------------------------------------------------------------------------------
+// The owner refused or removed the affiliation: the user is no longer affiliated to the group here either, and its
+// client learns that from its own notification (TS 24.282 clause 8.3.2.5).
+void DataServer::standard_affiliation_lost(const std::string &id, const std::string &group, const std::string &reason) {
+  end_standard_affiliation(id, group);
+  event("mcdata_standard_affiliation_lost", {{"user_id", id}, {"group", group}, {"reason", reason}});
+  if (auto *user = by_id(id); user && user->groups.erase(group)) schedule_notify(*user);
+}
+
+//------------------------------------------------------------------------------
+// RFC 6665 section 4.1.2.3: the subscription ends with an in-dialog SUBSCRIBE, Expires 0.
+void DataServer::end_standard_affiliation(const std::string &id, const std::string &group) {
+  const auto found = standard_outgoing_.find({id, group});
+  if (found == standard_outgoing_.end()) return;
+  if (found->second.subscribed)
+    sip_.request_in_dialog(found->second.dialog, "SUBSCRIBE", "", "",
+                           {{"Event", "presence"},
+                            {"Expires", "0"},
+                            {"Accept", "application/pidf+xml"},
+                            {"P-Asserted-Service", mcdata::icsi}});
+  else
+    standard_outgoing_dialogs_.erase(found->second.dialog);
+  standard_outgoing_.erase(found);
 }
 
 } // namespace mcx

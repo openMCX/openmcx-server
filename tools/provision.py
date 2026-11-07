@@ -307,7 +307,10 @@ def iwf_config(
                         "gssi": iwf_source["tetra_group"]["gssi"],
                         "control": "tetra_system",
                         "mcptt_group_id": tetra_group,
+                        # Its MCData group, the IWF owning it too (TS 29.582 clause 8.3.3), with the same identity.
+                        "mcdata_group_id": tetra_group,
                         "mc_members": members,
+                        "mcdata_members": list(mcdata_ids.values()),
                         # The IWF as controlling function authorises emergency calls and alerts (TS 29.379 clauses
                         # 6.6.3.1.8.1 and 6.6.3.1.8.2).
                         "allow_emergency_call": True,
@@ -893,6 +896,8 @@ TLS_CA = "/config/tls/ca.crt";
                     if iwf_source
                     else {}
                 ),
+                # The MCData group of the group the IWF controls is owned by the IWF too (TS 29.582 clause 8.3.3).
+                **({"group_controllers": {tetra_group: "iwf"}} if tetra_group else {}),
             },
         },
     )
@@ -999,6 +1004,8 @@ TLS_CA = "/config/tls/ca.crt";
                     "user_id": user["mcdata_id"],
                     "service_uri": mcdata_service,
                     "group_id": group,
+                    # The MCData group of the group the IWF controls (TS 29.582 clause 8.3.3), affiliated too.
+                    **({"groups": [tetra_group]} if tetra_group else {}),
                     "fd": {"auto_receive_bytes": 0},
                     "ipconn": {
                         "address": f"10.77.0.{[source_user['role'] for source_user in source['users']].index(role) + 1}"

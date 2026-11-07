@@ -532,6 +532,23 @@ class DataServer {
   // TS 100 392-19-1 clause 9.2.1 NOTE 5 (as for MCPTT): a peer's user need not be a member of, or affiliated to, a
   // group when the peer affiliated its own identity on its behalf.
   bool peer_vouched(const User &sender, const std::string &group) const;
+  // The other way round (TS 24.282 clauses 8.3.2.6 and 8.3.2.7): a group a peer owns (mcdata.group_controllers naming
+  // a peer with standard_affiliation), such as an IWF owning the MCData groups of a TETRA system (TS 29.582 clause
+  // 8.3.3): this server's users' affiliations go to it as one PUBLISH per group and user, after a subscription.
+  struct StandardOutgoing {
+    std::string dialog, pending_pid;
+    bool subscribed = false, confirmed = false, leaving = false;
+  };
+  std::map<std::pair<std::string, std::string>, StandardOutgoing> standard_outgoing_; // (MCData ID, group)
+  std::map<std::string, std::pair<std::string, std::string>> standard_outgoing_dialogs_;
+  std::string standard_controller(const std::string &group) const;
+  void sync_standard_affiliations(const User &user);
+  void subscribe_standard_affiliation(const User &user, const std::string &group, const std::string &peer);
+  void publish_standard_affiliation(const std::string &id, const std::string &client, const std::string &group,
+                                    bool affiliating);
+  SipResponse standard_affiliation_notify(const SipMessage &request);
+  void standard_affiliation_lost(const std::string &id, const std::string &group, const std::string &reason);
+  void end_standard_affiliation(const std::string &id, const std::string &group);
   SipResponse group_affiliation_subscribe(const SipMessage &request, const std::string &peer);
   GroupAffiliation group_affiliation_state(const std::string &group, const std::string &user,
                                            const std::string &p_id) const;
