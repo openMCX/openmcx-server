@@ -91,7 +91,14 @@ void DataServer::deliver(const User &target, mcdata::Info info, const std::vecto
   // TS 24.282 clause 13.2.3.3.4 step 2a: the reason of a server-initiated release.
   if (!reason.empty()) headers.push_back({"Reason", "SIP ;cause=200 ;text=\"" + reason + "\""});
   const auto [type, body] = message_body(parts, boundary);
-  sip_.request("MESSAGE", target.sip, type, body, headers, [this, id = target.id, what](const SipResponse &response) {
+  // A user a peer serves is reached at the peer's PSI, routed to it directly (TS 24.282 clause 9.2.2.4.1.1 step 4:
+  // the terminating participating function's PSI, here the peer's; peer_group_affiliation.cpp).
+  auto uri = target.sip;
+  if (const auto peer = peers_.find(target.peer); peer != peers_.end()) {
+    uri = peer->second.service_uri;
+    headers = peer_route(peers_, target.peer, std::move(headers));
+  }
+  sip_.request("MESSAGE", uri, type, body, headers, [this, id = target.id, what](const SipResponse &response) {
     if (response.status_code < 200) return;
     if (response.status_code < 300 && what == "sds") count("sds_delivered");
     event("mcdata_delivery_result", {{"user_id", id},

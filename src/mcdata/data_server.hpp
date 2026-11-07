@@ -527,6 +527,11 @@ class DataServer {
   std::optional<SipResponse> standard_group_refusal(const SipMessage &request, std::string &group, std::string &user,
                                                     std::uint64_t &expires);
   SipResponse group_affiliation_publish(const SipMessage &request, const std::string &peer);
+  // TS 29.582 clause 9.2.2.3.1: a group standalone SDS a peer sends for one of its users.
+  SipResponse peer_sds(const SipMessage &request, const std::string &peer);
+  // TS 100 392-19-1 clause 9.2.1 NOTE 5 (as for MCPTT): a peer's user need not be a member of, or affiliated to, a
+  // group when the peer affiliated its own identity on its behalf.
+  bool peer_vouched(const User &sender, const std::string &group) const;
   SipResponse group_affiliation_subscribe(const SipMessage &request, const std::string &peer);
   GroupAffiliation group_affiliation_state(const std::string &group, const std::string &user,
                                            const std::string &p_id) const;

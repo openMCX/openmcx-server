@@ -194,7 +194,9 @@ std::optional<SipResponse> DataServer::sds_group(const User &sender, mcdata::Inf
   if (document.value("preconfigured_use_only", false))
     return reject(403, "167 call is not allowed on the preconfigured group", sender.id, request.c_str());
   const auto settings = document.value("mcdata", Json());
-  if (!settings.is_object() || !listed(settings.value("members", Json::array()), sender.id))
+  // A peer's user is vouched for by the peer's own affiliation (peer_group_affiliation.cpp).
+  const bool vouched = peer_vouched(sender, group);
+  if (!settings.is_object() || (!listed(settings.value("members", Json::array()), sender.id) && !vouched))
     return reject(403, "116 user is not part of the MCData group", sender.id, request.c_str());
   if (!settings.value("allow_sds", false))
     return reject(403, "206 short data service not allowed for this group", sender.id, request.c_str());
@@ -211,7 +213,7 @@ std::optional<SipResponse> DataServer::sds_group(const User &sender, mcdata::Inf
   if (const auto max = limit(settings, "max_sds_bytes"); max && size > max)
     return reject(403, "217 user not authorised for SDS communications on this group identity due to message size",
                   sender.id, request.c_str());
-  if (!affiliated(sender.id, group))
+  if (!affiliated(sender.id, group) && !vouched)
     return reject(403, "120 user is not affiliated to this group", sender.id, request.c_str());
 
   // TS 24.282 clause 6.3.4: only affiliated members receive the message.

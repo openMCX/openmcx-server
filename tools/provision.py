@@ -213,7 +213,7 @@ def participating_routes(servers, users_by_role):
 # ------------------------------------------------------------------------------
 def iwf_config(
     iwf_source, iwf_psi, iwf_mcptt_id, iwf_mcdata_id, service, group, domain, mcptt_server, spk, tetra_group,
-    members, chat_group, tetra_chat_group, mcdata_service,
+    members, chat_group, tetra_chat_group, mcdata_service, mcdata_ids,
 ):
     """The configuration of openmcx-iwf (its config/iwf.example.json layout): SIP towards the MCPTT and MCData servers
     directly, the lab group bound to a TETRA GSSI controlled by the MC system (its MCPTT and MCData groups), the TETRA
@@ -272,12 +272,19 @@ def iwf_config(
         "decisions": iwf_source["decisions"],
         "identities": {
             "tetra_users": [
-                {"issi": issi, "mcptt_id": f"sip:tetra-{issi}@{domain}", "mcdata_id": f"sip:tetra-{issi}@{domain}"}
+                {
+                    "issi": issi,
+                    "mcptt_id": f"sip:tetra-{issi}@{domain}",
+                    "mcdata_id": f"sip:tetra-{issi}.mcdata@{domain}",
+                }
                 for issi in tetra["issis"]
             ],
             # TS 100 392-19-1 clause 8.2.1: the SSIs that represent MCPTT users to the TETRA MSs (individual calls).
             "mc_users": [
-                {"ssi": ssi, "mcptt_id": f"sip:{name}@{domain}"} for name, ssi in tetra.get("mc_users", {}).items()
+                {"ssi": ssi, "mcptt_id": f"sip:{name}@{domain}"}
+                # Its MCData ID too (TS 100 392-19-1 clause 8.2.1), the calling party of its SDS (clause 13.2.4.2).
+                | ({"mcdata_id": mcdata_ids[f"sip:{name}@{domain}"]} if f"sip:{name}@{domain}" in mcdata_ids else {})
+                for name, ssi in tetra.get("mc_users", {}).items()
             ],
             # TS 100 392-19-1 clause 9.2.1: the GSSI stands for the group's MCPTT and MCData groups (one identity here).
             "groups": [{"gssi": tetra["gssi"], "control": "mc_system", "mcptt_group_id": group, "mcdata_group_id": group}]
@@ -654,6 +661,10 @@ def main():
                     "sip_password": secrets.token_hex(20),
                     "client_id": f"urn:uuid:{uuid.uuid4()}",
                     "groups": [],
+                    # Their MCData ID and SDS right (TS 24.282 clause 9.2.2.3.1 step 7a): an MS's SDS through the IWF
+                    # (TS 100 392-19-1 clause 13.2.3).
+                    "mcdata_id": f"sip:tetra-{issi}.mcdata@{domain}",
+                    "mcdata": {"transmit_data": True},
                     # Their emergency rights (TS 24.379 clause 6.3.3.1.13.2): a TETRA emergency call becomes an MCPTT
                     # emergency group call (TS 29.379 clause 6.4.1.1).
                     **(
@@ -685,6 +696,9 @@ def main():
                     + ([iwf_mcdata_id] if iwf_source else []),
                     "sds_supported": True,
                     "allow_sds": True,
+                    # With an IWF: <mcdata-allow-transmit-data-in-this-group> for every member (TS 24.481 clause 7.2.4.2),
+                    # for the group SDS between the MSs and the MCData users (TS 100 392-19-1 clause 13.2).
+                    **({"transmit_all": True} if iwf_source else {}),
                 },
             }
         ]
@@ -869,7 +883,10 @@ TLS_CA = "/config/tls/ca.crt";
                                 "host": "iwf",
                                 "service_uri": iwf_psi,
                                 "standard_affiliation": True,
-                                "users": [f"sip:tetra-{issi}@{domain}" for issi in iwf_source["tetra"]["issis"]],
+                                # The MSs' MCData IDs (TS 100 392-19-1 clause 8.2.1).
+                                "users": [
+                                    f"sip:tetra-{issi}.mcdata@{domain}" for issi in iwf_source["tetra"]["issis"]
+                                ],
                             }
                         }
                     }
@@ -1060,7 +1077,7 @@ TLS_CA = "/config/tls/ca.crt";
             iwf_config(
                 iwf_source, iwf_psi, iwf_mcptt_id, iwf_mcdata_id, service, group, domain, next(iter(servers)), iwf_spk,
                 tetra_group, [source_user["mcptt_id"] for source_user in users], chat_group, tetra_chat_group,
-                mcdata_service,
+                mcdata_service, {source_user["mcptt_id"]: source_user["mcdata_id"] for source_user in users},
             ),
         )
     # The MCVideo server: the openmcx-mcvideo-server executable, on the same core as the

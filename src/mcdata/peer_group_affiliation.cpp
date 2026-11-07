@@ -19,6 +19,7 @@
 #include "data_server.hpp"
 
 #include <ctime>
+#include <limits>
 #include <optional>
 
 namespace mcx {
@@ -55,6 +56,16 @@ std::optional<std::string> body_of(const SipMessage &message, std::string_view t
 void DataServer::load_peers(bool disable_tls) {
   const auto servers = cfg_.at("mcdata").value("servers", Json::object());
   for (const auto &[name, entry] : servers.items()) peers_[name] = configured_peer(name, entry, disable_tls);
+  // The users a peer serves (ServicePeer::users): reachable through it, and senders through it, while this server
+  // runs (an interworking function's TETRA users, TS 100 392-19-1 clause 8.2.1).
+  for (const auto &[name, peer] : peers_)
+    for (const auto &id : peer.users) {
+      auto &user = users_[id];
+      user.id = id;
+      user.sip = id;
+      user.peer = name;
+      user.expires = std::numeric_limits<std::int64_t>::max();
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -65,6 +76,9 @@ SipResponse DataServer::peer_request(const SipMessage &request, const std::strin
   response.status_code = 200;
   try {
     if (request.method == "OPTIONS") return response;
+    // TS 29.582 clause 9.2.2.3.1 (TS 24.282 clause 6.3.1.1): a group standalone SDS for one of the peer's users.
+    if (request.method == "MESSAGE" && request.request_uri == service_uri_ && accepts(request, mcdata::sds_icsi))
+      return peer_sds(request, peer);
     const auto event_name = get_header(request.headers, "Event");
     if (request.method == "SUBSCRIBE" && group_affiliation_subscriptions_.contains(request.dialog_id))
       return group_affiliation_subscribe(request, peer);
@@ -229,6 +243,41 @@ SipResponse DataServer::group_affiliation_subscribe(const SipMessage &request, c
                   group_affiliation_xml(group_affiliation_state(group, user_id, {})));
   });
   return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 29.582 clause 9.2.2.3.1 steps 6 to 10 as received: the request names the peer's user in
+// <mcdata-calling-user-id> (step 8) and asserts the peer's PSI (step 10); it is then the procedure of TS 24.282
+// clause 9.2.2.4.2 for that user as sender. Only a group SDS ("group-sds") so far; one-to-one SDS comes later.
+SipResponse DataServer::peer_sds(const SipMessage &request, const std::string &peer) {
+  const auto asserted = asserted_identity(request);
+  const auto *info_part = part(request, mcdata::info_mime);
+  const auto *signalling = part(request, mcdata::signalling_mime);
+  const auto *data = part(request, mcdata::payload_mime);
+  if (asserted != peers_.at(peer).service_uri || !info_part || !signalling || !data)
+    return reject(403, "199 expected MIME bodies not in the request", asserted, "message");
+  auto info = mcdata::parse_info(info_part->body);
+  const auto found = users_.find(info.calling_user);
+  if (found == users_.end() || found->second.peer != peer)
+    return reject(404, "141 user unknown to the participating function", info.calling_user, "message");
+  if (info.request_type != "group-sds" ||
+      mcdata::message_type(signalling->body) != mcdata::MessageType::SdsSignalling)
+    return reject(403, "", info.calling_user, "message");
+  // The client the peer names for its user (TS 100 392-19-1 clause 13.2.3.2: how it determines it is its own).
+  found->second.client = info.client_id;
+  event("mcdata_peer_sds", {{"user_id", info.calling_user}, {"server", peer}, {"group_id", info.request_uri}});
+  return sds(request, found->second, info, *signalling, *data);
+}
+
+//------------------------------------------------------------------------------
+bool DataServer::peer_vouched(const User &sender, const std::string &group) const {
+  if (sender.peer.empty()) return false;
+  const auto members = standard_affiliations_.find(group);
+  if (members == standard_affiliations_.end()) return false;
+  const auto now = std::time(nullptr);
+  for (const auto &[id, entry] : members->second)
+    if (entry.peer == sender.peer && entry.expires > now) return true;
+  return false;
 }
 
 //------------------------------------------------------------------------------
