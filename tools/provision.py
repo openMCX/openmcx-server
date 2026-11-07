@@ -309,6 +309,8 @@ def iwf_config(
                         "mcptt_group_id": tetra_chat_group,
                         "call_type": "chat",
                         "mc_members": members,
+                        # TS 29.379 clause 10.2.3.1.1 step 6: the IWF authorises emergency calls (clause 6.6.3.1.8.2).
+                        "allow_emergency_call": True,
                     }
                     # <on-network-max-participant-count> (TS 24.481 clause 7.2.4.2), which the IWF enforces.
                     | (
@@ -705,6 +707,8 @@ def main():
                     "members": [source_user["mcptt_id"] for source_user in users],
                     "protect_media": False,
                     "protect_floor": False,
+                    # As the IWF's own document states it (<allow-MCPTT-emergency-call>).
+                    "allow_emergency_call": True,
                 }
             ]
             if tetra_chat_group
