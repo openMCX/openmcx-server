@@ -23,6 +23,7 @@ TS 35.206; RFC 6733, RFC 2617.
 """
 
 import argparse
+import csv
 import hashlib
 import json
 import os
@@ -228,6 +229,10 @@ def main():
     # The validity of the lab CA and of the certificates it signs, in days (OpenMCX's own CA: its validity period is
     # local policy); 30 by default: default pending maintainer choice (no spec value).
     parser.add_argument("--certificate-days", type=positive_days, default=30)
+    # Card-backed IMS AKA users ("card": ICCID): the owner-only key file of the cards (CSV with at least iccid and imsi
+    # columns). Only the IMSI is read here; K and OPc go into the SIP database after its start
+    # (tools/load-card-keys.py), never into a generated file.
+    parser.add_argument("--card-keys", type=pathlib.Path)
     args = parser.parse_args()
     source = json.loads(args.input.read_text())
     domain = source["domain"]
@@ -245,13 +250,31 @@ def main():
     for source_user in source["users"]:
         if source_user.get("auth", "digest") not in ("digest", "aka"):
             raise ValueError(f"user {source_user['role']}: auth must be digest or aka")
+        # TS 23.003 clause 2.2: the IMSI has at most 15 digits.
+        if "isim_imsi" in source_user and (source_user.get("auth") != "aka"
+                                           or not re.fullmatch(r"[0-9]{6,15}", str(source_user["isim_imsi"]))):
+            raise ValueError(f"user {source_user['role']}: isim_imsi needs auth aka and 6 to 15 digits")
+        if "card" in source_user and (source_user.get("auth", "digest") != "digest"
+                                      or not re.fullmatch(r"[0-9]{18,20}", str(source_user["card"]))):
+            raise ValueError(f"user {source_user['role']}: card needs a digest user and an ICCID of 18 to 20 digits")
+    cards = {}
+    if any("card" in source_user for source_user in source["users"]):
+        if args.card_keys is None:
+            raise SystemExit("users with a card need --card-keys")
+        with args.card_keys.open(newline="") as handle:
+            imsis = {row["iccid"]: row["imsi"] for row in csv.DictReader(handle)}
+        for source_user in source["users"]:
+            if "card" in source_user:
+                if source_user["card"] not in imsis:
+                    raise SystemExit(f"user {source_user['role']}: card {source_user['card']} is not in --card-keys")
+                cards[source_user["role"]] = {"iccid": source_user["card"], "imsi": imsis[source_user["card"]]}
     # IMS AKA identities that no client uses ("aka_probes"), for the refusal and challenge checks of a lab
     # (tests/integration/aka_negative.py), so that those never touch a client's registration.
     probes = list(source.get("aka_probes", []))
     for probe in probes:
         if not re.fullmatch(r"[a-zA-Z0-9_.-]+", probe):
             raise ValueError(f"aka_probes: invalid identity {probe}")
-    aka = bool(probes) or any(source_user.get("auth") == "aka" for source_user in source["users"])
+    aka = bool(probes) or bool(cards) or any(source_user.get("auth") == "aka" for source_user in source["users"])
     out = args.output.resolve()
     if out.exists():
         raise SystemExit(f"Refusing to overwrite {out}; use existing configuration or choose --output")
@@ -399,15 +422,22 @@ def main():
     # AMF of the subscription (TS 33.102 annex H), and the private user identity <user>@<domain> (TS 23.003
     # clause 13.3, the ISIM case of TS 37.579-1 table 5.5.2.13-1). Such a user has no SIP digest password. The keys
     # go to the user's client and the SIP database only, not into site.json.
+    # With "isim_imsi" the ISIM holds identities of the IMSI form (TS 23.003 clause 13.3 lets the private user
+    # identity contain the IMSI), and its public user identity is a barred one for registration only (TS 23.228
+    # clause 5.2.1 item 7); the user's own identity is the default public user identity of the implicit
+    # registration set (kamailio.cfg route[AKA_REGISTER]).
     isims = {}
     for user, entry in zip(users, source["users"]):
         if entry.get("auth") == "aka":
+            imsi = entry.get("isim_imsi")
             isims[user["username"]] = {
-                "impi": f"{entry['username']}@{domain}",
+                "impi": f"{imsi}@{domain}" if imsi else f"{entry['username']}@{domain}",
                 "k": secrets.token_hex(16),
                 "opc": secrets.token_hex(16),
                 "amf": entry.get("amf", "8000"),
             }
+            if imsi:
+                isims[user["username"]]["impu"] = f"sip:{imsi}@{domain}"
             if not re.fullmatch(r"[0-9a-f]{4}", isims[user["username"]]["amf"]):
                 raise ValueError(f"user {entry['role']}: amf must be 4 hex digits")
             user["sip_password"] = ""
@@ -778,11 +808,19 @@ TLS_CA = "/config/tls/ca.crt";
     # The per-IMPI subscription (TS 29.228 clause 6.3.1 step 4): its public user identity, its authentication scheme
     # and, for IMS AKA, the K, OPc and AMF of the vectors (TS 33.102 clause 6.3.2). Identities not listed use SIP
     # digest from the subscriber table.
-    sql += "CREATE TABLE ims_subscription (impi VARCHAR(128) PRIMARY KEY, impu VARCHAR(128) NOT NULL, domain VARCHAR(64) NOT NULL, auth_scheme ENUM('aka','digest') NOT NULL, k BINARY(16) NULL, opc BINARY(16) NULL, amf BINARY(2) NULL, KEY (impu));\n"
-    for user in users:
+    # default_impu: the default public user identity of an implicit registration set whose registered identity (impu)
+    # is barred (TS 23.228 clauses 4.3.3.3, 5.2.1 item 7); NULL: the set is impu alone.
+    sql += "CREATE TABLE ims_subscription (impi VARCHAR(128) PRIMARY KEY, impu VARCHAR(128) NOT NULL, default_impu VARCHAR(128) NULL, domain VARCHAR(64) NOT NULL, auth_scheme ENUM('aka','digest') NOT NULL, k BINARY(16) NULL, opc BINARY(16) NULL, amf BINARY(2) NULL, KEY (impu));\n"
+    for user, entry in zip(users, source["users"]):
+        # A card's subscription (TS 23.228 clause 4.3.3.4: the user's identity shared with it): its identities here,
+        # its K, OPc and AMF from tools/load-card-keys.py; until then the SIP core refuses it (no authentication data).
+        if entry["role"] in cards:
+            imsi = cards[entry["role"]]["imsi"]
+            sql += f"INSERT INTO ims_subscription(impi,impu,default_impu,domain,auth_scheme) VALUES ('{imsi}@{domain}','sip:{imsi}@{domain}','{user['sip_uri']}','{domain}','aka');\n"
         if user["username"] in isims:
             isim = isims[user["username"]]
-            sql += f"INSERT INTO ims_subscription(impi,impu,domain,auth_scheme,k,opc,amf) VALUES ('{isim['impi']}','{user['sip_uri']}','{domain}','aka',UNHEX('{isim['k']}'),UNHEX('{isim['opc']}'),UNHEX('{isim['amf']}'));\n"
+            impu, default = (isim["impu"], f"'{user['sip_uri']}'") if "impu" in isim else (user["sip_uri"], "NULL")
+            sql += f"INSERT INTO ims_subscription(impi,impu,default_impu,domain,auth_scheme,k,opc,amf) VALUES ('{isim['impi']}','{impu}',{default},'{domain}','aka',UNHEX('{isim['k']}'),UNHEX('{isim['opc']}'),UNHEX('{isim['amf']}'));\n"
             continue
         # Digest hashes only (RFC 2617 section 3.2.2.2), the realm being the domain; the SIP
         # password stays in the client's configuration.
@@ -792,6 +830,9 @@ TLS_CA = "/config/tls/ca.crt";
     for probe, isim in probe_isims.items():
         sql += f"INSERT INTO ims_subscription(impi,impu,domain,auth_scheme,k,opc,amf) VALUES ('{isim['impi']}','sip:{probe}@{domain}','{domain}','aka',UNHEX('{isim['k']}'),UNHEX('{isim['opc']}'),UNHEX('{isim['amf']}'));\n"
         save(f"aka-probe-{probe}.json", {"identity": f"sip:{probe}@{domain}", "isim": isim})
+    if cards:
+        # For tools/load-card-keys.py: which cards to load, by ICCID (no keys).
+        save("cards.json", {role: card["iccid"] for role, card in cards.items()})
     save("sip-db.sql", sql)
     # MySQL drops privileges before reading this bind-mounted initialization file.
     # The containing generated directory remains mode 0700 on the host.

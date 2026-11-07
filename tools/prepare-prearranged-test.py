@@ -22,6 +22,8 @@ import json
 import os
 from pathlib import Path
 import shutil
+import re
+import secrets
 import subprocess
 import uuid
 
@@ -2336,6 +2338,22 @@ def main():
         'client-a and client-b, and also with --admin (a tutorial\'s UE on 3GPP access, TS 33.180 clause 6.2.1)',
     )
     parser.add_argument(
+        '--aka-imsi',
+        action='append',
+        metavar='ROLE=IMSI',
+        help='an IMS AKA client\'s ISIM with identities of the IMSI form (TS 23.003 clause 13.3): IMPI <IMSI>@<domain> '
+        'and a barred registration IMPU sip:<IMSI>@<domain>, the client\'s own identity the default public user '
+        'identity of the implicit registration set (TS 23.228 clause 5.2.1 item 7); repeatable',
+    )
+    parser.add_argument(
+        '--test-card',
+        action='append',
+        choices=['client-a', 'client-b', 'client-c', 'client-d'],
+        help='a digest client that also has a card subscription (TS 23.228 clause 4.3.3.4, its identity shared): a '
+        'lab-only key file with a test ICCID, a test-network IMSI (MCC 001, MNC 01) and random K and OPc, loaded into '
+        'the SIP database by tools/load-card-keys.py; repeatable',
+    )
+    parser.add_argument(
         '--aka-transport',
         choices=['tcp', 'udp'],
         default='tcp',
@@ -2430,6 +2448,22 @@ def main():
     for user in source['users']:
         if user['role'] in aka_roles:
             user['auth'] = 'aka'
+    for item in args.aka_imsi or []:
+        role, _, imsi = item.partition('=')
+        user = next((user for user in source['users'] if user['role'] == role), None)
+        if user is None or user.get('auth') != 'aka' or not re.fullmatch(r'[0-9]{6,15}', imsi):
+            parser.error(f'--aka-imsi {item}: needs an IMS AKA client role and an IMSI of 6 to 15 digits')
+        user['isim_imsi'] = imsi
+    test_cards = []
+    for number, role in enumerate(sorted(set(args.test_card or [])), start=1):
+        user = next(user for user in source['users'] if user['role'] == role)
+        if user.get('auth', 'digest') != 'digest':
+            parser.error(f'--test-card {role}: needs a SIP digest client')
+        # ITU-T E.118: an ICCID starts with 89; the IMSI is of the test network MCC 001, MNC 01 (TS 23.003 clause 2.2).
+        card = dict(iccid=f'89000000000000000{number:02d}', imsi=f'0010100000000{number:02d}',
+                    ki=secrets.token_hex(16), opc=secrets.token_hex(16), amf='8000')
+        user['card'] = card['iccid']
+        test_cards.append(card)
     if args.split:
         source['servers'] = [
             dict(name='mcptt-server', role='controlling'),
@@ -2463,6 +2497,15 @@ def main():
     shutil.copyfile(ROOT / 'docker/kamailio.cfg', fixture / 'docker/kamailio.cfg')
     shutil.copyfile(ROOT / 'docker/pcscf.cfg', fixture / 'docker/pcscf.cfg')
     (fixture / 'lab.json').write_text(json.dumps(source, indent=2) + '\n')
+    card_args = []
+    if test_cards:
+        # Owner-only, as an operator's key file (tools/load-card-keys.py refuses any other).
+        keys = fixture / 'test-cards.csv'
+        keys.write_text('iccid,imsi,ki,opc,amf\n' + ''.join(
+            f"{card['iccid']},{card['imsi']},{card['ki']},{card['opc']},{card['amf']}\n" for card in test_cards))
+        keys.chmod(0o600)
+        card_args = ['--card-keys', str(keys)]
+        shutil.copyfile(ROOT / 'tools/load-card-keys.py', fixture / 'tools/load-card-keys.py')
     subprocess.run(
         [
             'python3',
@@ -2471,7 +2514,7 @@ def main():
             str(fixture / 'lab.json'),
             '--output',
             str(fixture / 'generated'),
-        ],
+        ] + card_args,
         check=True,
     )
     if not args.mcvideo:

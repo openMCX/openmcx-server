@@ -50,6 +50,11 @@ struct SipHeader {
 struct SipImsAkaConfig {
   bool enabled = false;
   std::string impi;                 // the private user identity, the username of the Authorization header field
+  // The ISIM's public user identity (EF_IMPU, TS 31.103 clause 4.2.4): From and To of every REGISTER (TS 24.229
+  // clause 5.1.1.2.1 "a) ... the public user identity to be registered"; clause 5.1.1.1A: with an ISIM, the
+  // identities come from it). Empty: the client's identity. It may be a barred identity used only for registration
+  // (TS 23.228 clause 5.2.1 item 7); the network returns the identities to use in P-Associated-URI.
+  std::string impu;
   std::string k, opc, amf = "8000"; // hexadecimal: K and OPc (32 digits), AMF (4 digits) of the ISIM
   std::string sqn_file;             // where the ISIM keeps its sequence numbers (TS 33.102 annex C.2)
   std::string pcscf_address;        // numeric IPv4 or IPv6 address

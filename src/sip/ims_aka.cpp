@@ -361,7 +361,7 @@ void SipEngine::Impl::aka_register(unsigned expires, std::string_view content_ty
 
 //------------------------------------------------------------------------------
 // TS 24.229 clauses 5.1.1.2.1, 5.1.1.2.2, 5.1.1.4.2, 5.1.1.5.1 and 5.1.1.6.2: one REGISTER of the procedure: From
-// and To the public user identity, the Request-URI the home domain, no Route (TS 37.579-1 table 5.5.2.13-1: it goes
+// and To the public user identity (the ISIM's, sip.isim.impu, when configured), the Request-URI the home domain, no Route (TS 37.579-1 table 5.5.2.13-1: it goes
 // to the P-CSCF directly), Expires, the Contact with the protected server port (or the unprotected port for an
 // unprotected REGISTER), Authorization, Security-Client, Security-Verify when protected, Require and Proxy-Require
 // "sec-agree" (RFC 3329 section 2.3.1) and Supported "path"; the Call-ID of the procedure, the next CSeq.
@@ -391,7 +391,8 @@ void SipEngine::Impl::aka_send_register(AkaRoute route, bool new_offer, const st
                             config.media_feature_tags +
                             (instance.empty() ? "" : ";+sip.instance=\"<" + instance + ">\";reg-id=1");
   auto target = pj_view(registrar);
-  auto identity = pj_view(config.identity);
+  // From and To: the ISIM's public user identity when it is configured (TS 24.229 clause 5.1.1.2.1 a) and b)).
+  auto identity = pj_view(config.aka.impu.empty() ? config.identity : config.aka.impu);
   auto contact = pj_view(contact_text);
   auto call_id = pj_view(aka->call_id);
   pjsip_tx_data *created = nullptr;

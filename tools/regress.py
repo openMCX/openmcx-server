@@ -638,6 +638,24 @@ LABS = [
         ],
         ['aka', 'common'],
     ),
+    # IMS AKA with an implicit registration set (TS 23.228 clauses 4.3.3.3, 4.3.3.4 and 5.2.1 item 7; TS 24.229
+    # clauses 5.4.1.2.2, 5.4.1.2.2F and 5.4.1.7): client-a's ISIM has identities of the IMSI form, its REGISTER the
+    # barred registration identity, its own identity the default one that the MC servers serve; client-c (digest)
+    # shares its identity with a test card's subscription, whose keys tools/load-card-keys.py loads; the digest
+    # refusal by private user identity (TS 29.228 clause 6.3.1 step 4). Then calls and SDS to and from client-a.
+    lab(
+        'aka-implicit',
+        'single',
+        ['--aka', '--aka-imsi', 'client-a=001010000000101', '--test-card', 'client-c', '--private-call', '--mcdata'],
+        [
+            'aka_implicit_scenario',
+            'aka_negative_scenario',
+            'prearranged_scenario',
+            'private_call_scenario',
+            'mcdata_sds_scenario',
+        ],
+        ['aka', 'common'],
+    ),
     # The same over UDP (TS 24.229 clause 4.2A, TS 33.203 clause 7.1 UDP case): the AKA UEs send from port_uc to
     # port_ps over UDP, requests of 1300 bytes or more (INVITEs with their bodies) over TCP (RFC 3261 section 18.1.1);
     # aka_refusals_scenario: the P-CSCF's refusals of requests received over a set go back over it, from port_pc to

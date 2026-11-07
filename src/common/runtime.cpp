@@ -107,7 +107,7 @@ SipConfig sip_config(const Json &cfg, bool disable_tls) {
   config.identity = sip.at("identity");
   config.session_expires = sip.value("session_expires", 1800u);
   // TS 33.203 and TS 24.229 clause 5.1.1.2.2: sip.auth "aka": the ISIM (sip.isim: impi, k, opc, amf, and optionally
-  // sqn_file; or algorithm "test", TS 34.108 clause 8.1.2, with k and optionally res_length, no opc) and the preconfigured P-CSCF (sip.pcscf: address, port); sip.port is the protected server port port_us.
+  // impu (EF_IMPU, From and To of the REGISTERs) and sqn_file; or algorithm "test", TS 34.108 clause 8.1.2, with k and optionally res_length, no opc) and the preconfigured P-CSCF (sip.pcscf: address, port); sip.port is the protected server port port_us.
   // The SAs bind IP addresses, so names are resolved here.
   if (sip.value("auth", "digest") == "aka") {
     const auto &isim = sip.at("isim");
@@ -116,6 +116,7 @@ SipConfig sip_config(const Json &cfg, bool disable_tls) {
     config.tls.ca_file = tls.at("ca_file");
     config.aka.enabled = true;
     config.aka.impi = isim.at("impi");
+    config.aka.impu = isim.value("impu", "");
     config.aka.k = isim.at("k");
     config.aka.algorithm = isim.value("algorithm", "milenage");
     if (config.aka.algorithm != "milenage" && config.aka.algorithm != "test")
