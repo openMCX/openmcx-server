@@ -150,10 +150,23 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   SAs have only a short time left before expiring" (clause 7.4.2a, open implementation point: the text gives no value
   for it; the P-CSCF switches at the UE's next message over the new set or at the old set's expiry); emergency
   registration (TS 24.229 clause 5.1.6); IPv6 (the IMS AKA path is tested on IPv4 only); the discovery of the P-CSCF (TS 24.229 clause 9.2.1: its
-  address is configured). The MCX Admin activation and the Credential Service issue digest
-  credentials only (an identity provisioned for IMS AKA gets none), so the clients that MCX Admin activates keep SIP
-  digest over TLS, also where they run on 3GPP access: the dispatcher inside the 5G or 4G UE of tutorials 3, 5 and 6 is
-  a deviation from TS 33.180 clause 6.2.1. The Android app would need carrier privileges to run AKA on the phone's SIM.
+  address is configured). The Credential Service issues digest credentials only (an identity provisioned for IMS AKA
+  gets none), so the dispatcher inside the 5G or 4G UE of tutorials 3, 5 and 6 keeps SIP digest over TLS on 3GPP
+  access: a deviation from TS 33.180 clause 6.2.1. The MCX Admin activation can offer IMS AKA to the Android app
+  (`activation.ims_aka.pcscf`, the P-CSCF it registers through). The app registers with IMS AKA when the phone's card
+  gives it carrier privileges, the card's ISIM holds its identities and the activation offers IMS AKA, on Wi-Fi as on
+  mobile data: the AKA runs on the card, the security associations are the platform's (Android IpSecManager, one per
+  socket). Without such a card it uses SIP digest over TLS on Wi-Fi and does not register on mobile data; it never
+  falls back to digest after an IMS AKA failure (TS 33.203 clause O.1.1 NOTE 2). The card's public user identity is
+  barred and its registration binds the MC user's identity, the default one of the subscription's implicit set (TS
+  23.228 clauses 4.3.3.3 and 4.3.3.4); `tools/load-card-keys.py` puts the card's subscription and keys into the SIP
+  core's database from an owner-only key file. Own deviation: Android's IPsec API (up to API level 37) has no
+  AES-GMAC, which TS 33.210 clause 5.3.4 says "shall be supported" for the ESP profile of TS 33.203 annex H; the app
+  offers the other algorithm pairs, the P-CSCF selects among them. Checked on one Android 16 phone with a
+  sysmoISIM-SJA5 card over Wi-Fi (registration, reregistration on a new set after a network-initiated
+  re-authentication, private call, SDS, MC log-off, de-REGISTER), not yet over a 4G or 5G radio. The carrier-privilege
+  rule on that card (ARA-M) names the debug build's signing certificate: for the lab only; a release needs the
+  operator's rule for the release certificate.
   The Linux client is a research and test client, not a client for operational use. It uses SIP digest over TLS for
   identities provisioned with a digest password, on non-3GPP access (the regression labs, tutorials 1 and 2, the
   unit-test tutorials), and IMS AKA for identities provisioned with an IMS AKA subscription, with its credentials held
