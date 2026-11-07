@@ -359,3 +359,27 @@ func TestAbsoluteFormForwardingAndAssertedIdentity(test *testing.T) {
 		test.Error("a forward entry of an unknown role accepted")
 	}
 }
+
+// ------------------------------------------------------------------------------
+// RFC 3986 section 2.2: the proxy forwards the request target with the client's percent-encoding, origin-form and
+// absolute-form; a signed KMS request names it in its ClientReqUrl (TS 33.180 annex D.2.2).
+func TestPercentEncodingPreserved(test *testing.T) {
+	const keyprov = "/keymanagement/identity/v1/keyprov/sip%3Auser%40example.test"
+	var seen []string
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, forwarded *http.Request) {
+		seen = append(seen, forwarded.RequestURI)
+	}))
+	defer upstream.Close()
+	endpoints := map[string]string{}
+	for _, role := range []string{"gms", "cms", "lms", "kms"} {
+		endpoints[role] = upstream.URL
+	}
+	handler, err := proxyHandler(endpoints, upstream.Client().Transport)
+	if err != nil {
+		test.Fatal(err)
+	}
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/kms"+keyprov, nil))
+	if len(seen) != 1 || seen[0] != keyprov {
+		test.Fatalf("percent-encoding changed: %v", seen)
+	}
+}

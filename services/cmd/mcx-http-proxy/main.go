@@ -185,7 +185,10 @@ func proxyHandlerWith(endpoints map[string]string, transport http.RoundTripper, 
 			Rewrite: func(proxyRequest *httputil.ProxyRequest) {
 				proxyRequest.SetURL(target)
 				proxyRequest.Out.URL.Path = strings.TrimPrefix(proxyRequest.In.URL.Path, prefix)
-				proxyRequest.Out.URL.RawPath = ""
+				// RFC 3986 section 2.2: a reserved character and its percent-encoding are not equivalent, so the
+				// request target keeps the client's encoding (a signed KMS request names its ClientReqUrl, TS 33.180
+				// annex D.2.2).
+				proxyRequest.Out.URL.RawPath = strings.TrimPrefix(proxyRequest.In.URL.RawPath, prefix)
 				// No caller-supplied proxy assertions are trusted by the upstream.
 				proxyRequest.Out.Header.Del("Forwarded")
 				proxyRequest.Out.Header.Del("X-Forwarded-User")
