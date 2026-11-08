@@ -62,11 +62,11 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   RFC 6508 [10]. The resulting UID shall be base64 encoded." It does not say whether ECCSI (RFC 6507) and SAKKE
   (RFC 6508) take the 32 octets of the SHA-256 output or their base64 text. The KMS, the MC servers and the clients
   use the base64 text, as the KMS key set's UserID carries it (annex D.3.3.2); the ETSI test suite for TS 37.579 uses
-  the 32 octets. The KMS, the MC servers, the GMS and the Android app therefore do not interwork with a KMS or peer
-  that uses the 32 octets. The Linux client finds the form at key provisioning: it validates the key set (RFC 6507
-  clause 5.1.2, RFC 6508 clause 6.1.2) for the 32 octets first, then for the text, and uses the form that validates
-  for every ECCSI and SAKKE operation under that KMS (the ETSI test suite's reading where the KMS's keys are for the 32
-  octets, not a 3GPP rule; the status file's `key_management.uid_form`).
+  the 32 octets. The KMS, the MC servers and the GMS therefore do not interwork with a KMS or peer that uses the 32
+  octets. The Linux and Android clients find the form at key provisioning: they validate the key set (RFC 6507 clause
+  5.1.2, RFC 6508 clause 6.1.2) for the 32 octets first, then for the text, and use the form that validates for every
+  ECCSI and SAKKE operation under that KMS (the ETSI test suite's reading where the KMS's keys are for the 32 octets,
+  not a 3GPP rule; the Linux client's status file shows it as `key_management.uid_form`).
 - **Home HTTP proxy** (TS 24.482 annex A.2.1.2). With `<http-proxy>` configured, the Linux and Android clients send
   their HTTP requests over a TLS tunnel to the proxy in absolute-form, the IdMS's directly. Not implemented, as the
   texts leave them open (reported): mutual TLS tunnel authentication with a certificate (TS 24.484 clause 7.2.2.7 g)

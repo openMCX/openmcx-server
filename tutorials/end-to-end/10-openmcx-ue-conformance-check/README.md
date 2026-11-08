@@ -195,17 +195,16 @@ de-REGISTER.
 | 1, access | IP network instead of the MCX PDU session | Wi-Fi instead of the MCX PDU session |
 | SIP registration, IMS AKA, IPsec | passes; every algorithm pair of TS 33.203 annex H | passes with the card, including the reregistration; AES-GMAC is not offered |
 | 3-12, sign-in | passes | OIDC sign-in in the phone's browser; not yet run against the test system |
-| 13-16, KMS | passes: signed, key set wrapped under the TrK | KMS requests are sent without TrK and InK |
+| 13-16, KMS | passes: signed, key set wrapped under the TrK | reads a key set wrapped under a TrK and finds the UID form; no TrK or InK on the phone yet, so the requests are not signed |
 | 17, service authorisation | passes | passes, as the test expects |
-| 18, configuration documents | passes | reads the documents with XCAP GET, without the SUBSCRIBE of the test |
-| 19, group document and GMK | passes | reads the group document with XCAP GET, without the SUBSCRIBE of the test |
+| 18, configuration documents | passes | one SUBSCRIBE, the documents read after its NOTIFY; passes in the Android lab, not yet run against the test system |
+| 19, group document and GMK | passes | group document SUBSCRIBE, read after its NOTIFY (Android lab); no MCPTT group key (GMK) yet |
 | MC log-off, de-REGISTER | passes | passes |
 
 <p align="center"><b>Table 5: What each client is ready for, per step of test 5.1.</b></p>
 
-The OpenMCX MC Client (Android) cannot run the whole test yet. It still lacks the TrK and InK for the KMS exchange
-(steps 13-16), the subscriptions of steps 18 and 19, and the UID form the test system uses. It also has no XML
-signalling protection.
+The OpenMCX MC Client (Android) cannot run the whole test yet. It still lacks the TrK and InK on the phone, which
+the signed KMS exchange of steps 13-16 needs, and the MCPTT group key (GMK). It also has no XML signalling protection.
 
 ### Own deviations
 
@@ -232,7 +231,7 @@ limitations](../../../docs/LIMITATIONS.md) quotes the exact text of each specifi
 | TS 24.229 annex A vs RFC 3329 section 2.3.1 | **sec-agree in Proxy-Require**: "n/a" for most methods against the RFC's MUST | every request after the registration | Proxy-Require sec-agree is sent in INVITE and OPTIONS only; Require and Security-Verify go in every request |
 | TS 37.579-5 table 9.2.2-1 | **TLS cipher suites**: TLS 1.2 RSA, PSK or NULL suites only (default TLS_RSA_WITH_NULL_SHA), against TS 33.210 clause 6.2 (TLS 1.3, AEAD and ECDHE only) | 3-12 and every HTTPS request | a UE that follows TS 33.210 supports none of the listed suites; OpenMCX refuses them |
 | TS 37.579-1, TS 37.579-5 | **ID token key**: the test signs the ID token, but no PIXIT gives the key to verify it (OIDC Core 1.0 section 3.1.3.7 asks for the check) | 9-10 | the IdMS's public key has to be given to the client by other means |
-| TS 33.180 annex F.2.1.1 (RFC 6507, RFC 6508); TS 37.579-1 table 5.5.4.10.8-1 | **UID form**: TS 33.180 V19.5.0 annex F.2.1.1 says "The full 256-bit output shall be used as the identifier within MIKEY-SAKKE (referred to as 'ID' in IETF RFC 6507 [9] and 'a' or 'b' within IETF RFC 6508 [10]. The resulting UID shall be base64 encoded." It does not say whether ECCSI and SAKKE take the 32 octets or their base64 text. TS 37.579-1 V18.1.0 table 5.5.4.10.8-1 inherits the gap: "the PVT is generated using the UID as contained in the UserID of the KSM message" | 13-16 (key set check), 17-19 (CSK, GMK) | The test suite uses the 32 octets. The KMS, the servers and the Android client use the base64 text; the Linux client tries both forms and uses the one that validates the key set |
+| TS 33.180 annex F.2.1.1 (RFC 6507, RFC 6508); TS 37.579-1 table 5.5.4.10.8-1 | **UID form**: TS 33.180 V19.5.0 annex F.2.1.1 says "The full 256-bit output shall be used as the identifier within MIKEY-SAKKE (referred to as 'ID' in IETF RFC 6507 [9] and 'a' or 'b' within IETF RFC 6508 [10]. The resulting UID shall be base64 encoded." It does not say whether ECCSI and SAKKE take the 32 octets or their base64 text. TS 37.579-1 V18.1.0 table 5.5.4.10.8-1 inherits the gap: "the PVT is generated using the UID as contained in the UserID of the KSM message" | 13-16 (key set check), 17-19 (CSK, GMK) | The test suite uses the 32 octets. The KMS and the servers use the base64 text; the Linux and Android clients try both forms and use the one that validates the key set |
 | TS 33.180 annexes D.2.2, D.3.1, D.3.5.3 | **Signature-ID, TrK-ID**: "shall be present" in signed messages, but typed xsd:string with no text form | 13-16 | OpenMCX neither sends nor reads them; the KeyName (the base64 XPK-ID) names the signing key |
 | TS 33.180 annex D.3.5.1 | **Id attributes**: the signatures' References point to an Id typed xsd:string, not xsd:ID | 13-16 | OpenMCX resolves the Id as an ID, as the ETSI test suite does |
 | TS 24.482 annex A.2.1.2 vs TS 33.180 clause 5.3.2 | **KMS behind the home HTTP proxy**: every request but the IdMS's through the proxy, against the KMS used without it; no item tells the UE which applies | 13-16 (test: through the proxy) | the clients reach the KMS directly; the Linux client's option `security.kms_via_proxy` sends the requests through the proxy |
