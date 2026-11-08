@@ -36,7 +36,8 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   identity (the GMS URI) as subject. A KMS of another vendor serves them if it accepts such tokens of the IdMS.
 - **KMS request security (TrK/InK).** The KMS and the key management clients use direct HTTPS (TS 33.180 clause 5.3.2,
   where the TrK and InK "may" be used). With a user's pre-provisioned TrK and InK (the Linux client's and the KMS's
-  `security.transport_keys`), KMS requests are signed and the KMS verifies them (annex D.2.2; the time window is the
+  `security.transport_keys`; the Android client's from the `transport_keys` of its provisioning file, moved into the
+  Android Keystore at import), KMS requests are signed and the KMS verifies them (annex D.2.2; the time window is the
   KMS's `security.kms_request_window_seconds`, which the clause leaves to the KMS), and KMS responses are signed and
   their key set wrapped under the TrK (annexes D.3.1 and D.3.3.2); the InK signs, else the TrK. Where the texts leave
   details open (reported):
@@ -56,7 +57,10 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
     and the text does not say which zone it is in;
   - the KMS URI the KMS's documents carry (clause 3.1, a security domain identifier) and the address the KMS is
     contacted at (TS 24.484 clause 7.2.2.7 `<kms>`) can differ, and no configuration item gives the first: the Linux
-    client's `security.kms_id`, by default the address.
+    and Android clients' `security.kms_id`, by default the address;
+  - own limitation of the Android client: a signed KMS message whose Canonical XML 1.1 form would have to join the
+    xml:base of an omitted ancestor with another one (the xml:base fix-up of Canonical XML 1.1) is refused; the Linux
+    client and the KMS accept it.
 - **MIKEY-SAKKE UID form** (spec defect, reported). TS 33.180 annex F.2.1.1 says "The full 256-bit output shall be
   used as the identifier within MIKEY-SAKKE (referred to as 'ID' in IETF RFC 6507 [9] and 'a' or 'b' within IETF
   RFC 6508 [10]. The resulting UID shall be base64 encoded." It does not say whether ECCSI (RFC 6507) and SAKKE
@@ -73,7 +77,7 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   gives the `<x509>` certificate but no private key) or with a pre-shared key (no PSK identity); a configuration that
   asks for either is refused. The KMS requests stay direct: TS 24.482 A.2.1.2 sends every request but the IdMS's
   through the proxy, TS 33.180 clause 5.3.2 lets the KMS be used without it, and no configuration item tells the UE
-  which applies (reported). The Linux client's `security.kms_via_proxy` (off by default) sends them through the proxy,
+  which applies (reported). The Linux and Android clients' `security.kms_via_proxy` (off by default) sends them through the proxy,
   as the ETSI test system for TS 37.579 expects (that test system's reading, not a 3GPP rule), and then requires a
   TrK for each MC service user (clause 5.3.2: "for public safety users the TrK shall be used"). The MC servers and the GMS reach the other servers directly, not through the proxy with
   X-3GPP-Asserted-Identity (TS 24.482 annex A.2.1.3).
@@ -302,11 +306,17 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   the Android app and the dispatcher position have one.
 - **Android app.** A debug build, run on real phones over Wi-Fi (tutorials 1 and 2), not yet over a 4G or 5G radio.
   Not supported: MCPTT chat calls and the conference subscription, first-to-answer calls, ambient listening, call-back,
-  transfer and forwarding, location-based functional alias activation, MCPTT media and XML protection, MCData over
-  MSRP, IP connectivity, enhanced status and the message store, and the SIP subscriptions to the CMS and GMS documents
-  (it reads them with XCAP). As it has no XML signalling protection, it does not start a service whose service
-  configuration document enables confidentiality or integrity protection (an absent element enables it), or whose
-  document it could not read, and shows why.
+  transfer and forwarding, location-based functional alias activation, XML signalling protection, MCData payload
+  protection (protected and authenticated MCData messages are refused), protected media in ad hoc group calls,
+  MCData over MSRP, IP connectivity, enhanced status and the message store. MCPTT and MCVideo media and transmission
+  control protection (PCK, GMK, CSK) are supported. As it has no XML signalling protection, it does not start a service
+  whose service configuration document enables confidentiality or integrity protection (an absent element enables it),
+  or whose document it could not read, and shows why; with the end-to-end protection of the test fixtures
+  (`--protected`), which turns on MCData signalling protection, the app starts MCPTT and MCVideo but not MCData. At
+  activation the app takes its KMS from the `<kms>` of MCX Admin's UE initial configuration (TS 24.484 clause
+  7.2.2.1); whether it protects MCPTT media and transmission control stays a setting of its provisioning, as for the
+  Linux client. The Linux client's activation does not read that `<kms>`: its KMS comes from its configuration file
+  (own deviation, not fixed yet).
 
 ## Deployment
 

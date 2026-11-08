@@ -27,7 +27,7 @@ configuration and group documents and the group key through the **home HTTP prox
 | Client under test | Steps | Status |
 |---|---|---|
 | the **OpenMCX MC Client (Linux)**, `mc-client`: a terminal without 3GPP access, its IM credentials in software | [1&nbsp;to&nbsp;5](#1-make-the-configuration) | passes every step of test 5.1 |
-| the **OpenMCX MC Client (Android)** on a phone over Wi-Fi, IMS AKA on its ISIM card | [6](#6-the-openmcx-mc-client-android) | IMS AKA registration passes; the other steps are not supported yet ([Table 5](#what-each-client-is-ready-for)) |
+| the **OpenMCX MC Client (Android)** on a phone over Wi-Fi, IMS AKA on its ISIM card | [6](#6-the-openmcx-mc-client-android) | the steps of the test run on a phone, not yet against the test system ([Table 5](#what-each-client-is-ready-for)) |
 
 <p align="center"><b>Table 1: The clients under test.</b></p>
 
@@ -195,16 +195,19 @@ de-REGISTER.
 | 1, access | IP network instead of the MCX PDU session | Wi-Fi instead of the MCX PDU session |
 | SIP registration, IMS AKA, IPsec | passes; every algorithm pair of TS 33.203 annex H | passes with the card, including the reregistration; AES-GMAC is not offered |
 | 3-12, sign-in | passes | OIDC sign-in in the phone's browser; not yet run against the test system |
-| 13-16, KMS | passes: signed, key set wrapped under the TrK | reads a key set wrapped under a TrK and finds the UID form; no TrK or InK on the phone yet, so the requests are not signed |
+| 13-16, KMS | passes: signed, key set wrapped under the TrK | signed with the InK, key set wrapped under the TrK, through the home HTTP proxy; the TrK and InK come with the provisioning file and stay in the Android Keystore; checked on a phone |
 | 17, service authorisation | passes | passes, as the test expects |
-| 18, configuration documents | passes | one SUBSCRIBE, the documents read after its NOTIFY; passes in the Android lab, not yet run against the test system |
-| 19, group document and GMK | passes | group document SUBSCRIBE, read after its NOTIFY (Android lab); no MCPTT group key (GMK) yet |
+| 18, configuration documents | passes | one SUBSCRIBE, the documents read after its NOTIFY; checked on a phone |
+| 19, group document and GMK | passes | group document SUBSCRIBE, read after its NOTIFY, and the GMK from the GKTP subscription to the GMS-URI; checked on a phone |
 | MC log-off, de-REGISTER | passes | passes |
 
 <p align="center"><b>Table 5: What each client is ready for, per step of test 5.1.</b></p>
 
-The OpenMCX MC Client (Android) cannot run the whole test yet. It still lacks the TrK and InK on the phone, which
-the signed KMS exchange of steps 13-16 needs, and the MCPTT group key (GMK). It also has no XML signalling protection.
+The OpenMCX MC Client (Android) ran the steps of test 5.1 on a phone with the card (IMS AKA over Wi-Fi), on a system
+with this tutorial's protections and the KMS reached through the home HTTP proxy, followed by a protected private call
+and the MC log-off; it has not yet been run against the test system. Its transport keys came with its provisioning file
+(the out-of-band distribution of TS 33.180 clause 5.3.2). It has no XML signalling protection, so it does
+not start MCData where the system requires it (Known limitations).
 
 ### Own deviations
 
