@@ -249,7 +249,8 @@ def iwf_config(
             # TS 29.379 clause 10.1.4.1.1 step 2: one openmcx server is the users' participating function too.
             "participating_psi": service,
             "route": f"<sip:{mcptt_server}:5061;transport=tls;lr>",
-            "spk": {"id": spk["id"], "key": spk["key"]},
+            # The RAND keys the SRTCP of floor control with the SPK (TS 33.180 clauses 9.4.5 and 9.4.6).
+            "spk": {"id": spk["id"], "key": spk["key"], "rand": spk["rand"]},
         },
         # TS 100 392-19-1 clause 13.4.2: the SDS applications the IWF carries: LIP (clause 13.4.5) as a binary payload
         # with Application ID 5, OTAK key management (clause 13.4.3) as the Non-3GPP security message (Interworking
@@ -312,7 +313,9 @@ def iwf_config(
                 for name, ssi in tetra.get("mc_users", {}).items()
             ],
             # TS 100 392-19-1 clause 9.2.1: the GSSI stands for the group's MCPTT and MCData groups (one identity here).
-            "groups": [{"gssi": tetra["gssi"], "control": "mc_system", "mcptt_group_id": group, "mcdata_group_id": group}]
+            # TS 29.380 clause 13.3.2 (decision 2026-11-08): its floor control protected, as its group document says.
+            "groups": [{"gssi": tetra["gssi"], "control": "mc_system", "mcptt_group_id": group, "mcdata_group_id": group,
+                        "protect_floor_control": True}]
             # TS 100 392-19-1 clause 9.3.1.2.2: a GSSI mapped to an MCPTT chat group, joined rather than affiliated.
             + (
                 [
@@ -718,7 +721,9 @@ def main():
                 "id": group,
                 "members": [source_user["mcptt_id"] for source_user in users] + ([iwf_mcptt_id] if iwf_source else []),
                 "protect_media": False,
-                "protect_floor": False,
+                # With an IWF: floor control protected (<protect-floor-control-signalling>), under the clients' CSKs and,
+                # towards the IWF, the SPK (TS 29.380 clause 13.3.2, TS 33.180 clauses 9.4.2 and 9.4.5).
+                "protect_floor": bool(iwf_source),
                 # With an IWF: <allow-MCPTT-emergency-call> for every member (TS 24.481 clause 7.2.12.1), for the
                 # emergency calls of the TETRA MSs and of the MC users towards them (TS 100 392-19-1 clause 4.4).
                 **({"allow_emergency_call": True} if iwf_source else {}),
@@ -807,6 +812,14 @@ def main():
         "mcdata_service": {"max_data_size_fd_bytes": 8388608, "service_uri": mcdata_service},
         "mcvideo_service": {"service_uri": mcvideo_service},
     }
+    if iwf_source:
+        # A protected group (the IWF lab's floor control, TS 29.380 clause 13.3.2) needs the agreed key parameter
+        # profile at the GMS, as tools/prepare-prearranged-test.py sets up a protected lab.
+        site["security"] = {
+            "key_parameter_profile": {
+                "message_type": 10, "algorithm": 1, "key_parameters_iei": 0x79, "encrypted_payload_iei": 0x78
+            }
+        }
     save("site.json", site)
     save(
         "http-proxy.json",
