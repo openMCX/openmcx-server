@@ -2380,6 +2380,11 @@ def main():
         '--client-image', help='mcx-client image (built from the openmcx-client repository) instead of the compose default'
     )
     parser.add_argument(
+        '--username', action='append', metavar='ROLE=NAME',
+        help='the user name of client-c or client-d (default the role): its identities become NAME@<domain>, '
+        'NAME.mcptt@<domain>, ...; the role keeps its service and file names (e.g. --username client-d=mc-client)'
+    )
+    parser.add_argument(
         '--key-parameters-iei',
         type=lambda spec: int(spec, 0),
         help='Explicit interoperability-profile IEI; not assigned by supplied TS33.180',
@@ -2430,6 +2435,12 @@ def main():
     for role in ['client-c', 'client-d']:
         # Fixture identities derive from the new role and configured domain.
         source['users'].append(dict(role=role, username=role, mcptt_user=role + '.mcptt'))
+    for item in args.username or []:
+        role, _, name = item.partition('=')
+        user = next((user for user in source['users'] if user['role'] == role and role in ('client-c', 'client-d')), None)
+        if user is None or not re.fullmatch(r'[a-z][a-z0-9-]{0,30}', name):
+            parser.error(f'--username {item}: client-c or client-d, and a lower-case name of letters, digits and -')
+        user['username'], user['mcptt_user'] = name, name + '.mcptt'
     if args.aka:
         if args.split or args.admin or args.keycloak or args.aka_role:
             parser.error('--aka runs on a combined server without --admin, --keycloak or --aka-role')

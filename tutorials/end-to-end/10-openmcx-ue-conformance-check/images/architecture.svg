@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="440" viewBox="0 0 900 440" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Tutorial 10: the OpenMCX MC Client (Linux, software IM credentials) and the OpenMCX MC Client (Android, on a phone with an ISIM card) register with IMS AKA through the P-CSCF, with SIP inside IPsec ESP, sign in at the IdMS, get their keys from the KMS and their documents through the home HTTP proxy</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6472"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3b6fd8"/>
+    </marker>
+  </defs>
+  <rect width="900" height="440" rx="14" fill="#ffffff"/>
+
+  <!-- OpenMCX system -->
+  <rect x="420" y="20" width="455" height="300" rx="16" fill="#fff7ed" stroke="#ea8a1a" stroke-width="2"/>
+  <text x="440" y="48" font-size="15" font-weight="700" fill="#9a4b05">Computer · OpenMCX system (the test network)</text>
+  <text x="440" y="66" font-size="11" fill="#9a4b05">Docker network 172.31.109.0/24 · bridge openmcx-t10</text>
+  <g font-size="13" fill="#1f2937">
+    <rect x="440" y="80" width="415" height="38" rx="9" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="458" y="104" font-weight="600">IdMS</text>
+    <text x="510" y="104" font-weight="600">KMS</text>
+    <text x="560" y="104" font-size="11" fill="#4b5563">signed requests, key set wrapped under the TrK</text>
+    <rect x="440" y="128" width="200" height="52" rx="9" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="540" y="150" text-anchor="middle" font-weight="600">Home HTTP proxy</text>
+    <text x="540" y="168" text-anchor="middle" font-size="11" fill="#4b5563">absolute-form, TLS tunnel</text>
+    <rect x="655" y="128" width="200" height="52" rx="9" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="755" y="150" text-anchor="middle" font-weight="600">CMS · GMS</text>
+    <text x="755" y="168" text-anchor="middle" font-size="11" fill="#4b5563">configuration, groups, GMK</text>
+    <rect x="440" y="190" width="200" height="52" rx="9" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="540" y="221" text-anchor="middle" font-weight="600">SIP core</text>
+    <rect x="655" y="190" width="200" height="52" rx="9" fill="#ffffff" stroke="#f0b46b"/>
+    <text x="755" y="212" text-anchor="middle" font-weight="600">MCPTT · MCData</text>
+    <text x="755" y="230" text-anchor="middle" font-size="11" fill="#4b5563">servers</text>
+    <rect x="440" y="254" width="415" height="52" rx="9" fill="#e8f0fe" stroke="#3b6fd8" stroke-width="1.5"/>
+    <text x="540" y="276" text-anchor="middle" font-weight="700">P-CSCF</text>
+    <text x="540" y="294" text-anchor="middle" font-size="11" fill="#4b5563">.60 · for a phone: host network</text>
+    <text x="755" y="276" text-anchor="middle" font-size="11" fill="#4b5563">IMS AKA, security agreement,</text>
+    <text x="755" y="294" text-anchor="middle" font-size="11" fill="#4b5563">IPsec ESP with the UE (TS 33.203)</text>
+  </g>
+  <path d="M640,216 L655,216" stroke="#5b6472" stroke-width="1.4" fill="none"/>
+  <path d="M640,154 L655,154" stroke="#5b6472" stroke-width="1.4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M540,254 L540,242" stroke="#3b6fd8" stroke-width="1.6" fill="none" marker-end="url(#arrow-blue)"/>
+
+  <!-- the OpenMCX MC Client (Linux) -->
+  <g font-size="13" fill="#1f2937">
+    <rect x="30" y="30" width="290" height="120" rx="12" fill="#eef7ee" stroke="#2f8a3b" stroke-width="1.5"/>
+    <text x="175" y="60" text-anchor="middle" font-weight="700">OpenMCX MC Client (Linux)</text>
+    <text x="175" y="82" text-anchor="middle" font-size="11" fill="#4b5563">Linux client in a container · mc-client</text>
+    <text x="175" y="100" text-anchor="middle" font-size="11" fill="#4b5563">172.31.109.104 · no 3GPP access</text>
+    <text x="175" y="118" text-anchor="middle" font-size="11" fill="#4b5563">IM credentials in software (TS 33.203 clause 9)</text>
+  </g>
+  <!-- the OpenMCX MC Client (Android) -->
+  <g font-size="13" fill="#1f2937">
+    <rect x="30" y="190" width="290" height="120" rx="12" fill="#eef7ee" stroke="#2f8a3b" stroke-width="1.5"/>
+    <text x="175" y="220" text-anchor="middle" font-weight="700">OpenMCX MC Client (Android)</text>
+    <text x="175" y="242" text-anchor="middle" font-size="11" fill="#4b5563">phone on the Wi-Fi · ISIM card</text>
+    <text x="175" y="260" text-anchor="middle" font-size="11" fill="#4b5563">AKA on the card (carrier privileges)</text>
+    <text x="175" y="278" text-anchor="middle" font-size="11" fill="#4b5563">registers with IMS AKA through the card</text>
+  </g>
+
+  <!-- links -->
+  <!-- one arrow per client into the OpenMCX system: SIP (inside IPsec ESP after IMS AKA) and HTTPS -->
+  <path d="M320,90 L414,90" stroke="#3b6fd8" stroke-width="2.4" fill="none" marker-end="url(#arrow-blue)"/>
+  <text x="330" y="81" font-size="11" font-weight="600" fill="#3b6fd8">SIP, HTTPS</text>
+  <path d="M320,250 L414,250" stroke="#3b6fd8" stroke-width="2.4" fill="none" stroke-dasharray="6 4" marker-end="url(#arrow-blue)"/>
+  <text x="330" y="241" font-size="11" font-weight="600" fill="#3b6fd8">SIP, HTTPS</text>
+
+  <!-- legend -->
+  <g font-size="11" fill="#4b5563">
+    <text x="30" y="352" font-weight="700" fill="#1f2937">Legend</text>
+    <path d="M30,372 L80,372" stroke="#3b6fd8" stroke-width="2.4" marker-end="url(#arrow-blue)"/>
+    <text x="90" y="376">SIP to the P-CSCF (inside IPsec ESP after IMS AKA)</text>
+    <text x="90" y="390">and HTTPS to the IdMS, KMS and home HTTP proxy</text>
+    <path d="M30,412 L80,412" stroke="#3b6fd8" stroke-width="2.4" stroke-dasharray="6 4" marker-end="url(#arrow-blue)"/>
+    <text x="90" y="416">the same from the phone over Wi-Fi</text>
+    <rect x="470" y="363" width="22" height="14" rx="3" fill="#eef7ee" stroke="#2f8a3b"/>
+    <text x="500" y="374">client under test</text>
+    <rect x="470" y="385" width="22" height="14" rx="3" fill="#fff7ed" stroke="#ea8a1a"/>
+    <text x="500" y="396">OpenMCX in the place of the test system</text>
+    <rect x="470" y="407" width="22" height="14" rx="3" fill="#e8f0fe" stroke="#3b6fd8"/>
+    <text x="500" y="418">the P-CSCF: security agreement and IPsec</text>
+  </g>
+</svg>

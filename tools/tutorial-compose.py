@@ -19,6 +19,7 @@ a capture service that records the lab's bridge with tcpdump.
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import yaml
@@ -156,8 +157,14 @@ def main():
     parser.add_argument('--tag', default=OPENMCX_TAG, help='the image tag (default the release; develop for later features)')
     parser.add_argument('--name', help='the project and bridge name (default openmcx-utNN)')
     parser.add_argument('--subnet', help='the first three octets of the /24 (default 172.31.N)')
+    parser.add_argument('--service', action='append', default=[], metavar='ROLE=NAME',
+                        help='name a client role\'s service, container host name and files NAME (with the generator\'s '
+                             '--username ROLE=NAME for its identities)')
     parser.add_argument('flags', nargs='*', help='the generator flags of the lab (after --)')
     args = parser.parse_args()
+    renames = dict(item.split('=', 1) for item in args.service)
+    if any(not re.fullmatch(r'client-[a-e]', role) or not re.fullmatch(r'[a-z][a-z0-9-]{0,30}', name) for role, name in renames.items()):
+        parser.error('--service ROLE=NAME: a client role and a lower-case name')
     global TAG
     TAG = args.tag
     lab = json.loads(args.lab.read_text())
@@ -182,7 +189,14 @@ def main():
                 'set -e; '
                 'if [ -e /work/config ]; then echo "./config exists: remove it to start over" >&2; exit 1; fi; '
                 f'python3 /opt/mcxserver/tools/prepare-prearranged-test.py --directory /tmp/lab {flags} >/dev/null; '
-                'cp -r /tmp/lab/generated /work/config; chown -R "$$(stat -c %u:%g /work)" /work/config; '
+                'cp -r /tmp/lab/generated /work/config; '
+                # --service: the role's files, host name and paths take the service's name (its identities already
+                # carry it, from the generator's --username).
+                + ''.join(f'cd /work/config; for f in $$(find . -depth -name "*{role}*"); do '
+                          f'mv "$$f" "$$(dirname "$$f")/$$(basename "$$f" | sed s/{role}/{name}/g)"; done; '
+                          f'grep -rlI -- {role} . | xargs -r sed -i s/{role}/{name}/g; cd /; '
+                          for role, name in renames.items())
+                + 'chown -R "$$(stat -c %u:%g /work)" /work/config; '
                 'echo "wrote ./config (certificates last 30 days)"'
             ],
             'volumes': ['.:/work'],
@@ -233,7 +247,9 @@ def main():
         }
         if depends:
             service['depends_on'] = depends
-        services[name] = service
+        if name in renames:
+            service = json.loads(json.dumps(service).replace(name, renames[name]))
+        services[renames.get(name, name)] = service
     services['client-a']['depends_on']['capture'] = {'condition': 'service_started'}
 
     compose = {
@@ -255,6 +271,8 @@ def main():
     roles = ('sip-core', 'mcptt-server', *(['mcvideo-server'] if 'mcvideo-server' in lab['services'] else []),
              *(['pcscf'] if 'pcscf' in lab['services'] else []), 'client-a', 'client-b', 'client-c', 'client-d')
     first_line = len(roles) - 3
+    named = [renames.get(role, role) for role in ('client-a', 'client-b', 'client-c', 'client-d')]
+    clients = 'client-a to client-d' if not renames else ', '.join(named[:-1]) + ' and ' + named[-1]
     header = [
         f'# OpenMCX: {args.title} ({folder}/README.md).',
         '#',
@@ -262,19 +280,19 @@ def main():
         + ', from the published images: the '
         + ' and '.join([', '.join(servers[:-1]), servers[-1]] if len(servers) > 1 else servers)
         + ' servers, the common',
-        *(['# services, the SIP core, a P-CSCF and four headless clients (client-a to client-d). SIP is in clear (5060/tcp,',
+        *([f'# services, the SIP core, a P-CSCF and four headless clients ({clients}). SIP is in clear (5060/tcp,',
            '# no TLS) but for the IMS AKA client\'s, which goes through the P-CSCF and, after the 401, inside IPsec ESP. A',
            f'# capture of the lab network ({bridge}) is kept for Wireshark. Nothing is published on this computer.']
           if 'pcscf' in lab['services'] else
-          ['# services, the SIP core and four headless clients (client-a to client-d), with SIP in clear (5060/tcp, no',
+          [f'# services, the SIP core and four headless clients ({clients}), with SIP in clear (5060/tcp, no',
            f'# TLS) and a capture of the lab network ({bridge}) for Wireshark. Nothing is published on this computer.']),
         '#',
         '#   docker compose run --rm setup      once: writes ./config',
         '#   docker compose up -d --wait',
         '#   ./run.sh                           the steps; copies the capture to captures/',
         '#',
-        f'# Addresses on {subnet}.0/24: ' + ', '.join(f'{role} .{ADDRESSES[role]}' for role in roles[:first_line]) + ',',
-        '# ' + ', '.join(f'{role} .{ADDRESSES[role]}' for role in roles[first_line:]) + '.',
+        f'# Addresses on {subnet}.0/24: ' + ', '.join(f'{renames.get(role, role)} .{ADDRESSES[role]}' for role in roles[:first_line]) + ',',
+        '# ' + ', '.join(f'{renames.get(role, role)} .{ADDRESSES[role]}' for role in roles[first_line:]) + '.',
         '# Generated by tools/tutorial-compose.py from the lab of tools/prepare-prearranged-test.py ' + flags + '.',
         '',
     ]

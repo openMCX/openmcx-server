@@ -5,23 +5,23 @@
 
 # OpenMCX Tutorial 10: the walk-through of TS 37.579-2 test 5.1 (README.md, step 3), each check before the next.
 # Usage: ./run.sh            (the system must be up: docker compose up -d --wait)
-# Writes captures/10-openmcx-ue-conformance-check-run.pcap.gz and, when the system runs with MCX_LOG=debug, the keys of the MC
-# client's IPsec security associations as captures/10-openmcx-ue-conformance-check-run.esp_sa (README.md, step 4), and client-d's
-# status before the log-off as captures/10-openmcx-ue-conformance-check-run.status.json.
-# captures/10-openmcx-ue-conformance-check-full.pcap.gz is the reference run of README.md. Set COMPOSE to another command than
+# Writes captures/run-ue-conformance.pcap.gz and, when the system runs with MCX_LOG=debug, the keys of the MC
+# client's IPsec security associations as captures/run-ue-conformance.esp_sa (README.md, step 4), and the MC client's
+# status before the log-off as captures/run-ue-conformance.status.json.
+# captures/linux-ue-conformance.pcap is the reference run of README.md. Set COMPOSE to another command than
 # "docker compose" if needed, and OVERRIDE to a second compose file (other images).
 set -euo pipefail
 cd "$(dirname "$0")"
 read -r -a DC <<<"${COMPOSE:-docker compose}"
 DC+=(-f docker-compose.yaml)
 if [ -n "${OVERRIDE:-}" ]; then DC+=(-f "$OVERRIDE"); fi
-CAPTURE=10-openmcx-ue-conformance-check-full.pcap   # in the capture container
-OUT=captures/10-openmcx-ue-conformance-check-run.pcap.gz
-ESP_SA=captures/10-openmcx-ue-conformance-check-run.esp_sa
-STATUS=captures/10-openmcx-ue-conformance-check-run.status.json
-UE=client-d
+CAPTURE=ue-conformance.pcap   # in the capture container
+OUT=captures/run-ue-conformance.pcap.gz
+ESP_SA=captures/run-ue-conformance.esp_sa
+STATUS=captures/run-ue-conformance.status.json
+UE=mc-client
 
-# Wait until a Python condition on client-d's status holds; st() is its status.json.
+# Wait until a Python condition on the MC client's status holds; st() is its status.json.
 wait_for() {
   local label=$1 condition=$2 timeout=${3:-60}
   "${DC[@]}" exec -T "$UE" python3 - "$condition" "$timeout" <<'PY' || { echo "  FAILED: $label" >&2; exit 1; }
@@ -29,7 +29,7 @@ import json, sys, time
 condition, deadline = sys.argv[1], time.monotonic() + float(sys.argv[2])
 def st():
     try:
-        return json.load(open('/artifacts/client-d/status.json'))
+        return json.load(open('/artifacts/mc-client/status.json'))
     except (OSError, ValueError):
         return {}
 while time.monotonic() < deadline:
@@ -41,11 +41,11 @@ PY
   echo "  ok: $label"
 }
 
-# Print part of client-d's status (a Python expression on st()), as JSON.
+# Print part of the MC client's status (a Python expression on st()), as JSON.
 show() {
   "${DC[@]}" exec -T "$UE" python3 - "$1" <<'PY'
 import json, sys
-st = lambda: json.load(open('/artifacts/client-d/status.json'))
+st = lambda: json.load(open('/artifacts/mc-client/status.json'))
 print('   ', json.dumps(eval(sys.argv[1])))
 PY
 }
@@ -91,10 +91,10 @@ else
 fi
 
 step '8. MC log-off (PUBLISH with Expires 0 per service), then SIP de-REGISTER'
-# client-d's status as the test left it, before the log-off ends the registration and the services.
+# the MC client's status as the test left it, before the log-off ends the registration and the services.
 mkdir -p captures
-"${DC[@]}" exec -T "$UE" cat /artifacts/client-d/status.json >"$STATUS"
-echo "  client-d's status before the log-off: $STATUS"
+"${DC[@]}" exec -T "$UE" cat /artifacts/mc-client/status.json >"$STATUS"
+echo "  the MC client's status before the log-off: $STATUS"
 echo "  \$ $UE: log-off"
 "${DC[@]}" exec -T "$UE" mcx-client --config "/config/$UE.json" --command log-off >/dev/null
 wait_for 'every service answered 200, then the de-REGISTER 200' "st().get('logged_off') and st().get('log_off') and all(code == 200 for code in st()['log_off'].values()) and st().get('deregistered') == 200" 60
