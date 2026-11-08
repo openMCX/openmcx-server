@@ -885,6 +885,13 @@ int main() {
     rejects([&] { (void)parse_initial_http_proxy(initial("<GMS-URI>sip:gms-proxy@x</GMS-URI>")); });
     rejects([&] { (void)parse_initial_http_proxy(server_info("", "<mutual-authentication>false</mutual-authentication>")); });
     rejects([&] { (void)parse_initial_http_proxy(server_info("<http-proxy/>", "<mutual-authentication>yes</mutual-authentication>")); });
+    // TS 24.484 clause 7.2.2.1 item 3 f): the KMS of the UE initial configuration.
+    check(parse_initial_kms(server_info("<http-proxy/>", "<mutual-authentication>false</mutual-authentication>")) ==
+              "https://kms",
+          "KMS of the UE initial configuration");
+    check(parse_initial_kms(initial("<App-Server-Info><kms/></App-Server-Info>")).empty(), "no KMS named");
+    rejects([&] { (void)parse_initial_kms(initial("<App-Server-Info><gms>https://gms</gms></App-Server-Info>")); });
+    rejects([&] { (void)parse_initial_kms(initial("<GMS-URI>sip:gms-proxy@x</GMS-URI>")); });
   }
   // TS 24.379 clauses 6.6.2.3 and 6.6.3.3, TS 24.484 clauses 8.4.2.1, 9.4.2.1 and 10.4.2.1: the signalling protection
   // of a service configuration document; an absent element (or parent) means enabled, only "false" disables.

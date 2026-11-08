@@ -1569,6 +1569,8 @@ def add_admin(fixture, compose, args):
                 function: (f'https://{function}:8443' if 'http' in client else 'https://http-proxy:8443/' + function)
                 for function in ('cms', 'gms')
             },
+            # TS 24.484 clause 7.2.2.1 item 3 f): the KMS of the UE initial configuration, where the clients use one.
+            **({'kms': client['security']['kms_uri']} if client.get('security', {}).get('kms_uri') else {}),
         },
         xcap_roots={function: client['endpoints'][function] for function in ('cms', 'gms')},
         trust_root_file='/config/tls/ca.crt',

@@ -255,6 +255,16 @@ InitialHttpProxy parse_initial_http_proxy(std::string_view xml) {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.484 clause 7.2.2.1 item 3 f): <on-network> / <App-Server-Info> / <kms>, mandatory.
+std::string parse_initial_kms(std::string_view xml) {
+  static constexpr const char *ns = "urn:3gpp:mcptt:mcpttUEinitConfig:1.0";
+  auto doc = document(xml);
+  auto root = xmlDocGetRootElement(doc.get());
+  if (!is(root, "mcptt-UE-initial-configuration", ns)) invalid("wrong UE initial configuration root");
+  return scalar(unique_child(unique_child(unique_child(root, "on-network", ns), "App-Server-Info", ns), "kms", ns));
+}
+
+//------------------------------------------------------------------------------
 // TS 24.481 clause 7.2.4.2: the <list-service> of a group document.
 static xmlNode *group_list_service(xmlDoc *doc) {
   auto root = xmlDocGetRootElement(doc);

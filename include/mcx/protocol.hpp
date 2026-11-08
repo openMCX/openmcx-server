@@ -257,6 +257,11 @@ struct InitialHttpProxy {
   bool mutual = false;
 };
 InitialHttpProxy parse_initial_http_proxy(std::string_view xml);
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 7.2.2.1 item 3 f) (TS 24.483 clause 8.2.44 KMS): the <kms> of <App-Server-Info>, "the URI used to
+// contact the key management server"; the element is mandatory, its value empty when the document names none.
+std::string parse_initial_kms(std::string_view xml);
 //------------------------------------------------------------------------------
 // TS 24.481 clause 7.2.4.2: <preconfigured-group-use-only> of a group document (<list-service>): calls on
 // the group are not allowed (TS 24.379 clause 10.1.5.2.1 step 1A, warning 167 of TS 24.379 table 4.4.2-2).

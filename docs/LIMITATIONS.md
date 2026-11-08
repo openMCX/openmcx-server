@@ -313,10 +313,9 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   whose service configuration document enables confidentiality or integrity protection (an absent element enables it),
   or whose document it could not read, and shows why; with the end-to-end protection of the test fixtures
   (`--protected`), which turns on MCData signalling protection, the app starts MCPTT and MCVideo but not MCData. At
-  activation the app takes its KMS from the `<kms>` of MCX Admin's UE initial configuration (TS 24.484 clause
-  7.2.2.1); whether it protects MCPTT media and transmission control stays a setting of its provisioning, as for the
-  Linux client. The Linux client's activation does not read that `<kms>`: its KMS comes from its configuration file
-  (own deviation, not fixed yet).
+  activation the app, as the Linux client, takes its KMS from the `<kms>` of MCX Admin's UE initial configuration
+  (TS 24.484 clause 7.2.2.1); whether it protects MCPTT media and transmission control stays a setting of its
+  provisioning, as for the Linux client.
 
 ## Deployment
 
