@@ -225,7 +225,7 @@ IWF_ENHANCED_STATUS = {
 # ------------------------------------------------------------------------------
 def iwf_config(
     iwf_source, iwf_psi, iwf_mcptt_id, iwf_mcdata_id, service, group, domain, mcptt_server, spk, tetra_group,
-    members, chat_group, tetra_chat_group, mcdata_service, mcdata_ids,
+    members, chat_group, tetra_chat_group, mcdata_service, mcdata_ids, mcdata_spk,
 ):
     """The configuration of openmcx-iwf (its config/iwf.example.json layout): SIP towards the MCPTT and MCData servers
     directly, the lab group bound to a TETRA GSSI controlled by the MC system (its MCPTT and MCData groups), the TETRA
@@ -262,6 +262,12 @@ def iwf_config(
             "service_uri": iwf_psi,
             "controlling_psi": mcdata_service,
             "route": "<sip:mcdata-server:5061;transport=tls;lr>",
+            # TS 29.582 clauses 4.5, 6.5 and 6.6: the SPK shared with the MCData server, and the Protected Payload
+            # wire profile the servers use (TS 33.180 table 8.5.4.1-1).
+            "spk": {"id": mcdata_spk["id"], "key": mcdata_spk["key"]},
+            "key_parameter_profile": {
+                "message_type": 10, "algorithm": 1, "key_parameters_iei": 0x79, "encrypted_payload_iei": 0x78
+            },
         },
         "swmi": {"listen": "0.0.0.0", "port": 15000},
         # IWF-3 (TS 23.283 clause 7.4.3; TS 24.481 clauses 6.2.5.1, 6.2.5.3): the IWF serves the group documents of its
@@ -551,6 +557,13 @@ def main():
         if iwf_source
         else None
     )
+    # TS 29.582 clauses 4.5 and 6.6.1: the SPK the IWF and the MCData server share; the IWF opens what it receives by
+    # the key ID, so its SPK-ID differs from the MCPTT one.
+    iwf_mcdata_spk = None
+    while iwf_source and (iwf_mcdata_spk is None or iwf_mcdata_spk["id"] == iwf_spk["id"]):
+        iwf_mcdata_spk = {
+            "id": (3 << 28) | secrets.randbelow(1 << 28), "key": secrets.token_hex(16), "rand": secrets.token_hex(16)
+        }
     endpoints = {function: f"https://{function}:8443" for function in ("idms", "gms", "cms", "lms", "kms")}
     # <MCDataContentServerURI>: the media storage function (TS 24.282 clause 10.2.2.1).
     # Clients and file URLs use the HTTP proxy (TS 24.482 annex A); the servers reach
@@ -917,6 +930,9 @@ TLS_CA = "/config/tls/ca.crt";
                                 "host": "iwf",
                                 "service_uri": iwf_psi,
                                 "standard_affiliation": True,
+                                # TS 29.582 clauses 4.5 and 6.6.1 (TS 24.282 clause 6.6.1): the SPK the IWF and the
+                                # MCData server share, provisioned directly; its own SPK-ID, apart from the MCPTT one.
+                                "spk": iwf_mcdata_spk,
                                 # The MSs' MCData IDs (TS 100 392-19-1 clause 8.2.1).
                                 "users": [
                                     f"sip:tetra-{issi}.mcdata@{domain}" for issi in iwf_source["tetra"]["issis"]
@@ -1118,6 +1134,7 @@ TLS_CA = "/config/tls/ca.crt";
                 iwf_source, iwf_psi, iwf_mcptt_id, iwf_mcdata_id, service, group, domain, next(iter(servers)), iwf_spk,
                 tetra_group, [source_user["mcptt_id"] for source_user in users], chat_group, tetra_chat_group,
                 mcdata_service, {source_user["mcptt_id"]: source_user["mcdata_id"] for source_user in users},
+                iwf_mcdata_spk,
             ),
         )
     # The MCVideo server: the openmcx-mcvideo-server executable, on the same core as the

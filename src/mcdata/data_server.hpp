@@ -158,6 +158,21 @@ class DataServer {
 
   std::vector<BodyPart> open_from(const keying::KeyMessage &key, std::vector<BodyPart> parts);
 
+  // ---- Protection with a peer server (protection.cpp): TS 24.282 clauses 6.5.2.2, 6.5.2.3.2, 6.5.3.2, 6.5.3.3.2,
+  // 6.6.3.3 and 6.6.3.4, TS 29.582 clauses 6.5 and 6.6 (an interworking function) ----
+  // Between servers the XPK and the DPPK are the SPK shared with the peer (mcdata.servers.<peer>.spk): what is sent
+  // to the peer has its MCData Data signalling sealed, its sensitive XML encrypted and its XML bodies signed, as
+  // <protection-between-mcdata-servers>/<allow-signalling-protection> enables it ("or no <allow-signalling-protection>
+  // element is present"); what the peer sends is verified, decrypted and opened under the SPK its key ID names.
+  unsigned peer_sealed_ = 0, peer_opened_ = 0, peer_encrypted_ = 0, peer_decrypted_ = 0, peer_signed_ = 0,
+           peer_verified_ = 0;
+
+  std::optional<xmlsec::Key> peer_xml_key(const std::string &peer, bool sending) const;
+
+  std::vector<BodyPart> protect_for_peer(const std::string &peer, std::vector<BodyPart> parts);
+
+  std::vector<BodyPart> open_from_peer(const std::string &peer, std::vector<BodyPart> parts);
+
   static void require_key_in_use(const keying::KeyMessage &csk);
 
   void require_xpk_in_use(const xmlsec::Key &key) const;

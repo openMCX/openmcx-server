@@ -145,6 +145,10 @@ void DataServer::save_status() {
                                       {"opened", signalling_opened_},
                                       {"sealed", signalling_sealed_},
                                       {"refused", signalling_refused_}};
+  // The protection with peer servers (protection.cpp, protect_for_peer and open_from_peer).
+  status_["peer_protection"] = {{"sealed", peer_sealed_},       {"opened", peer_opened_},
+                                {"encrypted", peer_encrypted_}, {"decrypted", peer_decrypted_},
+                                {"signed", peer_signed_},       {"verified", peer_verified_}};
   status_["pending_dispositions"] = dispatched_.size();
   status_communications();
   status_procedures();

@@ -2,7 +2,8 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// MCData signalling and XML protection with clients (CSK): signalling payloads, XML confidentiality and XML integrity.
+// MCData signalling and XML protection with clients (CSK) and with peer servers (SPK): signalling payloads, XML
+// confidentiality and XML integrity.
 //
 // Specifications: TS 33.180 V19.5.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19).
 
@@ -156,7 +157,10 @@ std::vector<BodyPart> DataServer::decrypt_xml(const std::optional<xmlsec::Key> &
 // where configured) is signed under its CSK; "all XML MIME bodies", not only the types clause 6.5.3.1 lists
 // (maintainer decision M11).
 std::vector<BodyPart> DataServer::sign_outgoing(const SipTransmission &transmission, std::vector<BodyPart> parts) {
-  if (transmission.address != core_address_) return parts;
+  if (transmission.address != core_address_) {
+    const auto peer = peer_at(peers_, transmission.address);
+    return peer.empty() ? parts : protect_for_peer(peer, std::move(parts));
+  }
   // Before the service configuration document is read, whether its protection applies is not known: an XML body to
   // a client is not sent then, never in the clear instead.
   if (!signalling_protection_ &&
@@ -205,7 +209,11 @@ std::vector<BodyPart> DataServer::sign_outgoing(const SipTransmission &transmiss
 std::vector<BodyPart> DataServer::verify_incoming(const SipTransmission &transmission, std::vector<BodyPart> parts) {
   const auto signatures =
       std::find_if(parts.begin(), parts.end(), [](const BodyPart &part) { return part.content_type == signed_mime; });
-  if (signatures == parts.end() || transmission.address != core_address_) return parts;
+  if (transmission.address != core_address_) {
+    const auto peer = peer_at(peers_, transmission.address);
+    return peer.empty() ? parts : open_from_peer(peer, std::move(parts));
+  }
+  if (signatures == parts.end()) return parts;
   std::optional<xmlsec::Key> key;
   try {
     const auto id = xmlsec::signature_key_id(signatures->body);
@@ -327,6 +335,113 @@ std::vector<BodyPart> DataServer::open_from(const keying::KeyMessage &key, std::
       throw std::runtime_error("protected signalling type mismatch");
     part.body.assign(opened.plain.begin(), opened.plain.end());
     ++signalling_opened_;
+  }
+  return parts;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clauses 6.5.2.2 and 6.5.3.2 (TS 33.180 clause 9.5.2): between servers the XPK is the SPK; the key derives
+// from the SPK and the sending server's PSI (TS 33.180 annex F.1.4).
+std::optional<xmlsec::Key> DataServer::peer_xml_key(const std::string &peer, bool sending) const {
+  const auto found = peers_.find(peer);
+  if (found == peers_.end() || !found->second.spk_key) return std::nullopt;
+  return xmlsec::Key{found->second.spk_key->key, found->second.spk_key->csb_id,
+                     sending ? service_uri_ : found->second.service_uri};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clauses 6.6.3.3 and 6.6.3.4 (TS 33.180 clause 8.5.4), 6.5.2.3.2 and 6.5.3.3.2 towards a peer: the Data
+// signalling messages sealed under the SPK (message type kept, bit 7 set: TS 24.282 clause 6.6.3.1, TS 33.180 clause
+// 8.5.1), the sensitive XML content encrypted, then the XML bodies signed. The DATA PAYLOAD is left alone (protected
+// end to end, if at all). Protection that applies without the peer's SPK, or before the service configuration is
+// known, is not dropped: the message is not sent (the SIP engine's local error path), as towards a client.
+std::vector<BodyPart> DataServer::protect_for_peer(const std::string &peer, std::vector<BodyPart> parts) {
+  const auto any = [&parts](auto condition) { return std::any_of(parts.begin(), parts.end(), condition); };
+  const auto sealable = [](const BodyPart &part) {
+    return part.content_type == mcdata::signalling_mime && !part.body.empty() &&
+           !(static_cast<std::uint8_t>(part.body[0]) & 0x40);
+  };
+  const bool signed_already = any([](const BodyPart &part) { return part.content_type == signed_mime; });
+  const bool xml = !signed_already && any([](const BodyPart &part) { return xmlsec::is_xml_mime(part.content_type); });
+  if (!xml && !any(sealable)) return parts;
+  if (!signalling_protection_)
+    throw std::runtime_error("the service configuration document has not been read: signalling protection unknown");
+  if (!signalling_protection_->between_servers) return parts;
+  const auto key = peer_xml_key(peer, true);
+  if (!key) throw std::runtime_error("no SPK of the peer server for the protection enabled");
+  for (auto &part : parts) {
+    if (!sealable(part)) continue;
+    keying::ProtectedPayload message;
+    message.message_type = static_cast<std::uint8_t>(part.body[0]) | 0x40;
+    message.unix_seconds = static_cast<std::uint64_t>(std::time(nullptr));
+    message.dppk_id = key->id;
+    message.plain.assign(part.body.begin(), part.body.end());
+    const auto sealed = keying::seal_payload(message, key->xpk, payload_profile());
+    part.body.assign(sealed.begin(), sealed.end());
+    ++peer_sealed_;
+  }
+  if (!xml) return parts;
+  std::vector<xmlsec::SignedBody> bodies;
+  for (auto &part : parts) {
+    if (xml_part(part.content_type) && !xmlsec::is_protected(part.body)) {
+      part.body = xmlsec::encrypt(part.body, *key, xml_profile());
+      ++peer_encrypted_;
+    }
+    if (!xmlsec::is_xml_mime(part.content_type)) continue;
+    if (part.content_id.empty()) part.content_id = random_id().substr(0, 16) + "@mcx";
+    bodies.push_back({part.content_id, part.body});
+  }
+  parts.push_back({signed_mime, xmlsec::sign(bodies, *key, "urn:3gpp:ns:mcpttSignedDoc:1.0")});
+  ++peer_signed_;
+  return parts;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 6.5.1.4 step 1, clauses 6.5.3.4, 6.5.2.4 and 6.6.3.3 from a peer: the signatures verified under the
+// SPK their XPK-ID names and removed ("139 ..."), the encrypted XML decrypted ("140 ..."), the sealed Data signalling
+// opened. Content under another key than the peer's SPK, or any without one, is refused. Clear content is taken: the
+// peer decides what it protects (TS 29.582 clauses 6.5.2.3.2 and 6.5.3.3.2).
+std::vector<BodyPart> DataServer::open_from_peer(const std::string &peer, std::vector<BodyPart> parts) {
+  const auto key = peer_xml_key(peer, false);
+  if (const auto signatures =
+          std::find_if(parts.begin(), parts.end(), [](const BodyPart &part) { return part.content_type == signed_mime; });
+      signatures != parts.end()) {
+    std::vector<xmlsec::SignedBody> bodies;
+    for (const auto &part : parts)
+      if (part.content_type != signed_mime && !part.content_id.empty()) bodies.push_back({part.content_id, part.body});
+    try {
+      if (!key || xmlsec::signature_key_id(signatures->body) != key->id)
+        throw std::runtime_error("signed under no SPK shared with the peer");
+      (void)xmlsec::verify(signatures->body, bodies, *key);
+    } catch (const std::exception &error) {
+      throw std::runtime_error(std::string("139 ") + error.what());
+    }
+    ++peer_verified_;
+    parts.erase(signatures);
+  }
+  for (auto &part : parts) {
+    if (xml_part(part.content_type) && xmlsec::is_protected(part.body)) {
+      try {
+        if (!key || xmlsec::key_id(part.body) != key->id)
+          throw std::runtime_error("encrypted under no SPK shared with the peer");
+        part.body = xmlsec::decrypt(part.body, *key);
+      } catch (const std::exception &error) {
+        throw std::runtime_error(std::string("140 ") + error.what());
+      }
+      ++peer_decrypted_;
+      continue;
+    }
+    if (part.content_type != mcdata::signalling_mime || part.body.empty() ||
+        !(static_cast<std::uint8_t>(part.body[0]) & 0x40))
+      continue;
+    const std::span bytes(reinterpret_cast<const std::uint8_t *>(part.body.data()), part.body.size());
+    if (!key || keying::payload_key_id(bytes) != key->id)
+      throw std::runtime_error("signalling sealed under no SPK shared with the peer");
+    const auto opened = keying::open_payload(bytes, key->xpk, payload_profile());
+    if (opened.plain.empty() || (opened.message_type & 0x3f) != (opened.plain[0] & 0x3f) || (opened.plain[0] & 0xc0))
+      throw std::runtime_error("protected signalling type mismatch");
+    part.body.assign(opened.plain.begin(), opened.plain.end());
+    ++peer_opened_;
   }
   return parts;
 }
