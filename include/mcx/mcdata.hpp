@@ -29,6 +29,8 @@ inline constexpr const char *payload_mime = "application/vnd.3gpp.mcdata-payload
 inline constexpr const char *file_mime = "application/vnd.3gpp.mcdata-file";
 // TS 24.282 annex D.4: the location-info body.
 inline constexpr const char *location_mime = "application/vnd.3gpp.mcdata-location-info+xml";
+// TS 29.582 clauses 17.1.1 step 8 and 17.3.1 step 7 (IANA, TS 29.379 annex B): the Interworking Security Data body.
+inline constexpr const char *interworking_data_mime = "application/vnd.3gpp.interworking-data";
 // ICSI values (TS 24.282 annex C.2, annex C.3 (SDS), annex C.4 (FD), annex C.5 (IP connectivity)).
 inline constexpr const char *icsi = "urn:urn-7:3gpp-service.ims.icsi.mcdata";
 inline constexpr const char *sds_icsi = "urn:urn-7:3gpp-service.ims.icsi.mcdata.sds";
@@ -326,6 +328,23 @@ SdsSignalling decode_sds_signalling(std::string_view bytes);
 //------------------------------------------------------------------------------
 // TS 24.282 clause 15.1.4.1: decodes a DATA PAYLOAD message.
 DataPayload decode_data_payload(std::string_view bytes);
+//------------------------------------------------------------------------------
+// TS 29.582 clause 17.2 (TS 23.283 clause 10.12.1.1, the Non-3GPP security message): the Interworking Security Data
+// message (InterSD-MESSAGE, a MONP message, table 17.2.1-1): the message type, the External network type (clause
+// 17.2.2, optional) and the opaque Payload (TS 24.282 clause 15.2.13, content type BINARY).
+//
+// TS 24.282 table 15.2.2-1 assigns InterSD-MESSAGE no code of its own; its first IE is the "SDS signalling payload
+// message identity" (Message type), so the message type is SDS SIGNALLING PAYLOAD, 0x01 (a decision). The External
+// network type is a V IE without an IEI: it is present when the second octet is not the Payload IEI 0x78.
+enum class ExternalNetwork : std::uint8_t { P25 = 1, Tetra = 2 };
+
+struct InterworkingSecurityData {
+  std::optional<ExternalNetwork> network;
+  std::string payload;
+};
+
+std::string encode(const InterworkingSecurityData &message);
+InterworkingSecurityData decode_interworking_security_data(std::string_view bytes);
 //------------------------------------------------------------------------------
 // TS 24.282 clause 15.1.5.1: decodes a SDS NOTIFICATION message.
 SdsNotification decode_sds_notification(std::string_view bytes);

@@ -234,6 +234,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/mcdata/protection.cpp
         src/mcdata/release.cpp
         src/mcdata/sds.cpp
+        src/mcdata/security_data.cpp
         src/mcdata/service_parts.cpp
         src/mcdata/sip_dispatch.cpp)
     target_link_libraries(openmcx-mcdata-server PRIVATE mcx_service_parts)

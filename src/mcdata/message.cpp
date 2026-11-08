@@ -36,6 +36,9 @@ SipResponse DataServer::message(const SipMessage &sip_request) {
       return emergency_alert(sip_request, user, alert_info);
     }
   }
+  // TS 29.582 clause 17.4.1.1: a "SIP MESSAGE request for Interworking Security Data for originating participating
+  // MCData function", told by its interworking-data body.
+  if (part(sip_request, mcdata::interworking_data_mime)) return security_data(sip_request, user);
   const bool file = accepts(sip_request, mcdata::fd_icsi);
   if (parsed_info) {
     // TS 24.282 clause 10.2.1.3.4: "SIP MESSAGE request for absolute URI discovery request".

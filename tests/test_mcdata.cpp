@@ -6,7 +6,7 @@
 // mcdata-info, affiliation, functional alias, location and storage control XML documents, and the
 // multipart bodies that carry them.
 //
-// Specifications: TS 24.282 V19.7.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19).
+// Specifications: TS 24.282 V19.7.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 29.582 V19.0.0 (Rel-19).
 
 #include "mcx/mcdata.hpp"
 #include "mcx/protocol.hpp"
@@ -68,6 +68,23 @@ static std::string uuid_bytes(int first) {
 // TS 24.282 clause 15 message coding, annex D XML documents and annex E MIME bodies, with the MCData
 // procedures that use them.
 int main() {
+  // TS 29.582 clause 17.2.1 (table 17.2.1-1): Interworking Security Data: message type 01, External network type
+  // TETRA (02, V, optional), then the Payload IE 78 (TLV-E) with content type BINARY (02).
+  {
+    InterworkingSecurityData message{ExternalNetwork::Tetra, std::string("\x01\xab\xcd", 3)};
+    const auto bytes = encode(message);
+    check(bytes == std::string("\x01\x02\x78\x00\x04\x02\x01\xab\xcd", 9), "InterSD encoding");
+    const auto decoded = decode_interworking_security_data(bytes);
+    check(decoded.network == ExternalNetwork::Tetra && decoded.payload == message.payload, "InterSD round trip");
+    const auto without = decode_interworking_security_data(std::string("\x01\x78\x00\x02\x02\x55", 6));
+    check(!without.network && without.payload == "\x55", "InterSD without External network type");
+    rejects([] { decode_interworking_security_data(std::string("\x01\x03\x78\x00\x01\x02", 6)); },
+            "reserved external network type");
+    rejects([] { decode_interworking_security_data(std::string("\x01\x02\x78\x00\x02\x01\x41", 7)); },
+            "InterSD payload not BINARY");
+    rejects([] { decode_interworking_security_data(std::string("\x03\x02\x78\x00\x01\x02", 6)); },
+            "InterSD of another message type");
+  }
   // TS 24.282 clause 15.1.2.1, table 15.1.2.1-1: SDS SIGNALLING PAYLOAD: type 01, 5-octet time, conversation,
   // message, then InReplyTo (21), Application ID (22), disposition (8-, type 1)
   // and the sender MCData user ID (51, TLV-E).

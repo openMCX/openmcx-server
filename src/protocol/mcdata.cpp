@@ -559,6 +559,42 @@ DataPayload decode_data_payload(std::string_view bytes) {
 }
 
 //------------------------------------------------------------------------------
+// TS 29.582 clause 17.2.1 (table 17.2.1-1): encodes an Interworking Security Data message: the message type (0x01,
+// mcdata.hpp), the External network type when known (clause 17.2.2) and the BINARY Payload IE.
+std::string encode(const InterworkingSecurityData &message) {
+  std::string out(1, static_cast<char>(MessageType::SdsSignalling));
+  if (message.network) {
+    const auto network = static_cast<std::uint8_t>(*message.network);
+    if (network != 1 && network != 2) invalid("reserved external network type");
+    out += static_cast<char>(network);
+  }
+  put_tlv_e(out, iei_payload, std::string(1, static_cast<char>(ContentType::Binary)) + message.payload);
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 29.582 clauses 17.2.1 and 17.2.2: decodes an Interworking Security Data message; a reserved External network
+// type, or a Payload other than one BINARY, is invalid.
+InterworkingSecurityData decode_interworking_security_data(std::string_view bytes) {
+  Reader in{bytes};
+  read_type(in, MessageType::SdsSignalling);
+  InterworkingSecurityData message;
+  auto iei = in.octet();
+  if (iei != iei_payload) {
+    if (iei != 1 && iei != 2) invalid("reserved external network type");
+    message.network = static_cast<ExternalNetwork>(iei);
+    iei = in.octet();
+  }
+  if (iei != iei_payload) invalid("Interworking Security Data without its Payload");
+  const auto value = in.tlv_e();
+  if (value.empty() || static_cast<ContentType>(value[0]) != ContentType::Binary)
+    invalid("Interworking Security Data payload not BINARY");
+  message.payload = value.substr(1);
+  if (!in.done()) invalid("unexpected information element in Interworking Security Data");
+  return message;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.282 clause 15.1.5.1: encodes an SDS NOTIFICATION message (table 15.1.5.1-1).
 std::string encode(const SdsNotification &notification) {
   const auto type = static_cast<std::uint8_t>(notification.type);

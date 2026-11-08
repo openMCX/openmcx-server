@@ -544,6 +544,13 @@ class DataServer {
   SipResponse group_affiliation_publish(const SipMessage &request, const std::string &peer);
   // TS 29.582 clause 9.2.2.3.1: a group standalone SDS a peer sends for one of its users.
   SipResponse peer_sds(const SipMessage &request, const std::string &peer);
+  // ---- Interworking Security Data (security_data.cpp): TS 29.582 clause 17.4 ----
+  // A client's request (clauses 17.4.2.1, 17.4.3.2, 17.4.3.1), 202 once sent; a peer's for a user served here (clause
+  // 17.4.2.2), the client's answer deferred to the peer.
+  SipResponse security_data(const SipMessage &request, const User &sender);
+  SipResponse peer_security_data(const SipMessage &request, const std::string &peer);
+  std::optional<SipResponse> security_data_to_user(const User &target, const mcdata::Info &info,
+                                                   const std::string &data);
   // TS 100 392-19-1 clause 9.2.1 NOTE 5 (as for MCPTT): a peer's user need not be a member of, or affiliated to, a
   // group when the peer affiliated its own identity on its behalf.
   bool peer_vouched(const User &sender, const std::string &group) const;

@@ -252,10 +252,11 @@ def iwf_config(
             "spk": {"id": spk["id"], "key": spk["key"]},
         },
         # TS 100 392-19-1 clause 13.4.2: the SDS applications the IWF carries: LIP (clause 13.4.5) as a binary payload
-        # with Application ID 5, OTAK key management (clause 13.4.3) as the native TETRA message.
+        # with Application ID 5, OTAK key management (clause 13.4.3) as the Non-3GPP security message (Interworking
+        # Security Data, TS 29.582 clause 17) one to one, the native TETRA message in a group SDS.
         "sds_applications": [
             {"protocol_identifier": 10, "application_id": 5, "format": "binary"},
-            {"protocol_identifier": 1, "format": "lmr_message"},
+            {"protocol_identifier": 1, "format": "interworking_security_data"},
         ],
         # IWF-2 (TS 29.582 clauses 8.3.2.6 and 8.3.2.7): the MCData server directly, the IWF's PSI the same.
         "mcdata": {

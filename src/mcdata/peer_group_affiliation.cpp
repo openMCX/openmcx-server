@@ -79,6 +79,10 @@ SipResponse DataServer::peer_request(const SipMessage &request, const std::strin
   response.status_code = 200;
   try {
     if (request.method == "OPTIONS") return response;
+    // TS 29.582 clause 17.4.1.1: Interworking Security Data for a user served here (security_data.cpp).
+    if (request.method == "MESSAGE" && request.request_uri == service_uri_ &&
+        part(request, mcdata::interworking_data_mime))
+      return peer_security_data(request, peer);
     // TS 29.582 clause 9.2.2.3.1 (TS 24.282 clause 6.3.1.1): a group standalone SDS for one of the peer's users.
     // TS 24.282 clauses 6.3.7.1.2 and 6.3.7.1.5 from a peer as controlling function (TS 29.582 clause 18.2.1): an
     // emergency alert notice or receipt for a user served here, passed to its client.
