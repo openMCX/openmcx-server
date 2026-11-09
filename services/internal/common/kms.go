@@ -173,7 +173,8 @@ func (svc *service) routesKMS(mux *http.ServeMux) {
 // TS 33.180 annex D.2.3, D.2.4 and D.2.5: answers a KMS Initialize, KeyProvision or CertCache request with its KMS
 // response XML (annex D.3): for a signed-in user with the key management scope (annex B.4.2.2), its MCPTT, MCData
 // or MCVideo ID; for the key management client of an MC server or the GMS (key_clients.go), the identity its access
-// token names, a KeyProvision request naming no other. A KeyProvision request may name the key period by its NTP
+// token names, a KeyProvision request naming no other; for an interworking function's, that identity or one it
+// serves. A KeyProvision request may name the key period by its NTP
 // timestamp (RFC 5905).
 func (svc *service) kmsProvision(writer http.ResponseWriter, request *http.Request) {
 	user := ""
@@ -188,12 +189,18 @@ func (svc *service) kmsProvision(writer http.ResponseWriter, request *http.Reque
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
-	if identity, server := svc.keyClientIdentity(request); server {
-		if id := request.PathValue("identity"); id != "" && id != identity {
-			writeJSON(writer, http.StatusForbidden, map[string]string{"error": "forbidden_identity"})
-			return
+	if client, server := svc.keyClientOf(request); server {
+		user = client.Identity
+		// An interworking function's client: a served identity, still a user's, under its service's key management
+		// scope (key_clients.go); KMS Initialize and CertCache name none.
+		if id := request.PathValue("identity"); id != "" && id != user {
+			scope := svc.identityScope(id)
+			if !client.keys(id) || scope == "" || !containsWord(client.Scope, scope) {
+				writeJSON(writer, http.StatusForbidden, map[string]string{"error": "forbidden_identity"})
+				return
+			}
+			user = id
 		}
-		user = identity
 	} else {
 		// authenticateBearer: a key management scope of any MC service (TS 33.180 clause 5.1.3.1: "This key
 		// management authorisation may be repeated for each KM service the user is authorised to use").

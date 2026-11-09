@@ -667,7 +667,27 @@ def main():
                     "3gpp:mc:ptt_key_management_service",
                 ),
             )
-        ],
+        ]
+        # TS 23.283 clause 10.9.1: the IWF's key management client, keyed as its PSI and for the MC identities it
+        # serves (its own MCPTT and MCData IDs, and the TETRA MSs'), with both key management scopes.
+        + (
+            [
+                {
+                    "client_id": "iwf-key",
+                    "secret": secrets.token_hex(24),
+                    "identity": iwf_psi,
+                    "scope": "3gpp:mc:ptt_key_management_service 3gpp:mc:data_key_management_service",
+                    "served_identities": [iwf_mcptt_id, iwf_mcdata_id]
+                    + [
+                        identity
+                        for issi in iwf_source["tetra"]["issis"]
+                        for identity in (f"sip:tetra-{issi}@{domain}", f"sip:tetra-{issi}.mcdata@{domain}")
+                    ],
+                }
+            ]
+            if iwf_source
+            else []
+        ),
         "token_ttl_seconds": source["token_ttl_seconds"],
         # The IWF's MCPTT ID is a user of the MC system (TS 100 392-19-1 clause 9.2.1 NOTE 5: a group member); no client
         # signs in with it.
@@ -1142,15 +1162,23 @@ TLS_CA = "/config/tls/ca.crt";
                 "key_client": {"client_id": entry["client_id"], "secret": entry["secret"], "scope": entry["scope"]},
             }
             save(f"{name}.json", server_cfg)
-        save(
-            "iwf.json",
-            iwf_config(
-                iwf_source, iwf_psi, iwf_mcptt_id, iwf_mcdata_id, service, group, domain, next(iter(servers)), iwf_spk,
-                tetra_group, [source_user["mcptt_id"] for source_user in users], chat_group, tetra_chat_group,
-                mcdata_service, {source_user["mcptt_id"]: source_user["mcdata_id"] for source_user in users},
-                iwf_mcdata_spk,
-            ),
+        iwf_cfg = iwf_config(
+            iwf_source, iwf_psi, iwf_mcptt_id, iwf_mcdata_id, service, group, domain, next(iter(servers)), iwf_spk,
+            tetra_group, [source_user["mcptt_id"] for source_user in users], chat_group, tetra_chat_group,
+            mcdata_service, {source_user["mcptt_id"]: source_user["mcdata_id"] for source_user in users},
+            iwf_mcdata_spk,
         )
+        # TS 33.180 clause 5.3.3: the IWF's key management client (above) at the KMS and IdMS.
+        entry = next(client for client in site["key_clients"] if client["identity"] == iwf_psi)
+        iwf_cfg["security"] = {
+            "kms_uri": endpoints["kms"],
+            "issuer": endpoints["idms"],
+            "key_client": {"client_id": entry["client_id"], "secret": entry["secret"], "scope": entry["scope"]},
+            "key_parameter_profile": {
+                "message_type": 10, "algorithm": 1, "key_parameters_iei": 0x79, "encrypted_payload_iei": 0x78
+            },
+        }
+        save("iwf.json", iwf_cfg)
     # The MCVideo server: the openmcx-mcvideo-server executable, on the same core as the
     # MCPTT server, with the MCVideo service profile
     # It has no

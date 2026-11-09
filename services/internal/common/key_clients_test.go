@@ -195,3 +195,102 @@ func TestKeyClientValidation(test *testing.T) {
 		test.Fatal(err)
 	}
 }
+
+// ------------------------------------------------------------------------------
+// Helper: the key client configuration with an interworking function's key management client keyed for bob's MCPTT
+// and MCData IDs (bob a TETRA MS's MC identities).
+func interworkingKeyClientConfig() Config {
+	cfg := keyClientConfig()
+	cfg.Users[1].MCDataID = "sip:bob.mcdata@mcx.test"
+	cfg.KeyClients = append(cfg.KeyClients, KeyClient{ClientID: "iwf-key", Secret: "iwf-secret", Identity: "sip:iwf@mcx.test",
+		Scope: scopePTTKeys + " " + scopeDataKeys, ServedIdentities: []string{"sip:bob@mcx.test", "sip:bob.mcdata@mcx.test"}})
+	return cfg
+}
+
+// ------------------------------------------------------------------------------
+// TS 23.283 clause 10.9.1 with TS 33.180 clause 5.3.3: an interworking function's key management client gets a token
+// with both its key management scopes, and the KMS provisions it for its own identity and for each identity it
+// serves, but for no other user's and not for a served identity without the scope of its service.
+func TestKMSInterworkingKeyClient(test *testing.T) {
+	cfg, key := interworkingKeyClientConfig(), testKey(test)
+	if err := cfg.Validate(); err != nil {
+		test.Fatal(err)
+	}
+	idms, err := NewHandlerWithKeys(RoleIDMS, cfg, key, &key.PublicKey, test.TempDir(), WithClock(func() time.Time { return testNow }))
+	if err != nil {
+		test.Fatal(err)
+	}
+	form := url.Values{"grant_type": {"client_credentials"}, "scope": {scopePTTKeys + " " + scopeDataKeys}}
+	request := formRequest(http.MethodPost, "/token", form)
+	request.SetBasicAuth("iwf-key", "iwf-secret")
+	rr := httptest.NewRecorder()
+	idms.ServeHTTP(rr, request)
+	var answer struct {
+		AccessToken string `json:"access_token"`
+	}
+	if rr.Code != 200 || json.Unmarshal(rr.Body.Bytes(), &answer) != nil {
+		test.Fatalf("grant got %d: %s", rr.Code, rr.Body)
+	}
+	var provisioned []string
+	backend := func(input map[string]any) (json.RawMessage, error) {
+		if input["op"] == "authority-generate" {
+			return json.RawMessage(`{"private":"test-only"}`), nil
+		}
+		provisioned = append(provisioned, input["user_uri"].(string))
+		return json.RawMessage(`{"xml":"<KmsResponse/>"}`), nil
+	}
+	kms, err := NewHandlerWithKeys(RoleKMS, cfg, nil, &key.PublicKey, test.TempDir(), WithClock(func() time.Time { return testNow }), WithKeyTool(backend))
+	if err != nil {
+		test.Fatal(err)
+	}
+	iwf := cfg.KeyClients[4]
+	narrow, _ := signToken(TokenClaims{Issuer: cfg.Issuer, Subject: iwf.Identity, Audience: Audience{cfg.ServerClientID},
+		Expires: testNow.Add(time.Minute).Unix(), IssuedAt: testNow.Unix(), ClientID: iwf.ClientID, Type: "access", Scope: scopePTTKeys}, key)
+	escaped := func(identity string) string { return "/keymanagement/identity/v1/keyprov/" + url.PathEscape(identity) }
+	for _, tc := range []struct {
+		path, token, identity string
+		status                int
+	}{
+		{"/keymanagement/identity/v1/init", answer.AccessToken, iwf.Identity, 200},
+		{"/keymanagement/identity/v1/keyprov", answer.AccessToken, iwf.Identity, 200},
+		{escaped("sip:bob@mcx.test"), answer.AccessToken, "sip:bob@mcx.test", 200},
+		{escaped("sip:bob.mcdata@mcx.test"), answer.AccessToken, "sip:bob.mcdata@mcx.test", 200},
+		// Alice is not served; the MCPTT server's identity is another client's.
+		{escaped("sip:alice@mcx.test"), answer.AccessToken, "", 403},
+		{escaped(cfg.ServiceURI), answer.AccessToken, "", 403},
+		// A token without the MCData key management scope is not this client's.
+		{escaped("sip:bob@mcx.test"), narrow, "", 401},
+	} {
+		before := len(provisioned)
+		rr := httptest.NewRecorder()
+		kms.ServeHTTP(rr, bearerRequest(http.MethodPost, tc.path, tc.token, nil))
+		if rr.Code != tc.status {
+			test.Fatalf("%s got %d want %d: %s", tc.path, rr.Code, tc.status, rr.Body)
+		}
+		if tc.status == 200 && (len(provisioned) != before+1 || provisioned[before] != tc.identity) {
+			test.Fatalf("%s provisioned %v, want %s", tc.path, provisioned[before:], tc.identity)
+		}
+	}
+}
+
+// ------------------------------------------------------------------------------
+// An interworking function's key management client: an identity that is no MC server's, the GMS's or a user's, served
+// identities that are users' and served once, and scopes covering their services.
+func TestInterworkingKeyClientValidation(test *testing.T) {
+	for name, change := range map[string]func(*Config){
+		"server identity":   func(cfg *Config) { cfg.KeyClients[4].Identity = cfg.ServiceURI },
+		"user identity":     func(cfg *Config) { cfg.KeyClients[4].Identity = "sip:alice@mcx.test" },
+		"unknown served":    func(cfg *Config) { cfg.KeyClients[4].ServedIdentities[0] = "sip:carol@mcx.test" },
+		"served twice":      func(cfg *Config) { cfg.KeyClients[4].ServedIdentities[1] = "sip:bob@mcx.test" },
+		"served server":     func(cfg *Config) { cfg.KeyClients[4].ServedIdentities[0] = cfg.ServiceURI },
+		"missing scope":     func(cfg *Config) { cfg.KeyClients[4].Scope = scopePTTKeys },
+		"service scope":     func(cfg *Config) { cfg.KeyClients[4].Scope += " 3gpp:mc:ptt_service" },
+		"two server scopes": func(cfg *Config) { cfg.KeyClients[0].Scope = scopePTTKeys + " " + scopeDataKeys },
+	} {
+		cfg := interworkingKeyClientConfig()
+		change(&cfg)
+		if cfg.Validate() == nil {
+			test.Fatalf("%s accepted", name)
+		}
+	}
+}

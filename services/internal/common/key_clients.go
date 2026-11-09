@@ -9,7 +9,15 @@
 // an MC UE does (clause 5.3.3: "The procedure is the same whether the key management client in the MC UE, an MCX
 // Server or a Group Management Server is making the request").
 //
-// Specifications: TS 33.180 V19.4.0 (Rel-19) clauses 5.3.2, 5.3.3 and annex D.2, RFC 6749, RFC 6750.
+// An interworking function's key management client (TS 23.283 clause 10.9.1: an IWF removing the MC system's
+// encryption "must perform key management procedures defined in 3GPP TS 33.180 to obtain the key material") is keyed
+// as well for the MC service IDs of the users it serves (served_identities), the TETRA MSs' MCPTT and MCData IDs and
+// its own: an OpenMCX provisioning. TS 33.180 annex L.3.2 has an IWF that terminates the MC system's security
+// generate that key material itself in its own security domain (a pseudo KMS cross-signed as an External KMS);
+// OpenMCX has no External KMS, so its IWF is a client of this KMS instead.
+//
+// Specifications: TS 33.180 V19.4.0 (Rel-19) clauses 5.3.2, 5.3.3 and annex D.2, TS 23.283 V19.5.0 (Rel-19) clause
+// 10.9.1, RFC 6749, RFC 6750.
 package common
 
 import (
@@ -31,8 +39,41 @@ type KeyClient struct {
 	Secret   string `json:"secret"`
 	// The identity the KMS provisions: the public service identity of the MC server, or the GMS URI.
 	Identity string `json:"identity"`
-	// The key management scope of its MC service (TS 33.180 table B.4.2.2-1).
+	// The key management scope of its MC service (TS 33.180 table B.4.2.2-1); an interworking function's client
+	// holds those of the services of its served identities, space-separated (RFC 6749 section 3.3).
 	Scope string `json:"scope"`
+	// An interworking function's client only: the users' MCPTT, MCData or MCVideo IDs it is keyed for as well.
+	ServedIdentities []string `json:"served_identities,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the key management scope under which an MC service ID of a user is keyed (TS 33.180 annex B.4.2.2), or ""
+// when it is no user's (site users, by siteUser).
+func (svc *service) identityScope(identity string) string {
+	if user, ok := svc.siteUser("mcptt_id", identity); ok && user.MCPTTID == identity {
+		return scopePTTKeys
+	}
+	if user, ok := svc.siteUser("mcdata_id", identity); ok && user.MCDataID == identity {
+		return scopeDataKeys
+	}
+	if user, ok := svc.siteUser("mcvideo_id", identity); ok && user.MCVideoID == identity {
+		return scopeVideoKeys
+	}
+	return ""
+}
+
+// ------------------------------------------------------------------------------
+// Helper: whether a key management client is keyed for an identity: its own, or one it serves.
+func (client KeyClient) keys(identity string) bool {
+	if identity == client.Identity {
+		return true
+	}
+	for _, served := range client.ServedIdentities {
+		if served == identity {
+			return true
+		}
+	}
+	return false
 }
 
 // The GMS URI the GMS is keyed as (TS 33.180 clause 5.7: the GMS signs the group keys it distributes).
@@ -43,7 +84,9 @@ func (cfg Config) gmsIdentity() string {
 // ------------------------------------------------------------------------------
 // Helper: checks the key management clients: each with a client ID of its own (not the users' or the servers'
 // OAuth client), a secret, the identity of an MC server or the GMS, at most one client per identity, and a key
-// management scope.
+// management scope. An interworking function's client (served identities) has an identity that is no MC server's,
+// the GMS's or a user's, a served identity at most once over all clients, each a user's (site users, unless MCX
+// Admin keeps them), and key management scopes covering their services.
 func (cfg Config) validateKeyClients() error {
 	identities := map[string]bool{cfg.ServiceURI: true, cfg.gmsIdentity(): cfg.Endpoints.GMS != ""}
 	if cfg.MCDataService.ServiceURI != "" {
@@ -52,18 +95,51 @@ func (cfg Config) validateKeyClients() error {
 	if cfg.MCVideoService.ServiceURI != "" {
 		identities[cfg.MCVideoService.ServiceURI] = true
 	}
+	// The key management scope of each site user's MC service ID.
+	userScopes := map[string]string{}
+	for _, user := range cfg.Users {
+		userScopes[user.MCPTTID] = scopePTTKeys
+		if user.MCDataID != "" {
+			userScopes[user.MCDataID] = scopeDataKeys
+		}
+		if user.MCVideoID != "" {
+			userScopes[user.MCVideoID] = scopeVideoKeys
+		}
+	}
 	clients, keyed := map[string]bool{}, map[string]bool{}
 	for _, client := range cfg.KeyClients {
 		if client.ClientID == "" || client.Secret == "" || client.ClientID == cfg.OAuthClientID || client.ClientID == cfg.ServerClientID || clients[client.ClientID] {
 			return fmt.Errorf("key client %q: a client ID of its own and a secret are required", client.ClientID)
 		}
-		if !identities[client.Identity] || keyed[client.Identity] {
-			return fmt.Errorf("key client %q: identity %q is not an MC server or the GMS, or already has a key client", client.ClientID, client.Identity)
+		interworking := len(client.ServedIdentities) > 0
+		known := identities[client.Identity]
+		if interworking {
+			known = client.Identity != "" && !identities[client.Identity] && userScopes[client.Identity] == ""
 		}
-		if client.Scope != scopePTTKeys && client.Scope != scopeDataKeys && client.Scope != scopeVideoKeys {
+		if !known || keyed[client.Identity] {
+			return fmt.Errorf("key client %q: identity %q is not an MC server or the GMS (an interworking function: not theirs or a user's), or already has a key client", client.ClientID, client.Identity)
+		}
+		scopes := strings.Fields(client.Scope)
+		if len(scopes) == 0 || (!interworking && len(scopes) != 1) {
 			return fmt.Errorf("key client %q: scope must be a key management scope", client.ClientID)
 		}
-		clients[client.ClientID], keyed[client.Identity] = true, true
+		for _, scope := range scopes {
+			if scope != scopePTTKeys && scope != scopeDataKeys && scope != scopeVideoKeys {
+				return fmt.Errorf("key client %q: scope must be a key management scope", client.ClientID)
+			}
+		}
+		keyed[client.Identity] = true
+		for _, served := range client.ServedIdentities {
+			scope, user := userScopes[served]
+			if keyed[served] || identities[served] || (cfg.AdminAccounts == nil && !user) {
+				return fmt.Errorf("key client %q: served identity %q is no user's, or already has a key client", client.ClientID, served)
+			}
+			if user && !containsWord(client.Scope, scope) {
+				return fmt.Errorf("key client %q: served identity %q needs the scope %s", client.ClientID, served, scope)
+			}
+			keyed[served] = true
+		}
+		clients[client.ClientID] = true
 	}
 	return nil
 }
@@ -101,7 +177,7 @@ func (svc *service) clientCredentialsGrant(writer http.ResponseWriter, request *
 		return
 	}
 	for _, scope := range strings.Fields(request.Form.Get("scope")) {
-		if scope != client.Scope && scope != "openid" {
+		if !containsWord(client.Scope, scope) && scope != "openid" {
 			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_scope"})
 			return
 		}
@@ -128,26 +204,31 @@ func (svc *service) clientCredentialsGrant(writer http.ResponseWriter, request *
 }
 
 // ------------------------------------------------------------------------------
-// TS 33.180 clause 5.3.3 step 1 and annex D.2: the identity of a key management client of an MC server or the GMS
-// from its Bearer access token: a token of the IdMS (issuer, audience, signature, lifetime) without an MC user (no
-// mcptt_id), issued to a configured key management client, whose subject is that client's identity and whose scope
-// holds its key management scope. ok is false for any other token (a user's token goes the user's way, with the
-// challenges of RFC 6750 section 3 in authenticateBearer). The auth-scheme is matched case-insensitively (bearerToken,
-// RFC 6750 section 2.1, RFC 7235 section 2.1).
-func (svc *service) keyClientIdentity(request *http.Request) (identity string, ok bool) {
+// TS 33.180 clause 5.3.3 step 1 and annex D.2: the key management client of an MC server, the GMS or an
+// interworking function from its Bearer access token: a token of the IdMS (issuer, audience, signature, lifetime)
+// without an MC user (no mcptt_id), issued to a configured key management client, whose subject is that client's
+// identity and whose scope holds its key management scopes. ok is false for any other token (a user's token goes
+// the user's way, with the challenges of RFC 6750 section 3 in authenticateBearer). The auth-scheme is matched
+// case-insensitively (bearerToken, RFC 6750 section 2.1, RFC 7235 section 2.1).
+func (svc *service) keyClientOf(request *http.Request) (client KeyClient, ok bool) {
 	token, bearer := bearerToken(request.Header.Get("Authorization"))
 	if !bearer {
-		return "", false
+		return KeyClient{}, false
 	}
 	claims, err := VerifyToken(token, svc.verificationKey, svc.cfg.Issuer, svc.cfg.ServerClientID, svc.now())
 	if err != nil || claims.MCPTTID != "" || (claims.Type != "" && claims.Type != "access") {
-		return "", false
+		return KeyClient{}, false
 	}
 	client, known := svc.cfg.keyClient(claims.ClientID)
-	if !known || claims.Subject != client.Identity || !containsWord(claims.Scope, client.Scope) {
-		return "", false
+	if !known || claims.Subject != client.Identity {
+		return KeyClient{}, false
 	}
-	return client.Identity, true
+	for _, scope := range strings.Fields(client.Scope) {
+		if !containsWord(claims.Scope, scope) {
+			return KeyClient{}, false
+		}
+	}
+	return client, true
 }
 
 // ------------------------------------------------------------------------------
