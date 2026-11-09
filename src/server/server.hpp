@@ -1679,9 +1679,10 @@ protected:
   // CSK held for the public user identity.
   bool open_register_parts(const std::string &identity, std::vector<BodyPart> &parts, SipResponse &response);
   // TS 24.379 clause 6.6.2: accept the uploaded CSK and open the protected parts with it.
+  // reuse_held: an identity hiding SUBSCRIBE, whose CSK may be one held already (take_csk).
   bool open_with_uploaded_csk(const SipMessage &message, SipMessage &opened,
                               std::optional<keying::KeyMessage> &uploaded, std::string &uploader,
-                              SipResponse &response);
+                              SipResponse &response, bool reuse_held = false);
   // TS 24.379 clause 7.3.3: bind the service authorised user.
   void bind_authorized_user(const Json &claims, const McpttInfo &info, const std::string &asserted,
                             std::map<std::string, User>::iterator old, std::string_view match, bool unknown_etag,
@@ -1700,6 +1701,19 @@ protected:
   static bool csk_in_subscribe(const SipMessage &message);
 
   std::optional<bool> subscription_protection(const std::string &dialog) const;
+  // Identity hiding (TS 24.484 clause 6.3.13.2.2 step d, TS 24.481 clause 6.3.13.2.1 step d): the CSK of a client's
+  // initial configuration management, group document or GKTP SUBSCRIBE opens its bodies (open_hidden_subscribe) and
+  // protects the requests and responses of its dialog (subscription_key).
+  bool open_hidden_subscribe(const SipMessage &message, SipMessage &opened, SipResponse &response);
+  keying::KeyMessage take_csk(const std::string &sender, const std::string &mikey);
+  std::optional<xmlsec::Key> subscriber_xml_key(const std::string &subscriber) const;
+  std::optional<xmlsec::Key> subscription_csk_by_id(std::uint32_t id) const;
+  std::optional<xmlsec::Key> subscription_key(const std::string &dialog) const;
+  bool hiding_csk_of(const SipMessage &message, const std::string &identity) const;
+  // MCPTT ID -> the CSK its identity hiding SUBSCRIBE brought (before or besides its service authorisation).
+  std::map<std::string, keying::KeyMessage> subscription_csks_;
+  // While incoming() handles the opened copy of an identity hiding SUBSCRIBE (open_hidden_subscribe).
+  bool hidden_subscribe_opened_ = false;
   // RFC 6665 section 4.2.1.2: a refresh (or end) of a group or configuration document subscription in its dialog;
   // a resource list in it is the modified list of group documents (TS 24.481 clauses 6.3.13.2.1, 6.3.13.2.2).
   bool refresh_document_subscription(const SipMessage &message, SipResponse &response);

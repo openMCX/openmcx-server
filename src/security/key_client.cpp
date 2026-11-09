@@ -251,10 +251,11 @@ struct KeyClient::Impl {
 
   // TS 33.180 clause 5.3.3 steps 1 and 2: a POST request for key material, authenticated with the access token, with
   // the signed KMS request when there is one (annex D.2.2: "accompanied with an XML payload MIME type"); returns the
-  // KMS response XML.
+  // KMS response XML. TS 33.180 sets no Cache-Control for a KMS request; "no-cache", the directive of its other
+  // client requests (annex B.4.2.2 and B.7.4), is the one TS 37.579-1 table 5.5.4.3-1 allows ("if present").
   std::string fetch(std::string_view operation, const std::string &signed_request = {}) const {
     std::map<std::string, std::string> headers{
-        {"Accept", "application/xml"}, {"Cache-Control", "no-store"}, {"Authorization", "Bearer " + bearer}};
+        {"Accept", "application/xml"}, {"Cache-Control", "no-cache"}, {"Authorization", "Bearer " + bearer}};
     if (!signed_request.empty()) headers["Content-Type"] = "application/xml";
     const auto response = http.request("POST", request_uri(operation), signed_request, headers);
     require(response.status == 200, "KMS provisioning HTTP request rejected");

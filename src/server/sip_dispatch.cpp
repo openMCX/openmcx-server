@@ -37,6 +37,19 @@ SipResponse McServer::incoming(const SipMessage &message) {
     }
     if (message.method == "OPTIONS") return response;
     auto event_name = std::string(get_header(message.headers, "Event"));
+    // TS 24.484 clause 6.3.13.3.2.2 and TS 24.481 clause 6.3.13.3.2.2: a client's initial xcap-diff SUBSCRIBE with
+    // the CSK in an application/mikey body (identity hiding) is opened with that CSK, then handled as any other.
+    if (peer.empty() && !hidden_subscribe_opened_ && message.method == "SUBSCRIBE" && event_name == "xcap-diff" &&
+        csk_in_subscribe(message)) {
+      SipMessage opened = message;
+      if (!open_hidden_subscribe(message, opened, response)) return response;
+      hidden_subscribe_opened_ = true;
+      struct Reset {
+        bool &flag;
+        ~Reset() { flag = false; }
+      } reset{hidden_subscribe_opened_};
+      return incoming(opened);
+    }
     // A request in the dialog of a call relayed by this participating function goes on to the other side.
     if (const auto relay = relays_.find(message.dialog_id); relay != relays_.end())
       return relay_request(message, relay->second, !peer.empty());
@@ -383,13 +396,13 @@ bool McServer::open_register_parts(const std::string &identity, std::vector<Body
 // them into `opened`. Returns false when the request is refused in `response` (Warning 139 or 140).
 bool McServer::open_with_uploaded_csk(const SipMessage &message, SipMessage &opened,
                                       std::optional<keying::KeyMessage> &uploaded, std::string &uploader,
-                                      SipResponse &response) {
+                                      SipResponse &response, bool reuse_held) {
   if (keys_)
     for (const auto &part : parts_of(message))
       if (part.content_type == "application/mikey") {
         if (uploaded) throw std::runtime_error("duplicate CSK");
         uploader = KeyClient::initiator(part.body);
-        uploaded = keys_->accept_csk(uploader, part.body);
+        uploaded = reuse_held ? take_csk(uploader, part.body) : keys_->accept_csk(uploader, part.body);
       }
   if (uploaded) {
     const xmlsec::Key key{uploaded->key, uploaded->csb_id, uploader};
@@ -776,6 +789,11 @@ void McServer::key_subscribe(const SipMessage &message, const User &user, SipRes
   const auto expiry = parse_expires(get_header(message.headers, "Expires"));
   if (!expiry || *expiry > max_subscription_s || key_subscriptions_.size() >= max_subscriptions) {
     response.status_code = 400;
+    return;
+  }
+  // Identity hiding: the CSK is the member's own (hiding_csk_of).
+  if (csk_in_subscribe(message) && !hiding_csk_of(message, user.id)) {
+    response.status_code = 403;
     return;
   }
   key_subscriptions_[message.dialog_id] = {user.id, info.request_uri, message.dialog_id,

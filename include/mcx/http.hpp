@@ -211,7 +211,9 @@ nlohmann::json verify_access_token(std::string_view token, const nlohmann::json 
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex B.11.1: validates an ID token against the IdMS JWKS, its issuer, audience and nonce (which the ID
-// token of a refresh may leave out), and returns its claims.
+// token of a refresh may leave out), and returns its claims. A null `jwks`: the token came straight from the token
+// endpoint over TLS, which validates the issuer in place of the signature (OpenID Connect Core 1.0 section 3.1.3.7
+// step 6, the client's oauth.id_token_tls_validation); every claim is still checked.
 nlohmann::json verify_id_token(std::string_view token, const nlohmann::json &jwks, std::string_view issuer,
                                std::string_view audience, std::string_view nonce, bool refreshed = false);
 } // namespace mcx

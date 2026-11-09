@@ -614,15 +614,48 @@ bool named(const json &claims, const char *name) {
   const auto value = claims.find(name);
   return value != claims.end() && value->is_string() && !value->get_ref<const std::string &>().empty();
 }
+
+//------------------------------------------------------------------------------
+// OpenID Connect Core 1.0 section 3.1.3.7 step 6: "If the ID Token is received via direct communication between the
+// Client and the Token Endpoint (which it is in this flow), the TLS server validation MAY be used to validate the
+// issuer in place of checking the token signature". The claims of a JWT whose signature is not checked: its form
+// (RFC 7519 section 7.2) and its header as signed_claims requires them (RS256, no "crit").
+json tls_validated_claims(std::string_view token) {
+  if (token.size() > max_id_token) throw std::runtime_error("oversized token");
+  auto first = token.find('.'), second = token.find('.', first == token.npos ? 0 : first + 1);
+  if (first == token.npos || second == token.npos || token.find('.', second + 1) != token.npos)
+    throw std::runtime_error("invalid JWT");
+  auto head = json::parse(unb64(token.substr(0, first)));
+  if (head.value("alg", "") != "RS256") throw std::runtime_error("JWT algorithm refused");
+  if (head.contains("crit")) throw std::runtime_error("JWT critical header parameter not understood");
+  auto claims = json::parse(unb64(token.substr(first + 1, second - first - 1)));
+  if (!claims.is_object()) throw std::runtime_error("invalid JWT claims");
+  return claims;
+}
+
+//------------------------------------------------------------------------------
+// The IdMS keys an ID token from the token endpoint is checked with (verify_id_token): its JWKS, or, with the client's
+// oauth.id_token_tls_validation (off by default), none: OpenID Connect Core 1.0 section 3.1.3.7 step 6, the TLS
+// server validation of the token endpoint (an https URI, TS 33.180 clause 5.1.2.1) in place of the signature.
+json id_token_keys(const HttpClient &http, const json &cfg, const std::string &token_endpoint,
+                   const std::function<json()> &discovery) {
+  if (!cfg.value("id_token_tls_validation", false))
+    return http.request("GET", oidc_endpoint(cfg, "jwks_uri", discovery)).json();
+  if (!token_endpoint.starts_with("https://"))
+    throw std::runtime_error("ID token validation by TLS needs an https token endpoint");
+  return nullptr;
+}
 } // namespace
 
 //------------------------------------------------------------------------------
 // TS 33.180 annex B.11.1 (OpenID Connect Core 1.0 section 3.1.3.7): validates an RS256-signed ID token against the
 // IdMS JWKS (RFC 7517, RFC 7518 section 3.3), its iss, aud, nonce, exp, iat and nbf claims, and the MCX claims of
 // TS 33.180 table B.2.1.3-1. The ID token of a refresh may leave the nonce out (OpenID Connect Core 1.0 section 12.2).
+// A null `jwks`: the token came from the token endpoint over TLS and its signature is not checked (step 6,
+// id_token_keys); every claim still is.
 json verify_id_token(std::string_view token, const json &jwks, std::string_view issuer, std::string_view audience,
                      std::string_view nonce, bool refreshed) {
-  auto claims = signed_claims(token, jwks);
+  auto claims = jwks.is_null() ? tls_validated_claims(token) : signed_claims(token, jwks);
   // TS 33.180 tables B.2.1.2-1 and B.2.1.3-1: sub is any identifier of the user that IdMS never reassigns, and
   // mcptt_id the MCPTT ID; the client checks the IDs against its configuration. client_id and sip_uri (an OpenMCX
   // extension, not in those tables) are checked where an IdMS gives them.
@@ -789,7 +822,7 @@ json oidc_exchange_code(const HttpClient &http, const json &cfg, const std::stri
   if (response.status != ok)
     throw std::runtime_error("OIDC token request refused: HTTP " + std::to_string(response.status));
   auto tokens = bearer_token_response(response.json());
-  auto keys = http.request("GET", oidc_endpoint(cfg, "jwks_uri", discovery)).json();
+  const auto keys = id_token_keys(http, cfg, oidc_endpoint(cfg, "token_endpoint", discovery), discovery);
   tokens["claims"] = verify_id_token(tokens.at("id_token").get<std::string>(), keys, issuer, client, nonce);
   tokens["nonce"] = nonce;
   return tokens;
@@ -1130,7 +1163,7 @@ json oidc_refresh(const HttpClient &http, const json &cfg, const std::string &re
   // TS 33.180 table B.5.3-1: the ID token is optional. OpenID Connect Core 1.0 section 12.2: one given names the
   // same user, and its nonce, where given, is the authentication's.
   if (tokens.contains("id_token")) {
-    auto keys = http.request("GET", oidc_endpoint(cfg, "jwks_uri", discovery)).json();
+    const auto keys = id_token_keys(http, cfg, token_endpoint, discovery);
     tokens["claims"] = verify_id_token(tokens.at("id_token").get<std::string>(), keys, issuer, client, nonce, true);
   }
   tokens["nonce"] = nonce;

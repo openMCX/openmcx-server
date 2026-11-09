@@ -71,6 +71,11 @@ SipResponse McServer::config_subscribe(const SipMessage &message, const std::str
   sub.subscriber = identity;
   sub.sip = asserted_identity(message);
   sub.identity_hiding = csk_in_subscribe(message);
+  // Identity hiding: the CSK is the subscriber's own (hiding_csk_of).
+  if (sub.identity_hiding && !hiding_csk_of(message, identity)) {
+    response.status_code = 403;
+    return response;
+  }
   sub.expires = std::time(nullptr) + static_cast<std::int64_t>(*expires);
   sub.etags = followed_configuration(identity, documents, nullptr);
   if (sub.etags.empty()) {

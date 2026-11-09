@@ -185,8 +185,17 @@ std::vector<BodyPart> McServer::protect_outgoing(const SipTransmission &transmis
   // that subscription's security context, not the service configuration document (subscription_protection).
   if (const auto hiding = subscription_protection(transmission.call_id)) {
     if (!*hiding) return parts;
-    throw std::runtime_error("subscription with identity hiding (CSK in the initial SUBSCRIBE): not supported, the "
-                             "protection it requires cannot be applied");
+    // TS 24.484 clause 6.3.13.3.2.2 and TS 24.481 clause 6.3.13.3.2.2: "the confidentiality protection procedures
+    // and integrity protection procedures defined in 3GPP TS 24.379 [9] for MCPTT server", under the subscriber's CSK
+    // whatever the service configuration document says; never in the clear without it.
+    const auto key = subscription_key(transmission.call_id);
+    if (!key) throw std::runtime_error("identity hiding subscription: no usable CSK of the subscriber");
+    for (auto &part : parts)
+      if (mcptt_xml_part(part.content_type) && !xmlsec::is_protected(part.body)) {
+        part.body = xmlsec::encrypt(part.body, *key, mcptt_xml_profile());
+        ++xml_encrypted_;
+      }
+    return sign_parts(std::move(parts), *key);
   }
   const bool to_client = transmission.address == core_address_;
   const auto peer = to_client ? std::string() : peer_at(transmission.address);
@@ -235,8 +244,8 @@ bool McServer::csk_in_subscribe(const SipMessage &message) {
 // the initial SIP SUBSCRIBE request, the CMS shall perform the confidentiality protection procedures and integrity
 // protection procedures defined in 3GPP TS 24.379 [9] for MCPTT server". For the dialog of a client's subscription
 // of these procedures: whether that protection applies (identity hiding); nothing for any other dialog (an MCS
-// server's group document subscription included), whose protection is decided as before. Identity hiding is not
-// supported yet: with it protection applies, and protect_outgoing then refuses (no key it could use), never clear.
+// server's group document subscription included), whose protection is decided as before. With identity hiding
+// protection applies under the subscriber's CSK (subscription_key, protect_outgoing), never clear.
 // The GMK in a GKTP document stays protected by its own MIKEY-SAKKE I_MESSAGE (TS 33.180 clause 5.7) either way.
 std::optional<bool> McServer::subscription_protection(const std::string &dialog) const {
   if (dialog.empty()) return std::nullopt;
@@ -261,7 +270,97 @@ std::optional<xmlsec::Key> McServer::key_by_id(const SipTransmission &transmissi
     if (user.csk && user.csk->csb_id == id && user.peer.empty())
       return csk_in_use(*user.csk) ? std::optional(xmlsec::Key{user.csk->key, user.csk->csb_id, user.id})
                                    : std::nullopt;
+  return subscription_csk_by_id(id);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 6.3.13.3.2.2 and TS 24.481 clause 6.3.13.3.2.2 (identity hiding, TS 24.484 clause 6.3.13.2.2 step
+// d and TS 24.481 clause 6.3.13.2.1 step d): a client's initial SUBSCRIBE carrying "an application/mikey MIME body
+// with the CSK" has its mcptt-info and resource-lists bodies confidentiality and integrity protected with that CSK
+// (TS 24.379 clauses 6.6.2.3.3 and 6.6.3.3.3), before or besides the service authorisation that may upload it too.
+// The CSK is taken (take_csk) and kept for the MCPTT ID that sent it; the bodies are verified and decrypted into
+// `opened`. Returns false when the request is refused in `response` (403, Warning 139 or 140 as at service
+// authorisation).
+bool McServer::open_hidden_subscribe(const SipMessage &message, SipMessage &opened, SipResponse &response) {
+  std::optional<keying::KeyMessage> uploaded;
+  std::string uploader;
+  const auto mikey = std::find_if(message.parts.begin(), message.parts.end(),
+                                  [](const BodyPart &part) { return part.content_type == "application/mikey"; });
+  // A local limit on the CSKs kept for subscribers not service authorised (as max_subscriptions).
+  if (!keys_ || mikey == message.parts.end() ||
+      (!subscription_csks_.contains(KeyClient::initiator(mikey->body)) &&
+       subscription_csks_.size() >= 3 * max_subscriptions)) {
+    response.status_code = 403;
+    return false;
+  }
+  if (!open_with_uploaded_csk(message, opened, uploaded, uploader, response, true)) return false;
+  if (!uploaded) {
+    response.status_code = 403;
+    return false;
+  }
+  subscription_csks_[uploader] = *uploaded;
+  event("identity_hiding_subscribe", {{"user_id", uploader}, {"csk_id", uploaded->csb_id}});
+  return true;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 clause 5.4 with annex E: the CSK of an identity hiding SUBSCRIBE's upload I_MESSAGE from `sender`. The
+// same CSK reaches this server in each of the client's identity hiding SUBSCRIBEs, and may be the one its service
+// authorisation uploaded; the I_MESSAGE of a CSK held for the sender (by its CSK-ID) is not accepted again
+// (KeyClient::accept_csk takes each CSK once), the bodies it comes with are verified and decrypted with the held key
+// instead. Any other CSK is accepted as new. The service authorisation itself accepts each CSK once, as before.
+keying::KeyMessage McServer::take_csk(const std::string &sender, const std::string &mikey) {
+  const auto id = KeyClient::key_id(mikey);
+  if (const auto found = subscription_csks_.find(sender);
+      found != subscription_csks_.end() && found->second.csb_id == id)
+    return found->second;
+  for (const auto &[sip, user] : users_)
+    if (user.id == sender && user.peer.empty() && user.csk && user.csk->csb_id == id) return *user.csk;
+  return keys_->accept_csk(sender, mikey);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 6.6.2.2: the XPK of an identity hiding subscription's subscriber: its current CSK once it is
+// service authorised (a later authorisation may have uploaded a new one), else the CSK its SUBSCRIBE brought; nothing
+// past its Expiry time (TS 33.180 annex E.6.10).
+std::optional<xmlsec::Key> McServer::subscriber_xml_key(const std::string &subscriber) const {
+  for (const auto &[sip, user] : users_)
+    if (user.id == subscriber && user.peer.empty() && user.csk && csk_in_use(*user.csk))
+      return xmlsec::Key{user.csk->key, user.csk->csb_id, user.id};
+  if (const auto found = subscription_csks_.find(subscriber);
+      found != subscription_csks_.end() && csk_in_use(found->second))
+    return xmlsec::Key{found->second.key, found->second.csb_id, subscriber};
   return std::nullopt;
+}
+
+//------------------------------------------------------------------------------
+// The XPK of a CSK-ID among the CSKs of identity hiding SUBSCRIBEs (for the in-dialog requests of a subscriber not
+// service authorised).
+std::optional<xmlsec::Key> McServer::subscription_csk_by_id(std::uint32_t id) const {
+  for (const auto &[user, csk] : subscription_csks_)
+    if (csk.csb_id == id && csk_in_use(csk)) return xmlsec::Key{csk.key, csk.csb_id, user};
+  return std::nullopt;
+}
+
+//------------------------------------------------------------------------------
+// The XPK protecting the dialog of an identity hiding subscription: its subscriber's (subscriber_xml_key).
+std::optional<xmlsec::Key> McServer::subscription_key(const std::string &dialog) const {
+  if (const auto found = config_subscriptions_.find(dialog); found != config_subscriptions_.end())
+    return subscriber_xml_key(found->second.subscriber);
+  if (const auto found = doc_subscriptions_.find(dialog); found != doc_subscriptions_.end() && !found->second.server)
+    return subscriber_xml_key(found->second.subscriber);
+  if (const auto found = key_subscriptions_.find(dialog); found != key_subscriptions_.end())
+    return subscriber_xml_key(found->second.user);
+  return std::nullopt;
+}
+
+//------------------------------------------------------------------------------
+// An identity hiding SUBSCRIBE may create a subscription for `identity` (the access token's) only with a CSK that
+// identity uploaded (the MIKEY initiator) and that this server holds for it.
+bool McServer::hiding_csk_of(const SipMessage &message, const std::string &identity) const {
+  for (const auto &part : message.parts)
+    if (part.content_type == "application/mikey" && KeyClient::initiator(part.body) != identity) return false;
+  return subscriber_xml_key(identity).has_value();
 }
 
 //------------------------------------------------------------------------------
@@ -288,6 +387,7 @@ std::vector<BodyPart> McServer::protect_incoming(const SipTransmission &transmis
       for (const auto &[sip, user] : users_)
         if (id && user.csk && user.csk->csb_id == *id && user.peer.empty() && csk_in_use(*user.csk))
           key = xmlsec::Key{user.csk->key, user.csk->csb_id, user.id};
+      if (!key && id) key = subscription_csk_by_id(*id);
     } else if (const auto peer = peer_at(transmission.address); !peer.empty())
       key = peer_xml_key(peer, false);
     // The service authorisation's CSK is not known until the request is handled.

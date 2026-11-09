@@ -207,9 +207,10 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   contact per user).
 - **sec-agree option-tag in Proxy-Require** (spec defect, to report). After the security agreement the Linux client
   sends Security-Verify and `Require: sec-agree` in every request (RFC 3329 section 2.3.1) but ACK and CANCEL (RFC 3329
-  table 1, TS 24.229 tables A.7 and A.23, RFC 3261 sections 8.2.2.3 and 9.1) and PRACK, and `Proxy-Require: sec-agree`
-  in INVITE and OPTIONS only: for the other methods TS 24.229 annex A gives Proxy-Require "n/a" for the UE, against
-  the RFC 3329 MUST it imports, with no text for the weaker status (clause A.1.1); for PRACK RFC 3329 contradicts itself
+  table 1, TS 24.229 tables A.7 and A.23, RFC 3261 sections 8.2.2.3 and 9.1) and PRACK, with `Proxy-Require: sec-agree`
+  in each of them: for the methods other than INVITE and OPTIONS TS 24.229 annex A gives Proxy-Require "n/a" for the
+  UE, against the RFC 3329 MUST it imports, with no text for the weaker status (clause A.1.1); "n/a" is not "x"
+  (prohibited), so the RFC is followed, as TS 37.579-1 expects (table 5.5.2.14-1); for PRACK RFC 3329 contradicts itself
   (section 2.3.1 "all the subsequent SIP requests", table 1 "-") and TS 24.229 table A.91 has no Security-Verify. The P-CSCF removes the sec-agree option-tags and Security-Verify before the
   SIP core (TS 24.229 annex A, proxy role: Security-Verify "x"). Own deviation not fixed yet: the P-CSCF checks
   Security-Verify only in a REGISTER, not in the later requests (RFC 3329 section 2.3.1: "The server MUST check that

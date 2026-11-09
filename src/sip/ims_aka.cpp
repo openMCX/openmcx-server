@@ -157,11 +157,12 @@ void add_raw_header(pjsip_tx_data *data, std::string_view name, std::string_view
 // REGISTER (its own procedure, aka_register). Not ACK and CANCEL: RFC 3329 table 1 gives Security-Verify "-" there,
 // TS 24.229 tables A.7 and A.23 have no Security-Verify and give Require and Proxy-Require "n/a" (RFC 3261 sections
 // 8.2.2.3 and 9.1). Not PRACK: table 1 gives "-" against the section 2.3.1 "all", and TS 24.229 table A.91 has no
-// Security-Verify (a contradiction, today's behaviour kept). Proxy-Require only in INVITE and OPTIONS: TS 24.229
-// annex A gives it "n/a" for the UE in the other methods against the RFC 3329 MUST, with no text for the weaker status
-// that clause A.1.1 asks for (a contradiction in the specification, Known limitations "sec-agree option-tag in
-// Proxy-Require"; today's behaviour kept). False when the request already has its Security-Verify (a retransmission,
-// or added before the send).
+// Security-Verify (a contradiction, today's behaviour kept). Proxy-Require in every one of these requests, as RFC 3329
+// section 2.3.1 says and TS 37.579-1 expects (table 5.5.2.14-1 and the other request templates): TS 24.229 annex A
+// gives it "n/a" for the UE in the methods other than INVITE and OPTIONS (tables A.104A, A.134, ...), with no text for
+// that weaker status; "n/a" (table A.1: "it is impossible to use the capability") is not "x" (prohibited), so the
+// RFC's MUST is followed (Known limitations "sec-agree option-tag in Proxy-Require"). False when the request already
+// has its Security-Verify (a retransmission, or added before the send).
 bool add_sec_agree(pjsip_tx_data *data, const std::string &security_server) {
   auto *message = data->msg;
   if (message == nullptr || message->type != PJSIP_REQUEST_MSG || security_server.empty()) return false;
@@ -173,7 +174,7 @@ bool add_sec_agree(pjsip_tx_data *data, const std::string &security_server) {
   if (pjsip_msg_find_hdr_by_name(message, &verify_name, nullptr) != nullptr) return false;
   add_raw_header(data, "Security-Verify", security_server);
   add_raw_header(data, "Require", "sec-agree");
-  if (method == PJSIP_INVITE_METHOD || method == PJSIP_OPTIONS_METHOD) add_raw_header(data, "Proxy-Require", "sec-agree");
+  add_raw_header(data, "Proxy-Require", "sec-agree");
   return true;
 }
 
@@ -364,7 +365,9 @@ void SipEngine::Impl::aka_register(unsigned expires, std::string_view content_ty
 // and To the public user identity (the ISIM's, sip.isim.impu, when configured), the Request-URI the home domain, no Route (TS 37.579-1 table 5.5.2.13-1: it goes
 // to the P-CSCF directly), Expires, the Contact with the protected server port (or the unprotected port for an
 // unprotected REGISTER), Authorization, Security-Client, Security-Verify when protected, Require and Proxy-Require
-// "sec-agree" (RFC 3329 section 2.3.1) and Supported "path"; the Call-ID of the procedure, the next CSeq.
+// "sec-agree" (RFC 3329 section 2.3.1) and Supported "path" with "timer" (RFC 3261 section 20.37: the extensions the
+// UA supports; the engine's RFC 4028 session timer, TS 37.579-1 table 5.5.2.13-1); the Call-ID of the procedure, the
+// next CSeq.
 void SipEngine::Impl::aka_send_register(AkaRoute route, bool new_offer, const std::string &authorization) {
   if (new_offer) {
     aka->offer = aka_new_offer();
@@ -414,7 +417,7 @@ void SipEngine::Impl::aka_send_register(AkaRoute route, bool new_offer, const st
   if (set != nullptr) add_raw_header(data.get(), "Security-Verify", set->security_server);
   add_raw_header(data.get(), "Require", "sec-agree");
   add_raw_header(data.get(), "Proxy-Require", "sec-agree");
-  add_raw_header(data.get(), "Supported", "path");
+  add_raw_header(data.get(), "Supported", "path, timer");
   (void)add_access_network_info(data.get());
   if (!aka->content_type.empty()) data->msg->body = make_text_body(data->pool, aka->content_type, aka->body);
 

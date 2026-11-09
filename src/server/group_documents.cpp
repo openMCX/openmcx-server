@@ -75,7 +75,12 @@ SipResponse McServer::doc_subscribe(const SipMessage &message, const std::string
   DocSubscription sub;
   sub.subscriber = identity;
   sub.server = server;
-  sub.identity_hiding = csk_in_subscribe(message);
+  sub.identity_hiding = !server && csk_in_subscribe(message);
+  // Identity hiding: the CSK is the subscriber's own (hiding_csk_of).
+  if (sub.identity_hiding && !hiding_csk_of(message, identity)) {
+    response.status_code = 403;
+    return response;
+  }
   sub.expires = std::time(nullptr) + static_cast<std::int64_t>(*expires);
   for (const auto &group : groups) {
     // TS 24.481 clause 7.2.12.2: a member may subscribe to its group's document. Clause 6.3.13.3.2.2 step d: 403 only
