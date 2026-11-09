@@ -1,7 +1,7 @@
 # Kamailio patches
 
 The SIP core and the P-CSCF run Kamailio 6.1.4 ([source](https://github.com/kamailio/kamailio/tree/6.1.4), archive
-SHA-256 `d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6`, dependencies/lock.json) with five changes,
+SHA-256 `d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6`, dependencies/lock.json) with six changes,
 applied by docker/Dockerfile.kamailio after each is checked against its SHA-256:
 
 - [0001-ims_auth-local-vectors-and-AKAv2-SHA-256.patch](0001-ims_auth-local-vectors-and-AKAv2-SHA-256.patch),
@@ -50,3 +50,8 @@ The image carries the source archive and the patches in /usr/src.
   than 1200 s, else at half time; a refresh that fails with a non-481 response (or gets none) leaves the subscription
   valid until its last known expiry, without a further refresh, and a new initial subscription follows (the record
   keeps its outbound proxy for it); a 481 makes a new initial subscription at once.
+- [0006-presence-NOTIFYs-of-a-subscription-in-CSeq-order.patch](0006-presence-NOTIFYs-of-a-subscription-in-CSeq-order.patch),
+  SHA-256 `b7f5e609d8e122c825f602b06321fc74732b337bb8e4d194997e4d3c8040d308`: the presence module sends the NOTIFYs of a subscription in CSeq order
+  (RFC 3261 clause 12.2.1.1): the first NOTIFY of a reg event subscription, whose body takes longer to build, left
+  after a later one that a PUBLISH made in another process, and the UE answered it 500 (clause 12.2.2); a reentrant
+  lock per subscription hash slot is held from taking the CSeq to sending the request.

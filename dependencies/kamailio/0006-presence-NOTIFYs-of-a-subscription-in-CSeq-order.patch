@@ -1,0 +1,153 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: OpenMCX <noreply@openmcx.invalid>
+Date: Mon, 9 Nov 2026 12:00:00 +0100
+Subject: [PATCH] presence: the NOTIFYs of a subscription leave in CSeq order
+
+RFC 3261 clause 12.2.1.1: the CSeq of a request within a dialog "MUST be
+strictly monotonically increasing"; clause 12.2.2: a UAS answers a request
+with a lower CSeq than the last one received with a 500. notify() took the
+next CSeq of the subscription under the lock of its hash slot, released it,
+and then built and sent the NOTIFY: the first NOTIFY of a reg event
+subscription, whose body is built from the presentity table, left after the
+NOTIFY that a PUBLISH of the same registration made in another process with
+its body ready, and the UE answered the first one 500. A reentrant lock per
+hash slot (the reply callback may run in the same process) is now held from
+taking the CSeq to sending the request.
+
+---
+diff --git a/src/modules/presence/notify.c b/src/modules/presence/notify.c
+index 0311ba8..eeab2ab 100644
+--- a/src/modules/presence/notify.c
++++ b/src/modules/presence/notify.c
+@@ -23,6 +23,8 @@
+  *
+  * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): a body the event declares final (is_final_body) is sent
+  * with Subscription-State "terminated" and the subscription is then deleted; no empty reason parameter.
++ * Modified by OpenMCX on 2026-11-09 (GPL-2.0 section 2(a)): the NOTIFYs of a subscription leave in CSeq order (a
++ * reentrant lock per subscription hash slot, held by notify() from taking the CSeq to sending the request).
+  *
+  */
+ 
+@@ -54,6 +56,7 @@
+ #include "presence_dmq.h"
+ #include "subscribe.h"
+ #include "../../core/receive.h"
++#include "../../core/locking.h"
+ 
+ #define ALLOC_SIZE 3000
+ #define MAX_FORWARD 70
+@@ -1811,9 +1814,41 @@ error:
+ }
+ 
+ 
++/* NOTIFYs of a subscription in CSeq order: RFC 3261 clause 12.2.1.1, the CSeq
++ * of a request within a dialog "MUST be strictly monotonically increasing";
++ * clause 12.2.2, a UAS rejects a request with a lower CSeq than the last one
++ * received with a 500. notify() takes the next CSeq of the subscription and
++ * then builds and sends the NOTIFY; without a lock, a NOTIFY whose body takes
++ * longer to build (the first one, from the presentity table) left after a
++ * later one of another process (a PUBLISH's, with its body ready). The lock of
++ * the subscription's hash slot is held from taking the CSeq to sending the
++ * request (reentrant: the reply callback may run in the same process). */
++rec_lock_set_t *pres_notify_order_locks = NULL;
++
++static int notify_in_order(subs_t *subs, subs_t *watcher_subs, str *n_body,
++		int force_null_body, aux_body_processing_t *aux_body_processing);
++
+ int notify(subs_t *subs, subs_t *watcher_subs, str *n_body, int force_null_body,
+ 		aux_body_processing_t *aux_body_processing)
+ {
++	unsigned int hash_code;
++	int ret;
++
++	if(pres_notify_order_locks == NULL) {
++		return notify_in_order(subs, watcher_subs, n_body, force_null_body,
++				aux_body_processing);
++	}
++	hash_code = core_case_hash(&subs->pres_uri, &subs->event->name, shtable_size);
++	rec_lock_set_get(pres_notify_order_locks, hash_code);
++	ret = notify_in_order(
++			subs, watcher_subs, n_body, force_null_body, aux_body_processing);
++	rec_lock_set_release(pres_notify_order_locks, hash_code);
++	return ret;
++}
++
++static int notify_in_order(subs_t *subs, subs_t *watcher_subs, str *n_body,
++		int force_null_body, aux_body_processing_t *aux_body_processing)
++{
+ 
+ 	str *aux_body = NULL;
+ 
+diff --git a/src/modules/presence/notify.h b/src/modules/presence/notify.h
+index 0f11da6..f08c07a 100644
+--- a/src/modules/presence/notify.h
++++ b/src/modules/presence/notify.h
+@@ -21,6 +21,9 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+  *
++ * Modified by OpenMCX on 2026-11-09 (GPL-2.0 section 2(a)): the NOTIFYs of a subscription leave in CSeq order (a
++ * reentrant lock per subscription hash slot, held by notify() from taking the CSeq to sending the request).
++ *
+  */
+ 
+ /*! \file
+@@ -29,6 +32,7 @@
+  */
+ 
+ 
++#include "../../core/locking.h"
+ #include "../../core/str.h"
+ #include "../../modules/tm/dlg.h"
+ #include "subscribe.h"
+@@ -120,6 +124,9 @@ int publ_notify_notifier(str pres_uri, pres_ev_t *event);
+ int set_updated(subs_t *sub);
+ int set_wipeer_subs_updated(str *pres_uri, pres_ev_t *event, int full);
+ 
++/* the locks that keep the NOTIFYs of a subscription in CSeq order (notify.c) */
++extern rec_lock_set_t *pres_notify_order_locks;
++
+ int notify(subs_t *subs, subs_t *watcher_subs, str *n_body, int force_null_body,
+ 		aux_body_processing_t *aux_body_processing);
+ 
+diff --git a/src/modules/presence/presence.c b/src/modules/presence/presence.c
+index 79704c9..14447db 100644
+--- a/src/modules/presence/presence.c
++++ b/src/modules/presence/presence.c
+@@ -19,6 +19,9 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+  *
++ * Modified by OpenMCX on 2026-11-09 (GPL-2.0 section 2(a)): the NOTIFYs of a subscription leave in CSeq order (a
++ * reentrant lock per subscription hash slot, held by notify() from taking the CSeq to sending the request).
++ *
+  */
+ 
+ /*!
+@@ -402,6 +405,13 @@ static int mod_init(void)
+ 			LM_ERR(" initializing subscribe hash table\n");
+ 			goto dberror;
+ 		}
++		/* the locks that keep the NOTIFYs of a subscription in CSeq order (notify.c) */
++		pres_notify_order_locks = rec_lock_set_alloc(shtable_size);
++		if(pres_notify_order_locks == NULL
++				|| rec_lock_set_init(pres_notify_order_locks) == NULL) {
++			LM_ERR("initializing the NOTIFY order locks\n");
++			goto dberror;
++		}
+ 	}
+ 
+ 	if(publ_cache_mode == PS_PCACHE_HYBRID) {
+@@ -651,6 +661,12 @@ static int child_init(int rank)
+  */
+ static void destroy(void)
+ {
++	/* the locks that keep the NOTIFYs of a subscription in CSeq order (notify.c) */
++	if(pres_notify_order_locks) {
++		rec_lock_set_destroy(pres_notify_order_locks);
++		rec_lock_set_dealloc(pres_notify_order_locks);
++		pres_notify_order_locks = NULL;
++	}
+ 	if(subs_htable && pres_subs_dbmode == WRITE_BACK) {
+ 		/* open database connection */
+ 		pa_db = pa_dbf.init(&pres_db_url);
