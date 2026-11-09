@@ -1033,6 +1033,8 @@ TLS_CA = "/config/tls/ca.crt";
                     # TS 100 392-19-1 clause 8.2.1 with TS 29.379 clause 11.1.2.2: the TETRA MSs' MCPTT IDs, reached
                     # through the IWF (a private call to an MS).
                     "users": [f"sip:tetra-{issi}@{domain}" for issi in iwf_source["tetra"]["issis"]],
+                    # TS 29.380 clause 13.1: the IWF's MCPTT ID, a member of the groups, takes their GMKs.
+                    "group_member": iwf_mcptt_id,
                 }
                 for owned in (tetra_group, tetra_chat_group):
                     if owned:
@@ -1177,6 +1179,8 @@ TLS_CA = "/config/tls/ca.crt";
             "key_parameter_profile": {
                 "message_type": 10, "algorithm": 1, "key_parameters_iei": 0x79, "encrypted_payload_iei": 0x78
             },
+            # TS 33.180 clause 5.7: the GMS that signs the GKTP documents of the groups' GMKs.
+            "gms_uri": endpoints["gms"] + "/xcap-root/org.openmobilealliance.groups",
         }
         save("iwf.json", iwf_cfg)
     # The MCVideo server: the openmcx-mcvideo-server executable, on the same core as the

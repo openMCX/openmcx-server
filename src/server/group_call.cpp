@@ -463,7 +463,9 @@ void McServer::notify_key(const std::string &dialog) {
   if (found == key_subscriptions_.end() || found->second.pending) return;
   auto &sub = found->second;
   auto *user = by_id(sub.user);
-  bool terminated = !user || user->expires <= std::time(nullptr) || sub.expires <= std::time(nullptr);
+  // A peer's group member is not a user signed in here: its subscription lasts while the peer is configured.
+  const bool present = sub.peer.empty() ? user && user->expires > std::time(nullptr) : peers_.contains(sub.peer);
+  bool terminated = !present || sub.expires <= std::time(nullptr);
   std::string body;
   if (!terminated) {
     const auto &common = cfg_.at("common");

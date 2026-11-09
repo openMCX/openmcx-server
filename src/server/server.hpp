@@ -272,7 +272,8 @@ protected:
   //------------------------------------------------------------------------------
   // A group member's subscription to the group's GKTP document, its group key (TS 24.481 clause 7.7).
   struct KeySubscription {
-    std::string user, group, dialog;
+    // peer: the peer whose group member (ServicePeer::group_member) the user is; empty for a served user.
+    std::string user, group, dialog, peer;
     std::int64_t expires = 0;
     std::uint32_t key_id = 0;
     std::uint64_t next_poll = 0;
@@ -1767,6 +1768,7 @@ protected:
   static std::optional<std::uint64_t> refreshed_expires(const SipMessage &message);
   // TS 24.481 clause 7.7: a group member's subscription to the group's GKTP document.
   void key_subscribe(const SipMessage &message, const User &user, SipResponse &response);
+  void peer_key_subscribe(const SipMessage &message, const std::string &peer, SipResponse &response);
   // RFC 6665 section 4.2.1.2: a re-SUBSCRIBE in the dialog of a key subscription; false when it is none's.
   bool refresh_key_subscription(const SipMessage &message, const User &user, SipResponse &response);
   // TS 24.379 clause 10.1.3.4.1: subscription to the conference event package of a call.

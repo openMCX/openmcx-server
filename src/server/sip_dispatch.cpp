@@ -171,6 +171,13 @@ bool McServer::peer_request(const SipMessage &message, const std::string &peer, 
         }
       }
     }
+  // TS 24.481 clause 7.7 with TS 29.380 clause 13.1: a standard peer's subscription to a group's GKTP document for
+  // its group member (an IWF's own MCPTT ID), new or in its dialog.
+  if (message.method == "SUBSCRIBE" && event_name == "xcap-diff" && peers_.contains(peer) &&
+      !peers_.at(peer).group_member.empty()) {
+    peer_key_subscribe(message, peer, response);
+    return true;
+  }
   if (terminating_request(message, peer, response)) return true;
   if (message.method == "PUBLISH" || (message.method == "SUBSCRIBE" && event_name != "conference")) {
     response.status_code = 403;
@@ -819,9 +826,66 @@ void McServer::key_subscribe(const SipMessage &message, const User &user, SipRes
     response.status_code = 400;
     return;
   }
-  key_subscriptions_[message.dialog_id] = {user.id, info.request_uri, message.dialog_id,
+  key_subscriptions_[message.dialog_id] = {user.id, info.request_uri, message.dialog_id, {},
                                            std::time(nullptr) + static_cast<std::int64_t>(*expiry)};
   key_subscriptions_[message.dialog_id].identity_hiding = csk_in_subscribe(message);
+  response.headers = {{"Expires", std::to_string(*expiry)}};
+  schedule([this, id = message.dialog_id] { notify_key(id); });
+}
+
+//------------------------------------------------------------------------------
+// TS 24.481 clause 7.7 with TS 29.380 clause 13.1 ("The GMK and the GMK-ID are distributed to the IWF by the MCPTT
+// GMS per the procedures specified in 3GPP TS 24.481 for distribution of the GMK and GMK-ID to an MCPTT server",
+// which TS 24.481 does not specify): a standard peer subscribes to a group's GKTP document for its configured group
+// member, at the GMS subscription proxy PSI, the group in <mcptt-request-uri>. The peer is trusted by its source
+// address (it has no access token); the member must be in the group. In the dialog: a refresh or the end, by the
+// same peer. The rest is key_subscribe's.
+void McServer::peer_key_subscribe(const SipMessage &message, const std::string &peer, SipResponse &response) {
+  const auto &group_member = peers_.at(peer).group_member;
+  if (const auto found = key_subscriptions_.find(message.dialog_id); found != key_subscriptions_.end()) {
+    if (found->second.peer != peer) {
+      response.status_code = 403;
+      return;
+    }
+    const auto expires = refreshed_expires(message);
+    if (!expires || *expires > max_subscription_s) {
+      response.status_code = 400;
+      return;
+    }
+    found->second.expires = std::time(nullptr) + static_cast<std::int64_t>(*expires);
+    found->second.key_id = 0;
+    response.headers = {{"Expires", std::to_string(*expires)}};
+    schedule([this, id = message.dialog_id] { notify_key(id); });
+    return;
+  }
+  const auto info = message_info(message, svc_);
+  const auto &service = cfg_.at(svc_.name);
+  const auto proxy_psi = service.value("gms_subscription_psi", service.at("service_uri").get<std::string>());
+  bool listed = false;
+  try {
+    listed = keys_ && message.request_uri == proxy_psi && member(group_profile(info.request_uri), group_member);
+  } catch (const std::exception &) {
+  }
+  if (!listed) {
+    response.status_code = 403;
+    return;
+  }
+  const BodyPart *resources = nullptr;
+  for (const auto &part : message.parts)
+    if (part.content_type == "application/resource-lists+xml") resources = &part;
+  if (!resources) {
+    response.status_code = 400;
+    return;
+  }
+  keying::validate_gktp_resource_list(resources->body, info.request_uri);
+  const auto expiry = parse_expires(get_header(message.headers, "Expires"));
+  if (!expiry || *expiry > max_subscription_s || key_subscriptions_.size() >= max_subscriptions) {
+    response.status_code = 400;
+    return;
+  }
+  key_subscriptions_[message.dialog_id] = {group_member, info.request_uri, message.dialog_id, peer,
+                                           std::time(nullptr) + static_cast<std::int64_t>(*expiry)};
+  event("peer_key_subscription", {{"peer", peer}, {"member", group_member}, {"group_id", info.request_uri}});
   response.headers = {{"Expires", std::to_string(*expiry)}};
   schedule([this, id = message.dialog_id] { notify_key(id); });
 }

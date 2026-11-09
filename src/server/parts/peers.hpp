@@ -37,6 +37,10 @@ struct ServicePeer {
   // 8.2.1): reached through it, such as in a private call (TS 29.379 clause 11.1.2.2; how the peer is found for them
   // is left to the implementation, TS 29.379 clause 11.1.3.1 NOTE 1).
   std::vector<std::string> users;
+  // The MCPTT ID under which the peer is a member of this system's groups (an interworking function's own MCPTT ID,
+  // TS 100 392-19-1 clause 9.2.1 NOTE 5): its subscription to a group's GKTP document (TS 24.481 clause 7.7) is taken
+  // for that member, whose GMK the GMS encrypts to it (TS 33.180 clause 5.7; TS 29.380 clause 13.1). Empty: none.
+  std::string group_member;
   // TS 33.180 clauses 5.5 and 9.4.5: the SPK as the KFC of the floor and media control between the two servers.
   std::shared_ptr<ProtectedCall> spk;
   // TS 33.180 clauses 5.5 and 11.1.3: the SPK of the signalling bodies and XML exchanged with the peer (the XPK).

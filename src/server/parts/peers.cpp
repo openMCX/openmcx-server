@@ -70,6 +70,7 @@ ServicePeer configured_peer(const std::string &name, const Json &entry, bool dis
   peer.controlling = entry.value("controlling", false);
   peer.standard_affiliation = entry.value("standard_affiliation", false);
   peer.users = entry.value("users", std::vector<std::string>{});
+  peer.group_member = entry.value("group_member", std::string{});
   return peer;
 }
 
