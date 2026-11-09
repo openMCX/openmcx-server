@@ -1,0 +1,101 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: OpenMCX <noreply@openmcx.invalid>
+Date: Mon, 9 Nov 2026 18:00:00 +0100
+Subject: [PATCH] ims_ipsec_pcscf: close the TCP connections of a deleted set
+
+TS 33.203 clause 7.1 associates port_ps and port_pc "with each pair of
+security associations" and has the P-CSCF, "if it does not have a TCP
+connection from its port_pc to the port_us of the UE", set one up before
+sending a request to it (NOTE 6: "it is not mandatory to maintain such TCP
+connection longer than required in RFC 3261"). destroy_ipsec_tunnel()
+deleted a set's SAs and gave its ports back but left its TCP connections
+open: when a later set of the same UE got the same port_pc, a request to the
+UE went over the old connection, which the UE no longer had (it answered
+RST) and the request was lost. The set's connections between its protected
+ports and the UE's (port_pc to port_us, port_uc to port_ps) are now closed
+when the set is deleted, as tcpops' tcp_close_connection() does.
+
+---
+diff --git a/src/modules/ims_ipsec_pcscf/cmd.c b/src/modules/ims_ipsec_pcscf/cmd.c
+index 3f761a8..31cfec7 100644
+--- a/src/modules/ims_ipsec_pcscf/cmd.c
++++ b/src/modules/ims_ipsec_pcscf/cmd.c
+@@ -1,4 +1,7 @@
+ /*
++ * Modified by OpenMCX on 2026-11-09 (GPL-2.0 section 2(a)): a set's TCP connections between its protected ports and
++ * the UE's (port_pc to port_us, port_uc to port_ps) are closed when the set is deleted (TS 33.203 clause 7.1).
++ *
+  * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): a request to the UE whose matched contact's set is gone
+  * goes over the set the UE uses for outbound messages, found by UE address and port_us (TS 33.203 clauses 7.1, 7.4.0).
+  *
+@@ -69,6 +72,9 @@
+ #include "../../core/parser/msg_parser.h"
+ #include "../../core/parser/digest/digest.h"
+ #include "../../core/socket_info.h"
++#include "../../core/globals.h"
++#include "../../core/pass_fd.h"
++#include "../../core/tcp_conn.h"
+ #include "../../lib/ims/ims_getters.h"
+ #include "../../modules/tm/tm_load.h"
+ #include "../ims_usrloc_pcscf/usrloc.h"
+@@ -78,6 +84,7 @@
+ #include "cmd.h"
+ #include "sec_agree.h"
+ 
++#include <errno.h>
+ #include <stdlib.h>
+ #include <string.h>
+ 
+@@ -663,6 +670,41 @@ static int create_ipsec_tunnel(const struct ip_addr *remote_addr, ipsec_t *s)
+ 	return 0;
+ }
+ 
++/* OpenMCX, 2026-11-09: TS 33.203 clause 7.1 associates port_ps and port_pc "with each pair of security associations"
++ * and has the P-CSCF, "if it does not have a TCP connection from its port_pc to the port_us of the UE", set one up
++ * before sending a request; NOTE 6: "it is not mandatory to maintain such TCP connection longer than required in RFC
++ * 3261". A connection of a deleted set can no longer carry anything (its SAs are gone, the port guards block the
++ * rest), but would be found again by its addresses and ports for a later set given the same port_pc: closed here,
++ * like tcpops' tcp_close_connection(), by the TCP main process. Connections are only looked up, not opened. */
++static void ipsec_close_set_connection(const ip_addr_t *ue, unsigned short ue_port, unsigned short local_port)
++{
++	struct tcp_connection *con;
++	union sockaddr_union local;
++	ip_addr_t remote = *ue;
++	long mcmd[2];
++
++	if(tcp_disable || unix_tcp_sock < 0 || ue_port == 0 || local_port == 0) {
++		return;
++	}
++	if(init_su(&local, ue->af == AF_INET6 ? &ipsec_listen_ip_addr6 : &ipsec_listen_ip_addr, local_port) < 0) {
++		return;
++	}
++	con = tcpconn_get(0, &remote, ue_port, &local, 0);
++	if(con == NULL) {
++		return;
++	}
++	LM_DBG("closing TCP connection %d of a deleted set: local port %u, UE port %u\n", con->id, local_port,
++			ue_port);
++	mcmd[0] = (long)con;
++	mcmd[1] = CONN_EOF; /* the TCP main process closes it and drops the reference taken above */
++	con->send_flags.f |= SND_F_CON_CLOSE;
++	con->flags |= F_CONN_FORCE_EOF;
++	if(send_all(unix_tcp_sock, mcmd, sizeof(mcmd)) <= 0) {
++		LM_ERR("failed to request the close of TCP connection %d: %s (%d)\n", con->id, strerror(errno), errno);
++		tcpconn_put(con);
++	}
++}
++
+ static int destroy_ipsec_tunnel(
+ 		str remote_addr, ipsec_t *s, unsigned short received_port)
+ {
+@@ -707,6 +749,10 @@ static int destroy_ipsec_tunnel(
+ 		ipsec_addr = ipsec_listen_addr;
+ 	}
+ 
++	/* OpenMCX, 2026-11-09: the set's TCP connections, before its ports are given back (release_spi() below). */
++	ipsec_close_set_connection(&ip_addr, s->port_us, s->port_pc);
++	ipsec_close_set_connection(&ip_addr, s->port_uc, s->port_ps);
++
+ 	LM_DBG("Destroying security associations: Local IP: %.*s client port: %d "
+ 		   "server port: %d; UE IP: %.*s; client port %d server port %d; "
+ 		   "spi_ps %u, spi_pc %u, spi_us %u, spi_uc %u\n",

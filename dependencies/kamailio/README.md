@@ -1,7 +1,7 @@
 # Kamailio patches
 
 The SIP core and the P-CSCF run Kamailio 6.1.4 ([source](https://github.com/kamailio/kamailio/tree/6.1.4), archive
-SHA-256 `d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6`, dependencies/lock.json) with six changes,
+SHA-256 `d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6`, dependencies/lock.json) with seven changes,
 applied by docker/Dockerfile.kamailio after each is checked against its SHA-256:
 
 - [0001-ims_auth-local-vectors-and-AKAv2-SHA-256.patch](0001-ims_auth-local-vectors-and-AKAv2-SHA-256.patch),
@@ -55,3 +55,8 @@ The image carries the source archive and the patches in /usr/src.
   (RFC 3261 clause 12.2.1.1): the first NOTIFY of a reg event subscription, whose body takes longer to build, left
   after a later one that a PUBLISH made in another process, and the UE answered it 500 (clause 12.2.2); a reentrant
   lock per subscription hash slot is held from taking the CSeq to sending the request.
+- [0007-ims_ipsec_pcscf-close-TCP-connections-of-a-deleted-set.patch](0007-ims_ipsec_pcscf-close-TCP-connections-of-a-deleted-set.patch),
+  SHA-256 `3050d2cfd8fc1f5efe79f6fc6b29fd4bb288b208f8c59982c6fdea293916216d`: ims_ipsec_pcscf closes the TCP connections of a set of security
+  associations between its protected ports and the UE's (port_pc to port_us, port_uc to port_ps) when the set is
+  deleted (TS 33.203 clause 7.1, NOTE 6): a later set of the same UE given the same port_pc otherwise sent its first
+  request over the old connection, which the UE no longer had, and the request was lost.

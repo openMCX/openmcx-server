@@ -10,7 +10,7 @@
 # SHA-256 and applied to the verified source. Built on the development
 # image, run on a slim Ubuntu image with only Kamailio's run-time libraries (docker/packages).
 #
-#   docker build -t openmcx-kamailio:6.1.4-10 -f docker/Dockerfile.kamailio .
+#   docker build -t openmcx-kamailio:6.1.4-11 -f docker/Dockerfile.kamailio .
 #
 # Kamailio is GPL-2.0 (its tls module ISC). The image carries the licence (/usr/share/doc/kamailio/COPYING) and the
 # exact source it was built from (/usr/src/kamailio-6.1.4.tar.gz, pinned in dependencies/lock.json) and the patch
@@ -40,9 +40,11 @@ ARG KAMAILIO_PATCH5=0005-pua-TS-24.229-5.2.3-reg-event-subscription.patch
 ARG KAMAILIO_PATCH5_SHA256=bbef36860baaef9fb5b90f833441f07c503f9424c849a32de47fcf903a1d1657
 ARG KAMAILIO_PATCH6=0006-presence-NOTIFYs-of-a-subscription-in-CSeq-order.patch
 ARG KAMAILIO_PATCH6_SHA256=b7f5e609d8e122c825f602b06321fc74732b337bb8e4d194997e4d3c8040d308
+ARG KAMAILIO_PATCH7=0007-ims_ipsec_pcscf-close-TCP-connections-of-a-deleted-set.patch
+ARG KAMAILIO_PATCH7_SHA256=3050d2cfd8fc1f5efe79f6fc6b29fd4bb288b208f8c59982c6fdea293916216d
 COPY dependencies/kamailio/${KAMAILIO_PATCH} dependencies/kamailio/${KAMAILIO_PATCH2} dependencies/kamailio/${KAMAILIO_PATCH3} \
      dependencies/kamailio/${KAMAILIO_PATCH4} dependencies/kamailio/${KAMAILIO_PATCH5} \
-     dependencies/kamailio/${KAMAILIO_PATCH6} /src/kamailio-patches/
+     dependencies/kamailio/${KAMAILIO_PATCH6} dependencies/kamailio/${KAMAILIO_PATCH7} /src/kamailio-patches/
 COPY docker/packages /usr/local/bin/packages
 # The IMS modules' build libraries the development image lacks (libmnl for ims_ipsec_pcscf).
 RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UBUNTU" kamailio-dev) \
@@ -56,12 +58,14 @@ RUN mkdir -p /src && fetch "$KAMAILIO_FILE" "$KAMAILIO_URL" "$KAMAILIO_SHA256" /
  && echo "$KAMAILIO_PATCH4_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH4" | sha256sum -c - \
  && echo "$KAMAILIO_PATCH5_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH5" | sha256sum -c - \
  && echo "$KAMAILIO_PATCH6_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH6" | sha256sum -c - \
+ && echo "$KAMAILIO_PATCH7_SHA256  /src/kamailio-patches/$KAMAILIO_PATCH7" | sha256sum -c - \
  && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH \
  && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH2 \
  && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH3 \
  && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH4 \
  && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH5 \
  && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH6 \
+ && patch -p1 --forward < /src/kamailio-patches/$KAMAILIO_PATCH7 \
  && make cfg prefix=/opt/kamailio include_modules="tls auth_db db_mysql http_client ims_auth ims_ipsec_pcscf ims_registrar_pcscf ims_usrloc_pcscf cdp cdp_avp gcrypt presence presence_reginfo pua pua_reginfo" \
  && make -j4 all && make install \
  && mkdir -p /install/doc && cp COPYING /install/doc/COPYING \
