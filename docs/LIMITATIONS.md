@@ -58,9 +58,6 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   - the KMS URI the KMS's documents carry (clause 3.1, a security domain identifier) and the address the KMS is
     contacted at (TS 24.484 clause 7.2.2.7 `<kms>`) can differ, and no configuration item gives the first: the Linux
     and Android clients' `security.kms_id`, by default the address;
-  - own limitation of the Android client: a signed KMS message whose Canonical XML 1.1 form would have to join the
-    xml:base of an omitted ancestor with another one (the xml:base fix-up of Canonical XML 1.1) is refused; the Linux
-    client and the KMS accept it.
 - **MIKEY-SAKKE UID form** (spec defect, reported). TS 33.180 annex F.2.1.1 says "The full 256-bit output shall be
   used as the identifier within MIKEY-SAKKE (referred to as 'ID' in IETF RFC 6507 [9] and 'a' or 'b' within IETF
   RFC 6508 [10]. The resulting UID shall be base64 encoded." It does not say whether ECCSI (RFC 6507) and SAKKE
@@ -293,8 +290,9 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 - **CMS subscription proxy PSI** (spec gap). TS 24.484 clause 6.3.13.2.2 step b) 2) sends the configuration management
   SUBSCRIBE to "the configured public service identity for performing subscription proxy function of the CMS", but no
   configuration item for that PSI is defined (TS 24.483 has no CMS counterpart of GMSURI; `<cms>` of TS 24.484 clause
-  7.2.2.7 is "the URI used to contact the configuration management server"). The Linux client sends it to the MCPTT
-  PSI until the specification names the item, or to `cms.subscription_psi` where that is configured, as the ETSI test
+  7.2.2.7 is "the URI used to contact the configuration management server"). The Linux and Android clients send it to
+  the MCPTT PSI until the specification names the item, or to the PSI configured (Linux `cms.subscription_psi`,
+  Android `mcptt.cms_subscription_psi`), as the ETSI test
   system for TS 37.579 names such a PSI (that test system's reading, not a 3GPP rule). The group document and group key subscriptions go to the configured
   GMS-URI (`gms.subscription_psi`).
 - **Location.** Positions and radio measurements are simulated. The SEAL location management server (TS 24.545) has

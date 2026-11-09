@@ -11,6 +11,8 @@
 
 #include "mcx/xml_security.hpp"
 
+#include "c14n11.hpp"
+
 #include <libxml/c14n.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
@@ -193,8 +195,10 @@ std::string c14n(xmlDocPtr doc, const NodeSet &set, const Canonicalization &meth
   require(buffer != nullptr, "XML allocation failed");
   NodeSet context = set;
   context.comments = set.comments && method.comments;
-  const int size = xmlC14NExecute(doc, visible, &context, method.mode, prefixes.empty() ? nullptr : list.data(),
-                                  method.comments ? 1 : 0, buffer.get());
+  const int size = method.mode == XML_C14N_1_1
+                       ? mcx::xmlsec::c14n11_execute(doc, visible, &context, method.comments ? 1 : 0, buffer.get())
+                       : xmlC14NExecute(doc, visible, &context, method.mode, prefixes.empty() ? nullptr : list.data(),
+                                        method.comments ? 1 : 0, buffer.get());
   require(size >= 0, "XML canonicalization failed");
   const auto *content = xmlOutputBufferGetContent(buffer.get());
   return content ? std::string(reinterpret_cast<const char *>(content), xmlOutputBufferGetSize(buffer.get())) : "";

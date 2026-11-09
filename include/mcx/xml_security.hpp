@@ -144,4 +144,10 @@ std::array<std::uint8_t, 32> hmac_sha256(std::span<const std::uint8_t> key, std:
 // for Exclusive XML Canonicalization, the InclusiveNamespaces prefixes. Throws for an algorithm not supported.
 std::string canonicalize(std::string_view xml, std::string_view algorithm, std::string_view element = {},
                          const std::vector<std::string> &inclusive_namespaces = {});
+//------------------------------------------------------------------------------
+// W3C Canonical XML 1.1 clause 2.4: the join-URI-References function of its xml:base fix-up, the reference (an inner
+// xml:base value) resolved against the base (an outer one) by RFC 3986 clauses 5.2 and 5.3 with the clause's
+// modifications (no scheme needed in the base, a trailing ".." taken as "../", leading "../" segments kept,
+// consecutive "/" made one, no fragment).
+std::string join_uri_references(std::string_view base, std::string_view reference);
 } // namespace mcx::xmlsec

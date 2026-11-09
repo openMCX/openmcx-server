@@ -11,8 +11,13 @@
 // W3C Exclusive XML Canonicalization 1.0.
 #include "mcx/xml_security.hpp"
 
+#include "../src/security/c14n11.hpp"
+
+#include <libxml/parser.h>
 #include <openssl/evp.h>
 
+#include <algorithm>
+#include <array>
 #include <iostream>
 #include <set>
 #include <stdexcept>
@@ -503,6 +508,217 @@ int main() {
                 decrypt(sealed, key).find("bob.mcvideo") != std::string::npos,
             "MCVideo request URI encrypted under the MCVideo profile");
       rejects([] { (void)signalling_profile("mcdata"); }, "a service without a signalling profile");
+    }
+
+    // W3C Canonical XML 1.1 clause 2.4: join-URI-References, its examples and RFC 3986 cases with the clause's
+    // modifications (the expected values follow the clause; where libxml2 2.9.14 differs, its result is noted).
+    {
+      const std::vector<std::array<std::string, 3>> joins{
+          {"abc/", "../", ""},
+          {"../", "../", "../../"},
+          {"..", "..", "../../"}, // libxml2: "../.."
+          {"http://h/a/b", "c/d", "http://h/a/c/d"},
+          {"http://h/a/b/", "../../../x", "http://h/x"},
+          {"http://h", "z", "http://h/z"},
+          {"/a/b/", "../c", "/a/c"},
+          {"x", "../y", "../y"},
+          {"../..", "x", "../../x"},
+          {"a/./b/", "./c/.", "a/b/c/"},
+          {"a//b/", "c", "a/b/c"},
+          {"a/b", "", "a/b"},
+          {"http://h/a?q", "", "http://h/a?q"},
+          {"a/b", "?n", "a/b?n"},
+          {"a/b?q", "#f", "a/b?q"},                         // libxml2: "a/b?q#f"
+          {"a/b", "../../c#x", "../c"},                     // libxml2: "../c#x"
+          {"a/", "http://o/p/./q", "http://o/p/q"},         // libxml2: "http://o/p/./q"
+          {"http://h/a", "//o/p/../q", "http://o/q"}};
+      for (const auto &[base, reference, joined] : joins)
+        check(join_uri_references(base, reference) == joined,
+              ("join-URI-References \"" + base + "\" \"" + reference + "\"").c_str());
+      // <a xml:base="foo/bar"><b xml:base=".."><c xml:base=".."><d xml:base="x">, b and c omitted: "../../x".
+      check(join_uri_references("..", join_uri_references("..", "x")) == "../../x", "clause 2.4 example");
+    }
+
+    // W3C Canonical XML 1.1 clause 2.4 on a document subset (the subtree of one element, as a SignedInfo or a
+    // referenced element is taken).
+    {
+      const std::string c14n11 = "http://www.w3.org/2006/12/xml-c14n11";
+      const std::string c14n10 = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315";
+      // Joined values (libxml2 gives the same).
+      check(canonicalize("<r xmlns=\"urn:d\" xml:base=\"http://h/a/\"><m xml:base=\"b/\"><e/></m></r>", c14n11, "e") ==
+                "<e xmlns=\"urn:d\" xml:base=\"http://h/a/b/\"></e>",
+            "xml:base joined over two omitted ancestors");
+      check(canonicalize("<a xml:base=\"foo/bar\"><b xml:base=\"..\"><c xml:base=\"..\"><d xml:base=\"x\"/></c></b></a>",
+                         c14n11, "d") == "<d xml:base=\"../x\"></d>",
+            "xml:base of a, b, c and d joined");
+      // A fixed-up value that is empty is not rendered.
+      check(canonicalize("<r><m xml:base=\"abc/\"><e xml:base=\"../\"/></m></r>", c14n11, "e") == "<e></e>",
+            "empty fixed-up xml:base not rendered");
+      // The fragment of a joined value is dropped (libxml2 keeps "#x").
+      check(canonicalize("<r xml:base=\"http://h/a?q\"><m xml:base=\"#f\"><e xml:base=\"../../c#x\"/></m></r>", c14n11,
+                         "e") == "<e xml:base=\"http://h/c\"></e>",
+            "fragment of the joined xml:base dropped");
+      // A trailing "..": "../../" (libxml2: "../..").
+      check(canonicalize("<r xml:base=\"..\"><e xml:base=\"..\"/></r>", c14n11, "e") == "<e xml:base=\"../../\"></e>",
+            "trailing .. of the joined xml:base");
+      // No fix-up: the single omitted xml:base as it is; an element's own xml:base, also an empty one, is an
+      // ordinary attribute (libxml2 drops the empty one).
+      check(canonicalize("<r xml:base=\"http://h/a/\"><e/></r>", c14n11, "e") == "<e xml:base=\"http://h/a/\"></e>",
+            "single omitted xml:base");
+      check(canonicalize("<r><e xml:base=\"a/../b\"/></r>", c14n11, "e") == "<e xml:base=\"a/../b\"></e>",
+            "own xml:base without a fix-up");
+      check(canonicalize("<r xml:base=\"\"><e/></r>", c14n11) == "<r xml:base=\"\"><e></e></r>",
+            "own empty xml:base without a fix-up (whole document)");
+      check(canonicalize("<r><m><e xml:base=\"\"><f xml:base=\"\"/></e></m></r>", c14n11, "e") ==
+                "<e xml:base=\"\"><f xml:base=\"\"></f></e>",
+            "own empty xml:base without a fix-up (subset)");
+      // Inside the subset an element's own xml:base is never fixed up (its parent is rendered).
+      check(canonicalize("<r xml:base=\"http://h/\"><e><f xml:base=\"../x\"/></e></r>", c14n11, "e") ==
+                "<e xml:base=\"http://h/\"><f xml:base=\"../x\"></f></e>",
+            "xml:base of a child of a rendered element");
+      // xml:lang and xml:space inherited from the nearest omitted ancestor; xml:id and other xml: attributes not.
+      check(canonicalize("<r xml:lang=\"en\" xml:space=\"preserve\" xml:id=\"r\" xml:other=\"o\"><m xml:lang=\"fr\" "
+                         "xml:id=\"m\"><e a=\"1\"/></m></r>",
+                         c14n11, "e") == "<e a=\"1\" xml:lang=\"fr\" xml:space=\"preserve\"></e>",
+            "simple inheritable attributes only");
+      check(canonicalize("<r xml:id=\"r\" xml:other=\"o\"><e xml:id=\"e\" xml:other=\"p\"/></r>", c14n11, "e") ==
+                "<e xml:id=\"e\" xml:other=\"p\"></e>",
+            "own xml:id and other xml: attributes ordinary");
+      // With comments.
+      check(canonicalize("<r xml:base=\"http://h/a/\"><!--c--><m xml:base=\"b/\" xml:id=\"m\"><!--d--><e/></m></r>",
+                         c14n11 + "#WithComments", "m") == "<m xml:base=\"http://h/a/b/\" xml:id=\"m\"><!--d--><e></e></m>",
+            "xml:base fixed up with comments");
+      // The document is unchanged after the canonicalization (it is read again for the next Reference).
+      {
+        const std::string xml = "<r xml:base=\"h/\" xml:id=\"r\" xml:o=\"1\"><m xml:base=\"\" xml:lang=\"x\"><e "
+                                "xml:base=\"../\" a=\"1\"/><f/></m></r>";
+        xmlDocPtr doc = xmlReadMemory(xml.data(), static_cast<int>(xml.size()), nullptr, nullptr, XML_PARSE_NONET);
+        check(doc != nullptr, "parse");
+        const auto dump = [doc] {
+          xmlChar *text = nullptr;
+          int size = 0;
+          xmlDocDumpMemory(doc, &text, &size);
+          std::string out(reinterpret_cast<const char *>(text), static_cast<std::size_t>(size));
+          xmlFree(text);
+          return out;
+        };
+        const auto before = dump();
+        for (const char *apex : {"e", "f", "m"}) {
+          xmlNodePtr top = xmlDocGetRootElement(doc)->children;
+          if (std::string(apex) != "m")
+            for (top = top->children; std::string(reinterpret_cast<const char *>(top->name)) != apex; top = top->next) {
+            }
+          const auto in_subtree = [](void *data, xmlNodePtr node, xmlNodePtr parent) -> int {
+            for (auto *current = node->type == XML_ATTRIBUTE_NODE || node->type == XML_NAMESPACE_DECL ? parent : node;
+                 current; current = current->parent)
+              if (current == data) return 1;
+            return 0;
+          };
+          xmlOutputBufferPtr buffer = xmlAllocOutputBuffer(nullptr);
+          check(c14n11_execute(doc, in_subtree, top, 0, buffer) >= 0, "canonicalization");
+          xmlOutputBufferClose(buffer);
+          check(dump() == before, (std::string("document restored after the subset of ") + apex).c_str());
+        }
+        xmlFreeDoc(doc);
+      }
+      // Canonical XML 1.1 example 3.8 with the canonical form of erratum E11-01 (W3C, 2008): e3's xml:base joins
+      // only e2's, the contiguously omitted ancestor; the Recommendation's "something/bar/foo" was the defect.
+      {
+        const std::string xml =
+            "<!DOCTYPE doc [<!ATTLIST e2 xml:space (default|preserve) 'preserve'><!ATTLIST e3 id ID #IMPLIED>]>"
+            "<doc xmlns=\"http://www.ietf.org\" xmlns:w3c=\"http://www.w3.org\" xml:base=\"something/else\">\n"
+            "   <e1>\n      <e2 xmlns=\"\" xml:id=\"abc\" xml:base=\"bar/\">\n         <e3 id=\"E3\" xml:base=\"foo\"/>\n"
+            "      </e2>\n   </e1>\n</doc>";
+        xmlDocPtr doc =
+            xmlReadMemory(xml.data(), static_cast<int>(xml.size()), nullptr, nullptr, XML_PARSE_NONET | XML_PARSE_DTDATTR);
+        check(doc != nullptr, "parse example 3.8");
+        // The subset expression: e1, its attributes and namespaces and its children other than text and e2, and every
+        // node of e3's subtree.
+        const auto in_subset = [](void *, xmlNodePtr node, xmlNodePtr parent) -> int {
+          const auto named = [](xmlNodePtr n, const char *name) {
+            return n && n->type == XML_ELEMENT_NODE && std::string(reinterpret_cast<const char *>(n->name)) == name;
+          };
+          const bool owned = node->type == XML_ATTRIBUTE_NODE || node->type == XML_NAMESPACE_DECL;
+          xmlNodePtr element = owned ? parent : node;
+          for (xmlNodePtr current = element; current; current = current->parent)
+            if (named(current, "e3")) return 1;
+          if (owned) return named(parent, "e1");
+          return named(node, "e1") || (named(node->parent, "e1") && node->type != XML_TEXT_NODE && !named(node, "e2"));
+        };
+        xmlOutputBufferPtr buffer = xmlAllocOutputBuffer(nullptr);
+        check(c14n11_execute(doc, in_subset, nullptr, 0, buffer) >= 0, "canonicalization of example 3.8");
+        const auto *content = xmlOutputBufferGetContent(buffer);
+        const std::string canonical(reinterpret_cast<const char *>(content), xmlOutputBufferGetSize(buffer));
+        xmlOutputBufferClose(buffer);
+        xmlFreeDoc(doc);
+        check(canonical == "<e1 xmlns=\"http://www.ietf.org\" xmlns:w3c=\"http://www.w3.org\" xml:base=\"something/else\">"
+                           "<e3 xmlns=\"\" id=\"E3\" xml:base=\"bar/foo\" xml:space=\"preserve\"></e3></e1>",
+              ("Canonical XML 1.1 example 3.8 (erratum E11-01): " + canonical).c_str());
+      }
+      // Node-sets of named elements (with their attributes, namespaces and text): an omitted element between two
+      // rendered ones. Refused only where libxml2 would merge a rendered ancestor's xml: attribute into the element.
+      {
+        const auto subset = [](const std::string &xml, std::vector<std::string> names) {
+          xmlDocPtr doc = xmlReadMemory(xml.data(), static_cast<int>(xml.size()), nullptr, nullptr, XML_PARSE_NONET);
+          check(doc != nullptr, "parse");
+          // Names of elements in the set, and "element@attribute" for an attribute of such an element left out.
+          const auto in_set = [](void *data, xmlNodePtr node, xmlNodePtr parent) -> int {
+            const auto &set = *static_cast<std::vector<std::string> *>(data);
+            if (node->type == XML_ATTRIBUTE_NODE && parent &&
+                std::find(set.begin(), set.end(),
+                          std::string(reinterpret_cast<const char *>(parent->name)) + "@" +
+                              reinterpret_cast<const char *>(node->name)) != set.end())
+              return 0;
+            xmlNodePtr element =
+                node->type == XML_ATTRIBUTE_NODE || node->type == XML_NAMESPACE_DECL || node->type == XML_TEXT_NODE
+                    ? parent
+                    : node;
+            return element && element->type == XML_ELEMENT_NODE &&
+                   std::find(set.begin(), set.end(), reinterpret_cast<const char *>(element->name)) != set.end();
+          };
+          xmlOutputBufferPtr buffer = xmlAllocOutputBuffer(nullptr);
+          std::string out;
+          try {
+            check(c14n11_execute(doc, in_set, &names, 0, buffer) >= 0, "canonicalization");
+            out.assign(reinterpret_cast<const char *>(xmlOutputBufferGetContent(buffer)), xmlOutputBufferGetSize(buffer));
+          } catch (...) {
+            xmlOutputBufferClose(buffer);
+            xmlFreeDoc(doc);
+            throw;
+          }
+          xmlOutputBufferClose(buffer);
+          xmlFreeDoc(doc);
+          return out;
+        };
+        const auto refused = [&](const std::string &xml, std::vector<std::string> names) {
+          try {
+            subset(xml, std::move(names));
+          } catch (const std::exception &) {
+            return true;
+          }
+          return false;
+        };
+        check(refused("<r xml:id=\"x\"><m><e/></m></r>", {"r", "e"}), "rendered ancestor's xml:id refused");
+        check(refused("<r xml:base=\"http://h/\"><m><e/></m></r>", {"r", "e"}),
+              "rendered ancestor's xml:base without a fix-up refused");
+        check(subset("<r xml:id=\"x\"><m><e xml:id=\"y\"/></m></r>", {"r", "e"}) ==
+                  "<r xml:id=\"x\"><e xml:id=\"y\"></e></r>",
+              "element's own xml:id kept");
+        check(subset("<r xml:base=\"http://h/a/\"><m xml:base=\"b/\"><e/></m></r>", {"r", "e"}) ==
+                  "<r xml:base=\"http://h/a/\"><e xml:base=\"b/\"></e></r>",
+              "xml:base joined over the omitted run only");
+        // The element's own or fixed-up xml:base outside the node-set: libxml2 would merge the ancestor's.
+        check(refused("<r xml:base=\"http://h/\"><m><e xml:base=\"x/\"/></m></r>", {"r", "e", "e@base"}),
+              "own xml:base outside the node-set, rendered ancestor's xml:base refused");
+        check(refused("<r><m xml:base=\"b/\"><e xml:base=\"x\"/></m></r>", {"r", "e", "e@base"}),
+              "fixed-up xml:base outside the node-set refused");
+        check(subset("<r><m><e xml:base=\"x\"/></m></r>", {"r", "e", "e@base"}) == "<r><e></e></r>",
+              "own xml:base outside the node-set, nothing to merge");
+      }
+      // Canonical XML 1.0 has no fix-up: every xml: attribute of the omitted ancestors, the nearest one first.
+      check(canonicalize("<r xml:base=\"http://h/a/\" xml:id=\"r\"><m xml:base=\"b/\"><e/></m></r>", c14n10, "e") ==
+                "<e xml:base=\"b/\" xml:id=\"r\"></e>",
+            "Canonical XML 1.0 xml: attributes inherited");
     }
     std::cout << "xml security tests passed\n";
     return 0;

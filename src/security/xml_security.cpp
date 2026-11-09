@@ -10,6 +10,8 @@
 // and Version 1.1, W3C Canonical XML 1.0 and 1.1, W3C Exclusive XML Canonicalization 1.0.
 #include "mcx/xml_security.hpp"
 
+#include "c14n11.hpp"
+
 #include <libxml/c14n.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
@@ -559,9 +561,11 @@ std::string c14n(xmlDocPtr doc, xmlNodePtr apex, const Canonicalization &method,
   const std::unique_ptr<xmlOutputBuffer, decltype(&xmlOutputBufferClose)> buffer(xmlAllocOutputBuffer(nullptr),
                                                                                   &xmlOutputBufferClose);
   require(buffer != nullptr, "XML allocation failed");
-  const int size = xmlC14NExecute(doc, apex ? in_subtree : nullptr, apex, method.mode,
-                                  inclusive_prefixes.empty() ? nullptr : prefixes.data(), method.comments ? 1 : 0,
-                                  buffer.get());
+  const int size = method.mode == XML_C14N_1_1
+                       ? c14n11_execute(doc, apex ? in_subtree : nullptr, apex, method.comments ? 1 : 0, buffer.get())
+                       : xmlC14NExecute(doc, apex ? in_subtree : nullptr, apex, method.mode,
+                                        inclusive_prefixes.empty() ? nullptr : prefixes.data(),
+                                        method.comments ? 1 : 0, buffer.get());
   require(size >= 0, "XML canonicalisation failed");
   const auto *content = xmlOutputBufferGetContent(buffer.get());
   return content ? std::string(reinterpret_cast<const char *>(content), xmlOutputBufferGetSize(buffer.get()))
