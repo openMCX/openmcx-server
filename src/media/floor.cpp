@@ -732,6 +732,17 @@ void FloorParticipantTimers::expect_implicit_grant(const FloorPacket &request, s
 }
 
 //------------------------------------------------------------------------------
+// TS 24.380 clause 12.1.2.2 (NOTE 2 and NOTE 3): the floor granted in the SDP answer ("mc_granted").
+void FloorParticipantTimers::granted_in_answer(std::uint32_t local_ssrc) {
+  state_ = FloorParticipantState::HasPermission;
+  local_ssrc_ = local_ssrc;
+  pending_.reset();
+  transmissions_ = 0;
+  last_remote_media_.reset();
+  queued_granted_at_.reset();
+}
+
+//------------------------------------------------------------------------------
 // TS 24.380 clause 6.2.4: the participant's handling of received floor messages: Floor Granted in 'U: pending
 // Request' (clause 6.2.4.4.2) and in 'U: queued' (clause 6.2.4.9.4, start T132); Floor Deny (clauses 6.2.4.4.4
 // and 6.2.4.9.5); Floor Queue Position Info (clauses 6.2.4.4.9 and 6.2.4.9.7); Floor Taken (clauses 6.2.4.4.11

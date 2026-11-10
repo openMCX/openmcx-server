@@ -314,6 +314,10 @@ public:
   // 'U: pending Request' with T101 started and C101 at 1, without sending; `request` is the Floor Request that
   // T101 expiry sends (clause 6.2.4.4.5).
   void expect_implicit_grant(const FloorPacket &request, std::uint64_t now_ms);
+  // TS 24.380 clause 12.1.2.2 (NOTE 2 and NOTE 3): the SDP answer's "mc_granted" granted the floor to this offerer,
+  // which has it "until it receives a Floor Revoke message, or until [it] releases the floor": 'U: has permission'
+  // without a Floor Granted message.
+  void granted_in_answer(std::uint32_t local_ssrc);
   void receive(const FloorPacket &packet, std::uint64_t now_ms);
   void media_received(std::uint64_t now_ms);
   std::vector<FloorPacket> tick(std::uint64_t now_ms);

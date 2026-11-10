@@ -74,7 +74,7 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
         video_media.profile_level_id.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
       invalid("invalid SDP video configuration");
     if (!media_direction(video_media.direction)) invalid("unsupported SDP media direction");
-  } else if (media.granted || media.granted_video_ssrc)
+  } else if (media.granted_video_ssrc) // "mc_granted" is MCPTT's too (TS 24.380 clauses 14.2.4 and 14.3.4)
     invalid("transmission control parameters in an MCPTT SDP");
   std::ostringstream out;
   out << "v=0\r\no=- " << session_id << " 1 IN IP4 " << media.address << "\r\ns=" << (video ? "MCVideo" : "MCPTT")
@@ -388,6 +388,10 @@ void parse_format_parameter(const std::string &parameter, const std::string &sec
     out.granted_audio_ssrc = number(val, UINT32_MAX);
   else if (transmission && key == "mc_video_ssrc")
     out.granted_video_ssrc = number(val, UINT32_MAX);
+  // TS 24.380 clauses 14.2.4 and 14.3.4: MCPTT "mc_granted" (in an offer, the offerer accepts a grant in the
+  // answer; in an answer, the floor is granted).
+  else if (section == "application" && !transmission && key == "mc_granted")
+    out.granted = true;
   else if (section == "application" && !transmission && key == "mc_ssrc")
     out.granted_audio_ssrc = number(val, UINT32_MAX); // TS 24.380 clause 14.4: the offerer uses it
   else if (section == "application" && !transmission && key == "mc_floor_ssrc") {

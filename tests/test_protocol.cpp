@@ -477,9 +477,11 @@ int main() {
     auto bad = sdp;
     bad.replace(bad.find("mc_floor_ssrc=12345"), 19, "mc_floor_ssrc=12345;mc_ssrc=x");
     rejects([&] { parse_sdp(bad); });
+    // TS 24.380 clauses 14.2.4 and 14.3.4: the MCPTT "mc_granted" is written and read back.
     auto granted = media;
-    granted.granted = true; // no MCPTT "mc_granted" is written (optional: TS 24.380 clauses 14.2.4 and 14.3.4)
-    rejects([&] { (void)make_sdp(granted, 795); });
+    granted.granted = true;
+    const auto granted_sdp = make_sdp(granted, 795);
+    check(granted_sdp.find(";mc_granted") != std::string::npos && parse_sdp(granted_sdp).granted, "mc_granted lost");
   }
   auto malformed_rtcp = sdp;
   malformed_rtcp.replace(malformed_rtcp.find("a=rtcp:4001"), 11, "a=rtcp:");
