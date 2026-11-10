@@ -863,12 +863,23 @@ void McServer::conference_subscribe(const SipMessage &message, const User &user,
     return;
   }
   const auto info = message_info(message, svc_);
-  auto found = sessions_.find(info.request_uri);
-  if (found == sessions_.end() || found->second->uri != message.request_uri) {
-    response.status_code = 404;
-    return;
+  // RFC 6665 sections 4.1.2.2 and 4.1.2.3 (TS 24.379 clause 10.1.3.2): a refresh or the end (Expires 0) of a
+  // subscription is a SUBSCRIBE in its dialog, sent to the remote target of the 200 (OK); it is matched by the dialog,
+  // not by the session identity. The NOTIFY that follows ends an unsubscribed subscription (notify_conference).
+  std::shared_ptr<Session> session;
+  for (const auto &[key, candidate] : sessions_)
+    if (candidate->subscriptions.contains(message.dialog_id)) {
+      session = candidate;
+      break;
+    }
+  if (!session) {
+    auto found = sessions_.find(info.request_uri);
+    if (found == sessions_.end() || found->second->uri != message.request_uri) {
+      response.status_code = 404;
+      return;
+    }
+    session = found->second;
   }
-  const auto session = found->second;
   if (!has_leg(*session, user.id) || (!info.calling_user.empty() && info.calling_user != user.id) ||
       !accepts_mcptt(message)) {
     response.status_code = 403;
