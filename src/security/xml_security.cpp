@@ -883,7 +883,9 @@ std::set<std::string> verify(std::string_view signatures, const std::vector<Sign
 const Profile &signalling_profile(std::string_view info_prefix) {
   static const Profile mcptt{{"mcptt-access-token", "mcptt-request-uri", "mcptt-calling-user-id",
                               "mcptt-called-party-id", "mcptt-calling-group-id", "mcptt-client-id", "originated-by",
-                              "associated-group-id", "location-of-functional-alias-URI", "emergency-ind", "alert-ind",
+                              "associated-group-id", "location-of-functional-alias-URI",
+                              // TS 24.379 clause 4.8: "functional alias" is sensitive application data.
+                              "functional-alias-URI", "called-functional-alias-URI", "emergency-ind", "alert-ind",
                               "imminentperil-ind",
                               // TS 24.379 annex F.3: the location reported.
                               "CurrentServingEcgi", "NeighbouringEcgi", "MbmsSaId", "MbsfnArea", "CL_5GMbsfsaArea",
