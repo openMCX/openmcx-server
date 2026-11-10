@@ -78,6 +78,9 @@ protected:
     std::string handled_pid;
     std::shared_ptr<ProtectedCall> protection;
     std::int64_t subscription_expires = 0;
+    // TS 24.379 clause 7.3.3: the application/poc-settings+xml of its service authorisation, the MCPTT service
+    // settings a settings subscription is notified of (clause 7.3.6.2).
+    std::string poc_settings;
   };
 
   //------------------------------------------------------------------------------
@@ -842,6 +845,10 @@ protected:
   // TS 24.379 clause 9.2.2.2.8: an affiliation status change request in negotiated mode for a served user.
   void affiliation_command_message(const SipMessage &message, User &user, const McpttInfo &info,
                                    SipResponse &response);
+  // TS 24.379 clause 7.3.6: subscriptions to the MCPTT service settings, by dialog: the served MCPTT ID.
+  std::map<std::string, std::string> settings_subscriptions_;
+  void settings_subscribe(const SipMessage &message, User &user, SipResponse &response);
+  void notify_settings(const User &user);
 
   // ---- Group calls (group_call.cpp): TS 24.379 clause 10.1 ----
   std::string pre_established_uri() const;

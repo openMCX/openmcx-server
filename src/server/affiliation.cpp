@@ -269,4 +269,14 @@ bool McServer::remote_affiliation_right(const std::string &id, const char *right
   }
 }
 
+//------------------------------------------------------------------------------
+// TS 24.379 clause 7.3.6.2: the NOTIFY of the user's MCPTT service settings (the application/poc-settings+xml of its
+// service authorisation: the answer mode and the selected user profile index) to each of its settings subscriptions.
+void McServer::notify_settings(const User &user) {
+  const auto body = user.poc_settings.empty() ? poc_settings_xml(user.client) : user.poc_settings;
+  for (const auto &[dialog, served] : settings_subscriptions_)
+    if (served == user.id)
+      sip_.notify(dialog, "poc-settings", "active;expires=3600", "application/poc-settings+xml", body);
+}
+
 } // namespace mcx

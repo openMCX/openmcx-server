@@ -303,6 +303,16 @@ void McServer::service_authorization(const SipMessage &message, SipResponse &res
     if (profile.empty()) throw std::runtime_error("empty Diameter user profile");
   }
   bind_authorized_user(claims, info, asserted, old, match, unknown_etag, uploaded, uploader, profile, response);
+  // TS 24.379 clause 7.3.6.2: the client's MCPTT service settings, which a settings subscription is notified of.
+  if (response.status_code == 200)
+    if (const auto found = users_.find(asserted); found != users_.end())
+      for (const auto &part : request.parts)
+        if (part.content_type == "application/poc-settings+xml") {
+          found->second.poc_settings = part.body;
+          schedule([this, sip = asserted] {
+            if (const auto user = users_.find(sip); user != users_.end()) notify_settings(user->second);
+          });
+        }
 }
 
 //------------------------------------------------------------------------------
@@ -574,6 +584,10 @@ void McServer::user_request(const SipMessage &message, User &user, const std::st
   if (message.method == "SUBSCRIBE" && event_name == "conference") return conference_subscribe(message, user, response);
   if (message.method == "SUBSCRIBE" && event_name == "presence" && alias_status_subscribe(message, user, response))
     return;
+  // TS 24.379 clause 7.3.6.1: subscription to the user's MCPTT service settings (poc-settings), new or in its dialog.
+  if (message.method == "SUBSCRIBE" &&
+      (event_name == "poc-settings" || settings_subscriptions_.contains(message.dialog_id)))
+    return settings_subscribe(message, user, response);
   // TS 24.379 clause 9.2.1.3: subscription to the user's affiliation status (Expires 0 ends it).
   if (message.method == "SUBSCRIBE") return affiliation_subscribe(message, user, event_name, response);
   // TS 24.379 clause 9.2.2.2.3: affiliation status change from a client (or a functional alias activation).
@@ -1019,6 +1033,48 @@ bool McServer::target_affiliation_subscribe(const SipMessage &message, User &use
                   affiliation_xml(affiliation_status(svc_, *found, {}), true));
   });
   return true;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 7.2.4 and 7.3.6.1: a subscription to the user's own MCPTT service settings (Event poc-settings),
+// initial or in its dialog. Step 3: another user's settings are refused (403). Expires 0 ends it in its dialog or
+// fetches the current state out of it: one final NOTIFY either way (clause 7.3.6.2).
+void McServer::settings_subscribe(const SipMessage &message, User &user, SipResponse &response) {
+  const auto existing = settings_subscriptions_.find(message.dialog_id);
+  if (existing != settings_subscriptions_.end() && existing->second != user.id) {
+    response.status_code = 403;
+    return;
+  }
+  if (existing == settings_subscriptions_.end()) {
+    std::string served;
+    try {
+      served = message_info(message, svc_).request_uri;
+    } catch (const std::exception &) {
+    }
+    if (served != user.id) {
+      response.status_code = 403;
+      return;
+    }
+  }
+  const auto body = user.poc_settings.empty() ? poc_settings_xml(user.client) : user.poc_settings;
+  if (get_header(message.headers, "Expires") == "0") {
+    settings_subscriptions_.erase(message.dialog_id);
+    response.headers = {{"Expires", "0"}};
+    schedule([this, dialog = message.dialog_id, body] {
+      sip_.notify(dialog, "poc-settings", "terminated;reason=timeout", "application/poc-settings+xml", body);
+    });
+    return;
+  }
+  if (existing == settings_subscriptions_.end() && settings_subscriptions_.size() >= max_subscriptions) {
+    response.status_code = 503;
+    return;
+  }
+  settings_subscriptions_[message.dialog_id] = user.id;
+  response.headers = {{"Expires", "3600"}};
+  event("settings_subscription", {{"user_id", user.id}});
+  schedule([this, dialog = message.dialog_id, body] {
+    sip_.notify(dialog, "poc-settings", "active;expires=3600", "application/poc-settings+xml", body);
+  });
 }
 
 //------------------------------------------------------------------------------
