@@ -96,7 +96,7 @@ bool McServer::xml_protection() const {
 // confidentiality protected content.
 bool McServer::mcptt_xml_part(const std::string &type) const {
   return type == svc_.info_mime || type == resource_lists_mime || type == "application/pidf+xml" ||
-         type == svc_.location_mime || type == "application/conference-info+xml";
+         type == svc_.location_mime || type == "application/conference-info+xml" || type == regroup_mime_of(svc_);
 }
 
 //------------------------------------------------------------------------------

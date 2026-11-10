@@ -221,20 +221,24 @@ std::string regroup_xml(const Regroup &regroup, const ServiceProfile &service) {
   for (const auto &group : regroup.groups) conference_uri(group);
   for (const auto &user : regroup.users) conference_uri(user);
 
-  // <preconfigured-group> is optional (TS 24.379 annex F.7.2); a removal may leave it out.
+  // <preconfigured-group> is optional (TS 24.379 annex F.7.2); a removal may leave it out. The containers of the group
+  // and user IDs carry type "Normal", so that XML protection encrypts their content (TS 24.379 clause 4.8: MCPTT IDs
+  // and group IDs are sensitive application data; TS 37.579-1 tables 5.5.3.16.2-1 and 5.5.3.16.3-1, NOTE 1 to 4;
+  // the schema's containers take any attribute).
+  const std::string normal = " type=\"Normal\"";
   std::string out = "<?xml version=\"1.0\"?><" + root + " xmlns=\"" + std::string(regroup_ns) + "\"><" + root +
-                    "-Params><preconfig-group-id>";
+                    "-Params><preconfig-group-id" + normal + ">";
   if (!regroup.preconfigured_group.empty())
     out += "<preconfigured-group>" + xml_escape(regroup.preconfigured_group) + "</preconfigured-group>";
-  out += "</preconfig-group-id><" + uri + "><" + uri + ">" + xml_escape(regroup.regroup_uri) + "</" + uri + "></" +
-         uri + ">";
+  out += "</preconfig-group-id><" + uri + normal + "><" + uri + ">" + xml_escape(regroup.regroup_uri) + "</" + uri +
+         "></" + uri + ">";
   if (!regroup.groups.empty()) {
-    out += "<groups-for-regroup>";
+    out += "<groups-for-regroup" + normal + ">";
     for (const auto &group : regroup.groups) out += "<group>" + xml_escape(group) + "</group>";
     out += "</groups-for-regroup>";
   }
   if (!regroup.users.empty()) {
-    out += "<users-for-regroup>";
+    out += "<users-for-regroup" + normal + ">";
     for (const auto &user : regroup.users) out += "<user>" + xml_escape(user) + "</user>";
     out += "</users-for-regroup>";
   }

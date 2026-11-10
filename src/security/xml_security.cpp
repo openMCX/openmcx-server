@@ -890,7 +890,10 @@ const Profile &signalling_profile(std::string_view info_prefix) {
                               // TS 24.379 annex F.3: the location reported.
                               "CurrentServingEcgi", "NeighbouringEcgi", "MbmsSaId", "MbsfnArea", "CL_5GMbsfsaArea",
                               "CurrentServingNcgi", "CL_NeighbouringNcgi", "CL_BearingAndSpeed", "longitude",
-                              "latitude", "altitude", "horizontalaccuracy", "verticalaccuracy"},
+                              "latitude", "altitude", "horizontalaccuracy", "verticalaccuracy",
+                              // TS 24.379 annex F.7: the group and user IDs of a regroup (the containers marked
+                              // "Normal" by regroup_xml).
+                              "preconfig-group-id", "mcptt-regroup-uri", "groups-for-regroup", "users-for-regroup"},
                              {{"entry", "uri"},
                               {"presence", "entity"},
                               {"affiliation", "group"},
