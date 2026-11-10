@@ -269,14 +269,18 @@ struct KeyClient::Impl {
     require(!bearer.empty(), "KMS credentials have not been provisioned");
     // TS 33.180 clause 5.3.2 and annex D.2.2: with this user's InK or TrK, signed requests, and the responses verified
     // and their keys unwrapped with them (key_documents.hpp); the keys live only for this exchange.
+    // The init request names no identity: the KMS answers for the token's user (the account), with the account's keys;
+    // the KeyProvision request names this identity (an MCData or MCVideo ID keys as itself), with this identity's.
+    const auto account_keys = transport::load_for(security_config, account_uri);
     const auto keys = transport::load_for(security_config, user_uri);
     const bool protected_exchange = transport::integrity_xpk(keys).has_value();
     // Keep existing identity until both authenticated responses and key validation succeed.
-    const auto init = fetch("init", protected_exchange ? keying::kms_request_xml(account_uri, kms_id, request_uri("init"),
-                                                                                 now_ntp(), keys)
-                                                       : std::string());
-    // The init request names no identity: the KMS answers for the token's user.
-    auto public_parameters = keying::parse_kms_init(init, account_uri, kms_id, request_uri("init"), now_ntp(), &keys);
+    const auto init = fetch("init", transport::integrity_xpk(account_keys).has_value()
+                                        ? keying::kms_request_xml(account_uri, kms_id, request_uri("init"), now_ntp(),
+                                                                  account_keys)
+                                        : std::string());
+    auto public_parameters =
+        keying::parse_kms_init(init, account_uri, kms_id, request_uri("init"), now_ntp(), &account_keys);
     const auto keyprov =
         fetch("keyprov", protected_exchange
                              ? keying::kms_request_xml(user_uri, kms_id, request_uri("keyprov"), now_ntp(), keys)

@@ -607,6 +607,15 @@ LABS = [
         ['mcdata_protected_scenario'],
         ['mcdata', 'protected'],
     ),
+    # TS 33.180 clause 5.3.2: transport keys for the MCPTT ID only: the KMS init (for the token's user) is signed under
+    # them, the MCData ID's KeyProvision is not; protected MCData has to key as the MCData ID all the same.
+    lab(
+        'mcdata-protected-transport-keys',
+        'single',
+        ['--private-call', '--mcdata'] + KEYS + ['--sign-payloads', '--transport-keys'],
+        ['mcdata_protected_scenario'],
+        ['mcdata', 'protected', 'kms'],
+    ),
     lab('mcdata-location', 'single', ['--mcdata', '--location'], ['mcdata_location_scenario'], ['mcdata', 'location']),
     lab(
         'mcdata-location-protected',
