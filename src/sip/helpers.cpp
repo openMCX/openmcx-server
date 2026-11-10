@@ -467,4 +467,12 @@ std::string_view get_header(const std::vector<SipHeader> &headers, std::string_v
   return {};
 }
 
+//------------------------------------------------------------------------------
+// RFC 3261 section 20.10: "if the URI contains a comma, question mark or semicolon, the URI MUST be enclosed in angle
+// brackets"; a URI in angle brackets (or with a display name) is kept as it is.
+std::string sip_detail::name_addr(std::string_view uri) {
+  if (uri.find('<') != std::string_view::npos) return std::string(uri);
+  return "<" + std::string(uri) + ">";
+}
+
 } // namespace mcx

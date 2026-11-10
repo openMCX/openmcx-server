@@ -415,6 +415,36 @@ void SipEngine::reinvite_sdp(std::string_view dialog_id, std::string_view sdp, c
 }
 
 //------------------------------------------------------------------------------
+// RFC 3311 section 5.1: sends an UPDATE with a new SDP offer built from local media in a confirmed dialog (TS 24.379
+// clauses 8.3.1.1 and 8.3.2.2: the modification of a pre-established session); one offer at a time, shared with the
+// re-INVITE.
+void SipEngine::update(std::string_view dialog_id, const MediaDescription &media, SipResponseHandler handler,
+                       const std::vector<SipHeader> &headers) {
+  auto &impl = *impl_;
+  impl.ensure_started();
+  const auto found = impl.dialogs.find(std::string(dialog_id));
+  if (found == impl.dialogs.end() || !found->second->invite || found->second->terminating)
+    throw std::invalid_argument("UPDATE requires active dialog");
+  auto &entry = *found->second;
+  if (entry.invite->state != PJSIP_INV_STATE_CONFIRMED || entry.reinvite_handler)
+    throw std::runtime_error("an offer is already pending or the dialog is not confirmed (RFC 3311 section 5.1)");
+  auto *sdp = parse_local_sdp(entry.invite->pool_prov, media);
+  pjsip_tx_data *created = nullptr;
+  require_success(pjsip_inv_update(entry.invite, nullptr, sdp, &created), "create UPDATE");
+  TxData data(created);
+  data->msg->body = make_invite_body(data->pool, media, {});
+  add_headers(data.get(), headers);
+  const auto *cseq = static_cast<const pjsip_cseq_hdr *>(pjsip_msg_find_hdr(data->msg, PJSIP_H_CSEQ, nullptr));
+  if (cseq == nullptr) throw std::runtime_error("UPDATE without CSeq");
+  entry.reinvite_cseq = cseq->cseq;
+  entry.reinvite_handler = handler ? std::move(handler) : [](const SipResponse &) {};
+  impl.before_send(data.get());
+  const auto result = pjsip_inv_send_msg(entry.invite, data.release());
+  if (result != PJ_SUCCESS) entry.reinvite_handler = {};
+  require_success(result, "send UPDATE");
+}
+
+//------------------------------------------------------------------------------
 // Helper: the routable Contact URI of this engine, with its transport (SipEngine::Impl::contact_target).
 std::string SipEngine::contact_target() const { return impl_->contact_target(); }
 

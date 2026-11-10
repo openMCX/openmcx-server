@@ -141,6 +141,7 @@ void SipEngine::Impl::start() {
     invite_callbacks.on_state_changed = &Impl::invite_state_changed;
     invite_callbacks.on_media_update = &Impl::invite_media_updated;
     invite_callbacks.on_rx_reinvite = &Impl::receive_reinvite;
+    invite_callbacks.on_rx_offer2 = &Impl::receive_offer;
     invite_callbacks.on_tsx_state_changed = &Impl::invite_transaction_changed;
     require_success(pjsip_inv_usage_init(endpoint, &invite_callbacks), "initialize PJSIP INVITE usage");
     require_success(pjsip_100rel_init_module(endpoint), "initialize PJSIP 100rel support");

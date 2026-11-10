@@ -146,6 +146,7 @@ unsigned McServer::media_offset() const {
   std::set<unsigned> used;
   for (const auto &[dialog, leg] : legs_) used.insert(leg->local.audio_port);
   for (const auto &[dialog, relay] : relays_) used.insert(relay->local.audio_port);
+  for (const auto &[dialog, session] : pre_sessions_) used.insert(session->local.audio_port);
   const unsigned base = cfg_.at("media").at("rtp_port").get<unsigned>();
   for (unsigned offset = 0; offset < 2 * media_slots; offset += 2)
     if (!used.contains(base + offset)) return offset;

@@ -325,16 +325,45 @@ pj_status_t SipEngine::Impl::receive_reinvite(pjsip_inv_session *invite, const p
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 sections 14.1 and 15.1.1: releases BYE references when a sent BYE transaction terminates, and
-// dispatches the final response of a sent re-INVITE (not 401/407 digest challenges) to its handler.
+// RFC 3311 section 5.2 (TS 24.379 clause 8.3.1.2 and clause 8.3.2.1): an UPDATE with an SDP offer goes to the
+// application like a re-INVITE; its 2xx answer's local_media becomes the SDP answer. pjsip calls this for a
+// re-INVITE's offer too, before on_rx_reinvite (receive_reinvite), which answers it: nothing is done here then.
+// Without an answer (the application refused the offer, or failed), pjsip answers the UPDATE with 488 (Not
+// Acceptable Here), as clause 8.3.1.2 step 1 asks.
+void SipEngine::Impl::receive_offer(pjsip_inv_session *invite, pjsip_inv_on_rx_offer_cb_param *param) {
+  auto *owner = active.load();
+  if (!owner || !invite || !param || !param->rdata || !param->rdata->msg_info.msg) return;
+  auto *data = const_cast<pjsip_rx_data *>(param->rdata); // read only by message_from
+  if (data->msg_info.msg->type != PJSIP_REQUEST_MSG ||
+      !ascii_equal(string_from(data->msg_info.msg->line.req.method.name), "UPDATE"))
+    return;
+  try {
+    auto request = owner->message_from(data);
+    request.transaction_id = std::to_string(++owner->next_transaction);
+    const auto response = safe_application_response(*owner, request);
+    if (response.status_code / 100 != 2 || !response.local_media) return;
+    require_success(pjsip_inv_set_sdp_answer(invite, parse_local_sdp(invite->pool_prov, *response.local_media)),
+                    "set the SDP answer of an UPDATE");
+  } catch (const std::exception &error) {
+    owner->report_error(error.what());
+  }
+}
+
+//------------------------------------------------------------------------------
+// RFC 3261 sections 14.1 and 15.1.1, RFC 3311 section 5.1: releases BYE references when a sent BYE transaction
+// terminates, and dispatches the final response of a sent re-INVITE or UPDATE (not 401/407 digest challenges) to its
+// handler.
 void SipEngine::Impl::invite_transaction_changed(pjsip_inv_session *invite, pjsip_transaction *tsx,
                                                  pjsip_event *event) {
   auto *owner = active.load();
   if (owner && invite && tsx && tsx->role == PJSIP_ROLE_UAC && tsx->method.id == PJSIP_BYE_METHOD &&
       tsx->state == PJSIP_TSX_STATE_TERMINATED && owner->bye_references.erase(invite))
     guarded(owner, [&] { owner->released_bye_references.push_back(invite); });
-  if (!owner || !invite || !tsx || tsx->role != PJSIP_ROLE_UAC || tsx->method.id != PJSIP_INVITE_METHOD ||
-      tsx->status_code < 200 || tsx->status_code == 401 || tsx->status_code == 407)
+  // RFC 3311 section 5.1: an UPDATE carrying an offer shares the re-INVITE's one pending offer of the dialog.
+  const bool offer_method =
+      tsx && (tsx->method.id == PJSIP_INVITE_METHOD || ascii_equal(string_from(tsx->method.name), "UPDATE"));
+  if (!owner || !invite || !tsx || tsx->role != PJSIP_ROLE_UAC || !offer_method || tsx->status_code < 200 ||
+      tsx->status_code == 401 || tsx->status_code == 407)
     return;
   auto *dialog = static_cast<Dialog *>(invite->mod_data[owner->module.id]);
   // A rejected INVITE reports both COMPLETED and later TERMINATED. Its

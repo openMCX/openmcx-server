@@ -148,6 +148,12 @@ void add_answer_headers(pjsip_tx_data *data, const std::vector<SipHeader> &heade
 
 //------------------------------------------------------------------------------
 // RFC 4566: parses the local SDP built from the media description (session version 1).
+//------------------------------------------------------------------------------
+// RFC 3261 section 20.10: a URI as the value of a To or From header field: in angle brackets (a name-addr) unless it
+// already is one, so that its URI parameters (";mcptt-pre-established", ";mcptt-session=...") stay with the URI
+// instead of being read as header field parameters.
+[[nodiscard]] std::string name_addr(std::string_view uri);
+
 [[nodiscard]] pjmedia_sdp_session *parse_local_sdp(pj_pool_t *pool, const MediaDescription &media);
 
 //------------------------------------------------------------------------------
@@ -556,6 +562,10 @@ struct SipEngine::Impl {
   static void invite_state_changed(pjsip_inv_session *invite, pjsip_event *event);
 
   void follow_invite_state(pjsip_inv_session *invite, pjsip_event *event);
+
+  // RFC 3311 section 5.2: an UPDATE with an offer in an INVITE dialog: the application's answer.
+
+  static void receive_offer(pjsip_inv_session *invite, pjsip_inv_on_rx_offer_cb_param *param);
 
   static pj_status_t receive_reinvite(pjsip_inv_session *invite, const pjmedia_sdp_session *, pjsip_rx_data *data);
 

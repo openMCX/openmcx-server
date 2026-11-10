@@ -80,7 +80,7 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
   // RFC 3261 section 8.1.1.2: the To URI is the Request-URI unless the application names another, as a REFER to a
   // pre-established session does (TS 37.579-1 table 5.5.2.12-1: the URI of the INVITE that created the session).
   const auto to_override = get_header(headers, "To");
-  const std::string to_text(to_override.empty() ? request_uri : to_override);
+  const std::string to_text = to_override.empty() ? name_addr(request_uri) : std::string(to_override);
   auto to = pj_view(to_text);
   std::vector<SipHeader> other_headers;
   for (const auto &header : headers)
@@ -127,9 +127,12 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
   auto contact_text = override_contact.empty() ? contact_uri() : std::string(override_contact);
   if (sips_target(request_uri)) contact_text = as_sips(contact_text);
   auto contact = pj_view(contact_text);
-  auto remote = pj_view(request_uri);
+  // RFC 3261 section 20.10: the To URI in angle brackets; the Request-URI (target) as it is.
+  const auto remote_text = name_addr(request_uri);
+  auto remote = pj_view(remote_text);
+  auto target = pj_view(request_uri);
   pjsip_dialog *sip_dialog = nullptr;
-  require_success(pjsip_dlg_create_uac(pjsip_ua_instance(), &local, &contact, &remote, &remote, &sip_dialog),
+  require_success(pjsip_dlg_create_uac(pjsip_ua_instance(), &local, &contact, &remote, &target, &sip_dialog),
                   "create outgoing SUBSCRIBE dialog");
 
   const std::string id = string_from(sip_dialog->call_id->id);
@@ -230,9 +233,12 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
       override_contact.empty() ? contact_uri() + config.media_feature_tags : std::string(override_contact);
   if (sips_target(request_uri)) contact_text = as_sips(contact_text);
   auto contact = pj_view(contact_text);
-  auto remote = pj_view(request_uri);
+  // RFC 3261 section 20.10: the To URI in angle brackets; the Request-URI (target) as it is.
+  const auto remote_text = name_addr(request_uri);
+  auto remote = pj_view(remote_text);
+  auto target = pj_view(request_uri);
   pjsip_dialog *sip_dialog = nullptr;
-  require_success(pjsip_dlg_create_uac(pjsip_ua_instance(), &local, &contact, &remote, &remote, &sip_dialog),
+  require_success(pjsip_dlg_create_uac(pjsip_ua_instance(), &local, &contact, &remote, &target, &sip_dialog),
                   "create outgoing INVITE dialog");
 
   const std::string id = string_from(sip_dialog->call_id->id);

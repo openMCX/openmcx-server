@@ -21,6 +21,8 @@
 #include <charconv>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <ostream>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -215,6 +217,23 @@ inline constexpr const char *common_policy_ns = "urn:ietf:params:xml:ns:common-p
 inline constexpr const char *poc_ns = "urn:oma:xml:poc:list-service";
 
 inline constexpr const char *mcpttgi_ns = "urn:3gpp:ns:mcpttGroupInfo:1.0";
+
+//------------------------------------------------------------------------------
+// RFC 8839 (ice_sdp.cpp): the ICE attributes seen while an SDP is read.
+struct IceSdpState {
+  IceDescription ice;
+  bool seen = false;
+};
+
+// RFC 8839 sections 5.4 to 5.6: writes the session-level ICE attributes; checks the credentials and components.
+void write_ice_session(std::ostream &out, const IceDescription &ice);
+// RFC 8839 section 5.1: writes the "a=candidate" lines of a media section.
+void write_ice_candidates(std::ostream &out, const std::vector<IceCandidate> &candidates);
+// RFC 8839 sections 5.1 and 5.4 to 5.6: reads an ICE attribute line of the session ("" section) or of the "audio"
+// or "application" section; returns whether the line was one.
+bool parse_ice_attribute(std::string_view line, std::string_view section, IceSdpState &state);
+// RFC 8839 section 5.4: the ICE description once every line is read; none when the SDP has no ICE attribute.
+std::optional<IceDescription> finish_ice(const IceSdpState &state);
 
 } // namespace protocol_detail
 

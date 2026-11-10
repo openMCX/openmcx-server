@@ -22,6 +22,7 @@
 #include "mcx/diameter.hpp"
 #include "mcx/floor.hpp"
 #include "mcx/http.hpp"
+#include "mcx/ice.hpp"
 #include "mcx/key_client.hpp"
 #include "mcx/key_documents.hpp"
 #include "mcx/location.hpp"
@@ -29,6 +30,7 @@
 #include "mcx/mbms_usage.hpp"
 #include "mcx/media.hpp"
 #include "mcx/multicast.hpp"
+#include "mcx/pre_established.hpp"
 #include "mcx/private_call.hpp"
 #include "mcx/protected_call.hpp"
 #include "mcx/runtime.hpp"
@@ -825,8 +827,49 @@ protected:
 
   void notify(User &user);
 
-  // ---- Group calls (group_call.cpp): TS 24.379 clause 10.1 ----
+  // ---- Pre-established sessions (pre_session.cpp): TS 24.379 clause 8, TS 24.380 clause 9.3 ----
+  // TS 24.379 clause 8.1A: what the third-party REGISTER told of the SIP core's resource sharing for a public user
+  // identity: the "Resource-Share: supported" of the client's REGISTER (in its message/sip body) and the
+  // "+g.3gpp.registration-token" of the REGISTER's Contact.
+  struct CoreRegistration {
+    bool resource_sharing = false;
+    std::string registration_token;
+  };
+  std::map<std::string, CoreRegistration> core_registrations_;
+  void record_core_registration(const SipMessage &message, const std::string &identity);
+
+  //------------------------------------------------------------------------------
+  // TS 24.379 clause 8.2.2 with TS 24.380 clause 9.3.2: a served user's pre-established session: its dialog, the URI
+  // allocated to it (step 8), the negotiated media on its own sockets (speech RTP and RTCP, floor control), its ICE
+  // agent (TS 24.379 clause 4.9, controlled: the client offers), and the call setup control state machine.
+  struct PreSession {
+    std::string dialog, user, uri;
+    MediaDescription local;
+    std::optional<MediaDescription> remote;
+    std::unique_ptr<UdpSocket> audio, rtcp, floor;
+    std::unique_ptr<IceAgent> ice;
+    std::unique_ptr<PreEstablishedServer> control;
+    bool implicit_floor = false; // TS 24.379 clause 6.4: established with an implicit floor request
+    bool confirmed = false;
+  };
+  std::map<std::string, std::shared_ptr<PreSession>> pre_sessions_;
+
   std::string pre_established_uri() const;
+  // TS 24.379 clause 8.1A: "none" (the default), "sip-core" or "rx" (mcptt.resource_sharing).
+  [[nodiscard]] std::string resource_sharing_mode() const;
+  void pre_session_invite(const SipMessage &message, const User &user, SipResponse &response);
+  void pre_session_offer(const SipMessage &message, const User &user, SipResponse &response);
+  bool pre_session_refused(const SipMessage &message, const User &user, SipResponse &response);
+  std::shared_ptr<PreSession> make_pre_session(const SipMessage &message, const User &user);
+  void pre_session_state(const std::shared_ptr<PreSession> &session, SipCallState state);
+  void pre_session_poll();
+  void pre_session_command(const std::string &command);
+  void pre_session_modify(const std::shared_ptr<PreSession> &session, std::optional<std::uint8_t> priority,
+                          bool update);
+  void pre_session_release(const std::shared_ptr<PreSession> &session);
+  std::vector<std::shared_ptr<PreSession>> pre_sessions_of(const std::string &which) const;
+
+  // ---- Group calls (group_call.cpp): TS 24.379 clause 10.1 ----
 
   void validate_remote(const std::string &user, const MediaDescription &media, bool uncontrolled_allowed = false);
 

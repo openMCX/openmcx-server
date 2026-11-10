@@ -55,6 +55,14 @@ SipResponse McServer::incoming(const SipMessage &message) {
       third_party_register(message, response);
       return response;
     }
+    // TS 24.379 clause 8.4.2.1: the client releases its pre-established session (no call uses it yet: step 1 c);
+    // the dialog's end releases its resources (pre_session_state).
+    if (message.method == "BYE")
+      if (const auto found = pre_sessions_.find(message.dialog_id); found != pre_sessions_.end()) {
+        const auto *owner = by_id(found->second->user);
+        if (!owner || owner->sip != message.from_uri) response.status_code = 481;
+        return response;
+      }
     // BYE outside a relayed call: only the leg's own user may end it.
     if (message.method == "BYE") {
       const auto found = legs_.find(message.dialog_id);
@@ -306,6 +314,11 @@ void McServer::third_party_register(const SipMessage &message, SipResponse &resp
     return;
   }
   const auto expires = std::string(get_header(message.headers, "Expires"));
+  // TS 24.379 clause 8.1A: the SIP core's resource sharing and the UE's registration token.
+  if (expires == "0")
+    core_registrations_.erase(identity);
+  else
+    record_core_registration(message, identity);
   if (expires == "0") {
     remove_binding(users_.find(identity), "deregistration");
     response.headers = {{"Expires", "0"}};
@@ -570,6 +583,16 @@ void McServer::user_request(const SipMessage &message, User &user, const std::st
   if (message.method == "MESSAGE") return user_message(message, user, response);
   // INVITE from a served user or a peer function: call setup and re-INVITE.
   if (message.method == "INVITE") return invite_request(message, user, response);
+  // TS 24.379 clause 8.3.2.1: an UPDATE modifying a pre-established session outside a call (RFC 3311).
+  if (message.method == "UPDATE")
+    if (const auto found = pre_sessions_.find(message.dialog_id);
+        found != pre_sessions_.end() && found->second->user == user.id) {
+      if (!message.remote_media) {
+        response.status_code = 488;
+        return;
+      }
+      return pre_session_offer(message, user, response);
+    }
   response.status_code = 405;
 }
 
@@ -1151,18 +1174,27 @@ void McServer::group_alert_message(const SipMessage &message, User &user, McpttI
 
 //------------------------------------------------------------------------------
 // INVITE from a served user or a peer function: call setup and re-INVITE. Pre-established sessions (TS 24.379
-// clause 8.2.2) are refused; a call controlled elsewhere is relayed; ambient listening (clause 11.1.6), private
+// clause 8.2.2, and re-INVITEs in their dialogs, clause 8.3.2.1) go to pre_session.cpp; a call controlled elsewhere is
+// relayed; ambient listening (clause 11.1.6), private
 // (clause 11.1.1), ad hoc (clause 17.4.2) and server video (TS 24.281 clauses 12.2.3.2.5 and 13.2.3.2.3) calls go
 // to their procedures, group calls to group_invite().
 void McServer::invite_request(const SipMessage &message, User &user, SipResponse &response) {
-  // TS 24.379 clause 8.2.2: setup of a pre-established session, addressed to its
-  // public service identity. Steps 3 and 5: the lab has no resource sharing
-  // (neither via the SIP core nor PCC/Rx, TS 24.379 clause 8.1A), so every request is refused.
+  // TS 24.379 clause 6.3.1.1: an INVITE to the PSI identifying pre-established session set-up (clause 8.2.2); a
+  // re-INVITE of a pre-established session outside a call (clause 8.3.2.1).
+  if (const auto found = pre_sessions_.find(message.dialog_id); found != pre_sessions_.end()) {
+    if (found->second->user != user.id) {
+      response.status_code = 481;
+      return;
+    }
+    if (!message.remote_media) {
+      response.status_code = 488; // clause 8.3.2.1 step 1
+      return;
+    }
+    pre_session_offer(message, user, response);
+    return;
+  }
   if (message.request_uri == pre_established_uri() && !legs_.contains(message.dialog_id)) {
-    response.status_code = 403;
-    response.headers = {
-        {"Warning", warning_value(warn(Warning::function_not_allowed, "pre-established session not supported"))}};
-    event("pre_established_session_refused", {{"user_id", user.id}, {"reason", "resource sharing not supported"}});
+    pre_session_invite(message, user, response);
     return;
   }
   if (auto answer = plain_reinvite(message, user)) {

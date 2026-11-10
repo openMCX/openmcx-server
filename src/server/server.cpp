@@ -25,6 +25,11 @@ void McServer::state(std::string_view dialog, SipCallState state, int code) {
       schedule([this, relay = relay->second] { schedule([this, relay] { end_relay(relay); }); });
     return;
   }
+  if (const auto pre = pre_sessions_.find(std::string(dialog)); pre != pre_sessions_.end()) {
+    const auto session = pre->second; // pre_session_state may erase it
+    pre_session_state(session, state);
+    return;
+  }
   auto it = legs_.find(std::string(dialog));
   if (it == legs_.end()) return;
   auto leg = it->second;
@@ -644,6 +649,11 @@ McServer::McServer(const ServiceProfile &service, Json cfg, bool disable_tls)
 // The SDP answer of a leg this server offered: the answer must keep the media plane control, the floor SSRC, the
 // media protection, the floor priority and the queueing of the offer; otherwise the dialog is ended.
 void McServer::media_answered(std::string_view dialog, const MediaDescription &media) {
+  // TS 24.379 clause 8.3.2.2: the negotiated media of a pre-established session after its modification.
+  if (const auto pre = pre_sessions_.find(std::string(dialog)); pre != pre_sessions_.end()) {
+    pre->second->remote = media;
+    return;
+  }
   auto it = legs_.find(std::string(dialog));
   if (it != legs_.end()) {
     try {
@@ -717,6 +727,13 @@ void McServer::run() {
         } catch (const std::exception &error) {
           event("seal_command_failed", {{"command", command}, {"reason", error.what()}});
         }
+      } else if (command.starts_with("pre-session-")) {
+        // TS 24.379 clauses 8.3.2.2 and 8.4.2.2: the operator modifies or releases pre-established sessions.
+        try {
+          pre_session_command(command);
+        } catch (const std::exception &error) {
+          event("pre_session_command_failed", {{"command", command}, {"reason", error.what()}});
+        }
       } else if (command.starts_with("csk-download ")) {
         send_csk_download(command.substr(13));
       } else if (command.starts_with("regroup-remove ")) {
@@ -725,6 +742,7 @@ void McServer::run() {
         if (!regroup_decide_remove(id)) event("regroup_remove_unknown", {{"regroup", id}});
       }
     }
+    pre_session_poll();
     for (auto &[id, leg] : legs_) {
       for (int index = 0; index < 32; index++) {
         auto datagram = leg->floor->receive();
