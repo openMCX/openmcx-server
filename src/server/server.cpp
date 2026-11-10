@@ -184,6 +184,7 @@ void McServer::tick() {
   if (!policy_clients_.empty()) policy_tick(now);
   location_.tick(now);
   docsub_tick(now);
+  group_data_tick();
   temporary_tick(now);
   seal_tick();
   mbms_tick(now);

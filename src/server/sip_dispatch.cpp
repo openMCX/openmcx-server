@@ -9,6 +9,9 @@
 
 #include "server.hpp"
 
+#include <limits>
+#include <regex>
+
 namespace mcx {
 
 //------------------------------------------------------------------------------
@@ -959,12 +962,25 @@ void McServer::affiliation_subscribe(const SipMessage &message, User &user, cons
     (void)target_affiliation_subscribe(message, user, {}, response);
     return;
   }
+  if (group_data_subscriptions_.contains(message.dialog_id)) {
+    (void)group_data_subscribe(message, user, {}, response);
+    return;
+  }
   if (user.subscription != message.dialog_id && !message.body.empty()) {
     std::string served;
     try {
       served = message_info(message, svc_).request_uri;
     } catch (const std::exception &) {
       served.clear(); // a body without the service info names no other user
+    }
+    // TS 24.379 clause 9.2.2.3.9: a group ID with a per-group SIMPLE-FILTER (clause 9.3.2) is a subscription to
+    // the group's dynamic data.
+    if (!served.empty() && served != user.id &&
+        std::any_of(message.parts.begin(), message.parts.end(), [](const BodyPart &part) {
+          return part.content_type == simple_filter_mime && part.body.find("additionalData") != std::string::npos;
+        })) {
+      (void)group_data_subscribe(message, user, served, response);
+      return;
     }
     if (!served.empty() && served != user.id) {
       (void)target_affiliation_subscribe(message, user, served, response);
@@ -1044,6 +1060,114 @@ bool McServer::target_affiliation_subscribe(const SipMessage &message, User &use
                   affiliation_xml(affiliation_status(svc_, *found, {}), true));
   });
   return true;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 9.2.2.3.9: a subscription to the dynamic data of a group served here, initial (`group` the
+// <mcptt-request-uri>) or in its dialog (`group` empty). Step 3: a nonzero Expires lower than 4294967295 is refused
+// 423 with Min-Expires 4294967295; step 4: an unknown group 403; step 5: a subscriber that is not a member of the group
+// 403 (the authorisation is local policy); step 6: 200 (OK), then the notification of clause 9.2.2.3.10. Expires 0 ends
+// it in its dialog, or out of it fetches the current state: one final NOTIFY either way. Returns false when refused.
+bool McServer::group_data_subscribe(const SipMessage &message, User &user, const std::string &group,
+                                    SipResponse &response) {
+  const auto existing = group_data_subscriptions_.find(message.dialog_id);
+  if (existing != group_data_subscriptions_.end() && existing->second.subscriber != user.id) {
+    response.status_code = 403;
+    return false;
+  }
+  const auto target = existing != group_data_subscriptions_.end() ? existing->second.group : group;
+  const auto expires = std::string(get_header(message.headers, "Expires"));
+  const bool ending = expires == "0";
+  if (!ending && expires != "4294967295") {
+    response.status_code = 423;
+    response.headers = {{"Min-Expires", "4294967295"}};
+    return false;
+  }
+  if (existing == group_data_subscriptions_.end()) {
+    Json profile;
+    try {
+      profile = group_profile(target);
+    } catch (const std::exception &) {
+      response.status_code = 403;
+      return false;
+    }
+    if (!member(profile, user.id)) {
+      event("group_data_subscription_refused", {{"user_id", user.id}, {"group", target}});
+      response.status_code = 403;
+      return false;
+    }
+  }
+  if (ending) {
+    if (existing != group_data_subscriptions_.end()) group_data_subscriptions_.erase(existing);
+    response.headers = {{"Expires", "0"}};
+    schedule([this, target, dialog = message.dialog_id] {
+      sip_.notify(dialog, "presence", "terminated;reason=timeout", "application/pidf+xml", group_data_xml(target));
+    });
+    event("group_data_subscription_ended", {{"user_id", user.id}, {"group", target}});
+    return true;
+  }
+  if (existing == group_data_subscriptions_.end() && group_data_subscriptions_.size() >= max_subscriptions) {
+    response.status_code = 503;
+    return false;
+  }
+  auto &entry = group_data_subscriptions_[message.dialog_id];
+  entry.subscriber = user.id;
+  entry.group = target;
+  entry.expires = std::numeric_limits<std::int64_t>::max();
+  entry.last.clear();
+  response.headers = {{"Expires", "4294967295"}};
+  event("group_data_subscription", {{"user_id", user.id}, {"group", target}});
+  schedule([this] { group_data_tick(); });
+  return true;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 9.3.1 and clause 9.2.2.3.10 step 2: the per-group dynamic data of a group: the group ID in "entity",
+// one <tuple> per affiliated member with an <affiliation> per client ("client" and "expires", step 2 a) and the
+// <additionalData> with "groupCallOngoing".
+std::string McServer::group_data_xml(const std::string &group) {
+  const std::string ns = std::string(svc_.info_prefix) + "PI10";
+  const auto at = std::time(nullptr) + 3600;
+  std::tm calendar{};
+  gmtime_r(&at, &calendar);
+  char expiry[32];
+  std::strftime(expiry, sizeof expiry, "%Y-%m-%dT%H:%M:%SZ", &calendar);
+  std::string body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><presence xmlns=\"urn:ietf:params:xml:ns:pidf\" xmlns:" +
+                     ns + "=\"urn:3gpp:ns:" + std::string(svc_.info_prefix) + "PresInfo:1.0\" entity=\"" +
+                     xml_escape(group) + "\">";
+  std::set<std::string> seen;
+  for (const auto &[sip, user] : users_) {
+    if (!affiliated(user.id, group) || !seen.insert(user.id).second) continue;
+    body += "<tuple id=\"" + xml_escape(user.id) + "\"><status><" + ns + ":affiliation client=\"" +
+            xml_escape(user.client) + "\" expires=\"" + expiry + "\"/></status></tuple>";
+  }
+  const auto session = sessions_.find(group);
+  const bool ongoing = session != sessions_.end() && session->second && session->second->established;
+  body += "<" + ns + ":additionalData groupCallOngoing=\"" + (ongoing ? "true" : "false") + "\"/></presence>";
+  return body;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 9.2.2.3.10: a NOTIFY on each group data subscription whose document changed (an affiliation, a
+// call starting or ending), the first one on the subscription's creation. The "expires" attributes are left out of
+// the comparison.
+void McServer::group_data_tick() {
+  if (group_data_subscriptions_.empty()) return;
+  // At most every 200 ms (the main loop ticks every few milliseconds).
+  static std::uint64_t next = 0;
+  const auto now = monotonic_ms();
+  if (now < next) return;
+  next = now + 200;
+  static const std::regex expiry(R"( expires="[^"]*")");
+  std::map<std::string, std::string> documents;
+  for (auto &[dialog, sub] : group_data_subscriptions_) {
+    auto found = documents.find(sub.group);
+    if (found == documents.end()) found = documents.emplace(sub.group, group_data_xml(sub.group)).first;
+    const auto compared = std::regex_replace(found->second, expiry, "");
+    if (compared == sub.last) continue;
+    sub.last = compared;
+    sip_.notify(dialog, "presence", "active;expires=4294967295", "application/pidf+xml", found->second);
+  }
 }
 
 //------------------------------------------------------------------------------

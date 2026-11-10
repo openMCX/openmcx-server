@@ -835,6 +835,18 @@ protected:
     std::int64_t expires = 0;
   };
   std::map<std::string, TargetAffiliationSubscription> target_affiliation_subscriptions_;
+  //------------------------------------------------------------------------------
+  // TS 24.379 clauses 9.2.2.3.9 and 9.2.2.3.10: a subscription to a group's dynamic data (per-group restrictions of
+  // the presence event package, clause 9.3.2), by its dialog: the subscriber, the group, when it ends, and the last
+  // document notified (a NOTIFY goes out when it changes).
+  struct GroupDataSubscription {
+    std::string subscriber, group, last;
+    std::int64_t expires = 0;
+  };
+  std::map<std::string, GroupDataSubscription> group_data_subscriptions_;
+  bool group_data_subscribe(const SipMessage &message, User &user, const std::string &group, SipResponse &response);
+  std::string group_data_xml(const std::string &group);
+  void group_data_tick();
   // TS 24.484 clause 8.3.2.1 (<allow-request-affiliated-groups>, <allow-request-to-affiliate-other-users>,
   // <allow-recommend-to-affiliate-other-users>): whether the user holds the right (site remote_affiliation).
   bool remote_affiliation_right(const std::string &id, const char *right);
