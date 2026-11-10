@@ -141,6 +141,11 @@ void add_headers(pjsip_tx_data *data, const std::vector<SipHeader> &headers);
 // initial INVITE: option tags of a Supported header field join the message's Supported header field; any other header
 // field is added unless the message already has one of that name.
 void add_answer_headers(pjsip_tx_data *data, const std::vector<SipHeader> &headers);
+//------------------------------------------------------------------------------
+// RFC 4028 section 9: a 2xx to an INVITE that carries Session-Expires (the session timer accepted) gets
+// "Require: timer" ("the UAS MUST [...] include the Require header field with the value "timer"" when the UAC
+// supports the extension, which the timer module checked); TS 37.579-1 table 5.5.2.17.1.1-1, INVITE-RSP.
+void require_session_timer(pjsip_tx_data *data);
 
 //------------------------------------------------------------------------------
 // RFC 4566: parses SDP text into a pjmedia session allocated in the pool.

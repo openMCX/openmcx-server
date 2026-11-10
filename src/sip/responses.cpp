@@ -87,6 +87,7 @@ void SipEngine::Impl::answer_reinvite(pjsip_inv_session *invite, pjsip_rx_data *
   else if (!response.parts.empty())
     answer->msg->body = make_parts_body(answer->pool, response.parts, "mcx-reinvite-error");
   add_headers(answer.get(), response.headers);
+  if (response.status_code >= 200 && response.status_code < 300) require_session_timer(answer.get());
   if (response.status_code >= 200 && response.status_code < 300 && !config.reinvite_success_headers.empty()) {
     // pjsip adds the endpoint's Supported header field ("100rel, timer") to an answer that has none; the option tags
     // must join it rather than replace it.
@@ -385,6 +386,7 @@ void SipEngine::Impl::take_session_refresh(pjsip_rx_data *data) {
                                              : make_invite_body(answer->pool, *response.local_media, parts);
     }
     add_headers(answer.get(), response.headers);
+    if (response.status_code >= 200 && response.status_code < 300) require_session_timer(answer.get());
     if (response.status_code > 100 && response.status_code < 200)
       add_answer_headers(answer.get(), config.invite_provisional_headers);
     else if (response.status_code >= 200 && response.status_code < 300)

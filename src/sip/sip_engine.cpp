@@ -307,6 +307,7 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
     data->msg->body = make_parts_body(data->pool, response.parts, "mcx-answer");
   if (response.status_code > 100 && response.status_code < 300)
     add_headers(data.get(), {{"Contact", entry.response_contact}});
+  if (response.status_code >= 200 && response.status_code < 300) require_session_timer(data.get());
 
   // A header field this answer sets replaces the copy pjsip kept from the last provisional answer, so that it is
   // not sent twice (a Resource-Priority of RFC 4412 section 3.1, for example).

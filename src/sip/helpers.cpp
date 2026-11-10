@@ -454,6 +454,21 @@ void add_answer_headers(pjsip_tx_data *data, const std::vector<SipHeader> &heade
   return make_body_with_sdp(pool, make_sdp(media, 1), parts);
 }
 
+//------------------------------------------------------------------------------
+void require_session_timer(pjsip_tx_data *data) {
+  static const pj_str_t long_name = pj_str(const_cast<char *>("Session-Expires"));
+  static const pj_str_t short_name = pj_str(const_cast<char *>("x"));
+  if (pjsip_msg_find_hdr_by_names(data->msg, &long_name, &short_name, nullptr) == nullptr) return;
+  for (auto *header = static_cast<pjsip_require_hdr *>(pjsip_msg_find_hdr(data->msg, PJSIP_H_REQUIRE, nullptr));
+       header != nullptr;
+       header = static_cast<pjsip_require_hdr *>(pjsip_msg_find_hdr(data->msg, PJSIP_H_REQUIRE, header->next)))
+    for (unsigned i = 0; i < header->count; ++i)
+      if (pj_stricmp2(&header->values[i], "timer") == 0) return;
+  auto *require = pjsip_require_hdr_create(data->pool);
+  require->values[require->count++] = pj_str(const_cast<char *>("timer"));
+  pjsip_msg_add_hdr(data->msg, reinterpret_cast<pjsip_hdr *>(require));
+}
+
 } // namespace sip_detail
 
 //------------------------------------------------------------------------------
