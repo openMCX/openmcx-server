@@ -49,6 +49,8 @@ type publicUser struct {
 	MCVideoID string          `json:"mcvideo_id,omitempty"`
 	MCVideo   map[string]any  `json:"mcvideo,omitempty"`
 	Location  *LocationPolicy `json:"location,omitempty"`
+	// The rights on other users' affiliations (TS 24.379 clauses 9.2.2.2.3, 9.2.2.2.4 and 9.2.2.2.8).
+	RemoteAffiliation *RemoteAffiliationPolicy `json:"remote_affiliation,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -610,7 +612,8 @@ func (svc *service) getInternalUser(writer http.ResponseWriter, request *http.Re
 	user = svc.effectiveUser(user)
 	writeJSON(writer, http.StatusOK, publicUser{ProfileIndex: user.profileIndex(), MCID: user.MCID, MCPTTID: user.MCPTTID, SIPURI: user.SIPURI, ClientID: user.ClientID, Groups: user.Groups, PrivateCall: user.PrivateCall, AdhocCall: user.AdhocCall, GroupCall: user.GroupCall,
 		FunctionalAliasTakeover: user.FunctionalAliasTakeover, FunctionalAliasBinding: user.FunctionalAliasBinding, MaxAffiliations: user.MaxAffiliations,
-		Regroup: user.Regroup, MCDataID: user.MCDataID, MCData: user.MCData, MCVideoID: user.MCVideoID, MCVideo: user.MCVideo, Location: user.Location})
+		Regroup: user.Regroup, MCDataID: user.MCDataID, MCData: user.MCData, MCVideoID: user.MCVideoID, MCVideo: user.MCVideo, Location: user.Location,
+		RemoteAffiliation: user.RemoteAffiliation})
 }
 
 // ------------------------------------------------------------------------------

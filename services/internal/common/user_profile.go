@@ -300,6 +300,11 @@ func profileRights(user User) []profileRight {
 	// (callable false); the servers apply the same default (TS 24.379 clause 11.1.1.3.2 step 8).
 	mcptt(user.PrivateCall == nil || user.PrivateCall.Callable == nil || *user.PrivateCall.Callable,
 		"allow-private-call-participation")
+	if remote := user.RemoteAffiliation; remote != nil {
+		mcptt(remote.RequestAffiliatedGroups, "allow-request-affiliated-groups")
+		mcptt(remote.RequestToAffiliate, "allow-request-to-affiliate-other-users")
+		mcptt(remote.RecommendToAffiliate, "allow-recommend-to-affiliate-other-users")
+	}
 	if private := user.PrivateCall; private != nil {
 		mcptt(private.Allow, "allow-private-call")
 		mcptt(private.AutomaticCommencement, "allow-automatic-commencement")

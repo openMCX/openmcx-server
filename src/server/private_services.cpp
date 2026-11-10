@@ -26,6 +26,49 @@ void McServer::relay_service_message(const User &target, McpttInfo info, bool ke
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clause 9.2.1.4 (the request of the originating user) with clauses 9.2.2.2.8 and 9.2.2.2.9 (this server
+// performs the originating and the terminating participating functions): an affiliation status change request in
+// negotiated mode, application/vnd.3gpp.mcptt-affiliation-command+xml (annex F.4), for the served user its
+// <mcptt-request-uri> names. Clause 9.2.2.2.8 step 3: the originating user needs
+// <allow-recommend-to-affiliate-other-users> (403 otherwise); a target not served here is 404. Steps 4 and 5: the
+// request goes on to the target's public user identity with the Accept-Contact of the MCPTT ICSI, its mcptt-info
+// naming the target (<mcptt-request-uri>) and the originating user (<mcptt-calling-user-id>, clause 9.2.2.2.8
+// precondition 2), and the command as received. The originator gets 200 (OK) once the request is sent on (as the
+// other services relayed by SIP MESSAGE, relay_service_message).
+void McServer::affiliation_command_message(const SipMessage &message, User &user, const McpttInfo &info,
+                                           SipResponse &response) {
+  if (!remote_affiliation_right(user.id, "recommend_to_affiliate")) {
+    event("affiliation_command_refused", {{"user_id", user.id}, {"target", info.request_uri}});
+    response.status_code = 403;
+    return;
+  }
+  const auto *target = by_id(info.request_uri);
+  if (!target || target->id == user.id) {
+    response.status_code = target ? 403 : 404;
+    return;
+  }
+  const auto command = std::find_if(message.parts.begin(), message.parts.end(), [](const BodyPart &part) {
+    return part.content_type == affiliation_command_mime;
+  });
+  if (command->body.find("command-list") == std::string::npos) {
+    response.status_code = 400;
+    return;
+  }
+  McpttInfo forwarded;
+  forwarded.request_uri = target->id;
+  forwarded.calling_user = user.id;
+  const auto [type, body] =
+      message_body({{svc_.info_mime, service_info_xml_(forwarded)}, {affiliation_command_mime, command->body}},
+                   "mcx-" + random_id());
+  sip_.request("MESSAGE", target->sip, type, body,
+               user_route(*target, {{"P-Asserted-Service", svc_.icsi},
+                                    {"Accept-Contact", feature_accept()},
+                                    {"Accept-Contact", icsi_accept()}}));
+  event("affiliation_command", {{"user_id", user.id}, {"target", target->id}});
+  response.status_code = 200;
+}
+
+//------------------------------------------------------------------------------
 // Helper: reject a service request relayed by SIP MESSAGE: set the status and the Warning, report the rejection
 // and return the response.
 SipResponse McServer::private_service_rejected(SipResponse &response, const User &user, int status,

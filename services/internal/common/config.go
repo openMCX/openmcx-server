@@ -157,6 +157,10 @@ type User struct {
 	// service provider policy"): creating groups in the user's own tree, and managing
 	// the listed groups ("*" for all).
 	GroupManagement *GroupManagementPolicy `json:"group_management,omitempty"`
+	// Rights on other users' affiliations (TS 24.484 clause 8.3.2.1: <allow-request-affiliated-groups>,
+	// <allow-request-to-affiliate-other-users>, <allow-recommend-to-affiliate-other-users>), which the MCPTT server
+	// checks (TS 24.379 clauses 9.2.2.2.4 step 4, 9.2.2.2.3 step 4 and 9.2.2.2.8 step 3).
+	RemoteAffiliation *RemoteAffiliationPolicy `json:"remote_affiliation,omitempty"`
 	// An MC service administrator's right to update other users' configuration
 	// management documents (TS 24.484 clause 6.3.4, "authorized" by local policy).
 	ConfigManagement bool `json:"config_management,omitempty"`
@@ -174,6 +178,14 @@ func (user User) profileIndex() int {
 		return 1
 	}
 	return user.ProfileIndex
+}
+
+// RemoteAffiliationPolicy: whether the user may learn another user's affiliations (RequestAffiliatedGroups), change
+// them in mandatory mode (RequestToAffiliate) or recommend a change in negotiated mode (RecommendToAffiliate).
+type RemoteAffiliationPolicy struct {
+	RequestAffiliatedGroups bool `json:"request_affiliated_groups,omitempty"`
+	RequestToAffiliate      bool `json:"request_to_affiliate,omitempty"`
+	RecommendToAffiliate    bool `json:"recommend_to_affiliate,omitempty"`
 }
 
 type GroupManagementPolicy struct {

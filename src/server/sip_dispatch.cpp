@@ -927,8 +927,13 @@ void McServer::affiliation_subscribe(const SipMessage &message, User &user, cons
     response.status_code = 489;
     return;
   }
-  // TS 24.379 clause 9.2.2.2.4 steps 1 to 4: the mcptt-info names the served user (<mcptt-request-uri>); no user is
-  // authorised for another user's affiliation status. A SUBSCRIBE without the mcptt-info is the subscriber's own.
+  // TS 24.379 clause 9.2.2.2.4 steps 1 to 4: the mcptt-info names the served user (<mcptt-request-uri>); a user
+  // with <allow-request-affiliated-groups> may subscribe to another user's affiliation status
+  // (target_affiliation_subscribe). A SUBSCRIBE without the mcptt-info is the subscriber's own.
+  if (target_affiliation_subscriptions_.contains(message.dialog_id)) {
+    (void)target_affiliation_subscribe(message, user, {}, response);
+    return;
+  }
   if (user.subscription != message.dialog_id && !message.body.empty()) {
     std::string served;
     try {
@@ -937,7 +942,7 @@ void McServer::affiliation_subscribe(const SipMessage &message, User &user, cons
       served.clear(); // a body without the service info names no other user
     }
     if (!served.empty() && served != user.id) {
-      response.status_code = 403;
+      (void)target_affiliation_subscribe(message, user, served, response);
       return;
     }
   }
@@ -964,27 +969,91 @@ void McServer::affiliation_subscribe(const SipMessage &message, User &user, cons
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clauses 9.2.1.3 and 9.2.2.2.4: a subscription to the affiliation status of another served MCPTT user,
+// initial (`served` the <mcptt-request-uri>) or in its dialog (`served` empty). Step 4: the subscriber needs
+// <allow-request-affiliated-groups> (403 otherwise); a user not served here is 404. Expires 0 ends the subscription
+// in its dialog, or out of it fetches the current state: one final NOTIFY either way. The subscription lasts at most
+// an hour (RFC 6665 section 4.2.1.1), refreshed in its dialog. Returns false when refused.
+bool McServer::target_affiliation_subscribe(const SipMessage &message, User &user, const std::string &served,
+                                            SipResponse &response) {
+  const auto existing = target_affiliation_subscriptions_.find(message.dialog_id);
+  if (existing != target_affiliation_subscriptions_.end() && existing->second.subscriber != user.id) {
+    response.status_code = 403;
+    return false;
+  }
+  const auto target_id = existing != target_affiliation_subscriptions_.end() ? existing->second.served : served;
+  if (existing == target_affiliation_subscriptions_.end() &&
+      !remote_affiliation_right(user.id, "request_affiliated_groups")) {
+    event("affiliation_subscription_refused", {{"user_id", user.id}, {"target", target_id}});
+    response.status_code = 403;
+    return false;
+  }
+  auto *target = by_id(target_id);
+  if (!target) {
+    response.status_code = 404;
+    return false;
+  }
+  const bool ending = get_header(message.headers, "Expires") == "0";
+  if (ending) {
+    if (existing != target_affiliation_subscriptions_.end()) target_affiliation_subscriptions_.erase(existing);
+    response.headers = {{"Expires", "0"}};
+    schedule([this, id = target_id, dialog = message.dialog_id] {
+      if (const auto *found = by_id(id))
+        sip_.notify(dialog, "presence", "terminated;reason=timeout", "application/pidf+xml",
+                    affiliation_xml(affiliation_status(svc_, *found, {}), true));
+    });
+    return true;
+  }
+  if (existing == target_affiliation_subscriptions_.end() &&
+      target_affiliation_subscriptions_.size() >= max_subscriptions) {
+    response.status_code = 503;
+    return false;
+  }
+  target_affiliation_subscriptions_[message.dialog_id] = {user.id, target_id, std::time(nullptr) + 3600};
+  response.headers = {{"Expires", "3600"}};
+  event("affiliation_subscription", {{"user_id", user.id}, {"target", target_id}});
+  // The current state on this dialog only (notify() reaches every subscription of the target).
+  schedule([this, id = target_id, dialog = message.dialog_id] {
+    if (const auto *found = by_id(id))
+      sip_.notify(dialog, "presence", "active;expires=3600", "application/pidf+xml",
+                  affiliation_xml(affiliation_status(svc_, *found, {}), true));
+  });
+  return true;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.379 clause 9.2.2.2.3: affiliation status change from a client (or a functional alias activation, decided
 // by the server owning the functional aliases, TS 24.379 clause 9A.2.2.2.3).
-void McServer::affiliation_publish(const SipMessage &message, User &user, SipResponse &response) {
+void McServer::affiliation_publish(const SipMessage &message, User &originator, SipResponse &response) {
   auto info = message_info(message, svc_);
   for (const auto &part : message.parts)
     if (part.content_type == "application/pidf+xml" && is_functional_alias_pidf(part.body)) {
       // TS 24.379 clause 9A.2.2.2.3: on split servers this server answers and passes each change on to the server
       // owning the aliases (clause 9A.2.2.2.6).
-      if (aliases_owned_elsewhere() && user.peer.empty()) {
-        response = served_alias_publish(message, user, info, part.body);
+      if (aliases_owned_elsewhere() && originator.peer.empty()) {
+        response = served_alias_publish(message, originator, info, part.body);
         return;
       }
-      response = functional_alias_publish(message, user, info, part.body);
+      response = functional_alias_publish(message, originator, info, part.body);
       return;
     }
   // TS 24.379 clause 9.2.2.2.3 steps 1 to 4: the mcptt-info names the served user (<mcptt-request-uri>); the client
-  // is the one of the PIDF's tuple (step 10), the mcptt-info needs no <mcptt-client-id> (clause 9.2.1.2 step 2).
-  if (info.request_uri != user.id) {
+  // is the one of the PIDF's tuple (step 10), the mcptt-info needs no <mcptt-client-id> (clause 9.2.1.2 step 2). A
+  // user with <allow-request-to-affiliate-other-users> may change another served user's affiliation in mandatory mode
+  // (clause 9.2.1.2: "an affiliation status change request in mandatory mode to another MCPTT user"); a user not
+  // served here is 404.
+  const bool remote = info.request_uri != originator.id;
+  if (remote && !remote_affiliation_right(originator.id, "request_to_affiliate")) {
+    event("affiliation_change_refused", {{"user_id", originator.id}, {"target", info.request_uri}});
     response.status_code = 403;
     return;
   }
+  auto *target = remote ? by_id(info.request_uri) : &originator;
+  if (!target) {
+    response.status_code = 404;
+    return;
+  }
+  auto &user = *target;
   // TS 24.379 clause 9.2.2.2.3 step 5: an affiliation lasts until changed, so Expires is 4294967295 (or 0 to end it).
   const auto expires = std::string(get_header(message.headers, "Expires"));
   if (expires != "0" && expires != "4294967295") {
@@ -994,8 +1063,9 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
   }
   // RFC 3903 section 6 step 3: a PUBLISH without SIP-If-Match is an initial publication, which replaces the state
   // (a restarted client has no entity tag); one naming an entity tag other than the current one is refused with 412.
+  // A mandatory mode change by another user is a publication of its own (no SIP-If-Match of the target's).
   const auto match = get_header(message.headers, "SIP-If-Match");
-  if (!match.empty() && match != user.affiliation_etag) {
+  if (!remote && !match.empty() && match != user.affiliation_etag) {
     response.status_code = 412;
     return;
   }
@@ -1044,12 +1114,15 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
   for (const auto &group : user.groups)
     if (!groups.contains(group)) leaving.insert(group);
   groups.merge(deaffiliation_forbidden(user, leaving));
-  user.affiliation_etag = removing ? std::string{} : random_id();
+  // The target's own publication (its entity tag) stays as it is after a mandatory mode change.
+  std::string etag = remote ? random_id() : std::string{};
+  if (!remote) user.affiliation_etag = etag = removing ? std::string{} : random_id();
   user.handled_pid = affiliation ? affiliation->publication_id : std::string{};
   apply_affiliation(user, std::move(groups));
   response.headers = {{"Expires", removing ? "0" : "4294967295"}};
-  if (!removing) response.headers.push_back({"SIP-ETag", user.affiliation_etag});
-  event(removing ? "deaffiliated" : "affiliated", {{"user_id", user.id}, {"groups", user.groups}});
+  if (!removing) response.headers.push_back({"SIP-ETag", etag});
+  event(removing ? "deaffiliated" : "affiliated",
+        {{"user_id", user.id}, {"groups", user.groups}, {"by", remote ? originator.id : user.id}});
 }
 
 //------------------------------------------------------------------------------
@@ -1070,6 +1143,13 @@ void McServer::user_message(const SipMessage &message, User &user, SipResponse &
     return;
   }
   auto info = message_info(message, svc_);
+  // TS 24.379 clauses 9.2.1.4 and 9.2.2.2.8: an affiliation status change request in negotiated mode.
+  if (std::any_of(message.parts.begin(), message.parts.end(), [](const BodyPart &part) {
+        return part.content_type == affiliation_command_mime;
+      })) {
+    affiliation_command_message(message, user, info, response);
+    return;
+  }
   if (user.peer.empty() && message_to_controller(message, user, info, response)) return;
   if (info.adhoc_alert) {
     response = adhoc_alert_message(message, user, info);

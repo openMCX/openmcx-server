@@ -825,6 +825,24 @@ protected:
 
   void notify(User &user);
 
+  // TS 24.379 clauses 9.2.2.2.4 and 9.2.2.2.5: a subscription to the affiliation status of another served user, by
+  // its dialog: the subscriber, the served (target) MCPTT ID and when it ends.
+  struct TargetAffiliationSubscription {
+    std::string subscriber, served;
+    std::int64_t expires = 0;
+  };
+  std::map<std::string, TargetAffiliationSubscription> target_affiliation_subscriptions_;
+  // TS 24.484 clause 8.3.2.1 (<allow-request-affiliated-groups>, <allow-request-to-affiliate-other-users>,
+  // <allow-recommend-to-affiliate-other-users>): whether the user holds the right (site remote_affiliation).
+  bool remote_affiliation_right(const std::string &id, const char *right);
+  bool target_affiliation_subscribe(const SipMessage &message, User &user, const std::string &served,
+                                    SipResponse &response);
+  // TS 24.379 annex F.4: the MIME type of an affiliation status change request in negotiated mode.
+  static constexpr const char *affiliation_command_mime = "application/vnd.3gpp.mcptt-affiliation-command+xml";
+  // TS 24.379 clause 9.2.2.2.8: an affiliation status change request in negotiated mode for a served user.
+  void affiliation_command_message(const SipMessage &message, User &user, const McpttInfo &info,
+                                   SipResponse &response);
+
   // ---- Group calls (group_call.cpp): TS 24.379 clause 10.1 ----
   std::string pre_established_uri() const;
 

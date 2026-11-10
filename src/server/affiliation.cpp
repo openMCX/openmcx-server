@@ -237,14 +237,36 @@ void McServer::apply_affiliation(User &user, std::set<std::string> groups) {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 9.2.2.2.5: the NOTIFY of the user's affiliation status to its subscription.
+// TS 24.379 clause 9.2.2.2.5: the NOTIFY of the user's affiliation status to its subscription, and to each
+// subscription of another user to it (clause 9.2.2.2.4).
 void McServer::notify(User &user) {
   // A peer's user gets affiliation notifications from its own server.
-  if (!user.peer.empty() || user.subscription.empty() || user.subscription_expires <= std::time(nullptr)) return;
+  if (!user.peer.empty()) return;
+  const auto now = std::time(nullptr);
+  const bool own = !user.subscription.empty() && user.subscription_expires > now;
+  const bool watched =
+      std::any_of(target_affiliation_subscriptions_.begin(), target_affiliation_subscriptions_.end(),
+                  [&](const auto &entry) { return entry.second.served == user.id && entry.second.expires > now; });
+  if (!own && !watched) return;
   // Clause 9.2.2.2.5 step 3d: the <p-id> only when a PUBLISH caused the notification (its handled p-id).
   const auto affiliation = affiliation_status(svc_, user, std::exchange(user.handled_pid, std::string{}));
   auto body = affiliation_xml(affiliation, true);
-  sip_.notify(user.subscription, "presence", "active;expires=3600", "application/pidf+xml", body);
+  if (own) sip_.notify(user.subscription, "presence", "active;expires=3600", "application/pidf+xml", body);
+  for (const auto &[dialog, sub] : target_affiliation_subscriptions_)
+    if (sub.served == user.id && sub.expires > now)
+      sip_.notify(dialog, "presence", "active;expires=" + std::to_string(sub.expires - now), "application/pidf+xml",
+                  body);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.1: one of the user's rights on other users' affiliations, from the site configuration's
+// remote_affiliation (request_affiliated_groups, request_to_affiliate, recommend_to_affiliate); none by default.
+bool McServer::remote_affiliation_right(const std::string &id, const char *right) {
+  try {
+    return user_profile(id).value("remote_affiliation", Json::object()).value(right, false);
+  } catch (const std::exception &) {
+    return false; // no profile: no right
+  }
 }
 
 } // namespace mcx
