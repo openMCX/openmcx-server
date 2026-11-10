@@ -42,6 +42,16 @@ struct SipHeader {
 };
 
 //------------------------------------------------------------------------------
+// RFC 3261 section 12 with RFC 4538 section 2 and RFC 3891 section 6.1: the identifiers of a dialog, its Call-ID and
+// the two tags as one side sees them (local: this side's tag). A Target-Dialog names the dialog from its sender's
+// side; a Replaces names its To and From tags as its recipient sees them.
+struct DialogIdentifiers {
+  std::string call_id, local_tag, remote_tag;
+
+  bool operator==(const DialogIdentifiers &) const = default;
+};
+
+//------------------------------------------------------------------------------
 // TS 33.203 and TS 24.229 clause 5.1.1.2.2: IMS AKA as the security mechanism of a UE (3GPP access, TS 33.180 clause
 // 6.2.1): the ISIM's private user identity and keys, and the P-CSCF the UE is preconfigured with (TS 24.229 clause
 // 5.1.1.2.1: the unprotected REGISTER goes to its unprotected port). The SIP signalling then runs over TCP, or UDP,
@@ -144,6 +154,11 @@ struct SipConfig {
   // "tdialog" option tags (TS 24.379 clauses 10.1.1.3.1.3, 10.1.1.4.7, 11.1.1.3.1.3; TS 24.281 clauses 9.2.1.3.1.3,
   // 9.2.1.4.7, 10.2.2.3.1.3). Empty for a client.
   std::vector<SipHeader> reinvite_success_headers;
+  // RFC 3261 section 8.2.2.3: option tags of a Require header field that this endpoint's application handles beyond
+  // the engine's own (an INVITE requiring any other is refused with 420), such as "replaces" for a client that takes
+  // an INVITE with Replaces on its pre-established session (TS 24.379 clause 6.3.2.2.5.3 step 1 a, RFC 3891
+  // section 6.1). They are not advertised in Supported header fields.
+  std::vector<std::string> accepted_extensions;
 };
 
 //------------------------------------------------------------------------------
@@ -297,8 +312,15 @@ public:
   // Requests, INVITEs and SUBSCRIBEs go through the SIP core unless their
   // headers include an explicit Route, which then selects the next hop; for an
   // INVITE or SUBSCRIBE it is also the dialog's fixed route set.
+  // A "To" header field among the headers is the To URI (RFC 3261 section 8.1.1.2), otherwise the Request-URI is.
   void request(std::string_view method, std::string_view request_uri, std::string_view content_type = {},
                std::string_view body = {}, const std::vector<SipHeader> &headers = {}, SipResponseHandler handler = {});
+  // RFC 3515 section 2.4.1 with RFC 4488: a REFER outside a dialog, its parts as one body or, when there are several
+  // or one has a Content-ID (the target of a cid URL, RFC 2392), as multipart/mixed (TS 24.379 clauses 6.2.4.2 and
+  // 10.1.2.2.2.1, TS 37.579-1 table 5.5.2.12-1). The headers give its Refer-To, Refer-Sub and Target-Dialog
+  // (include/mcx/refer.hpp); no implicit subscription is kept here: the handler gets the final response.
+  void refer(std::string_view request_uri, const std::vector<BodyPart> &parts, const std::vector<SipHeader> &headers,
+             SipResponseHandler handler = {});
   void publish(std::string_view request_uri, std::string_view content_type, std::string_view body,
                const std::vector<SipHeader> &headers = {}, SipResponseHandler handler = {});
   void request_in_dialog(std::string_view dialog_id, std::string_view method, std::string_view type,
@@ -334,6 +356,9 @@ public:
   // the transport in use describes it. A Contact override must build on it, since
   // it becomes the remote target of the dialog for in-dialog requests.
   [[nodiscard]] std::string contact_target() const;
+  // RFC 3261 section 12: the Call-ID and tags of an INVITE dialog of this engine, for a Target-Dialog (RFC 4538) or
+  // Replaces (RFC 3891) header field naming it, or to match a received one; none before the dialog has both tags.
+  [[nodiscard]] std::optional<DialogIdentifiers> dialog_identifiers(std::string_view dialog_id) const;
   // TS 33.203 clause 7.1: the security associations of an IMS AKA registration, or none (digest, not registered).
   [[nodiscard]] std::optional<SipSecurityStatus> security_status() const;
 

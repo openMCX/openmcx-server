@@ -5,7 +5,8 @@
 // SIP engine (PJSIP): configuration checks, header lookup, and the transaction, dialog, subscription and INVITE
 // session behaviour seen by the application, in one process and as separate server and client processes.
 //
-// Specifications: TS 24.379 V19.7.0 (Rel-19).
+// Specifications: TS 24.379 V19.7.0 (Rel-19), RFC 3515, RFC 4488, RFC 4538.
+#include "mcx/refer.hpp"
 #include "mcx/sip.hpp"
 
 #include <pthread.h>
@@ -504,9 +505,29 @@ void run_call_server(const std::string &directory) {
     // The first ACK completes initial admission; reverse only the update.
     if (update_ack == 2) reverse_dialog = id;
   };
+  mcx::SipEngine *server_engine = nullptr;
+  int refer_received = 0;
   callbacks.on_request = [&](const mcx::SipMessage &message) {
     mcx::SipResponse response;
     response.status_code = 200;
+    if (message.method == "REFER") {
+      // TS 24.379 clause 10.1.1.3.1.2 and TS 37.579-1 table 5.5.2.12-1: an out-of-dialog REFER to the session,
+      // its To the URI that created it, its Target-Dialog the INVITE dialog from the sender's side, its resource
+      // list named by the Refer-To's cid URL; 202 (Accepted) without a subscription (RFC 4488).
+      check(message.to_uri == "sip:pre-psi@openmcx.test", "REFER To names the URI of the session's INVITE");
+      check(mcx::refer_without_subscription(message.headers), "REFER asks for no implicit subscription");
+      const auto request = mcx::parse_pre_established_refer(message.headers, message.parts);
+      check(!request.leave && request.entry.target == "sip:group@openmcx.test" && request.entry.body.size() == 1 &&
+                request.entry.body.front().body == "<info/>",
+            "REFER carries its resource list entry with the hname body");
+      const auto target = mcx::parse_target_dialog(mcx::get_header(message.headers, "Target-Dialog"));
+      const auto own = server_engine->dialog_identifiers(target.call_id);
+      check(own && own->local_tag == target.remote_tag && own->remote_tag == target.local_tag,
+            "Target-Dialog identifies the INVITE dialog (RFC 4538 section 7)");
+      ++refer_received;
+      response.status_code = 202;
+      return response;
+    }
     if (message.method == "INFO" || message.method == "MESSAGE") {
       if (mcx::get_header(message.headers, "X-Test-Fail") == "yes") {
         response.status_code = 500;
@@ -569,6 +590,7 @@ void run_call_server(const std::string &directory) {
   };
   mcx::SipEngine engine(
       process_config(directory, 15061, "sip:service@openmcx.test", "sip:127.0.0.1:15061;transport=tls"), callbacks);
+  server_engine = &engine;
   engine.start();
   std::ofstream(required_environment("OPENMCX_SIP_TEST_READY_FILE")) << "ready\n";
   for (int iteration = 0; iteration < 1500 && disconnected < 4; ++iteration) {
@@ -625,6 +647,7 @@ void run_call_server(const std::string &directory) {
   check(update_ack == 4, "application observes deferred initial, two accepted and one deferred update ACK only");
   check(deferred_requests == 3, "out-of-dialog MESSAGE, in-dialog INFO and re-INVITE were deferred");
   check(reverse_result == 200, "reverse re-INVITE succeeds after receiving ACK");
+  check(refer_received == 1, "the out-of-dialog REFER reached the application");
   // Two INFO requests are accepted; a third carries X-Test-Fail and is refused.
   check(info_received == 2 && message_received == 1, "INVITE UAS delivers established INFO and MESSAGE to application");
   check(reverse_info == 200 && reverse_message == 200,
@@ -703,6 +726,26 @@ void run_call_client(const std::string &directory) {
         "deferred final answer advertises the public session Contact and focus role");
   check(std::getenv("OPENMCX_SIP_TEST_TCP") ? contact.starts_with("<sip:") : contact.starts_with("<sips:"),
         "the answer to a dialog started with a SIPS Request-URI has a SIPS Contact (RFC 3261 section 12.1.1)");
+  // RFC 3515 with RFC 4488 and RFC 4538: an out-of-dialog REFER naming this dialog in Target-Dialog, as an MCPTT
+  // client starts a call over its pre-established session (TS 24.379 clause 10.1.2.2.2.1).
+  const auto identifiers = engine.dialog_identifiers(dialog);
+  check(identifiers && identifiers->call_id == dialog && !identifiers->local_tag.empty() &&
+            !identifiers->remote_tag.empty(),
+        "the confirmed dialog has a Call-ID and both tags");
+  check(!engine.dialog_identifiers("no-such-dialog"), "no identifiers for an unknown dialog");
+  int refer_result = 0;
+  if (identifiers) {
+    mcx::ReferEntry entry{"sip:group@openmcx.test", mcx::refer_accept_contacts(), {{mcx::mcptt_mime, "<info/>"}}};
+    auto headers = mcx::pre_established_refer_headers(mcx::cid_refer_to("list@client"), *identifiers);
+    headers.insert(headers.end(), route.begin(), route.end());
+    headers.push_back({"To", "<sip:pre-psi@openmcx.test>"});
+    engine.refer(std::getenv("OPENMCX_SIP_TEST_TCP") ? "sip:pre-session@127.0.0.1:15061;transport=tcp"
+                                                     : "sips:pre-session@127.0.0.1:15061",
+                 {mcx::refer_resource_list_part(entry, "list@client", "inner")}, headers,
+                 [&](const mcx::SipResponse &response) { refer_result = response.status_code; });
+  }
+  for (int iteration = 0; iteration < 500 && !refer_result; ++iteration) engine.poll(std::chrono::milliseconds(10));
+  check(refer_result == 202, "the REFER is accepted (202), status=" + std::to_string(refer_result));
   int info_result = 0, message_result = 0;
   engine.request_in_dialog(dialog, "INFO", "application/test+xml", "<client/>", {},
                            [&](const mcx::SipResponse &response) { info_result = response.status_code; });
