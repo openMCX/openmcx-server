@@ -191,6 +191,33 @@ void SipEngine::request(std::string_view method, std::string_view request_uri, s
 }
 
 //------------------------------------------------------------------------------
+// RFC 3515 section 2.4.1 with RFC 4488 section 4: sends a REFER outside a dialog with its parts (TS 24.379 clauses
+// 6.2.4.2 and 10.1.2.2.2.1); the body protection filters see its parts as for any request.
+void SipEngine::refer(std::string_view request_uri, const std::vector<BodyPart> &parts,
+                      const std::vector<SipHeader> &headers, SipResponseHandler handler) {
+  if (get_header(headers, "Refer-To").empty()) throw std::invalid_argument("REFER without Refer-To: RFC 3515");
+  if (parts.empty()) {
+    request("REFER", request_uri, {}, {}, headers, std::move(handler));
+    return;
+  }
+  const auto [type, body] = message_body(parts, "mcx-refer");
+  request("REFER", request_uri, type, body, headers, std::move(handler));
+}
+
+//------------------------------------------------------------------------------
+// RFC 3261 section 12: the Call-ID and the local and remote tags of an INVITE dialog.
+std::optional<DialogIdentifiers> SipEngine::dialog_identifiers(std::string_view dialog_id) const {
+  const auto found = impl_->dialogs.find(std::string(dialog_id));
+  if (found == impl_->dialogs.end() || found->second->dialog == nullptr) return std::nullopt;
+  const auto *dialog = found->second->dialog;
+  if (dialog->call_id == nullptr || dialog->local.info == nullptr || dialog->remote.info == nullptr ||
+      dialog->local.info->tag.slen <= 0 || dialog->remote.info->tag.slen <= 0)
+    return std::nullopt;
+  return DialogIdentifiers{string_from(dialog->call_id->id), string_from(dialog->local.info->tag),
+                           string_from(dialog->remote.info->tag)};
+}
+
+//------------------------------------------------------------------------------
 // RFC 3903 and TS 24.379 clause 7.2.1A: sends a PUBLISH out of dialog.
 void SipEngine::publish(std::string_view request_uri, std::string_view content_type, std::string_view body,
                         const std::vector<SipHeader> &headers, SipResponseHandler handler) {

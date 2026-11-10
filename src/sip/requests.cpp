@@ -77,7 +77,14 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
   pjsip_method_init_np(&method, &method_name);
   auto target = pj_view(request_uri);
   auto from = pj_view(config.identity);
-  auto to = pj_view(request_uri);
+  // RFC 3261 section 8.1.1.2: the To URI is the Request-URI unless the application names another, as a REFER to a
+  // pre-established session does (TS 37.579-1 table 5.5.2.12-1: the URI of the INVITE that created the session).
+  const auto to_override = get_header(headers, "To");
+  const std::string to_text(to_override.empty() ? request_uri : to_override);
+  auto to = pj_view(to_text);
+  std::vector<SipHeader> other_headers;
+  for (const auto &header : headers)
+    if (!ascii_equal(header.name, "To")) other_headers.push_back(header);
   const auto contact_text = sips_target(request_uri) ? as_sips(contact_uri()) : contact_uri();
   auto contact = pj_view(contact_text);
 
@@ -90,8 +97,8 @@ void SipEngine::Impl::send_request(std::string_view method_text, std::string_vie
     data->msg->body = make_text_body(data->pool, content_type, body);
   }
 
-  add_core_route(data.get(), headers);
-  add_headers(data.get(), headers);
+  add_core_route(data.get(), other_headers);
+  add_headers(data.get(), other_headers);
   aka_apply(data.get());
   before_send(data.get());
 

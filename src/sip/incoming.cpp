@@ -38,13 +38,17 @@ namespace mcx {
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 8.2.2.3: lists the option tags of the Require header fields that the endpoint does not support.
+// RFC 3261 section 8.2.2.3: lists the option tags of the Require header fields that neither the endpoint nor the
+// application (SipConfig::accepted_extensions) supports.
 [[nodiscard]] std::string SipEngine::Impl::unsupported_required_extensions(pjsip_msg *message) const {
   std::string unsupported;
   auto *header = static_cast<pjsip_require_hdr *>(pjsip_msg_find_hdr(message, PJSIP_H_REQUIRE, nullptr));
   while (header != nullptr) {
     for (unsigned index = 0; index < header->count; ++index) {
-      if (!pjsip_endpt_has_capability(endpoint, PJSIP_H_SUPPORTED, nullptr, &header->values[index])) {
+      const auto tag = string_from(header->values[index]);
+      const bool accepted = std::any_of(config.accepted_extensions.begin(), config.accepted_extensions.end(),
+                                        [&tag](const std::string &extension) { return ascii_equal(extension, tag); });
+      if (!accepted && !pjsip_endpt_has_capability(endpoint, PJSIP_H_SUPPORTED, nullptr, &header->values[index])) {
         if (!unsupported.empty()) {
           unsupported += ", ";
         }
