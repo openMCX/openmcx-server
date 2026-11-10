@@ -304,16 +304,15 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   the Android app and the dispatcher position have one.
 - **Android app.** A debug build, run on real phones over Wi-Fi (tutorials 1 and 2), not yet over a 4G or 5G radio.
   Not supported: MCPTT chat calls and the conference subscription, first-to-answer calls, ambient listening, call-back,
-  transfer and forwarding, location-based functional alias activation, XML signalling protection, MCData payload
-  protection (protected and authenticated MCData messages are refused), protected media in ad hoc group calls,
-  MCData over MSRP, IP connectivity, enhanced status and the message store. MCPTT and MCVideo media and transmission
-  control protection (PCK, GMK, CSK) are supported. As it has no XML signalling protection, it does not start a service
-  whose service configuration document enables confidentiality or integrity protection (an absent element enables it),
-  or whose document it could not read, and shows why; with the end-to-end protection of the test fixtures
-  (`--protected`), which turns on MCData signalling protection, the app starts MCPTT and MCVideo but not MCData. At
-  activation the app, as the Linux client, takes its KMS from the `<kms>` of MCX Admin's UE initial configuration
-  (TS 24.484 clause 7.2.2.1); whether it protects MCPTT media and transmission control stays a setting of its
-  provisioning, as for the Linux client.
+  transfer and forwarding, location-based functional alias activation, protected media in ad hoc group calls,
+  MCData over MSRP, IP connectivity, enhanced status and the message store. Supported, as in the Linux client: MCPTT
+  and MCVideo media and transmission control protection (PCK, GMK, CSK), XML signalling protection (confidentiality
+  and integrity under the CSK of each service, enabled by the service configuration document; an absent element
+  enables it), and MCData signalling and payload protection (PCK one-to-one, GMK group, one-to-one files, signed
+  payloads). The app does not start a service whose service configuration document it could not read, or that
+  requires protection without a configured KMS, and shows why. At activation the app, as the Linux client, takes its
+  KMS from the `<kms>` of MCX Admin's UE initial configuration (TS 24.484 clause 7.2.2.1); whether it protects MCPTT
+  media and transmission control stays a setting of its provisioning, as for the Linux client.
 
 ## Deployment
 

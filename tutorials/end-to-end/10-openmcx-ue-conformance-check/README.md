@@ -210,8 +210,10 @@ de-REGISTER.
 The OpenMCX MC Client (Android) ran the steps of test 5.1 on a phone with the card (IMS AKA over Wi-Fi), on a system
 with this tutorial's protections and the KMS reached through the home HTTP proxy, followed by a protected private call
 and the MC log-off; it has not yet been run against the test system. Its transport keys came with its provisioning file
-(the out-of-band distribution of TS 33.180 clause 5.3.2). It has no XML signalling protection, so it does
-not start MCData where the system requires it (Known limitations).
+(the out-of-band distribution of TS 33.180 clause 5.3.2). It protects XML signalling and MCData as the Linux client
+does; a run with XML confidentiality and integrity on passed the same steps. With the KMS reached through the proxy
+each MC service user ID needs its own TrK: the system gave one to the MCPTT ID only, so the app started MCPTT and
+showed why MCData and MCVideo stayed off.
 
 ### Own deviations
 
