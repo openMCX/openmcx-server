@@ -145,7 +145,7 @@ std::vector<MbsAnnouncement> McServer::mbs_announcements() const {
 // of the service (steps 3 and 4), the SDP with Content-Disposition "render" (step 5), the MBMS usage information
 // with every bearer's <announcement> (step 6), the MBMS public service identity in P-Asserted-Identity (step 7: the
 // service's PSI, where the client sends its reports) and the MC service information naming the user (step 8).
-void McServer::mbms_announce(const User &user) {
+void McServer::mbms_announce(const User &user, bool cancel) {
   if (!mbms_ || !mbms_->serves(user.id)) return;
   // Step 5 d i to v: the MSCCK encapsulated to the user's UID, signed by this function's PSI.
   std::string key_mgmt;
@@ -160,21 +160,39 @@ void McServer::mbms_announce(const User &user) {
   usage.announcements = mbms_announcements();
   MbsUsageInfo mbs_usage;
   mbs_usage.announcements = mbs_announcements();
+  // TS 24.379 clause 14.2.2.4 (clause 14B.2.2.4 for an MBS session): the cancellation names each bearer by its TMGI
+  // without <mbms-service-areas> (item 2) or <GPMS> (item 3; all are cancelled), and has no SDP (item 4).
+  if (cancel) {
+    for (auto &announcement : usage.announcements) {
+      announcement.service_areas.clear();
+      announcement.gpms.reset();
+    }
+    for (auto &announcement : mbs_usage.announcements) {
+      announcement.service_areas.clear();
+      announcement.gpms.reset();
+    }
+  }
   std::vector<BodyPart> parts{{svc_.info_mime, service_info_xml_(info)}};
   if (!usage.announcements.empty())
     parts.push_back({mbms_usage_type(mbms_service()).mime, mbms_usage_xml(usage, mbms_service())});
   if (!mbs_usage.announcements.empty())
     parts.push_back({mbs_usage_type(mbms_service()).mime, mbs_usage_xml(mbs_usage, mbms_service())});
-  parts.push_back({"application/sdp", mbms_announcement_sdp(key_mgmt), {}, "render"});
+  if (!cancel) parts.push_back({"application/sdp", mbms_announcement_sdp(key_mgmt), {}, "render"});
   const auto boundary = "mcx-" + random_id();
   sip_.request("MESSAGE", user.sip, "multipart/mixed; boundary=" + boundary, multipart_body(parts, boundary),
                user_route(user, {{"P-Asserted-Service", svc_.icsi},
                                  {"P-Asserted-Identity", "<" + session_service_ + ">"},
                                  {"Accept-Contact", feature_accept()}}),
-               [this, id = user.id](const SipResponse &response) {
+               [this, id = user.id, cancel](const SipResponse &response) {
                  if (response.status_code < 200) return;
-                 event("mbms_announced", {{"user_id", id}, {"status", response.status_code}});
+                 event(cancel ? "mbms_announcement_cancelled" : "mbms_announced",
+                       {{"user_id", id}, {"status", response.status_code}});
                  if (response.status_code >= 300) return;
+                 if (cancel) {
+                   mbms_announced_.erase(id);
+                   publish_mbms_status();
+                   return;
+                 }
                  mbms_announced_.insert(id);
                  publish_mbms_status();
                  if (mbms_->musik)

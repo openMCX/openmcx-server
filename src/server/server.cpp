@@ -718,6 +718,13 @@ void McServer::run() {
         } catch (const std::exception &error) {
           event("seal_command_failed", {{"command", command}, {"reason", error.what()}});
         }
+      } else if (command.starts_with("mbms-announce ") || command.starts_with("mbms-cancel ")) {
+        // TS 24.379 clauses 14.2.2.2 and 14.2.2.4: the operator announces the bearers to a served user, or cancels.
+        const bool cancel = command.starts_with("mbms-cancel ");
+        if (const auto *user = by_id(command.substr(cancel ? 12 : 14)))
+          mbms_announce(*user, cancel);
+        else
+          event("mbms_announce_unknown", {{"command", command}});
       } else if (command.starts_with("csk-download ")) {
         send_csk_download(command.substr(13));
       } else if (command.starts_with("regroup-remove ")) {

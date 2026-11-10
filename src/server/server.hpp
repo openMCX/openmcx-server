@@ -1418,7 +1418,7 @@ protected:
 
   [[nodiscard]] std::vector<MbsAnnouncement> mbs_announcements() const;
 
-  void mbms_announce(const User &user);
+  void mbms_announce(const User &user, bool cancel = false);
 
   void mbms_tick(std::uint64_t now);
 

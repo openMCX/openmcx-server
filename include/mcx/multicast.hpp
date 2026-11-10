@@ -73,6 +73,9 @@ struct MbmsConfig {
   // protected with an MSCCK sent in the announcement, and the multicast floor and transmission control with a
   // MuSiK sent by key download (clause 14.2.2.5) when the call's floor control is protected.
   bool mscck = false, musik = false;
+  // TS 24.379 clause 14.2.2.1 (when to announce is local policy): after each service authorisation, unless false; the
+  // operator commands "mbms-announce <MC service ID>" and "mbms-cancel <MC service ID>" announce or cancel at any time.
+  bool announce_at_authorisation = true;
 
   // The bearer of a TMGI, or none.
   [[nodiscard]] const MbmsBearerConfig *bearer(const std::string &tmgi) const;

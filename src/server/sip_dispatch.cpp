@@ -547,7 +547,8 @@ void McServer::bind_authorized_user(const Json &claims, const McpttInfo &info, c
   // TS 24.379 clause 14.2.2.1: when and to whom the bearers are announced is local policy: to a served user on
   // the list after each service authorisation (src/server/mbms.cpp).
   schedule([this, sip = asserted] {
-    if (const auto found = users_.find(sip); found != users_.end()) mbms_announce(found->second);
+    if (const auto found = users_.find(sip); found != users_.end() && mbms_ && mbms_->announce_at_authorisation)
+      mbms_announce(found->second);
   });
 
   // TS 24.379 clause 13.2.2: location reporting is configured upon successful service authorisation.
