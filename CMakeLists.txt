@@ -51,14 +51,14 @@ target_link_libraries(mcx_keying PUBLIC mcx_dependencies PRIVATE ${WOLFSSL_LIBRA
 target_compile_options(mcx_keying PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(mcx-keytool src/keytool/keytool.cpp)
 target_link_libraries(mcx-keytool PRIVATE mcx_keying)
-add_library(mcx_core src/media/floor.cpp src/media/mbms.cpp src/media/pre_established.cpp src/media/media.cpp src/media/video.cpp src/media/transmission.cpp src/protocol/affiliation.cpp src/protocol/bodies.cpp src/protocol/conference.cpp src/protocol/functional_alias.cpp src/protocol/mbms_usage.cpp src/protocol/location.cpp src/protocol/profiles.cpp src/protocol/reginfo.cpp src/protocol/resource_lists.cpp src/protocol/refer.cpp src/protocol/sdp.cpp src/protocol/service_info.cpp src/protocol/xml_support.cpp src/protocol/mcdata.cpp src/media/msrp.cpp src/media/ipconn.cpp src/security/http.cpp src/security/security.cpp src/security/xml_security.cpp src/security/transport_keys.cpp src/security/kms_xml_signature.cpp src/location/location.cpp src/location/seal_location.cpp)
+add_library(mcx_core src/media/floor.cpp src/media/mbms.cpp src/media/pre_established.cpp src/media/media.cpp src/media/video.cpp src/media/transmission.cpp src/protocol/affiliation.cpp src/protocol/bodies.cpp src/protocol/conference.cpp src/protocol/functional_alias.cpp src/protocol/mbms_usage.cpp src/protocol/location.cpp src/protocol/profiles.cpp src/protocol/reginfo.cpp src/protocol/resource_lists.cpp src/protocol/refer.cpp src/protocol/ice_sdp.cpp src/protocol/sdp.cpp src/protocol/service_info.cpp src/protocol/xml_support.cpp src/protocol/mcdata.cpp src/media/msrp.cpp src/media/ipconn.cpp src/security/http.cpp src/security/security.cpp src/security/xml_security.cpp src/security/transport_keys.cpp src/security/kms_xml_signature.cpp src/location/location.cpp src/location/seal_location.cpp)
 target_link_libraries(mcx_core PUBLIC mcx_dependencies PkgConfig::OPENH264)
 # TS 33.180 annex D: the KMS documents sign, verify and unwrap with the transport keys of mcx_core.
 target_link_libraries(mcx_keying PUBLIC mcx_core)
 target_link_libraries(mcx-keytool PRIVATE mcx_core)
 target_compile_options(mcx_core PRIVATE -Wall -Wextra -Wpedantic)
 if(BUILD_TESTING)
-    foreach(component floor pre_established refer media video transmission protocol mcdata msrp ipconn http http_crl security protected_call private_call adhoc_call xml_security transport_keys location warning seal_location srtcp_index floor_rekey)
+    foreach(component floor pre_established refer ice_sdp media video transmission protocol mcdata msrp ipconn http http_crl security protected_call private_call adhoc_call xml_security transport_keys location warning seal_location srtcp_index floor_rekey)
         add_executable(test_${component} tests/test_${component}.cpp)
         target_link_libraries(test_${component} PRIVATE mcx_core)
         add_test(NAME ${component} COMMAND test_${component})
@@ -143,7 +143,7 @@ if(BUILD_TESTING)
     set_tests_properties(rx PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
-    add_library(mcx_sip src/sip/helpers.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp src/sip/messages.cpp src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp src/sip/ims_aka.cpp src/common/runtime.cpp src/common/multicast.cpp src/security/key_client.cpp src/security/xfrm.cpp)
+    add_library(mcx_sip src/media/ice.cpp src/sip/helpers.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp src/sip/messages.cpp src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp src/sip/ims_aka.cpp src/common/runtime.cpp src/common/multicast.cpp src/security/key_client.cpp src/security/xfrm.cpp)
     target_link_libraries(mcx_sip PUBLIC mcx_core mcx_keying mcx_ims_aka)
     target_compile_options(mcx_sip PRIVATE -Wall -Wextra -Wpedantic)
     # The service parts shared by the MCPTT and MCVideo core and the MCData server:
@@ -172,6 +172,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/server/functional_alias_split.cpp
         src/server/group_call.cpp
         src/server/group_documents.cpp
+        src/server/pre_session.cpp
         src/server/split.cpp
         src/server/split_relay.cpp
         src/server/location.cpp
@@ -263,6 +264,10 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         add_test(NAME multicast COMMAND test_multicast)
         # TS 24.380 clauses 8.4 to 8.6, TS 24.581 clauses 9.3 to 9.5, TS 24.379 and TS 24.281 annex F.2: the MBMS and
         # MBS subchannel control messages, the MBMS notifications and the MBMS usage information bodies.
+        add_executable(test_ice tests/test_ice.cpp)
+        target_link_libraries(test_ice PRIVATE mcx_sip)
+        add_test(NAME ice COMMAND test_ice)
+        set_tests_properties(ice PROPERTIES TIMEOUT 60)
         add_executable(test_mbms tests/test_mbms.cpp)
         target_link_libraries(test_mbms PRIVATE mcx_core)
         add_test(NAME mbms COMMAND test_mbms)

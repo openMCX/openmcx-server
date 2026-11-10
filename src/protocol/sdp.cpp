@@ -85,6 +85,11 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
   constexpr unsigned speech_kbps = 38;
   if (!video) out << "b=AS:" << speech_kbps << "\r\n";
   out << "t=0 0\r\n";
+  // TS 24.379 clauses 8.2.1 step 9 and 8.2.2 step 9 e: the ICE attributes of a pre-established session (MCPTT).
+  if (media.ice) {
+    if (video) invalid("ICE attributes are for an MCPTT pre-established session");
+    write_ice_session(out, *media.ice);
+  }
   if (!media.key_mgmt.empty()) {
     if (!media.protected_media) invalid("key management requires protected media");
     key_mgmt_data(media.key_mgmt);
@@ -100,6 +105,7 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
       << ";mode-change-capability=2;max-red=0\r\na=ptime:20\r\na=maxptime:240\r\na=" << media.direction << "\r\n";
   if (media.rtcp_port) out << "a=rtcp:" << media.rtcp_port << "\r\n";
   if (media.audio_ssrc) out << "a=ssrc:" << media.audio_ssrc << " cname:" << (video ? "mcvideo" : "mcptt") << "\r\n";
+  if (media.ice) write_ice_candidates(out, media.ice->audio);
   if (video) {
     // TS 24.281 clause 6.2.1 step 3 with RFC 6184 section 8.2.1.
     const auto &video_media = *media.video;
@@ -113,6 +119,7 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
     if (video_media.ssrc) out << "a=ssrc:" << video_media.ssrc << " cname:mcvideo\r\n";
   }
   if (!controlled) {
+    if (media.ice && !media.ice->control.empty()) invalid("ICE candidates for a missing control channel");
     if (media.granted || media.granted_audio_ssrc || media.granted_video_ssrc || media.implicit_request ||
         media.queueing || media.floor_priority)
       invalid(video ? "transmission control parameters without transmission control"
@@ -138,6 +145,7 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
   if (media.granted_audio_ssrc) out << (video ? ";mc_audio_ssrc=" : ";mc_ssrc=") << media.granted_audio_ssrc;
   if (media.granted_video_ssrc) out << ";mc_video_ssrc=" << media.granted_video_ssrc;
   out << "\r\n";
+  if (media.ice) write_ice_candidates(out, media.ice->control);
 
   return out.str();
 }
@@ -258,6 +266,7 @@ struct SdpState {
   bool matched_video_codec = false;
   std::uint16_t rtcp = 0;
   bool matched_codec = false;
+  IceSdpState ice;
 };
 
 //------------------------------------------------------------------------------
@@ -443,6 +452,7 @@ void parse_format(const std::string &value, MediaDescription &out, const SdpStat
 // "m=application" section: rtpmap, direction, key-mgmt, ssrc, rtcp (RFC 3605) and fmtp.
 void parse_attribute(const std::string &line, const std::string &value, MediaDescription &out, SdpState &state) {
   const auto &section = state.section;
+  if (line.starts_with("a=") && parse_ice_attribute(line, section, state.ice)) return;
   if (section == "audio" && line.starts_with("a=rtpmap:")) {
     auto fields = tokens(value.substr(7), ' ');
     if (fields.size() != 2 || number(fields[0], 127) != out.payload_type) invalid("conflicting SDP payload mapping");
@@ -504,6 +514,9 @@ void finish_sdp(MediaDescription &out, const SdpState &state) {
       invalid("a separate video address is not supported");
   }
   if (!out.key_mgmt.empty() && !out.protected_media) invalid("key management requires protected media");
+  out.ice = finish_ice(state.ice);
+  if (out.ice && (out.video || (!state.floor && !out.ice->control.empty())))
+    invalid("ICE attributes are for an MCPTT pre-established session");
   out.rtcp_port = state.rtcp ? state.rtcp : (out.audio_port < 65535 ? out.audio_port + 1 : 0);
   if (!out.rtcp_port || out.floor_port == out.rtcp_port || out.floor_port == out.audio_port)
     invalid("overlapping SDP ports");

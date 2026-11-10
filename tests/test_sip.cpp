@@ -7,6 +7,7 @@
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), RFC 3515, RFC 4488, RFC 4538.
 #include "mcx/refer.hpp"
+#include "mcx/runtime.hpp"
 #include "mcx/sip.hpp"
 
 #include <pthread.h>
@@ -16,6 +17,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -507,6 +509,9 @@ void run_call_server(const std::string &directory) {
   };
   mcx::SipEngine *server_engine = nullptr;
   int refer_received = 0;
+  std::string update_dialog;
+  int update_result = 0;
+  bool update_answer_sdp = false;
   callbacks.on_request = [&](const mcx::SipMessage &message) {
     mcx::SipResponse response;
     response.status_code = 200;
@@ -526,6 +531,16 @@ void run_call_server(const std::string &directory) {
             "Target-Dialog identifies the INVITE dialog (RFC 4538 section 7)");
       ++refer_received;
       response.status_code = 202;
+      return response;
+    }
+    if (message.method == "INFO" && mcx::get_header(message.headers, "X-Test-Update") == "status") {
+      // The UPDATE's 200 (OK) and the client's next requests travel on different connections: the client asks
+      // before it ends the dialog.
+      response.status_code = update_result == 200 && update_answer_sdp ? 200 : 480;
+      return response;
+    }
+    if (message.method == "INFO" && mcx::get_header(message.headers, "X-Test-Update") == "1") {
+      update_dialog = message.dialog_id; // answered at once; the UPDATE follows from the poll loop
       return response;
     }
     if (message.method == "INFO" || message.method == "MESSAGE") {
@@ -605,6 +620,21 @@ void run_call_server(const std::string &directory) {
                       [&](const mcx::SipResponse &response) { reverse_result = response.status_code; },
                       {{"X-Test-Change", "reverse"}});
     }
+    if (!update_dialog.empty()) {
+      // RFC 3311 section 5.1 (TS 24.379 clause 8.3.2.2): the server modifies the session with an UPDATE; the
+      // client's engine answers it from its local SDP (clause 8.3.1.2).
+      auto media = call_media(42000);
+      media.floor_priority = 2;
+      try {
+        engine.update(update_dialog, media, [&](const mcx::SipResponse &response) {
+          update_result = response.status_code;
+          update_answer_sdp = response.body.find("m=audio") != std::string::npos;
+        });
+      } catch (const std::exception &error) {
+        check(false, std::string("UPDATE not sent: ") + error.what());
+      }
+      update_dialog.clear();
+    }
     if (!deferred.empty() && std::chrono::steady_clock::now() >= deferred_at) {
       for (const auto &[id, reinvite] : deferred) {
         mcx::SipResponse later;
@@ -648,6 +678,7 @@ void run_call_server(const std::string &directory) {
   check(deferred_requests == 3, "out-of-dialog MESSAGE, in-dialog INFO and re-INVITE were deferred");
   check(reverse_result == 200, "reverse re-INVITE succeeds after receiving ACK");
   check(refer_received == 1, "the out-of-dialog REFER reached the application");
+  check(update_result == 200 && update_answer_sdp, "the UPDATE is answered 200 (OK) with an SDP answer (RFC 3311)");
   // Two INFO requests are accepted; a third carries X-Test-Fail and is refused.
   check(info_received == 2 && message_received == 1, "INVITE UAS delivers established INFO and MESSAGE to application");
   check(reverse_info == 200 && reverse_message == 200,
@@ -667,6 +698,13 @@ void run_call_client(const std::string &directory) {
   int reverse_received = 0, reverse_acked = 0, info_received = 0, message_received = 0;
   mcx::SipCallbacks callbacks;
   callbacks.on_ack = [&](std::string_view) { ++reverse_acked; };
+  int media_updates = 0;
+  std::optional<std::uint8_t> updated_priority;
+  callbacks.on_error = [](std::string_view error) { std::cerr << "client engine error: " << error << '\n'; };
+  callbacks.on_media = [&](std::string_view, const mcx::MediaDescription &remote) {
+    ++media_updates;
+    updated_priority = remote.floor_priority;
+  };
   callbacks.on_request = [&](const mcx::SipMessage &request) {
     mcx::SipResponse response;
     response.status_code = 200;
@@ -677,6 +715,12 @@ void run_call_client(const std::string &directory) {
         ++info_received;
       else
         ++message_received;
+    }
+    if (request.method == "UPDATE") {
+      // RFC 3311 section 5.2: the answer to the server's UPDATE (TS 24.379 clause 8.3.1.2 step 2).
+      check(request.remote_media && request.remote_media->floor_priority == 2, "UPDATE offer reaches the application");
+      response.local_media = call_media(43000);
+      return response;
     }
     if (request.method == "INVITE") {
       check(mcx::get_header(request.headers, "X-Test-Change") == "reverse",
@@ -819,6 +863,25 @@ void run_call_client(const std::string &directory) {
     engine.poll(std::chrono::milliseconds(10));
   check(deferred_message == 202 && deferred_info == 202 && deferred_change == 200,
         "explicitly routed MESSAGE, INFO and re-INVITE receive deferred responses");
+  // RFC 3311: the server's UPDATE, answered by the engine; the application sees the new remote media.
+  const int media_before = media_updates;
+  int update_request = 0;
+  engine.request_in_dialog(dialog, "INFO", "application/test+xml", "<client/>", {{"X-Test-Update", "1"}},
+                           [&](const mcx::SipResponse &response) { update_request = response.status_code; });
+  for (int iteration = 0; iteration < 500 && media_updates == media_before; ++iteration)
+    engine.poll(std::chrono::milliseconds(10));
+  int update_status = 0;
+  for (int attempt = 0; attempt < 50 && update_status != 200; ++attempt) {
+    update_status = 0;
+    engine.request_in_dialog(dialog, "INFO", "application/test+xml", "<client/>", {{"X-Test-Update", "status"}},
+                             [&](const mcx::SipResponse &response) { update_status = response.status_code; });
+    for (int iteration = 0; iteration < 100 && !update_status; ++iteration) engine.poll(std::chrono::milliseconds(10));
+  }
+  check(update_status == 200, "the server saw its UPDATE answered");
+  check(update_request == 200 && media_updates > media_before && updated_priority == 2,
+        "the server's UPDATE reaches on_media with its offer (mc_priority 2): updates " +
+            std::to_string(media_updates - media_before) + ", request " + std::to_string(update_request) +
+            ", priority " + (updated_priority ? std::to_string(*updated_priority) : std::string("none")));
   engine.bye(dialog);
   try {
     engine.bye(dialog);
@@ -938,6 +1001,8 @@ void run_transaction_failure(const std::string &directory) {
 //------------------------------------------------------------------------------
 // Runs one role of a multi-process test (OPENMCX_SIP_TEST_ROLE) or the single-process tests.
 int main() {
+  // The SIP message log of both processes (src/sip/lifecycle.cpp), for a failing exchange.
+  if (std::getenv("OPENMCX_SIP_TEST_DEBUG")) mcx::set_log_level(mcx::LogLevel::debug);
   if (const char *role = std::getenv("OPENMCX_SIP_TEST_ROLE")) {
     const char *certificate_directory = std::getenv("OPENMCX_SIP_TEST_CERT_DIR");
     if (certificate_directory == nullptr) {

@@ -259,7 +259,13 @@ with tempfile.TemporaryDirectory(prefix='openmcx-sip-tls-') as directory:
                 time.sleep(0.02)
             client_env = env.copy()
             client_env['OPENMCX_SIP_TEST_ROLE'] = prefix + 'client'
-            subprocess.run([binary], env=client_env, check=True, timeout=20)
+            try:
+                subprocess.run([binary], env=client_env, check=True, timeout=20)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                # The server's own checks explain most client failures: show them too.
+                server.terminate()
+                print(server.communicate(timeout=10)[0], end='')
+                raise
             output, _ = server.communicate(timeout=10)
             print(output, end='')
             if server.returncode:

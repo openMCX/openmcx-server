@@ -358,6 +358,46 @@ struct VideoMedia {
 };
 
 //------------------------------------------------------------------------------
+// RFC 8839 section 5.1 (RFC 8445 section 5.1): one ICE candidate of an SDP media section, its "a=candidate" line.
+struct IceCandidate {
+  std::string foundation;    // 1 to 32 ice-char
+  unsigned component = 1;    // 1 to 256: RTP 1 and RTCP 2 for the audio, 1 for the media plane control channel
+  std::string transport = "UDP";
+  std::uint32_t priority = 0;
+  std::string address;       // connection-address: IPv4, IPv6 or FQDN
+  std::uint16_t port = 0;
+  std::string type = "host"; // "host", "srflx", "prflx", "relay" or an extension
+  std::string related_address;
+  std::uint16_t related_port = 0;
+
+  bool operator==(const IceCandidate &) const = default;
+};
+
+//------------------------------------------------------------------------------
+// RFC 8839 sections 5.1 and 5.3 to 5.6 with TS 24.379 clauses 8.2.1 step 9 and 8.2.2 step 9 e: the ICE attributes of
+// the SDP of a pre-established session: one set of credentials (written at session level; a media-level set must be
+// the same for both sections here), "ice-lite", the "ice-options" tags (RFC 8445 agents give "ice2", RFC 8839
+// section 5.6), and the candidates of the "m=audio" and "m=application" sections (TS 37.579-1 table 5.5.3.1.1-1,
+// condition PRE_ESTABLISHED_SESSION).
+struct IceDescription {
+  std::string ufrag, pwd;
+  bool lite = false;
+  std::vector<std::string> options;
+  std::vector<IceCandidate> audio, control;
+
+  bool operator==(const IceDescription &) const = default;
+};
+
+//------------------------------------------------------------------------------
+// RFC 8839 section 5.1: writes the value of an "a=candidate" attribute (without "candidate:"); throws on a field
+// outside the grammar.
+std::string ice_candidate_value(const IceCandidate &candidate);
+//------------------------------------------------------------------------------
+// RFC 8839 section 5.1: reads the value of an "a=candidate" attribute (without "candidate:"); extension attributes
+// are ignored; throws on a malformed candidate.
+IceCandidate parse_ice_candidate(std::string_view value);
+
+//------------------------------------------------------------------------------
 // TS 24.379 clause 6.2.1 and clause 6.2.2, TS 24.380 clause 14 (MCPTT), TS 24.281 clause 6.2.1 and TS 24.581
 // clause 14 (MCVideo): the media of an SDP offer or answer: audio, video, and the floor or transmission control
 // channel.
@@ -385,6 +425,9 @@ struct MediaDescription {
   // RFC 4567 "a=key-mgmt:mikey": the base64 MIKEY-SAKKE I_MESSAGE carrying a PCK
   // (TS 24.379 clause 11.1.1.2.1.1 step 11; in the answer of a first-to-answer call).
   std::string key_mgmt;
+  // TS 24.379 clauses 4.9, 8.2.1 step 9 and 8.2.2 step 9 e: the ICE attributes of a pre-established session's SDP
+  // (RFC 8839); absent elsewhere. MCPTT only.
+  std::optional<IceDescription> ice;
 };
 
 //------------------------------------------------------------------------------

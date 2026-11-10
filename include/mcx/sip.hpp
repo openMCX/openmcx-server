@@ -346,6 +346,12 @@ public:
   void answer(std::string_view dialog_id, const SipResponse &response);
   void reinvite(std::string_view dialog_id, const MediaDescription &media, const std::vector<BodyPart> &parts,
                 SipResponseHandler handler = {}, const std::vector<SipHeader> &headers = {});
+  // RFC 3311 section 5.1: an UPDATE with an SDP offer in a confirmed dialog (TS 24.379 clauses 8.3.1.1 and 8.3.2.2);
+  // the handler gets its final response. A received UPDATE with an offer reaches on_request (method "UPDATE", with
+  // remote_media) like a re-INVITE; a 2xx response's local_media is the SDP answer, anything else gives 488 (Not
+  // Acceptable Here) (TS 24.379 clause 8.3.1.2). The negotiated media then reach on_media.
+  void update(std::string_view dialog_id, const MediaDescription &media, SipResponseHandler handler = {},
+              const std::vector<SipHeader> &headers = {});
   // A re-INVITE whose offer is supplied as SDP text (the MCData media plane).
   void reinvite_sdp(std::string_view dialog_id, std::string_view sdp, const std::vector<BodyPart> &parts,
                     SipResponseHandler handler = {}, const std::vector<SipHeader> &headers = {});
