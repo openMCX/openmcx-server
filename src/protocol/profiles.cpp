@@ -238,6 +238,20 @@ std::string parse_initial_gms_uri(std::string_view xml) {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.484 clause 7.2.2.1 item 5: <mcptt-UE-initial-configuration> / <on-network> / <group-creation-XUI> ("shall
+// contain"); a document without it gives an empty value, which the client treats as not configured.
+std::string parse_initial_group_creation_xui(std::string_view xml) {
+  static constexpr const char *ns = "urn:3gpp:mcptt:mcpttUEinitConfig:1.0";
+  auto doc = document(xml);
+  auto root = xmlDocGetRootElement(doc.get());
+  if (!is(root, "mcptt-UE-initial-configuration", ns)) invalid("wrong UE initial configuration root");
+  auto *on_network = unique_child(root, "on-network", ns);
+  for (auto *child = on_network->children; child != nullptr; child = child->next)
+    if (is(child, "group-creation-XUI", ns)) return scalar(unique_child(on_network, "group-creation-XUI", ns));
+  return {};
+}
+
+//------------------------------------------------------------------------------
 // TS 24.484 clause 7.2.2.1 item 3 c), g): <on-network> / <App-Server-Info> / <http-proxy> and <tls-tunnel-auth-method>
 // / <mutual-authentication> (xs:boolean, XML Schema Part 2 section 3.2.2: "true", "false", "1", "0").
 InitialHttpProxy parse_initial_http_proxy(std::string_view xml) {

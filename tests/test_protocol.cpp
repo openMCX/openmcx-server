@@ -866,6 +866,13 @@ int main() {
           "GMS-URI of the UE initial configuration");
     rejects([&] { (void)parse_initial_gms_uri(initial("")); });
     rejects([&] { (void)parse_initial_gms_uri(initial("<GMS-URI></GMS-URI>")); });
+    // TS 24.484 clause 7.2.2.1 item 5: the <group-creation-XUI>; none gives an empty value.
+    check(parse_initial_group_creation_xui(initial("<GMS-URI>sip:gms-proxy@x</GMS-URI><group-creation-XUI>"
+                                                   "sip:creator@x</group-creation-XUI>")) == "sip:creator@x",
+          "group-creation-XUI of the UE initial configuration");
+    check(parse_initial_group_creation_xui(initial("<GMS-URI>sip:gms-proxy@x</GMS-URI>")).empty(),
+          "no group-creation-XUI");
+    rejects([&] { (void)parse_initial_group_creation_xui("<other xmlns=\"urn:x\"/>"); });
     // TS 24.484 clause 7.2.2.1 item 3 c), g): the home HTTP proxy and its TLS tunnel authentication.
     const auto server_info = [&](const std::string &proxy, const std::string &mutual) {
       return initial("<App-Server-Info><idms-auth-endpoint>https://idms/a</idms-auth-endpoint><idms-token-endpoint>"

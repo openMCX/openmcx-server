@@ -223,6 +223,12 @@ ServiceProtection parse_service_protection(std::string_view xml);
 // subscription proxy function of the GMS".
 std::string parse_initial_gms_uri(std::string_view xml);
 
+//------------------------------------------------------------------------------
+// TS 24.484 clause 7.2.2.1 item 5 (TS 24.483 clause 8.2.9A GroupCreationXUI): the <group-creation-XUI> of the
+// <on-network> element of an MCS UE initial configuration document, the XUI whose users tree a GMC creates groups in
+// (TS 24.481 clauses 6.3.2.2.1 and 6.3.14.2); empty when the document has none.
+std::string parse_initial_group_creation_xui(std::string_view xml);
+
 // RFC 3680 section 5: a registration information document (application/reginfo+xml) of the reg event package (TS
 // 24.229 clauses 5.1.1.3, 5.1.1.5A and 5.1.1.7): its version, whether it is the full state, and per registration its
 // address-of-record and state with its contacts (state, event, expires when given, URI). RFC 3680 section 5.4: the
