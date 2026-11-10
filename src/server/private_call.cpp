@@ -940,6 +940,17 @@ SipResponse McServer::private_reinvite(const SipMessage &message, const User &us
   leg->pending_priority_info = correction;
   response.status_code = 200;
   response.local_media = leg->local;
+  // As for a group call's upgrade (TS 24.380 clause 6.3.4.3.6, sip_dispatch.cpp priority_reinvite): an upgrade to an
+  // emergency private call whose offer has "mc_implicit_request" is an implicit floor request (TS 37.579-2 6.2.1
+  // step 20); the answer keeps the parameter and the request is processed once the 200 (OK) is out
+  // (conformance GAPS.md C46).
+  if (*info.emergency && message.remote_media->implicit_request && leg->local.control == MediaControl::floor) {
+    accept_implicit_floor_request(*leg, *message.remote_media, true);
+    if (leg->implicit_floor) {
+      response.local_media = initial_answer_media(*leg);
+      schedule([this, leg, session] { (void)initial_service_state(leg, session); });
+    }
+  }
   McpttInfo current;
   current.session_type = "private";
   current.request_uri = user.id;
