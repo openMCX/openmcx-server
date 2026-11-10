@@ -1751,6 +1751,17 @@ void McServer::priority_reinvite(const SipMessage &message, const User &user, Mc
   if (session->chat && !was_priority && in_priority(session->group))
     schedule([this, session] { invite_chat_members(session); });
   response.local_media = leg->local;
+  // TS 24.380 clauses 6.3.4.3.6 and 6.3.4.4.x ("Upon receiving an implicit floor request due to an upgrade to an
+  // emergency group call or due to an upgrade to imminent peril call"): an upgrade whose offer has
+  // "mc_implicit_request" is an implicit floor request; the answer keeps the parameter (clause 14.3.5, as for the
+  // initial INVITE) and the request is processed once the 200 (OK) is out, as a Floor Request at the new priority.
+  if ((info.emergency == true || info.imminent_peril == true) && message.remote_media->implicit_request) {
+    accept_implicit_floor_request(*leg, *message.remote_media, true);
+    if (leg->implicit_floor) {
+      response.local_media = initial_answer_media(*leg);
+      schedule([this, leg, session] { (void)initial_service_state(leg, session); });
+    }
+  }
   auto current = info;
   current.request_uri = user.id;
   current.calling_group = session->group;
