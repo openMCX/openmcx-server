@@ -78,15 +78,22 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
     invalid("transmission control parameters in an MCPTT SDP");
   std::ostringstream out;
   out << "v=0\r\no=- " << session_id << " 1 IN IP4 " << media.address << "\r\ns=" << (video ? "MCVideo" : "MCPTT")
-      << "\r\nc=IN IP4 " << media.address << "\r\nt=0 0\r\n";
+      << "\r\nc=IN IP4 " << media.address << "\r\n";
+  // TS 24.229 clause 6.1.2 with TS 26.114 table K.6: the bandwidth of the AMR-WB speech (up to 23.85 kbit/s, IPv4,
+  // bandwidth-efficient, 20 ms) in "b=AS", at session and media level (TS 37.579-1 table 5.5.3.1.1-1). MCVideo leaves
+  // it out: its video bandwidth is not set here.
+  constexpr unsigned speech_kbps = 38;
+  if (!video) out << "b=AS:" << speech_kbps << "\r\n";
+  out << "t=0 0\r\n";
   if (!media.key_mgmt.empty()) {
     if (!media.protected_media) invalid("key management requires protected media");
     key_mgmt_data(media.key_mgmt);
     out << "a=key-mgmt:mikey " << media.key_mgmt << "\r\n";
   }
   out << "m=audio " << media.audio_port << ' ' << (media.protected_media ? "RTP/SAVP" : "RTP/AVP") << ' '
-      << unsigned(media.payload_type) << "\r\ni=" << (video ? "audio component of MCVideo" : "speech")
-      << "\r\na=rtpmap:" << unsigned(media.payload_type) << " AMR-WB/16000/1\r\na=fmtp:" << unsigned(media.payload_type)
+      << unsigned(media.payload_type) << "\r\ni=" << (video ? "audio component of MCVideo" : "speech") << "\r\n";
+  if (!video) out << "b=AS:" << speech_kbps << "\r\n";
+  out << "a=rtpmap:" << unsigned(media.payload_type) << " AMR-WB/16000/1\r\na=fmtp:" << unsigned(media.payload_type)
       << " octet-align=" << (media.octet_aligned ? 1 : 0)
       // TS 26.179 clause 4.1.3: mode-change-capability "2", max-red "0", ptime "20" and maxptime "240" offered;
       // no mode-set (all modes); one channel.

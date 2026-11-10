@@ -1509,9 +1509,16 @@ void McServer::group_invite(const SipMessage &message, User &user, McpttInfo &in
   if (!group_join_allowed(user, info, session, profile, admission_policy, chat_request, broadcast_request, response))
     return;
   const bool creating = !session;
-  if (creating)
+  if (creating) {
     session = create_group_session(user, info, profile, admission_policy, group_type, hierarchy, broadcast_request,
                                    chat_request);
+    // RFC 5373 with TS 24.379 clauses 6.3.2.2.6.2 step 4 and 6.3.4.1.2 step 13: the commencement mode the
+    // originator asks of the invited clients (Answer-Mode "Auto" or "Manual") goes on to them; without one, the
+    // group's call policy (answer_mode, "Auto" by default).
+    if (const auto mode = answer_mode_value(get_header(message.headers, "Answer-Mode"));
+        mode == "Auto" || mode == "Manual")
+      session->policy["answer_mode"] = mode;
+  }
   // TS 24.380 clauses 14.3.5 and 6.3.5.2.2: the request initiates the call (a new one, or one that exists when
   // the group identity is called), unless it joins a chat group call that exists or rejoins by session identity.
   const bool initiates = !session_addressed && (creating || !chat_request);

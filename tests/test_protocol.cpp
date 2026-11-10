@@ -525,8 +525,8 @@ int main() {
     ptt.audio_ssrc = 777;
     ptt.queueing = true;
     check(make_sdp(ptt, 1) ==
-              "v=0\r\no=- 1 1 IN IP4 192.0.2.1\r\ns=MCPTT\r\nc=IN IP4 192.0.2.1\r\nt=0 0\r\n"
-              "m=audio 4000 RTP/AVP 96\r\ni=speech\r\na=rtpmap:96 AMR-WB/16000/1\r\n"
+              "v=0\r\no=- 1 1 IN IP4 192.0.2.1\r\ns=MCPTT\r\nc=IN IP4 192.0.2.1\r\nb=AS:38\r\nt=0 0\r\n"
+              "m=audio 4000 RTP/AVP 96\r\ni=speech\r\nb=AS:38\r\na=rtpmap:96 AMR-WB/16000/1\r\n"
               "a=fmtp:96 octet-align=0;mode-change-capability=2;max-red=0\r\na=ptime:20\r\na=maxptime:240\r\na=sendrecv\r\n"
               "a=rtcp:4001\r\na=ssrc:777 cname:mcptt\r\nm=application 5000 udp MCPTT\r\n"
               "a=fmtp:MCPTT mc_floor_ssrc=12345;mc_queueing\r\n",
