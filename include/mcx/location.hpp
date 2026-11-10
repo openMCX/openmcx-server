@@ -262,6 +262,9 @@ public:
   // What the UE observes.
   void position(const Point &point, std::uint64_t now);
   void radio(Dimension dimension, const std::string &value, std::uint64_t now);
+  // The neighbouring E-UTRAN (Dimension::Cell) or NR (Dimension::NrCell) cells the UE hears, for <NeighbouringEcgi>
+  // and <CL_NeighbouringNcgi>; no trigger fires on them (TS 24.379 annex F.3.3).
+  void neighbours(Dimension dimension, std::vector<std::string> cells);
   void signal(Event event, std::uint64_t now);
   // TS 24.379 clause 13.3.3.1: a request is answered at once, and resets the timer.
   Report answer(const std::string &request_id, std::uint64_t now);
@@ -286,6 +289,7 @@ private:
   bool configured_ = false, emergency_ = false;
   std::optional<Point> position_, reported_position_;
   std::map<Dimension, std::string> radio_;
+  std::map<Dimension, std::vector<std::string>> neighbours_;
   std::set<std::string> fired_;
   std::map<std::string, bool> area_state_;        // TriggerId -> inside
   std::map<std::string, std::uint64_t> periodic_; // TriggerId -> next due

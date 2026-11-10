@@ -1266,6 +1266,15 @@ void Reporter::radio(Dimension dimension, const std::string &value, std::uint64_
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 annex F.3.3: the neighbouring cells, reported in <NeighbouringEcgi> or <CL_NeighbouringNcgi> when the
+// configuration requests them.
+void Reporter::neighbours(Dimension dimension, std::vector<std::string> cells) {
+  if (dimension != Dimension::Cell && dimension != Dimension::NrCell) invalid("neighbours are E-UTRAN or NR cells");
+  for (const auto &cell : cells) check_identity(dimension, cell);
+  neighbours_[dimension] = std::move(cells);
+}
+
+//------------------------------------------------------------------------------
 // TS 24.379 annex F.3.3: a signalling event (<McpttSignallingEvent>); its trigger fires.
 void Reporter::signal(Event event, std::uint64_t) {
   if (!configured_) return;
@@ -1290,10 +1299,18 @@ Report Reporter::build(std::uint64_t now) {
   if (position_ && (!want || want->coordinate)) report.location.coordinate = position_;
   if (has(Dimension::Cell) && (!want || want->serving_ecgi)) report.location.serving_ecgi = value(Dimension::Cell);
   if (has(Dimension::NrCell) && (!want || want->serving_ncgi)) report.location.serving_ncgi = value(Dimension::NrCell);
+  if (!want || want->neighbouring_ecgi) report.location.neighbouring_ecgi = neighbours_[Dimension::Cell];
+  if (!want || want->neighbouring_ncgi) report.location.neighbouring_ncgi = neighbours_[Dimension::NrCell];
   if (has(Dimension::MbmsSa) && (!want || want->mbms_sa)) report.location.mbms_sa = value(Dimension::MbmsSa);
   if (has(Dimension::Mbsfn) && (!want || want->mbsfn)) report.location.mbsfn = value(Dimension::Mbsfn);
   if (has(Dimension::Mbsfsa5G) && (!want || want->mbsfsa)) report.location.mbsfsa = value(Dimension::Mbsfsa5G);
+  // Step 3 "shall reset all triggers": the fired ones are cleared and each periodic trigger counts its interval again
+  // from this report (TS 37.579-2 6.3.1 steps 11A to 14).
   fired_.clear();
+  for (auto &[id, due] : periodic_) {
+    const auto entry = std::find_if(active().begin(), active().end(), [&](const Trigger &t) { return t.id == id; });
+    if (entry != active().end()) due = now + entry->amount * 1000;
+  }
   timer_until_ = now + (want ? want->minimum_interval : 0) * 1000ull;
   origin_ = now;
   reported_position_ = position_;

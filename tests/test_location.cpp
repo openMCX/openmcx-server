@@ -289,6 +289,56 @@ int main() {
         },
         "two periodic triggers from JSON");
 
+    // TS 24.379 annex F.3.3: <NeighbouringEcgi> is reported only when requested (TS 37.579-2 6.3.1 step 3).
+    {
+      Reporter rep;
+      Configuration cells;
+      cells.non_emergency = Requested{};
+      cells.non_emergency->serving_ecgi = true;
+      cells.non_emergency->minimum_interval = 1;
+      Trigger change{Trigger::Kind::AnyChange, "CELLCHANGE"};
+      change.dimension = Dimension::Cell;
+      cells.triggers.push_back(change);
+      const std::string cell1 = "001010" + std::string(27, '0') + "1", cell2 = "001010" + std::string(26, '0') + "10";
+      rep.radio(Dimension::Cell, cell1, 0);
+      rep.configure(cells, 0);
+      rep.radio(Dimension::Cell, cell2, 500);
+      rep.neighbours(Dimension::Cell, {cell1});
+      const auto plain = rep.poll(1000);
+      check(plain && plain->location.serving_ecgi == cell2 && plain->location.neighbouring_ecgi.empty(),
+            "neighbours not requested, not reported");
+      cells.non_emergency->neighbouring_ecgi = true;
+      rep.configure(cells, 2000);
+      rep.radio(Dimension::Cell, cell1, 2500);
+      rep.neighbours(Dimension::Cell, {cell2});
+      const auto with = rep.poll(3000);
+      check(with && with->location.neighbouring_ecgi == std::vector<std::string>{cell2}, "the requested neighbours");
+      rejects([&] { rep.neighbours(Dimension::Cell, {"1"}); }, "a malformed neighbour");
+    }
+    // TS 24.379 clause 13.3.4.2 step 3 ("shall reset all triggers"): a report restarts the periodic interval (TS 37.579-2
+    // 6.3.1 steps 11A to 14: the SS restarts its 60 s timer on the PLMN change report).
+    {
+      Reporter rep;
+      Configuration periodic;
+      periodic.non_emergency = Requested{};
+      periodic.non_emergency->coordinate = true;
+      periodic.non_emergency->minimum_interval = 10;
+      Trigger plmn{Trigger::Kind::AnyChange, "ANY PLMN"};
+      plmn.dimension = Dimension::Plmn;
+      Trigger every{Trigger::Kind::Periodic, "PERIODIC"};
+      every.amount = 60;
+      periodic.triggers = {plmn, every};
+      rep.position(Point::at(48.0, 2.0), 0);
+      rep.radio(Dimension::Plmn, "001001", 0);
+      rep.configure(periodic, 0);
+      check(!rep.poll(0), "nothing at the configuration");
+      rep.radio(Dimension::Plmn, "001002", 12000);
+      const auto change = rep.poll(12000);
+      check(change && change->triggers == std::vector<std::string>{"ANY PLMN"}, "the PLMN change report");
+      check(!rep.poll(60000) && !rep.poll(71000), "no periodic report 60 s after the configuration");
+      const auto due = rep.poll(72000);
+      check(due && due->triggers == std::vector<std::string>{"PERIODIC"}, "the periodic report 60 s after the last");
+    }
     // TS 24.379 clause 13.3.2.1 and clause 13.3.4: the client's triggers and its minimumReportInterval timer.
     {
       Reporter rep;
@@ -323,18 +373,30 @@ int main() {
       const auto third = rep.poll(20000);
       check(third && third->location.serving_ecgi == ecgi && third->location.serving_ncgi,
             "the requested cells are reported");
-      // Periodic: due 30 s after the configuration.
-      check(!rep.poll(30000) && rep.poll(32000).has_value(), "the periodic report");
+      // Periodic: TS 24.379 clause 13.3.4.2 step 3, each report resets the triggers. The adaptive trigger reports
+      // 17 s after each report, so the 30 s periodic one never comes due.
+      {
+        std::uint64_t last = 20000;
+        bool periodic = false, regular = true;
+        for (std::uint64_t t = 21000; t <= 52000; t += 1000)
+          if (const auto report = rep.poll(t)) {
+            periodic = periodic || std::find(report->triggers.begin(), report->triggers.end(), "periodic") !=
+                                       report->triggers.end();
+            regular = regular && t - last == 17000;
+            last = t;
+          }
+        check(!periodic && regular && last == 37000, "each report restarts the periodic trigger");
+      }
       // TS 24.379 clause 13.3.3.1: a request is answered at once and restarts the timer.
-      rep.signal(Event::GroupCallNonEmergency, 33000);
-      const auto now = rep.answer("r1", 33000);
+      rep.signal(Event::GroupCallNonEmergency, 53000);
+      const auto now = rep.answer("r1", 53000);
       check(now.id == "r1" && now.triggers.size() == 1, "a request answered at once with what has fired");
-      rep.signal(Event::GroupCallNonEmergency, 34000);
-      check(!rep.poll(35000) && rep.poll(38000).has_value(), "the request restarted the timer");
+      rep.signal(Event::GroupCallNonEmergency, 54000);
+      check(!rep.poll(55000) && rep.poll(58000).has_value(), "the request restarted the timer");
       // Emergency: the emergency triggers and interval.
       rep.set_emergency(true);
-      check(!rep.poll(41000), "the emergency periodic trigger counts from the emergency");
-      const auto emergency_report = rep.poll(43000);
+      check(!rep.poll(61000), "the emergency periodic trigger counts from the emergency");
+      const auto emergency_report = rep.poll(63000);
       check(emergency_report && emergency_report->emergency &&
                 emergency_report->triggers == std::vector<std::string>{"emergency-periodic"},
             "the emergency triggers");
@@ -345,12 +407,12 @@ int main() {
       trigger = {Trigger::Kind::Signalling, "configured"};
       trigger.event = Event::LocationConfigurationReceived;
       more.triggers.push_back(trigger);
-      rep.configure(more, 50000);
+      rep.configure(more, 70000);
       check(rep.configuration().triggers.size() == config.triggers.size() + 1 && rep.pending().count("configured"),
             "an update adds to the configuration");
-      rep.configure(Configuration{}, 60000);
-      rep.signal(Event::InitialLogOn, 60000);
-      check(!rep.configured() && !rep.poll(90000), "an empty configuration cancels reporting");
+      rep.configure(Configuration{}, 80000);
+      rep.signal(Event::InitialLogOn, 80000);
+      check(!rep.configured() && !rep.poll(110000), "an empty configuration cancels reporting");
     }
     {
       // TS 24.379 annex F.3.3: an "Update" adds the elements it requests to those requested before (removing one needs
