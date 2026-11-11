@@ -1,6 +1,6 @@
 # Private call tests
 
-These tests cover **on-network, on-demand private calls with floor control** between two MCPTT users (TS 23.379 §10.7, TS 24.379 §11.1.1). The tests cover the implemented subset below. They do not certify complete private-call conformance. [First-to-answer calls](#first-to-answer-call), [emergency private calls](#emergency-private-call) and the [private call services](#private-call-services) are covered. Pre-established and off-network private calls are not in present edition; see [coverage gaps](#coverage-gaps).
+These tests cover **on-network, on-demand private calls with floor control** between two MCPTT users (TS 23.379 §10.7, TS 24.379 §11.1.1). The tests cover the implemented subset below. They do not certify complete private-call conformance. [First-to-answer calls](#first-to-answer-call), [emergency private calls](#emergency-private-call) and the [private call services](#private-call-services) are covered. Private calls over a pre-established session are covered by the conformance tests of TS 37.579-2 (6.2.9 to 6.2.11, 6.2.26); off-network private calls are not in present edition; see [coverage gaps](#coverage-gaps).
 
 Back to the [test index by call type](../MCPTT_TEST.md).
 
@@ -253,7 +253,7 @@ If C's 200 crosses the CANCEL, the server acknowledges it and sends BYE with `<r
 | First-to-answer variants | PCK protection by the answering invitee is covered in the [protected private-call tests](PROTECTED_PRIVATE_CALL_TEST.md). First-to-answer calls to a functional alias are covered in the [functional-alias tests](FUNCTIONAL_ALIAS_TEST.md). |
 | Private call services | The forwarding-settings MESSAGE (`forward-private-call-settings-request`), and the `<forwarding-other-list>` check (warning 174) are not implemented. Private calls without floor control (§11.1.2) have their own [test document](PRIVATE_NO_FLOOR_TEST.md). TNP1 runs where the called user's private-call policy is applied (the combined server or the controlling function), with immediate forwarding, rather than only at the terminating participating function. Announced transfer is exercised on one server: the target's `<replaces-header-value>` names its dialog with the server, which Replaces matches by Call-ID. |
 | Ambient listening | Implemented separately; see the [ambient listening tests](AMBIENT_LISTENING_TEST.md). |
-| Pre-established sessions | Private calls over a pre-established session (§11.1.1.2.2): not in present edition; they need resource sharing in the PCRF or PCF. |
+| Pre-established sessions | Private calls over a pre-established session (§11.1.1.2.2): implemented on a combined server, behind `mcptt.resource_sharing`; tested by the conformance tests of TS 37.579-2 6.2.9 to 6.2.11 and 6.2.26, not here. |
 | Called-party authorization | Warnings 127 and 159 are evaluated by the controlling server, and again by the terminating participating server when the called user is served elsewhere. `<ListOfAllowedFAsToBeCalledFrom>` (functional aliases) is not. |
 | Multiple servers | Covered: the private-call and private-services scenarios also run with separate participating and controlling servers. |
 | Off-network | Off-network private calls (§11.2): not in present edition. |

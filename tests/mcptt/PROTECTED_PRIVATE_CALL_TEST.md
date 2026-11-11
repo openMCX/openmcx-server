@@ -73,5 +73,5 @@ Unit tests: PCK SRTP key and salt known answers for CS-ID 0 and 1, calculated in
 | Multiple servers | Within one system, protected private calls across participating and controlling servers work, with the floor control between servers under an SPK; see the [split protected tests](PROTECTED_SPLIT_TEST.md). |
 | Optional MIKEY features | SAKKE-to-self (E.5), identity hiding (E.7), a security profile supplied in a GENERIC-ID map (E.3.3) and the MC Security Gateway warning are not implemented. The parser rejects them. |
 | Ad hoc group calls | End-to-end security for ad hoc group calls uses a GMK, not a PCK, and is refused |
-| Pre-established and off-network | Not in present edition |
+| Pre-established and off-network | Over a pre-established session (the PCK in the REFER entry's offer, the Connect's PCK I_MESSAGE or the session's re-INVITE): tested by the conformance tests of TS 37.579-2 6.2.9 to 6.2.11 and 6.2.26, not here. Off-network: not in present edition |
 | TLS captures | Wire checks use the debug-SIP fixture; with TLS the same flows run but the SDP cannot be inspected from the capture |

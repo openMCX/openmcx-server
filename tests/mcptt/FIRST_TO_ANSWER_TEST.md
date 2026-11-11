@@ -1,6 +1,6 @@
 # First-to-answer call tests
 
-These tests cover **on-network, on-demand first-to-answer calls with floor control** (TS 23.379 §10.7, TS 24.379 §11.1.1). The caller invites two or more users at once, and the call continues as a private call with whichever invitee answers first. Emergency first-to-answer calls are included. The tests cover the implemented subset below, not complete conformance. First-to-answer over a pre-established session and off-network first-to-answer are not implemented; PCK protection is covered in the [protected private-call tests](PROTECTED_PRIVATE_CALL_TEST.md); see [coverage gaps](#coverage-gaps).
+These tests cover **on-network, on-demand first-to-answer calls with floor control** (TS 23.379 §10.7, TS 24.379 §11.1.1). The caller invites two or more users at once, and the call continues as a private call with whichever invitee answers first. Emergency first-to-answer calls are included. The tests cover the implemented subset below, not complete conformance. First-to-answer over a pre-established session is covered by the conformance tests of TS 37.579-2 (6.2.22, 6.2.23); off-network first-to-answer is not implemented; PCK protection is covered in the [protected private-call tests](PROTECTED_PRIVATE_CALL_TEST.md); see [coverage gaps](#coverage-gaps).
 
 Back to the [test index by call type](../MCPTT_TEST.md). Related: [private calls](PRIVATE_CALL_TEST.md), [emergency calls](EMERGENCY_CALL_TEST.md), [functional aliases](FUNCTIONAL_ALIAS_TEST.md).
 
@@ -111,5 +111,5 @@ sequenceDiagram
 | Multiple servers | Covered: first-to-answer calls, including the emergency first-to-answer scenario, also run with separate participating and controlling servers. |
 | Emergency to a functional alias | Refused. First-to-answer to an alias without emergency is covered in the [functional-alias tests](FUNCTIONAL_ALIAS_TEST.md). |
 | Emergency timer | None: TS 24.379 defines no on-network private emergency timer (the TFP timers are off-network). |
-| Pre-established and off-network | Not in present edition. |
+| Pre-established and off-network | Over a pre-established session: tested by the conformance tests of TS 37.579-2 6.2.22 and 6.2.23, not here. Off-network: not in present edition. |
 | Wire qualification | In-repository decoders only; no independent-peer run. |

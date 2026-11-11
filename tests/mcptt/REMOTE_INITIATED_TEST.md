@@ -1,6 +1,6 @@
 # Remotely initiated call tests
 
-These tests cover **remotely initiated calls**: one authorised user asks another user's device, by SIP MESSAGE, to place a call on their behalf (TS 24.379 §10.1.5 group, §11.1.7 private). The remote user's device originates a normal call and reports the outcome back to the requester. The tests cover the implemented subset below, not complete conformance. Pre-established sessions are not implemented; see [coverage gaps](#coverage-gaps).
+These tests cover **remotely initiated calls**: one authorised user asks another user's device, by SIP MESSAGE, to place a call on their behalf (TS 24.379 §10.1.5 group, §11.1.7 private). The remote user's device originates a normal call and reports the outcome back to the requester. The tests cover the implemented subset below, not complete conformance. The remotely initiated private call over a pre-established session is covered by the conformance tests of TS 37.579-2 (6.2.26); see [coverage gaps](#coverage-gaps).
 
 Back to the [test index by call type](../MCPTT_TEST.md). Related: [private calls](PRIVATE_CALL_TEST.md), [prearranged group calls](PREARRANGED_TEST.md).
 
@@ -111,6 +111,6 @@ sequenceDiagram
 | Area | Gap |
 |---|---|
 | Targeted group vs the remote user's group | The lab configures one group per client, so the remote user places the call only to its own affiliated group. A remote user asked to call a different group it is not affiliated to returns 120. |
-| Pre-established sessions | Remotely initiated calls over a pre-established session (§10.1.5.2.2 step 3): not in present edition. |
+| Pre-established sessions | The remotely initiated private call over a pre-established session (§11.1.7.2.2): tested by the conformance tests of TS 37.579-2 6.2.26, not here. The group call (§10.1.5.2.2 step 3): not tested. |
 | Multiple servers | Covered: both variants also run with separate participating and controlling servers. |
 | Wire qualification | In-repository decoders only; no independent-peer run. |

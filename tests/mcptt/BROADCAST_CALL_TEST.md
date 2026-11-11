@@ -1,6 +1,6 @@
 # Broadcast group call tests
 
-These tests cover **on-network, on-demand broadcast group calls** on a prearranged group (TS 23.379 §10.6.2.5, TS 24.379 §4.12 and §6.2.8.2, TS 24.380 broadcast floor rules). A broadcast group call is a group call in which only the initiator transmits, and the call ends when that transmission completes. The tests cover the implemented subset below, not complete broadcast conformance. Group-broadcast and user-broadcast groups follow a project profile; emergency and imminent-peril broadcast follow a local Floor Indicator policy. Pre-established and off-network broadcast are not implemented; see [coverage gaps](#coverage-gaps).
+These tests cover **on-network, on-demand broadcast group calls** on a prearranged group (TS 23.379 §10.6.2.5, TS 24.379 §4.12 and §6.2.8.2, TS 24.380 broadcast floor rules). A broadcast group call is a group call in which only the initiator transmits, and the call ends when that transmission completes. The tests cover the implemented subset below, not complete broadcast conformance. Group-broadcast and user-broadcast groups follow a project profile; emergency and imminent-peril broadcast follow a local Floor Indicator policy. Broadcast over a pre-established session is covered by the conformance tests of TS 37.579-2 (6.1.1.17, 6.1.1.18); off-network broadcast is not implemented; see [coverage gaps](#coverage-gaps).
 
 Back to the [test index by call type](../MCPTT_TEST.md).
 
@@ -126,7 +126,7 @@ The server sends the BYEs as soon as the initiator no longer holds the floor, wi
 | Override policy | Any listed overrider may override; there is no ranking among overriders, and a second override is not tested. |
 | Emergency / imminent broadcast | Implemented as a local Floor Indicator policy (B with D or E). TS 24.379 defines no stage-3 procedure for it, so another vendor may refuse or display these calls differently. Only the initiator may change the priority in-dialog, and receivers stay receive-only. Emergency broadcast on a group-broadcast or user-broadcast group was not tested. |
 | Authorization source | The optional `broadcast_members` list comes from server or GMS `call_policy` JSON, not a TS 24.481/24.484 XML document. By default any member may broadcast, as §4.12 describes for this release. |
-| Pre-established sessions, chat model, functional aliases | A broadcast in a REFER `body` on a pre-established session (§6.2.8.2 step 2), chat-group broadcast and functional-alias broadcast are not in present edition. |
+| Pre-established sessions, chat model, functional aliases | A broadcast in a REFER `body` on a pre-established session (§6.2.8.2 step 2) is tested by the conformance tests of TS 37.579-2 6.1.1.17 and 6.1.1.18, not here. Chat-group broadcast and functional-alias broadcast are not in present edition. |
 | Off-network broadcast | GROUP CALL BROADCAST messages and timers TFB1–TFB3 (§10.3): not in present edition. |
 | Protected media | Broadcast was tested with clear media only. The protected group profile applies unchanged but was not exercised with broadcast. |
 | Multiple servers | Covered: the broadcast scenario also runs with separate participating and controlling servers. |

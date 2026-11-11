@@ -59,7 +59,7 @@ tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =pr
 
 | Area | Gap |
 |---|---|
-| Pre-established sessions | The `mc_no_floor_ctrl` REFER of §11.1.2.3.1: not in present edition; pre-established sessions are refused |
+| Pre-established sessions | A private call without floor control over a pre-established session: implemented, tested by the conformance tests of TS 37.579-2 6.2.9 to 6.2.11, not here |
 | First-to-answer | Accepted by the server; mcx-client offers no floor-free first-to-answer call, so it is not exercised |
 | Protected media | The server relays PCK-protected speech unchanged; not exercised without floor control |
 | Refusal of other call types | Group, ad hoc and ambient listening offers without floor control get 488; covered by review, not by a scenario |
