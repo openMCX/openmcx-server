@@ -1,6 +1,6 @@
 # Ambient listening call tests
 
-These tests cover **ambient listening calls** (TS 24.379 §11.1.6, TS 23.379 §10.14): one user hears the surroundings of another user's device without that device's user being made aware of it. The tests cover the implemented on-demand subset below, not complete conformance. Pre-established sessions are not implemented; private call key (PCK) protection is covered elsewhere, see [coverage gaps](#coverage-gaps).
+These tests cover **ambient listening calls** (TS 24.379 §11.1.6, TS 23.379 §10.14): one user hears the surroundings of another user's device without that device's user being made aware of it. The tests cover the implemented on-demand subset below, not complete conformance. Ambient listening over a pre-established session is covered by the conformance tests of TS 37.579-2 (6.2.18, 6.2.19), not here; private call key (PCK) protection is covered elsewhere, see [coverage gaps](#coverage-gaps).
 
 Back to the [test index by call type](../MCPTT_TEST.md). Related: [private calls](PRIVATE_CALL_TEST.md), [remotely initiated calls](REMOTE_INITIATED_TEST.md).
 
@@ -117,7 +117,7 @@ sequenceDiagram
 
 | Area | Gap |
 |---|---|
-| Pre-established sessions | Ambient listening over a pre-established session (§11.1.6.2.2, §11.1.6.3.1.4), including the SIP INFO release reason: not in present edition. |
+| Pre-established sessions | Ambient listening over a pre-established session (§11.1.6.2.2, §11.1.6.3.1.4): implemented, tested by the conformance tests of TS 37.579-2 6.2.18 and 6.2.19. The SIP INFO release reason (§11.1.6.2.2.4): not in present edition. |
 | End-to-end protection | PCK protection (§11.1.6.2.1.1 step 10) is covered in the [protected private-call tests](PROTECTED_PRIVATE_CALL_TEST.md) (PP-06, and this scenario run on the protected fixture). |
 | Implicit request | The server grants the floor to the listened-to user whether or not the offer carries `mc_implicit_request` (§6.4 makes it the trigger). |
 | Location | The location-info bodies of §11.1.6.3.1.1 step 15 are not relayed. |

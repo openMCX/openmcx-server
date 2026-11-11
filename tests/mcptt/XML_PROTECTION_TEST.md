@@ -95,5 +95,5 @@ listening, emergency) and the prearranged scenario run with the protection on.
 |---|---|
 | MCData integrity | The MCData XML signatures of TS 24.282 §6.5.3 are not implemented. |
 | Service configuration | The servers read the document from the CMS's internal view, not by a subscription (LIMITATIONS). |
-| Pre-established sessions | The REFER case of §6.6.2.1 does not arise (pre-established sessions are not in present edition). |
+| Pre-established sessions | The REFER case of §6.6.2.1 (protected MCPTT-Info and resource-lists in the REFER entry): tested by the conformance tests of TS 37.579-2 6.1.1.5 to 6.2.26, not here. |
 | Negative lab test | No scenario sends a tampered or undecryptable body; the xmlsec unit tests cover tampered bodies and signatures, keys of another XPK and decryption failures. |

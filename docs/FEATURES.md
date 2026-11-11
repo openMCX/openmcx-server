@@ -61,6 +61,7 @@ participating and controlling servers.
 | First-to-answer call | Several invitees ring, the first answer wins, the rest are cancelled or released as "not selected"; emergency variant with MEPP save and restore | §11.1.4 |
 | Remotely initiated call | One user asks another user's device to place a group or private call, with requester authorisation (157/158) and outcome reporting | §10.1.5, §11.1.7 |
 | Ambient listening call | Remote-init and local-init: no indication at the listened-to device, `recvonly`/`sendonly` offers, automatic answer, ruleset checks (154/107/144/127) | §11.1.6 |
+| Calls over a pre-established session | Combined server only. The session set up ahead of a call (with ICE, behind `mcptt.resource_sharing`), modified and released by either side; prearranged, broadcast and chat group calls, emergency and imminent peril, functional aliases, private calls with and without floor control and with a PCK, first-to-answer, remotely initiated private and ambient listening calls over it by REFER; the Connect, Disconnect and Acknowledge of the media plane; automatic commencement, manual commencement by re-INVITE, INVITE with Replaces | §8, §10.1.1.2.2, §10.1.2.2.2, §11.1.1.2.2, §11.1.6.2.2; TS 24.380 §9 |
 
 | Service | Supported |
 |---|---|

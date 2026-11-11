@@ -124,7 +124,7 @@ flowchart LR
 |---|---|---|
 | `include/mcx/` | Public headers of the libraries the servers and the client share | `sip.hpp` (SIP engine API), `floor.hpp` and `media_control.hpp` (floor control codec and arbitration), `transmission.hpp` (MCVideo transmission control codec), `mbms.hpp` (MBMS and 5G MBS subchannel control and notification messages, TS 24.380 clauses 8.4 to 8.6 and TS 24.581 clauses 9.3 to 9.5; the code points the specifications leave open are listed in its header), `mbms_usage.hpp` (MBMS usage information bodies of TS 24.379 and TS 24.281 annex F.2), `protocol.hpp` (SIP bodies), `mcdata.hpp`, `msrp.hpp`, `warning.hpp`, `service.hpp` (service profiles), `runtime.hpp` |
 | `src/sip/` | SIP user agent and application server core over pjsip (`SipEngine`, private implementation `sip_impl.hpp`) | `incoming.cpp` (received requests, INVITE state), `requests.cpp`, `responses.cpp`, `transactions.cpp`, `messages.cpp` (bodies and their protection hooks) |
-| `src/server/` | `McServer`, the shared core of the MCPTT and MCVideo servers, one topic per file | `server.hpp` (the class), `server.cpp` (construction, run loop, tick, status), `sip_dispatch.cpp` (request dispatch), `group_call.cpp`, `private_call.cpp`, `adhoc.cpp`, `ambient.cpp`, `priority.cpp`, `affiliation.cpp`, `regroup.cpp`, `functional_alias.cpp`, `split.cpp`, `split_relay.cpp`, `xml_protection.cpp`, `policy.cpp` |
+| `src/server/` | `McServer`, the shared core of the MCPTT and MCVideo servers, one topic per file | `server.hpp` (the class), `server.cpp` (construction, run loop, tick, status), `sip_dispatch.cpp` (request dispatch), `group_call.cpp`, `private_call.cpp`, `adhoc.cpp`, `ambient.cpp`, `priority.cpp`, `affiliation.cpp`, `regroup.cpp`, `functional_alias.cpp`, `split.cpp`, `split_relay.cpp`, `pre_session.cpp` (pre-established sessions: setup, modification, release, REFER, Connect and Disconnect), `xml_protection.cpp`, `policy.cpp` |
 | `src/server/parts/` | Service parts shared by `McServer` and `DataServer`, reached through small host interfaces (`ServiceHost`) | `task_queue.hpp`, `served_users.hpp`, `location_service.*`, `peer_registration.*`, `peers.*`, `alias_registry.*`, `common_services.*`, `program.*` (shared `serve` entry point) |
 | `src/mcptt/` | `McpttServer`: the MCPTT service hooks of `McServer` and the floor control server interface | `mcptt_server.hpp`, `floor_control.cpp` |
 | `src/mcvideo/` | `McvideoServer`: transmission and reception control, video relay, video push and pull with the server, recording | `transmission_control.cpp`, `video_media.cpp`, `video_push_pull.cpp`, `recording.cpp` |
@@ -232,7 +232,8 @@ Exceptions map to answers in one place: `CapacityReached` to 500 with `Retry-Aft
 Warning 141, any other exception to 403 with the event `sip_request_rejected`. A procedure that must answer with a
 specific code and Warning sets it in `response` and returns; it does not throw.
 
-`invite_request` refuses pre-established sessions (403, Warning 100, not supported), answers a re-INVITE without MC
+`invite_request` hands an INVITE to the pre-established session PSI (`pre_established_uri`) and a re-INVITE in a
+pre-established session's dialog to `pre_session.cpp` (TS 24.379 clauses 8.2.2 and 8.3.2.1), answers a re-INVITE without MC
 service information as a session refresh or a hold/resume (`plain_reinvite`), relays a call controlled elsewhere
 (`invite_to_controller`), then chooses by `<session-type>`: ambient listening (`ambient_invite`), private and
 first-to-answer and the MCVideo one-to-one push and pull (`private_invite`), ad hoc (`adhoc_invite`), the service's
@@ -466,6 +467,7 @@ TS 24.380 clause 7; TS 24.581 clause 7) are outside this build.
 | Ad hoc group emergency alert | TS 24.379 clause 12.1A | `McServer::AdhocAlert`, `supervise_adhoc_alerts` | Recipients re-evaluated every 2 s |
 | Private call call-back | TS 24.379 clause 11.1.5 | `private_service_message`, `authorize_private_service` (`src/server/private_services.cpp`) | No state at the server: the requests are authorised and relayed as SIP MESSAGEs |
 | MCData disposition, file availability, release and re-delivery timers | TS 24.282 clauses 12.2, 10.2.4, 13, 9.2.2.4.1.1 | `Dispatched::tdc1`, `FileTransfer::expires` (TDC2), `FileTransfer::tdc3`, `ReleaseProcess::tdc3`, `Held::redeliver_at` (TDP1) in `src/mcdata/data_server.hpp` | Deadlines on `monotonic_ms()`, 0 meaning not running, checked in `DataServer::tick`. TS 24.582 defines no state machine the server implements |
+| Pre-established session call setup control: 'Start-stop', 'U: Pre-established session not in use', 'U: Pre-established session in use', 'Releasing' (server); 'U: not in use', 'U: in use' (client) | TS 24.380 clauses 9.3.2 and 9.2.2 | `PreEstablishedServer`, `PreEstablishedClient` in `include/mcx/pre_established.hpp`, `src/media/pre_established.cpp`; driven per session by `src/server/pre_session.cpp` | Timers T55/T56 and counters C55/C56 from `PreEstablishedTimerOptions`; tested in `tests/test_pre_established.cpp` |
 | SIP call and session handling | TS 24.379 clauses 10.1, 11.1, 6.3.8 | `Session`, `Leg`, `SipCallState` | Procedures, not a formal machine; see section 5.4 |
 
 ### 5.2 The floor control server
@@ -630,6 +632,11 @@ then reads:
   `call_policy`, `private_call`, `adhoc_call`, `floor_ack`, `document_poll_ms`, `configuration_poll_ms`, and for
   MCVideo the `floor_*` timer settings and `reception_control`. A participating server without `controller`, or a
   controller that is not a configured peer, refuses to start.
+- `mcptt.resource_sharing` (`none`, `sip-core` or `rx`; default `none`): how TS 24.379 clause 8.1A resource sharing
+  is supported. `none` refuses a pre-established session with 403 and warning 100; the others allow it
+  (`src/server/pre_session.cpp`). `mcptt.pre_established_uri` is the PSI of pre-established session set-up (TS 24.379
+  clause 6.3.1.1; default the service URI with `;mcptt-pre-established`). The operator commands `pre-session-modify`,
+  `pre-session-release` and `pre-session-refuse` drive the server-initiated steps.
 - `mcptt.mbms`, `mcvideo.mbms` (optional): pre-activated MBMS bearers of the participating function (role `both`;
   `include/mcx/multicast.hpp`, `src/server/mbms.cpp`; TS 24.379 clause 14.2, TS 24.281 clause 16.3). `bearers` is a
   list of `{"tmgi", "general_purpose": "<IPv4 host group>:<port>", "subchannels": ["<host group>:<port>", ...],

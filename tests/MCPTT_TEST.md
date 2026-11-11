@@ -33,7 +33,7 @@ The labs of the regression (`smoke`, `call-types`, `priority`, `first-to-answer`
 | [Regroup using a preconfigured group](mcptt/REGROUP_TEST.md) | An authorised user combines groups (group regroup) or named users (user regroup) into a temporary group that takes its configuration from a preconfigured group; authorisation (160/161), identity in use (165), constituents regrouped (148), a call on the regroup that user-regroup members take without selecting it, and removal (163 when unknown) |
 | [MBMS delivery of group call speech](mcptt/MULTICAST_TEST.md) | Pre-activated MBMS bearer emulated on the lab network (TS 24.379 §14, TS 24.380 §10): bearer announcement, listening reports on the general purpose subchannel and per session as the emulated MBMS interface moves, Map Group To Bearer repeated every T16, the speech once over the MBMS subchannel and by unicast to the others, fallback to unicast mid-burst and back without loss, Unmap Group To Bearer after T15; clear and protected |
 | [Multiple servers](#multiple-servers) | Participating and controlling functions on separate servers (every call-type scenario) |
-| Other call types | Off-network calls and pre-established sessions are not in the present edition; a pre-established session setup is refused with 403 warning 100 |
+| Other call types | Off-network calls are not in the present edition. Pre-established sessions are refused with 403 warning 100 unless `mcptt.resource_sharing` allows them; calls over them are tested by the TS 37.579-2 conformance tests |
 
 ## Prearranged group call
 
@@ -89,7 +89,7 @@ Supporting native and service tests cover shared components and are not addition
 |---|---|
 | Physical endpoints and access network | The scenarios run in Docker labs; group calls on Android phones over Wi-Fi are exercised in tutorials 1 and 2. Radio handover and coverage, carrier QoS, deployed NAT and firewalls, capacity and endurance are not validated. |
 | Standards and independent peers | No complete clause-by-clause conformance campaign or external interoperability result. Protected fixtures require an explicit local E.6 numeric wire profile; cryptographic vector tests do not resolve that interoperability qualification. |
-| Pre-established sessions | Not in present edition: they need resource sharing in the PCRF or PCF ([limitations](../docs/LIMITATIONS.md)). |
+| Pre-established sessions | Not in this suite: covered by the TS 37.579-2 conformance tests (5.4, 6.1.1.5 to 6.2.26) on a combined server ([limitations](../docs/LIMITATIONS.md)). |
 | Multiple MCPTT servers and systems | Separate participating and controlling servers in one system are tested ([multiple servers](#multiple-servers)); the non-controlling function's own session is not implemented; several MC systems are not in the present edition. |
 | Emergency location and authorization profile | Positions are simulated. Location triggers, freshness and requests are implemented ([location tests](mcptt/LOCATION_TEST.md)); the MCPTT location XML is encrypted with the rest of the XML under XML protection ([XML protection tests](mcptt/XML_PROTECTION_TEST.md)); GPS and radio measurement and full standardized user/group XML authorization mapping remain outside the implemented profile. |
 | Restart persistence | Emergency/originator state is held in memory. Key replay/ordering protections are process-local, not a persistent replay database. Existing client-restart tests do not establish server-restart continuity or anti-replay protection across a restart. |

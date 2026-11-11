@@ -1,6 +1,6 @@
 # Chat group call tests
 
-These tests cover **on-network, on-demand chat group calls** (TS 23.379 §10.6.2.3.1.2, TS 24.379 §10.1.2). In a chat group call each affiliated member joins the group's session individually. The first join creates the session, and the server never invites anyone. The tests cover the implemented subset below, not complete chat-group conformance: emergency and imminent-peril chat calls, implicit affiliation and chat calls on regroups and temporary groups are included; pre-established sessions are not in present edition and broadcast in a chat group is refused; see [coverage gaps](#coverage-gaps).
+These tests cover **on-network, on-demand chat group calls** (TS 23.379 §10.6.2.3.1.2, TS 24.379 §10.1.2). In a chat group call each affiliated member joins the group's session individually. The first join creates the session, and the server never invites anyone. The tests cover the implemented subset below, not complete chat-group conformance: emergency and imminent-peril chat calls, implicit affiliation and chat calls on regroups and temporary groups are included; chat over a pre-established session is covered by the conformance tests of TS 37.579-2 (6.1.2.2, 6.1.2.14) and broadcast in a chat group is refused; see [coverage gaps](#coverage-gaps).
 
 Back to the [test index by call type](../MCPTT_TEST.md).
 
@@ -127,7 +127,7 @@ With three or more participants a departure only updates the roster. The creator
 | Temporary and regrouped chat groups | Chat calls on a regroup (§10.1.2.4.1 steps 5 and 5a; [regroup tests](REGROUP_TEST.md), RC-01 to RC-06) and on a temporary group formed by the GMS ([temporary group tests](TEMPORARY_GROUP_TEST.md), TG-08) are implemented. Step 11b, the INVITE to the non-controlling function of each other constituent group, is not. |
 | Release interpretation | "Only one or no participants" (§6.3.8.1 item 2) is applied only after a second member has joined, so a first joiner can wait until the inactivity timer. This is a deliberate reading of the spec. |
 | Broadcast in a chat group | Rejected. The 23.379 NOTE says chat-model broadcast is set up through floor control, which is not implemented. |
-| Pre-established sessions | Chat over a pre-established session (§10.1.2.2.2): not in present edition. |
+| Pre-established sessions | Chat over a pre-established session (§10.1.2.2.2): implemented, tested by the conformance tests of TS 37.579-2 6.1.2.2 and 6.1.2.14, not here. |
 | Group document | The GMS XML group document carries type, restrictions, limit and member priorities, but the server enforces the same values from its JSON projection. |
 | Protected media | Chat was tested with clear media only. The protected group profile applies unchanged but was not exercised with chat. |
 | Wire qualification | In-repository decoders only; no external Wireshark dissection or independent-peer run. |
