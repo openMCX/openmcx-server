@@ -622,6 +622,15 @@ LABS = [
     lab(
         'mcdata-protected-transport-keys',
         'single',
+        ['--private-call', '--mcdata'] + KEYS + ['--sign-payloads', '--transport-keys', '--transport-keys-mcptt-only'],
+        ['mcdata_protected_scenario'],
+        ['mcdata', 'protected', 'kms'],
+    ),
+    # The same with transport keys of their own for the MCData IDs: the MCData ID's KeyProvision is signed under them
+    # too (each exchange under the keys of the identity it is for).
+    lab(
+        'mcdata-protected-transport-keys-all',
+        'single',
         ['--private-call', '--mcdata'] + KEYS + ['--sign-payloads', '--transport-keys'],
         ['mcdata_protected_scenario'],
         ['mcdata', 'protected', 'kms'],

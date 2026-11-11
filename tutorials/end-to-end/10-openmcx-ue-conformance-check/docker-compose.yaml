@@ -798,7 +798,9 @@ services:
     - ./config/tls/mc-client.crt:/config/tls/mc-client.crt:ro
     - ./config/tls/mc-client.key:/config/tls/mc-client.key:ro
     - ./config/transport-keys/mc-client-trk:/config/transport-keys/mc-client-trk:ro
+    - ./config/transport-keys/mc-client-trk-mcdata:/config/transport-keys/mc-client-trk-mcdata:ro
     - ./config/transport-keys/mc-client-ink:/config/transport-keys/mc-client-ink:ro
+    - ./config/transport-keys/mc-client-ink-mcdata:/config/transport-keys/mc-client-ink-mcdata:ro
     depends_on:
       http-proxy:
         condition: service_healthy
