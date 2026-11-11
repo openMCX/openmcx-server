@@ -10,6 +10,7 @@
 // RFC 4538, RFC 2392, RFC 5366, RFC 3891.
 
 #include "mcx/refer.hpp"
+#include "mcx/xml_security.hpp"
 
 #include <functional>
 #include <iostream>
@@ -168,6 +169,34 @@ static void Clause_10_1_1_3_1_2_NoSubscription() {
   expect(!mcx::refer_without_subscription({{"Supported", "norefersub"}}), "without Refer-Sub");
 }
 
+//------------------------------------------------------------------------------
+// TS 24.379 clause 6.6.2.1 (both items) with TS 33.180 clauses 9.3.4.2 and 9.3.4.3: the MCPTT-Info in the entry's
+// hname "body" is encrypted first; the resource list holding it escaped is not "protected" for that (its own uri
+// attribute still is to be encrypted), and once the uri is encrypted the whole opens back to the clear entry.
+static void Clause_6_6_2_1_NestedProtection() {
+  mcx::xmlsec::Key key;
+  key.xpk.fill(7);
+  key.id = 0x12345678;
+  key.user = "sip:alice@mcptt.example";
+  const mcx::xmlsec::Profile info_profile{{"mcptt-client-id"}, {}};
+  const std::string info = "<?xml version=\"1.0\"?><mcpttinfo xmlns=\"urn:3gpp:ns:mcpttInfo:1.0\"><mcptt-Params>"
+                           "<session-type>chat</session-type><mcptt-client-id type=\"Normal\">"
+                           "<mcpttURI>urn:uuid:0c3b5d4e-1111-2222-3333-444455556666</mcpttURI></mcptt-client-id>"
+                           "</mcptt-Params></mcpttinfo>";
+  auto entry = chat_entry();
+  entry.body[0].body = mcx::xmlsec::encrypt(info, key, info_profile);
+  expect(mcx::xmlsec::is_protected(entry.body[0].body), "the inner MCPTT-Info is protected");
+  const auto list = mcx::refer_resource_list(mcx::refer_entry_uri(entry, "inner-b"));
+  expect(!mcx::xmlsec::is_protected(list), "an escaped protected body does not make the list protected");
+  expect(!mcx::xmlsec::key_id(list), "and gives it no key ID");
+  const mcx::xmlsec::Profile list_profile{{}, {{"entry", "uri"}}};
+  const auto encrypted = mcx::xmlsec::encrypt(list, key, list_profile);
+  expect(mcx::xmlsec::is_protected(encrypted) && mcx::xmlsec::key_id(encrypted) == key.id, "the uri encrypted");
+  const auto opened = mcx::parse_refer_entry_uri(mcx::parse_refer_resource_list(mcx::xmlsec::decrypt(encrypted, key)));
+  expect(opened.body.size() == 2 && mcx::xmlsec::decrypt(opened.body[0].body, key).find("urn:uuid:0c3b5d4e") != std::string::npos,
+         "the entry and its MCPTT-Info open again");
+}
+
 int main() {
   const std::vector<std::pair<const char *, void (*)()>> tests = {
       {"Rfc3261_25_1_HeaderEscaping", Rfc3261_25_1_HeaderEscaping},
@@ -177,6 +206,7 @@ int main() {
       {"Clause_6_2_4_2_ReferBye", Clause_6_2_4_2_ReferBye},
       {"Rfc4538_7_TargetDialogAndReplaces", Rfc4538_7_TargetDialogAndReplaces},
       {"Clause_10_1_1_3_1_2_NoSubscription", Clause_10_1_1_3_1_2_NoSubscription},
+      {"Clause_6_6_2_1_NestedProtection", Clause_6_6_2_1_NestedProtection},
   };
   int failures = 0;
   for (const auto &[name, test] : tests) {

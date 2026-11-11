@@ -652,7 +652,8 @@ McServer::McServer(const ServiceProfile &service, Json cfg, bool disable_tls)
 void McServer::media_answered(std::string_view dialog, const MediaDescription &media) {
   // TS 24.379 clause 8.3.2.2: the negotiated media of a pre-established session after its modification.
   if (const auto pre = pre_sessions_.find(std::string(dialog)); pre != pre_sessions_.end()) {
-    pre->second->remote = media;
+    // RFC 3264 section 8.2: a call over the session without floor control keeps the session's control channel.
+    pre->second->remote = session_media_keeping_control(media, pre->second->remote);
     return;
   }
   auto it = legs_.find(std::string(dialog));
@@ -735,6 +736,13 @@ void McServer::run() {
           mbms_announce(*user, cancel);
         else
           event("mbms_announce_unknown", {{"command", command}});
+      } else if (command.starts_with("priority-reset ")) {
+        // Operator test aid (as a test system's script): the group's priority state back to normal, its emergency
+        // and imminent peril states and alerts cleared (TS 24.379 clause 6.3.3.1: "MEG 1" / "MIG 1"), for a test that
+        // starts a new priority call on a group whose earlier one was never cancelled (TS 37.579-2 test 6.1.2.2).
+        const auto group = command.substr(15);
+        priorities_[group] = PriorityState{};
+        event("priority_reset", {{"group_id", group}});
       } else if (command.starts_with("pre-session-")) {
         // TS 24.379 clauses 8.3.2.2 and 8.4.2.2: the operator modifies or releases pre-established sessions.
         try {
@@ -755,6 +763,7 @@ void McServer::run() {
       for (int index = 0; index < 32; index++) {
         auto datagram = leg->floor->receive();
         if (!datagram) break;
+        if (pre_session_leg_stun(*leg, IceStream::Control, *datagram)) continue; // RFC 7983
         try {
           media_control_packet(*leg, *datagram);
         } catch (const std::exception &error) {
@@ -765,6 +774,7 @@ void McServer::run() {
       for (int index = 0; index < 32; index++) {
         auto datagram = leg->audio->receive();
         if (!datagram) break;
+        if (pre_session_leg_stun(*leg, IceStream::Audio, *datagram)) continue;
         try {
           audio_packet(*leg, *datagram);
         } catch (const std::exception &error) {

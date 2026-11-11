@@ -614,6 +614,8 @@ void McServer::user_request(const SipMessage &message, User &user, const std::st
   if (message.method == "MESSAGE") return user_message(message, user, response);
   // INVITE from a served user or a peer function: call setup and re-INVITE.
   if (message.method == "INVITE") return invite_request(message, user, response);
+  // TS 24.379 clauses 10.1.1.3.1.2, 10.1.2.3.2, 11.1.1.3.1.2 and 11.1.3.2.1.2: a REFER to a pre-established session.
+  if (message.method == "REFER") return pre_session_refer(message, user, response);
   // TS 24.379 clause 8.3.2.1: an UPDATE modifying a pre-established session outside a call (RFC 3311).
   if (message.method == "UPDATE")
     if (const auto found = pre_sessions_.find(message.dialog_id);
@@ -2139,6 +2141,23 @@ void McServer::send_priority_correction(std::string_view dialog) {
   if (!leg.session->private_call) info.calling_group = leg.session->group;
   info.calling_user = leg.user;
   leg.pending_priority_info.reset();
+  // TS 24.379 clause 6.3.2.1.8.5 (its last paragraphs) and clause 10.1.2.3.2: for a call over a pre-established
+  // session the participating function answers this INFO with 200 (OK) and gives the client a re-INVITE in the
+  // session (the session's SDP, the Resource-Priority of its REFER, the MCPTT-Info of the INFO).
+  if (!leg.pre_session.empty()) {
+    if (const auto pre = pre_sessions_.find(leg.pre_session); pre != pre_sessions_.end()) {
+      const auto session = pre->second;
+      std::vector<SipHeader> headers;
+      if (!session->refer_priority.empty()) headers.push_back({"Resource-Priority", session->refer_priority});
+      session->refer_priority.clear();
+      sip_.reinvite(session->dialog, session->local, {{svc_.info_mime, service_info_xml_(info)}},
+                    [this, user = session->user](const SipResponse &answer) {
+                      event("pre_session_priority_reinvite", {{"user_id", user}, {"status", answer.status_code}});
+                    },
+                    headers);
+    }
+    return;
+  }
   sip_.request_in_dialog(
       leg.dialog, "INFO", svc_.info_mime, service_info_xml_(info),
       {{"Info-Package", std::string(svc_.feature_tag) + "-info"}, {"Content-Disposition", "Info-Package"}});

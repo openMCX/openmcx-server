@@ -210,6 +210,10 @@ void McServer::invite_member(const std::shared_ptr<Session> &session, const std:
   auto headers = priority_headers(profile.value("priority_policy", Json::object()), state);
   headers.push_back({"Answer-Mode", session->policy.value("answer_mode", "Auto")});
   headers.push_back({"Contact", focus_contact(*session)});
+  // TS 24.379 clauses 6.3.2.2.5.1 and 6.3.2.2.6.1, TS 24.380 clause 4.1.2.2: a member with a free pre-established
+  // session is invited over it (Connect, or re-INVITE then Connect); otherwise on demand (clause 4.1.2.2 NOTE).
+  if (pre_session_invite_member(session, leg, *user, info)) return;
+  if (!leg->replaces.empty()) headers.push_back({"Replaces", leg->replaces});
   leg->dialog = sip_.invite(user->sip, leg->local, priority_parts(info), {}, user_route(*user, headers));
   add_leg(leg);
   event("call_fanout", {{"user_id", id}, {"session_uri", session->uri}});
@@ -368,7 +372,7 @@ void McServer::complete_setup(const std::shared_ptr<Session> &session) {
           info.service["replaces-header-value"] = session->replaces_value;
           part.body = service_info_xml_(info);
         }
-    sip_.answer(origin->dialog, origin->answer);
+    answer_leg(origin, origin->answer);
     event("call_admitted", {{"session_uri", session->uri}, {"accepted", accepted}});
   } else if (!pending || monotonic_ms() - session->created >= session->policy.value("setup_timeout_ms", 30000u)) {
     origin->awaiting_answer = false;
@@ -390,7 +394,7 @@ void McServer::complete_setup(const std::shared_ptr<Session> &session) {
       failure.reason = "Server Internal Error";
       failure.headers = {{"Retry-After", std::to_string(capacity_retry_after())}};
     }
-    sip_.answer(origin->dialog, failure);
+    answer_leg(origin, failure);
     event("call_setup_failed", {{"session_uri", session->uri}, {"status", failure.status_code}});
     for (const auto &leg : session_legs(*session))
       if (leg != origin) bye(leg->dialog);
@@ -556,6 +560,9 @@ std::set<std::uint32_t> McServer::floor_ssrcs_in_use(const ProtectedCall *keys, 
 // return a 488 (Not Acceptable Here) response"), an answer to this server's offer by ending the dialog
 // (media_answered).
 bool McServer::peer_floor_ssrc_refused(const Leg &leg, std::uint32_t ssrc) {
+  // A call over a pre-established session goes on with the session's floor control streams (same SSRCs, same SRTCP
+  // contexts, their indexes still rising: RFC 7714 section 9.4's IVs stay unique); not a new stream to refuse.
+  if (pre_session_call_setup_) return false;
   const auto *user = floor_protected(leg) ? by_id(leg.user) : nullptr;
   const auto *keys = user ? floor_keys(*user) : nullptr;
   const auto current = leg.remote ? std::optional(leg.remote->floor_ssrc) : std::nullopt;
@@ -568,6 +575,7 @@ bool McServer::peer_floor_ssrc_refused(const Leg &leg, std::uint32_t ssrc) {
 // the SSRC is refused when floor control is to be protected ([protect_floor]) and it is already used under the
 // user's floor key for another stream. The leg's own SSRC is drawn apart from the offered one (make_leg).
 bool McServer::offered_floor_ssrc_refused(const User &user, bool protect_floor, std::uint32_t ssrc) {
+  if (pre_session_call_setup_) return false; // as peer_floor_ssrc_refused
   const auto *keys = protect_floor ? floor_keys(user) : nullptr;
   return keys && (keys->floor_ssrc_used(ssrc) || floor_ssrcs_in_use(keys).contains(ssrc));
 }

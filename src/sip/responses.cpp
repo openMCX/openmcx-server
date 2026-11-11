@@ -60,6 +60,19 @@ void SipEngine::Impl::send_response(pjsip_rx_data *data, const SipResponse &resp
 // 100 Trying (data is null).
 void SipEngine::Impl::answer_reinvite(pjsip_inv_session *invite, pjsip_rx_data *data, const std::string &dialog_id,
                                       int cseq, SipResponse response) {
+  // RFC 3261 section 13.3.1.1: a provisional response (180 Ringing while the user is alerted) to a deferred
+  // re-INVITE, without SDP; the final answer follows.
+  if (data == nullptr && response.status_code > 100 && response.status_code < 200) {
+    pjsip_tx_data *created = nullptr;
+    pj_str_t reason = pj_view(response.reason);
+    require_success(pjsip_inv_answer(invite, response.status_code, response.reason.empty() ? nullptr : &reason,
+                                     nullptr, &created),
+                    "provisional answer to a re-INVITE");
+    TxData answer(created);
+    add_headers(answer.get(), response.headers);
+    require_success(pjsip_inv_send_msg(invite, answer.release()), "send re-INVITE provisional answer");
+    return;
+  }
   if (response.status_code < 200) response.status_code = 500;
   if (response.status_code < 300 && !response.local_media && !response.local_sdp) response.status_code = 488;
   const auto *sdp = (response.local_media || response.local_sdp) && response.status_code < 300
@@ -172,6 +185,8 @@ void SipEngine::Impl::respond_deferred(const std::string &id, const SipResponse 
     const auto found = dialogs.find(deferred.dialog_id);
     if (found == dialogs.end() || found->second->invite == nullptr) return;
     answer_reinvite(found->second->invite, nullptr, deferred.dialog_id, deferred.cseq, response);
+    // A provisional response leaves the transaction to its final answer.
+    if (response.status_code > 100 && response.status_code < 200) deferred_responses.insert(std::move(node));
     return;
   }
   auto *data = deferred.data;

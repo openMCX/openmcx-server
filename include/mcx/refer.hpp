@@ -155,6 +155,9 @@ std::vector<SipHeader> pre_established_refer_headers(std::string_view refer_to, 
 // TS 24.379 clauses 10.1.1.2.2.1 and 10.1.2.2.2.1 steps 2 and 3: the body of a REFER that starts a call: the resource
 // list part with its Content-ID `content_id` (the Refer-To's cid URL), the entry built by refer_entry_uri.
 BodyPart refer_resource_list_part(const ReferEntry &entry, std::string_view content_id, std::string_view boundary);
+// TS 24.379 clause 11.1.1.2.2.1 step 9: a first-to-answer call's list, one entry per targeted user.
+BodyPart refer_resource_list_part(const std::vector<ReferEntry> &entries, std::string_view content_id,
+                                  std::string_view boundary);
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 10.1.1.3.1.2 conditions 1 to 3, clause 11.1.1.3.1.2, clause 11.1.3.2.1.2: what a received REFER for

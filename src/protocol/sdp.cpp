@@ -124,6 +124,7 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
         media.queueing || media.floor_priority)
       invalid(video ? "transmission control parameters without transmission control"
                     : "floor control parameters without floor control");
+    if (media.control_removed && !video) out << "m=application 0 udp MCPTT\r\n"; // RFC 3264 section 8.2
     return out.str();
   }
   const char *control = video ? "MCVideo" : "MCPTT";
@@ -278,7 +279,15 @@ void parse_media_line(const std::string &value, MediaDescription &out, SdpState 
   if (fields.size() != 4) invalid("unsupported SDP media formats");
   state.section = fields[0];
   auto port = number(fields[1], 65535);
-  if (!port) invalid("disabled media is unsupported");
+  if (!port) {
+    // RFC 3264 section 8.2: only the media-floor control stream may be removed (MediaDescription::control_removed);
+    // its section's attributes are skipped.
+    if (state.section != "application" || state.floor || fields[2] != "udp" || fields[3] != "MCPTT")
+      invalid("disabled media is unsupported");
+    out.control_removed = true;
+    state.section = "removed";
+    return;
+  }
   if (state.section == "audio") {
     if (state.audio) invalid("duplicate SDP audio");
     state.audio = true;
@@ -553,6 +562,8 @@ MediaDescription parse_sdp(std::string_view sdp) {
     }
     if (line.starts_with("m="))
       parse_media_line(value, out, state);
+    else if (state.section == "removed")
+      continue; // the attributes of a removed media section (RFC 3264 section 8.2)
     else if (line.starts_with("c="))
       parse_connection_line(value, out, state);
     else if (state.section == "video") {
@@ -562,6 +573,22 @@ MediaDescription parse_sdp(std::string_view sdp) {
       parse_attribute(line, value, out, state);
   }
   finish_sdp(out, state);
+  return out;
+}
+
+//------------------------------------------------------------------------------
+MediaDescription session_media_keeping_control(const MediaDescription &negotiated,
+                                               const std::optional<MediaDescription> &previous) {
+  auto out = negotiated;
+  if (!negotiated.control_removed || !previous) return out;
+  out.control = previous->control;
+  out.floor_address = previous->floor_address;
+  out.floor_port = previous->floor_port;
+  out.floor_ssrc = previous->floor_ssrc;
+  out.queueing = previous->queueing;
+  out.floor_priority = previous->floor_priority;
+  if (out.ice && previous->ice) out.ice->control = previous->ice->control;
+  out.control_removed = false;
   return out;
 }
 

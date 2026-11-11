@@ -410,6 +410,14 @@ BodyPart refer_resource_list_part(const ReferEntry &entry, std::string_view cont
   return {resource_lists_mime, refer_resource_list(refer_entry_uri(entry, boundary)), std::string(content_id)};
 }
 
+BodyPart refer_resource_list_part(const std::vector<ReferEntry> &entries, std::string_view content_id,
+                                  std::string_view boundary) {
+  if (entries.empty()) invalid("REFER resource list without an entry");
+  std::vector<std::string> uris;
+  for (const auto &entry : entries) uris.push_back(refer_entry_uri(entry, boundary));
+  return {resource_lists_mime, refer_resource_list_of(uris), std::string(content_id)};
+}
+
 //------------------------------------------------------------------------------
 // TS 24.379 clause 10.1.1.3.1.2 conditions 1 to 3 (a call), clause 11.1.3.2.1.2 (method "BYE").
 PreEstablishedReferRequest parse_pre_established_refer(const std::vector<SipHeader> &headers,

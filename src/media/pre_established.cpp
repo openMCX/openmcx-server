@@ -11,6 +11,8 @@
 
 #include "mcx/floor.hpp"
 
+#include <openssl/evp.h>
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -236,6 +238,31 @@ std::optional<PreEstablishedReasonCause> reason_cause_of(PreEstablishedReasonCod
   default:
     return std::nullopt; // 'Accepted', and 'Not Accepted', which no Reason Cause matches
   }
+}
+
+//------------------------------------------------------------------------------
+std::vector<std::uint8_t> pck_i_message_of(std::string_view key_mgmt) {
+  std::string clean;
+  for (const char character : key_mgmt)
+    if (!std::isspace(static_cast<unsigned char>(character))) clean += character;
+  if (clean.empty() || clean.size() % 4 != 0) throw std::invalid_argument("PCK I_MESSAGE: not base64");
+  std::vector<std::uint8_t> out(clean.size() / 4 * 3);
+  const int length = EVP_DecodeBlock(out.data(), reinterpret_cast<const unsigned char *>(clean.data()),
+                                     static_cast<int>(clean.size()));
+  if (length < 0) throw std::invalid_argument("PCK I_MESSAGE: not base64");
+  // EVP_DecodeBlock counts the padding's octets: they are not data.
+  std::size_t padding = 0;
+  for (auto it = clean.rbegin(); it != clean.rend() && *it == '='; ++it) ++padding;
+  out.resize(static_cast<std::size_t>(length) - padding);
+  return out;
+}
+
+std::string key_mgmt_of(std::span<const std::uint8_t> pck_i_message) {
+  std::string out((pck_i_message.size() + 2) / 3 * 4 + 1, '\0');
+  const int length = EVP_EncodeBlock(reinterpret_cast<unsigned char *>(out.data()), pck_i_message.data(),
+                                     static_cast<int>(pck_i_message.size()));
+  out.resize(static_cast<std::size_t>(length));
+  return out;
 }
 
 //------------------------------------------------------------------------------
