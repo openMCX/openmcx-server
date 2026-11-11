@@ -234,16 +234,18 @@ bool McServer::csk_in_subscribe(const SipMessage &message) {
 // result of the received initial SIP SUBSCRIBE request, if the CSK is received in an application/mikey MIME body of
 // the initial SIP SUBSCRIBE request, the CMS shall perform the confidentiality protection procedures and integrity
 // protection procedures defined in 3GPP TS 24.379 [9] for MCPTT server". For the dialog of a client's subscription
-// of these procedures: whether that protection applies (identity hiding); nothing for any other dialog (an MCS
-// server's group document subscription included), whose protection is decided as before. Identity hiding is not
+// of these procedures: whether that protection applies (identity hiding). An MCS server's group document subscription
+// (TS 24.481 clause 6.3.13.3.2.3) has no protection step: "the GMS shall act as a notifier according to IETF RFC 5875",
+// so its NOTIFYs are sent without a client's key (false). Nothing for any other dialog, whose protection is decided
+// as before. Identity hiding is not
 // supported yet: with it protection applies, and protect_outgoing then refuses (no key it could use), never clear.
 // The GMK in a GKTP document stays protected by its own MIKEY-SAKKE I_MESSAGE (TS 33.180 clause 5.7) either way.
 std::optional<bool> McServer::subscription_protection(const std::string &dialog) const {
   if (dialog.empty()) return std::nullopt;
   if (const auto found = config_subscriptions_.find(dialog); found != config_subscriptions_.end())
     return found->second.identity_hiding;
-  if (const auto found = doc_subscriptions_.find(dialog); found != doc_subscriptions_.end() && !found->second.server)
-    return found->second.identity_hiding;
+  if (const auto found = doc_subscriptions_.find(dialog); found != doc_subscriptions_.end())
+    return found->second.server ? false : found->second.identity_hiding;
   if (const auto found = key_subscriptions_.find(dialog); found != key_subscriptions_.end())
     return found->second.identity_hiding;
   return std::nullopt;

@@ -151,12 +151,24 @@ std::vector<BodyPart> DataServer::decrypt_xml(const std::optional<xmlsec::Key> &
 }
 
 //------------------------------------------------------------------------------
+// TS 24.282 clause 6.5.3.3.2 protects XML bodies sent from the MCData server to the MCData client and between MCData
+// servers, and clause 6.5.1.1 applies clause 6.5 to the procedures of TS 24.282 clauses 9, 10, 12 and 13. This
+// server's own subscription to group document changes is the MCS server procedure of TS 24.481 clause 6.3.13.2.2,
+// sent to the PSI of the GMS subscription proxy function (step b), not to a client: no client's CSK applies to it.
+// Its refreshes are new initial SUBSCRIBE requests to the same PSI (subscribe_group_document).
+bool DataServer::gms_subscription(const SipTransmission &transmission) const {
+  if (transmission.response || transmission.method != "SUBSCRIBE") return false;
+  const auto uri = cfg_.at("mcdata").value("group_subscription_uri", std::string{});
+  return !uri.empty() && transmission.request_uri == uri;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.282 clauses 6.5.1.3, 6.5.3.1 and 6.5.3.3.2 with TS 33.180 clause 9.3.5: just prior to sending, when integrity
 // protection is enabled, every XML MIME body of a request or response to a client (already confidentiality protected
 // where configured) is signed under its CSK; "all XML MIME bodies", not only the types clause 6.5.3.1 lists
 // (maintainer decision M11).
 std::vector<BodyPart> DataServer::sign_outgoing(const SipTransmission &transmission, std::vector<BodyPart> parts) {
-  if (transmission.address != core_address_) return parts;
+  if (transmission.address != core_address_ || gms_subscription(transmission)) return parts;
   // Before the service configuration document is read, whether its protection applies is not known: an XML body to
   // a client is not sent then, never in the clear instead.
   if (!signalling_protection_ &&

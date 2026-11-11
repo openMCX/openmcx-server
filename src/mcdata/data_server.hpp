@@ -142,6 +142,7 @@ class DataServer {
   bool integrity_protection() const { return signalling_protection_ && signalling_protection_->integrity; }
 
   std::vector<BodyPart> sign_outgoing(const SipTransmission &transmission, std::vector<BodyPart> parts);
+  bool gms_subscription(const SipTransmission &transmission) const;
 
   std::vector<BodyPart> verify_incoming(const SipTransmission &transmission, std::vector<BodyPart> parts);
 

@@ -434,6 +434,16 @@ LABS = [
         ['mcdata_group_subscription_scenario'],
         ['common', 'mcdata'],
     ),
+    # The same with XML confidentiality and integrity protection: TS 24.282 clause 6.5 protects the MCData server's
+    # XML towards its clients and between MCData servers, not its own TS 24.481 clause 6.3.13.2.2 subscription to the
+    # GMS, which is sent (it was refused for want of a client's CSK).
+    lab(
+        'group-management-mcdata-protected',
+        'single',
+        ['--private-call', '--mcdata', '--group-management'] + KEYS + ['--xml-protection', '--integrity-protection'],
+        ['mcdata_group_subscription_scenario'],
+        ['common', 'mcdata', 'protected'],
+    ),
     lab('location', 'single', ['--priority', '--location'], ['location_scenario'], ['mcptt', 'location']),
     # With TS 33.180 clauses 7.5.2 and 9.4.7: replayed and tampered SRTP media and SRTCP floor control are rejected.
     lab(
