@@ -295,12 +295,31 @@ static void Clause_9_3_2_3_3_ConnectContents() {
   expect(connect.warning_text == "107 text" && connect.invited_user == "sip:bob@x", "warning and invited user");
 }
 
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.3.3.10 with RFC 4567 section 3.1: the PCK I_MESSAGE field is the octets of the I_MESSAGE whose
+// base64 text an "a=key-mgmt:mikey" carries.
+static void Clause_8_3_3_10_KeyMgmtText() {
+  const std::vector<std::uint8_t> octets = {0x01, 0x1a, 0x05, 0x00, 0xff, 0x7e, 0x10};
+  const auto text = mcx::key_mgmt_of(octets);
+  expect(text == "ARoFAP9+EA==", "base64 text");
+  expect(mcx::pck_i_message_of(text) == octets, "octets back");
+  expect(mcx::pck_i_message_of(mcx::key_mgmt_of(std::vector<std::uint8_t>{1, 2, 3})).size() == 3, "no padding");
+  bool refused = false;
+  try {
+    (void)mcx::pck_i_message_of("ARo");
+  } catch (const std::exception &) {
+    refused = true;
+  }
+  expect(refused, "text that is not base64 refused");
+}
+
 int main() {
   const std::vector<std::pair<const char *, void (*)()>> tests = {
       {"Clause_8_3_4_ConnectOctets", Clause_8_3_4_ConnectOctets},
       {"Clause_8_3_6_AcknowledgeOctets", Clause_8_3_6_AcknowledgeOctets},
       {"Clause_8_3_5_DisconnectRoundTrip", Clause_8_3_5_DisconnectRoundTrip},
       {"Clause_8_3_3_10_PckIMessage", Clause_8_3_3_10_PckIMessage},
+      {"Clause_8_3_3_10_KeyMgmtText", Clause_8_3_3_10_KeyMgmtText},
       {"Clause_8_3_3_9_UnknownAndMalformed", Clause_8_3_3_9_UnknownAndMalformed},
       {"Clause_9_2_2_3_2_ClientReceivesConnect", Clause_9_2_2_3_2_ClientReceivesConnect},
       {"Clause_9_2_2_4_5_ClientReceivesDisconnect", Clause_9_2_2_4_5_ClientReceivesDisconnect},

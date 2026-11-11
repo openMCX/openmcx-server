@@ -31,6 +31,7 @@
 #include "mcx/media.hpp"
 #include "mcx/multicast.hpp"
 #include "mcx/pre_established.hpp"
+#include "mcx/refer.hpp"
 #include "mcx/private_call.hpp"
 #include "mcx/protected_call.hpp"
 #include "mcx/runtime.hpp"
@@ -221,6 +222,13 @@ protected:
   // the floor participant (TS 24.380 clause 6.3.5, TS 24.581 clause 6.3).
   struct Leg {
     std::string dialog, user;
+    // TS 24.379 clause 10.1.1.3.1.2: the dialog of the pre-established session this leg's call runs over (its
+    // media and media plane control are the session's; Connect and Disconnect take the place of the leg's SIP
+    // answer and BYE); empty for an on-demand leg.
+    std::string pre_session;
+    // RFC 3891: the Replaces of the INVITE inviting this leg's user, naming the pre-established session it replaces
+    // (TS 24.379 clauses 6.3.2.2.5.3 step 1 a and 6.3.2.2.6.3 step 1 a i); set by pre_session_invite_member.
+    std::string replaces;
     std::shared_ptr<Session> session;
     std::uint8_t granted_priority = 0;
     MediaDescription local;
@@ -338,6 +346,10 @@ protected:
   void bye(std::string_view dialog, SipResponseHandler handler = {}, const std::vector<SipHeader> &headers = {},
            const std::vector<BodyPart> &parts = {}) {
     ended_here_.insert(std::string(dialog));
+    // TS 24.380 clause 9.3.2.4.5: the call of a leg over a pre-established session ends with Disconnect; the
+    // session stays.
+    if (const auto found = legs_.find(std::string(dialog)); found != legs_.end() && !found->second->pre_session.empty())
+      return pre_session_end_call(found->second);
     sip_.bye(dialog, std::move(handler), headers, parts);
   }
 
@@ -851,8 +863,16 @@ protected:
     std::unique_ptr<PreEstablishedServer> control;
     bool implicit_floor = false; // TS 24.379 clause 6.4: established with an implicit floor request
     bool confirmed = false;
+    std::string call_leg; // the dialog of the leg (legs_) of the call over the session; empty: not in use
+    // TS 24.379 clause 6.3.2.1.8.5: the Resource-Priority of the REFER of a priority call, for the re-INVITE in the
+    // session after the controlling function's 2xx.
+    std::string refer_priority;
+    // Operator test aid ("pre-session-refuse"): the next REFER with this indication ("emergency", "imminent") is an
+    // unauthorised request (TS 24.379 clause 10.1.2.3.2 step 8: the SS's local decision of TS 37.579-2 test 6.1.2.2).
+    std::string refuse_next;
   };
   std::map<std::string, std::shared_ptr<PreSession>> pre_sessions_;
+  bool pre_session_call_setup_ = false; // the INVITE of a call over a session is being handled (pre_session_call)
 
   std::string pre_established_uri() const;
   // TS 24.379 clause 8.1A: "none" (the default), "sip-core" or "rx" (mcptt.resource_sharing).
@@ -868,6 +888,30 @@ protected:
                           bool update);
   void pre_session_release(const std::shared_ptr<PreSession> &session);
   std::vector<std::shared_ptr<PreSession>> pre_sessions_of(const std::string &which) const;
+  // Calls over a pre-established session (TS 24.379 clauses 10.1.1.3.1.2 and 6.3.2.2.5.3, TS 24.380 clause 9.3.2).
+  std::shared_ptr<PreSession> pre_session_by_uri(const std::string &uri) const;
+  void pre_session_refer(const SipMessage &message, const User &user, SipResponse &response);
+  void pre_session_call(const std::string &dialog, const std::string &user_id, PreEstablishedReferRequest refer,
+                        std::vector<SipHeader> headers);
+  void pre_session_leave(const std::shared_ptr<PreSession> &session);
+  void pre_session_bind(const std::shared_ptr<PreSession> &session, const std::shared_ptr<Leg> &leg);
+  void pre_session_unbind(const std::shared_ptr<PreSession> &session);
+  void pre_session_answer(const std::shared_ptr<Leg> &leg, const SipResponse &response);
+  void pre_session_end_call(const std::shared_ptr<Leg> &leg);
+  void pre_session_send(PreSession &session, const PreEstablishedMessage &message);
+  void pre_session_control(const std::shared_ptr<PreSession> &session, std::span<const std::uint8_t> bytes);
+  void pre_session_events(const std::shared_ptr<PreSession> &session);
+  bool pre_session_floor_protected(const PreSession &session);
+  // RFC 8445 section 7.3 with RFC 7983: a STUN datagram on the socket of a leg over a pre-established session goes to
+  // the session's ICE agent (its checks and keep-alives go on during the call); false for anything else.
+  bool pre_session_leg_stun(const Leg &leg, IceStream stream, const Datagram &datagram);
+  std::vector<BodyPart> pre_session_open_parts(const User &user, std::vector<BodyPart> parts);
+  // The answer to a leg's INVITE: SipEngine::answer, or Connect/Disconnect for a leg over a pre-established session.
+  void answer_leg(const std::shared_ptr<Leg> &leg, const SipResponse &response);
+  // TS 24.379 clauses 6.3.2.2.5.3 and 6.3.2.2.6.3: the controlling function's invitation of a member reaches it over
+  // its free pre-established session; false when it has none (or the call needs what is not implemented here).
+  bool pre_session_invite_member(const std::shared_ptr<Session> &session, const std::shared_ptr<Leg> &leg,
+                                 const User &user, const McpttInfo &info);
 
   // ---- Group calls (group_call.cpp): TS 24.379 clause 10.1 ----
 

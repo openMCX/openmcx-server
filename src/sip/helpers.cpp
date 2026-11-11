@@ -9,9 +9,21 @@
 #include "sip_impl.hpp"
 
 #include <arpa/inet.h>
+
+#include <atomic>
+#include <ctime>
 #include <sstream>
 
 namespace mcx {
+
+//------------------------------------------------------------------------------
+// RFC 4566 section 5.2: the <sess-id> of the "o=" line is unique for each new session description (an NTP-like
+// number, then counted up); pjmedia keeps a dialog's origin in its later offers and answers (RFC 3264 section 8).
+// TS 37.579-2 table 6.2.23.3.3-6: the answer of a call replacing a pre-established session has another sess-id.
+static std::uint64_t next_sdp_session_id() {
+  static std::atomic<std::uint64_t> next{static_cast<std::uint64_t>(std::time(nullptr))};
+  return next++;
+}
 namespace sip_detail {
 
 //------------------------------------------------------------------------------
@@ -398,7 +410,7 @@ void add_answer_headers(pjsip_tx_data *data, const std::vector<SipHeader> &heade
 //------------------------------------------------------------------------------
 // RFC 4566: parses the local SDP built from the media description (session version 1).
 [[nodiscard]] pjmedia_sdp_session *parse_local_sdp(pj_pool_t *pool, const MediaDescription &media) {
-  return parse_sdp_text(pool, make_sdp(media, 1));
+  return parse_sdp_text(pool, make_sdp(media, next_sdp_session_id()));
 }
 
 //------------------------------------------------------------------------------
@@ -451,7 +463,7 @@ void add_answer_headers(pjsip_tx_data *data, const std::vector<SipHeader> &heade
 // RFC 5621: builds an INVITE body from the local SDP (session version 1) and the given parts (see make_body_with_sdp).
 [[nodiscard]] pjsip_msg_body *make_invite_body(pj_pool_t *pool, const MediaDescription &media,
                                                const std::vector<BodyPart> &parts) {
-  return make_body_with_sdp(pool, make_sdp(media, 1), parts);
+  return make_body_with_sdp(pool, make_sdp(media, next_sdp_session_id()), parts);
 }
 
 } // namespace sip_detail

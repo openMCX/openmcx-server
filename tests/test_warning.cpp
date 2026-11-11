@@ -51,6 +51,7 @@ int main() {
       "139 integrity protection check failed",
       "140 unable to decrypt XML content",
       "141 user unknown to the participating function",
+      "142 unable to determine the controlling function",
       "143 not authorised to force auto answer",
       "144 user not authorised to call this particular user",
       "145 unable to determine called party",

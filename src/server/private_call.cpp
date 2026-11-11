@@ -716,6 +716,12 @@ void McServer::invite_private_target(const std::shared_ptr<Session> &session, co
   for (const auto &header : priority_headers(cfg_.at(svc_.name), session->priority)) headers.push_back(header);
   headers.push_back({"Contact", focus_contact(*session)});
   if (!session->replaces_header.empty()) headers.push_back({"Replaces", session->replaces_header});
+  // TS 24.379 clause 11.1.1.3.2 (6.3.2.2.5.3, 6.3.2.2.6.3): over the callee's pre-established session.
+  if (pre_session_invite_member(session, leg, *callee, info)) {
+    event("private_call_invite", {{"user_id", target}, {"session_uri", session->uri}, {"pre_established", true}});
+    return;
+  }
+  if (!leg->replaces.empty()) headers.push_back({"Replaces", leg->replaces});
   leg->local.key_mgmt = session->private_key_mgmt;
   leg->dialog = sip_.invite(
       callee->sip, leg->local, priority_parts(info, &session->priority),
@@ -729,7 +735,7 @@ void McServer::invite_private_target(const std::shared_ptr<Session> &session, co
           schedule([this, session] {
             if (!current_session(session)) return;
             for (const auto &leg : session_legs(*session))
-              if (leg->awaiting_answer) {
+              if (leg->awaiting_answer && leg->pre_session.empty()) { // over a session: no SIP dialog to answer
                 SipResponse progress;
                 progress.status_code = session->first_to_answer ? 183 : 180;
                 progress.reason = session->first_to_answer ? "Session Progress" : "Ringing";

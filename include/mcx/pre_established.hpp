@@ -154,6 +154,10 @@ class PreEstablishedClient {
 public:
   explicit PreEstablishedClient(std::uint32_t local_ssrc) : local_ssrc_(local_ssrc) {}
 
+  // TS 24.380 clause 4.3 (TS 24.379 clause 6.3.2.1.2.2 NOTE): the Acknowledge carries the SSRC the participating
+  // function gave in its SDP answer ("mc_floor_ssrc"), known once the session's media are negotiated.
+  void set_ssrc(std::uint32_t ssrc) noexcept { local_ssrc_ = ssrc; }
+
   // TS 24.380 clause 9.2.2.2.2: the pre-established session is created (TS 24.379 clause 8.2.1).
   void started();
   // TS 24.380 clause 9.2.2.3.3: the pre-established session is released (TS 24.379 clause 8.4).
@@ -275,6 +279,13 @@ private:
 // MIKEY-SAKKE I_MESSAGE for a private call, and the Media Streams field when the call does not use every stream of
 // the session (`floor_control` false: control channel 0). `session_type` is the <session-type> text ("prearranged",
 // "chat", "adhoc", "private").
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.3.3.10 with RFC 4567 section 3.1: the PCK I_MESSAGE field holds the MIKEY-SAKKE I_MESSAGE as
+// received in the SIP INVITE, whose "a=key-mgmt:mikey" carries it base64 encoded: the octets of that text, and back.
+// pck_i_message_of throws on text that is not base64.
+std::vector<std::uint8_t> pck_i_message_of(std::string_view key_mgmt);
+std::string key_mgmt_of(std::span<const std::uint8_t> pck_i_message);
+
 PreEstablishedMessage make_terminating_connect(std::string_view contact_uri, std::string_view session_type,
                                                std::string_view calling_group, std::string_view calling_user,
                                                bool privacy, std::span<const std::uint8_t> pck_i_message = {},

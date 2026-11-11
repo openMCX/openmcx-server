@@ -486,8 +486,27 @@ std::optional<std::uint32_t> key_id(std::string_view xml) {
 //------------------------------------------------------------------------------
 // TS 24.379 clause 6.6.2.4.1: whether a document holds any <EncryptedData> element or encrypted URI.
 bool is_protected(std::string_view xml) {
-  return xml.find("EncryptedData") != std::string_view::npos ||
-         xml.find(std::string("@") + encryption_domain) != std::string_view::npos;
+  if (xml.find("EncryptedData") == std::string_view::npos &&
+      xml.find(std::string("@") + encryption_domain) == std::string_view::npos)
+    return false;
+  // The text alone is not enough: an attribute can carry another document escaped in it (TS 24.379 clause 6.6.2.1:
+  // the encrypted MCPTT-Info in the hname "body" of a REFER's resource list entry), which is not this document's
+  // protection. Protected means an xenc <EncryptedData> element or an encrypted URI attribute (TS 33.180 clauses
+  // 9.3.4.2 and 9.3.4.3).
+  try {
+    Doc doc(xml);
+    bool found = false;
+    each_element(xmlDocGetRootElement(doc.doc), [&](xmlNodePtr element) {
+      if (found) return true;
+      if (name_of(element) == "EncryptedData" && in(element, xenc)) return found = true;
+      for (auto *attribute = element->properties; attribute && !found; attribute = attribute->next)
+        found = is_encrypted_uri(content_of(reinterpret_cast<xmlNodePtr>(attribute)));
+      return found;
+    });
+    return found;
+  } catch (const std::exception &) {
+    return true; // not well-formed: left to the decryption, which refuses it (TS 24.379 clause 6.6.2.4.2)
+  }
 }
 
 // ---- Integrity (TS 33.180 clause 9.3.5; TS 24.379 clause 6.6.3; TS 24.282 clause 6.5.3) ----

@@ -47,6 +47,7 @@ enum class Warning {
   no_signing_key,                        // code 139 in TS 24.379 and TS 24.281 table 4.4.2-2 (the table text)
   decrypt_failed,                        // code 140 in TS 24.379 and TS 24.281 table 4.4.2-2
   unknown_user,                          // code 141 in TS 24.379 and TS 24.281 table 4.4.2-2
+  controller_unknown,                    // code 142 in TS 24.379 and TS 24.281 table 4.4.2-2
   force_auto_answer_not_authorised,      // code 143 in TS 24.379 and TS 24.281 table 4.4.2-2
   callee_not_authorised,                 // code 144 in TS 24.379 and TS 24.281 table 4.4.2-2
   called_party_unknown,                  // code 145 in TS 24.379 and TS 24.281 table 4.4.2-2
@@ -139,6 +140,7 @@ constexpr WarningEntry mcptt_warning(Warning warning) {
   case Warning::no_signing_key: return {139, "integrity protection check failed"};
   case Warning::decrypt_failed: return {140, "unable to decrypt XML content"};
   case Warning::unknown_user: return {141, "user unknown to the participating function"};
+  case Warning::controller_unknown: return {142, "unable to determine the controlling function"};
   case Warning::force_auto_answer_not_authorised: return {143, "not authorised to force auto answer"};
   case Warning::callee_not_authorised: return {144, "user not authorised to call this particular user"};
   case Warning::called_party_unknown: return {145, "unable to determine called party"};
@@ -230,6 +232,7 @@ constexpr WarningEntry mcvideo_warning(Warning warning) {
   case Warning::no_signing_key: return {139, "integrity protection check failed"};
   case Warning::decrypt_failed: return {140, "unable to decrypt XML content"};
   case Warning::unknown_user: return {141, "user unknown to the participating function"};
+  case Warning::controller_unknown: return {142, "unable to determine the controlling function"};
   case Warning::force_auto_answer_not_authorised: return {143, "not authorised to force auto answer"};
   case Warning::callee_not_authorised: return {144, "user not authorised to call this particular user"};
   case Warning::called_party_unknown: return {145, "unable to determine called party"};
@@ -293,6 +296,7 @@ constexpr WarningEntry mcvideo_warning(Warning warning) {
 constexpr WarningEntry mcdata_warning(Warning warning) {
   switch (warning) {
   case Warning::unknown_user: return {141, "user unknown to the participating function"};
+  case Warning::controller_unknown: return {142, "unable to determine the controlling function"};
   case Warning::location_target_invalid: return {244, "invalid location request target client list"};
   case Warning::location_request_not_authorised: return {245, "user not authorized to request location information"};
   case Warning::location_configuration_not_authorised:

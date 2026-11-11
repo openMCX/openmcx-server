@@ -138,12 +138,43 @@ static void Rfc8839_5_4_Refusals() {
   expect(mcx::parse_sdp(mcx::make_sdp(no_floor, 1)).ice->audio.size() == 2, "private call without floor control");
 }
 
+//------------------------------------------------------------------------------
+// RFC 3264 section 8.2 (MediaDescription::control_removed): a call over the session without floor control removes the
+// session's media-floor control stream with port 0 (no attributes, no candidates); the other streams stay. The
+// session's negotiated media keep the control channel it had (session_media_keeping_control). Only that stream may
+// be removed.
+static void Rfc3264_8_2_RemovedControlStream() {
+  const auto session = offer();
+  auto call = session;
+  call.control = mcx::MediaControl::none;
+  call.control_removed = true;
+  call.floor_ssrc = 0;
+  call.ice->control.clear();
+  const auto sdp = mcx::make_sdp(call, 1);
+  expect(sdp.find("m=application 0 udp MCPTT\r\n") != std::string::npos, "port-0 m=application line");
+  expect(sdp.find("a=fmtp:MCPTT") == std::string::npos, "no attributes of the removed stream");
+  const auto parsed = mcx::parse_sdp(sdp);
+  expect(parsed.control == mcx::MediaControl::none && parsed.control_removed, "parsed: removed, no control");
+  expect(parsed.ice && parsed.ice->control.empty() && parsed.ice->audio.size() == 2, "parsed: audio candidates");
+  const auto kept = mcx::session_media_keeping_control(parsed, session);
+  expect(kept.control == mcx::MediaControl::floor && kept.floor_port == 40002 && kept.floor_ssrc == 77 &&
+             !kept.control_removed && kept.ice->control.size() == 1,
+         "the session keeps its control channel");
+  expect(mcx::session_media_keeping_control(mcx::parse_sdp(mcx::make_sdp(session, 1)), std::nullopt).floor_port ==
+             40002,
+         "an answer with the stream: unchanged");
+  auto audio_removed = mcx::make_sdp(session, 1);
+  audio_removed.replace(audio_removed.find("m=audio 40000"), 13, "m=audio 0");
+  rejects([&] { (void)mcx::parse_sdp(audio_removed); }, "removed speech stream");
+}
+
 int main() {
   const std::vector<std::pair<const char *, void (*)()>> tests = {
       {"Rfc8839_5_1_Candidate", Rfc8839_5_1_Candidate},
       {"Clause_8_2_1_PreEstablishedOffer", Clause_8_2_1_PreEstablishedOffer},
       {"Rfc8839_5_4_CredentialsAndLite", Rfc8839_5_4_CredentialsAndLite},
       {"Rfc8839_5_4_Refusals", Rfc8839_5_4_Refusals},
+      {"Rfc3264_8_2_RemovedControlStream", Rfc3264_8_2_RemovedControlStream},
   };
   int failures = 0;
   for (const auto &[name, test] : tests) {

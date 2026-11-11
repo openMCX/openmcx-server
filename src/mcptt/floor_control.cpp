@@ -18,12 +18,25 @@ namespace mcx {
 // client: Floor Ack (clause 8.2.13), Floor Request (clauses 6.3.5.3.4 and 6.3.5.4.4), Floor Release (clauses
 // 6.3.5.4.5 and 6.3.5.5.3) and Floor Queue Position Request (clause 6.3.5.4.7).
 void McpttServer::floor_packet(Leg &leg, const Datagram &datagram) {
-  if (!eligible(leg) || !UdpSocket::matches(datagram.source, leg.remote->floor_address, leg.remote->floor_port)) return;
+  // A leg over a pre-established session takes the Acknowledge of its Connect before it is active (TS 24.380 clause
+  // 9.3.2.4.7); any other leg only once active.
+  const bool over_session = !leg.pre_session.empty();
+  if ((!over_session && !eligible(leg)) || !leg.remote ||
+      !UdpSocket::matches(datagram.source, leg.remote->floor_address, leg.remote->floor_port))
+    return;
   if (wire_ssrc(datagram.bytes, true) != leg.local.floor_ssrc) return;
   auto *user = by_id(leg.user);
   auto *keys = user ? floor_keys(*user) : nullptr;
   if (floor_protected(leg) && !keys) throw std::runtime_error("floor key unavailable");
   auto bytes = floor_protected(leg) ? keys->unprotect_floor(datagram.bytes) : datagram.bytes;
+  // TS 24.380 clause 4.1.2.1: the pre-established session call control messages share the media plane control
+  // channel (an Acknowledge of a Connect or Disconnect, clauses 9.3.2.4.7 and 9.3.2.5.2).
+  if (over_session && is_pre_established_message(bytes)) {
+    if (const auto session = pre_sessions_.find(leg.pre_session); session != pre_sessions_.end())
+      pre_session_control(session->second, bytes);
+    return;
+  }
+  if (!eligible(leg)) return;
   auto packet = decode_floor(bytes);
   if (packet.ssrc != leg.local.floor_ssrc) return;
   validate_on_network_floor(packet);

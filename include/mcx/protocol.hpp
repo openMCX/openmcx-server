@@ -427,7 +427,19 @@ struct MediaDescription {
   // TS 24.379 clauses 4.9, 8.2.1 step 9 and 8.2.2 step 9 e: the ICE attributes of a pre-established session's SDP
   // (RFC 8839); absent elsewhere. MCPTT only.
   std::optional<IceDescription> ice;
+  // RFC 3264 section 8.2: with control none, an "m=application 0 udp MCPTT" line keeps the place of the media-floor
+  // control stream a pre-established session negotiated, for a call over it without floor control (TS 24.379 clause
+  // 11.1.3.1.2, TS 24.380 clause 9.3.2.3.3 NOTE 1): the stream removed for the call, not the session.
+  bool control_removed = false;
 };
+
+//------------------------------------------------------------------------------
+// A pre-established session's negotiated media after an offer or answer that removed its media-floor control stream
+// for a call without floor control (MediaDescription::control_removed): the session keeps the control channel it had
+// (`previous`), which carries the pre-established session call control (TS 24.380 clause 8.3) and the next call's
+// floor control.
+MediaDescription session_media_keeping_control(const MediaDescription &negotiated,
+                                               const std::optional<MediaDescription> &previous);
 
 //------------------------------------------------------------------------------
 // TS 24.282 clause 9.2.3.2 and clause 10.2.5.2, TS 24.582: the MCData media plane offers and answers an
