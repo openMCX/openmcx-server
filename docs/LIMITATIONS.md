@@ -234,12 +234,14 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   value the Linux client inserts in every request but CANCEL and ACK and every response but those to CANCEL, the
   initial REGISTER included as the ETSI test suite for TS 37.579 expects (its reading; TS 24.229 asks for it there
   only with a security association or TLS session).
-- **Media feature tags of RFC 3840** (spec gap). The Linux client registers, and offers and answers INVITEs, with
-  `audio` and, with MCVideo, `video` (TS 24.229 clauses 5.1.1.2.1 c), 5.1.3.1 and 5.1.4.1: the tags "for all
-  supported streaming media types"). Whether the MCPTT floor control and MCVideo transmission control streams
-  (`m=application`) count as streaming media for `application` or `control` (RFC 3840 section 10.4 names floor
-  control under `control`), and what MCData's MSRP (`m=message`, no RFC 3840 tag) needs, the texts do not settle: none
-  is sent. The Android app sends none yet (own deviation).
+- **Media feature tags of RFC 3840** (spec gaps, reported). TS 24.229 clauses 5.1.1.2.1 c), 5.1.3.1 and 5.1.4.1:
+  "The UE shall include the media feature tags defined in RFC 3840 [62] and RFC 5688 [120] for all supported streaming
+  media types" in the REGISTER Contact, the initial INVITE and the responses to it. RFC 3840 section 10 ties each tag
+  to an SDP media type, so the Linux and Android clients send `audio`, `application` (the floor control,
+  transmission control and IP connectivity streams are `m=application`) and, with MCVideo, `video`. Left open by the
+  texts: MCData's MSRP stream (`m=message`) has its tag `+sip.message` in RFC 4569, which TS 24.229 does not cite, so
+  it is not sent; and whether RFC 5688's `sip.app-subtype` applies to the `m=application ... udp MCPTT` and `MCVideo`
+  formats, for which TS 24.380 clause 12.1.1 and TS 24.581 register no media type: it is not sent.
 
 ### Media and floor control
 

@@ -113,7 +113,11 @@ def scenario_verifiers(scenario, flags):
             return 'mcptt-server', [['verify_protected.py']]
         return 'mcptt-server', [['verify_prearranged.py']]
     table = {
-        'private_call_scenario': ('mcptt-server', [['verify_private_call.py', '--service', MCPTT]]),
+        # TS 24.229 clauses 5.1.3.1 and 5.1.4.1, RFC 3840: the clients' media feature tags (audio, application).
+        'private_call_scenario': (
+            'mcptt-server',
+            [['verify_private_call.py', '--service', MCPTT], ['verify_media_feature_tags.py', '--service', MCPTT]],
+        ),
         'broadcast_call_scenario': ('mcptt-server', [['verify_broadcast_call.py', '--service', MCPTT]]),
         'chat_call_scenario': (
             'mcptt-server',
@@ -201,7 +205,11 @@ def scenario_verifiers(scenario, flags):
         command = ['verify_mcvideo.py', '--service', MCVIDEO]
         for kind in expected[scenario]:
             command += ['--expect', kind]
-        return 'mcvideo-server', [command]
+        commands = [command]
+        # TS 24.229 clauses 5.1.3.1 and 5.1.4.1, RFC 3840: an MCVideo client's tags (audio, video, application).
+        if scenario == 'mcvideo_private_call_scenario':
+            commands.append(['verify_media_feature_tags.py', '--service', MCVIDEO, '--video'])
+        return 'mcvideo-server', commands
     return table.get(scenario)
 
 
