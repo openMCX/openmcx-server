@@ -231,7 +231,9 @@ def main():
     from_server = [
         message
         for message in messages
-        if (message['request'] and uri_of(header(message, 'from')) == service)
+        # A NOTIFY in a subscription to a session identity is From that URI with its parameters (RFC 3261 section
+        # 20.10: the subscriber's To is a name-addr, ";mcptt-session=..." a URI parameter), as a response's To is.
+        if (message['request'] and uri_of(header(message, 'from')).split(';')[0] == service)
         or (not message['request'] and uri_of(header(message, 'to')).split(';')[0] == service)
     ]
     initial = [
