@@ -8,7 +8,7 @@
 # Writes captures/run-ue-conformance.pcap.gz and, when the system runs with MCX_LOG=debug, the keys of the MC
 # client's IPsec security associations as captures/run-ue-conformance.esp_sa (README.md, step 4), and the MC client's
 # status before the log-off as captures/run-ue-conformance.status.json.
-# captures/linux-ue-conformance.pcap is the reference run of README.md. Set COMPOSE to another command than
+# captures/linux-ue.pcap is the reference run of README.md. Set COMPOSE to another command than
 # "docker compose" if needed, and OVERRIDE to a second compose file (other images).
 set -euo pipefail
 cd "$(dirname "$0")"

@@ -4,8 +4,8 @@ This page follows the [walk-through of test 5.1](README.md#3-run-the-test-steps)
 TS 37.579-2 V18.1.0 table 5.1.3.2-1 it gives:
 - the procedure of TS 37.579-1 V18.1.0 that the step refers to;
 - the messages the MC client sends and receives, with their frame numbers in the
-  [reference capture](captures/linux-ue-conformance.pcap) (ESP decrypted, see
-  [Look at the capture](README.md#4-look-at-the-captures));
+  [reference capture](captures/linux-ue-decrypted.pcapng) (the SIP inside ESP in the clear; the same frame numbers as
+  [the capture as on the wire](captures/linux-ue.pcap), see [Look at the captures](README.md#4-look-at-the-captures));
 - the points where OpenMCX or this tutorial **differs from the test's procedure**, marked **⚠ G*n*** and listed under
   [Gaps](#gaps) at the end.
 
@@ -295,10 +295,10 @@ Each gap is one of:
 
 | Gap | Kind | Step | What | Where described |
 |---|---|---|---|---|
-| G1 | tutorial | 1 | No 5GS or EPS: the client is on an IP network (the IPCAN model of a test system over a VPN), without a radio, a system simulator or a TTCN-3 test suite. | README, step 3 |
+| G1 | tutorial | 1 | No 5GS or EPS: the client is on an IP network (the IPCAN model of a test system over a VPN), without a radio, a system simulator or a TTCN-3 test suite. On 5GS the UE always includes P-Access-Network-Info with the cell identity (TS 24.229 clause U.3.1.1); on plain IP there is none to send, so it is left out, and the option `sip.access_network_info` sets a value for a test system. | README, step 3 |
 | G2 | tutorial | SIP registration | The SIP core offers AKAv2-SHA-256 before AKAv1-MD5 (TS 33.203 clause 6.1.1) and the client answers the first; table 5.3.2.4.1-1 step 2 sends AKAv1-MD5 only, which the client also answers. | README, step 3 |
-| G3 | spec gap | 13-16 | The KMS requests go to the KMS directly. Table 5.3.2.3.1-1 steps 11-14 send them through the TLS tunnel to the HTTP proxy; TS 24.482 annex A.2.1.2 sends every request but the IdMS's through the proxy, TS 33.180 clause 5.3.2 lets the KMS be used without it, and no configuration item tells the UE which applies. The Linux and Android clients' `security.kms_via_proxy` (off by default) sends them through the proxy. | Known limitations, "Home HTTP proxy" |
+| G3 | spec gap | 13-16 | The KMS requests go to the KMS directly. Table 5.3.2.3.1-1 steps 11-14 send them through the TLS tunnel to the HTTP proxy; TS 24.482 annex A.2.1.2 sends every request except those to the IdMS through the proxy; TS 33.180 clause 5.3.2 lets the client reach the KMS without it; and no configuration item tells the UE which applies. The option `security.kms_via_proxy` (off by default) of the Linux and Android clients sends them through the proxy. | Known limitations, "Home HTTP proxy" |
 | G4 | spec gap | 18, 19 | The configuration SUBSCRIBE goes to the MCPTT server's PSI: TS 24.484 clause 6.3.13.2.2 b) 2) names "the configured public service identity for performing subscription proxy function of the CMS", but no configuration item for it exists (Linux `cms.subscription_psi` and Android `mcptt.cms_subscription_psi` set one). The group SUBSCRIBEs go to the configured GMS-URI, in this tutorial the same PSI. | Known limitations, "CMS subscription proxy PSI" |
-| G5 | spec gap | 13-16, and every MIKEY-SAKKE use | TS 33.180 annex F.2.1.1 does not say whether ECCSI and SAKKE take the UID's 32 octets or its base64 text. OpenMCX's KMS uses the text; the Linux client finds the form that validates the key set (`key_management.uid_form`, `text` here). | Known limitations, "MIKEY-SAKKE UID form" |
-| G6 | spec gap | 13-16 | The TrK and InK exchange follows the texts where they are clear; the details they leave open (Signature-ID and TrK-ID, the key-wrap padding, the schema Id, AES-128-GCM, a Time without a zone) are listed there. | Known limitations, "KMS request security (TrK/InK)" |
-| G7 | tutorial | after 5.1 | `mc-client` is the generator's user without the right to report its location (the regression's refusal case), so its reports are refused with 403. | README, step 3 |
+| G5 | spec gap | 13-16, and every MIKEY-SAKKE use | TS 33.180 annex F.2.1.1 does not say whether ECCSI and SAKKE take the UID's 32 octets or its base64 text. The OpenMCX KMS uses the base64 text. The OpenMCX MC clients check the received key set with both forms and use the form that validates (the Linux client reports it in its status file as `key_management.uid_form`: `text` in this tutorial). | Known limitations, "MIKEY-SAKKE UID form" |
+| G6 | spec gap | 13-16 | The TrK and InK exchange follows TS 33.180 where its text is clear. Known limitations lists the details it leaves open: Signature-ID and TrK-ID, the key-wrap padding, the schema Id, AES-128-GCM and a Time without a zone. | Known limitations, "KMS request security (TrK/InK)" |
+| G7 | tutorial | after 5.1 | `mc-client` is the generator's user that has no right to report its location (the regression's refusal case), so its location reports are refused with 403. | README, step 3 |
