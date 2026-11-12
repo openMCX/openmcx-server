@@ -67,6 +67,23 @@ The clients and servers report `xml_protection` in their status: whether each pr
 | XP-05 | Nothing is refused |
 | XP-06 | With integrity protection, every client and server signs its XML bodies and verifies those it receives |
 
+### Unknown XPK-ID (`xml_unknown_key_scenario`)
+
+In the `xml-protection` lab client-b's container sends client-a, over TLS with client-b's lab certificate, two MESSAGE
+requests protected under an XPK-ID none of client-a's CSKs has. The XPK of TS 24.379 clause 6.6.3.4.2 step 4 cannot be
+obtained, so the signature validation fails (step 5); the decryption of clause 6.6.2.4.2 step 2 fails (step 3). The
+refusal comes before any key is used, so the signature and cipher values are placeholders.
+
+| ID | What is checked |
+|---|---|
+| XK-00 | client-a is authorised with XML protection enabled |
+| XK-01 | A request signed under an unknown XPK-ID is answered 403 with warning 139 |
+| XK-02 | A request with an element encrypted under an unknown XPK-ID is answered 403 with warning 140 |
+| XK-03 | client-a counts both refusals and stays authorised |
+
+A SIP response and encrypted URI attributes under an unknown XPK-ID are not covered: the specs give no outcome there
+(LIMITATIONS).
+
 ### Required protection without keys (`xml_key_scenario`)
 
 The `xml-key-confidentiality`, `xml-key-integrity` and `xml-key-mixed` labs run XML protection without media and
@@ -96,4 +113,4 @@ listening, emergency) and the prearranged scenario run with the protection on.
 | MCData integrity | The MCData XML signatures of TS 24.282 §6.5.3 are not implemented. |
 | Service configuration | The servers read the document from the CMS's internal view, not by a subscription (LIMITATIONS). |
 | Pre-established sessions | The REFER case of §6.6.2.1 (protected MCPTT-Info and resource-lists in the REFER entry): tested by the conformance tests of TS 37.579-2 6.1.1.5 to 6.2.26, not here. |
-| Negative lab test | No scenario sends a tampered or undecryptable body; the xmlsec unit tests cover tampered bodies and signatures, keys of another XPK and decryption failures. |
+| Negative lab test | Only the unknown XPK-ID case is sent in a lab (`xml_unknown_key_scenario`); the xmlsec unit tests cover tampered bodies and signatures, keys of another XPK and decryption failures. |

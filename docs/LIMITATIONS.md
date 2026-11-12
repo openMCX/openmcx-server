@@ -85,6 +85,16 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   defect, reported). The Linux client accepts it for all three services, but not with identity hiding (an IDRi of
   type UID, clause 7.2.5 step 1 b)), and keeps DP_AES_128_GCM for MCData signalling (step 1 f), same defect). The
   Android client does not accept it.
+- **XML content under an unknown XPK-ID** (spec defects, reported). A received SIP request whose signatures or
+  encrypted XML elements name an XPK-ID (ds:KeyName) the receiver does not hold is refused with 403 and warning 139 or
+  140 by the MC servers and the Linux and Android clients: the XPK of TS 24.379 clause 6.6.3.4.2 step 4 cannot be
+  obtained, so the signature validation fails (step 5), and the decryption of clause 6.6.2.4.2 fails (step 3), although
+  neither clause names the case (TS 24.281 and TS 24.282 the same). Where the texts give no outcome, today's behaviour
+  is kept: in a SIP response (the only failure action, a 403, cannot answer a response; this holds for every
+  verification or decryption failure in a response) the signatures under an unknown XPK-ID are not verified and the
+  content stays encrypted; encrypted URI attributes (clause 6.6.2.4.3 has no failure step, no clause of 6.6.1.4 calls
+  it, and its step 1 writes the parameter as ";=key-id") are left as received; a body without a ds:KeyName, whose key
+  TS 33.180 clauses 9.3.4.2 and 9.3.5 leave "known ... through other means", is handled as before.
 - **Profile.** The default lab keeps media and floor protection off; the protected fixtures use an explicitly configured
   E.6 numeric wire profile that has not been qualified against an independent peer. TS 33.180 assigns no code to
   DP_AES_128_GCM or DP_AES_256_GCM (table 8.5.4.1-1, spec defect, reported): DP_AES_256_GCM, which OpenMCX accepts for

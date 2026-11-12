@@ -484,7 +484,7 @@ LABS = [
         'xml-protection',
         'single',
         ['--private-call'] + KEYS + ['--xml-protection'],
-        ['xml_protection_scenario', 'protected_private_scenario', 'prearranged_scenario'],
+        ['xml_protection_scenario', 'protected_private_scenario', 'prearranged_scenario', 'xml_unknown_key_scenario'],
         ['mcptt', 'protected'],
     ),
     lab(
