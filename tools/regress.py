@@ -207,6 +207,15 @@ LABS = [
         ],
         ['mcptt', 'mcdata', 'failure'],
     ),
+    # TS 24.379 clause 8, TS 24.380 clause 9: a pre-established session (with ICE) set up, modified and released by
+    # either side; group and private calls over it by REFER, and a terminating call received over it.
+    lab(
+        'pre-established',
+        'single',
+        ['--pre-established', '--private-call'],
+        ['pre_established_scenario'],
+        ['mcptt', 'pre-established'],
+    ),
     # TS 24.379 clauses 6.3.5.2, 6.3.5.3, 6.3.8.2 and 10.1.1.4.2: group calls refused by the group document and its
     # call policy (warnings 115, 119, 121 and 112).
     lab('group-admission', 'single', ['--admission-groups'], ['group_admission_scenario'], ['mcptt', 'failure']),
