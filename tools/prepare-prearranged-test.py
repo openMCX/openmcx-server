@@ -256,10 +256,12 @@ LOCATION_GROUP_AREA = square(48.02, 2.02, 0.003)
 
 
 # ------------------------------------------------------------------------------
-def add_location(fixture):
+def add_location(fixture, reporters=()):
     """Location reporting, requests and areas (TS 24.379 clause 13, TS 24.282 clause 17,
     TS 24.281 clause 18): each client's location rights in its profile, the server's reporting
-    configuration, alert and group areas, and each client's simulated position."""
+    configuration, alert and group areas, and each client's simulated position. client-d has no right
+    to report (the regression's refusal case; the right is an OpenMCX setting, see Known limitations,
+    "Location report authorisation") unless it is in reporters."""
     site_file = fixture / 'generated/site.json'
     site = json.loads(site_file.read_text())
     ids = {
@@ -270,7 +272,7 @@ def add_location(fixture):
         ids['client-a']: dict(request=True, configure=True),
         ids['client-b']: dict(share_with=['*']),
         ids['client-c']: dict(share_with=[ids['client-b']]),
-        ids['client-d']: dict(report=False),
+        ids['client-d']: dict(report='client-d' in reporters),
     }
     for user in site['users']:
         if user['mcptt_id'] in rights:
@@ -2335,6 +2337,13 @@ def main():
         '--location', action='store_true', help='Location reporting, requests and areas (TS 24.379 clause 13, 6.3.2.4)'
     )
     parser.add_argument(
+        '--location-reporter',
+        action='append',
+        default=[],
+        choices=['client-d'],
+        help='With --location: give client-d the right to report its location (by default it has none, the refusal case)',
+    )
+    parser.add_argument(
         '--split',
         action='store_true',
         help='Separate participating and controlling servers (H2): mcptt-server controls every call; '
@@ -2435,6 +2444,8 @@ def main():
         parser.error('--kms-unreachable takes client-c or client-d and requires --protected')
     if args.transport_keys and not args.protected:
         parser.error('--transport-keys requires --protected')
+    if args.location_reporter and not args.location:
+        parser.error('--location-reporter requires --location')
     if args.transport_key_role and not args.transport_keys:
         parser.error('--transport-key-role requires --transport-keys')
     if args.transport_keys_mcptt_only and not args.transport_keys:
@@ -2769,7 +2780,7 @@ def main():
     if args.location:
         if args.split:
             parser.error('--location runs on a combined server')
-        add_location(fixture)
+        add_location(fixture, args.location_reporter)
     if args.pcf:
         if args.split:
             parser.error('--pcf runs on a combined server')

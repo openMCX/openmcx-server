@@ -52,7 +52,8 @@ The setup runs OpenMCX's lab generator with the flags at the top of `docker-comp
 flags give the MC client `mc-client` (user `mc-client@mcx.test`): an IMS AKA subscription and the P-CSCF as its first hop
 (`--aka-role`), the home HTTP proxy in forward mode (`--http-proxy-mode forward`), MIKEY-SAKKE keys and the group's GMK
 (`--protected`), a TrK and an InK (`--transport-keys`), documents fetched after their NOTIFY (`--documents-on-notify`),
-the group `operations` and the location configuration. `client-a` to `client-c` are other users of the system; they register with SIP
+the group `operations` and the location configuration, with the right to report its location
+(`--location-reporter client-d`). `client-a` to `client-c` are other users of the system; they register with SIP
 digest and take no part in the test. The generated certificates are valid for 30 days.
 
 ## 2. Start the system
