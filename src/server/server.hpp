@@ -627,6 +627,9 @@ protected:
   std::string check_service_mapping(const std::string &id, const SipMessage &message, const McpttInfo &info);
 
   SipResponse relay_outgoing(const SipMessage &message, User &user, const std::string &peer, const std::string &target);
+  // split_relay.cpp: the location in the call request to the controlling function (talking_location.hpp).
+  std::vector<BodyPart> talking_location_parts(std::vector<BodyPart> parts, const User &user, const McpttInfo &info,
+                                               bool implicit);
 
   SipResponse relay_incoming(const SipMessage &message, const std::string &peer, const User &user);
 
@@ -892,7 +895,7 @@ protected:
   std::shared_ptr<PreSession> pre_session_by_uri(const std::string &uri) const;
   void pre_session_refer(const SipMessage &message, const User &user, SipResponse &response);
   void pre_session_call(const std::string &dialog, const std::string &user_id, PreEstablishedReferRequest refer,
-                        std::vector<SipHeader> headers);
+                        std::vector<SipHeader> headers, std::vector<BodyPart> refer_location = {});
   void pre_session_leave(const std::shared_ptr<PreSession> &session);
   void pre_session_bind(const std::shared_ptr<PreSession> &session, const std::shared_ptr<Leg> &leg);
   void pre_session_unbind(const std::shared_ptr<PreSession> &session);

@@ -564,6 +564,17 @@ void LocationService::serve_peer_targets(const location::Content &content, const
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clause 10.1.1.3.1.1 step 9: the location of the served user available here: its last report's location,
+// as a <Report> without TriggerId.
+std::optional<std::string> LocationService::last_location_xml(const std::string &id) const {
+  const auto *last = registry_.last(id);
+  if (!last) return std::nullopt;
+  location::Report report;
+  report.location = last->location;
+  return location::to_xml(report, namespace_);
+}
+
+//------------------------------------------------------------------------------
 // TS 24.379 clause 13.2.5: a location request or configuration never reaches a client inside a request relayed to
 // it; a body that cannot be read is dropped as well.
 std::vector<BodyPart> LocationService::without_requests(std::vector<BodyPart> parts) {

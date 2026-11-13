@@ -270,9 +270,8 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   which is optional (clause 14.3.4). Not done yet: the implicit floor request of an upgrade to an emergency or imminent
   peril call by re-INVITE (TS 24.379 clause 6.4, TS 24.380 clauses 6.3.4.3.6 and 6.3.4.4.12), which is handled as a
   request without it; the 'G: Initialising' state of a temporary group session (TS 24.380 clause 6.3.4.8), so the
-  initiator of a call on a temporary group is granted as in any other call; the location body the Linux client is to
-  send with an implicit floor request when `<allow-location-info-when-talking>` is set (TS 24.379 clause 10.1.1.2.1.1
-  step 16a); the Android client offers no implicit floor request.
+  initiator of a call on a temporary group is granted as in any other call; the Android client offers no implicit
+  floor request.
 
 ### MCData
 
@@ -318,6 +317,21 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   profile set `report` to false, an OpenMCX setting with no 3GPP element; such a report is refused with 403 (warning
   100 "function not allowed" from the MCPTT and MCVideo servers, no Warning header field from the MCData server, whose
   table has no code for it), and the user is still sent the location reporting configuration.
+- **Location in call requests** (spec defect). With an implicit floor request the Linux client includes its location
+  when `<allow-location-info-when-talking>` is "true" in its MCPTT user profile (TS 24.379 clauses 10.1.1.2.1.1 step 16
+  a), 10.1.2.2.1.1 step 15 a), 10.1.2.2.2.1 step 3 c) iii), 11.1.1.2.1.1 step 13 a), 11.1.6.2.2.1 step 8 f) ii),
+  17.2.2.1.1 step 14a a)), and the participating MCPTT function passes a client's location to a separate controlling
+  function only if the element is "true", or adds the location it holds when an implicit floor request carries none
+  (clause 6.3.2.1.3 step 9 and the call types' steps; TS 24.484 clause 8.3.2.7: "false" = "not authorised to be sent
+  to the MCPTT server performing the controlling MCPTT function"). The text is in conflict for on-demand group and
+  chat calls and re-INVITEs: clauses 10.1.1.3.1.1 step 7, 10.1.2.3.1.1 step 6 b) and 6.3.2.1.9 step 3 copy the
+  location with no condition, and the server passes it on there as before; the text does not say whether the element
+  covers the emergency alert's location (clause 6.2.9.1) or the reports of clause 13.3.4.2 (they have TriggerIds),
+  which pass on every call type. Not implemented: the client's location in the REFER of a private call over a
+  pre-established session (clause 11.1.1.2.2.1 step 13, which, unlike every other client step, does not depend on
+  the element), and in the re-INVITE of an upgrade to an emergency or imminent peril call (see "Implicit floor
+  request"). With one server for both functions there is no INVITE between them. TS 24.281 (MCVideo) is not covered:
+  its relay passes every body on as before.
 - **Location.** Positions and radio measurements are simulated. The SEAL location management server (TS 24.545) has
   no CoAP, SIP-based subscription, location-based query or trigger other than the periodic one.
 

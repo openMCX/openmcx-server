@@ -131,6 +131,9 @@ type User struct {
 	// <allow-regroup>: create and remove a regroup using a preconfigured group
 	// (TS 24.379 clause 16.2.2.2 step 3, warnings 160 and 161).
 	Regroup bool `json:"regroup,omitempty"`
+	// <allow-location-info-when-talking> (TS 24.484 clause 8.3.2.7): the user's location goes with its implicit floor
+	// requests to the controlling function (TS 24.379 clauses 6.3.2.1.3 step 9, 10.1.1.2.1.1 step 16 a)).
+	LocationWhenTalking bool `json:"location_when_talking,omitempty"`
 	// <MaxAffiliationsN2>: simultaneous group affiliations; 0 means no limit.
 	MaxAffiliations int `json:"max_affiliations,omitempty"`
 	// MCData ID (TS 23.280 clause 8.1.2): a distinct identity; empty when the user has no

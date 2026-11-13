@@ -21,7 +21,7 @@ func TestApplyProfileRoundTrip(test *testing.T) {
 	no := false
 	user := User{MCPTTID: "sip:a@mcx.test", MCID: "sip:a.mc@mcx.test", SIPURI: "sip:a@mcx.test", ClientID: "urn:uuid:1",
 		Groups: []string{"sip:ops@mcx.test", "sip:fire@mcx.test"}, MaxAffiliations: 3,
-		FunctionalAliasTakeover: true, MCDataID: "sip:a.data@mcx.test",
+		FunctionalAliasTakeover: true, LocationWhenTalking: true, MCDataID: "sip:a.data@mcx.test",
 		PrivateCall: &PrivateCallPolicy{Allow: true, AutomaticCommencement: true, Targets: []string{"sip:b@mcx.test"},
 			IncomingFrom: []string{"sip:c@mcx.test"}, Emergency: true, EmergencyRecipients: []string{"sip:b@mcx.test", "sip:c@mcx.test"},
 			EmergencyCancel: true, Alert: true, AlertAny: true, Transfer: true, ForwardImmediate: "sip:d@mcx.test", Callable: &no},
@@ -38,6 +38,10 @@ func TestApplyProfileRoundTrip(test *testing.T) {
 		ClientID: user.ClientID, MCDataID: user.MCDataID}, doc)))
 	if string(again) != string(rendered) {
 		test.Fatalf("read back differs\n got %s\nwant %s", again, rendered)
+	}
+	// <allow-location-info-when-talking> (TS 24.484 clause 8.3.2.7) is rendered and read back.
+	if !strings.Contains(string(rendered), "allow-location-info-when-talking") || !applyProfile(User{}, doc).LocationWhenTalking {
+		test.Fatalf("allow-location-info-when-talking lost: %s", rendered)
 	}
 	// The configured parts the document cannot express stay.
 	if back := applyProfile(user, doc); back.PrivateCall.ForwardImmediate != "sip:d@mcx.test" ||

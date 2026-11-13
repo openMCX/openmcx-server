@@ -165,7 +165,27 @@ emergency alert's own location told apart.
 | LOC-17 | Emergency alert area: entry raises the client's alert; Emergency reports on the emergency trigger; exit recorded |
 | SL-01–SL-06 | The SEAL location management server: bob's client reads its configuration and reports every 2 s; the MCPTT server subscribes to bob, carol and dave, and is notified of bob's positions, including after he moves; an on-demand request; offline, bob's client stores its positions and sends them as history, which reaches the server; on demand with history; unsubscription |
 
-The Go unit tests cover the SLM-S. The C++ unit tests cover the location-info documents.
+### Location with an implicit floor request (LWF-01 to LWF-06)
+
+The `location-with-floor-request` lab (`--split --private-call --chat --adhoc --location-when-talking client-a
+--location-when-talking-always client-c`, scenario `location_with_floor_scenario.py`) checks the location a client
+sends with an implicit floor request and what the originating participating function passes to the separate
+controlling function (TS 24.379 §6.3.2.1.3 step 9, §10.1.1.2.1.1 step 16 a), §11.1.1.2.1.1 step 13 a), §11.1.1.3.1.1
+step 21, §17.3.2.1.1 step 17; TS 24.484 §8.3.2.7 `<allow-location-info-when-talking>`). client-a has the element
+"true"; client-b and client-c "false", and client-c sends its location anyway (`mcptt.location_when_talking`
+"always", a lab sender).
+
+| ID | What is checked |
+|---|---|
+| LWF-01 | Private call, element "true": client-a sends its location and the participating function passes it on |
+| LWF-02 | Private call, element "false": client-c's location is withheld |
+| LWF-03 | Private call, element "false": client-b sends none, the function has none to add |
+| LWF-04 | Ad hoc group call, element "false": withheld |
+| LWF-05 | On-demand group call, element "false": passed on as before (§10.1.1.3.1.1 step 7 copies it with no condition, a conflict listed in Known limitations) |
+| LWF-06 | A private call without an implicit floor request: no location |
+
+The Go unit tests cover the SLM-S. The C++ unit tests cover the location-info documents, the client's location
+without TriggerIds (`Reporter::current`) and the participating function's decision (`talking_location`).
 
 ## Coverage gaps
 

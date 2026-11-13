@@ -8,6 +8,7 @@
 // TS 24.281 V19.6.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), RFC 6184.
 
 #include "server.hpp"
+#include "talking_location.hpp"
 
 namespace mcx {
 
@@ -86,6 +87,52 @@ std::string McServer::check_service_mapping(const std::string &id, const SipMess
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clause 6.3.2.1.3 step 9 with the call types' location steps (talking_location.hpp): the bodies of a
+// served user's call request as they go to the controlling function: its location passed on, withheld when
+// <allow-location-info-when-talking> is not "true", or the location this function holds added for an implicit floor
+// request (clause 6.4) that carries none. The element is read from the user profile; one that cannot be read
+// authorises nothing (TS 24.484 clause 8.3.2.7: only "true" authorises).
+std::vector<BodyPart> McServer::talking_location_parts(std::vector<BodyPart> parts, const User &user,
+                                                       const McpttInfo &info, bool implicit) {
+  // TS 24.379 only: the MCVideo relay passes its bodies on as before.
+  if (svc_.service != Service::mcptt) return parts;
+  const auto found = std::find_if(parts.begin(), parts.end(),
+                                  [this](const BodyPart &part) { return part.content_type == svc_.location_mime; });
+  bool allowed = false;
+  try {
+    allowed = user_profile(user.id).value("location_when_talking", false);
+  } catch (const std::exception &) {
+  }
+  bool kept = false;
+  if (found != parts.end()) {
+    // The emergency alert's location (clause 6.2.9.1) and a clause 13.3.4.2 report (with TriggerIds): passed on as
+    // before, the text does not say the element covers them.
+    kept = info.alert == true || info.adhoc_alert == true;
+    try {
+      // Read in the clear where XML protection encrypted it (the user's key, as for a REFER entry); passed on as it is.
+      const auto clear = pre_session_open_parts(user, {*found});
+      const auto content = location::parse(clear.front().body, nullptr, true);
+      if (const auto *report = std::get_if<location::Report>(&content)) kept = kept || !report->triggers.empty();
+    } catch (const std::exception &) {
+    }
+  }
+  const auto own = found == parts.end() ? location_.last_location_xml(user.id) : std::nullopt;
+  const auto decision =
+      talking_location(talking_location_gated(info.session_type, svc_.ambient),
+                       talking_location_own(info.session_type, svc_.ambient), implicit, allowed, found != parts.end(),
+                       kept, own.has_value());
+  static constexpr const char *names[] = {"passed", "withheld", "added", "none"};
+  event("talking_location", {{"user_id", user.id},
+                             {"session_type", info.session_type},
+                             {"implicit", implicit},
+                             {"allowed", allowed},
+                             {"outcome", names[static_cast<int>(decision)]}});
+  if (decision == TalkingLocation::withhold) parts.erase(found);
+  if (decision == TalkingLocation::add_own) parts.push_back({svc_.location_mime, *own});
+  return parts;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.379 clauses 10.1.1.3.1 and 11.1.1.3.1.1: the originating participating function passes a
 // served user's call request to the controlling function.
 SipResponse McServer::relay_outgoing(const SipMessage &message, User &user, const std::string &peer,
@@ -123,7 +170,8 @@ SipResponse McServer::relay_outgoing(const SipMessage &message, User &user, cons
   auto headers = route_to(peer, relayed_headers(message.headers));
   headers.push_back({"P-Asserted-Identity", "<" + user.sip + ">"});
   relay->peer_dialog = sip_.invite(
-      target, mirror(*message.remote_media, relay->local), application_parts(message.parts),
+      target, mirror(*message.remote_media, relay->local),
+      talking_location_parts(application_parts(message.parts), user, outgoing, message.remote_media->implicit_request),
       [this, weak = std::weak_ptr<Relay>(relay)](const SipResponse &answer) {
         schedule([this, weak, answer] {
           if (auto relay = weak.lock()) relay_answer(relay, answer, false);

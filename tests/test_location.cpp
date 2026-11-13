@@ -300,6 +300,12 @@ int main() {
       check(!rep.poll(1000) && rep.pending().empty(), "no report before a trigger");
       rep.signal(Event::InitialLogOn, 1500);
       check(!rep.poll(1500), "the timer started by the configuration holds the report");
+      // The location sent when talking (TS 24.379 clause 10.1.1.2.1.1 step 16 a): what the UE knows, no TriggerId,
+      // the fired trigger and the timer left as they are.
+      const auto talking = rep.current();
+      check(talking.location.coordinate && talking.triggers.empty() && talking.id.empty() &&
+                rep.pending().count("event-0"),
+            "the current location: no TriggerId, the triggers kept");
       const auto first = rep.poll(6000);
       check(first && first->triggers == std::vector<std::string>{"event-0"} && first->location.coordinate &&
                 !first->emergency && !first->location.serving_ecgi,

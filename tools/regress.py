@@ -372,6 +372,25 @@ LABS = [
         ['implicit_floor_scenario'],
         ['mcptt'],
     ),
+    # TS 24.379 clauses 6.3.2.1.3 step 9, 10.1.1.2.1.1 step 16 a) and 11.1.1.3.1.1 step 21 with TS 24.484 clause
+    # 8.3.2.7: the location sent with an implicit floor request, gated by <allow-location-info-when-talking> at the
+    # originating participating function (separate servers).
+    lab(
+        'location-with-floor-request',
+        'single',
+        [
+            '--split',
+            '--private-call',
+            '--chat',
+            '--adhoc',
+            '--location-when-talking',
+            'client-a',
+            '--location-when-talking-always',
+            'client-c',
+        ],
+        ['location_with_floor_scenario'],
+        ['mcptt', 'split', 'location'],
+    ),
     lab('regroup', 'single', ['--regroup'], ['regroup_scenario', 'temporary_group_scenario'], ['mcptt']),
     # RFC 4825 section 8.2.5 with TS 24.481 clause 7.2.4 and TS 24.484 clause 8.3.2.3: schema validation of the documents.
     lab(

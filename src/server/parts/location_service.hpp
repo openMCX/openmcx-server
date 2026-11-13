@@ -112,6 +112,10 @@ public:
   // TS 24.379 clause 13.2.5, TS 24.282 clause 17.2.5: the bodies of a request relayed to a client, without location
   // requests and configurations.
   std::vector<BodyPart> without_requests(std::vector<BodyPart> parts);
+  // TS 24.379 clause 10.1.1.3.1.1 step 9 ("the participating MCPTT function has the location of the originating MCPTT
+  // client available") and its twins: a <location-info> body with a <Report> of the served user's last reported
+  // location, or std::nullopt.
+  std::optional<std::string> last_location_xml(const std::string &id) const;
   void tick(std::uint64_t now);
   Json status();
 

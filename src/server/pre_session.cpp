@@ -615,8 +615,15 @@ void McServer::pre_session_refer(const SipMessage &message, const User &user, Si
   // Handled now, as an INVITE reaching this server would be: the call's fan-out is scheduled ahead of the next
   // tick's supervision of its setup (supervise_session). The 200 (OK) above is sent when this returns, ahead of the
   // INVITEs to the members and of any Connect (steps 14 and 15).
+  // TS 24.379 clause 6.3.2.1.4 step 14 and clauses 11.1.1.3.1.2 step 19b, 11.1.6.3.1.4 step 18a: a location body of
+  // the REFER itself (the client's of clause 11.1.1.2.2.1 step 13) goes with the INVITE, as the client's own would;
+  // the relay to the controlling function decides on it (talking_location_parts).
+  std::vector<BodyPart> refer_location;
+  for (const auto &part : message.parts)
+    if (part.content_type == svc_.location_mime) refer_location.push_back(part);
   try {
-    pre_session_call(session->dialog, user.id, std::move(refer), std::move(forwarded));
+    pre_session_call(session->dialog, user.id, std::move(refer), std::move(forwarded),
+                     pre_session_open_parts(user, std::move(refer_location)));
   } catch (const std::exception &error) {
     event("pre_session_call_failed", {{"user_id", user.id}, {"reason", error.what()}});
   }
@@ -630,7 +637,8 @@ void McServer::pre_session_refer(const SipMessage &message, const User &user, Si
 // handled here as the client's own would be, and the answer the controlling function gives comes back as a Connect
 // (answer_leg). The leg takes the session's media (pre_session_bind).
 void McServer::pre_session_call(const std::string &dialog, const std::string &user_id,
-                                PreEstablishedReferRequest refer, std::vector<SipHeader> headers) {
+                                PreEstablishedReferRequest refer, std::vector<SipHeader> headers,
+                                std::vector<BodyPart> refer_location) {
   const auto found = pre_sessions_.find(dialog);
   auto *user = by_id(user_id);
   if (found == pre_sessions_.end() || user == nullptr) return;
@@ -683,6 +691,12 @@ void McServer::pre_session_call(const std::string &dialog, const std::string &us
   }
   media.ice.reset();
   invite.remote_media = media;
+  // The REFER's own location body, if the entry has none ("if not already copied").
+  const auto has_location = [this](const std::vector<BodyPart> &list) {
+    return std::any_of(list.begin(), list.end(),
+                       [this](const BodyPart &part) { return part.content_type == svc_.location_mime; });
+  };
+  if (!refer_location.empty() && !has_location(parts)) parts.push_back(std::move(refer_location.front()));
   invite.parts = std::move(parts);
   invite.parts.insert(invite.parts.begin(), BodyPart{"application/sdp", make_sdp(media, 1)});
   // TS 24.379 clause 11.1.1.3.1.2: the private call's INVITE names the called user in a resource list, as the client's

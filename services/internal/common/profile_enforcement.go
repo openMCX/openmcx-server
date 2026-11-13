@@ -108,6 +108,7 @@ func applyProfile(user User, doc profileXML) User {
 
 	user.FunctionalAliasTakeover = rights["allow-takeover-functional-alias-other-user"]
 	user.FunctionalAliasBinding = rights["allow-functional-alias-binding-with-group"]
+	user.LocationWhenTalking = rights["allow-location-info-when-talking"]
 	user.Groups, user.MaxAffiliations = nil, 0
 	if on := doc.OnNetwork; on != nil {
 		user.MaxAffiliations = on.MaxAffiliationsN2

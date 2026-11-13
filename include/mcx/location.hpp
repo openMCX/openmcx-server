@@ -267,6 +267,11 @@ public:
   Report answer(const std::string &request_id, std::uint64_t now);
   // TS 24.379 clause 13.3.4.1: a report due now, once the minimumReportInterval timer allows it.
   std::optional<Report> poll(std::uint64_t now);
+  // TS 24.379 clause 10.1.1.2.1.1 step 16 a) and the other "location info when talking" steps: a <Report> of what
+  // the UE knows now, as a report's location (the configuration's wanted elements, everything without one), with no
+  // TriggerId and without the side effects of a report (the triggers and the minimumReportInterval timer are left
+  // as they are: it is not a location information report of clause 13.3.4).
+  Report current() const;
 
   std::optional<Point> last_position() const { return position_; }
 

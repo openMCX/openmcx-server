@@ -256,6 +256,30 @@ LOCATION_GROUP_AREA = square(48.02, 2.02, 0.003)
 
 
 # ------------------------------------------------------------------------------
+def add_location_when_talking(fixture, allowed, always):
+    """TS 24.379 clauses 6.3.2.1.3 step 9 and 10.1.1.2.1.1 step 16 a): <allow-location-info-when-talking> for the
+    clients in allowed; the clients in always send their location with an implicit floor request whatever the
+    profile says. Each such client gets a simulated position if it has none."""
+    site_file = fixture / 'generated/site.json'
+    site = json.loads(site_file.read_text())
+    for role in allowed:
+        mcptt = json.loads((fixture / f'generated/{role}.json').read_text())['mcptt']['user_id']
+        for user in site['users']:
+            if user['mcptt_id'] == mcptt:
+                user['location_when_talking'] = True
+    site_file.write_text(json.dumps(site, indent=2) + '\n')
+    for item, role in enumerate(['client-a', 'client-b', 'client-c', 'client-d']):
+        if role not in allowed and role not in always:
+            continue
+        path = fixture / f'generated/{role}.json'
+        cfg = json.loads(path.read_text())
+        cfg['mcptt'].setdefault('location', dict(position=[48.0, 2.0 + 0.01 * item]))
+        if role in always:
+            cfg['mcptt']['location_when_talking'] = 'always'
+        path.write_text(json.dumps(cfg, indent=2) + '\n')
+
+
+# ------------------------------------------------------------------------------
 def add_location(fixture, reporters=()):
     """Location reporting, requests and areas (TS 24.379 clause 13, TS 24.282 clause 17,
     TS 24.281 clause 18): each client's location rights in its profile, the server's reporting
@@ -2337,6 +2361,21 @@ def main():
         '--location', action='store_true', help='Location reporting, requests and areas (TS 24.379 clause 13, 6.3.2.4)'
     )
     parser.add_argument(
+        '--location-when-talking',
+        action='append',
+        default=[],
+        choices=['client-a', 'client-b', 'client-c', 'client-d'],
+        help='<allow-location-info-when-talking> "true" in this client\'s MCPTT user profile (TS 24.484 clause 8.3.2.7)',
+    )
+    parser.add_argument(
+        '--location-when-talking-always',
+        action='append',
+        default=[],
+        choices=['client-a', 'client-b', 'client-c', 'client-d'],
+        help='This client sends its location with an implicit floor request whatever its profile says (a lab sender '
+        'for the participating function\'s check)',
+    )
+    parser.add_argument(
         '--location-reporter',
         action='append',
         default=[],
@@ -2777,6 +2816,8 @@ def main():
         if not args.mcdata:
             parser.error('--msgstore requires --mcdata')
         add_msgstore(fixture)
+    if args.location_when_talking or args.location_when_talking_always:
+        add_location_when_talking(fixture, args.location_when_talking, args.location_when_talking_always)
     if args.location:
         if args.split:
             parser.error('--location runs on a combined server')

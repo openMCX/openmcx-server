@@ -5,7 +5,8 @@
 // The request values of the MCPTT, MCVideo and MCData servers (src/server/request_values.hpp): the Expires header
 // field, percent-decoding of URI components, the outcome rule of an implicit affiliation and the configuration
 // management documents of a subscription's resource list; and the implicit floor request rules of the MCPTT server
-// (src/server/implicit_floor.hpp).
+// (src/server/implicit_floor.hpp); the location sent with a call request to the controlling function
+// (src/server/talking_location.hpp).
 //
 // Specifications: RFC 3261, RFC 3986, RFC 5875, TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19),
 // TS 24.484 V19.6.0 (Rel-19).
@@ -13,6 +14,7 @@
 #undef NDEBUG
 #endif
 #include "implicit_floor.hpp"
+#include "talking_location.hpp"
 #include "request_values.hpp"
 
 #include <cassert>
@@ -117,6 +119,35 @@ static void Clause_6_3_5_2_2_ImplicitFloorOutcome() {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clauses 6.3.2.1.3 step 9, 10.1.1.3.1.1 steps 7 and 9, 11.1.1.3.1.1 step 21, 17.3.2.1.1 step 17 and
+// TS 24.484 clause 8.3.2.7: the location towards the controlling function.
+static void Clause_6_3_2_1_3_TalkingLocation() {
+  using enum TalkingLocation;
+  constexpr std::string_view ambient = "ambient-listening";
+  assert(talking_location_gated("private", ambient) && talking_location_gated("adhoc", ambient) &&
+         talking_location_gated(ambient, ambient) && !talking_location_gated("prearranged", ambient) &&
+         !talking_location_gated("chat", ambient));
+  assert(talking_location_own("prearranged", ambient) && talking_location_own("private", ambient) &&
+         !talking_location_own("adhoc", ambient));
+  // A private call: the client's location only with "true", implicit or not.
+  assert(talking_location(true, true, true, true, true, false, false) == pass);
+  assert(talking_location(true, true, false, true, true, false, false) == pass);
+  assert(talking_location(true, true, true, false, true, false, false) == withhold);
+  // ... the emergency alert's location and clause 13.3.4.2 reports pass as before (not said to be covered).
+  assert(talking_location(true, true, true, false, true, true, false) == pass);
+  // ... none from the client with an implicit floor request and "true": the function's own, if it has one.
+  assert(talking_location(true, true, true, true, false, false, true) == add_own);
+  assert(talking_location(true, true, true, true, false, false, false) == none);
+  assert(talking_location(true, true, false, true, false, false, true) == none);
+  assert(talking_location(true, true, true, false, false, false, true) == none);
+  // An on-demand group call: copied with no condition (step 7, the conflict kept), own location as above.
+  assert(talking_location(false, true, true, false, true, false, false) == pass);
+  assert(talking_location(false, true, true, true, false, false, true) == add_own);
+  // An ad hoc call: no own-location branch.
+  assert(talking_location(true, false, true, true, false, false, true) == none);
+}
+
+//------------------------------------------------------------------------------
 int main() {
   Section_20_19_Expires();
   Section_2_1_PercentDecoding();
@@ -125,6 +156,7 @@ int main() {
   Clause_14_3_5_ImplicitFloorAccepted();
   Clause_14_3_6_McSsrc();
   Clause_6_3_5_2_2_ImplicitFloorOutcome();
+  Clause_6_3_2_1_3_TalkingLocation();
   std::cout << "server request values: all checks passed\n";
   return 0;
 }

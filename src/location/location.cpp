@@ -1274,12 +1274,11 @@ void Reporter::signal(Event event, std::uint64_t) {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clause 13.3.4.2: builds a report with the fired TriggerIds and the requested location elements,
-// starts the minimumReportInterval timer and resets all triggers.
-Report Reporter::build(std::uint64_t now) {
+// TS 24.379 clause 13.3.4.2 item 1 c): the requested location elements of what the UE knows now (everything known
+// without a configuration); no TriggerId, no change of state.
+Report Reporter::current() const {
   Report report;
   report.emergency = emergency_;
-  report.triggers.assign(fired_.begin(), fired_.end());
   const auto *want = requested();
   const auto has = [&](Dimension dimension) {
     const auto found = radio_.find(dimension);
@@ -1293,6 +1292,16 @@ Report Reporter::build(std::uint64_t now) {
   if (has(Dimension::MbmsSa) && (!want || want->mbms_sa)) report.location.mbms_sa = value(Dimension::MbmsSa);
   if (has(Dimension::Mbsfn) && (!want || want->mbsfn)) report.location.mbsfn = value(Dimension::Mbsfn);
   if (has(Dimension::Mbsfsa5G) && (!want || want->mbsfsa)) report.location.mbsfsa = value(Dimension::Mbsfsa5G);
+  return report;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 13.3.4.2: builds a report with the fired TriggerIds and the requested location elements,
+// starts the minimumReportInterval timer and resets all triggers.
+Report Reporter::build(std::uint64_t now) {
+  auto report = current();
+  report.triggers.assign(fired_.begin(), fired_.end());
+  const auto *want = requested();
   fired_.clear();
   timer_until_ = now + (want ? want->minimum_interval : 0) * 1000ull;
   origin_ = now;
