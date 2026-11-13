@@ -269,7 +269,7 @@ pj_status_t SipEngine::Impl::protect_outgoing(pjsip_tx_data *data) {
           // Media that is not MCPTT or MCVideo audio and video, such as the
           // MSRP stream of the MCData media plane, is left to the application.
           if (part.body.find("m=audio") != std::string::npos || part.body.find("m=video") != std::string::npos)
-            result.remote_media = parse_sdp(part.body);
+            result.remote_media = parse_sdp(part.body, config.sdp_read);
           break;
         }
       }

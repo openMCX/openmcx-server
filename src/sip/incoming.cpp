@@ -416,7 +416,7 @@ void SipEngine::Impl::invite_media_updated(pjsip_inv_session *invite, pj_status_
   // the SDP itself.
   if (negotiated.find("m=audio") == std::string_view::npos && negotiated.find("m=video") == std::string_view::npos)
     return;
-  guarded(owner, [&] { owner->callbacks.on_media(dialog->id, parse_sdp(negotiated)); });
+  guarded(owner, [&] { owner->callbacks.on_media(dialog->id, parse_sdp(negotiated, owner->config.sdp_read)); });
 }
 
 } // namespace mcx

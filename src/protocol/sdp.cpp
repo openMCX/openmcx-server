@@ -407,6 +407,7 @@ void parse_format_parameter(const std::string &parameter, const std::string &sec
   else if (transmission && key == "mc_transmission_ssrc") {
     if (out.floor_ssrc) invalid("duplicate transmission control SSRC");
     out.floor_ssrc = number(val, UINT32_MAX);
+    if (!out.floor_ssrc) invalid("transmission control SSRC 0"); // 0 stands for none (MediaDescription::floor_ssrc)
   } else if (transmission && key == "mc_granted")
     out.granted = true;
   else if (transmission && key == "mc_audio_ssrc")
@@ -422,6 +423,7 @@ void parse_format_parameter(const std::string &parameter, const std::string &sec
   else if (section == "application" && !transmission && key == "mc_floor_ssrc") {
     if (out.floor_ssrc) invalid("duplicate floor SSRC");
     out.floor_ssrc = number(val, UINT32_MAX);
+    if (!out.floor_ssrc) invalid("floor SSRC 0"); // 0 stands for none (MediaDescription::floor_ssrc)
   } else if (section == "application" && key == "mc_priority") {
     if (out.floor_priority || val.size() > 2) invalid("duplicate or invalid floor priority");
     out.floor_priority = number(val, 99);
@@ -498,7 +500,7 @@ void parse_attribute(const std::string &line, const std::string &value, MediaDes
 //------------------------------------------------------------------------------
 // TS 24.379 clause 6.2.1, TS 24.380 clause 14.2 and TS 24.281 clause 6.2.1 step 3: completes and checks the
 // description once every line is read: the addresses, the media plane control, the video and the ports.
-void finish_sdp(MediaDescription &out, const SdpState &state) {
+void finish_sdp(MediaDescription &out, const SdpState &state, const SdpReadOptions &options) {
   out.address = state.audio_address.empty() ? state.session_address : state.audio_address;
   if (out.floor_address.empty())
     out.floor_address = state.session_address.empty() ? out.address : state.session_address;
@@ -510,7 +512,10 @@ void finish_sdp(MediaDescription &out, const SdpState &state) {
   // without floor control (TS 24.379 clause 11.1.2). Whether the call allows it is the
   // server's decision.
   if (!state.floor) out.control = MediaControl::none;
-  if (!state.version || !state.audio || !state.matched_codec || (state.floor && !out.floor_ssrc))
+  // TS 24.380 clauses 14.2.7 and 14.3.8: "mc_floor_ssrc" only with multiplexing; required unless the reader accepts
+  // a peer without it (SdpReadOptions::floor_ssrc_optional).
+  if (!state.version || !state.audio || !state.matched_codec ||
+      (state.floor && !out.floor_ssrc && !options.floor_ssrc_optional))
     invalid("incomplete MCPTT SDP");
 
   // MCPTT floor control has no video section, and MCVideo transmission control needs
@@ -523,7 +528,7 @@ void finish_sdp(MediaDescription &out, const SdpState &state) {
       invalid("a separate video address is not supported");
   }
   if (!out.key_mgmt.empty() && !out.protected_media) invalid("key management requires protected media");
-  out.ice = finish_ice(state.ice);
+  out.ice = finish_ice(state.ice, options.ice_without_credentials);
   if (out.ice && (out.video || (!state.floor && !out.ice->control.empty())))
     invalid("ICE attributes are for an MCPTT pre-established session");
   out.rtcp_port = state.rtcp ? state.rtcp : (out.audio_port < 65535 ? out.audio_port + 1 : 0);
@@ -547,8 +552,8 @@ void finish_sdp(MediaDescription &out, const SdpState &state) {
 //------------------------------------------------------------------------------
 // TS 24.379 clause 6.2.1 and clause 6.2.2 with TS 24.380 clause 14.2 and clause 14.3 (MCPTT), TS 24.281 clause
 // 6.2.1 with TS 24.581 clause 12.1.2 (MCVideo): reads an SDP offer or answer: the AMR-WB audio, the H.264 video
-// of MCVideo, and the floor or transmission control channel with its fmtp parameters.
-MediaDescription parse_sdp(std::string_view sdp) {
+// of MCVideo, and the floor or transmission control channel with its fmtp parameters (options: SdpReadOptions).
+MediaDescription parse_sdp(std::string_view sdp, const SdpReadOptions &options) {
   bounded(sdp);
   version_first(sdp);
   MediaDescription out;
@@ -572,7 +577,7 @@ MediaDescription parse_sdp(std::string_view sdp) {
     } else
       parse_attribute(line, value, out, state);
   }
-  finish_sdp(out, state);
+  finish_sdp(out, state, options);
   return out;
 }
 

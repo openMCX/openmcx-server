@@ -132,8 +132,12 @@ static void Clause_6_2_4_2_ReferBye() {
   rejects([] { (void)mcx::cid_refer_to("a b@ue"); }, "Content-ID with a space (RFC 2045 msg-id)");
   expect(mcx::parse_refer_to("<cid:a%2Bb@ue>").content_id == "a+b@ue", "cid URL decoded");
   expect(mcx::parse_refer_to("cid:x@y").content_id == "x@y", "addr-spec form");
+  // TS 37.579-1 table 5.5.2.12-1 (METHOD-BYE as every condition) and the TS 37.579 test suite: Require
+  // "multiple-refer" on the REFER leaving a call too (include/mcx/refer.hpp file header).
   const auto headers = mcx::pre_established_refer_headers(mcx::bye_refer_to("sip:c@x"), {"c", "l", "r"});
-  for (const auto &header : headers) expect(header.name != "Require", "no multiple-refer for a REFER BYE");
+  bool multiple = false;
+  for (const auto &header : headers) multiple |= header.name == "Require" && header.value == "multiple-refer";
+  expect(multiple, "Require: multiple-refer on a REFER BYE");
 }
 
 //------------------------------------------------------------------------------

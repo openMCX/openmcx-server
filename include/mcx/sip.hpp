@@ -159,6 +159,10 @@ struct SipConfig {
   // an INVITE with Replaces on its pre-established session (TS 24.379 clause 6.3.2.2.5.3 step 1 a, RFC 3891
   // section 6.1). They are not advertised in Supported header fields.
   std::vector<std::string> accepted_extensions;
+  // What the engine accepts in the SDP of a received message or of a negotiated session (SdpReadOptions): the
+  // defaults for a server; an MCPTT client that may face a participating function other than OpenMCX (the TS 37.579
+  // test system) accepts SDP without "mc_floor_ssrc" and ICE candidates without credentials.
+  SdpReadOptions sdp_read;
 };
 
 //------------------------------------------------------------------------------

@@ -206,9 +206,12 @@ bool parse_ice_attribute(std::string_view line, std::string_view section, IceSdp
 }
 
 //------------------------------------------------------------------------------
-// RFC 8839 section 5.4: an SDP with ICE attributes has the credentials; the candidates fit the sections.
-std::optional<IceDescription> finish_ice(const IceSdpState &state) {
+// RFC 8839 section 5.4: an SDP with ICE attributes has the credentials; the candidates fit the sections. With
+// without_credentials (SdpReadOptions::ice_without_credentials), an SDP whose ICE attributes have neither credential
+// is read without ICE; one credential alone is still refused.
+std::optional<IceDescription> finish_ice(const IceSdpState &state, bool without_credentials) {
   if (!state.seen) return std::nullopt;
+  if (without_credentials && state.ice.ufrag.empty() && state.ice.pwd.empty()) return std::nullopt;
   check_credentials(state.ice.ufrag, state.ice.pwd);
   check_components(state.ice.audio, kAudioComponents);
   check_components(state.ice.control, kControlComponents);

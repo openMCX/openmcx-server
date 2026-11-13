@@ -400,7 +400,7 @@ std::vector<SipHeader> pre_established_refer_headers(std::string_view refer_to, 
                                  {"Supported", "norefersub"},
                                  {"Target-Dialog", target_dialog_value(session)},
                                  {"P-Preferred-Service", service.icsi}};
-  if (!parse_refer_to(refer_to).content_id.empty()) headers.push_back({"Require", "multiple-refer"});
+  headers.push_back({"Require", "multiple-refer"}); // every REFER over the session (the file header)
   return headers;
 }
 

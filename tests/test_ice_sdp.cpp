@@ -168,6 +168,44 @@ static void Rfc3264_8_2_RemovedControlStream() {
   rejects([&] { (void)mcx::parse_sdp(audio_removed); }, "removed speech stream");
 }
 
+//------------------------------------------------------------------------------
+// SdpReadOptions: the TS 37.579 test system's answer to the INVITE creating a pre-established session (the R&S trace
+// R5s260356 of TC_6_1_1_5_MCPTT): an ICE lite peer's candidates without credentials, and floor control without
+// "mc_floor_ssrc" (TS 24.380 clause 14.3.8: only with multiplexing). Refused by default (an OpenMCX server's reading
+// of a client); with the options, read without ICE and with floor_ssrc 0. A credential alone, and an
+// "mc_floor_ssrc" of 0, are refused either way.
+static void SdpReadOptions_TestSystemAnswer() {
+  const std::string answer = "v=0\r\no=- 1111111111 1111111111 IN IP4 172.22.1.201\r\ns= \r\nb=AS:38\r\nt=0 0\r\n"
+                             "a=ice-lite\r\nm=audio 60350 RTP/SAVP 114\r\ni=speech\r\nc=IN IP4 172.22.1.201\r\n"
+                             "b=AS:38\r\nb=RS:0\r\nb=RR:2000\r\na=rtpmap:114 AMR-WB/16000/1\r\n"
+                             "a=fmtp:114 mode-change-capability=2;max-red=0\r\na=ptime:20\r\na=maxptime:240\r\n"
+                             "a=candidate:1234 1 UDP 2130706431 172.22.1.201 60350 typ host\r\n"
+                             "a=candidate:1234 2 UDP 2130706430 172.22.1.201 60351 typ host\r\n"
+                             "m=application 60354 udp MCPTT\r\nc=IN IP4 172.22.1.201\r\n"
+                             "a=fmtp:MCPTT mc_queueing;mc_priority=3\r\n"
+                             "a=candidate:4321 1 UDP 2130706431 172.22.1.201 60354 typ host\r\n";
+  rejects([&] { (void)mcx::parse_sdp(answer); }, "no mc_floor_ssrc, no credentials (default)");
+  const mcx::SdpReadOptions lenient{.floor_ssrc_optional = true, .ice_without_credentials = true};
+  const auto media = mcx::parse_sdp(answer, lenient);
+  expect(media.control == mcx::MediaControl::floor && media.floor_ssrc == 0, "floor control without its SSRC");
+  expect(!media.ice, "candidates without credentials: no ICE");
+  expect(media.address == "172.22.1.201" && media.audio_port == 60350 && media.floor_port == 60354 &&
+             media.queueing && media.floor_priority == 3,
+         "the default addresses and the floor parameters");
+  rejects([&] { (void)mcx::parse_sdp(answer, {.floor_ssrc_optional = true}); }, "candidates without credentials");
+  auto with_ssrc = answer;
+  with_ssrc.replace(with_ssrc.find("mc_queueing;"), 12, "mc_queueing;mc_floor_ssrc=9;");
+  rejects([&] { (void)mcx::parse_sdp(with_ssrc); }, "candidates without credentials (default)");
+  const auto multiplexing = mcx::parse_sdp(with_ssrc, {.ice_without_credentials = true});
+  expect(multiplexing.floor_ssrc == 9 && !multiplexing.ice, "an mc_floor_ssrc is read as before");
+  auto ufrag_only = answer;
+  ufrag_only.insert(ufrag_only.find("m=audio"), "a=ice-ufrag:abcd\r\n");
+  rejects([&] { (void)mcx::parse_sdp(ufrag_only, lenient); }, "a ufrag without a pwd");
+  auto zero = answer;
+  zero.replace(zero.find("mc_queueing;"), 12, "mc_queueing;mc_floor_ssrc=0;");
+  rejects([&] { (void)mcx::parse_sdp(zero, lenient); }, "mc_floor_ssrc 0");
+}
+
 int main() {
   const std::vector<std::pair<const char *, void (*)()>> tests = {
       {"Rfc8839_5_1_Candidate", Rfc8839_5_1_Candidate},
@@ -175,6 +213,7 @@ int main() {
       {"Rfc8839_5_4_CredentialsAndLite", Rfc8839_5_4_CredentialsAndLite},
       {"Rfc8839_5_4_Refusals", Rfc8839_5_4_Refusals},
       {"Rfc3264_8_2_RemovedControlStream", Rfc3264_8_2_RemovedControlStream},
+      {"SdpReadOptions_TestSystemAnswer", SdpReadOptions_TestSystemAnswer},
   };
   int failures = 0;
   for (const auto &[name, test] : tests) {

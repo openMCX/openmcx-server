@@ -412,6 +412,9 @@ struct MediaDescription {
   std::string address, floor_address;
   std::uint16_t audio_port = 0, rtcp_port = 0, floor_port = 0;
   std::uint8_t payload_type = 96;
+  // floor_ssrc: the "mc_floor_ssrc" (MCVideo "mc_transmission_ssrc") the SDP allocates (TS 24.380 clause 4.3.3.1);
+  // 0 when it has none, read only with SdpReadOptions::floor_ssrc_optional: a peer without multiplexing (TS 24.380
+  // clause 14.4), whose floor control messages carry its own SSRC.
   std::uint32_t floor_ssrc = 0, audio_ssrc = 0;
   bool octet_aligned = false, protected_media = false, queueing = false;
   bool implicit_request = false;
@@ -570,9 +573,29 @@ std::vector<BodyPart> parse_sip_fragment_parts(std::string_view message);
 // 6.2.1 and clause 6.2.2 with TS 24.581 clause 12.1.2 (MCVideo): writes the SDP offer or answer.
 std::string make_sdp(const MediaDescription &media, std::uint64_t session_id);
 //------------------------------------------------------------------------------
+// What parse_sdp accepts beyond the SDP the OpenMCX servers require of a client (the defaults). An MCPTT client
+// reading the SDP of a participating function that is not OpenMCX, such as the TS 37.579 test system, sets both.
+struct SdpReadOptions {
+  // TS 24.380 clauses 14.2.7 and 14.3.8: "mc_floor_ssrc" (MCVideo: TS 24.581 "mc_transmission_ssrc") is in an
+  // offer or answer only "if multiplexing is supported"; clause 14.4: an answer with it marks a peer that supports
+  // multiplexing. Without it the media plane control section is read with floor_ssrc 0. The TS 37.579 test system
+  // never sends it (TS 37.579-5 MCX_IMS_Component.ttcn, RTCP_SSRC_SS; R5-236320, R5-236323: "When there is no
+  // multiplexing (normal case), the RTCP SSRCs have no meaning"). The OpenMCX servers relay and protect floor control
+  // by SSRC, so they keep requiring it (the default).
+  bool floor_ssrc_optional = false;
+  // A pre-established session's SDP with "a=candidate" lines (or "a=ice-lite") but neither "a=ice-ufrag" nor
+  // "a=ice-pwd": RFC 8839 section 5.4 requires the credentials, and the default refuses such an SDP; the TS 37.579
+  // test system, an ICE lite peer, sends its candidates without them (the 200 (OK) of its pre-established session in
+  // the R&S trace R5s260356). With this set the SDP is read without ICE (ice empty): no connectivity check can be run
+  // without the peer's password (RFC 8445 section 7.2.2), so the media go to the "c=" and "m=" addresses, which are
+  // the default candidates (RFC 8839 section 4.2.1.1). Malformed or partial credentials are refused either way.
+  bool ice_without_credentials = false;
+};
+
+//------------------------------------------------------------------------------
 // TS 24.379 clause 6.2.1 and clause 6.2.2 with TS 24.380 clause 14.2 and clause 14.3 (MCPTT), TS 24.281 clause
-// 6.2.1 with TS 24.581 clause 12.1.2 (MCVideo): reads an SDP offer or answer.
-MediaDescription parse_sdp(std::string_view sdp);
+// 6.2.1 with TS 24.581 clause 12.1.2 (MCVideo): reads an SDP offer or answer (what it accepts: SdpReadOptions).
+MediaDescription parse_sdp(std::string_view sdp, const SdpReadOptions &options = {});
 
 //------------------------------------------------------------------------------
 // TS 26.179 clause 4.1.3 with RFC 4867 section 8.1: the AMR-WB mode to send with when the client would use `wanted`:

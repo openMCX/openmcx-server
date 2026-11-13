@@ -19,8 +19,11 @@
 // "multiple-refer" option tag in the Require header field of the private call, ambient listening and ad hoc group
 // call REFERs (clauses 11.1.1.2.2.1 step 4, 11.1.6.2.2.1 step 4, 17.2.2.2 step 4) but not in the prearranged and
 // chat group call REFERs (clauses 10.1.1.2.2.1, 10.1.2.2.2.1); TS 37.579-1 table 5.5.2.12-1 expects it in every
-// REFER, and RFC 5368 section 4 asks for it whenever the Refer-To points to a URI list. Every REFER with a
-// Content-ID URL carries it here; the participating function accepts a REFER with or without it.
+// REFER, the one leaving a call (condition METHOD-BYE) included, as does the TS 37.579 test suite
+// (f_MCX_PreestablishedSession_ReceiveREFER: Require "sec-agree" and "multiple-refer" for every REFER on the session);
+// and RFC 5368 section 4 asks for it whenever the Refer-To points to a URI list. Every REFER over a pre-established
+// session carries it here, also a "method=BYE" one (no rule forbids the tag there); the participating function
+// accepts a REFER with or without it.
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 37.579-1 V18.1.0 (Rel-18), RFC 3261, RFC 3515, RFC 4488,
 // RFC 4538, RFC 2392, RFC 5366, RFC 5368, RFC 3891, RFC 2046.
@@ -145,8 +148,8 @@ ReplacesValue replaces_for(const DialogIdentifiers &own_dialog, bool early_only 
 
 //------------------------------------------------------------------------------
 // The header fields of a REFER over a pre-established session, beyond those every request has: Refer-To,
-// Refer-Sub "false", Supported "norefersub" (RFC 4488), Require "multiple-refer" for a Content-ID URL (see the file
-// header), Target-Dialog identifying the pre-established session (RFC 4538) and the service's P-Preferred-Service
+// Refer-Sub "false", Supported "norefersub" (RFC 4488), Require "multiple-refer" (see the file header),
+// Target-Dialog identifying the pre-established session (RFC 4538) and the service's P-Preferred-Service
 // (RFC 6050). TS 24.379 clauses 6.2.4.2 steps 4 to 8, 10.1.2.2.2.1 steps 2, 8 to 10, 11.1.1.2.2.1 steps 2 to 7.
 std::vector<SipHeader> pre_established_refer_headers(std::string_view refer_to, const DialogIdentifiers &session,
                                                      const ServiceProfile &service = mcptt_service);

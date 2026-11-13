@@ -232,8 +232,9 @@ void write_ice_candidates(std::ostream &out, const std::vector<IceCandidate> &ca
 // RFC 8839 sections 5.1 and 5.4 to 5.6: reads an ICE attribute line of the session ("" section) or of the "audio"
 // or "application" section; returns whether the line was one.
 bool parse_ice_attribute(std::string_view line, std::string_view section, IceSdpState &state);
-// RFC 8839 section 5.4: the ICE description once every line is read; none when the SDP has no ICE attribute.
-std::optional<IceDescription> finish_ice(const IceSdpState &state);
+// RFC 8839 section 5.4: the ICE description once every line is read; none when the SDP has no ICE attribute, or,
+// with without_credentials (SdpReadOptions::ice_without_credentials), none of the credentials.
+std::optional<IceDescription> finish_ice(const IceSdpState &state, bool without_credentials = false);
 
 } // namespace protocol_detail
 
