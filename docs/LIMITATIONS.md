@@ -307,6 +307,17 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   Android `mcptt.cms_subscription_psi`), as the ETSI test
   system for TS 37.579 names such a PSI (that test system's reading, not a 3GPP rule). The group document and group key subscriptions go to the configured
   GMS-URI (`gms.subscription_psi`).
+- **Location report authorisation** (spec gap). On a location information report from a client, the participating
+  function "shall authorise the location report based on the MCPTT ID received" (TS 24.379 clause 13.2.4.1; TS 24.281
+  clause 18.2.4.1 and TS 24.282 clause 17.2.4.1 with the MCVideo and MCData ID), but no clause or user profile element
+  says what authorises a user to send one (the allow-* elements of TS 24.484 clause 7.4 cover requests, sharing,
+  subscriptions and configuration changes, `<allow-location-info-when-talking>` only the location in a floor request),
+  and only the authorised case has steps: no response or warning text is given for a report that is not authorised,
+  and nothing ties the location reporting configuration (clause 13.2.2 and its counterparts, a "may") to the right to
+  report. The MCPTT, MCVideo and MCData servers authorise every report unless the user's location rights in the user
+  profile set `report` to false, an OpenMCX setting with no 3GPP element; such a report is refused with 403 (warning
+  100 "function not allowed" from the MCPTT and MCVideo servers, no Warning header field from the MCData server, whose
+  table has no code for it), and the user is still sent the location reporting configuration.
 - **Location.** Positions and radio measurements are simulated. The SEAL location management server (TS 24.545) has
   no CoAP, SIP-based subscription, location-based query or trigger other than the periodic one.
 
