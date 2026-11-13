@@ -305,8 +305,12 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
   if (entry.answer_sdp_pending && response.status_code >= 200 && response.status_code < 300) {
     if (!response.local_media && !response.local_sdp)
       throw std::invalid_argument("a 2xx INVITE answer needs local media");
+    if (response.local_sdp)
+      record_sdp_text(entry.sdp_origin, *response.local_sdp);
+    else
+      next_sdp_origin(entry.sdp_origin, *response.local_media);
     sdp = response.local_sdp ? parse_sdp_text(entry.dialog->pool, *response.local_sdp)
-                             : parse_local_sdp(entry.dialog->pool, *response.local_media);
+                             : parse_local_sdp(entry.dialog->pool, *response.local_media, entry.sdp_origin);
     entry.answer_sdp_pending = false;
   }
 
@@ -327,7 +331,8 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
   if (response.status_code >= 200 && response.status_code < 300 && response.local_sdp)
     data->msg->body = make_body_with_sdp(data->pool, *response.local_sdp, impl_->answer_parts(response, entry.dialog));
   else if (response.status_code >= 200 && response.status_code < 300 && response.local_media)
-    data->msg->body = make_invite_body(data->pool, *response.local_media, impl_->answer_parts(response, entry.dialog));
+    data->msg->body = make_invite_body(data->pool, *response.local_media, impl_->answer_parts(response, entry.dialog),
+                                       entry.sdp_origin);
   else if (response.status_code >= 300 && !response.content_type.empty())
     data->msg->body = make_text_body(data->pool, response.content_type, response.body);
   else if (response.status_code >= 300 && !response.parts.empty())
@@ -367,8 +372,8 @@ void SipEngine::respond(std::string_view transaction_id, const SipResponse &resp
 // RFC 3261 section 14.1: sends a re-INVITE in a confirmed dialog with no re-INVITE pending: the offer and the body
 // come from the builders, in the session's pool and in the request's.
 void SipEngine::Impl::send_reinvite(std::string_view dialog_id,
-                                    const std::function<pjmedia_sdp_session *(pj_pool_t *)> &offer,
-                                    const std::function<pjsip_msg_body *(pj_pool_t *)> &body,
+                                    const std::function<pjmedia_sdp_session *(pj_pool_t *, SdpOrigin &)> &offer,
+                                    const std::function<pjsip_msg_body *(pj_pool_t *, const SdpOrigin &)> &body,
                                     SipResponseHandler handler, const std::vector<SipHeader> &headers) {
   ensure_started();
   const auto found = dialogs.find(std::string(dialog_id));
@@ -377,11 +382,11 @@ void SipEngine::Impl::send_reinvite(std::string_view dialog_id,
   auto &entry = *found->second;
   if (entry.invite->state != PJSIP_INV_STATE_CONFIRMED || entry.reinvite_handler)
     throw std::runtime_error("re-INVITE already pending or dialog not confirmed");
-  auto *sdp = offer(entry.invite->pool_prov);
+  auto *sdp = offer(entry.invite->pool_prov, entry.sdp_origin);
   pjsip_tx_data *created = nullptr;
   require_success(pjsip_inv_reinvite(entry.invite, nullptr, sdp, &created), "create re-INVITE");
   TxData data(created);
-  data->msg->body = body(data->pool);
+  data->msg->body = body(data->pool, entry.sdp_origin);
   add_headers(data.get(), headers);
   const auto *cseq = static_cast<const pjsip_cseq_hdr *>(pjsip_msg_find_hdr(data->msg, PJSIP_H_CSEQ, nullptr));
   if (cseq == nullptr) throw std::runtime_error("re-INVITE without CSeq");
@@ -398,8 +403,10 @@ void SipEngine::Impl::send_reinvite(std::string_view dialog_id,
 void SipEngine::reinvite(std::string_view dialog_id, const MediaDescription &media, const std::vector<BodyPart> &parts,
                          SipResponseHandler handler, const std::vector<SipHeader> &headers) {
   impl_->send_reinvite(
-      dialog_id, [&](pj_pool_t *pool) { return parse_local_sdp(pool, media); },
-      [&](pj_pool_t *pool) { return make_invite_body(pool, media, parts); }, std::move(handler), headers);
+      dialog_id,
+      [&](pj_pool_t *pool, SdpOrigin &origin) { return parse_local_sdp(pool, media, next_sdp_origin(origin, media)); },
+      [&](pj_pool_t *pool, const SdpOrigin &origin) { return make_invite_body(pool, media, parts, origin); },
+      std::move(handler), headers);
 }
 
 //------------------------------------------------------------------------------
@@ -410,8 +417,13 @@ void SipEngine::reinvite_sdp(std::string_view dialog_id, std::string_view sdp, c
   if (sdp.empty()) throw std::invalid_argument("a re-INVITE offer needs an SDP body");
   const std::string text(sdp);
   impl_->send_reinvite(
-      dialog_id, [&](pj_pool_t *pool) { return parse_sdp_text(pool, text); },
-      [&](pj_pool_t *pool) { return make_body_with_sdp(pool, text, parts); }, std::move(handler), headers);
+      dialog_id,
+      [&](pj_pool_t *pool, SdpOrigin &origin) {
+        record_sdp_text(origin, text);
+        return parse_sdp_text(pool, text);
+      },
+      [&](pj_pool_t *pool, const SdpOrigin &) { return make_body_with_sdp(pool, text, parts); }, std::move(handler),
+      headers);
 }
 
 //------------------------------------------------------------------------------
@@ -428,11 +440,11 @@ void SipEngine::update(std::string_view dialog_id, const MediaDescription &media
   auto &entry = *found->second;
   if (entry.invite->state != PJSIP_INV_STATE_CONFIRMED || entry.reinvite_handler)
     throw std::runtime_error("an offer is already pending or the dialog is not confirmed (RFC 3311 section 5.1)");
-  auto *sdp = parse_local_sdp(entry.invite->pool_prov, media);
+  auto *sdp = parse_local_sdp(entry.invite->pool_prov, media, next_sdp_origin(entry.sdp_origin, media));
   pjsip_tx_data *created = nullptr;
   require_success(pjsip_inv_update(entry.invite, nullptr, sdp, &created), "create UPDATE");
   TxData data(created);
-  data->msg->body = make_invite_body(data->pool, media, {});
+  data->msg->body = make_invite_body(data->pool, media, {}, entry.sdp_origin);
   add_headers(data.get(), headers);
   const auto *cseq = static_cast<const pjsip_cseq_hdr *>(pjsip_msg_find_hdr(data->msg, PJSIP_H_CSEQ, nullptr));
   if (cseq == nullptr) throw std::runtime_error("UPDATE without CSeq");

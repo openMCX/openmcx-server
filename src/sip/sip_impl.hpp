@@ -154,7 +154,23 @@ void add_answer_headers(pjsip_tx_data *data, const std::vector<SipHeader> &heade
 // instead of being read as header field parameters.
 [[nodiscard]] std::string name_addr(std::string_view uri);
 
-[[nodiscard]] pjmedia_sdp_session *parse_local_sdp(pj_pool_t *pool, const MediaDescription &media);
+//------------------------------------------------------------------------------
+// RFC 3264 section 8 and RFC 4566 section 5.2: the "o=" line of the SDP this side sends in one dialog. The first SDP
+// takes a new <sess-id> with <sess-version> 1; every later SDP (re-INVITE or UPDATE offer, answer to one) keeps the
+// <sess-id> and increments the <sess-version> by one when its description differs from the previous one, else keeps it.
+struct SdpOrigin {
+  std::uint64_t id = 0;
+  std::uint64_t version = 0;
+  std::string last; // the previous description without its "o=" line
+};
+
+// The origin of the next SDP built from `media` in the dialog of `origin` (updated in place).
+const SdpOrigin &next_sdp_origin(SdpOrigin &origin, const MediaDescription &media);
+// Records an SDP the caller wrote itself (its "o=" line) as the dialog's last SDP.
+void record_sdp_text(SdpOrigin &origin, const std::string &sdp);
+
+[[nodiscard]] pjmedia_sdp_session *parse_local_sdp(pj_pool_t *pool, const MediaDescription &media,
+                                                   const SdpOrigin &origin);
 
 //------------------------------------------------------------------------------
 // RFC 5621 and RFC 2046 section 5.1.3: builds a multipart/mixed body with the SDP first, then the given parts; the SDP
@@ -165,7 +181,7 @@ void add_answer_headers(pjsip_tx_data *data, const std::vector<SipHeader> &heade
 //------------------------------------------------------------------------------
 // RFC 5621: builds an INVITE body from the local SDP and the given parts (see make_body_with_sdp).
 [[nodiscard]] pjsip_msg_body *make_invite_body(pj_pool_t *pool, const MediaDescription &media,
-                                               const std::vector<BodyPart> &parts);
+                                               const std::vector<BodyPart> &parts, const SdpOrigin &origin);
 
 //------------------------------------------------------------------------------
 // RFC 2046 section 5.1.3, RFC 5621 and RFC 2392: builds a multipart/mixed body of the parts in the pool, each with
@@ -230,6 +246,8 @@ struct SipEngine::Impl {
     bool sips_contact = false;
     // Body for the BYE; kept when a CANCEL was sent, in case a 2xx crosses it.
     std::vector<BodyPart> bye_parts;
+    // RFC 3264 section 8: the origin of the SDP this side sends in the dialog.
+    SdpOrigin sdp_origin;
   };
 
   struct PendingResponse {
@@ -541,8 +559,10 @@ struct SipEngine::Impl {
 
   // RFC 3261 section 14.1: sends a re-INVITE in a confirmed dialog with the offer and body the builders make in the
   // session's and the request's pools.
-  void send_reinvite(std::string_view dialog_id, const std::function<pjmedia_sdp_session *(pj_pool_t *)> &offer,
-                     const std::function<pjsip_msg_body *(pj_pool_t *)> &body, SipResponseHandler handler,
+  void send_reinvite(std::string_view dialog_id,
+                     const std::function<pjmedia_sdp_session *(pj_pool_t *, SdpOrigin &)> &offer,
+                     const std::function<pjsip_msg_body *(pj_pool_t *, const SdpOrigin &)> &body,
+                     SipResponseHandler handler,
                      const std::vector<SipHeader> &headers);
 
   static void send_complete(void *opaque, pjsip_event *event);

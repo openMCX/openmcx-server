@@ -75,9 +75,18 @@ void SipEngine::Impl::answer_reinvite(pjsip_inv_session *invite, pjsip_rx_data *
   }
   if (response.status_code < 200) response.status_code = 500;
   if (response.status_code < 300 && !response.local_media && !response.local_sdp) response.status_code = 488;
+  // RFC 3264 section 8: the answer in an existing dialog keeps the dialog's origin, its version incremented when the
+  // description changed.
+  auto *owner = static_cast<Dialog *>(invite->mod_data[module.id]);
+  SdpOrigin fallback;
+  SdpOrigin &origin = owner ? owner->sdp_origin : fallback;
+  if (response.status_code < 300 && response.local_sdp)
+    record_sdp_text(origin, *response.local_sdp);
+  else if (response.status_code < 300 && response.local_media)
+    next_sdp_origin(origin, *response.local_media);
   const auto *sdp = (response.local_media || response.local_sdp) && response.status_code < 300
                         ? (response.local_sdp ? parse_sdp_text(invite->pool_prov, *response.local_sdp)
-                                              : parse_local_sdp(invite->pool_prov, *response.local_media))
+                                              : parse_local_sdp(invite->pool_prov, *response.local_media, origin))
                         : nullptr;
 
   pjsip_tx_data *created = nullptr;
@@ -94,7 +103,8 @@ void SipEngine::Impl::answer_reinvite(pjsip_inv_session *invite, pjsip_rx_data *
   TxData answer(created);
   if (response.status_code < 300)
     answer->msg->body = response.local_sdp ? make_body_with_sdp(answer->pool, *response.local_sdp, response.parts)
-                                           : make_invite_body(answer->pool, *response.local_media, response.parts);
+                                           : make_invite_body(answer->pool, *response.local_media, response.parts,
+                                                              origin);
   else if (!response.content_type.empty())
     answer->msg->body = make_text_body(answer->pool, response.content_type, response.body);
   else if (!response.parts.empty())
@@ -347,8 +357,14 @@ void SipEngine::Impl::take_session_refresh(pjsip_rx_data *data) {
 
     if (!response.local_media && !response.local_sdp && response.status_code >= 200)
       throw std::invalid_argument("a final INVITE answer needs local media");
+    // RFC 3264 section 8: the dialog's first SDP takes a new origin, kept for its later offers and answers.
+    SdpOrigin origin;
+    if (response.local_sdp)
+      record_sdp_text(origin, *response.local_sdp);
+    else if (response.local_media)
+      next_sdp_origin(origin, *response.local_media);
     auto *local_sdp = response.local_sdp     ? parse_sdp_text(sip_dialog->pool, *response.local_sdp)
-                      : response.local_media ? parse_local_sdp(sip_dialog->pool, *response.local_media)
+                      : response.local_media ? parse_local_sdp(sip_dialog->pool, *response.local_media, origin)
                                              : nullptr;
 
     if (config.uas_refresher) take_session_refresh(data);
@@ -384,6 +400,7 @@ void SipEngine::Impl::take_session_refresh(pjsip_rx_data *data) {
     entry->answer_sdp_pending = local_sdp == nullptr;
     entry->response_contact = contact_text;
     entry->sips_contact = sips;
+    entry->sdp_origin = origin;
     if (response.status_code >= 200 && response.status_code < 300) entry->pending_ack_cseq = data->msg_info.cseq->cseq;
     invite->mod_data[module.id] = entry.get();
     dialogs[entry->id] = std::move(entry);
@@ -397,7 +414,7 @@ void SipEngine::Impl::take_session_refresh(pjsip_rx_data *data) {
     if (response.status_code >= 200) {
       const auto parts = answer_parts(response, sip_dialog);
       answer->msg->body = response.local_sdp ? make_body_with_sdp(answer->pool, *response.local_sdp, parts)
-                                             : make_invite_body(answer->pool, *response.local_media, parts);
+                                             : make_invite_body(answer->pool, *response.local_media, parts, origin);
     }
     add_headers(answer.get(), response.headers);
     if (response.status_code > 100 && response.status_code < 200)

@@ -342,7 +342,12 @@ void SipEngine::Impl::receive_offer(pjsip_inv_session *invite, pjsip_inv_on_rx_o
     request.transaction_id = std::to_string(++owner->next_transaction);
     const auto response = safe_application_response(*owner, request);
     if (response.status_code / 100 != 2 || !response.local_media) return;
-    require_success(pjsip_inv_set_sdp_answer(invite, parse_local_sdp(invite->pool_prov, *response.local_media)),
+    // RFC 3264 section 8: the answer keeps the dialog's origin, its version incremented when the description changed.
+    auto *entry = static_cast<Dialog *>(invite->mod_data[owner->module.id]);
+    SdpOrigin fallback;
+    SdpOrigin &origin = entry ? entry->sdp_origin : fallback;
+    require_success(pjsip_inv_set_sdp_answer(invite, parse_local_sdp(invite->pool_prov, *response.local_media,
+                                                                     next_sdp_origin(origin, *response.local_media))),
                     "set the SDP answer of an UPDATE");
   } catch (const std::exception &error) {
     owner->report_error(error.what());

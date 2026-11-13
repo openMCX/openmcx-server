@@ -46,7 +46,7 @@ static void version_first(std::string_view sdp) {
 // 6.2.1 and clause 6.2.2 with TS 24.581 clause 12.1.2 (MCVideo): writes the SDP offer or answer: AMR-WB audio
 // (RFC 4867), H.264 video for MCVideo (RFC 6184), and the "m=application" media plane control channel with its
 // fmtp parameters.
-std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
+std::string make_sdp(const MediaDescription &media, std::uint64_t session_id, std::uint64_t session_version) {
   address(media.address);
   if (!media.floor_address.empty()) address(media.floor_address);
   if (!media_direction(media.direction)) invalid("unsupported SDP media direction");
@@ -77,7 +77,8 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id) {
   } else if (media.granted || media.granted_video_ssrc)
     invalid("transmission control parameters in an MCPTT SDP");
   std::ostringstream out;
-  out << "v=0\r\no=- " << session_id << " 1 IN IP4 " << media.address << "\r\ns=" << (video ? "MCVideo" : "MCPTT")
+  out << "v=0\r\no=- " << session_id << ' ' << session_version << " IN IP4 " << media.address << "\r\ns="
+      << (video ? "MCVideo" : "MCPTT")
       << "\r\nc=IN IP4 " << media.address << "\r\nt=0 0\r\n";
   // TS 24.379 clauses 8.2.1 step 9 and 8.2.2 step 9 e: the ICE attributes of a pre-established session (MCPTT).
   if (media.ice) {

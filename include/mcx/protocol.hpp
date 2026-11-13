@@ -566,8 +566,10 @@ std::string multipart_boundary(std::string_view type);
 std::vector<BodyPart> parse_sip_fragment_parts(std::string_view message);
 //------------------------------------------------------------------------------
 // TS 24.379 clause 6.2.1 and clause 6.2.2 with TS 24.380 clause 14.2 and clause 14.3 (MCPTT), TS 24.281 clause
-// 6.2.1 and clause 6.2.2 with TS 24.581 clause 12.1.2 (MCVideo): writes the SDP offer or answer.
-std::string make_sdp(const MediaDescription &media, std::uint64_t session_id);
+// 6.2.1 and clause 6.2.2 with TS 24.581 clause 12.1.2 (MCVideo): writes the SDP offer or answer. RFC 4566 section 5.2
+// and RFC 3264 section 8: session_id and session_version are the <sess-id> and <sess-version> of the "o=" line; a
+// later SDP of the same session keeps the <sess-id> and increments the <sess-version> (see SdpOrigin in sip_impl.hpp).
+std::string make_sdp(const MediaDescription &media, std::uint64_t session_id, std::uint64_t session_version = 1);
 //------------------------------------------------------------------------------
 // TS 24.379 clause 6.2.1 and clause 6.2.2 with TS 24.380 clause 14.2 and clause 14.3 (MCPTT), TS 24.281 clause
 // 6.2.1 with TS 24.581 clause 12.1.2 (MCVideo): reads an SDP offer or answer.
