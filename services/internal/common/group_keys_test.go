@@ -166,6 +166,41 @@ func TestGroupKeyForMCVideoMember(test *testing.T) {
 }
 
 // ------------------------------------------------------------------------------
+// TS 33.180 clause 5.7 with TS 24.481 clause 6.3.14: a temporary group is keyed for the members of its constituent
+// groups in each service: an MCVideo server asking for its user's MCVideo ID gets the GMK when that ID is an MCVideo
+// member of a constituent group, and a non-member is refused.
+func TestGroupKeyForTemporaryGroupMCVideoMember(test *testing.T) {
+	now := time.Date(2026, 9, 27, 0, 0, 0, 0, time.UTC)
+	kms := testKeyServer(test, nil)
+	defer kms.Close()
+	svc := &service{dataDir: test.TempDir(), now: func() time.Time { return now }, cfg: Config{ServerClientID: "server", ServerSecret: "secret", Issuer: kms.URL, KeyClients: []KeyClient{testGMSKeyClient}, Endpoints: Endpoints{KMS: kms.URL, GMS: "https://gms.example.org"},
+		Users: []User{{MCPTTID: "sip:alice@example.org", MCVideoID: "sip:alice.video@example.org"},
+			{MCPTTID: "sip:bob@example.org", MCVideoID: "sip:bob.video@example.org"},
+			{MCPTTID: "sip:carol@example.org", MCVideoID: "sip:carol.video@example.org"}},
+		Groups: []Group{
+			{ID: "sip:a@example.org", Members: []string{"sip:alice@example.org"}, ProtectMedia: true, MCVideo: &GroupMCVideo{Members: []string{"sip:alice.video@example.org"}}},
+			{ID: "sip:b@example.org", Members: []string{"sip:bob@example.org"}, ProtectMedia: true, MCVideo: &GroupMCVideo{Members: []string{"sip:bob.video@example.org"}}},
+			{ID: "sip:t@example.org", ProtectMedia: true, TemporaryConstituents: []string{"sip:a@example.org", "sip:b@example.org"}}}}}
+	svc.keyTool = func(in map[string]any) (json.RawMessage, error) {
+		return json.RawMessage(`{"document":"<group>encrypted-recipient-payload</group>"}`), nil
+	}
+	handler := newGroupKeyHandler(svc, kms.Client(), time.Hour)
+	for user, want := range map[string]int{"sip:alice.video@example.org": 200, "sip:bob.video@example.org": 200,
+		"sip:carol.video@example.org": 403, "sip:alice@example.org": 200} {
+		request := httptest.NewRequest("GET", "/internal/gktp?group_id=sip%3At%40example.org&user_id="+url.QueryEscape(user), nil)
+		request.SetBasicAuth("server", "secret")
+		recorder := httptest.NewRecorder()
+		handler(recorder, request)
+		if recorder.Code != want {
+			test.Fatalf("%s = %d want %d (%s)", user, recorder.Code, want, recorder.Body.String())
+		}
+	}
+	if group, _ := svc.group("sip:t@example.org"); group.MCVideo != nil {
+		test.Fatalf("the stored temporary group was changed: %+v", group.MCVideo)
+	}
+}
+
+// ------------------------------------------------------------------------------
 // TS 33.180 clause 5.7.2: GKTP requests may come at once; the KMS client made by the first is shared without a
 // data race (run with -race).
 func TestGroupKeyRequestsShareKMSClient(test *testing.T) {
