@@ -1053,6 +1053,21 @@ int main() {
   check(parse_mcptt_info(moved_xml).private_call_kms_uri == moved.private_call_kms_uri, "PrivateCallKMSURI lost");
   moved.private_call_kms_uri = "not a uri";
   rejects([&] { (void)mcptt_info_xml(moved); });
+  // TS 24.281 clause 6.2.0.1 and annex F.1.3 ah) (TS 24.379 forwardingReasonType): the notification of ad hoc group call
+  // redirection carries <forwarding-reason> "migrated".
+  {
+    const auto redirected = parse_service_info(
+        "<mcvideoinfo xmlns=\"urn:3gpp:ns:mcvideoInfo:1.0\"><mcvideo-Params><anyExt><forwarding-reason>migrated"
+        "</forwarding-reason></anyExt></mcvideo-Params></mcvideoinfo>",
+        mcvideo_service);
+    check(redirected.service.contains("forwarding-reason") && redirected.service.at("forwarding-reason") == "migrated",
+          "forwarding-reason migrated (ad hoc group call redirection)");
+    rejects([] {
+      (void)parse_service_info("<mcvideoinfo xmlns=\"urn:3gpp:ns:mcvideoInfo:1.0\"><mcvideo-Params><anyExt>"
+                               "<forwarding-reason></forwarding-reason></anyExt></mcvideo-Params></mcvideoinfo>",
+                               mcvideo_service);
+    });
+  }
   // RFC 2046 section 5.1.1: the CRLF PJSIP writes before the first delimiter.
   check(parse_body_parts("multipart/mixed; boundary=b", "\r\n--b\r\nContent-Type: text/plain\r\n\r\nx\r\n--b--\r\n")
                 .size() == 1,
@@ -1293,6 +1308,53 @@ int main() {
       (void)parse_mcvideo_profile("<mcptt-user-profile xmlns=\"urn:3gpp:mcptt:user-profile:1.0\" XUI-URI=\"sip:a@x\" "
                                   "user-profile-index=\"3\"><Status>true</Status></mcptt-user-profile>");
     });
+    // TS 24.484 clause 9.3.2.1 item 10: functional aliases with their location criteria (TS 24.281 clause 20.2.1.4).
+    {
+      const auto at = [](double lat, double lon) {
+        return "<Corner><Longitude>" + std::to_string(location::encode_longitude(lon)) + "</Longitude><Latitude>" +
+               std::to_string(location::encode_latitude(lat)) + "</Latitude></Corner>";
+      };
+      const auto polygon = "<PolygonArea>" + at(45.0005, 9.999) + at(45.0005, 10.001) + at(45.0013, 10.001) +
+                           at(45.0013, 9.999) + "</PolygonArea>";
+      auto with_aliases = video_profile;
+      with_aliases.replace(
+          with_aliases.find("</OnNetwork>"), 12,
+          "<anyExt><FunctionalAliasList><entry index=\"1\"><uri-entry>sip:fa1@x</uri-entry><anyExt>"
+          "<LocationCriteriaForActivation><EnterSpecificArea>" +
+              polygon +
+              "</EnterSpecificArea></LocationCriteriaForActivation><LocationCriteriaForDeactivation>"
+              "<ExitSpecificArea>" +
+              polygon +
+              "</ExitSpecificArea><ExitSpecificArea><EllipsoidArcArea><Center><Longitude>1</Longitude><Latitude>2"
+              "</Latitude></Center><Radius>500</Radius><OffsetAngle>0</OffsetAngle><IncludedAngle>179"
+              "</IncludedAngle></EllipsoidArcArea></ExitSpecificArea></LocationCriteriaForDeactivation>"
+              "<manual-deactivation-not-allowed-if-location-criteria-met>true"
+              "</manual-deactivation-not-allowed-if-location-criteria-met></anyExt></entry>"
+              "<entry index=\"2\"><uri-entry>sip:fa2@x</uri-entry></entry></FunctionalAliasList></anyExt>"
+              "</OnNetwork>");
+      const auto read_aliases = parse_mcvideo_profile(with_aliases);
+      check(read_aliases.functional_aliases.size() == 2, "MCVideo profile functional aliases");
+      const auto &first = read_aliases.functional_aliases.front();
+      check(first.alias == "sip:fa1@x" && first.activate_on_entry.size() == 1 && first.activate_on_exit.empty() &&
+                first.deactivate_on_entry.empty() && first.deactivate_on_exit.size() == 2 &&
+                first.manual_deactivation_locked && first.has_location_criteria(),
+            "functional alias location criteria");
+      check(first.activate_on_entry.front().polygon.size() == 4 &&
+                location::inside(first.activate_on_entry.front(), 45.0009, 10.0) &&
+                !location::inside(first.activate_on_entry.front(), 45.0018, 10.0),
+            "functional alias area coordinates (TS 23.032 codes)");
+      const auto &arc = first.deactivate_on_exit.back();
+      check(arc.center && arc.center->longitude == 1 && arc.center->latitude == 2 && arc.radius == 500 &&
+                arc.included_angle == 179,
+            "functional alias ellipsoid arc");
+      check(read_aliases.functional_aliases.back().alias == "sip:fa2@x" &&
+                !read_aliases.functional_aliases.back().has_location_criteria(),
+            "functional alias without criteria");
+      auto two_corners = with_aliases;
+      for (const auto &corner : {at(45.0013, 10.001), at(45.0013, 9.999)})
+        two_corners.replace(two_corners.find(corner), corner.size(), "");
+      rejects([&] { (void)parse_mcvideo_profile(two_corners); });
+    }
     // TS 24.484 clause 10.3.2.1: the MCData user profile: identity, index and the MCData rights only.
     const std::string data_profile =
         "<mcdata-user-profile xmlns=\"urn:3gpp:ns:mcdata:user-profile:1.0\" XUI-URI=\"sip:d@x\" "

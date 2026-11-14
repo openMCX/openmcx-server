@@ -13,6 +13,7 @@
 // RFC 4566, RFC 4567, RFC 4575, RFC 4826, RFC 5366, RFC 5547, RFC 5875, RFC 6184.
 
 #pragma once
+#include "mcx/location.hpp"
 #include "mcx/service.hpp"
 
 #include <cstdint>
@@ -176,6 +177,20 @@ struct McvideoProfile {
   unsigned profile_index = 1;
   std::vector<std::string> private_call_targets, groups;
   std::set<std::string> actions;
+  // TS 24.484 clause 9.3.2.1 item 10 (the <FunctionalAliasList> of <OnNetwork>): a functional alias the user may
+  // activate, with the location criteria of its <anyExt> (<LocationCriteriaForActivation>,
+  // <LocationCriteriaForDeactivation>: areas whose entry or exit triggers the change, TS 24.281 clause 20.2.1.4) and
+  // <manual-deactivation-not-allowed-if-location-criteria-met> (TS 24.281 clause 20.2.1.2).
+  struct FunctionalAlias {
+    std::string alias;
+    std::vector<location::Area> activate_on_entry, activate_on_exit, deactivate_on_entry, deactivate_on_exit;
+    bool manual_deactivation_locked = false;
+    bool has_location_criteria() const {
+      return !activate_on_entry.empty() || !activate_on_exit.empty() || !deactivate_on_entry.empty() ||
+             !deactivate_on_exit.empty();
+    }
+  };
+  std::vector<FunctionalAlias> functional_aliases;
 };
 
 //------------------------------------------------------------------------------

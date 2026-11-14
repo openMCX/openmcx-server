@@ -40,7 +40,9 @@ const std::vector<std::pair<std::string, std::set<std::string>>> &service_elemen
       {"transfer-announced-ind", {"true", "false"}},
       {"replaces-header-value", {}},
       {"call-forwarding-ind", {"true", "false"}},
-      {"forwarding-reason", {"immediate", "no-answer", "manual-input"}},
+      // TS 24.379 annex F.1.2 forwardingReasonType; "migrated" is also the redirection of an ad hoc group call
+      // (TS 24.379 / TS 24.281 clause 6.2.0.1, TS 24.281 annex F.1.3 ah)).
+      {"forwarding-reason", {"immediate", "no-answer", "manual-input", "migrated"}},
       {"forwarded-by-mcptt-id", {}},
       {"forwarding-target-id", {}},
       {"forwarding-target-orig-id", {}},

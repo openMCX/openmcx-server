@@ -85,6 +85,7 @@ func (svc *service) routesCMS(mux *http.ServeMux) {
 	mux.HandleFunc("GET /internal/user", svc.getInternalUser)
 	mux.HandleFunc("GET /internal/functional-alias", svc.getInternalFunctionalAlias)
 	mux.HandleFunc("GET /xcap-root/org.3gpp.mcvideo.user-profile/users/{mcvideoID}/{document}", svc.getMCVideoProfile)
+	mux.HandleFunc("PUT /xcap-root/org.3gpp.mcvideo.user-profile/users/{mcvideoID}/{document}", svc.putMCVideoProfile)
 	mux.HandleFunc("GET /xcap-root/org.3gpp.mcdata.user-profile/users/{mcdataID}/{document}", svc.getMCDataProfile)
 	// TS 24.484 clauses 8.4.2.8, 9.4.2.8 and 10.4.2.8: the global service configuration documents.
 	mux.HandleFunc("GET /xcap-root/{auid}/global/{document}", svc.getServiceConfig)

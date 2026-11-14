@@ -456,15 +456,15 @@ func (svc *service) mcvideoProfileDocument(id string) ([]byte, int, int) {
 	if !ok {
 		return nil, 0, http.StatusNotFound
 	}
-	doc, err := svc.mcvideoProfileXML(user)
+	generated, index, err := svc.generatedMCVideoProfile(user)
 	if err != nil {
 		return nil, 0, http.StatusInternalServerError
 	}
-	raw, err := xml.Marshal(doc)
-	if err != nil {
-		return nil, 0, http.StatusInternalServerError
+	// TS 24.484 clause 6.3.4.3: the document an authorised CMC stored, while it is the latest change.
+	if stored, updated := svc.uploadedMCVideoProfile(user, generated); updated {
+		return stored, index, http.StatusOK
 	}
-	return append([]byte(xml.Header), raw...), doc.ProfileIndex, http.StatusOK
+	return generated, index, http.StatusOK
 }
 
 // ------------------------------------------------------------------------------

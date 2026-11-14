@@ -113,6 +113,28 @@ type MCVideoServiceConfiguration struct {
 	ResourcePriority         ResourcePriorities       `json:"resource_priority"`
 	SignallingProtection     *SignallingProtection    `json:"signalling_protection,omitempty"`
 	ProtectionBetweenServers *MCVideoServerProtection `json:"protection_between_servers,omitempty"`
+	// <adhoc-group-call> of the <anyExt> of <on-network> (TS 24.484 clause 9.4.2.1 item c): absent, the MCVideo
+	// system does not support ad hoc group calls (clause 9.4.2.6).
+	AdhocGroupCall *AdhocGroupCallConfiguration `json:"adhoc_group_call,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// AdhocGroupCallConfiguration: <allow-adhoc-group-call-support>, <max-no-participants> and the optional <hang-time>
+// and <max-duration-of-call> (in seconds) of <adhoc-group-call> (TS 24.484 clause 9.4.2.3).
+type AdhocGroupCallConfiguration struct {
+	Allow            bool `json:"allow"`
+	MaxParticipants  int  `json:"max_participants"`
+	HangTimeS        int  `json:"hang_time,omitempty"`
+	MaxCallDurationS int  `json:"max_duration,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 9.4.2.3: the adhoc-group-callType.
+type adhocGroupCallXML struct {
+	Allow           bool   `xml:"allow-adhoc-group-call-support"`
+	MaxParticipants int    `xml:"max-no-participants"`
+	HangTime        string `xml:"hang-time,omitempty"`
+	MaxDuration     string `xml:"max-duration-of-call,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -393,7 +415,8 @@ type mcvideoServiceConfigXML struct {
 			Imminent             resourcePriorityXML      `xml:"imminent-peril-resource-priority"`
 			Normal               resourcePriorityXML      `xml:"normal-resource-priority"`
 			AnyExt               struct {
-				MaxAuthorizations int `xml:"max-simultaneous-authorizations"`
+				MaxAuthorizations int                `xml:"max-simultaneous-authorizations"`
+				AdhocGroupCall    *adhocGroupCallXML `xml:"adhoc-group-call,omitempty"`
 			} `xml:"anyExt"`
 		} `xml:"on-network"`
 	} `xml:"service-configuration-params"`
@@ -466,6 +489,15 @@ func (svc *service) serviceConfigDocument(auid string) ([]byte, string, *documen
 		on := &out.Params.OnNetwork
 		on.Emergency, on.Imminent, on.Normal = resourcePriorityElement(rp.Emergency), resourcePriorityElement(rp.Imminent), resourcePriorityElement(rp.Normal)
 		on.AnyExt.MaxAuthorizations = maxSimultaneousAuthorizations
+		if adhoc := conf.AdhocGroupCall; adhoc != nil {
+			on.AnyExt.AdhocGroupCall = &adhocGroupCallXML{Allow: adhoc.Allow, MaxParticipants: max(adhoc.MaxParticipants, 1)}
+			if adhoc.HangTimeS > 0 {
+				on.AnyExt.AdhocGroupCall.HangTime = durationOf(adhoc.HangTimeS * 1000)
+			}
+			if adhoc.MaxCallDurationS > 0 {
+				on.AnyExt.AdhocGroupCall.MaxDuration = durationOf(adhoc.MaxCallDurationS * 1000)
+			}
+		}
 		on.SignallingProtection = signallingProtectionElement(conf.SignallingProtection)
 		if between := conf.ProtectionBetweenServers; between != nil {
 			on.BetweenServers = serverProtectionElement(serverProtectionXML{AllowSignalling: between.AllowSignalling,

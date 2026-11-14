@@ -102,6 +102,8 @@ type profileEntry struct {
 	EntryInfo string `xml:"entry-info,attr,omitempty"`
 	Index     string `xml:"index,attr,omitempty"`
 	URI       string `xml:"uri-entry"`
+	// The location criteria of a <FunctionalAliasList> entry (functional_alias_location.go).
+	AnyExt *profileEntryExt `xml:"anyExt,omitempty"`
 }
 
 // ------------------------------------------------------------------------------

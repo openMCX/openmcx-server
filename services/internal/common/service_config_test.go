@@ -196,3 +196,31 @@ func TestServiceConfigurationProtection(test *testing.T) {
 		}
 	}
 }
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 9.4.2.1 item c and 9.4.2.6: the MCVideo service configuration carries <adhoc-group-call> in the
+// <anyExt> of <on-network> when the site supports ad hoc group calls, valid against the schema; without it the element
+// is absent (ad hoc group calls not supported).
+func TestMCVideoServiceConfigurationAdhocGroupCall(test *testing.T) {
+	key := testKey(test)
+	for _, adhoc := range []*AdhocGroupCallConfiguration{{Allow: true, MaxParticipants: 8, HangTimeS: 30}, nil} {
+		cfg := testConfig()
+		cfg.ServiceConfig = ServiceConfiguration{MCVideo: &MCVideoServiceConfiguration{AdhocGroupCall: adhoc}}
+		cms := roleHandler(test, RoleCMS, cfg, key, test.TempDir())
+		alice := tokenFor(test, cfg, key, "alice", testNow, cfg.ServerClientID)
+		rr := httptest.NewRecorder()
+		cms.ServeHTTP(rr, bearerRequest("GET", "/xcap-root/org.3gpp.mcvideo.service-config/global/service-config.xml", alice, nil))
+		if rr.Code != http.StatusOK {
+			test.Fatalf("status %d", rr.Code)
+		}
+		if err := mcvideoServiceConfigSchema.validate(rr.Body.Bytes()); err != nil {
+			test.Fatalf("schema: %v\n%s", err, rr.Body.String())
+		}
+		want := "<adhoc-group-call><allow-adhoc-group-call-support>true</allow-adhoc-group-call-support>" +
+			"<max-no-participants>8</max-no-participants><hang-time>PT30S</hang-time></adhoc-group-call></anyExt>"
+		if got := strings.Contains(rr.Body.String(), want); got != (adhoc != nil) ||
+			(adhoc == nil && strings.Contains(rr.Body.String(), "adhoc-group-call")) {
+			test.Fatalf("ad hoc group call configuration %v:\n%s", adhoc, rr.Body.String())
+		}
+	}
+}

@@ -113,6 +113,77 @@ McdataProfile parse_mcdata_profile(std::string_view xml) {
 //------------------------------------------------------------------------------
 // TS 24.484 clause 9.3.2.1: reads an MCVideo user profile: its index, the MCVideo ID (equal to "XUI-URI"), the
 // private call targets, the MCVideo groups of <OnNetwork> and the granted actions.
+//------------------------------------------------------------------------------
+// TS 24.484 clause 9.3.2.3: a <GeographicalAreaType> of a user profile: a <PolygonArea> of 3 to 15 <Corner>s or an
+// <EllipsoidArcArea>, each point a <Longitude> and a <Latitude> coded as in TS 23.032 clause 6.1 (0 to 16777215).
+static location::Area profile_area(xmlNode *node, const char *ns) {
+  const auto coded = [&](xmlNode *parent, const char *name, std::uint32_t max) {
+    const auto value = text(unique_child(parent, name, ns));
+    if (value.empty() || value.size() > 10) invalid("invalid profile area coordinate or size");
+    return static_cast<std::uint32_t>(number(value, max));
+  };
+  const auto point = [&](xmlNode *parent) {
+    location::Point out;
+    out.longitude = coded(parent, "Longitude", 0xffffff);
+    out.latitude = coded(parent, "Latitude", 0xffffff);
+    return out;
+  };
+  location::Area area;
+  if (auto polygon = unique_child(node, "PolygonArea", ns, false)) {
+    for (auto corner = polygon->children; corner; corner = corner->next)
+      if (is(corner, "Corner", ns)) {
+        if (area.polygon.size() >= 15) invalid("a polygon has 3 to 15 corners");
+        area.polygon.push_back(point(corner));
+      }
+    if (area.polygon.size() < 3) invalid("a polygon has 3 to 15 corners");
+  } else if (auto arc = unique_child(node, "EllipsoidArcArea", ns, false)) {
+    area.center = point(unique_child(arc, "Center", ns));
+    area.radius = coded(arc, "Radius", 0xffffffff);
+    area.offset_angle = static_cast<std::uint8_t>(coded(arc, "OffsetAngle", 255));
+    area.included_angle = static_cast<std::uint8_t>(coded(arc, "IncludedAngle", 255));
+  } else {
+    invalid("an area is a polygon or an ellipsoid arc");
+  }
+  return area;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 9.3.2.1 item 10: the <entry> elements of <FunctionalAliasList> in the <anyExt> of <OnNetwork>, with
+// the location criteria and the manual deactivation lock of their <anyExt>.
+static void profile_functional_aliases(xmlNode *on, const char *ns, McvideoProfile &out) {
+  for (auto ext = on->children; ext; ext = ext->next) {
+    if (!is(ext, "anyExt", ns)) continue;
+    for (auto list = ext->children; list; list = list->next) {
+      if (!is(list, "FunctionalAliasList", ns)) continue;
+      for (auto entry = list->children; entry; entry = entry->next) {
+        if (!is(entry, "entry", ns)) continue;
+        if (out.functional_aliases.size() >= 256) invalid("too many functional aliases");
+        McvideoProfile::FunctionalAlias alias;
+        alias.alias = text(unique_child(entry, "uri-entry", ns));
+        if (alias.alias.empty()) invalid("a functional alias entry without its URI");
+        if (auto entry_ext = unique_child(entry, "anyExt", ns, false))
+          for (auto node = entry_ext->children; node; node = node->next) {
+            const bool activation = is(node, "LocationCriteriaForActivation", ns);
+            if (activation || is(node, "LocationCriteriaForDeactivation", ns)) {
+              for (auto area = node->children; area; area = area->next) {
+                const bool entry_area = is(area, "EnterSpecificArea", ns);
+                if (!entry_area && !is(area, "ExitSpecificArea", ns)) continue;
+                auto &areas = activation ? (entry_area ? alias.activate_on_entry : alias.activate_on_exit)
+                                         : (entry_area ? alias.deactivate_on_entry : alias.deactivate_on_exit);
+                if (areas.size() >= 16) invalid("too many functional alias location criteria");
+                areas.push_back(profile_area(area, ns));
+              }
+            } else if (is(node, "manual-deactivation-not-allowed-if-location-criteria-met", ns)) {
+              const auto value = text(node);
+              alias.manual_deactivation_locked = value == "true" || value == "1";
+            }
+          }
+        out.functional_aliases.push_back(std::move(alias));
+      }
+    }
+  }
+}
+
 McvideoProfile parse_mcvideo_profile(std::string_view xml) {
   auto doc = document(xml);
   const char *ns = nullptr;
@@ -137,6 +208,7 @@ McvideoProfile parse_mcvideo_profile(std::string_view xml) {
         if (out.groups.size() >= 256) invalid("too many MCVideo groups");
         out.groups.push_back(uri(unique_child(entry, "MCVideo-Group-ID", ns)));
       }
+    profile_functional_aliases(on, ns, out);
   }
   out.actions = parse_profile_actions(xml);
 

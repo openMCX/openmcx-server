@@ -107,6 +107,11 @@ type FunctionalAlias struct {
 	MCVideoUsers               []string `json:"mcvideo_users,omitempty"`
 	MaxSimultaneousActivations int      `json:"max_simultaneous_activations"`
 	AllowTakeover              bool     `json:"allow_takeover,omitempty"`
+	// The location criteria of the alias in the user profiles (functional_alias_location.go): the areas whose entry
+	// or exit activates or deactivates it at the client, and whether the user may deactivate it while they are met.
+	LocationActivation       *AreaCriteria `json:"location_activation,omitempty"`
+	LocationDeactivation     *AreaCriteria `json:"location_deactivation,omitempty"`
+	ManualDeactivationLocked bool          `json:"manual_deactivation_locked,omitempty"`
 }
 
 type User struct {
@@ -703,6 +708,9 @@ func (cfg Config) Validate() error {
 			return fmt.Errorf("invalid functional alias %q", fa.ID)
 		}
 		aliases[fa.ID] = true
+		if err := fa.checkLocationCriteria(); err != nil {
+			return err
+		}
 		// In admin mode MCX Admin creates the users after this file is written, so an alias may name users this file
 		// does not hold yet (an MC service ID all the same); in file mode every alias user is one of its users.
 		known := func(ids map[string]bool, id string) bool {
@@ -798,7 +806,7 @@ func (cfg Config) functionalAliasList(id string, users func(FunctionalAlias) []s
 			if list == nil {
 				list = &profileEntryList{}
 			}
-			list.Entries = append(list.Entries, profileEntry{URI: alias.ID})
+			list.Entries = append(list.Entries, profileEntry{URI: alias.ID, AnyExt: alias.profileEntryExt()})
 		}
 	}
 	return list
