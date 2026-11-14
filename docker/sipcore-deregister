@@ -13,7 +13,7 @@
 # contact of the AOR is removed and the subscribers to its reg event get the document with the registration
 # terminated and the event deactivated (the user is expected to register again) or rejected (pua_reginfo
 # reginfo.deregister, dependencies/kamailio patch 0004). The network-initiated re-authentication of clause 5.4.1.6 is
-# kamcmd -s unix:/tmp/kamailio_ctl reginfo.shorten location <AOR> <seconds> (docs/USAGE.md).
+# kamcmd -s unix:/tmp/kamailio_ctl reginfo.shorten location <AOR> <private user identity> <seconds> (docs/USAGE.md).
 set -eu
 [ $# -eq 2 ] || { echo "usage: sipcore-deregister <AOR> deactivated|rejected" >&2; exit 2; }
 aor=$1

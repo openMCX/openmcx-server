@@ -155,18 +155,20 @@ SIP core's container (`docker exec <sip-core container> ...`); the operator deci
 "operator settable triggers"):
 
 ```bash
-# Re-authentication (TS 24.229 clause 5.4.1.6): every contact of the user expires after <seconds>, given by the
-# operator; the subscribers are notified with the event "shortened" and the user registers again, with a new
-# authentication, before then.
-kamcmd -s unix:/tmp/kamailio_ctl reginfo.shorten location alice@mcx.test 60
+# Re-authentication of a private user identity (TS 24.229 clause 5.4.1.6): the contacts that identity registered for
+# the user expire after <seconds>, given by the operator; the subscribers are notified with the event "shortened" for
+# them and the device registers again, with a new authentication, before then. The private user identity is the
+# registration's Authorization username as sent: the IMPI for IMS AKA (alice@mcx.test in the labs, the ISIM's IMPI
+# with a card), the username for SIP digest (client-c).
+kamcmd -s unix:/tmp/kamailio_ctl reginfo.shorten location alice@mcx.test alice@mcx.test 60
 
 # Deregistration (TS 24.229 clause 5.4.1.5): the user's sessions are released, then its registration is removed and
 # the subscribers are notified with the event "deactivated" (the user is expected to register again) or "rejected".
 sipcore-deregister alice@mcx.test deactivated
 ```
 
-`reginfo.shorten` marks every contact of the user (one per device; TS 24.229 clause 5.4.1.6 NOTE 2 asks for only the
-contacts of the device being re-authenticated, see LIMITATIONS.md). The Linux client reports the subscription in its
+`reginfo.shorten` shortens and marks only the contacts of that private user identity; the user's other contacts stay
+"active" in the same document (clause 5.4.1.6 items c) to f)). The Linux client reports the subscription in its
 status file (`reg_event`) and as events: `reg_subscribed`, `reg_subscription_refreshed`, `reg_shortened` (with the
 reregistration time), `network_deregistered` (with the event) and `reg_subscription_ended`. After "rejected" it stays
 logged off until the `log-on` command.

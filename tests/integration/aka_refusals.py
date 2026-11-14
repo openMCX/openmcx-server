@@ -13,11 +13,16 @@ port_pc". The probe takes a duplicate of the UE client's own UDP socket on its p
 sends two requests the P-CSCF refuses:
   - a MESSAGE inside a dialog (To tag) without a Route: 404 (loose routing fails, docker/pcscf.cfg route[PROTECTED]);
   - a MESSAGE whose Via sent-by address is not the UE's: 403 (TS 33.203 clause 7.1).
+These two carry the Security-Verify the UE mirrors from the agreement's Security-Server (--security-verify). AKA-12,
+RFC 3329 section 2.3.1 ("The server MUST check that the security mechanisms listed in the Security-Verify header
+field of incoming requests correspond to its static list"; 494 otherwise, with the unmodified list): two more
+MESSAGEs, one whose Security-Verify differs from the agreement (its first spi-c changed) and one without it, each
+refused with 494 (the scenario reads the P-CSCF's log for the code).
 For each, on the UE's interface: an ESP packet from the P-CSCF with the SPI of the UE's inbound SA from port_pc to
 port_us (spi_us) shall arrive, and no plaintext SIP from the P-CSCF. The UE client receives the refusal and drops it
 as a stray response (no transaction of its own).
 
-  aka_refusals.py --pid PID --pcscf ADDRESS --ue ADDRESS --status FILE --identity SIP-URI
+  aka_refusals.py --pid PID --pcscf ADDRESS --ue ADDRESS --status FILE --identity SIP-URI --security-verify LIST
 
 Prints one JSON line {"passed": ..., "checks": [...]}.
 
@@ -28,6 +33,7 @@ import argparse
 import ctypes
 import json
 import os
+import re
 import secrets
 import socket
 import struct
@@ -69,11 +75,13 @@ def stolen_udp_socket(pid, port):
 
 
 # ------------------------------------------------------------------------------
-def message(via_host, port_us, identity, domain, tag):
-    """A MESSAGE inside a dialog (To tag), without a Route header field."""
+def message(via_host, port_us, identity, domain, tag, security_verify):
+    """A MESSAGE inside a dialog (To tag), without a Route header field; with the Security-Verify given, if any."""
+    verify = f'Security-Verify: {security_verify}\r\n' if security_verify else ''
     return (
         f'MESSAGE sip:{domain} SIP/2.0\r\n'
         f'Via: SIP/2.0/UDP {via_host}:{port_us};branch=z9hG4bK{secrets.token_hex(8)}\r\n'
+        f'{verify}'
         'Max-Forwards: 70\r\n'
         f'From: <{identity}>;tag={secrets.token_hex(4)}\r\n'
         f'To: <sip:{domain}>;tag={tag}\r\n'
@@ -117,6 +125,7 @@ def main():
     parser.add_argument('--ue', required=True, help="the UE's address")
     parser.add_argument('--status', required=True)
     parser.add_argument('--identity', required=True)
+    parser.add_argument('--security-verify', required=True, help="the agreement's Security-Server, as the UE mirrors it")
     parser.add_argument('--interface', default='eth0')
     args = parser.parse_args()
     sa = json.load(open(args.status)).get('sip_security') or {}
@@ -125,16 +134,23 @@ def main():
     sock = stolen_udp_socket(args.pid, int(sa['port_uc']))
     capture = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
     capture.bind((args.interface, 0))
-    for name, via_host in (('404 to an in-dialog request without Route', args.ue),
-                           ('403 to a Via not matching the security association', '192.0.2.1')):
+    # The first spi-c of the list changed: the same mechanisms, one parameter value modified (RFC 3329 section 2.3.1).
+    modified = re.sub(r'spi-c=(\d+)', lambda m: f'spi-c={int(m.group(1)) + 1}', args.security_verify, count=1)
+    if modified == args.security_verify:
+        raise SystemExit('no spi-c in the Security-Verify given')
+    for name, via_host, verify in (
+            ('AKA-10 404 to an in-dialog request without Route', args.ue, args.security_verify),
+            ('AKA-10 403 to a Via not matching the security association', '192.0.2.1', args.security_verify),
+            ('AKA-12 494 to a modified Security-Verify', args.ue, modified),
+            ('AKA-12 494 to a request without Security-Verify', args.ue, '')):
         watch(capture, args.pcscf, 0.3)  # drain
-        sock.sendto(message(via_host, sa['port_us'], args.identity, domain, secrets.token_hex(4)).encode(),
+        sock.sendto(message(via_host, sa['port_us'], args.identity, domain, secrets.token_hex(4), verify).encode(),
                     (args.pcscf, int(sa['port_ps'])))
         esp, plain = watch(capture, args.pcscf, 3.0)
         over_sa = int(sa['spi_us']) in esp
-        checks.append(dict(name=f'AKA-10 {name}: over the SA to port_us (spi_us {sa["spi_us"]})', passed=over_sa,
+        checks.append(dict(name=f'{name}: over the SA to port_us (spi_us {sa["spi_us"]})', passed=over_sa,
                            detail=f'ESP SPIs from the P-CSCF {sorted(set(esp))}'))
-        checks.append(dict(name=f'AKA-10 {name}: nothing unprotected', passed=not plain,
+        checks.append(dict(name=f'{name}: nothing unprotected', passed=not plain,
                            detail='; '.join(plain) or 'no plaintext SIP'))
     sock.close()
     print(json.dumps(dict(passed=all(check['passed'] for check in checks), checks=checks)))

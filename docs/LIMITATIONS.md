@@ -207,25 +207,20 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 
 - **Reg event package** (RFC 3680; TS 24.229 clauses 5.1.1.3, 5.2.3 and 5.4.2.1) is served by the SIP core to the
   Linux client, the Android app and the P-CSCF; the operator starts a network-initiated deregistration or
-  re-authentication (shortened registration, TS 33.203 clauses 5.1.2 and 6.1.4) with the commands in USAGE.md. Own
-  deviations not fixed yet: the Linux client keeps its TLS session after a
-  deregistration by the network over SIP digest (clause 5.1.1.7: "the UE shall delete all security associations or
-  TLS sessions towards the P-CSCF"; over IMS AKA the security associations go); the P-Charging-Vector (charging
-  correlation, TS 32.260) is carried only in the P-CSCF's reg event dialog (clauses 5.2.3, 5.2.4, 5.2.5.2, 5.4.2.1.1
-  and 5.4.2.1.2): the P-CSCF's REGISTER (clause 5.2.2.1 item 3) and the other requests and responses of the P-CSCF
-  and the SIP core carry none, so neither do the UEs' own reg event dialogs; reginfo.shorten marks every contact of the address-of-record "shortened"
-  (clause 5.4.1.6 NOTE 2: only the contacts "originally registered by this UE"; the labs and tutorials have one
-  contact per user).
+  re-authentication of one private user identity (shortened registration, TS 33.203 clauses 5.1.2 and 6.1.4) with the
+  commands in USAGE.md. Own deviation not fixed yet: the P-Charging-Vector (charging correlation, TS 32.260) is
+  carried only in the P-CSCF's reg event dialog (clauses 5.2.3, 5.2.4, 5.2.5.2, 5.4.2.1.1 and 5.4.2.1.2): the
+  P-CSCF's REGISTER (clause 5.2.2.1 item 3) and the other requests and responses of the P-CSCF and the SIP core carry
+  none, so neither do the UEs' own reg event dialogs.
 - **sec-agree option-tag in Proxy-Require** (spec defect, to report). After the security agreement the Linux client
   sends Security-Verify and `Require: sec-agree` in every request (RFC 3329 section 2.3.1) but ACK and CANCEL (RFC 3329
   table 1, TS 24.229 tables A.7 and A.23, RFC 3261 sections 8.2.2.3 and 9.1) and PRACK, and `Proxy-Require: sec-agree`
   in INVITE and OPTIONS only: for the other methods TS 24.229 annex A gives Proxy-Require "n/a" for the UE, against
   the RFC 3329 MUST it imports, with no text for the weaker status (clause A.1.1); for PRACK RFC 3329 contradicts itself
   (section 2.3.1 "all the subsequent SIP requests", table 1 "-") and TS 24.229 table A.91 has no Security-Verify. The P-CSCF removes the sec-agree option-tags and Security-Verify before the
-  SIP core (TS 24.229 annex A, proxy role: Security-Verify "x"). Own deviation not fixed yet: the P-CSCF checks
-  Security-Verify only in a REGISTER, not in the later requests (RFC 3329 section 2.3.1: "The server MUST check that
-  the security mechanisms listed in the Security-Verify header field of incoming requests correspond to its static
-  list"; 494 otherwise).
+  SIP core (TS 24.229 annex A, proxy role: Security-Verify "x"), after checking that Security-Verify of every later
+  request but ACK, CANCEL and PRACK mirrors the Security-Server of the agreement (RFC 3329 section 2.3.1); a missing
+  or modified one is refused with 494 and the unmodified list.
 - **P-Access-Network-Info** (TS 24.229 clauses 5.1.1.2.1 h) and 5.1.2A.1.1, "if available to the UE (as defined in the
   access technology specific annexes)"). The clients never send it: on 5GS and EPS (annexes U and L, "The UE shall
   always include the P-Access-Network-Info header field where indicated") it needs the serving cell, which the Linux

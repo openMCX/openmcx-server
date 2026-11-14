@@ -1,0 +1,199 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: OpenMCX <noreply@openmcx.invalid>
+Date: Sat, 14 Nov 2026 12:00:00 +0100
+Subject: [PATCH] pua_reginfo: network-initiated re-authentication of one
+ private user identity (TS 24.229 clause 5.4.1.6)
+
+- reginfo.shorten <usrloc domain> <AOR> <private user identity> <seconds>
+  (was <usrloc domain> <AOR> <seconds>, every contact of the AOR): "If the
+  S-CSCF is informed that a private user identity needs to be
+  re-authenticated", the document of the NOTIFY sets the event "shortened"
+  and the operator's expiry only "within each <contact> element that was
+  registered by this UE" (items e) and f)); the other contacts of the AOR
+  stay "active" with their expiry (items c) and d)). A contact's private user
+  identity is its "impi" attribute, which the SIP core stores with it (usrloc
+  xavp_contact). An identity without a contact of the AOR is an RPC fault
+  (404), and no document is published.
+
+The modified files carry a notice of the change (GPL-2.0 section 2(a)).
+---
+diff --git a/src/modules/pua_reginfo/pua_reginfo.c b/src/modules/pua_reginfo/pua_reginfo.c
+index ed853cc..b713aa2 100644
+--- a/src/modules/pua_reginfo/pua_reginfo.c
++++ b/src/modules/pua_reginfo/pua_reginfo.c
+@@ -24,6 +24,8 @@
+  *
+  * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): the RPC commands reginfo.shorten and reginfo.deregister
+  * (network-initiated re-authentication and deregistration, TS 24.229 clauses 5.4.1.6 and 5.4.1.5).
++ * Modified by OpenMCX on 2026-11-14 (GPL-2.0 section 2(a)): reginfo.shorten re-authenticates one private user
++ * identity: only the contacts it registered are shortened and marked (TS 24.229 clause 5.4.1.6 items e) and f)).
+  */
+ 
+ /* Bindings to PUA */
+@@ -64,8 +66,9 @@ static int domain_fixup(void **param, int param_no);
+ static int mod_init(void);
+ 
+ static const char *rpc_shorten_doc[2] = {
+-		"Shorten every contact of an address-of-record to the given expiry and "
+-		"publish it with the event \"shortened\": usrloc domain, AOR, seconds",
++		"Shorten the contacts a private user identity registered for an "
++		"address-of-record to the given expiry and publish them with the event "
++		"\"shortened\": usrloc domain, AOR, private user identity, seconds",
+ 		0};
+ static const char *rpc_deregister_doc[2] = {
+ 		"Remove every contact of an address-of-record and publish it with the "
+@@ -260,22 +263,31 @@ static urecord_t *rpc_record(rpc_t *rpc, void *ctx, str *table, str *aor,
+ }
+ 
+ /*!
+- * \brief reginfo.shorten <domain> <aor> <seconds>: every contact of the AOR
+- * expires after <seconds> (TS 24.229 clause 5.4.1.6: "shorten the validity of
+- * all registration lifetimes"); one document with the event "shortened" and
+- * the new expiry ("an operator defined value", given by the operator here)
++ * \brief reginfo.shorten <domain> <aor> <impi> <seconds>: the network-initiated
++ * re-authentication of a private user identity (TS 24.229 clause 5.4.1.6: "If
++ * the S-CSCF is informed that a private user identity needs to be
++ * re-authenticated"): each contact of the AOR registered with <impi> (the "impi"
++ * attribute the SIP core stores with it) expires after <seconds> ("an operator
++ * defined value", given by the operator here; item f)) and has the event
++ * "shortened" (item e)); the other contacts stay as they are, "active" (items c)
++ * and d)). One document; none and an RPC fault when the identity has no contact.
+  */
+ static void rpc_shorten(rpc_t *rpc, void *ctx)
+ {
+-	str table = {0, 0}, aor = {0, 0};
+-	int seconds = 0;
++	str table = {0, 0}, aor = {0, 0}, impi = {0, 0};
++	int seconds = 0, matched = 0;
+ 	udomain_t *domain = NULL;
+ 	urecord_t *record;
+ 	ucontact_t *c;
+ 	time_t now = time(0);
+ 
+-	if(rpc->scan(ctx, "SSd", &table, &aor, &seconds) < 3) {
+-		rpc->fault(ctx, 400, "Expected: usrloc domain, AOR, seconds");
++	if(rpc->scan(ctx, "SSSd", &table, &aor, &impi, &seconds) < 4) {
++		rpc->fault(ctx, 400,
++				"Expected: usrloc domain, AOR, private user identity, seconds");
++		return;
++	}
++	if(impi.len <= 0) {
++		rpc->fault(ctx, 400, "Invalid private user identity");
+ 		return;
+ 	}
+ 	if(seconds <= 0) {
+@@ -286,15 +298,27 @@ static void rpc_shorten(rpc_t *rpc, void *ctx)
+ 	if(record == NULL)
+ 		return;
+ 	for(c = record->contacts; c; c = c->next) {
+-		if(VALID_CONTACT(c, now) && c->expires > now + seconds)
++		if(!VALID_CONTACT(c, now) || !reginfo_contact_of_impi(c, &impi))
++			continue;
++		matched++;
++		if(c->expires > now + seconds)
+ 			c->expires = now + seconds;
+ 	}
++	if(matched == 0) {
++		ul.release_urecord(record);
++		ul.unlock_udomain(domain, &aor);
++		rpc->fault(ctx, 404, "No contact of the private user identity");
++		return;
++	}
+ 	reginfo_event_override = "shortened";
++	reginfo_event_impi = impi;
+ 	reginfo_usrloc_cb(record->contacts, UL_CONTACT_UPDATE, NULL);
+ 	reginfo_event_override = NULL;
++	reginfo_event_impi.s = NULL;
++	reginfo_event_impi.len = 0;
+ 	ul.release_urecord(record);
+ 	ul.unlock_udomain(domain, &aor);
+-	rpc->rpl_printf(ctx, "shortened");
++	rpc->rpl_printf(ctx, "shortened %d", matched);
+ }
+ 
+ /*!
+diff --git a/src/modules/pua_reginfo/usrloc_cb.c b/src/modules/pua_reginfo/usrloc_cb.c
+index c01f174..79e205a 100644
+--- a/src/modules/pua_reginfo/usrloc_cb.c
++++ b/src/modules/pua_reginfo/usrloc_cb.c
+@@ -22,6 +22,8 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+  *
++ * Modified by OpenMCX on 2026-11-14 (GPL-2.0 section 2(a)): an RPC command's event applies to the contacts of one
++ * private user identity when reginfo_event_impi is set (TS 24.229 clause 5.4.1.6 items e) and f)).
+  * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): the reginfo document follows RFC 3680 (a contact added by
+  * a REGISTER has the event "registered", not "created"; no "received", "path" or "user_agent" attributes, which the
+  * reginfo schema does not have; no "unknown" event); the RPC commands reginfo.shorten and reginfo.deregister change the
+@@ -31,6 +33,7 @@
+  */
+ 
+ #include "usrloc_cb.h"
++#include "../../core/xavp.h"
+ #include "pua_reginfo.h"
+ #include <libxml/parser.h>
+ #include "../pua/pua.h"
+@@ -63,6 +66,24 @@ static int _pua_reginfo_self_op = 0;
+ /* The event of the contacts of the next document, set by the RPC commands of pua_reginfo.c (NULL: from the usrloc
+  * callback type). Process-local: the RPC command and the callbacks it triggers run in the same process. */
+ const char *reginfo_event_override = NULL;
++/* With reginfo_event_override: the private user identity whose contacts it applies to (TS 24.229 clause 5.4.1.6 items
++ * e) and f): "each <contact> element that was registered by this UE"); empty: every contact. */
++str reginfo_event_impi = {0, 0};
++
++/* Whether contact c was registered with the private user identity impi: the "impi" attribute the SIP core stores with
++ * the contact (usrloc xavp_contact "ulattrs", set before save()). */
++int reginfo_contact_of_impi(ucontact_t *c, str *impi)
++{
++	static str name = str_init("impi");
++	sr_xavp_t *attr;
++
++	if(c->xavp == NULL || c->xavp->val.type != SR_XTYPE_XAVP)
++		return 0;
++	attr = xavp_get(&name, c->xavp->val.v.xavp);
++	return attr != NULL && attr->val.type == SR_XTYPE_STR
++		   && attr->val.v.s.len == impi->len
++		   && memcmp(attr->val.v.s.s, impi->s, impi->len) == 0;
++}
+ 
+ #define BUF_LEN 256
+ int ki_reginfo_disable_publish(sip_msg_t *msg)
+@@ -148,10 +169,14 @@ str *build_reginfo_full(urecord_t *record, str uri, ucontact_t *c, int type)
+ 			memset(buf, 0, sizeof(buf));
+ 			snprintf(buf, sizeof(buf), "%p", ptr);
+ 			xmlNewProp(contact_node, BAD_CAST "id", BAD_CAST buf);
+-			/* Check, if this is the modified contact (every contact of the
+-			 * address-of-record for an RPC command): */
+-			if(reginfo_event_override
+-					|| ((c->ruid.len == ptr->ruid.len)
++			/* Check, if this is the modified contact (for an RPC command every
++			 * contact of the address-of-record, or of reginfo_event_impi): */
++			if((reginfo_event_override
++					   && (reginfo_event_impi.len == 0
++							   || reginfo_contact_of_impi(
++									   ptr, &reginfo_event_impi)))
++					|| (!reginfo_event_override
++							&& (c->ruid.len == ptr->ruid.len)
+ 							&& !memcmp(c->ruid.s, ptr->ruid.s, c->ruid.len))) {
+ 				if((type & UL_CONTACT_INSERT) || (type & UL_CONTACT_UPDATE)) {
+ 					reg_active = 1;
+diff --git a/src/modules/pua_reginfo/usrloc_cb.h b/src/modules/pua_reginfo/usrloc_cb.h
+index d73b509..9ae8e8a 100644
+--- a/src/modules/pua_reginfo/usrloc_cb.h
++++ b/src/modules/pua_reginfo/usrloc_cb.h
+@@ -23,6 +23,7 @@
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+  *
+  * Modified by OpenMCX on 2026-10-31 (GPL-2.0 section 2(a)): reginfo_event_override.
++ * Modified by OpenMCX on 2026-11-14 (GPL-2.0 section 2(a)): reginfo_event_impi, reginfo_contact_of_impi.
+  */
+ 
+ #ifndef __PUA_REGINFO_USRLOC_CB__
+@@ -34,5 +35,7 @@ void reginfo_usrloc_cb(ucontact_t *c, int type, void *param);
+ void pua_reginfo_update_self_op(int v);
+ 
+ extern const char *reginfo_event_override;
++extern str reginfo_event_impi;
++int reginfo_contact_of_impi(ucontact_t *c, str *impi);
+ 
+ #endif

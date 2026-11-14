@@ -676,7 +676,9 @@ LABS = [
     # messages until the UE's first message over the new set, and the old set goes at both ends (clause 7.4); the
     # calls and SDS after it then run over the new set; aka_resync_scenario: after a restart of the SIP core (its SQN in
     # memory) the UE answers with AUTS over the set in use and authenticates again (TS 24.229 clauses 5.1.1.5.3 and
-    # 5.4.1.2.3A).
+    # 5.4.1.2.3A); reg_event_scenario, last: the SIP core's re-authentication of one private user identity (client-a's
+    # contact shortened, another contact of its AOR kept, TS 24.229 clause 5.4.1.6) and its deregistration of a digest
+    # client (client-c "deactivated": its TLS session closed, registered again, clauses 5.4.1.5 and 5.1.1.7).
     lab(
         'aka',
         'single',
@@ -690,6 +692,7 @@ LABS = [
             'prearranged_scenario',
             'private_call_scenario',
             'mcdata_sds_scenario',
+            'reg_event_scenario',
             'tls_profile_check',
         ],
         ['aka', 'common'],
@@ -715,7 +718,8 @@ LABS = [
     # The same over UDP (TS 24.229 clause 4.2A, TS 33.203 clause 7.1 UDP case): the AKA UEs send from port_uc to
     # port_ps over UDP, requests of 1300 bytes or more (INVITEs with their bodies) over TCP (RFC 3261 section 18.1.1);
     # aka_refusals_scenario: the P-CSCF's refusals of requests received over a set go back over it, from port_pc to
-    # port_us (TS 33.203 clause 7.1, UDP case).
+    # port_us (TS 33.203 clause 7.1, UDP case), and a request whose Security-Verify does not mirror the agreement's
+    # Security-Server, or has none, gets 494 (RFC 3329 section 2.3.1).
     lab(
         'aka-udp',
         'single',

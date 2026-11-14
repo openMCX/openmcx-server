@@ -1,7 +1,7 @@
 # Kamailio patches
 
 The SIP core and the P-CSCF run Kamailio 6.1.4 ([source](https://github.com/kamailio/kamailio/tree/6.1.4), archive
-SHA-256 `d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6`, dependencies/lock.json) with seven changes,
+SHA-256 `d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6`, dependencies/lock.json) with eight changes,
 applied by docker/Dockerfile.kamailio after each is checked against its SHA-256:
 
 - [0001-ims_auth-local-vectors-and-AKAv2-SHA-256.patch](0001-ims_auth-local-vectors-and-AKAv2-SHA-256.patch),
@@ -60,3 +60,8 @@ The image carries the source archive and the patches in /usr/src.
   associations between its protected ports and the UE's (port_pc to port_us, port_uc to port_ps) when the set is
   deleted (TS 33.203 clause 7.1, NOTE 6): a later set of the same UE given the same port_pc otherwise sent its first
   request over the old connection, which the UE no longer had, and the request was lost.
+- [0008-pua_reginfo-re-authentication-of-one-private-user-identity.patch](0008-pua_reginfo-re-authentication-of-one-private-user-identity.patch),
+  SHA-256 `19d825edde321d8b455c09b0b77bda8a05ff5e06c1710162520d806d6888b92b`: pua_reginfo's reginfo.shorten re-authenticates one private user identity
+  (TS 24.229 clause 5.4.1.6): only the contacts that identity registered (the "impi" attribute the SIP core stores with
+  each contact) are shortened and get the event "shortened" (items e) and f)); the other contacts of the AOR stay
+  "active".

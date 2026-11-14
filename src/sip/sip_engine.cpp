@@ -173,13 +173,27 @@ void SipEngine::unregister_account(SipResponseHandler handler) {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.229 clause 5.1.1.7: the S-CSCF ended the registration (reg event NOTIFY): SIP digest: the registration client
-// goes with its refresh, and the next register_account starts a new one; IMS AKA: aka_registration_ended().
+// TS 24.229 clause 5.1.1.7: the S-CSCF ended the registration (reg event NOTIFY): "the UE shall delete all security
+// associations or TLS sessions towards the P-CSCF". SIP digest: the registration client goes with its refresh, and
+// the TLS session it registered over (the registration client holds a reference to its last transport) is shut down:
+// gracefully, so the transactions still on it (the NOTIFY's answer, BYEs of a "rejected") end first, and no new request
+// picks it; the next register_account opens a new one. IMS AKA: aka_registration_ended().
 void SipEngine::registration_ended() {
   if (impl_->aka) return impl_->aka_registration_ended();
   if (impl_->registration != nullptr) {
+    pjsip_regc_info info{};
+    pjsip_transport *session = nullptr;
+    if (pjsip_regc_get_info(impl_->registration, &info) == PJ_SUCCESS && info.transport != nullptr &&
+        (info.transport->flag & PJSIP_TRANSPORT_SECURE) != 0) {
+      session = info.transport;
+      (void)pjsip_transport_add_ref(session);
+    }
     (void)pjsip_regc_destroy(impl_->registration);
     impl_->registration = nullptr;
+    if (session != nullptr) {
+      (void)pjsip_transport_shutdown(session);
+      (void)pjsip_transport_dec_ref(session);
+    }
   }
 }
 

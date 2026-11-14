@@ -8,14 +8,17 @@
 Once client-a is authorised over its IPsec security associations, aka_refusals.py runs in a privileged helper container
 joined to client-a's network and PID namespaces: it sends two requests the P-CSCF refuses from client-a's protected
 client port, through client-a's security associations, and checks that each refusal comes back over the set (ESP to
-port_us) and never unprotected (TS 33.203 clause 7.1, UDP case). Its result is written as
-integration/aka-refusals-results.json.
+port_us) and never unprotected (TS 33.203 clause 7.1, UDP case); AKA-12: a request whose Security-Verify does not
+mirror the agreement's Security-Server, or has none, is refused with 494 (RFC 3329 section 2.3.1), read from the
+P-CSCF's log (the agreement it logs at the registration's 200 (OK) gives the probe the Security-Verify to mirror). Its
+result is written as integration/aka-refusals-results.json.
 
 Specifications: TS 33.203 V19.1.0 (Rel-19).
 """
 
 import argparse
 import json
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -60,11 +63,22 @@ def main():
                                text=True, check=True).stdout.split()
         ue = subprocess.run(cli + ['exec', '-T', 'client-a', 'sh', '-c', 'hostname -i'], capture_output=True,
                             text=True, check=True).stdout.split()[0]
+        port_uc = status['sip_security']['port_uc']
+        agreement = f'security agreement {ue}:{port_uc} '
+        logs = subprocess.run(cli + ['logs', '--no-color', 'pcscf'], capture_output=True, text=True).stdout
+        lines = [line for line in logs.splitlines() if agreement in line]
+        if not lines:
+            raise AssertionError(f'no security agreement logged for {ue}:{port_uc}')
+        # The P-CSCF's line: "... security agreement <UE>:<port_uc> port_us <port> expires <seconds>: <Security-Server>".
+        found = re.search(r'security agreement \S+ port_us \d+ expires \d+: (.+)$', lines[-1])
+        if not found:
+            raise AssertionError(f'security agreement line not understood: {lines[-1][:160]}')
+        security_verify = found.group(1).strip()
         run = subprocess.run(
             ['docker', 'run', '--rm', '--privileged', '--network', f'container:{cid}', '--pid', f'container:{cid}',
              '-v', f'{HERE / "aka_refusals.py"}:/probe/aka_refusals.py:ro', '-v', f'{status_file}:/probe/status.json:ro',
              TOOLS, 'python3', '/probe/aka_refusals.py', '--pid', pid, '--pcscf', hosts[0], '--ue', ue, '--status',
-             '/probe/status.json', '--identity', cfg['sip']['identity']],
+             '/probe/status.json', '--identity', cfg['sip']['identity'], '--security-verify', security_verify],
             capture_output=True, text=True, timeout=120,
         )
         lines = run.stdout.strip().splitlines()
@@ -72,6 +86,12 @@ def main():
             raise AssertionError(f'probe failed: {run.stderr.strip()[-400:]}')
         probes = json.loads(lines[-1])
         result.update(probes)
+        logs = subprocess.run(cli + ['logs', '--no-color', 'pcscf'], capture_output=True, text=True).stdout
+        refused = [line for line in logs.splitlines()
+                   if f'MESSAGE from {ue}:{port_uc}: Security-Verify does not mirror' in line]
+        probes.setdefault('checks', []).append(dict(
+            name='AKA-12 494 to the modified and the missing Security-Verify, none to the mirrored one',
+            passed=len(refused) == 2, detail=f'{len(refused)} refusals with 494 in the P-CSCF log'))
         failed = [check['name'] + ' (' + check['detail'] + ')' for check in probes.get('checks', [])
                   if not check['passed']]
         if failed or not probes.get('passed'):
