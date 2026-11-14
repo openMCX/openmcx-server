@@ -234,6 +234,13 @@ int main() {
             pull.video_pull_url == "https://mcvideo-server/recordings/0a1b",
         "a video pull URL must parse");
   check(service_info_xml(pull, mcvideo_service) == pull_fixture, "a video pull request must round-trip byte for byte");
+  // TS 24.281 clauses 7.2.1 and 7.2.2 with annex F.1.2: <gw-mcvideo-usage> (xs:boolean) after <video-pull-url>.
+  const std::string gateway_fixture =
+      R"(<?xml version="1.0"?><mcvideoinfo xmlns="urn:3gpp:ns:mcvideoInfo:1.0"><mcvideo-Params><mcvideo-client-id type="Normal"><mcvideoString>urn:uuid:client-a</mcvideoString></mcvideo-client-id><gw-mcvideo-usage>true</gw-mcvideo-usage></mcvideo-Params></mcvideoinfo>)";
+  const auto gateway = parse_service_info(gateway_fixture, mcvideo_service);
+  check(gateway.gateway_usage == true, "<gw-mcvideo-usage> must parse");
+  check(service_info_xml(gateway, mcvideo_service) == gateway_fixture,
+        "<gw-mcvideo-usage> must round-trip byte for byte");
   const std::string push_fixture =
       R"(<?xml version="1.0"?><mcvideoinfo xmlns="urn:3gpp:ns:mcvideoInfo:1.0"><mcvideo-Params><anyExt><video-push-url>https://mcvideo-server/recordings/0a1b</video-push-url></anyExt></mcvideo-Params></mcvideoinfo>)";
   const auto push = parse_service_info(push_fixture, mcvideo_service);
@@ -922,6 +929,22 @@ int main() {
                            "</signalling-protection><protection-between-mcdata-servers/>"));
     check(!data.confidentiality && data.integrity && data.between_servers && data.between_servers_control,
           "MCData protection");
+    // TS 24.484 clause 9.4.2.1 item c and 9.4.2.6: <adhoc-group-call>; absent, ad hoc group calls are not supported.
+    check(!parse_service_adhoc(document("mcvideo", "")).supported, "ad hoc group calls not supported when absent");
+    const auto adhoc = parse_service_adhoc(
+        document("mcvideo", "<anyExt><adhoc-group-call><allow-adhoc-group-call-support>true"
+                            "</allow-adhoc-group-call-support><max-no-participants>8</max-no-participants>"
+                            "</adhoc-group-call></anyExt>"));
+    check(adhoc.supported && adhoc.max_participants == 8, "ad hoc group calls supported");
+    check(!parse_service_adhoc(document("mcvideo", "<anyExt><adhoc-group-call><allow-adhoc-group-call-support>false"
+                                                   "</allow-adhoc-group-call-support><max-no-participants>8"
+                                                   "</max-no-participants></adhoc-group-call></anyExt>"))
+               .supported,
+          "ad hoc group calls not allowed");
+    rejects([&] {
+      (void)parse_service_adhoc(document("mcvideo", "<anyExt><adhoc-group-call><allow-adhoc-group-call-support>yes"
+                                                    "</allow-adhoc-group-call-support></adhoc-group-call></anyExt>"));
+    });
     // Another service's element is not this document's: ignored, so the default applies.
     check(parse_service_protection(document("mcdata", "<protection-between-mcptt-servers><allow-signalling-protection>"
                                                       "false</allow-signalling-protection>"

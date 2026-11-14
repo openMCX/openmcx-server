@@ -33,6 +33,223 @@ template <typename Action> bool refused(Action action) {
 } // namespace
 
 //------------------------------------------------------------------------------
+// TS 24.581 clauses 6.2.4 and 6.2.5 with clauses 11.1.1 and 11.2.1: the transmission participant timers T100 to
+// T104 and counters C100 to C104 on a fake clock (1000 ms intervals, limits of 3).
+static void participant_timers() {
+  const Packet request{Type::Request, false, 5, {priority_field(1)}};
+  const Packet end{Type::EndRequest, false, 5, {}};
+  const Packet queue{Type::QueuePositionRequest, false, 5, {}};
+  const Packet receive{Type::ReceiveMediaRequest, false, 5, {}};
+  const Packet reception_end{
+      Type::ReceptionEndRequest, false, 5, {transmitting_user_field("sip:bob@mcx.test"), audio_ssrc_field(1)}};
+  const auto server = [](Type type, std::vector<FloorField> fields = {}) {
+    return Packet{type, false, 9, std::move(fields)};
+  };
+
+  // Defaults of table 11.2.1-1 and a refused zero limit.
+  assert(ParticipantTimerOptions{}.c100_request == 3 && ParticipantTimerOptions{}.c104_receive_release == 3);
+  assert(refused([] { ParticipantTimers{ParticipantTimerOptions{.c101_end_request = 0}}; }));
+
+  // Clauses 6.2.4.3.2, 6.2.4.4.3 and 6.2.4.4.4: T100 resends at each expiry below C100, then gives up into 'U: has
+  // no permission to transmit'.
+  {
+    ParticipantTimers timers;
+    timers.send(request, 0);
+    assert(timers.state() == ParticipantState::PendingRequest);
+    assert(timers.tick(999).empty());
+    assert(timers.tick(1000) == std::vector<Packet>{request});
+    assert(timers.tick(1999).empty());
+    assert(timers.tick(2000) == std::vector<Packet>{request});
+    assert(timers.take_failed().empty());
+    assert(timers.tick(3000).empty());
+    assert(timers.state() == ParticipantState::NoPermission);
+    assert(timers.take_failed() == std::vector<Type>{Type::Request} && timers.take_failed().empty());
+    assert(timers.tick(10000).empty());
+  }
+
+  // Clause 6.2.4.4.6: Transmission Granted stops T100; clause 6.2.4.5.3 starts T101; clauses 6.2.4.6.2 and
+  // 6.2.4.6.4: T101 resends, Transmission End Response stops it.
+  {
+    ParticipantTimers timers;
+    timers.send(request, 0);
+    timers.receive(server(Type::Granted), 500);
+    assert(timers.state() == ParticipantState::HasPermission && timers.tick(5000).empty());
+    assert(refused([&] { timers.send(request, 5000); }));
+    timers.send(end, 5000);
+    assert(timers.state() == ParticipantState::PendingEnd);
+    assert(timers.tick(6000) == std::vector<Packet>{end});
+    timers.receive(server(Type::EndResponse), 6100);
+    assert(timers.state() == ParticipantState::NoPermission && timers.tick(20000).empty());
+    assert(timers.take_failed().empty());
+  }
+
+  // Clause 6.2.4.6.3: T101 expired N times enters 'U: has no permission to transmit'.
+  {
+    ParticipantTimers timers;
+    timers.send(request, 0);
+    timers.send(end, 100); // clause 6.2.4.4.7: T100 stopped, T101 started
+    assert(timers.tick(1099).empty());
+    assert(timers.tick(1100) == std::vector<Packet>{end} && timers.tick(2100) == std::vector<Packet>{end});
+    assert(timers.tick(3100).empty() && timers.state() == ParticipantState::NoPermission);
+    assert(timers.take_failed() == std::vector<Type>{Type::EndRequest});
+  }
+
+  // Clause 6.2.4.4.2: Transmission rejected stops T100.
+  {
+    ParticipantTimers timers;
+    timers.send(request, 0);
+    timers.receive(server(Type::Rejected, {reject_cause_field(1)}), 10);
+    assert(timers.state() == ParticipantState::NoPermission && timers.tick(5000).empty());
+    assert(timers.take_failed().empty());
+  }
+
+  // Queued path: clause 6.2.4.4.5 (Queue Position Info stops T100, 'U: queued transmission'), clauses 6.2.4.9.3,
+  // 6.2.4.9.7 and 6.2.4.9.2 (T102 started, resent, stopped), clause 6.2.4.9.9 (Granted).
+  {
+    ParticipantTimers timers;
+    timers.send(request, 0);
+    timers.receive(server(Type::QueuePositionInfo, {queue_info_field(2, 1)}), 200);
+    assert(timers.state() == ParticipantState::Queued && timers.tick(5000).empty());
+    timers.send(queue, 5000);
+    assert(timers.tick(6000) == std::vector<Packet>{queue});
+    timers.receive(server(Type::QueuePositionInfo, {queue_info_field(1, 1)}), 6200);
+    assert(timers.state() == ParticipantState::Queued && timers.tick(9000).empty());
+    timers.send(queue, 9000);
+    timers.receive(server(Type::Granted), 9100);
+    assert(timers.state() == ParticipantState::HasPermission && timers.tick(20000).empty());
+  }
+
+  // Clause 6.2.4.9.8: T102 expired N times sends a Transmission end request, starts T101 and enters 'U: pending end
+  // of transmission'; clause 6.2.4.9.6: Transmission cancel request notify leaves the queue.
+  {
+    ParticipantTimers timers;
+    timers.send(request, 0);
+    timers.receive(server(Type::QueuePositionInfo, {queue_info_field(2, 1)}), 0);
+    timers.send(queue, 1000);
+    assert(timers.tick(2000) == std::vector<Packet>{queue} && timers.tick(3000) == std::vector<Packet>{queue});
+    assert(timers.tick(4000) == std::vector<Packet>{end});
+    assert(timers.state() == ParticipantState::PendingEnd);
+    assert(timers.take_failed() == std::vector<Type>{Type::QueuePositionRequest});
+    assert(timers.tick(5000) == std::vector<Packet>{end});
+    timers.receive(server(Type::EndResponse), 5100);
+    assert(timers.state() == ParticipantState::NoPermission);
+
+    ParticipantTimers cancelled;
+    cancelled.send(request, 0);
+    cancelled.receive(server(Type::QueuePositionInfo, {queue_info_field(2, 1)}), 0);
+    cancelled.send(queue, 10);
+    cancelled.receive(server(Type::CancelRequestNotify), 20);
+    assert(cancelled.state() == ParticipantState::NoPermission && cancelled.tick(9000).empty());
+  }
+
+  // Clause 6.2.4.5.5 step 4b: a revoke queueing the transmission, then a Queue Position Request from 'U: has
+  // permission to transmit'; clause 6.2.4.5.7: the server's Transmission End Request ends the permission.
+  {
+    ParticipantTimers timers;
+    timers.send(request, 0);
+    timers.receive(server(Type::Granted), 0);
+    timers.receive(server(Type::Revoked, {reject_cause_field(2)}), 100);
+    timers.send(queue, 100);
+    assert(timers.state() == ParticipantState::Queued);
+    timers.receive(server(Type::Granted), 200);
+    timers.receive(server(Type::EndRequest), 300);
+    assert(timers.state() == ParticipantState::NoPermission);
+  }
+
+  // Clause 6.2.4.2.2 step 4: an implicit Transmission request starts T100 without sending.
+  {
+    ParticipantTimers timers;
+    timers.expect_implicit_request(request, 0);
+    assert(timers.state() == ParticipantState::PendingRequest);
+    assert(timers.tick(1000) == std::vector<Packet>{request});
+    timers.receive(server(Type::Granted), 1100);
+    assert(timers.state() == ParticipantState::HasPermission);
+    assert(refused([&] { timers.expect_implicit_request(request, 2000); }));
+  }
+
+  // Reception path: clauses 6.2.5.3.3, 6.2.5.4.3 and 6.2.5.4.5 (T103 resent, granted stops it), clauses 6.2.5.5.3,
+  // 6.2.5.6.2 and 6.2.5.6.4 (T104 resent, Media Reception End Response stops it); the two machines run apart.
+  {
+    ParticipantTimers timers;
+    timers.send(receive, 0);
+    timers.send(request, 0);
+    assert(timers.reception_state() == ReceptionState::PendingRequest);
+    assert((timers.tick(1000) == std::vector<Packet>{request, receive}));
+    timers.receive(server(Type::ReceiveMediaResponse, {result_field(true)}), 1500);
+    assert(timers.reception_state() == ReceptionState::HasPermission);
+    assert(timers.state() == ParticipantState::PendingRequest);
+    assert(timers.tick(2000) == std::vector<Packet>{request});
+    assert(refused([&] { timers.send(receive, 2000); }));
+    timers.send(reception_end, 3000);
+    assert(timers.reception_state() == ReceptionState::PendingRelease);
+    assert(timers.tick(3000).empty()); // T100 expired N times here
+    assert(timers.take_failed() == std::vector<Type>{Type::Request});
+    assert(timers.tick(4000) == std::vector<Packet>{reception_end});
+    timers.receive(server(Type::ReceptionEndResponse), 4500);
+    assert(timers.reception_state() == ReceptionState::Terminated && timers.tick(20000).empty());
+    timers.send(receive, 20000); // a new basic reception instance (clause 6.2.5.3.3 step 2)
+    assert(timers.reception_state() == ReceptionState::PendingRequest);
+  }
+
+  // Clauses 6.2.5.4.4 and 6.2.5.6.3: T103 and T104 expired N times enter 'terminated'.
+  {
+    ParticipantTimers timers;
+    timers.send(receive, 0);
+    assert(timers.tick(1000).size() == 1 && timers.tick(2000).size() == 1 && timers.tick(3000).empty());
+    assert(timers.reception_state() == ReceptionState::Terminated);
+    assert(timers.take_failed() == std::vector<Type>{Type::ReceiveMediaRequest});
+    timers.send(receive, 4000);
+    timers.receive(server(Type::ReceiveMediaResponse, {result_field(true)}), 4000);
+    timers.send(reception_end, 5000);
+    assert(timers.tick(6000).size() == 1 && timers.tick(7000).size() == 1 && timers.tick(8000).empty());
+    assert(timers.reception_state() == ReceptionState::Terminated);
+    assert(timers.take_failed() == std::vector<Type>{Type::ReceptionEndRequest});
+  }
+
+  // Clause 6.2.5.4.2: a rejected Receive Media Response (Result 0, or a Reject Cause alone) stops T103 and enters
+  // 'terminated'; clause 6.2.5.4.6: the user cancelling the pending request stops T103 and starts T104.
+  {
+    ParticipantTimers rejected;
+    rejected.send(receive, 0);
+    rejected.receive(server(Type::ReceiveMediaResponse, {result_field(false), reject_cause_field(1)}), 10);
+    assert(rejected.reception_state() == ReceptionState::Terminated && rejected.tick(9000).empty());
+    rejected.send(receive, 9000);
+    rejected.receive(server(Type::ReceiveMediaResponse, {reject_cause_field(0)}), 9010);
+    assert(rejected.reception_state() == ReceptionState::Terminated && rejected.take_failed().empty());
+
+    ParticipantTimers cancelled;
+    cancelled.send(receive, 0);
+    cancelled.send(reception_end, 500);
+    assert(cancelled.reception_state() == ReceptionState::PendingRelease);
+    assert(cancelled.tick(1000).empty()); // T103 stopped
+    assert(cancelled.tick(1500) == std::vector<Packet>{reception_end});
+    // A late Receive Media Response has no procedure in 'U: pending reception release' (clause 6.2.5.1).
+    cancelled.receive(server(Type::ReceiveMediaResponse, {result_field(true)}), 1600);
+    assert(cancelled.reception_state() == ReceptionState::PendingRelease);
+    cancelled.receive(server(Type::ReceptionEndResponse), 1700);
+    assert(cancelled.reception_state() == ReceptionState::Terminated && cancelled.tick(9000).empty());
+  }
+
+  // Clauses 6.2.4.7.2 and 6.2.5.3.5: call release stops every timer; later messages are discarded.
+  {
+    ParticipantTimers timers;
+    timers.send(request, 0);
+    timers.send(receive, 0);
+    timers.release();
+    assert(timers.state() == ParticipantState::CallReleasing);
+    assert(timers.reception_state() == ReceptionState::CallReleasing);
+    assert(timers.tick(1000).empty() && timers.tick(5000).empty() && timers.take_failed().empty());
+    timers.receive(server(Type::Granted), 5000);
+    timers.send(request, 5000);
+    assert(timers.state() == ParticipantState::CallReleasing && timers.tick(9000).empty());
+  }
+
+  // Only participant messages are registered.
+  ParticipantTimers timers;
+  assert(refused([&] { timers.send(Packet{Type::Granted, false, 5, {}}, 0); }));
+}
+
+//------------------------------------------------------------------------------
 // TS 24.581 clause 9.1.2, clause 9.2.2.1 (tables 9.2.2.1-1 to 9.2.2.1-3) and clause 9.2.3 (table 9.2.3.1-1): each
 // transmission control message encodes with its name (MCV0, MCV1, MCV2) and subtype and decodes back; Transmission
 // Request (clause 9.2.4), Transmission Granted (clause 9.2.5), Transmission Arbitration Taken (clause 9.2.8) and the
@@ -155,5 +372,6 @@ int main() {
   assert(automatic_reception(true, false, true, false));
   assert(automatic_reception(true, false, false, true));
   assert(automatic_reception(false, false, false, false));
+  participant_timers();
   std::cout << "transmission tests passed\n";
 }

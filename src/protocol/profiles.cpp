@@ -297,6 +297,28 @@ ServiceProtection parse_service_protection(std::string_view xml) {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.484 clause 9.4.2.1 item c and 9.4.2.6 (clause 8.4.2.1 for MCPTT): the <adhoc-group-call> of the <anyExt> of
+// <on-network>. Absent, ad hoc group calls are not supported; present, <allow-adhoc-group-call-support> says whether
+// they are (TS 24.281 clause 22.2.2.1.1: the client skips the procedure when it is absent or "false").
+ServiceAdhoc parse_service_adhoc(std::string_view xml) {
+  auto doc = document(xml);
+  const auto [on, ns] = service_on_network(doc.get());
+  ServiceAdhoc out;
+  for (auto ext = on->children; ext; ext = ext->next) {
+    if (!is(ext, "anyExt", ns)) continue;
+    auto adhoc = unique_child(ext, "adhoc-group-call", ns, false);
+    if (!adhoc) continue;
+    const auto allow = scalar(unique_child(adhoc, "allow-adhoc-group-call-support", ns));
+    if (allow != "true" && allow != "false" && allow != "1" && allow != "0")
+      invalid("invalid allow-adhoc-group-call-support value");
+    out.supported = allow == "true" || allow == "1";
+    if (auto max = unique_child(adhoc, "max-no-participants", ns, false))
+      out.max_participants = number(scalar(max), 65535);
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.484 clause 7.2.2.1 item 4: <mcptt-UE-initial-configuration> (clause 7.2.2.2 namespace) / <on-network> /
 // <GMS-URI>, mandatory.
 std::string parse_initial_gms_uri(std::string_view xml) {

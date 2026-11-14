@@ -75,6 +75,9 @@ struct McpttInfo {
   // video pull asks for (a contentType in <mcvideo-Params>), and <video-push-url>, where
   // the server records a one-to-server video push (an <anyExt> anyURI, sent in INFO).
   std::string video_pull_url, video_push_url;
+  // TS 24.281 clauses 7.2.1 and 7.2.2 (annex F.1.2, <mcvideo-Params>): <gw-mcvideo-usage> "true" when the MCVideo
+  // client reaches the MCVideo system through an MCVideo gateway UE.
+  std::optional<bool> gateway_usage;
   // <associated-group-id>: for a user- or group-broadcast group call, the group
   // through which the invited user is affiliated (project profile; TS 24.379
   // clause 4.12 defines no stage-3 procedure for broadcast group hierarchies).
@@ -231,6 +234,17 @@ struct ServiceProtection {
 };
 
 ServiceProtection parse_service_protection(std::string_view xml);
+
+//------------------------------------------------------------------------------
+// TS 24.484 clauses 8.4.2.1 (MCPTT) and 9.4.2.1 item c (MCVideo): the <adhoc-group-call> of the <anyExt> of
+// <on-network>: whether the system supports ad hoc group calls (<allow-adhoc-group-call-support>; the element absent,
+// it does not, clause 9.4.2.6) and <max-no-participants>.
+struct ServiceAdhoc {
+  bool supported = false;
+  unsigned max_participants = 0;
+};
+
+ServiceAdhoc parse_service_adhoc(std::string_view xml);
 
 //------------------------------------------------------------------------------
 // TS 24.484 clause 7.2.2.1 item 4 and clause 7.2.2.7 item 5 (TS 24.483 clause 8.2.9 GMSURI): the <GMS-URI> of the

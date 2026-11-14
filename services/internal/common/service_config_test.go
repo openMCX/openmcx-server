@@ -203,7 +203,7 @@ func TestServiceConfigurationProtection(test *testing.T) {
 // is absent (ad hoc group calls not supported).
 func TestMCVideoServiceConfigurationAdhocGroupCall(test *testing.T) {
 	key := testKey(test)
-	for _, adhoc := range []*AdhocGroupCallConfiguration{{Allow: true, MaxParticipants: 8, HangTimeS: 30}, nil} {
+	for _, adhoc := range []*AdhocGroupCallConfiguration{{Allow: true, MaxParticipants: 8, HangTimeS: 30}, {Allow: false, MaxParticipants: 8}, nil} {
 		cfg := testConfig()
 		cfg.ServiceConfig = ServiceConfiguration{MCVideo: &MCVideoServiceConfiguration{AdhocGroupCall: adhoc}}
 		cms := roleHandler(test, RoleCMS, cfg, key, test.TempDir())
@@ -218,6 +218,11 @@ func TestMCVideoServiceConfigurationAdhocGroupCall(test *testing.T) {
 		}
 		want := "<adhoc-group-call><allow-adhoc-group-call-support>true</allow-adhoc-group-call-support>" +
 			"<max-no-participants>8</max-no-participants><hang-time>PT30S</hang-time></adhoc-group-call></anyExt>"
+		if adhoc != nil && !adhoc.Allow {
+			// ad hoc group calls not allowed (TS 24.281 22.2.2.1.1: the client skips the procedure)
+			want = "<adhoc-group-call><allow-adhoc-group-call-support>false</allow-adhoc-group-call-support>" +
+				"<max-no-participants>8</max-no-participants></adhoc-group-call></anyExt>"
+		}
 		if got := strings.Contains(rr.Body.String(), want); got != (adhoc != nil) ||
 			(adhoc == nil && strings.Contains(rr.Body.String(), "adhoc-group-call")) {
 			test.Fatalf("ad hoc group call configuration %v:\n%s", adhoc, rr.Body.String())

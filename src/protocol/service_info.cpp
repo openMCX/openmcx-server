@@ -50,7 +50,12 @@ const std::vector<std::pair<std::string, std::set<std::string>>> &service_elemen
       // Functional alias status determination (TS 24.379 clause 9A.2.1.3, TS 24.281 clause 20.2.1.3).
       {"req-type",
        {"mc-service-authorisation-notify-request", "functional-alias-status-determination",
-        "fa-user-status-determination"}},
+        "fa-user-status-determination",
+        // TS 24.281 clause 12.1A.1.4 4) c) ii) and annex F.1.3: the ad hoc group emergency alert participant criteria
+        // modification request (TS 24.379 clause 12.1A.1.5 for MCPTT).
+        "ad-hoc-emergency-alert-participant-criteria-modification"}},
+      // TS 24.281 clauses 6.2.0.1 and 12.1A.3 (annex F.1.3): the controlling function's response to it.
+      {"resp-type", {"ad-hoc-emergency-alert-participant-criteria-modification"}},
       {"mc-service-auth-result", {"true", "false"}},
       // Functional alias to group binding (TS 24.379 clause 9A.4.2.1, TS 24.281 clause 20.4.2.1).
       {"binding-ind", {"true", "false"}},
@@ -131,6 +136,9 @@ std::string service_info_xml(const McpttInfo &info, const ServiceProfile &servic
   flag("alert-ind-rcvd", info.alert_received);
   flag("emergency-ind-rcvd", info.emergency_received);
   out += wrapped("video-pull-url", names.uri, info.video_pull_url);
+  // TS 24.281 annex F.1.2: <gw-mcvideo-usage> (xs:boolean) follows <video-pull-url> in <mcvideo-Params>.
+  if (names.prefix == "mcvideo" && info.gateway_usage)
+    out += std::string("<gw-mcvideo-usage>") + (*info.gateway_usage ? "true" : "false") + "</gw-mcvideo-usage>";
   std::string ext;
   if (!info.ambient_listening_type.empty()) {
     if (info.ambient_listening_type != "remote-init" && info.ambient_listening_type != "local-init")
@@ -439,6 +447,11 @@ McpttInfo parse_service_info(std::string_view xml, const ServiceProfile &service
   out.originated_by = info_value(params, "originated-by", true, names);
   out.associated_group = associated_group_id(params, names);
   out.video_pull_url = info_value(params, "video-pull-url", true, names);
+  if (names.prefix == "mcvideo")
+    if (auto gw = unique_child(params, "gw-mcvideo-usage", info_ns, false)) {
+      const auto value = scalar(gw);
+      out.gateway_usage = value == "true" || value == "1";
+    }
   if (auto ext = unique_child(params, "anyExt", info_ns, false)) {
     parse_info_extensions(ext, names, out);
     // TS 24.281 clause 9.2.1.2.1.1 step 14 d) i) places <associated-group-id> in <anyExt>, while annex F.1 has it in
