@@ -240,6 +240,7 @@ std::string info_xml(const Info &info) {
   out += wrapped("originated-by", "mcdataURI", info.originated_by);
   out += wrapped("mcdata-client-id", "mcdataString", info.client_id);
   out += wrapped("mcdata-controller-psi", "mcdataURI", info.controller_psi);
+  if (info.gateway_usage) out += "<gw-mcdata-usage>true</gw-mcdata-usage>";
   std::string ext;
   const auto plain = [&](const char *name, std::optional<bool> value) {
     if (value) ext += std::string("<") + name + ">" + (*value ? "true" : "false") + "</" + name + ">";
@@ -345,6 +346,7 @@ Info parse_info(std::string_view xml) {
   info.calling_group = content(child(params, "mcdata-calling-group-id"), "mcdataURI");
   info.client_id = content(child(params, "mcdata-client-id"), "mcdataString");
   info.controller_psi = content(child(params, "mcdata-controller-psi"), "mcdataURI");
+  info.gateway_usage = boolean(child(params, "gw-mcdata-usage")).value_or(false);
   if (auto alert = child(params, "alert-ind")) {
     const auto value = content(alert, "mcdataBoolean");
     if (value != "true" && value != "false" && value != "1" && value != "0") invalid("invalid alert-ind");

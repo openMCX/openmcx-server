@@ -42,6 +42,9 @@ struct Info {
   // <mcdata-controller-psi>: the controlling function, or the absolute URI of the
   // media storage function in an "msf-disc-res" (TS 24.282 clause 10.2.1.3.4 step 7d ii).
   std::string controller_psi;
+  // <gw-mcdata-usage>: the client reaches the MCData system through an MCData gateway UE (TS 24.282 clauses 7.2.1 and
+  // 7.2.2, annex D.1: after <mcdata-controller-psi>, an xs:boolean outside <anyExt>).
+  bool gateway_usage = false;
   // <anyExt> elements.
   std::string functional_alias, called_functional_alias, associated_group;
   std::optional<bool> call_to_functional_alias;

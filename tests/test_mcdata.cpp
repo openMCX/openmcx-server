@@ -309,6 +309,17 @@ int main() {
   rejects([&] { parse_info(encrypted); }, "encrypted content");
   rejects([&] { parse_info("<mcdatainfo xmlns=\"urn:3gpp:ns:mcpttInfo:1.0\"/>"); }, "MCPTT namespace");
   rejects([&] { parse_info("<!DOCTYPE x><mcdatainfo xmlns=\"urn:3gpp:ns:mcdataInfo:1.0\"/>"); }, "DTD");
+  // TS 24.282 clauses 7.2.1 and 7.2.2, annex D.1: <gw-mcdata-usage> after <mcdata-client-id> (and
+  // <mcdata-controller-psi>), before <anyExt>.
+  Info gateway;
+  gateway.access_token = "t";
+  gateway.client_id = "urn:uuid:1";
+  gateway.gateway_usage = true;
+  gateway.call_to_functional_alias = false;
+  const auto gateway_xml = info_xml(gateway);
+  check(gateway_xml.find("</mcdata-client-id><gw-mcdata-usage>true</gw-mcdata-usage><anyExt>") != std::string::npos &&
+            parse_info(gateway_xml).gateway_usage && !parse_info(xml).gateway_usage,
+        "gw-mcdata-usage");
   // Application priority (TS 24.282 clause 9.2.2.2.1 step 2b-ii-C, clause 9.2.2.4.1.1 step 5c).
   Info prioritised;
   prioritised.request_type = "group-sds";
