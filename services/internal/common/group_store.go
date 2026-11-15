@@ -294,7 +294,7 @@ func (svc *service) xcapGet(writer http.ResponseWriter, request *http.Request, t
 			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "server_error"})
 			return
 		}
-		readable, ok := readableGroup(group, claims.MCPTTID, false)
+		readable, ok := readableGroup(group, claims.MCPTTID, false, svc.otherServiceIDs(claims.MCPTTID)...)
 		if !ok {
 			writeJSON(writer, http.StatusForbidden, map[string]string{"error": "forbidden"})
 			return

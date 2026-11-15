@@ -274,7 +274,7 @@ func (svc *service) serveGroupDocument(writer http.ResponseWriter, request *http
 		writeDocument(writer, request, doc.XML, groupDocumentMIME)
 		return
 	}
-	readable, ok := readableGroup(group, claims.MCPTTID, false)
+	readable, ok := readableGroup(group, claims.MCPTTID, false, svc.otherServiceIDs(claims.MCPTTID)...)
 	// A temporary group lists no members: those of its constituent groups read it.
 	if len(group.TemporaryConstituents) > 0 {
 		readable, ok = group, slices.Contains(svc.keyGroup(group).Members, claims.MCPTTID)

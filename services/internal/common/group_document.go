@@ -519,8 +519,10 @@ func parseGroupDocument(raw []byte) (Group, error) {
 // ------------------------------------------------------------------------------
 // TS 24.481 clause 7.2.12.1: readableGroup is the part of a group an authenticated identity may read: an authorized MCS
 // server reads the whole document; a member reads <list-service> without <list>, except its own <entry>, unless the
-// group grants <on-network-allow-getting-member-list>. ok is false when the identity may read nothing.
-func readableGroup(group Group, identity string, server bool) (Group, bool) {
+// group grants <on-network-allow-getting-member-list>. ok is false when the identity may read nothing. own: the
+// requester's other MC service IDs (MCVideo, MCData): its own entries and rights under them are its own too (e.g. the
+// <mcdata-allow-transmit-data-in-this-group> of its MCData ID, TS 24.282 clause 11.1 2)).
+func readableGroup(group Group, identity string, server bool, own ...string) (Group, bool) {
 	if server {
 		return group, true
 	}
@@ -530,7 +532,17 @@ func readableGroup(group Group, identity string, server bool) (Group, bool) {
 	if group.AllowGettingMemberList {
 		return group, true
 	}
-	return onlyMembers(group, func(id string) bool { return id == identity }), true
+	return onlyMembers(group, func(id string) bool { return id == identity || (id != "" && slices.Contains(own, id)) }), true
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the MCVideo and MCData IDs of the user with an MCPTT ID (readableGroup).
+func (svc *service) otherServiceIDs(mcpttID string) []string {
+	user, ok := svc.cfg.userByMCPTTID(mcpttID)
+	if !ok {
+		return nil
+	}
+	return []string{user.MCVideoID, user.MCDataID}
 }
 
 // ------------------------------------------------------------------------------

@@ -1039,6 +1039,16 @@ int main() {
   check(group_preconfigured_use_only(
             group_doc + "<gi:preconfigured-group-use-only>true</gi:preconfigured-group-use-only>" + group_end),
         "preconfigured-group-use-only lost");
+  // TS 24.282 clause 11.1 5), 10): the SDS elements of an MCData group document.
+  {
+    const auto none = parse_mcdata_group_sds(group_doc + group_end);
+    check(!none.allow_sds && !none.max_sds_bytes && !none.preconfigured_use_only, "no SDS elements");
+    const auto set = parse_mcdata_group_sds(
+        group_doc + "<gi:mcdata-allow-short-data-service>true</gi:mcdata-allow-short-data-service>"
+                    "<gi:mcdata-on-network-max-data-size-for-SDS>20</gi:mcdata-on-network-max-data-size-for-SDS>" +
+        group_end);
+    check(set.allow_sds && set.max_sds_bytes == 20u, "MCData group SDS elements");
+  }
   check(!group_preconfigured_use_only(group_doc + group_end) &&
             !group_preconfigured_use_only(
                 group_doc + "<gi:preconfigured-group-use-only>false</gi:preconfigured-group-use-only>" + group_end),

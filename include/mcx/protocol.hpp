@@ -340,6 +340,18 @@ std::string parse_initial_kms(std::string_view xml);
 bool group_preconfigured_use_only(std::string_view xml);
 
 //------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.2 with TS 24.282 clause 11.1 5), 10) and 9.2.2.2.1 3)a): the SDS elements of an MCData group
+// document's <list-service>: <mcdata-allow-short-data-service> (false when absent), <mcdata-on-network-max-data-size-
+// for-SDS> (no limit when absent) and <preconfigured-group-use-only>.
+struct McdataGroupSds {
+  bool allow_sds = false;
+  std::optional<std::uint64_t> max_sds_bytes;
+  bool preconfigured_use_only = false;
+};
+
+McdataGroupSds parse_mcdata_group_sds(std::string_view xml);
+
+//------------------------------------------------------------------------------
 // TS 24.481 clauses 7.2.2 and 7.2.12.1 with RFC 4745 sections 7 and 10: whether a group document grants a boolean
 // action of its <ruleset> (an element of mcpttGroupInfo, e.g. "mcvideo-allow-emergency-alert") to a user, one of whose
 // identities is given: true when a rule whose conditions match the user (no conditions, an <identity> <one> of the

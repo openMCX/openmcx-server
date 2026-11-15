@@ -455,6 +455,18 @@ bool group_preconfigured_use_only(std::string_view xml) {
 }
 
 //------------------------------------------------------------------------------
+McdataGroupSds parse_mcdata_group_sds(std::string_view xml) {
+  auto doc = document(xml);
+  auto list_service = group_list_service(doc.get());
+  McdataGroupSds out;
+  out.allow_sds = group_flag(list_service, "mcdata-allow-short-data-service");
+  out.preconfigured_use_only = group_flag(list_service, "preconfigured-group-use-only");
+  if (auto max = unique_child(list_service, "mcdata-on-network-max-data-size-for-SDS", mcpttgi_ns, false))
+    out.max_sds_bytes = number(scalar(max), 0xFFFFFFFFull);
+  return out;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.481 clauses 7.2.2 (the <ruleset>, <rule>, <conditions> with <identity> and <is-list-member>, <actions>),
 // 7.2.8 (a condition element not specified is evaluated as not known, RFC 4745: the rule does not apply) and RFC 4745
 // sections 7.1 (<identity>/<one id>), 10.1 (a rule applies when all its conditions match) and 10.2 (boolean

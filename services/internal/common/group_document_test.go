@@ -79,6 +79,13 @@ func TestReadableGroup(test *testing.T) {
 	if !ok || !reflect.DeepEqual(own.Members, []string{"sip:a@mcx.test"}) || len(own.UserPriorities) != 1 {
 		test.Fatalf("member view: %#v", own)
 	}
+	// the member's MCData rights, under its MCData ID, are its own (TS 24.282 clause 11.1 2))
+	group.MCData = &GroupMCData{Members: []string{"sip:a.d@mcx.test", "sip:b.d@mcx.test"},
+		TransmitMembers: []string{"sip:a.d@mcx.test", "sip:b.d@mcx.test"}}
+	if own, _ := readableGroup(group, "sip:a@mcx.test", false, "sip:a.d@mcx.test"); !reflect.DeepEqual(own.MCData.TransmitMembers, []string{"sip:a.d@mcx.test"}) {
+		test.Fatalf("member's own MCData right: %#v", own.MCData)
+	}
+	group.MCData = nil
 	if all, _ := readableGroup(group, "", true); len(all.Members) != 2 {
 		test.Fatal("server view reduced")
 	}
