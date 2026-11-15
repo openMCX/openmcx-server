@@ -107,6 +107,15 @@ McdataProfile parse_mcdata_profile(std::string_view xml) {
   out.user_id = text(unique_child(unique_child(common, "MCDataUserID", ns), "uri-entry", ns));
   if (out.user_id.empty() || attr(root, "XUI-URI") != out.user_id) invalid("MCData user profile identity mismatch");
   out.actions = parse_profile_actions(xml);
+  if (auto list = unique_child(common, "One-to-One-Communication", ns, false))
+    for (auto entry = list->children; entry; entry = entry->next) {
+      if (!is(entry, "One-to-One-CommunicationListEntry", ns)) continue;
+      const auto id = text(unique_child(unique_child(entry, "MCData-ID", ns), "uri-entry", ns));
+      std::string kms;
+      if (auto uri = unique_child(entry, "MCData-ID-KMSURI", ns, false))
+        if (auto inner = unique_child(uri, "uri-entry", ns, false)) kms = text(inner);
+      if (!id.empty()) out.one_to_one_kms[id] = kms;
+    }
   return out;
 }
 

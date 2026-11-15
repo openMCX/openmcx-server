@@ -118,3 +118,24 @@ func TestMCDataProfileAndLocationDocuments(test *testing.T) {
 		test.Fatalf("bob's MCData profile for alice: %d", rr.Code)
 	}
 }
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 10.3.2.1 item 8 j i, TS 24.282 clause 6.2.8.3.9: a target's own KMS in <MCData-ID-KMSURI>.
+func TestMCDataProfileTargetKMS(test *testing.T) {
+	key := testKey(test)
+	cfg := mcdataLocationConfig(testConfig())
+	for i := range cfg.Users {
+		if cfg.Users[i].MCData != nil && len(cfg.Users[i].MCData.Targets) > 0 {
+			cfg.Users[i].MCData.TargetKMS = map[string]string{"sip:bob.mcdata@mcx.test": "https://kms2.mcx.test"}
+		}
+	}
+	cms := roleHandler(test, RoleCMS, cfg, key, test.TempDir())
+	alice := tokenFor(test, cfg, key, "alice", testNow, cfg.ServerClientID)
+	rr := httptest.NewRecorder()
+	cms.ServeHTTP(rr, bearerRequest("GET", "/xcap-root/org.3gpp.mcdata.user-profile/users/"+
+		url.PathEscape("sip:alice.mcdata@mcx.test")+"/mcdata-user-profile-1.xml", alice, nil))
+	want := "<MCData-ID><uri-entry>sip:bob.mcdata@mcx.test</uri-entry></MCData-ID><MCData-ID-KMSURI><uri-entry>https://kms2.mcx.test</uri-entry></MCData-ID-KMSURI>"
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), want) {
+		test.Fatalf("status=%d, lacks %s:\n%s", rr.Code, want, rr.Body.String())
+	}
+}

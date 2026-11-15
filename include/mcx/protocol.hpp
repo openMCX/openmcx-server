@@ -234,6 +234,10 @@ struct McdataProfile {
   std::string user_id;
   unsigned profile_index = 1;
   std::set<std::string> actions;
+  // TS 24.484 clause 10.3.2.1 item 8 j i (TS 24.282 clauses 6.2.8.3.9 and 11.1 1A)): the <MCData-ID> of each
+  // <One-to-One-CommunicationListEntry> of <Common>/<One-to-One-Communication>, with its <MCData-ID-KMSURI> ("" when
+  // empty or absent).
+  std::map<std::string, std::string> one_to_one_kms;
 };
 
 //------------------------------------------------------------------------------

@@ -209,18 +209,22 @@ func (svc *service) mcdataProfileXML(user User) mcdataProfileXML {
 	if len(policy.AlertGroups) > 0 {
 		doc.Common.GroupAlert.Entry = groupInitiationEntry(policy.AlertGroups[0])
 	}
-	oneToOne := func(ids []string) *mcdataOneToOne {
+	oneToOne := func(ids []string, targetKMS map[string]string) *mcdataOneToOne {
 		list := &mcdataOneToOne{}
 		for _, id := range ids {
-			list.Entries = append(list.Entries, mcdataOneToOneEntry{ID: profileEntry{URI: id}, KMS: kms})
+			entry := kms
+			if uri, ok := targetKMS[id]; ok {
+				entry = profileEntry{URI: uri}
+			}
+			list.Entries = append(list.Entries, mcdataOneToOneEntry{ID: profileEntry{URI: id}, KMS: entry})
 		}
 		return list
 	}
 	if len(policy.Targets) > 0 {
-		doc.Common.OneToOne = oneToOne(policy.Targets)
+		doc.Common.OneToOne = oneToOne(policy.Targets, policy.TargetKMS)
 	}
 	if len(policy.IncomingFrom) > 0 {
-		doc.OnNetwork.AnyExt.IncomingList = oneToOne(policy.IncomingFrom)
+		doc.OnNetwork.AnyExt.IncomingList = oneToOne(policy.IncomingFrom, nil)
 	}
 	if len(policy.ImplicitAffiliations) > 0 {
 		doc.OnNetwork.ImplicitAffiliations = &profileEntryList{}

@@ -1548,6 +1548,17 @@ int main() {
     stranger.replace(stranger.find("XUI-URI=\"sip:d@x\""), 17, "XUI-URI=\"sip:o@x\"");
     rejects([&] { (void)parse_mcdata_profile(stranger); });
     rejects([&] { (void)parse_mcdata_profile(video_profile); });
+    // TS 24.484 clause 10.3.2.1 item 8 j i: the one-to-one list and each target's KMS.
+    auto listed = data_profile;
+    listed.replace(listed.find("</MCDataUserID>"), 15,
+                   "</MCDataUserID><One-to-One-Communication><One-to-One-CommunicationListEntry><MCData-ID><uri-entry>"
+                   "sip:b@x</uri-entry></MCData-ID><MCData-ID-KMSURI><uri-entry>https://kms2.x</uri-entry>"
+                   "</MCData-ID-KMSURI></One-to-One-CommunicationListEntry><One-to-One-CommunicationListEntry>"
+                   "<MCData-ID><uri-entry>sip:c@x</uri-entry></MCData-ID></One-to-One-CommunicationListEntry>"
+                   "</One-to-One-Communication>");
+    const auto targets = parse_mcdata_profile(listed).one_to_one_kms;
+    check(targets.size() == 2 && targets.at("sip:b@x") == "https://kms2.x" && targets.at("sip:c@x").empty(),
+          "MCData one-to-one targets and their KMS");
   }
   {
     // RFC 3680 section 5: the registration information of the reg event package (TS 24.229 clause 5.1.1.5A).

@@ -216,9 +216,12 @@ type LocationPolicy struct {
 type MCDataPolicy struct {
 	TransmitData bool     `json:"transmit_data"`
 	Targets      []string `json:"targets,omitempty"`
-	IncomingFrom []string `json:"incoming_from,omitempty"`
-	IncomingAny  bool     `json:"incoming_any,omitempty"`
-	MaxData1To1  int      `json:"max_data_1to1,omitempty"`
+	// TS 24.484 clause 10.3.2.1 item 8 j i (<MCData-ID-KMSURI> of a <One-to-One-CommunicationListEntry>; TS 24.282
+	// clause 6.2.8.3.9): the KMS URI of a target; a target not listed gets the KMS of the endpoints.
+	TargetKMS    map[string]string `json:"target_kms,omitempty"`
+	IncomingFrom []string          `json:"incoming_from,omitempty"`
+	IncomingAny  bool              `json:"incoming_any,omitempty"`
+	MaxData1To1  int               `json:"max_data_1to1,omitempty"`
 	// <allow-takeover-functional-alias-other-user> in the MCData user profile.
 	FunctionalAliasTakeover bool `json:"functional_alias_takeover,omitempty"`
 	// Emergency alert (TS 24.282 clauses 6.3.7.2.1, 6.3.7.2.2 and 16.2.1.2): <allow-activate-emergency-alert>;
@@ -356,12 +359,12 @@ type PrivateCallPolicy struct {
 	// TS 24.484 clause 9.3.2.1 item 8 d) (the <PrivateCallKMSURI> of a <PrivateCallOnNetwork> entry; TS 24.281
 	// clause 6.2.8.3.9): the KMS URI of a target; a target not listed gets the KMS of the endpoints, one listed with ""
 	// an empty entry.
-	TargetKMS map[string]string `json:"target_kms,omitempty"`
-	AnyTarget             bool     `json:"any_target"`
-	FirstToAnswer         bool     `json:"first_to_answer,omitempty"` // <allow-request-first-to-answer-call>
-	Callable              *bool    `json:"callable,omitempty"`
-	IncomingFrom          []string `json:"incoming_from,omitempty"`
-	IncomingAny           bool     `json:"incoming_any,omitempty"`
+	TargetKMS     map[string]string `json:"target_kms,omitempty"`
+	AnyTarget     bool              `json:"any_target"`
+	FirstToAnswer bool              `json:"first_to_answer,omitempty"` // <allow-request-first-to-answer-call>
+	Callable      *bool             `json:"callable,omitempty"`
+	IncomingFrom  []string          `json:"incoming_from,omitempty"`
+	IncomingAny   bool              `json:"incoming_any,omitempty"`
 	// Emergency private calls (TS 24.379 clause 6.3.3.1.13): <allow-emergency-private-call>
 	// with <MCPTTPrivateRecipient> entries or "LocallyDetermined" (EmergencyAny),
 	// <allow-cancel-private-emergency-call>, and the <allow-activate-emergency-alert>,
