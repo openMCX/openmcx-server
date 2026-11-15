@@ -285,6 +285,15 @@ struct FdHttpTermination {
 };
 
 //------------------------------------------------------------------------------
+// TS 24.282 clause 15.1.12.1: DEFERRED DATA RESPONSE: the deferred files as FILEURL Payload IEs (kept for backward
+// compatibility, NOTE), MCData group IDs and Deferred FD signalling payloads (15.2.27: an FD SIGNALLING PAYLOAD each).
+struct DeferredListResponse {
+  std::uint8_t count = 0; // Number of payloads
+  std::vector<std::string> file_urls, groups;
+  std::vector<std::string> fd_payloads; // encoded FD SIGNALLING PAYLOADs
+};
+
+//------------------------------------------------------------------------------
 // TS 24.282 clause 15.1.5.1: SDS NOTIFICATION.
 struct SdsNotification {
   DispositionNotification type = DispositionNotification::Delivered;
@@ -341,6 +350,11 @@ FdNotification decode_fd_notification(std::string_view bytes);
 //------------------------------------------------------------------------------
 // TS 24.282 clause 15.1.9.1: decodes a FD NETWORK NOTIFICATION message.
 FdNetworkNotification decode_fd_network_notification(std::string_view bytes);
+//------------------------------------------------------------------------------
+// TS 24.282 clause 15.1.11.1: a DEFERRED DATA REQUEST (the message type only); clause 15.1.12.1: the response.
+std::string encode_deferred_list_request();
+std::string encode(const DeferredListResponse &response);
+DeferredListResponse decode_deferred_list_response(std::string_view bytes);
 //------------------------------------------------------------------------------
 // TS 24.282 clause 15.1.13.1: decodes a FD HTTP TERMINATION message.
 FdHttpTermination decode_fd_http_termination(std::string_view bytes);

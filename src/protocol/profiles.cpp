@@ -486,6 +486,10 @@ McdataGroupSds parse_mcdata_group_sds(std::string_view xml) {
   out.preconfigured_use_only = group_flag(list_service, "preconfigured-group-use-only");
   if (auto max = unique_child(list_service, "mcdata-on-network-max-data-size-for-SDS", mcpttgi_ns, false))
     out.max_sds_bytes = number(scalar(max), 0xFFFFFFFFull);
+  if (auto fd = unique_child(list_service, "mcdata-allow-file-distribution", mcpttgi_ns, false))
+    out.allow_fd = scalar(fd) == "true" || scalar(fd) == "1";
+  if (auto max = unique_child(list_service, "mcdata-on-network-max-data-size-for-FD", mcpttgi_ns, false))
+    out.max_fd_bytes = number(scalar(max), 0xFFFFFFFFull);
   return out;
 }
 

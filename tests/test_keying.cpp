@@ -506,17 +506,18 @@ int main() {
     Bytes file(150000);
     for (std::size_t index = 0; index < file.size(); ++index) file[index] = static_cast<byte>(index * 7);
     auto series = seal_series(file, 0x42, pck.key, pck.csb_id, payload_profile);
-    check(series.size() == 8 + file.size() + 3 * (35 + 16) && series[0] == 0x42 && series[10] == 0 &&
+    check(series.size() == file.size() + 3 * (35 + 16) && series[0] == 0x42 && series[10] == 0 &&
               series[35 + 60000 + 16 + 10] == 1,
-          "three messages numbered 0, 1 and 2, after the 8-octet length");
+          "three messages numbered 0, 1 and 2, the file alone");
     check(open_series(series, 0x42, pck.key, payload_profile) == file, "series round trip");
     auto reordered = series;
     std::rotate(reordered.begin(), reordered.begin() + 35 + 60000 + 16, reordered.end());
     rejected([&] { open_series(reordered, 0x42, pck.key, payload_profile); }, "reordered series accepted");
+    check(open_series(series, 0, pck.key, payload_profile) == file, "a series of any one type");
     auto truncated = series;
-    truncated.resize(series.size() - (35 + 30008 + 16));
-    rejected([&] { open_series(truncated, 0x42, pck.key, payload_profile); },
-             "series missing its last message accepted");
+    truncated.resize(series.size() - (35 + 30000 + 16));
+    check(open_series(truncated, 0x42, pck.key, payload_profile).size() == 120000,
+          "the messages of a series open on their own (the file selector tells the size)");
     truncated.pop_back();
     rejected([&] { open_series(truncated, 0x42, pck.key, payload_profile); }, "cut series accepted");
     check(open_series(seal_series({}, 0x42, pck.key, pck.csb_id, payload_profile), 0x42, pck.key, payload_profile)

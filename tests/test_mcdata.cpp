@@ -247,6 +247,17 @@ int main() {
           "reserved termination information type");
   rejects([&] { decode_fd_http_termination(termination + bytes({0xd3})); }, "reserved release response type");
   check(message_type(termination) == MessageType::FdHttpTermination, "FD HTTP TERMINATION message type 0d");
+  // TS 24.282 clauses 15.1.11, 15.1.12: the deferred list request and response (TS 37.579-7 table 6.2.13.3.3-19)
+  check(encode_deferred_list_request() == bytes({0x0b}), "DEFERRED DATA REQUEST: the message type only");
+  DeferredListResponse listed;
+  listed.count = 1;
+  listed.file_urls = {"https://msf/f1"};
+  listed.groups = {"sip:g@x"};
+  const auto listed_copy = decode_deferred_list_response(encode(listed));
+  check(encode(listed).substr(0, 5) == bytes({0x0c, 0x01, 0x78, 0x00, 0x0f}) && listed_copy.count == 1 &&
+            listed_copy.file_urls == listed.file_urls && listed_copy.groups == listed.groups,
+        "DEFERRED DATA RESPONSE with a FILEURL payload and a group ID");
+  rejects([&] { decode_deferred_list_response(bytes({0x0c, 0x01, 0x21})); }, "unknown deferred response IE");
 
   // TS 24.282 clause 15.1.10.1, table 15.1.10.1-1: COMMUNICATION RELEASE: the message type 0a, the Comm
   // release Information type octet (clause 15.2.20), and the half-octet Data query type (IEI B, clause 15.2.19)

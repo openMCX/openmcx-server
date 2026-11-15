@@ -1060,6 +1060,12 @@ int main() {
                     "<gi:mcdata-on-network-max-data-size-for-SDS>20</gi:mcdata-on-network-max-data-size-for-SDS>" +
         group_end);
     check(set.allow_sds && set.max_sds_bytes == 20u, "MCData group SDS elements");
+    check(none.allow_fd && !none.max_fd_bytes, "FD allowed when <mcdata-allow-file-distribution> is absent");
+    const auto fd = parse_mcdata_group_sds(
+        group_doc + "<gi:mcdata-allow-file-distribution>false</gi:mcdata-allow-file-distribution>"
+                    "<gi:mcdata-on-network-max-data-size-for-FD>10000</gi:mcdata-on-network-max-data-size-for-FD>" +
+        group_end);
+    check(!fd.allow_fd && fd.max_fd_bytes == 10000u, "MCData group FD elements (TS 24.282 clauses 10.1, 11.1 6))");
   }
   check(!group_preconfigured_use_only(group_doc + group_end) &&
             !group_preconfigured_use_only(

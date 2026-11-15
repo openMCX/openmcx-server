@@ -347,6 +347,10 @@ struct McdataGroupSds {
   bool allow_sds = false;
   std::optional<std::uint64_t> max_sds_bytes;
   bool preconfigured_use_only = false;
+  // FD (TS 24.282 clause 10.1, 11.1 step 6): <mcdata-allow-file-distribution> (an absent element allows, as TS 24.282
+  // clauses 10.2.1.3.4 and 10.2.4.4.2 test it "set to "false""), <mcdata-on-network-max-data-size-for-FD>
+  bool allow_fd = true;
+  std::optional<std::uint64_t> max_fd_bytes;
 };
 
 McdataGroupSds parse_mcdata_group_sds(std::string_view xml);
@@ -556,6 +560,8 @@ struct MsrpMedia {
   bool secure = false; // "TCP/TLS/MSRP"
   // RFC 5547 attributes of a file transfer (TS 24.282 clause 10.2.5.2.1 step 1g).
   std::string file_selector, file_date, file_description;
+  // RFC 5547 clause 8.2.1: the offerer's "a=file-transfer-id" (the answer repeats it, clause 8.2.2).
+  std::string file_transfer_id;
   // RFC 4567 "a=key-mgmt:mikey": the PCK of a one-to-one communication
   // (TS 24.282 clause 9.2.3.2.1 step 2, clause 9.2.4.2.1 step 2, clause 10.2.5.2.1 step 2).
   std::string key_mgmt;

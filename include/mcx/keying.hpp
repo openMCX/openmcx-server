@@ -246,8 +246,8 @@ Bytes seal_series(std::span<const std::uint8_t> plain, std::uint8_t type, std::s
                   std::uint32_t dppk_id, const KeyParameterWireProfile &profile, std::size_t chunk = 60000);
 
 //------------------------------------------------------------------------------
-// TS 33.180 table 8.5.4.1-1 NOTE 2: opens a series sealed under one DPPK: every message must carry that DPPK-ID, the
-// message type, one Payload ID and the next sequence number.
+// TS 33.180 table 8.5.4.1-1 NOTE 2: opens a series sealed under one DPPK: every message must carry that DPPK-ID, one
+// message type (`type`, or any one when 0), one Payload ID and the next sequence number.
 Bytes open_series(std::span<const std::uint8_t> data, std::uint8_t type, std::span<const std::uint8_t, 16> dppk,
                   const KeyParameterWireProfile &profile);
 

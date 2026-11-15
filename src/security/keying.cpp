@@ -474,45 +474,38 @@ Bytes seal_payload(const ProtectedPayload &message, std::span<const byte, 16> dp
 
 //------------------------------------------------------------------------------
 // TS 33.180 table 8.5.4.1-1 NOTE 2: data longer than one Protected Payload message holds, as a series of messages
-// with one random Payload ID and consecutive Payload sequence numbers; at most 256 messages.
+// with one random Payload ID and consecutive Payload sequence numbers; at most 256 messages. The series is the data
+// alone: the NOTE defines no length field (the size and hash of the file selector, RFC 5547, describe the whole).
 Bytes seal_series(std::span<const byte> plain, std::uint8_t type, std::span<const byte, 16> dppk, std::uint32_t dppk_id,
                   const KeyParameterWireProfile &profile, std::size_t chunk) {
-  require(chunk > 8 && chunk <= 65535 - 16 && plain.size() + 8 <= chunk * 256,
-          "data too large for 256 protected payloads");
+  require(chunk > 0 && chunk <= 65535 - 16 && plain.size() <= chunk * 256, "data too large for 256 protected payloads");
   std::array<byte, 4> id{};
   require(RAND_bytes(id.data(), id.size()) == 1, "payload ID generation failed");
-
-  // The series starts with the length of the data, so that a series missing its
-  // last messages is refused (the format has no last-message indication).
-  Bytes framed;
-  integer(framed, plain.size(), 8);
-  framed.insert(framed.end(), plain.begin(), plain.end());
 
   Bytes out;
   std::size_t offset = 0;
   unsigned sequence = 0;
   do {
-    const auto length = std::min(chunk, framed.size() - offset);
+    const auto length = std::min(chunk, plain.size() - offset);
     ProtectedPayload message{type,
                              static_cast<std::uint64_t>(std::time(nullptr)),
                              (std::uint32_t(id[0]) << 24) | (std::uint32_t(id[1]) << 16) | (std::uint32_t(id[2]) << 8) |
                                  id[3],
                              static_cast<std::uint8_t>(sequence++),
                              dppk_id,
-                             Bytes(framed.begin() + offset, framed.begin() + offset + length)};
+                             Bytes(plain.begin() + offset, plain.begin() + offset + length)};
     const auto sealed = seal_payload(message, dppk, profile);
     OPENSSL_cleanse(message.plain.data(), message.plain.size());
     out.insert(out.end(), sealed.begin(), sealed.end());
     offset += length;
-  } while (offset < framed.size());
-
-  OPENSSL_cleanse(framed.data(), framed.size());
+  } while (offset < plain.size());
   return out;
 }
 
 //------------------------------------------------------------------------------
-// TS 33.180 table 8.5.4.1-1 NOTE 2: opens a series sealed under one DPPK: every message must carry that DPPK-ID, the
-// message type, one Payload ID and the next sequence number.
+// TS 33.180 table 8.5.4.1-1 NOTE 2: opens a series sealed under one DPPK: every message must carry that DPPK-ID, one
+// message type (`type`, or the first message's when `type` is 0: TS 33.180 assigns a protected file no type), one
+// Payload ID and the next sequence number.
 Bytes open_series(std::span<const byte> data, std::uint8_t type, std::span<const byte, 16> dppk,
                   const KeyParameterWireProfile &profile) {
   require(!data.empty(), "empty protected series");
@@ -521,6 +514,8 @@ Bytes open_series(std::span<const byte> data, std::uint8_t type, std::span<const
   unsigned sequence = 0;
   const auto dppk_id = payload_key_id(data);
   std::optional<std::uint32_t> payload_id;
+  std::optional<std::uint8_t> series_type;
+  if (type) series_type = type;
 
   while (offset < data.size()) {
     require(data.size() - offset >= 35, "truncated protected series");
@@ -529,7 +524,8 @@ Bytes open_series(std::span<const byte> data, std::uint8_t type, std::span<const
     const auto message = data.subspan(offset, length);
     require(payload_key_id(message) == dppk_id, "protected series uses several keys");
     auto opened = open_payload(message, dppk, profile);
-    require(opened.message_type == type && opened.sequence == sequence++ && sequence <= 256 &&
+    if (!series_type) series_type = opened.message_type;
+    require(opened.message_type == *series_type && opened.sequence == sequence++ && sequence <= 256 &&
                 (!payload_id || *payload_id == opened.payload_id),
             "protected series out of order");
     payload_id = opened.payload_id;
@@ -537,12 +533,6 @@ Bytes open_series(std::span<const byte> data, std::uint8_t type, std::span<const
     OPENSSL_cleanse(opened.plain.data(), opened.plain.size());
     offset += length;
   }
-
-  require(plain.size() >= 8, "protected series without its length");
-  std::uint64_t declared = 0;
-  for (int index = 0; index < 8; ++index) declared = (declared << 8) | plain[index];
-  require(declared == plain.size() - 8, "protected series is incomplete");
-  plain.erase(plain.begin(), plain.begin() + 8);
   return plain;
 }
 

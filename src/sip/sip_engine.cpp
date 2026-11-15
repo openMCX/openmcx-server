@@ -6,6 +6,7 @@
 //
 // Specifications: RFC 3261, RFC 3264, RFC 4028, RFC 6665, RFC 3903, TS 24.379 V19.7.0 (Rel-19), TS 24.229.
 
+#include "mcx/runtime.hpp"
 #include "sip_impl.hpp"
 
 namespace mcx {
@@ -305,8 +306,15 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
     throw std::invalid_argument("invalid INVITE answer status");
   const auto found = impl_->dialogs.find(std::string(dialog_id));
   if (found == impl_->dialogs.end() || !found->second->invite || found->second->terminating ||
-      found->second->final_answer)
+      found->second->final_answer) {
+    debug_line("SIP answer " + std::to_string(response.status_code) + " for dialog " + std::string(dialog_id) +
+               " dropped: " +
+               (found == impl_->dialogs.end() ? "no such dialog"
+                : !found->second->invite      ? "not an INVITE dialog"
+                : found->second->terminating  ? "the dialog is ending"
+                                              : "already answered"));
     return;
+  }
 
   auto &entry = *found->second;
   auto *invite = entry.invite;

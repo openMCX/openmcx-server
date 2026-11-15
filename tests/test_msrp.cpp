@@ -461,10 +461,11 @@ int main() {
     answer.direction = "recvonly";
     answer.secure = true;
     answer.file_selector = "name:\"report.txt\" type:text/plain size:12";
+    answer.file_transfer_id = "vBnG916S"; // RFC 5547 clause 8.2.2: as offered
     const auto answered = mcx::parse_msrp_sdp(mcx::msrp_sdp(answer, 43));
     check(answered.setup == "passive" && answered.direction == "recvonly" && answered.secure &&
-              answered.file_selector == answer.file_selector,
-          "MSRP SDP answer with the file selector");
+              answered.file_selector == answer.file_selector && answered.file_transfer_id == "vBnG916S",
+          "MSRP SDP answer with the file selector and the file transfer ID");
     // TS 24.282 clause 9.2.3.2.1 step 2: the PCK of a one-to-one offer in a=key-mgmt (RFC 4567).
     mcx::MsrpMedia keyed = offer;
     keyed.key_mgmt = "AQIDBAUG";

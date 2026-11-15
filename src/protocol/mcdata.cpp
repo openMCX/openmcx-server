@@ -220,7 +220,8 @@ constexpr std::uint8_t iei_in_reply_to = 0x21, iei_application_id = 0x22, iei_di
                        iei_extended_application_id = 0x7d, iei_user_location = 0x7e, iei_sender = 0x51,
                        iei_application_metadata = 0x53, iei_payload = 0x78, iei_protected_payload = 0x7a,
                        iei_file_metadata = 0x79, iei_completion_request = 0x9, iei_mandatory_download = 0xa,
-                       iei_extension_response = 0xc, iei_release_response = 0xd, iei_data_query = 0xb;
+                       iei_extension_response = 0xc, iei_release_response = 0xd, iei_data_query = 0xb,
+                       iei_group_id = 0x7b, iei_deferred_fd = 0x52;
 } // namespace
 
 //------------------------------------------------------------------------------
@@ -773,6 +774,44 @@ FdNetworkNotification decode_fd_network_notification(std::string_view bytes) {
 
 //------------------------------------------------------------------------------
 // TS 24.282 clause 15.1.13.1: encodes an FD HTTP TERMINATION message (table 15.1.13.1-1).
+std::string encode_deferred_list_request() { return std::string(1, static_cast<char>(MessageType::DeferredListRequest)); }
+
+//------------------------------------------------------------------------------
+std::string encode(const DeferredListResponse &response) {
+  std::string out(1, static_cast<char>(MessageType::DeferredListResponse));
+  out += static_cast<char>(response.count);
+  for (const auto &url : response.file_urls)
+    put_tlv_e(out, iei_payload, std::string(1, static_cast<char>(ContentType::FileUrl)) + url);
+  for (const auto &group : response.groups) put_tlv_e(out, iei_group_id, group);
+  for (const auto &fd : response.fd_payloads) put_tlv_e(out, iei_deferred_fd, fd);
+  return out;
+}
+
+//------------------------------------------------------------------------------
+DeferredListResponse decode_deferred_list_response(std::string_view bytes) {
+  Reader in{bytes};
+  read_type(in, MessageType::DeferredListResponse);
+  DeferredListResponse response;
+  response.count = in.octet();
+  while (!in.done()) {
+    const auto iei = in.octet();
+    switch (iei) {
+    case iei_payload: {
+      const auto value = in.tlv_e();
+      if (!value.empty() && static_cast<std::uint8_t>(value[0]) == static_cast<std::uint8_t>(ContentType::FileUrl))
+        response.file_urls.push_back(value.substr(1));
+      break;
+    }
+    case iei_protected_payload: (void)in.tlv_e(); break; // a protected payload this client cannot list
+    case iei_group_id: response.groups.push_back(in.tlv_e()); break;
+    case iei_deferred_fd: response.fd_payloads.push_back(in.tlv_e()); break;
+    default: invalid("unknown DEFERRED DATA RESPONSE information element");
+    }
+  }
+  return response;
+}
+
+//------------------------------------------------------------------------------
 std::string encode(const FdHttpTermination &termination) {
   const auto type = static_cast<std::uint8_t>(termination.type);
   if (type < 1 || type > 7) invalid("reserved termination information type");

@@ -176,6 +176,7 @@ std::string msrp_sdp(const MsrpMedia &media, std::uint64_t session_id) {
     out << (index ? " " : "") << media.accept_types[index];
   out << "\r\na=" << media.direction << "\r\n";
   if (!media.file_selector.empty()) out << "a=file-selector:" << media.file_selector << "\r\n";
+  if (!media.file_transfer_id.empty()) out << "a=file-transfer-id:" << media.file_transfer_id << "\r\n";
   if (!media.file_date.empty()) out << "a=file-date:" << media.file_date << "\r\n";
   if (!media.file_description.empty()) out << "a=file-description:" << media.file_description << "\r\n";
   return out.str();
@@ -241,6 +242,8 @@ MsrpMedia parse_msrp_sdp(std::string_view sdp) {
         out.file_selector = std::string(rest);
       else if (name == "file-date")
         out.file_date = std::string(rest);
+      else if (name == "file-transfer-id")
+        out.file_transfer_id = std::string(rest);
       else if (name == "file-description")
         out.file_description = std::string(rest);
       else if (name == "sendonly" || name == "recvonly" || name == "sendrecv")
