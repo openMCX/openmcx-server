@@ -214,6 +214,22 @@ int main() {
   check(settings.find("<entity id=\"urn:uuid:test-client\">") != std::string::npos, "PoC entity missing");
   check(settings.find("urn:3gpp:mcsSettings:1.0") != std::string::npos, "MCS settings namespace wrong");
   check(settings.find("<answer-mode>automatic</answer-mode>") != std::string::npos, "PoC answer mode wrong");
+  // TS 24.281 clause 7.2.3 4) a): the current answer mode; clause 7.4.1.2.2: read back per <entity>.
+  const auto manual_settings = parse_poc_settings(poc_settings_xml("urn:uuid:test-client", 3, true));
+  check(manual_settings.size() == 1 && manual_settings[0].id == "urn:uuid:test-client" &&
+            manual_settings[0].answer_mode == "manual" && manual_settings[0].profile_index == 3u &&
+            manual_settings[0].multiplex_support == true,
+        "PoC settings round trip wrong");
+  // TS 24.281 table 7.4.1.2.2-3: two clients, the extension elements unprefixed as in the example.
+  const auto two = parse_poc_settings(
+      R"(<?xml version="1.0"?><poc-settings xmlns="urn:oma:params:xml:ns:poc:poc-settings"><entity id="urn:uuid:a"><am-settings><answer-mode>automatic</answer-mode></am-settings><selected-user-profile-index><user-profile-index>1</user-profile-index></selected-user-profile-index><multiplex-support>true</multiplex-support></entity><entity id="urn:uuid:b"><am-settings><answer-mode>manual</answer-mode></am-settings><selected-user-profile-index><user-profile-index>2</user-profile-index></selected-user-profile-index></entity></poc-settings>)");
+  check(two.size() == 2 && two[1].id == "urn:uuid:b" && two[1].answer_mode == "manual" && two[1].profile_index == 2u &&
+            !two[1].multiplex_support,
+        "PoC settings of two clients wrong");
+  rejects([] {
+    (void)parse_poc_settings(
+        R"(<?xml version="1.0"?><poc-settings xmlns="urn:oma:params:xml:ns:poc:poc-settings"><entity/></poc-settings>)");
+  });
   // TS 24.379 annex F.1: the application/vnd.3gpp.mcptt-info+xml body.
   const std::string fixture =
       R"(<?xml version="1.0"?><mcpttinfo xmlns="urn:3gpp:ns:mcpttInfo:1.0"><mcptt-Params><session-type>prearranged</session-type><mcptt-request-uri type="Normal"><mcpttURI>sip:rescue@example.test</mcpttURI></mcptt-request-uri><mcptt-client-id type="Normal"><mcpttString>urn:uuid:client-a</mcpttString></mcptt-client-id></mcptt-Params></mcpttinfo>)";
@@ -234,11 +250,31 @@ int main() {
             pull.video_pull_url == "https://mcvideo-server/recordings/0a1b",
         "a video pull URL must parse");
   check(service_info_xml(pull, mcvideo_service) == pull_fixture, "a video pull request must round-trip byte for byte");
+  // TS 24.281 clauses 7.2.1 and 7.2.2 with annex F.1.2: <gw-mcvideo-usage> (xs:boolean) after <video-pull-url>.
+  const std::string gateway_fixture =
+      R"(<?xml version="1.0"?><mcvideoinfo xmlns="urn:3gpp:ns:mcvideoInfo:1.0"><mcvideo-Params><mcvideo-client-id type="Normal"><mcvideoString>urn:uuid:client-a</mcvideoString></mcvideo-client-id><gw-mcvideo-usage>true</gw-mcvideo-usage></mcvideo-Params></mcvideoinfo>)";
+  const auto gateway = parse_service_info(gateway_fixture, mcvideo_service);
+  check(gateway.gateway_usage == true, "<gw-mcvideo-usage> must parse");
+  check(service_info_xml(gateway, mcvideo_service) == gateway_fixture,
+        "<gw-mcvideo-usage> must round-trip byte for byte");
   const std::string push_fixture =
       R"(<?xml version="1.0"?><mcvideoinfo xmlns="urn:3gpp:ns:mcvideoInfo:1.0"><mcvideo-Params><anyExt><video-push-url>https://mcvideo-server/recordings/0a1b</video-push-url></anyExt></mcvideo-Params></mcvideoinfo>)";
   const auto push = parse_service_info(push_fixture, mcvideo_service);
   check(push.video_push_url == "https://mcvideo-server/recordings/0a1b", "a video push URL must parse");
   check(service_info_xml(push, mcvideo_service) == push_fixture, "a video push URL must round-trip byte for byte");
+  // TS 24.281 clause 6.3.3.1.25 step 5 and annex F.1.3: the notification of ad hoc group call redirection carries the
+  // migrating user's <partner-mcvideo-id> and <primary-mcvideo-id> (contentType) with <forwarding-reason> "migrated";
+  // clause 22.4.2.1.1 step 4 c): <preconfigured-group-id> (xs:anyURI) for an end-to-end protected ad hoc group call.
+  const std::string redirection_fixture =
+      R"(<?xml version="1.0"?><mcvideoinfo xmlns="urn:3gpp:ns:mcvideoInfo:1.0"><mcvideo-Params><mcvideo-request-uri type="Normal"><mcvideoURI>sip:alice@example.test</mcvideoURI></mcvideo-request-uri><mcvideo-calling-group-id type="Normal"><mcvideoURI>sip:adhoc-1@example.test</mcvideoURI></mcvideo-calling-group-id><anyExt><partner-mcvideo-id type="Normal"><mcvideoURI>sip:bob@partner.test</mcvideoURI></partner-mcvideo-id><primary-mcvideo-id type="Normal"><mcvideoURI>sip:bob@example.test</mcvideoURI></primary-mcvideo-id><forwarding-reason>migrated</forwarding-reason><preconfigured-group-id>sip:preconf@example.test</preconfigured-group-id></anyExt></mcvideo-Params></mcvideoinfo>)";
+  const auto redirection = parse_service_info(redirection_fixture, mcvideo_service);
+  check(redirection.partner_mcvideo_id == "sip:bob@partner.test" &&
+            redirection.primary_mcvideo_id == "sip:bob@example.test" &&
+            redirection.service.at("forwarding-reason") == "migrated" &&
+            redirection.preconfigured_group_id == "sip:preconf@example.test",
+        "the ad hoc redirection and preconfigured group elements must parse");
+  check(service_info_xml(redirection, mcvideo_service) == redirection_fixture,
+        "the ad hoc redirection elements must round-trip byte for byte");
   // TS 24.281 clause 15.2.1.1 step 8 and annex F.1: an ambient viewing call names its type in
   // <ambient-viewing-type>, and its release reasons speak of the viewed-to client.
   McpttInfo viewing;
@@ -565,6 +601,41 @@ int main() {
     answer.granted_video_ssrc = 6;
     const auto answered = parse_sdp(make_sdp(answer, 3));
     check(answered.granted_audio_ssrc == 5 && answered.granted_video_ssrc == 6, "granted SSRCs round trip");
+    // TS 24.581 clauses 12.1.2.3, 14.2.3 and 14.2.6: "mc_priority" and "mc_reception_priority" (1*2(DIGIT)) of the
+    // MCVideo transmission control channel.
+    {
+      auto prio = mcv;
+      prio.floor_priority = 7;
+      prio.reception_priority = 4;
+      const auto prio_sdp = make_sdp(prio, 6);
+      check(prio_sdp.find("a=fmtp:MCVideo mc_transmission_ssrc=12345;mc_priority=7;mc_reception_priority=4;") !=
+                std::string::npos,
+            "MCVideo priorities written");
+      const auto prio_back = parse_sdp(prio_sdp);
+      check(prio_back.floor_priority == 7 && prio_back.reception_priority == 4 && prio_back.queueing,
+            "MCVideo priorities round trip");
+      check(!parse_sdp(video_sdp).reception_priority, "no mc_reception_priority by default");
+      auto colon_prio = prio_sdp;
+      colon_prio.replace(colon_prio.find(";mc_reception_priority"), 1, ":");
+      check(parse_sdp(colon_prio).reception_priority == 4, "colon-separated mc_reception_priority");
+      for (const char *bad : {"mc_reception_priority=100", "mc_reception_priority=", "mc_reception_priority=x",
+                              "mc_reception_priority=4;mc_reception_priority=5"}) {
+        auto wrong = video_sdp;
+        wrong.replace(wrong.find("mc_queueing"), 11, std::string(bad) + ";mc_queueing");
+        rejects([&] { (void)parse_sdp(wrong); });
+      }
+      auto too_high = mcv;
+      too_high.reception_priority = 100;
+      rejects([&] { (void)make_sdp(too_high, 7); });
+      auto in_ptt = ptt;
+      in_ptt.reception_priority = 3;
+      rejects([&] { (void)make_sdp(in_ptt, 8); });
+      auto uncontrolled = mcv;
+      uncontrolled.control = MediaControl::none;
+      uncontrolled.implicit_request = uncontrolled.granted = uncontrolled.queueing = false;
+      uncontrolled.reception_priority = 3;
+      rejects([&] { (void)make_sdp(uncontrolled, 9); });
+    }
     // Video in an MCPTT call, MCVideo without video, another codec: all refused.
     auto in_mcptt = video_sdp;
     in_mcptt.replace(in_mcptt.find("udp MCVideo"), 11, "udp MCPTT")
@@ -922,6 +993,22 @@ int main() {
                            "</signalling-protection><protection-between-mcdata-servers/>"));
     check(!data.confidentiality && data.integrity && data.between_servers && data.between_servers_control,
           "MCData protection");
+    // TS 24.484 clause 9.4.2.1 item c and 9.4.2.6: <adhoc-group-call>; absent, ad hoc group calls are not supported.
+    check(!parse_service_adhoc(document("mcvideo", "")).supported, "ad hoc group calls not supported when absent");
+    const auto adhoc = parse_service_adhoc(
+        document("mcvideo", "<anyExt><adhoc-group-call><allow-adhoc-group-call-support>true"
+                            "</allow-adhoc-group-call-support><max-no-participants>8</max-no-participants>"
+                            "</adhoc-group-call></anyExt>"));
+    check(adhoc.supported && adhoc.max_participants == 8, "ad hoc group calls supported");
+    check(!parse_service_adhoc(document("mcvideo", "<anyExt><adhoc-group-call><allow-adhoc-group-call-support>false"
+                                                   "</allow-adhoc-group-call-support><max-no-participants>8"
+                                                   "</max-no-participants></adhoc-group-call></anyExt>"))
+               .supported,
+          "ad hoc group calls not allowed");
+    rejects([&] {
+      (void)parse_service_adhoc(document("mcvideo", "<anyExt><adhoc-group-call><allow-adhoc-group-call-support>yes"
+                                                    "</allow-adhoc-group-call-support></adhoc-group-call></anyExt>"));
+    });
     // Another service's element is not this document's: ignored, so the default applies.
     check(parse_service_protection(document("mcdata", "<protection-between-mcptt-servers><allow-signalling-protection>"
                                                       "false</allow-signalling-protection>"
@@ -953,6 +1040,35 @@ int main() {
         group_doc + "<gi:preconfigured-group-use-only>yes</gi:preconfigured-group-use-only>" + group_end);
   });
   rejects([&] { (void)group_preconfigured_use_only("<list-service xmlns=\"urn:oma:xml:xdm:group-list\"/>"); });
+  // TS 24.481 clauses 7.2.2, 7.2.8 and 7.2.12.1 with RFC 4745: the actions of the group's ruleset granted to a user
+  // (TS 24.281 clause 6.2.8.1.6 b): <mcvideo-allow-emergency-alert>).
+  {
+    const std::string rules =
+        "<group xmlns=\"urn:oma:xml:poc:list-service\" xmlns:gi=\"urn:3gpp:ns:mcpttGroupInfo:1.0\" "
+        "xmlns:cp=\"urn:ietf:params:xml:ns:common-policy\"><list-service uri=\"sip:g@x\"><list>"
+        "<entry uri=\"sip:a@x\"><gi:mcvideo-mcvideo-id uri=\"sip:av@x\"/></entry><entry uri=\"sip:b@x\"/></list>"
+        "<cp:ruleset><cp:rule id=\"m\"><cp:conditions><is-list-member/></cp:conditions><cp:actions>"
+        "<gi:on-network-allow-getting-member-list>true</gi:on-network-allow-getting-member-list></cp:actions>"
+        "</cp:rule><cp:rule id=\"one\"><cp:conditions><cp:identity><cp:one id=\"sip:av@x\"/></cp:identity>"
+        "</cp:conditions><cp:actions><gi:mcvideo-allow-emergency-alert>true</gi:mcvideo-allow-emergency-alert>"
+        "</cp:actions></cp:rule><cp:rule id=\"unknown\"><cp:conditions><gi:unknown-condition/></cp:conditions>"
+        "<cp:actions><gi:mcvideo-allow-imminent-peril-call>true</gi:mcvideo-allow-imminent-peril-call></cp:actions>"
+        "</cp:rule><cp:rule id=\"no\"><cp:conditions><cp:identity><cp:one id=\"sip:b@x\"/></cp:identity>"
+        "</cp:conditions><cp:actions><gi:mcvideo-allow-emergency-alert>false</gi:mcvideo-allow-emergency-alert>"
+        "</cp:actions></cp:rule></cp:ruleset></list-service></group>";
+    check(group_document_allows(rules, "mcvideo-allow-emergency-alert", {"sip:a@x", "sip:av@x"}),
+          "group ruleset: an <identity> rule grants the action");
+    check(!group_document_allows(rules, "mcvideo-allow-emergency-alert", {"sip:b@x"}),
+          "group ruleset: false for another user");
+    check(group_document_allows(rules, "on-network-allow-getting-member-list", {"sip:av@x"}) &&
+              group_document_allows(rules, "on-network-allow-getting-member-list", {"sip:b@x"}) &&
+              !group_document_allows(rules, "on-network-allow-getting-member-list", {"sip:c@x"}),
+          "group ruleset: <is-list-member> by entry uri or MCVideo ID");
+    check(!group_document_allows(rules, "mcvideo-allow-imminent-peril-call", {"sip:av@x"}),
+          "group ruleset: a rule with an unknown condition does not apply");
+    check(!group_document_allows(group_doc + group_end, "mcvideo-allow-emergency-alert", {"sip:a@x"}),
+          "group ruleset: no ruleset grants nothing");
+  }
   // TS 24.282 clause 14.2.1 and TS 24.481 clause 7.2.8: enhanced status, the allow flag and the <status> entries
   // by <id>.
   const auto value = [](const char *id, const char *text) {
@@ -1053,6 +1169,21 @@ int main() {
   check(parse_mcptt_info(moved_xml).private_call_kms_uri == moved.private_call_kms_uri, "PrivateCallKMSURI lost");
   moved.private_call_kms_uri = "not a uri";
   rejects([&] { (void)mcptt_info_xml(moved); });
+  // TS 24.281 clause 6.2.0.1 and annex F.1.3 ah) (TS 24.379 forwardingReasonType): the notification of ad hoc group call
+  // redirection carries <forwarding-reason> "migrated".
+  {
+    const auto redirected = parse_service_info(
+        "<mcvideoinfo xmlns=\"urn:3gpp:ns:mcvideoInfo:1.0\"><mcvideo-Params><anyExt><forwarding-reason>migrated"
+        "</forwarding-reason></anyExt></mcvideo-Params></mcvideoinfo>",
+        mcvideo_service);
+    check(redirected.service.contains("forwarding-reason") && redirected.service.at("forwarding-reason") == "migrated",
+          "forwarding-reason migrated (ad hoc group call redirection)");
+    rejects([] {
+      (void)parse_service_info("<mcvideoinfo xmlns=\"urn:3gpp:ns:mcvideoInfo:1.0\"><mcvideo-Params><anyExt>"
+                               "<forwarding-reason></forwarding-reason></anyExt></mcvideo-Params></mcvideoinfo>",
+                               mcvideo_service);
+    });
+  }
   // RFC 2046 section 5.1.1: the CRLF PJSIP writes before the first delimiter.
   check(parse_body_parts("multipart/mixed; boundary=b", "\r\n--b\r\nContent-Type: text/plain\r\n\r\nx\r\n--b--\r\n")
                 .size() == 1,
@@ -1286,6 +1417,56 @@ int main() {
               read.actions ==
                   std::set<std::string>({"allow-private-call", "allow-adhoc-group-call", "allow-video-push-to-server"}),
           "MCVideo user profile");
+    check(!read.emergency_group_initiation.present && !read.imminent_group_initiation.present &&
+              !read.group_emergency_alert.present && !read.emergency_private_recipient.present &&
+              !read.private_emergency_alert.present,
+          "MCVideo profile target entries absent");
+    // TS 24.484 clause 9.3.2.1 items 8 d) ii), 8 e) and 9 f): the target entries of the priority requests that
+    // TS 24.281 clauses 6.2.8.1.6, 6.2.8.1.8, 6.2.8.3.1.1 and 6.2.8.3.1.3 check.
+    {
+      auto targets = video_profile;
+      targets.replace(targets.find("</PrivateCallList></PrivateCall>"), 32,
+                      "</PrivateCallList><EmergencyCall><MCVideoPrivateRecipient><entry entry-info=\"UsePreConfigured\">"
+                      "<uri-entry>sip:w@x</uri-entry></entry><ProSeUserID-entry><User-Info-ID>00</User-Info-ID>"
+                      "</ProSeUserID-entry></MCVideoPrivateRecipient></EmergencyCall></PrivateCall>"
+                      "<MCVideo-group-call><MaxSimultaneousCallsN6>1</MaxSimultaneousCallsN6><EmergencyCall>"
+                      "<MCVideoGroupInitiation><entry entry-info=\"DedicatedGroup\"><uri-entry>sip:g@x</uri-entry>"
+                      "</entry></MCVideoGroupInitiation></EmergencyCall><ImminentPerilCall><MCVideoGroupInitiation>"
+                      "<entry entry-info=\"UseCurrentlySelectedGroup\"><uri-entry/></entry></MCVideoGroupInitiation>"
+                      "</ImminentPerilCall><EmergencyAlert><entry entry-info=\"DedicatedGroup\"><uri-entry>sip:h@x"
+                      "</uri-entry></entry></EmergencyAlert><Priority>1</Priority></MCVideo-group-call>");
+      targets.replace(targets.find("</OnNetwork>"), 12,
+                      "<PrivateEmergencyAlert><entry entry-info=\"LocallyDetermined\"><uri-entry/></entry>"
+                      "</PrivateEmergencyAlert></OnNetwork>");
+      const auto entries = parse_mcvideo_profile(targets);
+      check(entries.emergency_group_initiation.present &&
+                entries.emergency_group_initiation.entry_info == "DedicatedGroup" &&
+                entries.emergency_group_initiation.uri == "sip:g@x",
+            "MCVideoGroupInitiation of EmergencyCall");
+      check(entries.imminent_group_initiation.present &&
+                entries.imminent_group_initiation.entry_info == "UseCurrentlySelectedGroup" &&
+                entries.imminent_group_initiation.uri.empty(),
+            "MCVideoGroupInitiation of ImminentPerilCall");
+      check(entries.group_emergency_alert.present && entries.group_emergency_alert.entry_info == "DedicatedGroup" &&
+                entries.group_emergency_alert.uri == "sip:h@x",
+            "EmergencyAlert of MCVideo-group-call");
+      check(entries.emergency_private_recipient.present &&
+                entries.emergency_private_recipient.entry_info == "UsePreConfigured" &&
+                entries.emergency_private_recipient.uri == "sip:w@x",
+            "MCVideoPrivateRecipient of PrivateCall EmergencyCall");
+      check(entries.private_emergency_alert.present &&
+                entries.private_emergency_alert.entry_info == "LocallyDetermined",
+            "PrivateEmergencyAlert of OnNetwork");
+      check(entries.actions == read.actions && entries.groups == read.groups, "target entries leave the rest");
+      // TS 24.484 clause 9.3.2.1 item 8 e) v): <Priority> of <MCVideo-group-call>; absent, the default 0.
+      check(entries.group_call_priority == 1 && read.group_call_priority == 0, "MCVideo group call Priority");
+      auto high = targets;
+      high.replace(high.find("<Priority>1</Priority>"), 22, "<Priority>255</Priority>");
+      check(parse_mcvideo_profile(high).group_call_priority == 255, "MCVideo group call Priority 255");
+      auto over = targets;
+      over.replace(over.find("<Priority>1</Priority>"), 22, "<Priority>256</Priority>");
+      rejects([&] { (void)parse_mcvideo_profile(over); });
+    }
     auto other = video_profile;
     other.replace(other.find("XUI-URI=\"sip:v@x\""), 17, "XUI-URI=\"sip:o@x\"");
     rejects([&] { (void)parse_mcvideo_profile(other); });
@@ -1293,6 +1474,53 @@ int main() {
       (void)parse_mcvideo_profile("<mcptt-user-profile xmlns=\"urn:3gpp:mcptt:user-profile:1.0\" XUI-URI=\"sip:a@x\" "
                                   "user-profile-index=\"3\"><Status>true</Status></mcptt-user-profile>");
     });
+    // TS 24.484 clause 9.3.2.1 item 10: functional aliases with their location criteria (TS 24.281 clause 20.2.1.4).
+    {
+      const auto at = [](double lat, double lon) {
+        return "<Corner><Longitude>" + std::to_string(location::encode_longitude(lon)) + "</Longitude><Latitude>" +
+               std::to_string(location::encode_latitude(lat)) + "</Latitude></Corner>";
+      };
+      const auto polygon = "<PolygonArea>" + at(45.0005, 9.999) + at(45.0005, 10.001) + at(45.0013, 10.001) +
+                           at(45.0013, 9.999) + "</PolygonArea>";
+      auto with_aliases = video_profile;
+      with_aliases.replace(
+          with_aliases.find("</OnNetwork>"), 12,
+          "<anyExt><FunctionalAliasList><entry index=\"1\"><uri-entry>sip:fa1@x</uri-entry><anyExt>"
+          "<LocationCriteriaForActivation><EnterSpecificArea>" +
+              polygon +
+              "</EnterSpecificArea></LocationCriteriaForActivation><LocationCriteriaForDeactivation>"
+              "<ExitSpecificArea>" +
+              polygon +
+              "</ExitSpecificArea><ExitSpecificArea><EllipsoidArcArea><Center><Longitude>1</Longitude><Latitude>2"
+              "</Latitude></Center><Radius>500</Radius><OffsetAngle>0</OffsetAngle><IncludedAngle>179"
+              "</IncludedAngle></EllipsoidArcArea></ExitSpecificArea></LocationCriteriaForDeactivation>"
+              "<manual-deactivation-not-allowed-if-location-criteria-met>true"
+              "</manual-deactivation-not-allowed-if-location-criteria-met></anyExt></entry>"
+              "<entry index=\"2\"><uri-entry>sip:fa2@x</uri-entry></entry></FunctionalAliasList></anyExt>"
+              "</OnNetwork>");
+      const auto read_aliases = parse_mcvideo_profile(with_aliases);
+      check(read_aliases.functional_aliases.size() == 2, "MCVideo profile functional aliases");
+      const auto &first = read_aliases.functional_aliases.front();
+      check(first.alias == "sip:fa1@x" && first.activate_on_entry.size() == 1 && first.activate_on_exit.empty() &&
+                first.deactivate_on_entry.empty() && first.deactivate_on_exit.size() == 2 &&
+                first.manual_deactivation_locked && first.has_location_criteria(),
+            "functional alias location criteria");
+      check(first.activate_on_entry.front().polygon.size() == 4 &&
+                location::inside(first.activate_on_entry.front(), 45.0009, 10.0) &&
+                !location::inside(first.activate_on_entry.front(), 45.0018, 10.0),
+            "functional alias area coordinates (TS 23.032 codes)");
+      const auto &arc = first.deactivate_on_exit.back();
+      check(arc.center && arc.center->longitude == 1 && arc.center->latitude == 2 && arc.radius == 500 &&
+                arc.included_angle == 179,
+            "functional alias ellipsoid arc");
+      check(read_aliases.functional_aliases.back().alias == "sip:fa2@x" &&
+                !read_aliases.functional_aliases.back().has_location_criteria(),
+            "functional alias without criteria");
+      auto two_corners = with_aliases;
+      for (const auto &corner : {at(45.0013, 10.001), at(45.0013, 9.999)})
+        two_corners.replace(two_corners.find(corner), corner.size(), "");
+      rejects([&] { (void)parse_mcvideo_profile(two_corners); });
+    }
     // TS 24.484 clause 10.3.2.1: the MCData user profile: identity, index and the MCData rights only.
     const std::string data_profile =
         "<mcdata-user-profile xmlns=\"urn:3gpp:ns:mcdata:user-profile:1.0\" XUI-URI=\"sip:d@x\" "

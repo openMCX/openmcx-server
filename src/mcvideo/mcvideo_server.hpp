@@ -111,7 +111,8 @@ class McvideoServer final : public McServer {
   [[nodiscard]] Json service_members(Json group) const override;
 
   //------------------------------------------------------------------------------
-  // TS 24.281 clause 6.2.1 has no SDP direction rule for an ambient viewing call.
+  // TS 24.281 clause 6.2.1 step 3c (Rel-19) puts the direction of an ambient viewing call on the video media
+  // ("a=recvonly" remote-init, "a=sendonly" local-init); earlier clients set it elsewhere, so it is not enforced.
   [[nodiscard]] std::optional<std::string> ambient_direction_refusal(const MediaDescription & /*media*/,
                                                                      const std::string & /*type*/) const override {
     return std::nullopt;

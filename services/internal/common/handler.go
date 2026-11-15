@@ -67,8 +67,12 @@ type service struct {
 	profileDocs map[string][]byte
 	// The entity tag of the configured profile each was uploaded over: a later change of the configuration supersedes
 	// the uploaded document (uploadedProfile).
-	profileBases  map[string]string
-	notifications *notificationServer
+	profileBases map[string]string
+	// MCVideo user profile documents replaced through the CMS (TS 24.484 clause 6.3.4.3), by MCVideo ID, and the
+	// entity tag of the configured profile each was uploaded over (uploadedMCVideoProfile).
+	mcvideoProfileDocs  map[string][]byte
+	mcvideoProfileBases map[string]string
+	notifications       *notificationServer
 	// Requests to other services of this system (the content server, the
 	// notification server); replaced in tests.
 	serviceClient *http.Client
@@ -168,6 +172,9 @@ func (svc *service) routes(mux *http.ServeMux) error {
 		svc.routesGroupProvisioning(mux)
 	case RoleCMS:
 		if err := svc.loadProfileDocuments(); err != nil {
+			return err
+		}
+		if err := svc.loadMCVideoProfileDocuments(); err != nil {
 			return err
 		}
 		if err := svc.checkProfileDocuments(); err != nil {

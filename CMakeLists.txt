@@ -51,14 +51,14 @@ target_link_libraries(mcx_keying PUBLIC mcx_dependencies PRIVATE ${WOLFSSL_LIBRA
 target_compile_options(mcx_keying PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(mcx-keytool src/keytool/keytool.cpp)
 target_link_libraries(mcx-keytool PRIVATE mcx_keying)
-add_library(mcx_core src/media/floor.cpp src/media/mbms.cpp src/media/pre_established.cpp src/media/media.cpp src/media/video.cpp src/media/transmission.cpp src/protocol/affiliation.cpp src/protocol/bodies.cpp src/protocol/conference.cpp src/protocol/functional_alias.cpp src/protocol/mbms_usage.cpp src/protocol/location.cpp src/protocol/profiles.cpp src/protocol/reginfo.cpp src/protocol/resource_lists.cpp src/protocol/refer.cpp src/protocol/ice_sdp.cpp src/protocol/sdp.cpp src/protocol/service_info.cpp src/protocol/xml_support.cpp src/protocol/mcdata.cpp src/media/msrp.cpp src/media/ipconn.cpp src/security/http.cpp src/security/security.cpp src/security/xml_security.cpp src/security/c14n11.cpp src/security/transport_keys.cpp src/security/kms_xml_signature.cpp src/location/location.cpp src/location/seal_location.cpp)
+add_library(mcx_core src/media/floor.cpp src/media/mbms.cpp src/media/pre_established.cpp src/media/media.cpp src/media/video.cpp src/media/transmission.cpp src/protocol/affiliation.cpp src/protocol/bodies.cpp src/protocol/conference.cpp src/protocol/functional_alias.cpp src/protocol/group_dynamic_data.cpp src/protocol/mbms_usage.cpp src/protocol/location.cpp src/protocol/profiles.cpp src/protocol/reginfo.cpp src/protocol/resource_lists.cpp src/protocol/refer.cpp src/protocol/ice_sdp.cpp src/protocol/sdp.cpp src/protocol/service_info.cpp src/protocol/xml_support.cpp src/protocol/mcdata.cpp src/media/msrp.cpp src/media/ipconn.cpp src/security/http.cpp src/security/security.cpp src/security/xml_security.cpp src/security/c14n11.cpp src/security/transport_keys.cpp src/security/kms_xml_signature.cpp src/location/location.cpp src/location/seal_location.cpp)
 target_link_libraries(mcx_core PUBLIC mcx_dependencies PkgConfig::OPENH264)
 # TS 33.180 annex D: the KMS documents sign, verify and unwrap with the transport keys of mcx_core.
 target_link_libraries(mcx_keying PUBLIC mcx_core)
 target_link_libraries(mcx-keytool PRIVATE mcx_core)
 target_compile_options(mcx_core PRIVATE -Wall -Wextra -Wpedantic)
 if(BUILD_TESTING)
-    foreach(component floor pre_established refer ice_sdp media video transmission protocol mcdata msrp ipconn http http_crl security protected_call private_call adhoc_call xml_security transport_keys location warning seal_location srtcp_index floor_rekey)
+    foreach(component floor pre_established refer ice_sdp media video transmission protocol mcdata msrp ipconn http http_crl security protected_call private_call adhoc_call xml_security transport_keys location warning seal_location srtcp_index floor_rekey group_dynamic_data)
         add_executable(test_${component} tests/test_${component}.cpp)
         target_link_libraries(test_${component} PRIVATE mcx_core)
         add_test(NAME ${component} COMMAND test_${component})
@@ -172,6 +172,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/server/functional_alias_split.cpp
         src/server/group_call.cpp
         src/server/group_documents.cpp
+        src/server/group_dynamic_data.cpp
         src/server/pre_session.cpp
         src/server/split.cpp
         src/server/split_relay.cpp
@@ -247,6 +248,10 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         add_executable(test_sip tests/test_sip.cpp)
         target_link_libraries(test_sip PRIVATE mcx_sip)
         add_test(NAME sip_api COMMAND test_sip)
+        # RFC 3264 section 8: the "o=" line of a dialog's SDP (SdpOrigin, src/sip/helpers.cpp).
+        add_executable(test_sdp_origin tests/test_sdp_origin.cpp)
+        target_link_libraries(test_sdp_origin PRIVATE mcx_sip)
+        add_test(NAME sdp_origin COMMAND test_sdp_origin)
         add_test(NAME sip_tls COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sip_tls.py $<TARGET_FILE:test_sip>)
         add_test(NAME sip_tcp COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sip_tls.py $<TARGET_FILE:test_sip> tcp)
         set_tests_properties(sip_tls sip_tcp PROPERTIES TIMEOUT 45 RUN_SERIAL TRUE)

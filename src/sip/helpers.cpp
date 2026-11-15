@@ -408,9 +408,56 @@ void add_answer_headers(pjsip_tx_data *data, const std::vector<SipHeader> &heade
 }
 
 //------------------------------------------------------------------------------
-// RFC 4566: parses the local SDP built from the media description (session version 1).
-[[nodiscard]] pjmedia_sdp_session *parse_local_sdp(pj_pool_t *pool, const MediaDescription &media) {
-  return parse_sdp_text(pool, make_sdp(media, next_sdp_session_id()));
+// RFC 3264 section 8: an SDP description without its "o=" line, to tell whether a new SDP differs from the previous.
+static std::string without_origin(const std::string &sdp) {
+  std::string out;
+  std::size_t start = 0;
+  while (start < sdp.size()) {
+    auto end = sdp.find('\n', start);
+    end = end == std::string::npos ? sdp.size() : end + 1;
+    if (sdp.compare(start, 2, "o=") != 0) out.append(sdp, start, end - start);
+    start = end;
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// RFC 3264 section 8 and RFC 4566 section 5.2: see SdpOrigin.
+const SdpOrigin &next_sdp_origin(SdpOrigin &origin, const MediaDescription &media) {
+  if (origin.id == 0) {
+    origin.id = next_sdp_session_id();
+    origin.version = 1;
+    origin.last = without_origin(make_sdp(media, origin.id, origin.version));
+    return origin;
+  }
+  auto described = without_origin(make_sdp(media, origin.id, origin.version));
+  if (described != origin.last) {
+    ++origin.version;
+    origin.last = std::move(described);
+  }
+  return origin;
+}
+
+//------------------------------------------------------------------------------
+// RFC 4566 section 5.2: takes <sess-id> and <sess-version> from the "o=" line of an SDP written by the caller.
+void record_sdp_text(SdpOrigin &origin, const std::string &sdp) {
+  const auto at = sdp.find("o=");
+  if (at == std::string::npos) return;
+  std::istringstream line(sdp.substr(at + 2, sdp.find('\n', at) - at - 2));
+  std::string user;
+  std::uint64_t id = 0, version = 0;
+  if (line >> user >> id >> version) {
+    origin.id = id;
+    origin.version = version;
+    origin.last = without_origin(sdp);
+  }
+}
+
+//------------------------------------------------------------------------------
+// RFC 4566: parses the local SDP built from the media description, with the dialog's origin (see SdpOrigin).
+[[nodiscard]] pjmedia_sdp_session *parse_local_sdp(pj_pool_t *pool, const MediaDescription &media,
+                                                   const SdpOrigin &origin) {
+  return parse_sdp_text(pool, make_sdp(media, origin.id, origin.version));
 }
 
 //------------------------------------------------------------------------------
@@ -460,10 +507,11 @@ void add_answer_headers(pjsip_tx_data *data, const std::vector<SipHeader> &heade
 }
 
 //------------------------------------------------------------------------------
-// RFC 5621: builds an INVITE body from the local SDP (session version 1) and the given parts (see make_body_with_sdp).
+// RFC 5621: builds an INVITE body from the local SDP, with the dialog's origin (see SdpOrigin), and the given parts
+// (see make_body_with_sdp).
 [[nodiscard]] pjsip_msg_body *make_invite_body(pj_pool_t *pool, const MediaDescription &media,
-                                               const std::vector<BodyPart> &parts) {
-  return make_body_with_sdp(pool, make_sdp(media, next_sdp_session_id()), parts);
+                                               const std::vector<BodyPart> &parts, const SdpOrigin &origin) {
+  return make_body_with_sdp(pool, make_sdp(media, origin.id, origin.version), parts);
 }
 
 } // namespace sip_detail

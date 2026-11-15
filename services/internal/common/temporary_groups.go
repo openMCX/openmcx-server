@@ -347,23 +347,54 @@ func (svc *service) tearDownTemporaryGroup(writer http.ResponseWriter, request *
 
 // ------------------------------------------------------------------------------
 // TS 33.180 clause 5.7: keyGroup is a group as the GMS keys it: a temporary group's
-// members are those of its constituent groups.
+// members are those of its constituent groups, for every MC service: the MCPTT IDs, and
+// the MCVideo and MCData IDs of the constituents' MCVideo and MCData parts (TS 24.281
+// clause 4.7.1 and TS 24.282: an MCVideo or MCData server asks for its user's own ID).
 func (svc *service) keyGroup(original Group) Group {
 	if len(original.TemporaryConstituents) == 0 {
 		return original
 	}
 	out := original
 	out.Members = nil
+	var video, data []string
+	hasVideo, hasData := false, false
+	union := func(into []string, from []string) []string {
+		for _, member := range from {
+			if !slices.Contains(into, member) {
+				into = append(into, member)
+			}
+		}
+		return into
+	}
 	for _, id := range original.TemporaryConstituents {
 		constituent, ok := svc.group(id)
 		if !ok {
 			continue
 		}
-		for _, member := range constituent.Members {
-			if !slices.Contains(out.Members, member) {
-				out.Members = append(out.Members, member)
-			}
+		out.Members = union(out.Members, constituent.Members)
+		if constituent.MCVideo != nil {
+			hasVideo, video = true, union(video, constituent.MCVideo.Members)
 		}
+		if constituent.MCData != nil {
+			hasData, data = true, union(data, constituent.MCData.Members)
+		}
+	}
+	// Copies, so that the stored group is not changed through its pointers.
+	if hasVideo {
+		part := GroupMCVideo{}
+		if original.MCVideo != nil {
+			part = *original.MCVideo
+		}
+		part.Members = video
+		out.MCVideo = &part
+	}
+	if hasData {
+		part := GroupMCData{}
+		if original.MCData != nil {
+			part = *original.MCData
+		}
+		part.Members = data
+		out.MCData = &part
 	}
 	return out
 }

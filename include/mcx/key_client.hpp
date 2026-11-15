@@ -13,6 +13,7 @@
 #include <memory>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace mcx {
 //------------------------------------------------------------------------------
@@ -45,8 +46,11 @@ public:
                         const std::string &scope);
   // The KMS URI whose key material serves an identity: this user's KMS.
   std::string kms_uri_of(std::string_view identity) const;
-  // TS 33.180 clause 5.2.7.3: whether this client holds the certificate of a KMS (its own).
+  // TS 33.180 clause 5.2.7.3: whether this client holds the certificate of a KMS (its own or an External KMS's).
   bool knows_kms(std::string_view kms_uri) const;
+  // TS 33.180 clause 5.2.8.2.5: the KMS URIs whose certificates this client holds: the Home KMS first, then the
+  // External KMSs of the Home KMS's KmsCertCache (annex D.2.5).
+  std::vector<std::string> known_kms() const;
   // TS 33.180 clause 5.4 and annex E.4: creates a CSK and the MIKEY-SAKKE I_MESSAGE to the recipient, base64 encoded.
   std::pair<keying::KeyMessage, std::string> make_csk(std::string_view recipient);
   // TS 33.180 clause 5.4 and annex E.4: opens a CSK upload I_MESSAGE from the sender.

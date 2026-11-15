@@ -231,10 +231,23 @@ void SipEngine::Impl::dialog_transaction_state(pjsip_transaction *transaction, p
 
 //------------------------------------------------------------------------------
 // RFC 3261 section 10.2: reports the result of a REGISTER transaction to the registration handler.
+//
+// TS 24.229 clause 5.1.1.4.1: the UE "shall reregister ... either 600 seconds before the expiration time if the
+// previous registration was for greater than 1200 seconds, or when half of the time has expired if the previous
+// registration was for 1200 seconds or less" (the IMS AKA path times it in ims_aka.cpp). pjsip_regc refreshes
+// PJSIP_REGISTER_CLIENT_DELAY_BEFORE_REFRESH (5 s) before the expiry by default: after every 2xx, the granted
+// expiration (parameter->expiration, which pjsip has also stored as the registration's expires) sets the delay
+// before the refresh, and pjsip_regc_set_delay_before_refresh reschedules the pending refresh with it.
 void SipEngine::Impl::registration_complete(pjsip_regc_cbparam *parameter) {
   auto *owner = parameter == nullptr ? nullptr : static_cast<Impl *>(parameter->token);
   if (owner == nullptr) {
     return;
+  }
+  if (parameter->regc != nullptr && parameter->code / 100 == 2 && parameter->expiration > 0 &&
+      parameter->expiration != PJSIP_REGC_EXPIRATION_NOT_SPECIFIED) {
+    const pj_uint32_t granted = parameter->expiration;
+    const pj_uint32_t before = granted > 1200 ? 600 : granted - granted / 2;
+    pjsip_regc_set_delay_before_refresh(parameter->regc, before);
   }
   guarded(owner, [&] {
     SipResponse response = owner->response_from(parameter->rdata);

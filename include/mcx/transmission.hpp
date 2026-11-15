@@ -98,7 +98,8 @@ std::vector<std::uint8_t> encode(const Packet &packet);
 
 //------------------------------------------------------------------------------
 // TS 24.581 clauses 9.1.2 and 9.2.2.1: decodes an RTCP APP packet as a transmission control message. Refuses another
-// name (an MCPTT floor packet), an unknown subtype, a void subtype and malformed fields of known IDs (clause 9.2.3).
+// name (an MCPTT floor packet), an unknown subtype and a void subtype (clause 9.1.4 step 1: the message is ignored);
+// unknown fields are kept and malformed fields of known IDs (clause 9.2.3) left out (clause 9.1.4 steps 2 and 3).
 Packet decode(std::span<const std::uint8_t> bytes);
 
 //------------------------------------------------------------------------------
@@ -164,5 +165,85 @@ FloorField result_field(bool success);
 //------------------------------------------------------------------------------
 // TS 24.581 clause 9.2.3.17: reads the Result field; true when granted.
 bool read_result(const FloorField &field);
+
+
+//------------------------------------------------------------------------------
+// TS 24.581 clause 6.2.4: the states of the 'Transmission participant state transition diagram for basic
+// transmission control operation': 'U: has no permission to transmit', 'U: pending request to transmit', 'U: has
+// permission to transmit', 'U: pending end of transmission', 'U: queued transmission' and 'Call releasing'.
+enum class ParticipantState { NoPermission, PendingRequest, HasPermission, PendingEnd, Queued, CallReleasing };
+
+//------------------------------------------------------------------------------
+// TS 24.581 clause 6.2.5: the states of the reception control machines: 'U: reception controller' of the general
+// machine with no basic instance (Idle), the basic machine states 'U: pending request to receive', 'U: has
+// permission to receive', 'U: pending reception release' and 'U: terminated', and 'Call releasing'.
+enum class ReceptionState { Idle, PendingRequest, HasPermission, PendingRelease, Terminated, CallReleasing };
+
+//------------------------------------------------------------------------------
+// TS 24.581 clauses 11.1.1 and 11.2.1: the on-network transmission participant timers and counters. The timer
+// values come from the MCVideo service configuration document (TS 24.484 clause 9.4.2.7, in seconds) and have no
+// default in TS 24.581; one second each keeps the C = 3 transmissions within the 6 seconds of table 11.1.1-1
+// NOTEs 1 to 4. The counter limits are the defaults of table 11.2.1-1.
+struct ParticipantTimerOptions {
+  std::uint64_t t100_request_ms{1000};         // T100 (Transmission Request)
+  std::uint64_t t101_end_request_ms{1000};     // T101 (Transmission End Request)
+  std::uint64_t t102_queue_position_ms{1000};  // T102 (Transmission Queue Position Request)
+  std::uint64_t t103_receive_request_ms{1000}; // T103 (Receive Media Request)
+  std::uint64_t t104_receive_release_ms{1000}; // T104 (Receive Media Release)
+  unsigned c100_request{3};                    // C100 (Transmission Request)
+  unsigned c101_end_request{3};                // C101 (Transmission End Request)
+  unsigned c102_queue_position{3};             // C102 (Transmission Queue Position Request)
+  unsigned c103_receive_request{3};            // C103 (Receive Media Request)
+  unsigned c104_receive_release{3};            // C104 (Receive Media Release)
+};
+
+//------------------------------------------------------------------------------
+// TS 24.581 clauses 6.2.4 and 6.2.5 with clauses 11.1.1 and 11.2.1: the on-network transmission participant's
+// timers T100 to T104 and counters C100 to C104 with the state transitions they drive, for the basic transmission
+// control machine and one basic reception control instance. Pure logic: the caller sends what send() registers
+// and what tick() returns, sends the Transmission control Acks, end responses and user notifications, and binds
+// incoming packets to the session. Broadcast group call endings ('Call releasing' in clauses 6.2.4.5.7 and
+// 6.2.4.6.4 step 6) are left to the caller, which calls release().
+class ParticipantTimers {
+public:
+  explicit ParticipantTimers(ParticipantTimerOptions options = {});
+  // A request the caller has just sent: Transmission Request (T100), Transmission end request (T101), Queue
+  // Position Request (T102), Receive Media Request (T103) or Media reception end request (T104). Throws when the
+  // message is not valid in the current state; other participant messages are accepted and start no timer.
+  void send(const Packet &packet, std::uint64_t now_ms);
+  // TS 24.581 clause 6.2.4.2.2 step 4: a call whose SIP INVITE request was an implicit Transmission request: T100
+  // starts with C100 at 1 and 'U: pending request to transmit' is entered without sending; T100 expiry sends
+  // `request` (clause 6.2.4.4.3).
+  void expect_implicit_request(const Packet &request, std::uint64_t now_ms);
+  // A transmission control message received from the transmission control server.
+  void receive(const Packet &packet, std::uint64_t now_ms);
+  // The requests to send again on timer expiry, and the Transmission end request of clause 6.2.4.9.8.
+  std::vector<Packet> tick(std::uint64_t now_ms);
+  // The request types that expired the upper limit of their counter since the last call (clauses 6.2.4.4.4,
+  // 6.2.4.6.3, 6.2.4.9.8, 6.2.5.4.4 and 6.2.5.6.3).
+  std::vector<Type> take_failed();
+  // TS 24.581 clauses 6.2.4.7.2 and 6.2.5.3.5: MCVideo call release step 1 stops every timer and enters 'Call
+  // releasing' in both machines; step 2 (clauses 6.2.4.8.2 and 6.2.5.9.2) is destroying this object.
+  void release();
+
+  ParticipantState state() const { return state_; }
+
+  ReceptionState reception_state() const { return reception_; }
+
+private:
+  struct Pending {
+    Packet packet;
+    std::uint64_t sent_ms{};
+    unsigned count{}; // the counter C10x, 1 after the first transmission
+  };
+  void start(std::optional<Pending> &slot, const Packet &packet, std::uint64_t now_ms);
+
+  ParticipantTimerOptions options_;
+  ParticipantState state_{ParticipantState::NoPermission};
+  ReceptionState reception_{ReceptionState::Idle};
+  std::optional<Pending> transmission_;    // T100, T101 or T102 (one runs at a time in the basic machine)
+  std::optional<Pending> reception_timer_; // T103 or T104
+  std::vector<Type> failed_;
+};
 
 } // namespace mcx::transmission

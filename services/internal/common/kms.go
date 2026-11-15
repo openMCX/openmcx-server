@@ -282,6 +282,10 @@ func (svc *service) kmsProvision(writer http.ResponseWriter, request *http.Reque
 	if transport != nil {
 		input["security"] = transport
 	}
+	// TS 33.180 annex D.2.5: the External KMS certificates loaded onto this KMS (security.external_kms_certificates).
+	if operation == "certcache" && len(svc.cfg.Security.ExternalKMSCertificates) > 0 {
+		input["external_certificates"] = svc.cfg.Security.ExternalKMSCertificates
+	}
 	raw, err := svc.runKeyTool(input)
 	var result struct {
 		XML string `json:"xml"`

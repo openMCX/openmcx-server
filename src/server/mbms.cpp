@@ -566,24 +566,16 @@ void McServer::mbms_move_to_unicast(MbmsConversation &conversation, std::uint64_
 // TS 24.380 clause 10A.1 and clause 8.5.4 (TS 24.581 clauses 10.5.1 and 9.4.4): a group's dynamic data (whether a call
 // is ongoing; the emergency or imminent peril state and who set it) goes over the general purpose subchannel of each
 // bearer that one of its affiliated members listens to, as Group Dynamic Data Notify, whenever it changes. This server
-// keeps no subscription to group dynamic data (TS 24.379 clause 9.2.1.6), so it sends the notification on every
-// change rather than in place of a SIP NOTIFY. Under a MuSiK it is SRTCP under it (TS 33.180 clause 9.2.2).
+// keeps no MBMS subscription to group dynamic data (TS 24.379 clause 9.2.1.6), so it sends the notification on every
+// change rather than in place of a SIP NOTIFY (the MCVideo SIP subscription, TS 24.281 clause 8.2.1.6, is served
+// apart: group_dynamic_data.cpp). Under a MuSiK it is SRTCP under it (TS 33.180 clause 9.2.2). The data itself is
+// group_dynamic_data(), shared with that subscription.
 void McServer::mbms_group_dynamic_data_tick() {
   std::set<std::string> groups;
   for (const auto &[sip, user] : users_) groups.insert(user.groups.begin(), user.groups.end());
   for (const auto &group : groups) {
-    GroupDynamicData data;
+    auto data = group_dynamic_data(group);
     data.ssrc = mbms_ssrc_;
-    data.group = group;
-    data.call_ongoing = std::ranges::any_of(sessions_, [&](const auto &entry) {
-      return entry.second->group == group && !entry.second->private_call;
-    });
-    if (const auto found = priorities_.find(group); found != priorities_.end()) {
-      const auto &state = found->second;
-      if (state.emergency || state.imminent) data.status = state.emergency ? 0 : 1;
-      const auto &setters = state.emergency ? state.emergency_users : state.imminent_users;
-      if (data.status && !setters.empty()) data.status_changer = *setters.begin();
-    }
     auto &last = mbms_group_data_[group];
     if (last == data) continue;
     const bool first = last.group.empty();

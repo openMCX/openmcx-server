@@ -21,6 +21,7 @@
 #include "mcx/af.hpp"
 #include "mcx/diameter.hpp"
 #include "mcx/floor.hpp"
+#include "mcx/group_dynamic_data.hpp"
 #include "mcx/http.hpp"
 #include "mcx/ice.hpp"
 #include "mcx/key_client.hpp"
@@ -1550,6 +1551,58 @@ protected:
   std::map<std::string, GroupDynamicData> mbms_group_data_;
 
   void mbms_group_dynamic_data_tick();
+
+  // ---- Subscription to group dynamic data (group_dynamic_data.cpp): TS 24.281 clauses 8.2.2.2.16, 8.2.2.3.9 and
+  // 8.2.2.3.10, MCVideo only ----
+  // TS 24.380 clause 10A.1 with TS 24.379 clause 9.2.1.6 (TS 24.581 clause 10.5.1, TS 24.281 clause 8.2.1.6): a
+  // group's dynamic data, the one source of the MBMS Group Dynamic Data Notify and of the PIDF of clause 8.3.1.2.
+  GroupDynamicData group_dynamic_data(const std::string &group) const;
+  // TS 24.281 clause 8.3.1.2 (per-group dynamic data): the document of the group now, at the server owning it.
+  GroupDynamicDataDocument group_dynamic_data_document(const std::string &group) const;
+
+  // TS 24.281 clause 8.2.2.2.16: a subscription passed on to the controlling function of the group; its NOTIFYs come
+  // back to the client, its responses either way. NOTIFYs held until the client's SUBSCRIBE is answered.
+  struct GddRelay {
+    std::string peer, client_dialog, upstream_dialog;
+    bool accepted = false;
+
+    struct Held {
+      std::string state, content_type, body, transaction;
+    };
+
+    std::vector<Held> pending;
+  };
+
+  std::map<std::string, std::shared_ptr<GddRelay>> gdd_relays_; // by either dialog
+  // TS 24.281 clauses 8.2.2.3.9 and 8.2.2.3.10: the subscriptions at the server owning the groups.
+  GroupDynamicDataSubscriptions gdd_subscriptions_;
+  std::uint64_t gdd_next_check_ = 0;
+
+  // The request is a subscription to group dynamic data (its filter, clause 8.3.2.2), or in the dialog of one.
+  bool is_gdd_subscribe(const SipMessage &message, const std::string &event_name) const;
+  // Clause 8.2.1.6 from a served client: passed on (clause 8.2.2.2.16) or, for a group this server owns, taken as
+  // the controlling function (clause 8.2.2.3.9). False when the request is no such subscription.
+  bool group_dynamic_data_subscribe(const SipMessage &message, User &user, const std::string &event_name,
+                                    SipResponse &response);
+  // Clause 8.2.2.3.9 from the participating function on a peer. False when the request is no such subscription.
+  bool peer_group_dynamic_data_subscribe(const SipMessage &message, const std::string &peer,
+                                         const std::string &event_name, SipResponse &response);
+  // Clause 8.2.2.3.9 steps 1 to 6, with the handled MCVideo ID; and the SUBSCRIBE in the dialog of a subscription.
+  SipResponse owned_gdd_subscribe(const SipMessage &message, const std::string &group, const std::string &user,
+                                  const std::string &peer, const GroupDynamicDataFilter &filter);
+  SipResponse owned_gdd_resubscribe(const SipMessage &message);
+  // Clause 8.2.2.2.16 step 4: the SUBSCRIBE towards the controlling function.
+  SipResponse relay_gdd_subscribe(const SipMessage &message, const User &user, const std::string &group,
+                                  const std::string &owner);
+  // Clause 8.2.2.2.16, last paragraph: a request in the dialog of a relayed subscription.
+  SipResponse relay_gdd_in_dialog(const SipMessage &message, const std::shared_ptr<GddRelay> &relay);
+  void forward_gdd_notify(const std::shared_ptr<GddRelay> &relay, const GddRelay::Held &held);
+  void end_gdd_relay(const std::shared_ptr<GddRelay> &relay);
+  // Clause 8.2.2.3.10: the NOTIFY of a subscription; with `state` "terminated;..." its end.
+  void notify_gdd(const std::string &dialog, const std::string &body, const std::string &state);
+  std::string gdd_body(const GroupDynamicDataSubscriptions::Subscription &subscription) const;
+  // Clause 8.2.2.3.10: a NOTIFY on every change of a group's dynamic data.
+  void group_dynamic_data_tick(std::uint64_t now);
 
   // The "mbms" block, the socket of the general purpose and MBMS subchannels and the SSRC of this participating
   // function on them; none when not configured. The users the bearers were announced to, and the TMGIs whose general

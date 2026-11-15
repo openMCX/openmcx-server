@@ -254,8 +254,14 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
       require_success(pjsip_auth_clt_set_credentials(&sip_dialog->auth_sess, 1, &credential), "set INVITE credentials");
     }
 
-    auto *local_sdp =
-        sdp_text ? parse_sdp_text(sip_dialog->pool, *sdp_text) : parse_local_sdp(sip_dialog->pool, local_media);
+    // RFC 3264 section 8: the dialog's first SDP takes a new origin, kept for its later offers and answers.
+    SdpOrigin origin;
+    if (sdp_text)
+      record_sdp_text(origin, *sdp_text);
+    else
+      next_sdp_origin(origin, local_media);
+    auto *local_sdp = sdp_text ? parse_sdp_text(sip_dialog->pool, *sdp_text)
+                               : parse_local_sdp(sip_dialog->pool, local_media, origin);
     require_success(
         pjsip_inv_create_uac(sip_dialog, local_sdp, PJSIP_INV_SUPPORT_TIMER | PJSIP_INV_REQUIRE_TIMER, &invite_session),
         "create outgoing INVITE session");
@@ -275,6 +281,7 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
     entry->dialog = sip_dialog;
     entry->invite = invite_session;
     entry->initial_handler = std::move(handler);
+    entry->sdp_origin = origin;
     invite_session->mod_data[module.id] = entry.get();
     dialogs[id] = std::move(entry);
 
@@ -282,7 +289,7 @@ SipEngine::Impl::create_invite(std::string_view request_uri, const MediaDescript
     require_success(pjsip_inv_invite(invite_session, &created), "create INVITE request");
     TxData data(created);
     data->msg->body = sdp_text ? make_body_with_sdp(data->pool, *sdp_text, application_parts)
-                               : make_invite_body(data->pool, local_media, application_parts);
+                               : make_invite_body(data->pool, local_media, application_parts, origin);
     add_core_route(data.get(), headers);
 
     // An MCPTT call declares the MCPTT service; a caller that names its own

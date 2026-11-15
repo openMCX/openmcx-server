@@ -306,3 +306,42 @@ func TestKMSSignedRequestsForUsersWithTransportKeys(test *testing.T) {
 		test.Fatalf("config without the request window: %v", err)
 	}
 }
+
+// ------------------------------------------------------------------------------
+// TS 33.180 clause 5.2.8.3 and annex D.2.5: a CertCache request gets the External KMS certificates loaded onto the
+// KMS (security.external_kms_certificates) passed to the key tool; the other requests do not.
+func TestKMSCertCacheExternalCertificates(test *testing.T) {
+	cfg, key := testConfig(), testKey(test)
+	external := json.RawMessage(`{"period":{"kms_uri":"https://kms2.mcx.test","seconds":2592000,"offset":0},"authentication_key":"04","encryption_key":"04"}`)
+	cfg.Security.ExternalKMSCertificates = []json.RawMessage{external}
+	seen := map[string]any{}
+	backend := func(input map[string]any) (json.RawMessage, error) {
+		if input["op"] == "authority-generate" {
+			return json.RawMessage(`{"private":"test-only"}`), nil
+		}
+		seen[input["op"].(string)] = input["external_certificates"]
+		return json.RawMessage(`{"xml":"<KmsResponse/>"}`), nil
+	}
+	handler, err := NewHandlerWithKeys(RoleKMS, cfg, nil, &key.PublicKey, test.TempDir(),
+		WithClock(func() time.Time { return testNow }), WithKeyTool(backend))
+	if err != nil {
+		test.Fatal(err)
+	}
+	claims, _ := newClaims(cfg, cfg.Users[0], cfg.ServerClientID, "access", "", testNow)
+	claims.Scope = "openid 3gpp:mc:ptt_key_management_service"
+	token, _ := signToken(claims, key)
+	for _, path := range []string{"/keymanagement/identity/v1/certcache", "/keymanagement/identity/v1/init"} {
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, bearerRequest(http.MethodPost, path, token, nil))
+		if rr.Code != 200 {
+			test.Fatalf("%s status %d", path, rr.Code)
+		}
+	}
+	certs, ok := seen["kms-certcache"].([]json.RawMessage)
+	if !ok || len(certs) != 1 || string(certs[0]) != string(external) {
+		test.Fatalf("certcache key tool input %v", seen["kms-certcache"])
+	}
+	if seen["kms-init"] != nil {
+		test.Fatalf("init got External KMS certificates")
+	}
+}

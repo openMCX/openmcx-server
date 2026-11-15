@@ -50,6 +50,11 @@ type SecurityConfig struct {
 	// TS 33.180 annex D.2.2: the "recent time window (e.g. 5 seconds)" in which the Time of a signed KMS request must
 	// lie, in seconds; the clause leaves it to the KMS. Required with transport_keys; no default.
 	KMSRequestWindowSeconds int `json:"kms_request_window_seconds,omitempty"`
+	// TS 33.180 clause 5.2.8.3 ("External KMS Certificates shall be manually loaded onto the Home KMS and distributed
+	// to the user") and annex D.2.5: the certificates of the External KMSs the KMS serves in its KmsCertCache, each the
+	// public parameters of that KMS as the key tool writes them ({"period": {"kms_uri", "seconds", "offset"},
+	// "authentication_key", "encryption_key"}, hexadecimal points).
+	ExternalKMSCertificates []json.RawMessage `json:"external_kms_certificates,omitempty"`
 }
 
 type Config struct {
@@ -107,6 +112,11 @@ type FunctionalAlias struct {
 	MCVideoUsers               []string `json:"mcvideo_users,omitempty"`
 	MaxSimultaneousActivations int      `json:"max_simultaneous_activations"`
 	AllowTakeover              bool     `json:"allow_takeover,omitempty"`
+	// The location criteria of the alias in the user profiles (functional_alias_location.go): the areas whose entry
+	// or exit activates or deactivates it at the client, and whether the user may deactivate it while they are met.
+	LocationActivation       *AreaCriteria `json:"location_activation,omitempty"`
+	LocationDeactivation     *AreaCriteria `json:"location_deactivation,omitempty"`
+	ManualDeactivationLocked bool          `json:"manual_deactivation_locked,omitempty"`
 }
 
 type User struct {
@@ -310,6 +320,10 @@ type GroupCallPolicy struct {
 	Alert       bool   `json:"alert,omitempty"`
 	AlertGroup  string `json:"alert_group,omitempty"` // <MCPTT-group-call>/<EmergencyAlert>
 	AlertCancel bool   `json:"alert_cancel,omitempty"`
+	// TS 24.484 clause 9.3.2.1 item 8 e) v): the <Priority> of <MCVideo-group-call> (0 to 255; TS 24.483 clause
+	// 13.2.38G6), the configured priority that TS 24.581 clauses 14.2.3 and 14.2.6 have the MCVideo client base its
+	// "mc_priority" and "mc_reception_priority" on; 0 (the default) when absent.
+	Priority int `json:"priority,omitempty"`
 }
 
 // AdhocCallPolicy mirrors <allow-adhoc-group-call> (TS 24.379 clause 17.3.2.1.1 step 9),
@@ -339,6 +353,10 @@ type PrivateCallPolicy struct {
 	ManualCommencement    bool     `json:"manual_commencement"`
 	ForceAutoAnswer       bool     `json:"force_auto_answer"`
 	Targets               []string `json:"targets,omitempty"`
+	// TS 24.484 clause 9.3.2.1 item 8 d) (the <PrivateCallKMSURI> of a <PrivateCallOnNetwork> entry; TS 24.281
+	// clause 6.2.8.3.9): the KMS URI of a target; a target not listed gets the KMS of the endpoints, one listed with ""
+	// an empty entry.
+	TargetKMS map[string]string `json:"target_kms,omitempty"`
 	AnyTarget             bool     `json:"any_target"`
 	FirstToAnswer         bool     `json:"first_to_answer,omitempty"` // <allow-request-first-to-answer-call>
 	Callable              *bool    `json:"callable,omitempty"`
@@ -706,6 +724,9 @@ func (cfg Config) Validate() error {
 			return fmt.Errorf("invalid functional alias %q", fa.ID)
 		}
 		aliases[fa.ID] = true
+		if err := fa.checkLocationCriteria(); err != nil {
+			return err
+		}
 		// In admin mode MCX Admin creates the users after this file is written, so an alias may name users this file
 		// does not hold yet (an MC service ID all the same); in file mode every alias user is one of its users.
 		known := func(ids map[string]bool, id string) bool {
@@ -801,7 +822,7 @@ func (cfg Config) functionalAliasList(id string, users func(FunctionalAlias) []s
 			if list == nil {
 				list = &profileEntryList{}
 			}
-			list.Entries = append(list.Entries, profileEntry{URI: alias.ID})
+			list.Entries = append(list.Entries, profileEntry{URI: alias.ID, AnyExt: alias.profileEntryExt()})
 		}
 	}
 	return list

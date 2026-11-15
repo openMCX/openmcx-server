@@ -11,6 +11,8 @@
 #include "mcx/transport_keys.hpp"
 
 #include <functional>
+#include <span>
+#include <vector>
 
 namespace mcx::keying {
 // The KMS documents of TS 33.180 annex D below. Without transport keys (keys null or empty) they are the TLS profile:
@@ -68,9 +70,20 @@ std::string verify_kms_request(std::string_view xml, const std::function<transpo
                                std::string_view kms, std::string_view request, std::uint64_t now, std::uint64_t window);
 
 //------------------------------------------------------------------------------
-// TS 33.180 annexes D.2.5 and D.3.2: the KmsCertCache response of a KMS without External KMSs: no certificates.
+// TS 33.180 annexes D.2.5 and D.3.2: the KmsCertCache response: the certificates (Role "External") of the External
+// KMSs whose certificates were loaded onto this Home KMS (clause 5.2.8.3: "External KMS Certificates shall be
+// manually loaded onto the Home KMS and distributed to the user"); none without External KMSs.
 std::string kms_certcache_xml(const PublicParameters &home, std::string_view user, std::string_view request,
-                              std::uint64_t now);
+                              std::uint64_t now, std::span<const PublicParameters> externals = {},
+                              const transport::TransportKeys *keys = nullptr);
+
+//------------------------------------------------------------------------------
+// TS 33.180 annexes D.2.5 and D.3.2 (table D.3.2.2-1): the External KMS certificates of a KmsCertCache response from
+// the Home KMS kms to the user (each <KmsCertificate>, also within a <SignedKmsCertificate>, of Role "External",
+// UserIdFormat 2 and parameter set 1, within its validity and not revoked; another one is skipped).
+std::vector<PublicParameters> parse_kms_certcache(std::string_view xml, std::string_view user, std::string_view kms,
+                                                  std::string_view request, std::uint64_t now,
+                                                  const transport::TransportKeys *keys = nullptr);
 
 //------------------------------------------------------------------------------
 // TS 33.180 clause 5.2.8 and annex D.4: the content type of a KMS Redirect Response, returned in a SIP 488.
@@ -81,6 +94,9 @@ inline constexpr const char *krr_mime = "application/vnd.3gpp.kmsredirectrespons
 struct KmsRedirect {
   std::string creator, initiator, initiator_kms, receiver, receiver_kms;
   std::vector<std::string> initiator_list, receiver_list;
+  // parse_krr: whether the list was <ANY> ("any KMS is acceptable"); an empty list without it accepts none (clause
+  // 5.2.8.2.4: "an empty list is returned within the KRR (and consequently, the communication will fail)").
+  bool initiator_any = false, receiver_any = false;
 };
 
 //------------------------------------------------------------------------------

@@ -13,6 +13,7 @@
 // RFC 4566, RFC 4567, RFC 4575, RFC 4826, RFC 5366, RFC 5547, RFC 5875, RFC 6184.
 
 #pragma once
+#include "mcx/location.hpp"
 #include "mcx/service.hpp"
 
 #include <cstdint>
@@ -74,6 +75,9 @@ struct McpttInfo {
   // video pull asks for (a contentType in <mcvideo-Params>), and <video-push-url>, where
   // the server records a one-to-server video push (an <anyExt> anyURI, sent in INFO).
   std::string video_pull_url, video_push_url;
+  // TS 24.281 clauses 7.2.1 and 7.2.2 (annex F.1.2, <mcvideo-Params>): <gw-mcvideo-usage> "true" when the MCVideo
+  // client reaches the MCVideo system through an MCVideo gateway UE.
+  std::optional<bool> gateway_usage;
   // <associated-group-id>: for a user- or group-broadcast group call, the group
   // through which the invited user is affiliated (project profile; TS 24.379
   // clause 4.12 defines no stage-3 procedure for broadcast group hierarchies).
@@ -81,6 +85,11 @@ struct McpttInfo {
   // Ad hoc group call priority (TS 24.379 clause 17, <anyExt> booleans):
   // <adhoc-emergency-ind>, <adhoc-alert-ind>, <adhoc-grp-emg-alert-grp-ind>.
   std::optional<bool> adhoc_emergency, adhoc_alert, adhoc_emergency_alert_group, adhoc_alert_received;
+  // TS 24.281 annex F.1.3 (<anyExt>): <preconfigured-group-id> (xs:anyURI), the preconfigured group whose security
+  // information an end-to-end protected ad hoc group call uses (TS 24.281 clauses 22.2.2.1.2 step 8 and 22.4.2.1.1
+  // step 4 c)); <partner-mcvideo-id> and <primary-mcvideo-id> (contentType), the MCVideo IDs of a migrating user in the
+  // partner and primary MCVideo systems (e.g. TS 24.281 clause 6.3.3.1.25 step 5 c), ad hoc group call redirection).
+  std::string preconfigured_group_id, partner_mcvideo_id, primary_mcvideo_id;
   // <anyExt><call-participants-criterias>: comma-separated ad hoc participant criteria.
   std::string participant_criteria;
   // Functional aliases (TS 24.379 clause 9A, <anyExt>): the caller's <functional-alias-URI>,
@@ -175,7 +184,43 @@ struct McvideoProfile {
   std::string user_id;
   unsigned profile_index = 1;
   std::vector<std::string> private_call_targets, groups;
+  // TS 24.484 clause 9.3.2.1 item 8 d) and TS 24.281 clause 6.2.8.3.9: the <uri-entry> of the <PrivateCallKMSURI> of
+  // each <PrivateCallOnNetwork> entry, by its <PrivateCallURI> (empty when the entry is empty or absent).
+  std::map<std::string, std::string> private_call_kms;
   std::set<std::string> actions;
+  // TS 24.484 clause 9.3.2.1 item 10 (the <FunctionalAliasList> of <OnNetwork>): a functional alias the user may
+  // activate, with the location criteria of its <anyExt> (<LocationCriteriaForActivation>,
+  // <LocationCriteriaForDeactivation>: areas whose entry or exit triggers the change, TS 24.281 clause 20.2.1.4) and
+  // <manual-deactivation-not-allowed-if-location-criteria-met> (TS 24.281 clause 20.2.1.2).
+  struct FunctionalAlias {
+    std::string alias;
+    std::vector<location::Area> activate_on_entry, activate_on_exit, deactivate_on_entry, deactivate_on_exit;
+    bool manual_deactivation_locked = false;
+    bool has_location_criteria() const {
+      return !activate_on_entry.empty() || !activate_on_exit.empty() || !deactivate_on_entry.empty() ||
+             !deactivate_on_exit.empty();
+    }
+  };
+  std::vector<FunctionalAlias> functional_aliases;
+  // TS 24.484 clause 9.3.2.3 (EntryType): an <entry> naming the target of a priority request, with its "entry-info"
+  // (UseCurrentlySelectedGroup, DedicatedGroup, UsePreConfigured or LocallyDetermined) and its <uri-entry>; present is
+  // false when the profile has no such element.
+  struct TargetEntry {
+    bool present = false;
+    std::string entry_info, uri;
+  };
+  // TS 24.484 clause 9.3.2.1 item 8 e) with TS 24.281 clauses 6.2.8.1.6 and 6.2.8.1.8: the <entry> of
+  // <MCVideo-group-call>/<EmergencyCall>/<MCVideoGroupInitiation>, of <MCVideo-group-call>/<ImminentPerilCall>/
+  // <MCVideoGroupInitiation> and of <MCVideo-group-call>/<EmergencyAlert>.
+  TargetEntry emergency_group_initiation, imminent_group_initiation, group_emergency_alert;
+  // TS 24.484 clause 9.3.2.1 item 8 d) ii) and item 9 f) with TS 24.281 clauses 6.2.8.3.1.1 and 6.2.8.3.1.3: the
+  // <entry> of <PrivateCall>/<EmergencyCall>/<MCVideoPrivateRecipient> and of <OnNetwork>/<PrivateEmergencyAlert>.
+  TargetEntry emergency_private_recipient, private_emergency_alert;
+  // TS 24.484 clause 9.3.2.1 item 8 e) v): the <Priority> of <MCVideo-group-call> (0 to 255, schema PriorityType;
+  // TS 24.483 clause 13.2.38G6), the user's configured priority that TS 24.581 clauses 14.2.3 and 14.2.6 base the
+  // "mc_priority" and "mc_reception_priority" of the client's offers on; 0 (the default priority, TS 24.581 clauses
+  // 9.2.3.2 and 9.2.3.19) when absent.
+  unsigned group_call_priority = 0;
 };
 
 //------------------------------------------------------------------------------
@@ -216,6 +261,17 @@ struct ServiceProtection {
 };
 
 ServiceProtection parse_service_protection(std::string_view xml);
+
+//------------------------------------------------------------------------------
+// TS 24.484 clauses 8.4.2.1 (MCPTT) and 9.4.2.1 item c (MCVideo): the <adhoc-group-call> of the <anyExt> of
+// <on-network>: whether the system supports ad hoc group calls (<allow-adhoc-group-call-support>; the element absent,
+// it does not, clause 9.4.2.6) and <max-no-participants>.
+struct ServiceAdhoc {
+  bool supported = false;
+  unsigned max_participants = 0;
+};
+
+ServiceAdhoc parse_service_adhoc(std::string_view xml);
 
 //------------------------------------------------------------------------------
 // TS 24.484 clause 7.2.2.1 item 4 and clause 7.2.2.7 item 5 (TS 24.483 clause 8.2.9 GMSURI): the <GMS-URI> of the
@@ -266,6 +322,14 @@ std::string parse_initial_kms(std::string_view xml);
 // TS 24.481 clause 7.2.4.2: <preconfigured-group-use-only> of a group document (<list-service>): calls on
 // the group are not allowed (TS 24.379 clause 10.1.5.2.1 step 1A, warning 167 of TS 24.379 table 4.4.2-2).
 bool group_preconfigured_use_only(std::string_view xml);
+
+//------------------------------------------------------------------------------
+// TS 24.481 clauses 7.2.2 and 7.2.12.1 with RFC 4745 sections 7 and 10: whether a group document grants a boolean
+// action of its <ruleset> (an element of mcpttGroupInfo, e.g. "mcvideo-allow-emergency-alert") to a user, one of whose
+// identities is given: true when a rule whose conditions match the user (no conditions, an <identity> <one> of the
+// user, or <is-list-member> with the user an <entry> of the <list>, by its "uri" or its <mcvideo-mcvideo-id> or
+// <mcdata-mcdata-id>) has the action "true" (boolean permissions combine by OR, RFC 4745 section 10.2).
+bool group_document_allows(std::string_view xml, std::string_view action, const std::vector<std::string> &identities);
 
 //------------------------------------------------------------------------------
 // TS 24.282 clause 14.2.1 with TS 24.481 clause 7.2.4.2: <mcdata-allow-enhanced-status> and the operational values of
@@ -420,7 +484,11 @@ struct MediaDescription {
   // Audio direction attribute (RFC 4566): "sendrecv", or "sendonly"/"recvonly"
   // in an ambient listening call (TS 24.379 clause 6.2.1 step 2c).
   std::string direction = "sendrecv";
+  // TS 24.380 clause 14 / TS 24.581 clause 14: "mc_priority" of the media plane control channel.
   std::optional<std::uint8_t> floor_priority;
+  // TS 24.581 clauses 12.1.2.2, 14.2.6 and 14.3.6: "mc_reception_priority" of the MCVideo transmission control
+  // channel, the maximum reception priority of the offerer's Receive Media Requests (MCVideo only).
+  std::optional<std::uint8_t> reception_priority;
   // RFC 4567 "a=key-mgmt:mikey": the base64 MIKEY-SAKKE I_MESSAGE carrying a PCK
   // (TS 24.379 clause 11.1.1.2.1.1 step 11; in the answer of a first-to-answer call).
   std::string key_mgmt;
@@ -543,6 +611,22 @@ Affiliation parse_affiliation(std::string_view xml, std::string_view client = {}
 // TS 24.379 clause 7.2.3 with clause 7.4.1.2.2: writes the application/poc-settings+xml of a client.
 std::string poc_settings_xml(std::string_view client_id, unsigned profile_index = 0);
 //------------------------------------------------------------------------------
+// TS 24.281 clauses 7.2.2 6), 7.2.3 4) with clause 7.4.1.2.2 (RFC 4354): the same with the client's current answer
+// mode (<answer-mode> "manual" when manual_answer, else "automatic").
+std::string poc_settings_xml(std::string_view client_id, unsigned profile_index, bool manual_answer);
+//------------------------------------------------------------------------------
+// RFC 4354 with TS 24.281 clause 7.4.1.2.2: the settings of one <entity> (one MC client) of a poc-settings document:
+// its "id", the <answer-mode> of <am-settings> (empty when absent), the <user-profile-index> of
+// <selected-user-profile-index> and <multiplex-support>, when present.
+struct PocSettingsEntity {
+  std::string id, answer_mode;
+  std::optional<unsigned> profile_index;
+  std::optional<bool> multiplex_support;
+};
+//------------------------------------------------------------------------------
+// RFC 4354 with TS 24.281 clause 7.4.1.2.2: reads an application/poc-settings+xml document (one entry per <entity>).
+std::vector<PocSettingsEntity> parse_poc_settings(std::string_view xml);
+//------------------------------------------------------------------------------
 // Helper: the emergency location of a multipart body (the location-info MIME part), if any.
 std::optional<EmergencyLocation> parse_emergency_location_parts(const std::vector<BodyPart> &parts);
 //------------------------------------------------------------------------------
@@ -566,8 +650,10 @@ std::string multipart_boundary(std::string_view type);
 std::vector<BodyPart> parse_sip_fragment_parts(std::string_view message);
 //------------------------------------------------------------------------------
 // TS 24.379 clause 6.2.1 and clause 6.2.2 with TS 24.380 clause 14.2 and clause 14.3 (MCPTT), TS 24.281 clause
-// 6.2.1 and clause 6.2.2 with TS 24.581 clause 12.1.2 (MCVideo): writes the SDP offer or answer.
-std::string make_sdp(const MediaDescription &media, std::uint64_t session_id);
+// 6.2.1 and clause 6.2.2 with TS 24.581 clause 12.1.2 (MCVideo): writes the SDP offer or answer. RFC 4566 section 5.2
+// and RFC 3264 section 8: session_id and session_version are the <sess-id> and <sess-version> of the "o=" line; a
+// later SDP of the same session keeps the <sess-id> and increments the <sess-version> (see SdpOrigin in sip_impl.hpp).
+std::string make_sdp(const MediaDescription &media, std::uint64_t session_id, std::uint64_t session_version = 1);
 //------------------------------------------------------------------------------
 // TS 24.379 clause 6.2.1 and clause 6.2.2 with TS 24.380 clause 14.2 and clause 14.3 (MCPTT), TS 24.281 clause
 // 6.2.1 with TS 24.581 clause 12.1.2 (MCVideo): reads an SDP offer or answer.

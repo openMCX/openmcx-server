@@ -439,22 +439,46 @@ Bytes keyfield(xmlNode *parent, std::string_view name, const transport::Transpor
 } // namespace
 
 //------------------------------------------------------------------------------
-// TS 33.180 annex D.3.1 and annex D.3.2 (table D.3.2.2-1): the KmsInit response with the Root KMS certificate
-// (UserIdFormat 2, the key period, Z_T and KPAK, parameter set 1).
-std::string kms_init_xml(const PublicParameters &parameters, std::string_view user, std::string_view request,
-                         std::uint64_t now, const transport::TransportKeys *keys) {
+// TS 33.180 annex D.3.2 (table D.3.2.2-1): a KMS certificate of the given Role ("Root" or "External"): UserIdFormat
+// 2, the key period, Z_T and KPAK, parameter set 1.
+std::string certificate_xml(const PublicParameters &parameters, const char *role) {
   point(parameters.authentication_key, 65);
   point(parameters.encryption_key, 257);
   require(parameters.period.seconds && parameters.period.offset < parameters.period.seconds, "invalid key period");
+  return std::string("<KmsCertificate Version=\"1.1.0\" Role=\"") + role + "\">" +
+         tag("KmsUri", parameters.period.kms_uri) + tag("UserIdFormat", "2") +
+         tag("UserKeyPeriod", std::to_string(parameters.period.seconds)) +
+         tag("UserKeyOffset", std::to_string(parameters.period.offset)) +
+         tag("PubEncKey", hex(parameters.encryption_key)) + tag("PubAuthKey", hex(parameters.authentication_key)) +
+         tag("ParameterSet", "1") + "</KmsCertificate>";
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex D.3.2 (table D.3.2.2-1) and clause 5.3.5: the public parameters of a KMS certificate of the given
+// Role, its KmsUri the expected one unless kms is empty.
+PublicParameters read_certificate(xmlNode *cert, const char *role, std::string_view kms, std::uint64_t now) {
+  require(attr(cert, "Version") == "1.1.0" && attr(cert, "Role") == role &&
+              (kms.empty() || field(cert, "KmsUri") == kms) && field(cert, "UserIdFormat") == "2",
+          "unsupported KMS certificate");
+  bounds(cert, now);
+  if (auto *params = one(cert, "ParameterSet", kmsns, false))
+    require(content(params) == "1", "unsupported parameter set");
+  auto period = number(field(cert, "UserKeyPeriod")), offset = number(field(cert, "UserKeyOffset"));
+  require(period > 0 && period <= UINT32_MAX && offset < period, "invalid KMS key period");
+  PublicParameters parameters{{field(cert, "KmsUri"), std::uint32_t(period), std::uint32_t(offset)},
+                              unhex(field(cert, "PubAuthKey")),
+                              unhex(field(cert, "PubEncKey"))};
+  point(parameters.authentication_key, 65);
+  point(parameters.encryption_key, 257);
+  return parameters;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 annex D.3.1 and annex D.3.2 (table D.3.2.2-1): the KmsInit response with the Root KMS certificate.
+std::string kms_init_xml(const PublicParameters &parameters, std::string_view user, std::string_view request,
+                         std::uint64_t now, const transport::TransportKeys *keys) {
   return response(parameters, user, request, now,
-                  "<KmsInit Version=\"1.0.0\"><KmsCertificate Version=\"1.1.0\" Role=\"Root\">" +
-                      tag("KmsUri", parameters.period.kms_uri) + tag("UserIdFormat", "2") +
-                      tag("UserKeyPeriod", std::to_string(parameters.period.seconds)) +
-                      tag("UserKeyOffset", std::to_string(parameters.period.offset)) +
-                      tag("PubEncKey", hex(parameters.encryption_key)) +
-                      tag("PubAuthKey", hex(parameters.authentication_key)) + tag("ParameterSet", "1") +
-                      "</KmsCertificate></KmsInit>",
-                  keys);
+                  "<KmsInit Version=\"1.0.0\">" + certificate_xml(parameters, "Root") + "</KmsInit>", keys);
 }
 
 //------------------------------------------------------------------------------
@@ -488,21 +512,7 @@ PublicParameters parse_kms_init(std::string_view xml, std::string_view user, std
   auto doc = open_response(xml, user, keys);
   auto *message = envelope(doc.get(), user, kms, request, now);
   auto *init = one(message, "KmsInit");
-  auto *cert = one(init, "KmsCertificate");
-  require(attr(cert, "Version") == "1.1.0" && attr(cert, "Role") == "Root" && field(cert, "KmsUri") == kms &&
-              field(cert, "UserIdFormat") == "2",
-          "unsupported KMS certificate");
-  bounds(cert, now);
-  if (auto *params = one(cert, "ParameterSet", kmsns, false))
-    require(content(params) == "1", "unsupported parameter set");
-  auto period = number(field(cert, "UserKeyPeriod")), offset = number(field(cert, "UserKeyOffset"));
-  require(period > 0 && period <= UINT32_MAX && offset < period, "invalid KMS key period");
-  PublicParameters parameters{{std::string(kms), std::uint32_t(period), std::uint32_t(offset)},
-                              unhex(field(cert, "PubAuthKey")),
-                              unhex(field(cert, "PubEncKey"))};
-  point(parameters.authentication_key, 65);
-  point(parameters.encryption_key, 257);
-  return parameters;
+  return read_certificate(one(init, "KmsCertificate"), "Root", kms, now);
 }
 
 //------------------------------------------------------------------------------
@@ -559,10 +569,45 @@ IdentityKeys parse_kms_keyprov(std::string_view xml, const PublicParameters &par
 }
 
 //------------------------------------------------------------------------------
-// TS 33.180 annexes D.2.5 and D.3.2: the KmsCertCache response of a KMS without External KMSs: no certificates.
+// TS 33.180 annexes D.2.5 and D.3.2: the KmsCertCache response with the External KMS certificates.
 std::string kms_certcache_xml(const PublicParameters &home, std::string_view user, std::string_view request,
-                              std::uint64_t now) {
-  return response(home, user, request, now, "<KmsCertCache Version=\"1.0.0\"></KmsCertCache>");
+                              std::uint64_t now, std::span<const PublicParameters> externals,
+                              const transport::TransportKeys *keys) {
+  std::string certificates;
+  for (const auto &external : externals) {
+    require(external.period.kms_uri != home.period.kms_uri, "an External KMS certificate of the Home KMS");
+    certificates += certificate_xml(external, "External");
+  }
+  return response(home, user, request, now, "<KmsCertCache Version=\"1.0.0\">" + certificates + "</KmsCertCache>",
+                  keys);
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 annexes D.2.5 and D.3.2: the External KMS certificates of a KmsCertCache response. A certificate that
+// cannot be used (another role or format, revoked, outside its validity) is skipped; the response itself must be
+// bound to the user, the Home KMS and the request (envelope).
+std::vector<PublicParameters> parse_kms_certcache(std::string_view xml, std::string_view user, std::string_view kms,
+                                                  std::string_view request, std::uint64_t now,
+                                                  const transport::TransportKeys *keys) {
+  auto doc = open_response(xml, user, keys);
+  auto *message = envelope(doc.get(), user, kms, request, now);
+  auto *cache = one(message, "KmsCertCache");
+  std::vector<PublicParameters> out;
+  for (auto *node = cache->children; node; node = node->next) {
+    xmlNode *cert = named(node, "KmsCertificate", kmsns) ? node
+                    : named(node, "SignedKmsCertificate", kmsns) ? one(node, "KmsCertificate", kmsns, false)
+                                                                 : nullptr;
+    if (!cert) continue;
+    try {
+      auto parameters = read_certificate(cert, "External", {}, now);
+      if (parameters.period.kms_uri == kms) continue;
+      require(out.size() < 64, "too many External KMS certificates");
+      out.push_back(std::move(parameters));
+    } catch (const std::exception &) {
+      // not usable: skipped (TS 33.180 table D.3.2.2-1: revoked, expired, or of another format)
+    }
+  }
+  return out;
 }
 
 //------------------------------------------------------------------------------
@@ -665,15 +710,19 @@ KmsRedirect parse_krr(std::string_view xml) {
                        content(one(root, "ReceiverKmsUri", krrns)),
                        {},
                        {}};
-  const auto list = [&](const char *name, std::vector<std::string> &out) {
+  const auto list = [&](const char *name, std::vector<std::string> &out, bool &any) {
     for (auto *node = one(root, name, krrns)->children; node; node = node->next)
       if (named(node, "KmsUri", krrns)) {
         require(out.size() < 16, "too many KMS URIs");
         out.push_back(content(node));
+      } else if (named(node, "ANY", krrns)) {
+        any = true;
       }
+    // annex D.4.4 KmsUriListType: <ANY> or KMS URIs, not both
+    require(!any || out.empty(), "a KMS URI list with ANY and KMS URIs");
   };
-  list("InitiatorKmsList", redirect.initiator_list);
-  list("ReceiverKmsList", redirect.receiver_list);
+  list("InitiatorKmsList", redirect.initiator_list, redirect.initiator_any);
+  list("ReceiverKmsList", redirect.receiver_list, redirect.receiver_any);
   return redirect;
 }
 

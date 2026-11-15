@@ -13,6 +13,7 @@
 
 #include <string>
 
+#include <cstring>
 #include <iostream>
 #include <stdexcept>
 using namespace mcx::keying;
@@ -260,9 +261,28 @@ int main() {
       auto krr = parse_krr(krr_xml(
           {"sip:mcptt@mcx.test", "sip:a@x", "https://kms.a", "sip:b@y", "https://kms.a", {}, {"https://kms.b"}}, now));
       if (krr.creator != "sip:mcptt@mcx.test" || krr.receiver != "sip:b@y" || krr.receiver_kms != "https://kms.a" ||
-          !krr.initiator_list.empty() || krr.receiver_list != std::vector<std::string>{"https://kms.b"})
+          !krr.initiator_list.empty() || krr.receiver_list != std::vector<std::string>{"https://kms.b"} ||
+          !krr.initiator_any || krr.receiver_any)
         throw std::runtime_error("KRR round trip");
       rejects([&] { parse_krr("<KmsRedirectResponse/>"); });
+      // TS 33.180 clause 5.2.8.2.4: an empty list (no <ANY>) accepts no KMS.
+      auto none = krr_xml({"sip:mcptt@mcx.test", "sip:a@x", "https://kms.a", "sip:b@y", "https://kms.a", {}, {"x"}}, now);
+      none.replace(none.find("<KmsUri>x</KmsUri>"), std::strlen("<KmsUri>x</KmsUri>"), "");
+      const auto empty = parse_krr(none);
+      if (empty.receiver_any || !empty.receiver_list.empty() || !empty.initiator_any)
+        throw std::runtime_error("KRR empty list");
+      // TS 33.180 annexes D.2.5 and D.3.2: External KMS certificates round trip; the Home KMS's own is refused.
+      auto partner = create_authority({"https://kms.partner.example.org", 604800, 3600}).public_parameters;
+      const auto with = kms_certcache_xml(home_kms, "sip:a@example.org", url, now, std::vector{partner});
+      const auto read = parse_kms_certcache(with, "sip:a@example.org", home_kms.period.kms_uri, url, now);
+      if (read.size() != 1 || read[0].period.kms_uri != partner.period.kms_uri || read[0].period.seconds != 604800 ||
+          read[0].period.offset != 3600 || read[0].encryption_key != partner.encryption_key ||
+          read[0].authentication_key != partner.authentication_key || with.find("Role=\"External\"") == std::string::npos)
+        throw std::runtime_error("certificate cache round trip");
+      if (!parse_kms_certcache(cache, "sip:a@example.org", home_kms.period.kms_uri, url, now).empty())
+        throw std::runtime_error("empty certificate cache read");
+      rejects([&] { kms_certcache_xml(home_kms, "sip:a@example.org", url, now, std::vector{home_kms}); });
+      rejects([&] { parse_kms_certcache(with, "sip:other@example.org", home_kms.period.kms_uri, url, now); });
     }
     std::cout << "key document tests passed\n";
   } catch (const std::exception &error) {
