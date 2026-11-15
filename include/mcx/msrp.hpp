@@ -47,6 +47,8 @@ struct Message {
   bool complete = true; // the "$" continuation flag; "+" when more chunks follow
   bool aborted = false; // the "#" continuation flag
   std::string success_report, failure_report;
+  // RFC 4975 section 9: the Status header field of a REPORT ("000 200 OK").
+  std::string report_status;
   // TS 24.582 clause 6.4.1: bodies of a multipart/mixed body, decoded on request.
   std::map<std::string, std::string> parts() const;
 };

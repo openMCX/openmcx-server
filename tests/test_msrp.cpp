@@ -336,6 +336,17 @@ int main() {
     const auto answer = exchange(encode(data));
     check(answer.rfind("MSRP " + data.transaction + " 200", 0) == 0 && received.size() == 1,
           "a SEND is answered 200 and delivered");
+    // RFC 4975 section 7.1.2: "Success-Report: yes" gets a REPORT for the whole message, Status 000 200.
+    Message asked = data;
+    asked.transaction = random_ident();
+    asked.message_id = random_ident();
+    asked.success_report = "yes";
+    asked.body = "abc";
+    const auto reported = exchange(encode(asked));
+    check(reported.find(" REPORT\r\n") != std::string::npos && reported.find("Status: 000 200") != std::string::npos &&
+              reported.find("Message-ID: " + asked.message_id) != std::string::npos &&
+              reported.find("Byte-Range: 1-3/3") != std::string::npos,
+          "a success report is sent when asked for");
     if (peer >= 0) ::close(peer);
   }
 

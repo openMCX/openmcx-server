@@ -233,6 +233,7 @@ std::string encode(const Message &message) {
            (message.total ? std::to_string(*message.total) : "*") + "\r\n";
   if (!message.success_report.empty()) out += "Success-Report: " + message.success_report + "\r\n";
   if (!message.failure_report.empty()) out += "Failure-Report: " + message.failure_report + "\r\n";
+  if (!message.report_status.empty()) out += "Status: " + message.report_status + "\r\n";
   if (!message.body.empty()) {
     if (message.content_type.empty()) invalid("a body needs a content type");
     out += "Content-Type: " + message.content_type + "\r\n\r\n" + message.body + "\r\n";
@@ -491,6 +492,22 @@ struct Endpoint::State {
       held->second.complete = true;
       message = held->second;
       partial.erase(held);
+    }
+    // RFC 4975 section 7.1.2: a sender that asked for a success report ("Success-Report: yes") gets a REPORT for the
+    // whole message once it is received (Status 000 200, the octets received in Byte-Range; TS 24.582 clause
+    // 6.1.1.3.1 step 1).
+    if (message.success_report == "yes") {
+      Message report;
+      report.transaction = random_ident();
+      report.method = "REPORT";
+      report.to_path = message.from_path;
+      report.from_path = std::vector<Uri>{local};
+      report.message_id = message.message_id;
+      report.range_start = 1;
+      report.range_end = message.body.size();
+      report.total = message.body.size();
+      report.report_status = "000 200 OK";
+      queue(report);
     }
     if (callbacks.message) callbacks.message(message);
   }
