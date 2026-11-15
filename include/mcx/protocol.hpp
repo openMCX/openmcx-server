@@ -274,6 +274,18 @@ struct ServiceAdhoc {
 ServiceAdhoc parse_service_adhoc(std::string_view xml);
 
 //------------------------------------------------------------------------------
+// TS 24.484 clause 10.4.2.1 item 2 (MCData): the <tx-and-rx-control> of <on-network>: <max-data-size-sds-bytes>,
+// <max-payload-size-sds-cplane-bytes>, <max-data-size-fd-bytes> and <max-data-size-auto-recv-bytes>; an absent element
+// is no limit (TS 24.282 clause 9.2.1.1 2): without <max-payload-size-sds-cplane-bytes> a standalone SDS goes over
+// the signalling plane).
+struct McDataTxRxLimits {
+  std::optional<std::uint64_t> max_data_size_sds, max_payload_size_sds_cplane, max_data_size_fd,
+      max_data_size_auto_recv;
+};
+
+McDataTxRxLimits parse_mcdata_tx_limits(std::string_view xml);
+
+//------------------------------------------------------------------------------
 // TS 24.484 clause 7.2.2.1 item 4 and clause 7.2.2.7 item 5 (TS 24.483 clause 8.2.9 GMSURI): the <GMS-URI> of the
 // <on-network> element of an MCS UE initial configuration document, "the public service identity for performing
 // subscription proxy function of the GMS".

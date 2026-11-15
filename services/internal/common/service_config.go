@@ -147,6 +147,19 @@ type MCDataServiceConfiguration struct {
 	// <default-file-availability> and <max-file-availability> (TS 24.282 clause 10.2.4.4.2 step 9), in seconds.
 	DefaultFileAvailabilityS int `json:"default_file_availability_s,omitempty"`
 	MaxFileAvailabilityS     int `json:"max_file_availability_s,omitempty"`
+	// <tx-and-rx-control> of <on-network> (TS 24.484 clause 10.4.2.1 item 2): the SDS and FD size limits; an absent
+	// value is an absent element (no limit, TS 24.282 clause 9.2.1.1: with no <max-payload-size-sds-cplane-bytes> the
+	// client uses the signalling plane).
+	TxRxControl *MCDataTxRxControl `json:"tx_and_rx_control,omitempty"`
+}
+
+// MCDataTxRxControl: <max-data-size-sds-bytes>, <max-payload-size-sds-cplane-bytes>, <max-data-size-fd-bytes> and
+// <max-data-size-auto-recv-bytes> (TS 24.484 clause 10.4.2.1 2a)-2d)).
+type MCDataTxRxControl struct {
+	MaxDataSizeSDS      *uint32 `json:"max_data_size_sds_bytes,omitempty"`
+	MaxPayloadSDSCplane *uint32 `json:"max_payload_size_sds_cplane_bytes,omitempty"`
+	MaxDataSizeFD       *uint32 `json:"max_data_size_fd_bytes,omitempty"`
+	MaxDataSizeAutoRecv *uint32 `json:"max_data_size_auto_recv_bytes,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -430,6 +443,7 @@ type mcdataServiceConfigXML struct {
 	Params  struct {
 		Domain    string `xml:"domain,attr"`
 		OnNetwork struct {
+			TxRxControl          *mcdataTxRxXML           `xml:"tx-and-rx-control,omitempty"`
 			SignallingProtection *signallingProtectionXML `xml:"signalling-protection,omitempty"`
 			BetweenServers       *serverProtectionXML     `xml:"protection-between-mcdata-servers,omitempty"`
 			FileAvailability     struct {
@@ -445,6 +459,14 @@ type mcdataServiceConfigXML struct {
 			} `xml:"anyExt"`
 		} `xml:"on-network"`
 	} `xml:"service-configuration-params"`
+}
+
+// mcdataTxRxXML is <tx-and-rx-control> of <on-network> (on-network-tx-and-rx-controlType).
+type mcdataTxRxXML struct {
+	MaxDataSizeSDS      *uint32 `xml:"max-data-size-sds-bytes,omitempty"`
+	MaxPayloadSDSCplane *uint32 `xml:"max-payload-size-sds-cplane-bytes,omitempty"`
+	MaxDataSizeFD       *uint32 `xml:"max-data-size-fd-bytes,omitempty"`
+	MaxDataSizeAutoRecv *uint32 `xml:"max-data-size-auto-recv-bytes,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -510,6 +532,10 @@ func (svc *service) serviceConfigDocument(auid string) ([]byte, string, *documen
 		out.Params.Domain = svc.cfg.Domain
 		on := &out.Params.OnNetwork
 		on.FileAvailability.Default, on.FileAvailability.Max = conf.DefaultFileAvailabilityS, conf.MaxFileAvailabilityS
+		if t := conf.TxRxControl; t != nil {
+			on.TxRxControl = &mcdataTxRxXML{MaxDataSizeSDS: t.MaxDataSizeSDS, MaxPayloadSDSCplane: t.MaxPayloadSDSCplane,
+				MaxDataSizeFD: t.MaxDataSizeFD, MaxDataSizeAutoRecv: t.MaxDataSizeAutoRecv}
+		}
 		rp := conf.ResourcePriority
 		on.AnyExt.Emergency, on.AnyExt.Imminent, on.AnyExt.Normal = resourcePriorityElement(rp.Emergency), resourcePriorityElement(rp.Imminent), resourcePriorityElement(rp.Normal)
 		on.AnyExt.MaxAuthorizations = maxSimultaneousAuthorizations
@@ -600,6 +626,9 @@ func (svc *service) getInternalServiceConfig(writer http.ResponseWriter, request
 		}
 		out := map[string]any{"resource_priority": values(conf.ResourcePriority),
 			"default_file_availability_s": conf.DefaultFileAvailabilityS, "max_file_availability_s": conf.MaxFileAvailabilityS}
+		if conf.TxRxControl != nil {
+			out["tx_and_rx_control"] = conf.TxRxControl
+		}
 		maps.Copy(out, protectionValues(conf.SignallingProtection, between.AllowSignalling, nil))
 		writeJSON(writer, http.StatusOK, out)
 	default:

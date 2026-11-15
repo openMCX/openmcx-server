@@ -361,6 +361,25 @@ ServiceAdhoc parse_service_adhoc(std::string_view xml) {
 }
 
 //------------------------------------------------------------------------------
+McDataTxRxLimits parse_mcdata_tx_limits(std::string_view xml) {
+  auto doc = document(xml);
+  const auto [on, ns] = service_on_network(doc.get());
+  McDataTxRxLimits out;
+  auto control = unique_child(on, "tx-and-rx-control", ns, false);
+  if (!control) return out;
+  const auto value = [&](const char *name) -> std::optional<std::uint64_t> {
+    auto element = unique_child(control, name, ns, false);
+    if (!element) return std::nullopt;
+    return number(scalar(element), 0xFFFFFFFFull); // xs:unsignedInt
+  };
+  out.max_data_size_sds = value("max-data-size-sds-bytes");
+  out.max_payload_size_sds_cplane = value("max-payload-size-sds-cplane-bytes");
+  out.max_data_size_fd = value("max-data-size-fd-bytes");
+  out.max_data_size_auto_recv = value("max-data-size-auto-recv-bytes");
+  return out;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.484 clause 7.2.2.1 item 4: <mcptt-UE-initial-configuration> (clause 7.2.2.2 namespace) / <on-network> /
 // <GMS-URI>, mandatory.
 std::string parse_initial_gms_uri(std::string_view xml) {

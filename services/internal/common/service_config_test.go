@@ -21,7 +21,7 @@ func TestServiceConfigurationDocuments(test *testing.T) {
 	cfg := testConfig()
 	cfg.ServiceConfig = ServiceConfiguration{
 		MCPTT:  &MCPTTServiceConfiguration{ResourcePriority: ResourcePriorities{Emergency: "mcpttq.14", Imminent: "mcpttq.9", Normal: "mcpttq.1"}, FloorQueue: true, FloorTimers: map[string]int{"t1": 5500}},
-		MCData: &MCDataServiceConfiguration{DefaultFileAvailabilityS: 600}}
+		MCData: &MCDataServiceConfiguration{DefaultFileAvailabilityS: 600, TxRxControl: &MCDataTxRxControl{MaxPayloadSDSCplane: new(uint32)}}}
 	cms := roleHandler(test, RoleCMS, cfg, key, test.TempDir())
 	alice := tokenFor(test, cfg, key, "alice", testNow, cfg.ServerClientID)
 	for _, tc := range []struct {
@@ -40,6 +40,7 @@ func TestServiceConfigurationDocuments(test *testing.T) {
 				"<anyExt><max-simultaneous-authorizations>1</max-simultaneous-authorizations></anyExt></on-network>"}},
 		{"org.3gpp.mcdata.service-config", "application/vnd.3gpp.mcdata-service-config+xml", mcdataServiceConfigSchema,
 			[]string{"<default-file-availability>600</default-file-availability>",
+				"<on-network><tx-and-rx-control><max-payload-size-sds-cplane-bytes>0</max-payload-size-sds-cplane-bytes></tx-and-rx-control>",
 				"<anyExt><emergency-resource-priority><resource-priority-namespace>mcpttp</resource-priority-namespace><resource-priority-priority>15</resource-priority-priority>",
 				"</normal-resource-priority><max-simultaneous-authorizations>1</max-simultaneous-authorizations></anyExt>"}},
 	} {

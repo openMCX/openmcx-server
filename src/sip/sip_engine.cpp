@@ -311,7 +311,7 @@ void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) 
   auto &entry = *found->second;
   auto *invite = entry.invite;
   if (invite->role != PJSIP_ROLE_UAS) throw std::invalid_argument("only an incoming INVITE can be answered");
-  if (!response.contact_uri.empty() || response.focus)
+  if (!response.contact_uri.empty() || response.focus || !response.contact_tags.empty())
     entry.response_contact =
         entry.sips_contact ? Impl::as_sips(impl_->response_contact(response)) : impl_->response_contact(response);
 

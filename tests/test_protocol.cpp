@@ -993,6 +993,14 @@ int main() {
                            "</signalling-protection><protection-between-mcdata-servers/>"));
     check(!data.confidentiality && data.integrity && data.between_servers && data.between_servers_control,
           "MCData protection");
+    // TS 24.484 clause 10.4.2.1 item 2: <tx-and-rx-control>; absent elements are no limit.
+    check(!parse_mcdata_tx_limits(document("mcdata", "")).max_payload_size_sds_cplane, "no SDS c-plane limit");
+    const auto limits = parse_mcdata_tx_limits(
+        document("mcdata", "<tx-and-rx-control><max-data-size-sds-bytes>500</max-data-size-sds-bytes>"
+                           "<max-payload-size-sds-cplane-bytes>0</max-payload-size-sds-cplane-bytes>"
+                           "</tx-and-rx-control>"));
+    check(limits.max_data_size_sds == 500 && limits.max_payload_size_sds_cplane == 0 && !limits.max_data_size_fd,
+          "MCData SDS limits");
     // TS 24.484 clause 9.4.2.1 item c and 9.4.2.6: <adhoc-group-call>; absent, ad hoc group calls are not supported.
     check(!parse_service_adhoc(document("mcvideo", "")).supported, "ad hoc group calls not supported when absent");
     const auto adhoc = parse_service_adhoc(

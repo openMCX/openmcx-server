@@ -89,6 +89,10 @@ pj_status_t SipEngine::Impl::access_network_info_outgoing(pjsip_tx_data *data) {
       throw std::invalid_argument("invalid public SIP Contact URI");
     }
     contact = "<" + uri + ">" + (response.contact_tags.empty() ? service_tags() : response.contact_tags);
+  } else if (!response.contact_tags.empty()) {
+    // this endpoint's URI with the response's own tags, e.g. an MCData client's 200 (OK) to an SDS INVITE with the
+    // g.3gpp.mcdata.sds tag and its ICSI (TS 24.282 clause 9.2.3.2.4 steps 7-8)
+    contact = "<" + contact_target() + ">" + response.contact_tags;
   }
   if (response.focus) contact += ";isfocus";
   // TS 24.229 clause 5.1.4.1: a UE's responses to an INVITE carry its media feature tags (SipConfig::media_feature_tags).

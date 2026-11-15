@@ -215,8 +215,9 @@ struct SipResponse {
   // Optional public session URI, without angle brackets or header parameters.
   std::string contact_uri;
   bool focus = false;
-  // With contact_uri: the media feature tags of the Contact, each with its leading ';', in place of the configured
-  // services' tags, such as an MCData subservice's (TS 24.282 clause 6.3.7.1.23 step 6).
+  // The media feature tags of the Contact, each with its leading ';', in place of the configured services' tags, such
+  // as an MCData subservice's (TS 24.282 clause 6.3.7.1.23 step 6): with contact_uri, of that URI; without it, of this
+  // endpoint's own Contact URI (TS 24.282 clause 9.2.3.2.4 steps 7-8).
   std::string contact_tags;
   // For an incoming INVITE from a peer server reached without the SIP core: the
   // Route header value used for every request in the new dialog.
