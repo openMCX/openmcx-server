@@ -1039,6 +1039,18 @@ int main() {
   check(group_preconfigured_use_only(
             group_doc + "<gi:preconfigured-group-use-only>true</gi:preconfigured-group-use-only>" + group_end),
         "preconfigured-group-use-only lost");
+  // TS 24.481 clause 7.2.4.2: a temporary group's constituents, a constituent's regroups.
+  check(group_temporary_constituents(group_doc +
+                                     "<gi:on-network-temporary><gi:constituent-MCPTT-group-IDs><gi:constituent-MCPTT-"
+                                     "group-ID>sip:a@x</gi:constituent-MCPTT-group-ID><gi:constituent-MCPTT-group-ID>"
+                                     "sip:b@x</gi:constituent-MCPTT-group-ID></gi:constituent-MCPTT-group-IDs>"
+                                     "</gi:on-network-temporary>" + group_end) ==
+            std::vector<std::string>{"sip:a@x", "sip:b@x"},
+        "temporary group constituents");
+  check(group_regrouped_tgis(group_doc + "<gi:on-network-regrouped temporary-MCPTT-group-ID=\"sip:t@x\"/>" + group_end) ==
+                std::vector<std::string>{"sip:t@x"} &&
+            group_temporary_constituents(group_doc + group_end).empty(),
+        "regrouped temporary group IDs");
   // TS 24.282 clause 11.1 5), 10): the SDS elements of an MCData group document.
   {
     const auto none = parse_mcdata_group_sds(group_doc + group_end);

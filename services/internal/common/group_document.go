@@ -60,7 +60,9 @@ type listServiceXML struct {
 	PreconfiguredUseOnly bool                 `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 preconfigured-group-use-only,omitempty"`
 	Disabled             *struct{}            `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-disabled,omitempty"`
 	ProtectMedia         bool                 `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 protect-media"`
-	ProtectFloor         bool                 `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 protect-floor-control-signalling"`
+	// TS 24.481 clause 7.2.2 (MCData group document): <mcdata-protect-media>, read as the group's media protection.
+	MCDataProtectMedia *bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-protect-media,omitempty"`
+	ProtectFloor       bool  `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 protect-floor-control-signalling"`
 	// MCData group (TS 24.481 clause 7.2.2): the short data service, file distribution and their size limits.
 	AllowSDS             *bool                  `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-allow-short-data-service,omitempty"`
 	AllowFD              *bool                  `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-allow-file-distribution,omitempty"`
@@ -441,7 +443,8 @@ func parseGroupDocument(raw []byte) (Group, error) {
 	if ls.URI == "" {
 		return Group{}, errors.New("group document without a list-service uri")
 	}
-	group := Group{ID: ls.URI, ProtectMedia: ls.ProtectMedia, ProtectFloor: ls.ProtectFloor,
+	group := Group{ID: ls.URI, ProtectMedia: ls.ProtectMedia || (ls.MCDataProtectMedia != nil && *ls.MCDataProtectMedia),
+		ProtectFloor:         ls.ProtectFloor,
 		PreconfiguredUseOnly: ls.PreconfiguredUseOnly, Members: []string{}}
 	if ls.List != nil {
 		for _, entry := range ls.List.Entries {
@@ -492,6 +495,22 @@ func parseGroupDocument(raw []byte) (Group, error) {
 		group.Type, group.SubordinateGroups, group.Regrouped = extension.Type, extension.SubordinateGroups, extension.Regrouped
 		group.CallPolicy, group.FloorPriorityCaps, group.PriorityPolicy = extension.CallPolicy, extension.FloorPriorityCaps, extension.PriorityPolicy
 		group.MCData, group.MCVideo = extension.MCData, extension.MCVideo
+	}
+	// An uploaded MCData group document without the project extension (a GMC's request, e.g. a temporary group, TS
+	// 24.481 clause 6.3.14.3.1): its MCData part from the MCData elements of <list-service> (clause 7.2.2).
+	if group.MCData == nil && (ls.AllowSDS != nil || ls.AllowFD != nil || slices.ContainsFunc(ls.SupportedServices.Services,
+		func(service serviceXML) bool { return service.Enabler == mcdataICSI })) {
+		data := &GroupMCData{MaxSDSBytes: ls.MaxSDSBytes, MaxFDBytes: ls.MaxFDBytes, MaxAutoRecvBytes: ls.MaxAutoRecvBytes,
+			AllowEnhancedStatus: ls.AllowEnhancedStatus}
+		data.SDSSupported = slices.ContainsFunc(ls.SupportedServices.Services,
+			func(service serviceXML) bool { return service.Enabler == mcdataICSI })
+		if ls.AllowSDS != nil {
+			data.AllowSDS = *ls.AllowSDS
+		}
+		if ls.AllowFD != nil {
+			data.AllowFD = *ls.AllowFD
+		}
+		group.MCData = data
 	}
 	if ls.Ruleset != nil {
 		readRules(&group, ls.Ruleset.Rules)

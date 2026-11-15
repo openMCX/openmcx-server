@@ -276,8 +276,16 @@ func (svc *service) serveGroupDocument(writer http.ResponseWriter, request *http
 	}
 	readable, ok := readableGroup(group, claims.MCPTTID, false, svc.otherServiceIDs(claims.MCPTTID)...)
 	// A temporary group lists no members: those of its constituent groups read it.
+	// (TS 24.481 clause 7.2.12.1: a member reads its own <entry>, here from the members of the constituents, so that the
+	// group's <is-list-member> rules apply to it, e.g. <mcdata-allow-transmit-data-in-this-group>, TS 24.282 11.1 2))
 	if len(group.TemporaryConstituents) > 0 {
-		readable, ok = group, slices.Contains(svc.keyGroup(group).Members, claims.MCPTTID)
+		expanded := svc.keyGroup(group)
+		ok = slices.Contains(expanded.Members, claims.MCPTTID)
+		readable = group
+		if ok {
+			own := svc.otherServiceIDs(claims.MCPTTID)
+			readable = onlyMembers(expanded, func(id string) bool { return id == claims.MCPTTID || (id != "" && slices.Contains(own, id)) })
+		}
 	}
 	if !ok {
 		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "forbidden"})

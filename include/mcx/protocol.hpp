@@ -352,6 +352,12 @@ struct McdataGroupSds {
 McdataGroupSds parse_mcdata_group_sds(std::string_view xml);
 
 //------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.4.2: the <constituent-MCPTT-group-ID>s of a temporary group's <on-network-temporary> (empty
+// for another group), and the "temporary-MCPTT-group-ID" of each <on-network-regrouped> of a constituent group.
+std::vector<std::string> group_temporary_constituents(std::string_view xml);
+std::vector<std::string> group_regrouped_tgis(std::string_view xml);
+
+//------------------------------------------------------------------------------
 // TS 24.481 clauses 7.2.2 and 7.2.12.1 with RFC 4745 sections 7 and 10: whether a group document grants a boolean
 // action of its <ruleset> (an element of mcpttGroupInfo, e.g. "mcvideo-allow-emergency-alert") to a user, one of whose
 // identities is given: true when a rule whose conditions match the user (no conditions, an <identity> <one> of the

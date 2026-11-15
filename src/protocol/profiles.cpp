@@ -455,6 +455,29 @@ bool group_preconfigured_use_only(std::string_view xml) {
 }
 
 //------------------------------------------------------------------------------
+std::vector<std::string> group_temporary_constituents(std::string_view xml) {
+  auto doc = document(xml);
+  auto list_service = group_list_service(doc.get());
+  std::vector<std::string> out;
+  if (auto temporary = unique_child(list_service, "on-network-temporary", mcpttgi_ns, false))
+    if (auto ids = unique_child(temporary, "constituent-MCPTT-group-IDs", mcpttgi_ns, false))
+      for (auto id = ids->children; id; id = id->next)
+        if (is(id, "constituent-MCPTT-group-ID", mcpttgi_ns)) out.push_back(text(id));
+  return out;
+}
+
+//------------------------------------------------------------------------------
+std::vector<std::string> group_regrouped_tgis(std::string_view xml) {
+  auto doc = document(xml);
+  auto list_service = group_list_service(doc.get());
+  std::vector<std::string> out;
+  for (auto node = list_service->children; node; node = node->next)
+    if (is(node, "on-network-regrouped", mcpttgi_ns))
+      if (const auto tgi = attr(node, "temporary-MCPTT-group-ID"); !tgi.empty()) out.push_back(tgi);
+  return out;
+}
+
+//------------------------------------------------------------------------------
 McdataGroupSds parse_mcdata_group_sds(std::string_view xml) {
   auto doc = document(xml);
   auto list_service = group_list_service(doc.get());

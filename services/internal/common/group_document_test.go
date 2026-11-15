@@ -122,3 +122,21 @@ func TestGMSGroupDocumentExcludingMembers(test *testing.T) {
 		}
 	}
 }
+
+// ------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.2: an uploaded MCData group document without the project extension keeps its MCData elements
+// and the transmit right of its <is-list-member> rule.
+func TestUploadedMCDataGroup(test *testing.T) {
+	raw := []byte(`<group xmlns="urn:oma:xml:poc:list-service" xmlns:gi="urn:3gpp:ns:mcpttGroupInfo:1.0" ` +
+		`xmlns:cp="urn:ietf:params:xml:ns:common-policy"><list-service uri="sip:t@mcx.test">` +
+		`<cp:ruleset><cp:rule id="m"><cp:conditions><is-list-member/></cp:conditions><cp:actions>` +
+		`<gi:mcdata-allow-transmit-data-in-this-group>true</gi:mcdata-allow-transmit-data-in-this-group>` +
+		`</cp:actions></cp:rule></cp:ruleset><gi:mcdata-protect-media>true</gi:mcdata-protect-media>` +
+		`<gi:mcdata-allow-short-data-service>true</gi:mcdata-allow-short-data-service>` +
+		`<gi:on-network-temporary><gi:constituent-MCPTT-group-IDs><gi:constituent-MCPTT-group-ID>sip:a@mcx.test` +
+		`</gi:constituent-MCPTT-group-ID></gi:constituent-MCPTT-group-IDs></gi:on-network-temporary></list-service></group>`)
+	group, err := parseGroupDocument(raw)
+	if err != nil || group.MCData == nil || !group.MCData.AllowSDS || !group.MCData.TransmitAll || !group.ProtectMedia {
+		test.Fatalf("MCData part: %v %#v", err, group.MCData)
+	}
+}
