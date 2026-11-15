@@ -342,6 +342,23 @@ int main() {
   assert(refused([] { (void)encode({Type::Request, false, 1, {FloorField{0, {5, 1}}}}); }));
   assert(refused([] { (void)encode({Type::Granted, false, 1, {FloorField{4, {}}}}); }));
 
+  // TS 24.581 clause 9.1.4 steps 2 and 3: a Transmission Granted with unknown fields (ID 100, one-octet length;
+  // ID 200, two-octet length, clause 9.1.3) and a syntactically incorrect Transmission Priority (one octet instead of
+  // two, clause 9.2.3.2) decodes: the unknown fields are kept, the incorrect field is left out, the others are read.
+  {
+    auto bytes = encode({Type::Granted, true, 7, {video_ssrc_field(0xb1b2b3b4), FloorField{100, {1, 2, 3}},
+                                                  FloorField{200, {9, 9, 9, 9, 9}}}});
+    bytes.insert(bytes.end(), {0, 1, 5, 0}); // the one-octet Transmission Priority field, padded
+    const auto words = static_cast<std::uint16_t>(bytes.size() / 4 - 1);
+    bytes[2] = static_cast<std::uint8_t>(words >> 8);
+    bytes[3] = static_cast<std::uint8_t>(words);
+    const auto lenient = decode(bytes);
+    assert(lenient.type == Type::Granted && lenient.ack_required);
+    assert(read_video_ssrc(*find(lenient, Field::VideoSsrc)) == 0xb1b2b3b4);
+    assert(find(lenient, Field::Priority) == nullptr && lenient.fields.size() == 3);
+    assert(std::any_of(lenient.fields.begin(), lenient.fields.end(), [](const FloorField &f) { return f.id == 200; }));
+  }
+
   // TS 24.581 clause 9.2.13: the Media Transmission Notification (MCV1, subtype x0110) the server sends to every
   // other participant when one transmits (clauses 6.3.4.4.2 step 3, 6.3.5.7.4 step 3 and 6.3.6.3.3): the
   // transmitter's MCVideo ID and SSRCs, Permission to Request, the Transmission Indicator of an emergency call and

@@ -115,7 +115,7 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id, st
   if (!controlled) {
     if (media.ice && !media.ice->control.empty()) invalid("ICE candidates for a missing control channel");
     if (media.granted || media.granted_audio_ssrc || media.granted_video_ssrc || media.implicit_request ||
-        media.queueing || media.floor_priority)
+        media.queueing || media.floor_priority || media.reception_priority)
       invalid(video ? "transmission control parameters without transmission control"
                     : "floor control parameters without floor control");
     if (media.control_removed && !video) out << "m=application 0 udp MCPTT\r\n"; // RFC 3264 section 8.2
@@ -132,6 +132,12 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id, st
   if (media.floor_priority) {
     if (*media.floor_priority > 99) invalid("floor priority exceeds SDP range");
     out << ";mc_priority=" << unsigned(*media.floor_priority);
+  }
+  // TS 24.581 clauses 12.1.2.3 ("mc_reception_priority=" 1*2(DIGIT)), 14.2.6 and 14.3.6.
+  if (media.reception_priority) {
+    if (!video) invalid("reception priority without MCVideo transmission control");
+    if (*media.reception_priority > 99) invalid("reception priority exceeds SDP range");
+    out << ";mc_reception_priority=" << unsigned(*media.reception_priority);
   }
   if (media.queueing) out << ";mc_queueing";
   if (media.implicit_request) out << ";mc_implicit_request";
@@ -415,6 +421,10 @@ void parse_format_parameter(const std::string &parameter, const std::string &sec
   } else if (section == "application" && key == "mc_priority") {
     if (out.floor_priority || val.size() > 2) invalid("duplicate or invalid floor priority");
     out.floor_priority = number(val, 99);
+  } else if (transmission && key == "mc_reception_priority") {
+    // TS 24.581 clause 12.1.2.3: "mc_reception_priority=" 1*2(DIGIT).
+    if (out.reception_priority || val.empty() || val.size() > 2) invalid("duplicate or invalid reception priority");
+    out.reception_priority = number(val, 99);
   } else if (section == "application" && key == "mc_queueing")
     out.queueing = true;
   else if (section == "application" && key == "mc_implicit_request")
@@ -577,6 +587,7 @@ MediaDescription session_media_keeping_control(const MediaDescription &negotiate
   out.floor_ssrc = previous->floor_ssrc;
   out.queueing = previous->queueing;
   out.floor_priority = previous->floor_priority;
+  out.reception_priority = previous->reception_priority;
   if (out.ice && previous->ice) out.ice->control = previous->ice->control;
   out.control_removed = false;
   return out;

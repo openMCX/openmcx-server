@@ -111,11 +111,13 @@ type mcvideoPrivateCallEntry struct {
 // ------------------------------------------------------------------------------
 // TS 24.484 clause 9.3.2.1 item 9: the <OnNetwork> element.
 type mcvideoOnNetwork struct {
-	Index             string                  `xml:"index,attr"`
-	GroupInfo         []mcvideoGroupInfo      `xml:"MCVideoGroupInfo"`
-	MaxAffiliationsN2 int                     `xml:"MaxAffiliationsN2,omitempty"`
-	RemoteSelection   *profileEntryList       `xml:"RemoteGroupSelectionURIList,omitempty"`
-	AnyExt            *mcvideoOnNetworkExtXML `xml:"anyExt,omitempty"`
+	Index             string             `xml:"index,attr"`
+	GroupInfo         []mcvideoGroupInfo `xml:"MCVideoGroupInfo"`
+	MaxAffiliationsN2 int                `xml:"MaxAffiliationsN2,omitempty"`
+	// Item 9 f: <PrivateEmergencyAlert> with its <entry> (TS 24.281 clause 6.2.8.3.1.3 2)).
+	PrivateAlert    *profileAlert           `xml:"PrivateEmergencyAlert,omitempty"`
+	RemoteSelection *profileEntryList       `xml:"RemoteGroupSelectionURIList,omitempty"`
+	AnyExt          *mcvideoOnNetworkExtXML `xml:"anyExt,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -258,6 +260,11 @@ func (svc *service) mcvideoProfileXML(user User) (mcvideoProfileXML, error) {
 		doc.Common.GroupCall.Emergency.Entry = groupInitiationEntry(groupCall.EmergencyGroup)
 		doc.Common.GroupCall.Imminent.Entry = groupInitiationEntry(groupCall.ImminentGroup)
 		doc.Common.GroupCall.Alert.Entry = groupInitiationEntry(groupCall.AlertGroup)
+		// TS 24.484 clause 9.3.2.1 item 8 e) v): <Priority> (PriorityType, 0 to 255).
+		if groupCall.Priority < 0 || groupCall.Priority > 255 {
+			return mcvideoProfileXML{}, fmt.Errorf("MCVideo group call priority %d out of range", groupCall.Priority)
+		}
+		doc.Common.GroupCall.Priority = groupCall.Priority
 	}
 	doc.Common.AnyExt = &locationURIExt{LocationURI: svc.locationDocumentURI(user.MCVideoID, user.profileIndex())}
 	ext := &mcvideoProfileExtension{}
@@ -285,6 +292,9 @@ func (svc *service) mcvideoProfileXML(user User) (mcvideoProfileXML, error) {
 		for _, target := range private.Targets {
 			entry := mcvideoPrivateCallEntry{URI: profileEntry{URI: target}}
 			entry.KMS.Entry = profileEntry{URI: svc.cfg.Endpoints.KMS}
+			if kms, ok := private.TargetKMS[target]; ok {
+				entry.KMS.Entry = profileEntry{URI: kms}
+			}
 			call.List.OnNetwork = append(call.List.OnNetwork, entry)
 		}
 		doc.Common.PrivateCall = call
@@ -295,6 +305,15 @@ func (svc *service) mcvideoProfileXML(user User) (mcvideoProfileXML, error) {
 		if private.Emergency {
 			ext.EmergencyRecipients = recipients(private.EmergencyAny, private.EmergencyRecipients)
 		}
+		// TS 24.484 clause 9.3.2.1 item 9 f: the target of an emergency alert to a user (TS 24.281 clause
+		// 6.2.8.3.1.3 2)): "LocallyDetermined", or "UsePreConfigured" with the configuration's single recipient.
+		if private.Alert {
+			if private.AlertAny {
+				on.PrivateAlert = &profileAlert{Entry: profileEntry{EntryInfo: "LocallyDetermined"}}
+			} else if len(private.AlertRecipients) == 1 {
+				on.PrivateAlert = &profileAlert{Entry: profileEntry{EntryInfo: "UsePreConfigured", URI: private.AlertRecipients[0]}}
+			}
+		}
 		ext.NotCallable = private.Callable != nil && !*private.Callable
 	}
 	// The functional aliases whose <mcvideo-user-list> names the user (TS 24.281 clause 20.2.2.2.3).
@@ -304,7 +323,8 @@ func (svc *service) mcvideoProfileXML(user User) (mcvideoProfileXML, error) {
 		}
 		on.AnyExt.FunctionalAliasList = aliases
 	}
-	if len(on.GroupInfo) > 0 || on.MaxAffiliationsN2 > 0 || on.RemoteSelection != nil || on.AnyExt != nil {
+	if len(on.GroupInfo) > 0 || on.MaxAffiliationsN2 > 0 || on.RemoteSelection != nil || on.AnyExt != nil ||
+		on.PrivateAlert != nil {
 		doc.OnNetwork = on
 	}
 	if ext.EmergencyRecipients != nil || ext.NotCallable {
@@ -386,6 +406,14 @@ func (doc mcvideoProfileXML) rights() mcvideoRights {
 		}
 		if on.AnyExt != nil && on.AnyExt.IncomingList != nil {
 			private().IncomingFrom = on.AnyExt.IncomingList.uris()
+		}
+		// The alert's target only: the right itself is the ruleset's <allow-activate-emergency-alert>.
+		if alert := on.PrivateAlert; alert != nil {
+			if alert.Entry.EntryInfo == "LocallyDetermined" {
+				private().AlertAny = true
+			} else if alert.Entry.URI != "" {
+				private().AlertRecipients = []string{alert.Entry.URI}
+			}
 		}
 	}
 	if ext := doc.Extension; ext != nil {

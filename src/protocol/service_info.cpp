@@ -164,6 +164,8 @@ std::string service_info_xml(const McpttInfo &info, const ServiceProfile &servic
   };
   uri("functional-alias-URI", info.functional_alias);
   uri("called-functional-alias-URI", info.called_functional_alias);
+  uri("partner-mcvideo-id", info.partner_mcvideo_id);
+  uri("primary-mcvideo-id", info.primary_mcvideo_id);
   plain("call-to-functional-alias-ind", info.call_to_functional_alias);
   plain("emergency-alert-area-ind", info.emergency_alert_area);
   plain("group-geo-area-ind", info.group_geo_area);
@@ -195,6 +197,10 @@ std::string service_info_xml(const McpttInfo &info, const ServiceProfile &servic
   plain("adhoc-alert-ind", info.adhoc_alert);
   plain("adhoc-grp-emg-alert-grp-ind", info.adhoc_emergency_alert_group);
   plain("adhoc-alert-ind-rcvd", info.adhoc_alert_received);
+  if (!info.preconfigured_group_id.empty()) {
+    conference_uri(info.preconfigured_group_id);
+    ext += "<preconfigured-group-id>" + xml_escape(info.preconfigured_group_id) + "</preconfigured-group-id>";
+  }
   if (!ext.empty()) out += "<anyExt>" + ext + "</anyExt>";
   out += "</" + names.params + "></" + names.root + ">";
   bounded(out);
@@ -415,6 +421,14 @@ void parse_info_extensions(xmlNode *ext, const InfoNames &names, McpttInfo &out)
   out.adhoc_alert = ext_flag(ext, "adhoc-alert-ind", info_ns);
   out.adhoc_emergency_alert_group = ext_flag(ext, "adhoc-grp-emg-alert-grp-ind", info_ns);
   out.adhoc_alert_received = ext_flag(ext, "adhoc-alert-ind-rcvd", info_ns);
+  // TS 24.281 annex F.1.3: <partner-mcvideo-id> and <primary-mcvideo-id> (contentType) and <preconfigured-group-id>
+  // (xs:anyURI).
+  out.partner_mcvideo_id = ext_uri(ext, "partner-mcvideo-id", names);
+  out.primary_mcvideo_id = ext_uri(ext, "primary-mcvideo-id", names);
+  if (auto node = unique_child(ext, "preconfigured-group-id", info_ns, false)) {
+    out.preconfigured_group_id = scalar(node);
+    conference_uri(out.preconfigured_group_id);
+  }
 }
 
 } // namespace

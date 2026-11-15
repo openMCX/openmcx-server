@@ -29,6 +29,8 @@ static uint64_t now() {
 //------------------------------------------------------------------------------
 // The home KMS of the test users.
 static auto authority = mcx::keying::create_authority({"https://kms.example.org", 2592000, 0});
+// An External KMS whose certificate the home KMS distributes in its KmsCertCache (TS 33.180 annex D.2.5).
+static auto external = mcx::keying::create_authority({"https://kms.partner.example.org", 2592000, 0});
 // Replace only network I/O. Every XML document, identity, signature,
 // encapsulation and protected-key payload below is generated and parsed by
 // production code.
@@ -72,6 +74,11 @@ HttpResponse HttpClient::request(std::string_view method, const std::string &url
   }
   if (method != "POST" || !body.empty() || !basic.empty()) throw std::runtime_error("invalid provisioning request");
   const auto identity = substituted_identity.empty() ? headers.at("Authorization").substr(7) : substituted_identity;
+  if (url.ends_with("/certcache"))
+    return {200,
+            keying::kms_certcache_xml(authority.public_parameters, identity, url, now(),
+                                      std::vector{external.public_parameters}),
+            {{"content-type", "application/xml"}}};
   if (!url.ends_with("/init")) last_keyprov_url = url;
   const auto provisioned = keyprov_identity.empty() ? identity : keyprov_identity;
   auto xml = url.ends_with("/init") ? keying::kms_init_xml(authority.public_parameters, identity, url, now())
@@ -128,6 +135,19 @@ int main() {
     alice.provision("sip:alice@example.org");
     check(last_keyprov_url == "https://kms.example.org/keymanagement/identity/v1/keyprov/sip:alice@example.org",
           "KeyProvision names the identity by default");
+    // TS 33.180 clause 5.2.8.3 and annex D.2.5: the External KMS of the KmsCertCache is known, after the Home KMS, and
+    // a PCK can be encapsulated under it (TS 24.281 clause 6.2.8.3.9: the KMS URI of the invited user).
+    check(alice.known_kms() == std::vector<std::string>{"https://kms.example.org", "https://kms.partner.example.org"},
+          "Home KMS and External KMS known");
+    check(alice.knows_kms("https://kms.partner.example.org") && !alice.knows_kms("https://kms.other.example.org"),
+          "External KMS certificate held");
+    {
+      auto [pck, message] = alice.make_pck("sip:bob@example.org", "https://kms.partner.example.org");
+      check(mcx::KeyClient::receiver(message).second == "https://kms.partner.example.org" &&
+                mcx::KeyClient::initiator_kms(message) == "https://kms.example.org",
+            "PCK keyed to the External KMS (IDRkmsr), signed under the Home KMS (IDRkmsi)");
+      reject([&] { alice.make_pck("sip:bob@example.org", "https://kms.other.example.org"); });
+    }
     bob.provision("sip:bob@example.org");
     // TS 33.180 annex D.2.4: the plain "keyprov" form for the token's identity, the subdirectory for another of the
     // user's MC service IDs; the option must be a boolean.

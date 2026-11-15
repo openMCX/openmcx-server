@@ -98,7 +98,8 @@ std::vector<std::uint8_t> encode(const Packet &packet);
 
 //------------------------------------------------------------------------------
 // TS 24.581 clauses 9.1.2 and 9.2.2.1: decodes an RTCP APP packet as a transmission control message. Refuses another
-// name (an MCPTT floor packet), an unknown subtype, a void subtype and malformed fields of known IDs (clause 9.2.3).
+// name (an MCPTT floor packet), an unknown subtype and a void subtype (clause 9.1.4 step 1: the message is ignored);
+// unknown fields are kept and malformed fields of known IDs (clause 9.2.3) left out (clause 9.1.4 steps 2 and 3).
 Packet decode(std::span<const std::uint8_t> bytes);
 
 //------------------------------------------------------------------------------

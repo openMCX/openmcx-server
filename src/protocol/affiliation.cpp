@@ -99,17 +99,59 @@ Affiliation parse_affiliation(std::string_view xml, std::string_view client) {
 // TS 24.379 clause 7.2.3 with clause 7.4.1.2.2: writes the application/poc-settings+xml of a client: automatic
 // answer mode, the selected user profile index and multiplex support.
 std::string poc_settings_xml(std::string_view client_id, unsigned profile_index) {
+  return poc_settings_xml(client_id, profile_index, false);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.281 clauses 7.2.2 6) and 7.2.3 4) with clause 7.4.1.2.2: a) the current answer mode (RFC 4354 <answer-mode>
+// "automatic" or "manual"), b) the selected user profile index, c) <multiplex-support>.
+std::string poc_settings_xml(std::string_view client_id, unsigned profile_index, bool manual_answer) {
   if (client_id.empty()) throw std::invalid_argument("PoC client identity required");
   return "<?xml version=\"1.0\"?><poc-settings "
          "xmlns=\"urn:oma:params:xml:ns:poc:poc-settings\" "
          "xmlns:mc=\"urn:3gpp:mcsSettings:1.0\"><entity id=\"" +
-         xml_escape(client_id) +
-         "\"><am-settings><answer-mode>automatic</answer-mode></"
+         xml_escape(client_id) + "\"><am-settings><answer-mode>" + (manual_answer ? "manual" : "automatic") +
+         "</answer-mode></"
          "am-settings><mc:selected-user-profile-index><mc:user-profile-index>" +
          std::to_string(profile_index) +
          "</mc:user-profile-index></"
          "mc:selected-user-profile-index><mc:multiplex-support>true</"
          "mc:multiplex-support></entity></poc-settings>";
+}
+
+//------------------------------------------------------------------------------
+// RFC 4354 with TS 24.281 clause 7.4.1.2.2: reads a poc-settings document: the <poc-settings> root and its <entity>
+// elements (RFC 4354 namespace). <selected-user-profile-index> and <multiplex-support> are in the mcsSettings
+// namespace (table 7.4.1.2.2-2); the example of table 7.4.1.2.2-3 writes them unprefixed, so they are read in either.
+std::vector<PocSettingsEntity> parse_poc_settings(std::string_view xml) {
+  constexpr const char *poc_ns = "urn:oma:params:xml:ns:poc:poc-settings";
+  constexpr const char *mcs_ns = "urn:3gpp:mcsSettings:1.0";
+  bounded(xml);
+  auto doc = document(xml);
+  auto root = xmlDocGetRootElement(doc.get());
+  if (!is(root, "poc-settings", poc_ns)) invalid("not a poc-settings document");
+  const auto either = [&](xmlNode *node, const char *name) { return is(node, name, mcs_ns) || is(node, name, poc_ns); };
+  std::vector<PocSettingsEntity> out;
+  for (auto entity = root->children; entity; entity = entity->next) {
+    if (!is(entity, "entity", poc_ns)) continue;
+    PocSettingsEntity settings;
+    settings.id = attr(entity, "id");
+    if (settings.id.empty()) invalid("poc-settings entity without id");
+    for (auto node = entity->children; node; node = node->next) {
+      if (is(node, "am-settings", poc_ns)) {
+        if (auto mode = unique_child(node, "answer-mode", poc_ns, false)) settings.answer_mode = trim(text(mode));
+      } else if (either(node, "selected-user-profile-index")) {
+        for (auto index = node->children; index; index = index->next)
+          if (either(index, "user-profile-index")) settings.profile_index = number(trim(text(index)), 0xffffffffu);
+      } else if (either(node, "multiplex-support")) {
+        const auto value = trim(text(node));
+        if (value != "true" && value != "false" && value != "1" && value != "0") invalid("invalid multiplex-support");
+        settings.multiplex_support = value == "true" || value == "1";
+      }
+    }
+    out.push_back(std::move(settings));
+  }
+  return out;
 }
 
 } // namespace mcx

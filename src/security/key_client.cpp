@@ -149,6 +149,8 @@ struct KeyClient::Impl {
   std::function<void(std::string_view)> warn;
   keying::PublicParameters parameters;
   keying::IdentityKeys identity;
+  // TS 33.180 clause 5.2.8.3 and annex D.2.5: the External KMS certificates the Home KMS distributes (KmsCertCache).
+  std::vector<keying::PublicParameters> externals;
   bool provisioned = false;
   // set_uid_form_detection: the UID forms a key set may be validated for (key_documents.hpp UidDetection).
   keying::UidDetection uid_detection = keying::UidDetection::text_only;
@@ -296,12 +298,30 @@ struct KeyClient::Impl {
     parameters = public_parameters;
     identity = std::move(next_identity);
     provisioned = true;
+    // TS 33.180 clause 5.2.8.1.1 ("The partner (external) security domains (KMS URIs) and certificates are typically
+    // provisioned to the UE by the user's Home KMS") and annex D.2.5: the KmsCertCache. Without it (a KMS without
+    // External KMSs may not serve it) only the Home KMS is known.
+    try {
+      const auto cache =
+          fetch("certcache", protected_exchange ? keying::kms_request_xml(account_uri, kms_id, request_uri("certcache"),
+                                                                          now_ntp(), keys)
+                                                : std::string());
+      auto found = keying::parse_kms_certcache(cache, account_uri, kms_id, request_uri("certcache"), now_ntp(), &keys);
+      // The External KMSs' keys are for the UID form of the Home KMS's (keying.hpp PublicParameters::uid_form).
+      for (auto &external : found) external.uid_form = parameters.uid_form;
+      externals = std::move(found);
+    } catch (const std::exception &) {
+      externals.clear();
+    }
   }
 
   // TS 33.180 clause 5.2.7.3: the public parameters of a KMS URI: the Home KMS; null otherwise.
   keying::KmsLookup lookup() const {
     return [this](std::string_view uri) -> const keying::PublicParameters * {
-      return uri == parameters.period.kms_uri ? &parameters : nullptr;
+      if (uri == parameters.period.kms_uri) return &parameters;
+      for (const auto &external : externals)
+        if (uri == external.period.kms_uri) return &external;
+      return nullptr;
     };
   }
 
@@ -418,6 +438,18 @@ void provision_server_keys(KeyClient &keys, const nlohmann::json &cfg) {
 bool KeyClient::knows_kms(std::string_view kms_uri) const {
   std::lock_guard lock(impl_->mutex);
   return impl_->provisioned && impl_->lookup()(kms_uri) != nullptr;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 clause 5.2.8.2.5: the KMS URIs whose certificates this client holds: its Home KMS first, then the
+// External KMSs of the Home KMS's KmsCertCache.
+std::vector<std::string> KeyClient::known_kms() const {
+  std::lock_guard lock(impl_->mutex);
+  std::vector<std::string> out;
+  if (!impl_->provisioned) return out;
+  out.push_back(impl_->parameters.period.kms_uri);
+  for (const auto &external : impl_->externals) out.push_back(external.period.kms_uri);
+  return out;
 }
 
 //------------------------------------------------------------------------------

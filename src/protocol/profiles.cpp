@@ -200,6 +200,13 @@ McvideoProfile parse_mcvideo_profile(std::string_view xml) {
       if (is(entry, "PrivateCallOnNetwork", ns)) {
         if (out.private_call_targets.size() >= 256) invalid("too many private call targets");
         out.private_call_targets.push_back(uri(unique_child(entry, "PrivateCallURI", ns)));
+        // TS 24.484 clause 9.3.2.1 item 8 d) (schema PrivateCallKMSURIEntryType): <PrivateCallKMSURI> with one
+        // <PrivateCallKMSURI> <entry> holding the <uri-entry>; TS 24.281 clause 6.2.8.3.9 1) a).
+        std::string kms;
+        if (auto outer = unique_child(entry, "PrivateCallKMSURI", ns, false))
+          if (auto inner = unique_child(outer, "PrivateCallKMSURI", ns, false))
+            if (auto value = unique_child(inner, "uri-entry", ns, false)) kms = text(value);
+        out.private_call_kms[out.private_call_targets.back()] = kms;
       }
   for (auto on = root->children; on; on = on->next) {
     if (!is(on, "OnNetwork", ns)) continue;
@@ -210,6 +217,41 @@ McvideoProfile parse_mcvideo_profile(std::string_view xml) {
       }
     profile_functional_aliases(on, ns, out);
   }
+  // TS 24.484 clause 9.3.2.3: the EntryType <entry> of a target element, with its "entry-info" and <uri-entry>
+  // (absent for "UseCurrentlySelectedGroup" and "LocallyDetermined", which name no target).
+  const auto target = [&](xmlNode *holder, const char *name) {
+    McvideoProfile::TargetEntry out;
+    if (!holder) return out;
+    auto element = unique_child(holder, name, ns, false);
+    if (!element) return out;
+    auto entry = unique_child(element, "entry", ns, false);
+    if (!entry) return out;
+    out.present = true;
+    out.entry_info = attr(entry, "entry-info");
+    if (auto uri_entry = unique_child(entry, "uri-entry", ns, false)) out.uri = text(uri_entry);
+    if (out.entry_info.size() > 64 || out.uri.size() > 1024) invalid("invalid profile target entry");
+    return out;
+  };
+  // Item 8 e): <MCVideo-group-call> with <EmergencyCall>, <ImminentPerilCall> (each an <MCVideoGroupInitiation>) and
+  // <EmergencyAlert>.
+  if (auto group_call = unique_child(common, "MCVideo-group-call", ns, false)) {
+    out.emergency_group_initiation = target(unique_child(group_call, "EmergencyCall", ns, false), "MCVideoGroupInitiation");
+    out.imminent_group_initiation =
+        target(unique_child(group_call, "ImminentPerilCall", ns, false), "MCVideoGroupInitiation");
+    out.group_emergency_alert = target(group_call, "EmergencyAlert");
+    // Item 8 e) v): <Priority>, PriorityType 0 to 255.
+    if (auto priority = unique_child(group_call, "Priority", ns, false)) {
+      const auto value = scalar(priority);
+      if (value.empty() || value.size() > 3) invalid("invalid MCVideo group call priority");
+      out.group_call_priority = number(value, 255);
+    }
+  }
+  // Item 8 d) ii): <PrivateCall>/<EmergencyCall>/<MCVideoPrivateRecipient>.
+  if (auto call = unique_child(common, "PrivateCall", ns, false))
+    out.emergency_private_recipient = target(unique_child(call, "EmergencyCall", ns, false), "MCVideoPrivateRecipient");
+  // Item 9 f): <OnNetwork>/<PrivateEmergencyAlert> (the first <OnNetwork> carrying one).
+  for (auto on = root->children; on && !out.private_emergency_alert.present; on = on->next)
+    if (is(on, "OnNetwork", ns)) out.private_emergency_alert = target(on, "PrivateEmergencyAlert");
   out.actions = parse_profile_actions(xml);
 
   return out;
@@ -382,6 +424,62 @@ static bool group_flag(xmlNode *list_service, const char *name) {
 bool group_preconfigured_use_only(std::string_view xml) {
   auto doc = document(xml);
   return group_flag(group_list_service(doc.get()), "preconfigured-group-use-only");
+}
+
+//------------------------------------------------------------------------------
+// TS 24.481 clauses 7.2.2 (the <ruleset>, <rule>, <conditions> with <identity> and <is-list-member>, <actions>),
+// 7.2.8 (a condition element not specified is evaluated as not known, RFC 4745: the rule does not apply) and RFC 4745
+// sections 7.1 (<identity>/<one id>), 10.1 (a rule applies when all its conditions match) and 10.2 (boolean
+// permissions combine by OR).
+bool group_document_allows(std::string_view xml, std::string_view action, const std::vector<std::string> &identities) {
+  auto doc = document(xml);
+  auto list_service = group_list_service(doc.get());
+  const auto mine = [&](const std::string &id) {
+    return !id.empty() && std::find(identities.begin(), identities.end(), id) != identities.end();
+  };
+  // <is-list-member>: the user is an <entry> of the <list>, by its "uri" or its MCVideo / MCData ID (clause 7.2.2).
+  bool member = false;
+  if (auto list = unique_child(list_service, "list", poc_ns, false))
+    for (auto entry = list->children; entry && !member; entry = entry->next) {
+      if (!is(entry, "entry", poc_ns)) continue;
+      member = mine(attr(entry, "uri"));
+      for (auto id = entry->children; id && !member; id = id->next)
+        if (is(id, "mcvideo-mcvideo-id", mcpttgi_ns) || is(id, "mcdata-mcdata-id", mcpttgi_ns))
+          member = mine(attr(id, "uri"));
+    }
+  auto ruleset = unique_child(list_service, "ruleset", common_policy_ns, false);
+  if (!ruleset) return false;
+  for (auto rule = ruleset->children; rule; rule = rule->next) {
+    if (!is(rule, "rule", common_policy_ns)) continue;
+    bool applies = true;
+    if (auto conditions = unique_child(rule, "conditions", common_policy_ns, false))
+      for (auto condition = conditions->children; condition && applies; condition = condition->next) {
+        if (condition->type != XML_ELEMENT_NODE) continue;
+        if (is(condition, "identity", common_policy_ns)) {
+          bool listed = false;
+          for (auto one = condition->children; one && !listed; one = one->next)
+            if (is(one, "one", common_policy_ns)) listed = mine(attr(one, "id"));
+          applies = listed;
+        } else if (is(condition, "is-list-member", poc_ns)) {
+          applies = member;
+        } else {
+          applies = false;
+        }
+      }
+    if (!applies) continue;
+    auto actions = unique_child(rule, "actions", common_policy_ns, false);
+    if (!actions) continue;
+    for (auto element = actions->children; element; element = element->next) {
+      if (element->type != XML_ELEMENT_NODE || !element->ns || !xmlStrEqual(element->ns->href, BAD_CAST mcpttgi_ns) ||
+          action != reinterpret_cast<const char *>(element->name))
+        continue;
+      auto value = scalar(element);
+      value.erase(0, value.find_first_not_of(" \t\r\n"));
+      value.erase(value.find_last_not_of(" \t\r\n") + 1);
+      if (value == "true" || value == "1") return true;
+    }
+  }
+  return false;
 }
 
 //------------------------------------------------------------------------------

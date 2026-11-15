@@ -61,14 +61,19 @@ json kms_verify_request(const json &request) {
 }
 
 //------------------------------------------------------------------------------
-// TS 33.180 annex D.2.5: the KMS response to a KMS CertCache request ("kms-certcache"): this system has no External
-// KMS, so the cache has no certificates.
+// TS 33.180 annex D.2.5: the KMS response to a KMS CertCache request ("kms-certcache"): the certificates of the
+// External KMSs loaded onto this KMS ("external_certificates": the public parameters of each, clause 5.2.8.3), none
+// without; signed for a user with a TrK or InK as the other responses (annex D.3.1).
 json kms_certcache(const json &request) {
   json result;
   const auto authority = request.at("authority").get<Authority>();
-  result["xml"] = kms_certcache_xml(authority.public_parameters, request.at("user_uri").get<std::string>(),
-                                    request.at("request_uri").get<std::string>(),
-                                    request.at("ntp_seconds").get<std::uint64_t>());
+  std::vector<PublicParameters> externals;
+  for (const auto &item : request.value("external_certificates", json::array()))
+    externals.push_back(item.get<PublicParameters>());
+  const auto user = request.at("user_uri").get<std::string>();
+  const auto keys = mcx::transport::load_for(request.value("security", json::object()), user);
+  result["xml"] = kms_certcache_xml(authority.public_parameters, user, request.at("request_uri").get<std::string>(),
+                                    request.at("ntp_seconds").get<std::uint64_t>(), externals, &keys);
   return result;
 }
 

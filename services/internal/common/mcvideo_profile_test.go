@@ -160,3 +160,101 @@ func TestAuthorizationLimitConstraint(test *testing.T) {
 		}
 	}
 }
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 9.3.2.1 item 9 f: a user allowed emergency alerts to users has the <PrivateEmergencyAlert> of
+// <OnNetwork> (the target condition of TS 24.281 clause 6.2.8.3.1.3 2)): "LocallyDetermined" for any user, or
+// "UsePreConfigured" with the single configured recipient; the document stays valid against the schema.
+func TestMCVideoPrivateEmergencyAlert(test *testing.T) {
+	key := testKey(test)
+	for _, testCase := range []struct {
+		policy map[string]any
+		want   string
+	}{
+		{map[string]any{"allow": true, "alert": true, "alert_any": true},
+			`<PrivateEmergencyAlert><entry entry-info="LocallyDetermined"><uri-entry></uri-entry></entry></PrivateEmergencyAlert>`},
+		{map[string]any{"allow": true, "alert": true, "alert_recipients": []any{"sip:bob.mcvideo@mcx.test"}},
+			`<PrivateEmergencyAlert><entry entry-info="UsePreConfigured"><uri-entry>sip:bob.mcvideo@mcx.test</uri-entry></entry></PrivateEmergencyAlert>`},
+	} {
+		cfg := mcvideoConfig(testConfig())
+		cfg.Users[0].MCVideo["private_call"] = testCase.policy
+		cms := roleHandler(test, RoleCMS, cfg, key, test.TempDir())
+		rr := httptest.NewRecorder()
+		cms.ServeHTTP(rr, bearerRequest("GET", mcvideoProfilePath("sip:alice.mcvideo@mcx.test", 1),
+			tokenFor(test, cfg, key, "alice", testNow, cfg.ServerClientID), nil))
+		body := rr.Body.Bytes()
+		if rr.Code != http.StatusOK || !strings.Contains(string(body), testCase.want) {
+			test.Fatalf("status=%d, want %s in\n%s", rr.Code, testCase.want, body)
+		}
+		if err := mcvideoProfileSchema.validate(body); err != nil {
+			test.Fatalf("the served profile fails the schema of 9.3.2.3: %v\n%s", err, body)
+		}
+	}
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 9.3.2.1 item 8 d) with TS 24.281 clause 6.2.8.3.9: a target's <PrivateCallKMSURI> is the KMS URI
+// the record gives it (target_kms), else the KMS of the endpoints; "" gives an empty entry.
+func TestMCVideoProfilePrivateCallKMS(test *testing.T) {
+	key := testKey(test)
+	cfg := mcvideoConfig(testConfig())
+	private := cfg.Users[0].MCVideo["private_call"].(map[string]any)
+	private["targets"] = []any{"sip:bob.mcvideo@mcx.test", "sip:carol.mcvideo@mcx.test"}
+	private["target_kms"] = map[string]any{"sip:bob.mcvideo@mcx.test": "https://kms2.mcx.test"}
+	cms := roleHandler(test, RoleCMS, cfg, key, test.TempDir())
+	alice := tokenFor(test, cfg, key, "alice", testNow, cfg.ServerClientID)
+	rr := httptest.NewRecorder()
+	cms.ServeHTTP(rr, bearerRequest("GET", mcvideoProfilePath("sip:alice.mcvideo@mcx.test", 1), alice, nil))
+	body := rr.Body.String()
+	if rr.Code != http.StatusOK {
+		test.Fatalf("profile status=%d body=%s", rr.Code, body)
+	}
+	if err := mcvideoProfileSchema.validate(rr.Body.Bytes()); err != nil {
+		test.Fatalf("the served profile fails the schema of 9.3.2.3: %v\n%s", err, body)
+	}
+	for _, want := range []string{
+		"<PrivateCallURI><uri-entry>sip:bob.mcvideo@mcx.test</uri-entry></PrivateCallURI><PrivateCallKMSURI><PrivateCallKMSURI><uri-entry>https://kms2.mcx.test</uri-entry>",
+		"<PrivateCallURI><uri-entry>sip:carol.mcvideo@mcx.test</uri-entry></PrivateCallURI><PrivateCallKMSURI><PrivateCallKMSURI><uri-entry>https://kms.mcx.test</uri-entry>"} {
+		if !strings.Contains(body, want) {
+			test.Fatalf("profile lacks %s:\n%s", want, body)
+		}
+	}
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 9.3.2.1 item 8 e) v): the <Priority> of <MCVideo-group-call> is the record's group_call priority
+// (TS 24.581 clauses 14.2.3 and 14.2.6: the client's configured priority), 0 by default; out of range is refused.
+func TestMCVideoProfilePriority(test *testing.T) {
+	key := testKey(test)
+	for _, testCase := range []struct {
+		policy map[string]any
+		want   string
+		status int
+	}{
+		{nil, "<Priority>0</Priority>", http.StatusOK},
+		{map[string]any{"priority": 5}, "<Priority>5</Priority>", http.StatusOK},
+		{map[string]any{"priority": 255}, "<Priority>255</Priority>", http.StatusOK},
+	} {
+		cfg := mcvideoConfig(testConfig())
+		if testCase.policy != nil {
+			cfg.Users[0].MCVideo["group_call"] = testCase.policy
+		}
+		cms := roleHandler(test, RoleCMS, cfg, key, test.TempDir())
+		rr := httptest.NewRecorder()
+		cms.ServeHTTP(rr, bearerRequest("GET", mcvideoProfilePath("sip:alice.mcvideo@mcx.test", 1),
+			tokenFor(test, cfg, key, "alice", testNow, cfg.ServerClientID), nil))
+		body := rr.Body.Bytes()
+		if rr.Code != testCase.status || !strings.Contains(string(body), testCase.want) {
+			test.Fatalf("status=%d, want %s in\n%s", rr.Code, testCase.want, body)
+		}
+		if err := mcvideoProfileSchema.validate(body); err != nil {
+			test.Fatalf("the served profile fails the schema of 9.3.2.3: %v\n%s", err, body)
+		}
+	}
+	cfg := mcvideoConfig(testConfig())
+	cfg.Users[0].MCVideo["group_call"] = map[string]any{"priority": 256}
+	svc := &service{cfg: cfg}
+	if _, err := svc.mcvideoProfileXML(cfg.Users[0]); err == nil {
+		test.Fatal("a priority above 255 accepted")
+	}
+}

@@ -158,7 +158,9 @@ std::vector<std::uint8_t> encode(const Packet &packet) {
 
 //------------------------------------------------------------------------------
 // TS 24.581 clauses 9.1.2 and 9.2.2.1: decodes an RTCP APP packet as a transmission control message; unknown
-// and void subtypes are refused, fields are checked (clause 9.2.3).
+// and void subtypes are refused (clause 9.1.4 step 1: the whole message is ignored), fields are checked (clause
+// 9.2.3). Clause 9.1.4 steps 2 and 3: unspecified fields are kept for the caller to ignore, and a syntactically
+// incorrect field is ignored (left out), the rest of the message being processed.
 Packet decode(std::span<const std::uint8_t> bytes) {
   auto app = decode_app(bytes);
   int name = -1;
@@ -177,8 +179,14 @@ Packet decode(std::span<const std::uint8_t> bytes) {
   if (!known) throw std::runtime_error("unknown or void transmission control subtype");
   if (packet.type == Type::Ack && packet.ack_required) throw std::runtime_error("an ack cannot ask for an ack");
   packet.ssrc = app.ssrc;
-  for (const auto &field : app.fields) validate(field);
-  packet.fields = std::move(app.fields);
+  for (auto &field : app.fields) {
+    try {
+      validate(field);
+    } catch (const std::runtime_error &) {
+      continue; // clause 9.1.4 step 3: "ignore the syntactically incorrect optional fields"
+    }
+    packet.fields.push_back(std::move(field));
+  }
   return packet;
 }
 
