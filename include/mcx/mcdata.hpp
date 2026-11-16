@@ -71,6 +71,10 @@ struct Info {
   std::string store_specific_private, store_specific_group;
   // <mc-service-auth-result> in <anyExt>.
   std::optional<bool> service_auth_result;
+  // Functional alias to group binding (TS 24.282 clause 22.4.2, <anyExt>): <binding-ind>, <binding-fa-uri>,
+  // <unbinding-fa-uri> (xs:anyURI, not contentType).
+  std::optional<bool> binding;
+  std::string binding_fa_uri, unbinding_fa_uri;
 };
 
 //------------------------------------------------------------------------------

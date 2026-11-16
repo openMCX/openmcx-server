@@ -249,6 +249,19 @@ int main() {
   check(message_type(termination) == MessageType::FdHttpTermination, "FD HTTP TERMINATION message type 0d");
   // TS 24.282 clauses 15.1.11, 15.1.12: the deferred list request and response (TS 37.579-7 table 6.2.13.3.3-19)
   check(encode_deferred_list_request() == bytes({0x0b}), "DEFERRED DATA REQUEST: the message type only");
+  {
+    // TS 24.282 clause 22.4.2.1.2 6)b)-c): the binding elements, in <anyExt>
+    Info bind;
+    bind.request_type = "fa-group-binding-req";
+    bind.binding = true;
+    bind.binding_fa_uri = "sip:fa@x";
+    const auto xml = info_xml(bind);
+    const auto back = parse_info(xml);
+    check(xml.find("<anyExt><binding-ind>true</binding-ind><binding-fa-uri>sip:fa@x</binding-fa-uri>") !=
+                  std::string::npos &&
+              back.binding == true && back.binding_fa_uri == "sip:fa@x",
+          "MCData-Info functional alias to group binding");
+  }
   DeferredListResponse listed;
   listed.count = 1;
   listed.file_urls = {"https://msf/f1"};

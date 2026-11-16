@@ -266,6 +266,10 @@ std::string info_xml(const Info &info) {
   plain("emergency-alert-area-ind", info.emergency_alert_area);
   plain("group-geo-area-ind", info.group_geo_area);
   ext += wrapped("location-of-functional-alias-URI", "mcdataURI", info.location_of_functional_alias);
+  plain("binding-ind", info.binding);
+  if (!info.binding_fa_uri.empty()) ext += "<binding-fa-uri>" + xml_escape(info.binding_fa_uri) + "</binding-fa-uri>";
+  if (!info.unbinding_fa_uri.empty())
+    ext += "<unbinding-fa-uri>" + xml_escape(info.unbinding_fa_uri) + "</unbinding-fa-uri>";
   plain("store-all-private-comms-in-msgstore", info.store_all_private);
   plain("store-all-group-comms-in-msgstore", info.store_all_group);
   for (const auto &[name, value] : {std::pair{"store-specific-private-comms-in-msgstore", &info.store_specific_private},
@@ -370,6 +374,9 @@ Info parse_info(std::string_view xml) {
     info.emergency_alert_area = boolean(child(ext, "emergency-alert-area-ind"));
     info.group_geo_area = boolean(child(ext, "group-geo-area-ind"));
     info.location_of_functional_alias = content(child(ext, "location-of-functional-alias-URI"), "mcdataURI");
+    info.binding = boolean(child(ext, "binding-ind"));
+    if (auto node = child(ext, "binding-fa-uri")) info.binding_fa_uri = text(node);
+    if (auto node = child(ext, "unbinding-fa-uri")) info.unbinding_fa_uri = text(node);
     info.store_all_private = boolean(child(ext, "store-all-private-comms-in-msgstore"));
     info.store_all_group = boolean(child(ext, "store-all-group-comms-in-msgstore"));
     for (const auto &[name, value] :
