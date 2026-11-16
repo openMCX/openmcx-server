@@ -120,6 +120,11 @@ void SipEngine::Impl::send_complete(void *opaque, pjsip_event *event) {
       const pj_status_t status =
           pjsip_auth_clt_reinit_req(&token->auth, received, transaction->last_tx, &authenticated);
       if (status == PJ_SUCCESS) {
+        // RFC 3261 section 22.2 (and 8.1.3.5): the request resent with credentials is a new request, whose CSeq
+        // "MUST be incremented"; pjsip's reinit keeps it, so it is raised here (an out-of-dialog request has no
+        // dialog layer to number it).
+        if (auto *cseq = static_cast<pjsip_cseq_hdr *>(pjsip_msg_find_hdr(authenticated->msg, PJSIP_H_CSEQ, nullptr)))
+          ++cseq->cseq;
         token->retried = true;
         pj_status_t send_status = PJ_SUCCESS;
         if (send_with_token(token, send_status, [&] {
