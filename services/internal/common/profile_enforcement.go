@@ -53,6 +53,8 @@ func applyProfile(user User, doc profileXML) User {
 	private.Callable = &callable
 	if call := doc.Common.PrivateCall; call != nil {
 		private.Targets = call.List.uris()
+		// TS 24.484 clause 8.3.2.7 (<PrivateCallKMSURI>; TS 24.379 clause 6.2.8.3.9 1)).
+		private.TargetKMS = call.List.targetKMS()
 		if emergency := call.Emergency; emergency != nil {
 			entry := emergency.Recipient.Entry
 			private.EmergencyAny = entry.EntryInfo == "LocallyDetermined"

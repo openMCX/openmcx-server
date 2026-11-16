@@ -365,7 +365,9 @@ type PrivateCallPolicy struct {
 	Targets               []string `json:"targets,omitempty"`
 	// TS 24.484 clause 9.3.2.1 item 8 d) (the <PrivateCallKMSURI> of a <PrivateCallOnNetwork> entry; TS 24.281
 	// clause 6.2.8.3.9): the KMS URI of a target; a target not listed gets the KMS of the endpoints, one listed with ""
-	// an empty entry.
+	// an empty entry. In the MCPTT user profile (TS 24.484 clause 8.3.2.1 item 8 d) i); TS 24.379 clause 6.2.8.3.9) a
+	// target listed with a KMS URI gets it in the <PrivateCallKMSURI> of its <PrivateCallURI>, the others the KMS of the
+	// initial configuration (an empty <PrivateCallKMSURI> of the list).
 	TargetKMS     map[string]string `json:"target_kms,omitempty"`
 	AnyTarget     bool              `json:"any_target"`
 	FirstToAnswer bool              `json:"first_to_answer,omitempty"` // <allow-request-first-to-answer-call>

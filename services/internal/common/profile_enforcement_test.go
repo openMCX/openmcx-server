@@ -164,3 +164,48 @@ func TestCMSUploadedProfileEnforced(test *testing.T) {
 		test.Fatalf("served profile after the configuration change: %s", rr.Body.String())
 	}
 }
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.1 item 8 d) i) and clause 8.3.2.7 with TS 24.379 clause 6.2.8.3.9 1): a private call target
+// the record gives a KMS URI (target_kms) has it in the <PrivateCallKMSURI> of the <anyExt> of its <PrivateCallURI>;
+// the list's <PrivateCallKMSURI> is empty (the KMS of the initial configuration) for the others. The document
+// conforms to the schema of clause 8.3.2.3 and reads back to the same KMS URIs.
+func TestUserProfilePrivateCallKMS(test *testing.T) {
+	user := User{MCPTTID: "sip:a@mcx.test", MCID: "sip:a.mc@mcx.test", SIPURI: "sip:a@mcx.test", ClientID: "urn:uuid:1",
+		PrivateCall: &PrivateCallPolicy{Allow: true, Targets: []string{"sip:b@mcx.test", "sip:c@mcx.test"},
+			TargetKMS: map[string]string{"sip:b@mcx.test": "https://kms2.mcx.test"}}}
+	rendered, _ := xml.Marshal(userProfileXML(user))
+	if err := userProfileSchema.validate(rendered); err != nil {
+		test.Fatalf("%v\n%s", err, rendered)
+	}
+	for _, want := range []string{
+		"<PrivateCallURI><uri-entry>sip:b@mcx.test</uri-entry><anyExt><PrivateCallKMSURI><PrivateCallKMSURI><uri-entry>https://kms2.mcx.test</uri-entry></PrivateCallKMSURI></PrivateCallKMSURI></anyExt></PrivateCallURI>",
+		"<PrivateCallURI><uri-entry>sip:c@mcx.test</uri-entry></PrivateCallURI>",
+		"<anyExt><PrivateCallKMSURI><PrivateCallKMSURI><uri-entry></uri-entry></PrivateCallKMSURI></PrivateCallKMSURI></anyExt></PrivateCallList>"} {
+		if !strings.Contains(string(rendered), want) {
+			test.Fatalf("profile lacks %s:\n%s", want, rendered)
+		}
+	}
+	var doc profileXML
+	if err := xml.Unmarshal(rendered, &doc); err != nil {
+		test.Fatal(err)
+	}
+	back := applyProfile(User{MCPTTID: user.MCPTTID, MCID: user.MCID, SIPURI: user.SIPURI, ClientID: user.ClientID}, doc)
+	if len(back.PrivateCall.TargetKMS) != 1 || back.PrivateCall.TargetKMS["sip:b@mcx.test"] != "https://kms2.mcx.test" {
+		test.Fatalf("TargetKMS read back %v", back.PrivateCall.TargetKMS)
+	}
+	if again, _ := xml.Marshal(userProfileXML(back)); string(again) != string(rendered) {
+		test.Fatalf("read back differs\n got %s\nwant %s", again, rendered)
+	}
+	// A list without a KMS URI for any target has no <PrivateCallKMSURI>.
+	user.PrivateCall.TargetKMS = map[string]string{"sip:b@mcx.test": ""}
+	if plain, _ := xml.Marshal(userProfileXML(user)); strings.Contains(string(plain), "PrivateCallKMSURI") {
+		test.Fatalf("unexpected PrivateCallKMSURI: %s", plain)
+	}
+	// An uploaded document's non-empty list KMS URI applies to the targets without their own.
+	doc.Common.PrivateCall.List.AnyExt.KMS.Entry.URI = "https://kms3.mcx.test"
+	if kms := applyProfile(User{}, doc).PrivateCall.TargetKMS; kms["sip:c@mcx.test"] != "https://kms3.mcx.test" ||
+		kms["sip:b@mcx.test"] != "https://kms2.mcx.test" {
+		test.Fatalf("list KMS read back %v", kms)
+	}
+}

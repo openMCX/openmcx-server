@@ -131,8 +131,22 @@ type profilePrivateEmergency struct {
 // TS 24.484 clause 8.3.2.3: privateCallList is the PrivateCallListEntryType, which needs one child: an
 // empty <anyExt> stands for an empty list.
 type privateCallList struct {
-	URIs   []profileEntry `xml:"PrivateCallURI"`
-	AnyExt *struct{}      `xml:"anyExt,omitempty"`
+	URIs   []profileEntry      `xml:"PrivateCallURI"`
+	AnyExt *privateCallListExt `xml:"anyExt,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.1 item 8 d) i) C) I): the <anyExt> of a <PrivateCallList>, which may hold the
+// <PrivateCallKMSURI> of the MCPTT IDs of the list (clause 8.3.2.7: empty, the KMS of the initial configuration).
+type privateCallListExt struct {
+	KMS *profileKMSURI `xml:"PrivateCallKMSURI,omitempty"`
+}
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.3: the PrivateCallKMSURIEntryType, a <PrivateCallKMSURI> holding one <PrivateCallKMSURI>
+// entry whose <uri-entry> is the KMS URI.
+type profileKMSURI struct {
+	Entry profileEntry `xml:"PrivateCallKMSURI"`
 }
 
 // ------------------------------------------------------------------------------
@@ -143,9 +157,57 @@ func newPrivateCallList(uris []string) privateCallList {
 		list.URIs = append(list.URIs, profileEntry{URI: uri})
 	}
 	if len(list.URIs) == 0 {
-		list.AnyExt = &struct{}{}
+		list.AnyExt = &privateCallListExt{}
 	}
 	return list
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the <PrivateCallList> of the private call targets with their KMS URIs (TS 24.484 clause 8.3.2.1 item 8 d) i);
+// TS 24.379 clause 6.2.8.3.9 1)). A target that targetKMS names with a KMS URI gets it in the <PrivateCallKMSURI> of
+// the <anyExt> of its <PrivateCallURI> (item A) I)); the list's own <PrivateCallKMSURI> (item C) I)) is then present
+// and empty, so that the other targets keep the KMS of the initial configuration (clause 8.3.2.7: an entry is only
+// present when it differs from the list's KMS URI; an empty one stands for the KMS of the initial configuration).
+func newPrivateCallTargets(targets []string, targetKMS map[string]string) privateCallList {
+	list := newPrivateCallList(targets)
+	named := false
+	for i := range list.URIs {
+		if kms := targetKMS[list.URIs[i].URI]; kms != "" {
+			list.URIs[i].AnyExt = &profileEntryExt{KMS: &profileKMSURI{Entry: profileEntry{URI: kms}}}
+			named = true
+		}
+	}
+	if named {
+		list.AnyExt = &privateCallListExt{KMS: &profileKMSURI{}}
+	}
+	return list
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the KMS URIs of the targets of a <PrivateCallList> that name one (TS 24.379 clause 6.2.8.3.9 1)a)): the
+// <PrivateCallKMSURI> of the target's entry, else the list's; nil when none does.
+func (list *privateCallList) targetKMS() map[string]string {
+	if list == nil {
+		return nil
+	}
+	common := ""
+	if list.AnyExt != nil && list.AnyExt.KMS != nil {
+		common = list.AnyExt.KMS.Entry.URI
+	}
+	var out map[string]string
+	for _, entry := range list.URIs {
+		kms := common
+		if entry.AnyExt != nil && entry.AnyExt.KMS != nil && entry.AnyExt.KMS.Entry.URI != "" {
+			kms = entry.AnyExt.KMS.Entry.URI
+		}
+		if kms != "" {
+			if out == nil {
+				out = map[string]string{}
+			}
+			out[entry.URI] = kms
+		}
+	}
+	return out
 }
 
 // ------------------------------------------------------------------------------
@@ -464,7 +526,7 @@ func userProfileXML(user User) profileXML {
 		}
 	}
 	if private := user.PrivateCall; private != nil {
-		doc.Common.PrivateCall = &profilePrivateCall{List: newPrivateCallList(private.Targets)}
+		doc.Common.PrivateCall = &profilePrivateCall{List: newPrivateCallTargets(private.Targets, private.TargetKMS)}
 		if len(private.IncomingFrom) > 0 {
 			list := newPrivateCallList(private.IncomingFrom)
 			on.AnyExt = &profileOnNetworkExt{IncomingList: &list}

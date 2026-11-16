@@ -40,6 +40,8 @@ type profileEntryExt struct {
 	Activation   *profileAreaChange `xml:"LocationCriteriaForActivation,omitempty"`
 	Deactivation *profileAreaChange `xml:"LocationCriteriaForDeactivation,omitempty"`
 	ManualLocked *bool              `xml:"manual-deactivation-not-allowed-if-location-criteria-met,omitempty"`
+	// The <PrivateCallKMSURI> of a <PrivateCallURI> entry (TS 24.484 clause 8.3.2.1 item 8 d) i) A) I)).
+	KMS *profileKMSURI `xml:"PrivateCallKMSURI,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
