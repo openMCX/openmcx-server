@@ -74,6 +74,12 @@ struct Info {
   std::string store_specific_private, store_specific_group;
   // <mc-service-auth-result> in <anyExt>.
   std::optional<bool> service_auth_result;
+  // Ad hoc group emergency alert (TS 24.282 clause 16.2A, <anyExt>): <adhoc-alert-ind>, <adhoc-alert-ind-rcvd>,
+  // <adhoc-grp-emg-alert-grp-ind>, <adhoc-additional-information>; <response-type> (6.3.7.1.5); the preconfigured group
+  // of an ad hoc group (24.2.7.2, 9.2.2.2.1 3A)iv)A)): written <preconfigured-group-id> (annex D.1), read also as the
+  // <preconfigured-group> the procedures name.
+  std::optional<bool> adhoc_alert, adhoc_alert_received, adhoc_alert_group;
+  std::string adhoc_additional_information, response_type, preconfigured_group;
   // Functional alias to group binding (TS 24.282 clause 22.4.2, <anyExt>): <binding-ind>, <binding-fa-uri>,
   // <unbinding-fa-uri> (xs:anyURI, not contentType).
   std::optional<bool> binding;

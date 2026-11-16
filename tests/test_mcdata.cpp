@@ -265,6 +265,19 @@ int main() {
     received.emergency = false;
     received.emergency_received = true;
     check(parse_info(info_xml(received)).emergency_received == true, "MCData-Info <emergency-ind-rcvd>");
+    Info adhoc;
+    adhoc.adhoc_alert = true;
+    adhoc.adhoc_additional_information = "help";
+    adhoc.preconfigured_group = "sip:p@x";
+    adhoc.response_type = "ad-hoc-emergency-alert-participant-criteria-modification";
+    const auto adhoc_back = parse_info(info_xml(adhoc));
+    check(adhoc_back.adhoc_alert == true && adhoc_back.adhoc_additional_information == "help" &&
+              adhoc_back.preconfigured_group == "sip:p@x" && adhoc_back.response_type == adhoc.response_type,
+          "MCData-Info ad hoc alert elements");
+    check(parse_info("<mcdatainfo xmlns=\"urn:3gpp:ns:mcdataInfo:1.0\"><mcdata-Params><anyExt><preconfigured-group>"
+                     "sip:q@x</preconfigured-group></anyExt></mcdata-Params></mcdatainfo>")
+                  .preconfigured_group == "sip:q@x",
+          "MCData-Info <preconfigured-group> read");
   }
   DeferredListResponse listed;
   listed.count = 1;

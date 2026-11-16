@@ -267,6 +267,18 @@ std::string info_xml(const Info &info) {
   plain("emergency-alert-area-ind", info.emergency_alert_area);
   plain("group-geo-area-ind", info.group_geo_area);
   ext += wrapped("location-of-functional-alias-URI", "mcdataURI", info.location_of_functional_alias);
+  plain("adhoc-alert-ind", info.adhoc_alert);
+  plain("adhoc-alert-ind-rcvd", info.adhoc_alert_received);
+  plain("adhoc-grp-emg-alert-grp-ind", info.adhoc_alert_group);
+  if (!info.adhoc_additional_information.empty())
+    ext += "<adhoc-additional-information>" + xml_escape(info.adhoc_additional_information) +
+           "</adhoc-additional-information>";
+  if (!info.response_type.empty()) {
+    check_token(info.response_type, "response type");
+    ext += "<response-type>" + info.response_type + "</response-type>";
+  }
+  if (!info.preconfigured_group.empty())
+    ext += "<preconfigured-group-id>" + xml_escape(info.preconfigured_group) + "</preconfigured-group-id>";
   plain("binding-ind", info.binding);
   if (!info.binding_fa_uri.empty()) ext += "<binding-fa-uri>" + xml_escape(info.binding_fa_uri) + "</binding-fa-uri>";
   if (!info.unbinding_fa_uri.empty())
@@ -376,6 +388,16 @@ Info parse_info(std::string_view xml) {
     info.emergency_alert_area = boolean(child(ext, "emergency-alert-area-ind"));
     info.group_geo_area = boolean(child(ext, "group-geo-area-ind"));
     info.location_of_functional_alias = content(child(ext, "location-of-functional-alias-URI"), "mcdataURI");
+    info.adhoc_alert = boolean(child(ext, "adhoc-alert-ind"));
+    info.adhoc_alert_received = boolean(child(ext, "adhoc-alert-ind-rcvd"));
+    info.adhoc_alert_group = boolean(child(ext, "adhoc-grp-emg-alert-grp-ind"));
+    if (auto node = child(ext, "adhoc-additional-information")) info.adhoc_additional_information = text(node);
+    if (auto node = child(ext, "response-type")) info.response_type = text(node);
+    if (auto node = child(ext, "preconfigured-group-id")) info.preconfigured_group = text(node);
+    else if (auto node = child(ext, "preconfigured-group")) info.preconfigured_group = text(node);
+    // TS 24.282 clause 16.2A.1.4 c)ii) puts the criteria modification's <request-type> in <anyExt>
+    if (info.request_type.empty())
+      if (auto node = child(ext, "request-type")) info.request_type = text(node);
     info.binding = boolean(child(ext, "binding-ind"));
     if (auto node = child(ext, "binding-fa-uri")) info.binding_fa_uri = text(node);
     if (auto node = child(ext, "unbinding-fa-uri")) info.unbinding_fa_uri = text(node);
