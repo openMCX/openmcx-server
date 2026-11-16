@@ -1262,6 +1262,14 @@ int main() {
     announced.service["replaces-header-value"] = bad;
     rejects([&] { (void)mcptt_info_xml(announced); });
   }
+  // TS 24.379 clause 11.1.1.2.1.1 14B), 14C) a1), annex F.1.3 af): <forwarding-sequence-number>.
+  McpttInfo counted;
+  counted.service = {{"call-forwarding-ind", "true"}, {"forwarding-sequence-number", "1"}};
+  check(parse_mcptt_info(mcptt_info_xml(counted)).service == counted.service, "forwarding-sequence-number lost");
+  for (const auto *bad : {"", "-1", "x", "1234567890"}) {
+    counted.service["forwarding-sequence-number"] = bad;
+    rejects([&] { (void)mcptt_info_xml(counted); });
+  }
   // TS 24.379 clause 11.1.1.3.2 step 4a b iii: <PrivateCallKMSURI> of a forwarding.
   McpttInfo moved;
   moved.service = {{"request-type", "forward-private-call-request"}, {"forwarding-reason", "manual-input"}};

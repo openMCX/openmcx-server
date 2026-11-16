@@ -48,6 +48,8 @@ const std::vector<std::pair<std::string, std::set<std::string>>> &service_elemen
       {"forwarded-by-mcptt-id", {}},
       {"forwarding-target-id", {}},
       {"forwarding-target-orig-id", {}},
+      // TS 24.379 annex F.1.3 af) and clause 11.1.1.2.1.1 14B), 14C) a1): the number of forwardings of the call.
+      {"forwarding-sequence-number", {}},
       {"forwarding-call-outcome", {"success", "fail"}},
       // Functional alias status determination (TS 24.379 clause 9A.2.1.3, TS 24.281 clause 20.2.1.3).
       {"req-type",
@@ -83,6 +85,10 @@ void check_service_value(const std::string &name, const std::string &value) {
       // TS 24.379 clause 6.2.3.1.1 step 7a: "Call-ID;from-tag;to-tag", or the RFC 3891 Replaces form; either is
       // carried into a Replaces header (parse_replaces_header_value).
       if (name == "replaces-header-value") (void)parse_replaces_header_value(value);
+      // TS 24.379 annex F.1.2: <forwarding-sequence-number> is a non-negative integer.
+      if (name == "forwarding-sequence-number" &&
+          (value.size() > 9 || !std::all_of(value.begin(), value.end(), [](unsigned char c) { return std::isdigit(c); })))
+        invalid("invalid forwarding-sequence-number value");
       // RFC 8101 / RFC 4412 r-value: namespace "." priority.
       if (name == "ric-app-level-priority") {
         const auto dot = value.find('.');
