@@ -74,7 +74,7 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id, st
         video_media.profile_level_id.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
       invalid("invalid SDP video configuration");
     if (!media_direction(video_media.direction)) invalid("unsupported SDP media direction");
-  } else if (media.granted || media.granted_video_ssrc)
+  } else if (media.granted_video_ssrc) // "mc_granted" is MCPTT's too (TS 24.380 clauses 14.2.4, 14.3.4)
     invalid("transmission control parameters in an MCPTT SDP");
   std::ostringstream out;
   out << "v=0\r\no=- " << session_id << ' ' << session_version << " IN IP4 " << media.address << "\r\ns="
@@ -419,8 +419,8 @@ void parse_format_parameter(const std::string &parameter, const std::string &sec
   else if (transmission && key == "mc_transmission_ssrc") {
     if (out.floor_ssrc) invalid("duplicate transmission control SSRC");
     out.floor_ssrc = number(val, UINT32_MAX);
-  } else if (transmission && key == "mc_granted")
-    out.granted = true;
+  } else if (section == "application" && key == "mc_granted")
+    out.granted = true; // TS 24.581 clause 12.1.2 (MCVideo), TS 24.380 clauses 14.2.4, 14.3.4 (MCPTT)
   else if (transmission && key == "mc_audio_ssrc")
     out.granted_audio_ssrc = number(val, UINT32_MAX);
   else if (transmission && key == "mc_video_ssrc")

@@ -524,8 +524,8 @@ int main() {
     bad.replace(bad.find("mc_floor_ssrc=12345"), 19, "mc_floor_ssrc=12345;mc_ssrc=x");
     rejects([&] { parse_sdp(bad); });
     auto granted = media;
-    granted.granted = true; // no MCPTT "mc_granted" is written (optional: TS 24.380 clauses 14.2.4 and 14.3.4)
-    rejects([&] { (void)make_sdp(granted, 795); });
+    granted.granted = true; // MCPTT "mc_granted" (TS 24.380 clauses 14.2.4 and 14.3.4) is written
+    check(make_sdp(granted, 795).find(";mc_granted") != std::string::npos, "MCPTT mc_granted not written");
   }
   auto malformed_rtcp = sdp;
   malformed_rtcp.replace(malformed_rtcp.find("a=rtcp:4001"), 11, "a=rtcp:");
@@ -910,6 +910,12 @@ int main() {
     check(no_floor_sdp.find("a=fmtp:MCPTT mc_floor_ssrc=12345;mc_no_floor_ctrl\r\n") != std::string::npos,
           "mc_no_floor_ctrl written");
     check(parse_sdp(no_floor_sdp).no_floor_control, "mc_no_floor_ctrl read");
+    // TS 24.380 clauses 14.2.4 and 14.3.4: "mc_granted" of MCPTT, read as for MCVideo.
+    auto granted_offer = offer;
+    granted_offer.granted = granted_offer.implicit_request = true;
+    const auto granted_sdp = make_sdp(granted_offer, 1);
+    check(granted_sdp.find(";mc_granted") != std::string::npos && parse_sdp(granted_sdp).granted,
+          "MCPTT mc_granted written and read");
     const auto with_floor_attributes =
         std::string(no_floor_sdp).replace(no_floor_sdp.find(";mc_no_floor_ctrl"), 17,
                                           ";mc_priority=5;mc_implicit_request;mc_no_floor_ctrl");
