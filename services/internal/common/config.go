@@ -144,6 +144,9 @@ type User struct {
 	// <allow-location-info-when-talking> (TS 24.484 clause 8.3.2.7): the user's location goes with its implicit floor
 	// requests to the controlling function (TS 24.379 clauses 6.3.2.1.3 step 9, 10.1.1.2.1.1 step 16 a)).
 	LocationWhenTalking bool `json:"location_when_talking,omitempty"`
+	// <allow-trigger-remote-floor-request> (TS 24.484 clauses 8.3.2.1 11) AB) and 8.3.2.7): the user may send a remote
+	// emergency floor request trigger (TS 24.379 clauses 18.1.1.1 1) and 18.1.2.1 4)).
+	TriggerRemoteFloorRequest bool `json:"trigger_remote_floor_request,omitempty"`
 	// <MaxAffiliationsN2>: simultaneous group affiliations; 0 means no limit.
 	MaxAffiliations int `json:"max_affiliations,omitempty"`
 	// MCData ID (TS 23.280 clause 8.1.2): a distinct identity; empty when the user has no
