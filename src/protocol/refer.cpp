@@ -362,6 +362,23 @@ ReplacesValue parse_replaces(std::string_view value) {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 annex F.1.3 and clause 6.2.3.1.1 step 7a: "callid;from-tag;to-tag" (three items, no parameter names), or
+// the RFC 3891 Replaces form.
+ReplacesValue parse_replaces_header_value(std::string_view value) {
+  if (value.find('=') != std::string_view::npos) return parse_replaces(value);
+  const auto first = value.find(';');
+  const auto second = first == std::string_view::npos ? first : value.find(';', first + 1);
+  if (second == std::string_view::npos || value.find(';', second + 1) != std::string_view::npos)
+    invalid("invalid replaces-header-value");
+  ReplacesValue replaces{std::string(value.substr(0, first)), std::string(value.substr(second + 1)),
+                         std::string(value.substr(first + 1, second - first - 1)), false};
+  check_call_id(replaces.call_id);
+  check_tag(replaces.to_tag);
+  check_tag(replaces.from_tag);
+  return replaces;
+}
+
+//------------------------------------------------------------------------------
 // RFC 3891 section 3: the to-tag is the recipient's tag, the from-tag the sender's.
 ReplacesValue replaces_for(const DialogIdentifiers &own_dialog, bool early_only) {
   return {own_dialog.call_id, own_dialog.remote_tag, own_dialog.local_tag, early_only};

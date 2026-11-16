@@ -148,6 +148,16 @@ static void Rfc4538_7_TargetDialogAndReplaces() {
   expect(mcx::parse_replaces("pre@x;from-tag=f1;to-tag=t1;early-only") == replaces, "Replaces parsed");
   rejects([] { (void)mcx::parse_replaces("pre@x;to-tag=t1"); }, "Replaces without from-tag");
   rejects([] { (void)mcx::target_dialog_value({"a b", "l", "r"}); }, "Call-ID with a space");
+  // TS 24.379 clause 6.2.3.1.1 step 7a, annex F.1.3: <replaces-header-value> "Call-ID;from-tag;to-tag", or RFC 3891.
+  expect(mcx::parse_replaces_header_value("c@h;f1;t1") == mcx::ReplacesValue{"c@h", "t1", "f1", false},
+         "core replaces-header-value");
+  expect(mcx::replaces_value(mcx::parse_replaces_header_value("c@h;f1;t1")) == "c@h;to-tag=t1;from-tag=f1",
+         "core form into a Replaces header");
+  expect(mcx::parse_replaces_header_value("c@h;to-tag=t1;from-tag=f1") == mcx::ReplacesValue{"c@h", "t1", "f1", false},
+         "RFC 3891 replaces-header-value");
+  rejects([] { (void)mcx::parse_replaces_header_value("c@h;f1"); }, "replaces-header-value without to-tag");
+  rejects([] { (void)mcx::parse_replaces_header_value("c@h;f1;t1;x"); }, "replaces-header-value with four items");
+  rejects([] { (void)mcx::parse_replaces_header_value("c@h;;t1"); }, "replaces-header-value with an empty tag");
   // RFC 3891 section 3: the participating function (server tag "srv2") names the session to the client ("ue1").
   const auto sent = mcx::replaces_for({"abc@10.0.0.1", "srv2", "ue1"});
   expect(sent.to_tag == "ue1" && sent.from_tag == "srv2", "to-tag is the recipient's tag");

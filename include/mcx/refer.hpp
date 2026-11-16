@@ -127,6 +127,13 @@ std::string replaces_value(const ReplacesValue &replaces);
 ReplacesValue parse_replaces(std::string_view value);
 
 //------------------------------------------------------------------------------
+// TS 24.379 annex F.1.3 and clause 6.2.3.1.1 step 7a: a <replaces-header-value>, the dialog of the announced transfer
+// target as "the Call-ID header field, and the value of the from-tag [...] The value of the to-tag": "callid;from-tag;
+// to-tag"; the RFC 3891 form "callid;to-tag=...;from-tag=..." is accepted as well. The to-tag is the target's (the
+// recipient of the INVITE with Replaces, RFC 3891 section 3). Throws when the value is neither.
+ReplacesValue parse_replaces_header_value(std::string_view value);
+
+//------------------------------------------------------------------------------
 // RFC 3891 section 3: the Replaces of an INVITE naming one of the sender's own dialogs with the recipient: the
 // recipient compares the to-tag with its local tag and the from-tag with its remote tag, so the to-tag is the
 // recipient's (the sender's remote tag) and the from-tag the sender's own. TS 24.379 clauses 6.3.2.2.5.3 step 1 a and

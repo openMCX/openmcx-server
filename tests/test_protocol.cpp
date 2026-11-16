@@ -1255,7 +1255,10 @@ int main() {
   announced.service = {{"request-type", "transfer-private-call-request"},
                        {"replaces-header-value", "abc@h;to-tag=1;from-tag=2"}};
   check(parse_mcptt_info(mcptt_info_xml(announced)).service == announced.service, "replaces-header-value lost");
-  for (const auto *bad : {"abc@h", ";to-tag=1;from-tag=2", "abc@h;to-tag=1", "abc@h;to-tag=1;from-tag=2\r\nX: y"}) {
+  // TS 24.379 clause 6.2.3.1.1 step 7a: the core's "Call-ID;from-tag;to-tag".
+  announced.service["replaces-header-value"] = "abc@h;2;1";
+  check(parse_mcptt_info(mcptt_info_xml(announced)).service == announced.service, "core replaces-header-value lost");
+  for (const auto *bad : {"abc@h", ";to-tag=1;from-tag=2", "abc@h;2", ";2;1", "abc@h;to-tag=1", "abc@h;to-tag=1;from-tag=2\r\nX: y"}) {
     announced.service["replaces-header-value"] = bad;
     rejects([&] { (void)mcptt_info_xml(announced); });
   }

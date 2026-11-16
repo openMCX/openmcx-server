@@ -10,6 +10,8 @@
 
 #include "protocol_internal.hpp"
 
+#include "mcx/refer.hpp"
+
 namespace mcx {
 
 //------------------------------------------------------------------------------
@@ -78,11 +80,9 @@ void check_service_value(const std::string &name, const std::string &value) {
       if (value.empty() || value.size() > 256 || (!allowed.empty() && !allowed.contains(value)))
         invalid(("invalid " + name + " value").c_str());
       if (name.ends_with("-id") || name.ends_with("-fa-uri")) conference_uri(value);
-      // RFC 3891: Call-ID ";to-tag=" tag ";from-tag=" tag, carried into a header.
-      if (name == "replaces-header-value" &&
-          (value.find_first_of("\r\n,<>\" ") != std::string::npos || value.find(";to-tag=") == std::string::npos ||
-           value.find(";from-tag=") == std::string::npos || value.front() == ';'))
-        invalid("invalid replaces-header-value");
+      // TS 24.379 clause 6.2.3.1.1 step 7a: "Call-ID;from-tag;to-tag", or the RFC 3891 Replaces form; either is
+      // carried into a Replaces header (parse_replaces_header_value).
+      if (name == "replaces-header-value") (void)parse_replaces_header_value(value);
       // RFC 8101 / RFC 4412 r-value: namespace "." priority.
       if (name == "ric-app-level-priority") {
         const auto dot = value.find('.');
