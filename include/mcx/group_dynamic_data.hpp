@@ -22,6 +22,8 @@
 // Specifications: TS 24.281 V19.6.0 (Rel-19), RFC 3856, RFC 3863, RFC 4661, RFC 6665.
 #pragma once
 
+#include "mcx/service.hpp"
+
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -99,15 +101,18 @@ inline constexpr std::string_view gdd_filter_affiliated =
 // TS 24.281 clause 8.3.1.2 (per-group dynamic data) with clause 8.2.2.3.10 step 2 a: writes the PIDF; every
 // <affiliation> carries its "expires" when one is known. With a filter that selects items, only those are written
 // (RFC 4661 section 3.2); the <presence> "entity" always.
+// The elements are in the presence namespace of `service` (TS 24.281 table 8.3.1.2-2, TS 24.379 table 9.3.1.2-2).
 std::string group_dynamic_data_xml(const GroupDynamicDataDocument &document,
-                                   const GroupDynamicDataFilter *filter = nullptr);
+                                   const GroupDynamicDataFilter *filter = nullptr, Service service = Service::mcvideo);
 //------------------------------------------------------------------------------
 // TS 24.281 clause 8.3.1.2 (per-group dynamic data): reads the PIDF (as the MCVideo client does, clause 8.2.1.6).
-GroupDynamicDataDocument parse_group_dynamic_data(std::string_view xml);
+// TS 24.379 clause 9.3.1.2: the same for MCPTT (clause 9.2.1.6), the elements in the MCPTT presence namespace.
+GroupDynamicDataDocument parse_group_dynamic_data(std::string_view xml, Service service = Service::mcvideo);
 
 //------------------------------------------------------------------------------
 // TS 24.281 clause 8.3.2.2 (per-group dynamic data restrictions): writes the filter of clause 8.2.1.6 step 7.
-std::string group_dynamic_data_filter_xml(const GroupDynamicDataFilter &filter);
+// TS 24.379 clause 9.3.2.2: the same for MCPTT (clause 9.2.1.6 step 7), bound to the "mcpttPI10" prefix.
+std::string group_dynamic_data_filter_xml(const GroupDynamicDataFilter &filter, Service service = Service::mcvideo);
 //------------------------------------------------------------------------------
 // TS 24.281 clause 8.3.2.2 (per-group dynamic data restrictions): reads the filter; none when the body is a
 // simple-filter of another kind (a per-client or per-user filter, item 7 B of the other two lists: an <include> of

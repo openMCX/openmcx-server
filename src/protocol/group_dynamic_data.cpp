@@ -6,7 +6,12 @@
 // indicating per-group dynamic data, the application/simple-filter+xml body indicating per-group dynamic data
 // restrictions, the Expires rule and the subscriptions of the MCVideo server owning the group.
 //
-// Specifications: TS 24.281 V19.6.0 (Rel-19), RFC 3856, RFC 3863, RFC 4661, RFC 6665.
+// The documents are those of TS 24.281 clauses 8.3.1.2 and 8.3.2.2, of TS 24.379 clauses 9.3.1.2 and 9.3.2.2 (MCPTT,
+// namespace urn:3gpp:ns:mcpttPresInfo:1.0, prefix mcpttPI10 of table 9.3.1.2-2) and of TS 24.282 clause 8.4.1 (MCData,
+// urn:3gpp:ns:mcdataPresInfo:1.0): the same elements and filter values in the presence namespace of each service.
+//
+// Specifications: TS 24.281 V19.6.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), RFC 3856,
+// RFC 3863, RFC 4661, RFC 6665.
 
 #include "mcx/group_dynamic_data.hpp"
 
@@ -18,18 +23,34 @@ namespace {
 // RFC 4661 section 5: the simple-filter namespace.
 constexpr const char *simple_filter_ns = "urn:ietf:params:xml:ns:simple-filter";
 
-// TS 24.281 table 8.3.1.2-2: the prefix of the MCVideo presence namespace.
-constexpr const char *mcvideo_prefix = "mcvideoPI10";
+// The presence namespace of a service and its prefix: TS 24.281 table 8.3.1.2-2 (mcvideoPI10), TS 24.379 table
+// 9.3.1.2-2 (mcpttPI10), TS 24.282 clause 8.4.1 (mcdataPI10).
+struct PresenceNames {
+  const char *ns;
+  const char *prefix;
+};
+
+PresenceNames presence_names(Service service) {
+  switch (service) {
+  case Service::mcptt: return {affiliation_ns, "mcpttPI10"};
+  case Service::mcdata: return {mcdata_affiliation_ns, "mcdataPI10"};
+  case Service::mcvideo: break;
+  }
+  return {mcvideo_affiliation_ns, "mcvideoPI10"};
+}
 
 //------------------------------------------------------------------------------
-// Helper: a filter value without white space, the MCVideo prefix read as "pidf" (see the header comment).
+// Helper: a filter value without white space, the prefix of any service's presence namespace read as "pidf" (see
+// the header comment).
 std::string normalised(std::string_view value) {
   std::string out;
   for (const char character : value)
     if (!std::isspace(static_cast<unsigned char>(character))) out += character;
-  const std::string prefix = std::string(mcvideo_prefix) + ":";
-  for (auto at = out.find(prefix); at != std::string::npos; at = out.find(prefix, at))
-    out.replace(at, prefix.size(), "pidf:");
+  for (const auto service : {Service::mcptt, Service::mcvideo, Service::mcdata}) {
+    const std::string prefix = std::string(presence_names(service).prefix) + ":";
+    for (auto at = out.find(prefix); at != std::string::npos; at = out.find(prefix, at))
+      out.replace(at, prefix.size(), "pidf:");
+  }
   return out;
 }
 
@@ -53,13 +74,15 @@ bool boolean_value(const std::string &value) {
 // one <tuple> per affiliated MCVideo ID with one <affiliation> per client ("client", "expires": clause 8.2.2.3.10
 // step 2 a) and its <functionalAlias> elements; items 3 and 4 <groupStatus> with "ModifiedBy"; items 5 to 8
 // <additionalData> with its attributes. RFC 3863 section 4.1.2: the <tuple> elements come before the extensions.
-std::string group_dynamic_data_xml(const GroupDynamicDataDocument &document, const GroupDynamicDataFilter *filter) {
+std::string group_dynamic_data_xml(const GroupDynamicDataDocument &document, const GroupDynamicDataFilter *filter,
+                                   Service service) {
   conference_uri(document.group);
   const bool all = !filter || !filter->selects();
   const auto wanted = [&](bool item) { return all || item; };
-  const std::string p = std::string(mcvideo_prefix) + ":";
+  const auto names = presence_names(service);
+  const std::string p = std::string(names.prefix) + ":";
   std::string out = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><presence xmlns=\"" + std::string(pidf_ns) +
-                    "\" xmlns:" + mcvideo_prefix + "=\"" + mcvideo_affiliation_ns + "\" entity=\"" +
+                    "\" xmlns:" + names.prefix + "=\"" + names.ns + "\" entity=\"" +
                     xml_escape(document.group) + "\">";
   if (wanted(filter && filter->affiliated))
     for (const auto &member : document.members) {
@@ -93,8 +116,10 @@ std::string group_dynamic_data_xml(const GroupDynamicDataDocument &document, con
 }
 
 //------------------------------------------------------------------------------
-// TS 24.281 clause 8.3.1.2 (per-group dynamic data), as the MCVideo client determines it (clause 8.2.1.6).
-GroupDynamicDataDocument parse_group_dynamic_data(std::string_view xml) {
+// TS 24.281 clause 8.3.1.2 (per-group dynamic data), as the MCVideo client determines it (clause 8.2.1.6); TS 24.379
+// clause 9.3.1.2 as the MCPTT client does (clause 9.2.1.6): the elements in the service's presence namespace.
+GroupDynamicDataDocument parse_group_dynamic_data(std::string_view xml, Service service) {
+  const char *ns = presence_names(service).ns;
   auto doc = document(xml);
   auto root = xmlDocGetRootElement(doc.get());
   if (!is(root, "presence", pidf_ns)) invalid("wrong PIDF namespace");
@@ -109,18 +134,18 @@ GroupDynamicDataDocument parse_group_dynamic_data(std::string_view xml) {
       if (member.id.empty()) invalid("tuple without id");
       auto status = unique_child(child, "status", pidf_ns); // item 11
       for (auto node = status->children; node; node = node->next) {
-        if (is(node, "affiliation", mcvideo_affiliation_ns))
+        if (is(node, "affiliation", ns))
           member.clients.push_back({attr(node, "client"), attr(node, "expires")});
-        else if (is(node, "functionalAlias", mcvideo_affiliation_ns))
+        else if (is(node, "functionalAlias", ns))
           member.functional_aliases.push_back(attr(node, "functionalAliasID"));
       }
       out.members.push_back(std::move(member));
-    } else if (is(child, "groupStatus", mcvideo_affiliation_ns)) {
+    } else if (is(child, "groupStatus", ns)) {
       if (!out.group_status.empty()) invalid("duplicate groupStatus");
       out.group_status = trim(scalar(child));
       group_status_value(out.group_status);
       out.modified_by = attr(child, "ModifiedBy");
-    } else if (is(child, "additionalData", mcvideo_affiliation_ns)) {
+    } else if (is(child, "additionalData", ns)) {
       out.broadcast_alias = attr(child, "groupBroadcastAlias");
       out.regroup_alias = attr(child, "groupRegroupAlias");
       if (const auto ongoing = attr(child, "groupCallOngoing"); !ongoing.empty())
@@ -131,14 +156,16 @@ GroupDynamicDataDocument parse_group_dynamic_data(std::string_view xml) {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.281 clause 8.3.2.2 (per-group dynamic data restrictions): items 1 to 4 the <filter-set> with the "pidf" and
-// "mcvideoPI10" bindings; item 5 one <filter> with an "id" and no "uri" or "domain"; items 6 and 7 a <what> with one
-// <include> without "type" per item of 7 B asked for (and the group, see the header comment).
-std::string group_dynamic_data_filter_xml(const GroupDynamicDataFilter &filter) {
+// TS 24.281 clause 8.3.2.2 (per-group dynamic data restrictions; TS 24.379 clause 9.3.2.2 for MCPTT): items 1 to 4
+// the <filter-set> with the "pidf" and the service's presence bindings ("mcvideoPI10", "mcpttPI10"); item 5 one
+// <filter> with an "id" and no "uri" or "domain"; items 6 and 7 a <what> with one <include> without "type" per item of
+// 7 B asked for (and the group, see the header comment).
+std::string group_dynamic_data_filter_xml(const GroupDynamicDataFilter &filter, Service service) {
   if (filter.id.empty()) invalid("filter without id");
+  const auto names = presence_names(service);
   std::string out = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><filter-set xmlns=\"" + std::string(simple_filter_ns) +
                     "\"><ns-bindings><ns-binding prefix=\"pidf\" urn=\"" + pidf_ns + "\"/><ns-binding prefix=\"" +
-                    mcvideo_prefix + "\" urn=\"" + mcvideo_affiliation_ns + "\"/></ns-bindings><filter id=\"" +
+                    names.prefix + "\" urn=\"" + names.ns + "\"/></ns-bindings><filter id=\"" +
                     xml_escape(filter.id) + "\"><what>";
   const auto include = [&](std::string_view value) { out += "<include>" + xml_escape(value) + "</include>"; };
   if (!filter.group.empty()) {

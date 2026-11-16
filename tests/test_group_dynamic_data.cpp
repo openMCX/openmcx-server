@@ -180,6 +180,38 @@ static void filter_coding() {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clauses 9.3.1.2 and 9.3.2.2: the MCPTT documents, in the namespace urn:3gpp:ns:mcpttPresInfo:1.0 with the
+// prefix mcpttPI10 (table 9.3.1.2-2); an MCVideo body is not read as MCPTT dynamic data.
+static void mcptt_coding() {
+  auto document = sample();
+  document.group = "sip:group-a@mcptt.example";
+  const auto xml = group_dynamic_data_xml(document, nullptr, Service::mcptt);
+  expect(has(xml, "xmlns:mcpttPI10=\"urn:3gpp:ns:mcpttPresInfo:1.0\""), "prefix of table 9.3.1.2-2");
+  expect(has(xml, "<mcpttPI10:groupStatus ModifiedBy=") && has(xml, "<mcpttPI10:affiliation client=") &&
+             !has(xml, "mcvideoPI10"),
+         "MCPTT elements");
+  expect(parse_group_dynamic_data(xml, Service::mcptt) == document, "MCPTT PIDF round trip");
+  const auto foreign = parse_group_dynamic_data(group_dynamic_data_xml(document), Service::mcptt);
+  expect(foreign.group_status.empty() && foreign.members.size() == 2 && foreign.members[0].clients.empty(),
+         "MCVideo elements are not MCPTT ones");
+
+  GroupDynamicDataFilter filter;
+  filter.group = document.group;
+  filter.group_status = filter.affiliated = true;
+  const auto filter_xml = group_dynamic_data_filter_xml(filter, Service::mcptt);
+  expect(has(filter_xml, "<ns-binding prefix=\"mcpttPI10\" urn=\"urn:3gpp:ns:mcpttPresInfo:1.0\"/>"),
+         "mcpttPI10 binding (clause 9.3.2.2 item 4)");
+  expect(!has(filter_xml, "mcvideo"), "no MCVideo binding");
+  const auto parsed = parse_group_dynamic_data_filter(filter_xml);
+  expect(parsed && *parsed == filter, "MCPTT filter round trip");
+  const std::string prefixed =
+      "<filter-set xmlns=\"urn:ietf:params:xml:ns:simple-filter\"><filter id=\"7\"><what><include>"
+      "//pidf:presence/mcpttPI10:additionalData/@mcpttPI10:groupCallOngoing</include></what></filter></filter-set>";
+  const auto read = parse_group_dynamic_data_filter(prefixed);
+  expect(read && read->call_ongoing, "an item written with the mcpttPI10 prefix");
+}
+
+//------------------------------------------------------------------------------
 // TS 24.281 clause 8.2.1.6 steps 4 and 5 and clause 8.2.2.3.9 steps 3 to 6.
 static void subscribe_rules() {
   expect(classify_gdd_expires("4294967295") == GddExpires::subscribe, "Expires 4294967295 subscribes");
@@ -251,6 +283,7 @@ int main() {
   const std::pair<const char *, void (*)()> cases[] = {{"pidf_coding", pidf_coding},
                                                        {"pidf_filtered", pidf_filtered},
                                                        {"filter_coding", filter_coding},
+                                                       {"mcptt_coding", mcptt_coding},
                                                        {"subscribe_rules", subscribe_rules},
                                                        {"subscription_lifecycle", subscription_lifecycle}};
   int failed = 0;
