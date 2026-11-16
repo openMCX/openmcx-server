@@ -89,7 +89,8 @@ struct McpttInfo {
   // TS 24.281 annex F.1.3 (<anyExt>): <preconfigured-group-id> (xs:anyURI), the preconfigured group whose security
   // information an end-to-end protected ad hoc group call uses (TS 24.281 clauses 22.2.2.1.2 step 8 and 22.4.2.1.1
   // step 4 c)); <partner-mcvideo-id> and <primary-mcvideo-id> (contentType), the MCVideo IDs of a migrating user in the
-  // partner and primary MCVideo systems (e.g. TS 24.281 clause 6.3.3.1.25 step 5 c), ad hoc group call redirection).
+  // partner and primary MCVideo systems (e.g. TS 24.281 clause 6.3.3.1.25 step 5 c), ad hoc group call redirection);
+  // for MCPTT <partner-mcptt-id> and <primary-mcptt-id> (TS 24.379 clause 6.3.3.1.26 5) c)).
   std::string preconfigured_group_id, partner_mcvideo_id, primary_mcvideo_id;
   // <anyExt><call-participants-criterias>: comma-separated ad hoc participant criteria.
   std::string participant_criteria;

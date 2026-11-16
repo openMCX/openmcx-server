@@ -170,8 +170,11 @@ std::string service_info_xml(const McpttInfo &info, const ServiceProfile &servic
   };
   uri("functional-alias-URI", info.functional_alias);
   uri("called-functional-alias-URI", info.called_functional_alias);
-  uri("partner-mcvideo-id", info.partner_mcvideo_id);
-  uri("primary-mcvideo-id", info.primary_mcvideo_id);
+  // TS 24.379 clause 6.3.3.1.26 5) c) ii), iii) (<partner-mcptt-id>, <primary-mcptt-id>) and TS 24.281 annex F.1.3
+  // (<partner-mcvideo-id>, <primary-mcvideo-id>): the migrated user's IDs of an ad hoc group call redirection.
+  const auto partner = "partner-" + names.prefix + "-id", primary = "primary-" + names.prefix + "-id";
+  uri(partner.c_str(), info.partner_mcvideo_id);
+  uri(primary.c_str(), info.primary_mcvideo_id);
   plain("call-to-functional-alias-ind", info.call_to_functional_alias);
   plain("emergency-alert-area-ind", info.emergency_alert_area);
   plain("group-geo-area-ind", info.group_geo_area);
@@ -429,8 +432,9 @@ void parse_info_extensions(xmlNode *ext, const InfoNames &names, McpttInfo &out)
   out.adhoc_alert_received = ext_flag(ext, "adhoc-alert-ind-rcvd", info_ns);
   // TS 24.281 annex F.1.3: <partner-mcvideo-id> and <primary-mcvideo-id> (contentType) and <preconfigured-group-id>
   // (xs:anyURI).
-  out.partner_mcvideo_id = ext_uri(ext, "partner-mcvideo-id", names);
-  out.primary_mcvideo_id = ext_uri(ext, "primary-mcvideo-id", names);
+  // TS 24.379 clause 6.3.3.1.26 5) c): <partner-mcptt-id> and <primary-mcptt-id> for MCPTT.
+  out.partner_mcvideo_id = ext_uri(ext, ("partner-" + names.prefix + "-id").c_str(), names);
+  out.primary_mcvideo_id = ext_uri(ext, ("primary-" + names.prefix + "-id").c_str(), names);
   if (auto node = unique_child(ext, "preconfigured-group-id", info_ns, false)) {
     out.preconfigured_group_id = scalar(node);
     conference_uri(out.preconfigured_group_id);

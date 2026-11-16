@@ -1196,6 +1196,20 @@ int main() {
   status_request.service = {{"req-type", "emergency-remote-floor-request-trigger"}};
   check(parse_mcptt_info(mcptt_info_xml(status_request)).service == status_request.service,
         "emergency remote floor request trigger lost");
+  // TS 24.379 clause 6.3.3.1.26 5) c): the ad hoc group call redirection, <partner-mcptt-id> and <primary-mcptt-id>.
+  McpttInfo migrated_call;
+  migrated_call.calling_group = "sip:adhoc-1@example.com";
+  migrated_call.service = {{"forwarding-reason", "migrated"}};
+  migrated_call.partner_mcvideo_id = "sip:partner@example.net";
+  migrated_call.primary_mcvideo_id = "sip:primary@example.com";
+  const auto migrated_xml = mcptt_info_xml(migrated_call);
+  check(migrated_xml.find("<partner-mcptt-id ") != std::string::npos &&
+            migrated_xml.find("<primary-mcptt-id ") != std::string::npos,
+        "MCPTT redirection IDs written as <partner-mcptt-id>, <primary-mcptt-id>");
+  const auto redirected = parse_mcptt_info(migrated_xml);
+  check(redirected.partner_mcvideo_id == migrated_call.partner_mcvideo_id &&
+            redirected.primary_mcvideo_id == migrated_call.primary_mcvideo_id,
+        "MCPTT redirection IDs lost");
   // TS 24.379 clauses 11.1.8.2.3 and 11.1.8.2.1: announced transfer, <transfer-announced-ind> and
   // <replaces-header-value>.
   McpttInfo announced;
