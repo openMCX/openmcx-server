@@ -1217,6 +1217,17 @@ int main() {
   status_request.service = {{"req-type", "emergency-remote-floor-request-trigger"}};
   check(parse_mcptt_info(mcptt_info_xml(status_request)).service == status_request.service,
         "emergency remote floor request trigger lost");
+  // TS 24.379 annex F.1.2, F.1.3 2) c): <req-type> as contentType, in <mcpttString> (and the bare text above).
+  const std::string wrapped_trigger =
+      "<?xml version=\"1.0\"?><mcpttinfo xmlns=\"urn:3gpp:ns:mcpttInfo:1.0\"><mcptt-Params><anyExt>"
+      "<req-type type=\"Normal\"><mcpttString>emergency-remote-floor-request-trigger</mcpttString></req-type>"
+      "<resp-type><mcpttString>ad-hoc-emergency-alert-participant-criteria-modification</mcpttString></resp-type>"
+      "</anyExt></mcptt-Params></mcpttinfo>";
+  check(parse_mcptt_info(wrapped_trigger).service.at("req-type") == "emergency-remote-floor-request-trigger",
+        "<req-type> in <mcpttString> not read");
+  check(parse_mcptt_info(wrapped_trigger).service.at("resp-type") ==
+            "ad-hoc-emergency-alert-participant-criteria-modification",
+        "<resp-type> in <mcpttString> not read");
   // TS 24.379 clause 6.3.3.1.26 5) c): the ad hoc group call redirection, <partner-mcptt-id> and <primary-mcptt-id>.
   McpttInfo migrated_call;
   migrated_call.calling_group = "sip:adhoc-1@example.com";

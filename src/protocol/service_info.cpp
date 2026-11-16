@@ -390,14 +390,19 @@ std::string ext_uri(xmlNode *ext, const char *name, const InfoNames &names) {
 //------------------------------------------------------------------------------
 // TS 24.379 annex F.1.2 and TS 24.281 annex F.1.2: the private call service elements of <anyExt>, each checked
 // against the values its schema allows.
-void parse_service_elements(xmlNode *ext, const char *info_ns, McpttInfo &out) {
+void parse_service_elements(xmlNode *ext, const InfoNames &names, McpttInfo &out) {
+  const char *info_ns = names.ns.c_str();
   for (const auto &element : service_elements())
     if (const auto &name = element.first; auto node = unique_child(ext, name.c_str(), info_ns, false)) {
       if (name == "selected-user-profile-index") {
         if (attr(node, "type") == "Encrypted") invalid("MIKEY/XML protected profile is unavailable");
         if (auto index = unique_child(node, "user-profile-index", info_ns, false)) node = index;
       }
-      const auto value = scalar(node);
+      // TS 24.379 annex F.1.2 and F.1.3 2) c) (TS 24.281 annex F.1.2): <req-type> and <resp-type> are of contentType,
+      // their value in <mcpttString> (<mcvideoString>); the bare text is accepted as well.
+      bool nested = false;
+      for (auto child = node->children; child; child = child->next) nested = nested || child->type == XML_ELEMENT_NODE;
+      const auto value = (name == "req-type" || name == "resp-type") && nested ? content(node, names) : scalar(node);
       check_service_value(name, value);
       out.service[name] = value;
     }
@@ -421,7 +426,7 @@ void parse_info_extensions(xmlNode *ext, const InfoNames &names, McpttInfo &out)
   }
   if (auto criteria = unique_child(ext, names.criteria.c_str(), info_ns, false))
     out.participant_criteria = scalar(criteria);
-  parse_service_elements(ext, info_ns, out);
+  parse_service_elements(ext, names, out);
   out.functional_alias = ext_uri(ext, "functional-alias-URI", names);
   out.called_functional_alias = ext_uri(ext, "called-functional-alias-URI", names);
   out.call_to_functional_alias = ext_flag(ext, "call-to-functional-alias-ind", info_ns);
