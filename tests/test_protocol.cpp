@@ -1192,6 +1192,10 @@ int main() {
   status_request.service = {{"req-type", "fa-user-status-determination"}};
   check(parse_mcptt_info(mcptt_info_xml(status_request)).service == status_request.service,
         "functional alias user status determination lost");
+  // TS 24.379 clause 18.1.1.1 2) d) ii) A): the emergency remote floor request trigger.
+  status_request.service = {{"req-type", "emergency-remote-floor-request-trigger"}};
+  check(parse_mcptt_info(mcptt_info_xml(status_request)).service == status_request.service,
+        "emergency remote floor request trigger lost");
   // TS 24.379 clauses 11.1.8.2.3 and 11.1.8.2.1: announced transfer, <transfer-announced-ind> and
   // <replaces-header-value>.
   McpttInfo announced;

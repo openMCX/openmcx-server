@@ -53,7 +53,9 @@ const std::vector<std::pair<std::string, std::set<std::string>>> &service_elemen
         "fa-user-status-determination",
         // TS 24.281 clause 12.1A.1.4 4) c) ii) and annex F.1.3: the ad hoc group emergency alert participant criteria
         // modification request (TS 24.379 clause 12.1A.1.5 for MCPTT).
-        "ad-hoc-emergency-alert-participant-criteria-modification"}},
+        "ad-hoc-emergency-alert-participant-criteria-modification",
+        // TS 24.379 clause 18.1.1.1 2) d) ii) A) and annex F.1.3 aq) x): the emergency remote floor request trigger.
+        "emergency-remote-floor-request-trigger"}},
       // TS 24.281 clauses 6.2.0.1 and 12.1A.3 (annex F.1.3): the controlling function's response to it.
       {"resp-type", {"ad-hoc-emergency-alert-participant-criteria-modification"}},
       {"mc-service-auth-result", {"true", "false"}},
