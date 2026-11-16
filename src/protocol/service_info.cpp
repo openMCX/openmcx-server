@@ -134,6 +134,10 @@ std::string service_info_xml(const McpttInfo &info, const ServiceProfile &servic
   out += wrapped("originated-by", names.uri, info.originated_by);
   out += wrapped(names.element("client-id"), names.str, info.client_id);
   flag("alert-ind-rcvd", info.alert_received);
+  // TS 24.379 annex F.1.2: <gw-mcptt-usage> (xs:boolean) follows <alert-ind-rcvd> in <mcptt-Params> (clauses 7.2.1 3)
+  // and 7.2.2 4)c) / 5)c): "true" when the MCPTT client reaches the MCPTT system through an MCPTT gateway UE).
+  if (names.prefix == "mcptt" && info.gateway_usage)
+    out += std::string("<gw-mcptt-usage>") + (*info.gateway_usage ? "true" : "false") + "</gw-mcptt-usage>";
   flag("emergency-ind-rcvd", info.emergency_received);
   out += wrapped("video-pull-url", names.uri, info.video_pull_url);
   // TS 24.281 annex F.1.2: <gw-mcvideo-usage> (xs:boolean) follows <video-pull-url> in <mcvideo-Params>.
@@ -461,8 +465,10 @@ McpttInfo parse_service_info(std::string_view xml, const ServiceProfile &service
   out.originated_by = info_value(params, "originated-by", true, names);
   out.associated_group = associated_group_id(params, names);
   out.video_pull_url = info_value(params, "video-pull-url", true, names);
-  if (names.prefix == "mcvideo")
-    if (auto gw = unique_child(params, "gw-mcvideo-usage", info_ns, false)) {
+  // TS 24.281 annex F.1.2 <gw-mcvideo-usage>, TS 24.379 annex F.1.2 <gw-mcptt-usage>.
+  if (names.prefix == "mcvideo" || names.prefix == "mcptt")
+    if (auto gw = unique_child(params, names.prefix == "mcvideo" ? "gw-mcvideo-usage" : "gw-mcptt-usage", info_ns,
+                               false)) {
       const auto value = scalar(gw);
       out.gateway_usage = value == "true" || value == "1";
     }

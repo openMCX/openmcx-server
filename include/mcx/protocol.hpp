@@ -76,7 +76,8 @@ struct McpttInfo {
   // the server records a one-to-server video push (an <anyExt> anyURI, sent in INFO).
   std::string video_pull_url, video_push_url;
   // TS 24.281 clauses 7.2.1 and 7.2.2 (annex F.1.2, <mcvideo-Params>): <gw-mcvideo-usage> "true" when the MCVideo
-  // client reaches the MCVideo system through an MCVideo gateway UE.
+  // client reaches the MCVideo system through an MCVideo gateway UE; TS 24.379 clauses 7.2.1 and 7.2.2 (annex F.1.2,
+  // <mcptt-Params>): <gw-mcptt-usage>, the same for MCPTT (clause 5.6).
   std::optional<bool> gateway_usage;
   // <associated-group-id>: for a user- or group-broadcast group call, the group
   // through which the invited user is affiliated (project profile; TS 24.379

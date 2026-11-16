@@ -257,6 +257,16 @@ int main() {
   check(gateway.gateway_usage == true, "<gw-mcvideo-usage> must parse");
   check(service_info_xml(gateway, mcvideo_service) == gateway_fixture,
         "<gw-mcvideo-usage> must round-trip byte for byte");
+  // TS 24.379 clauses 7.2.1 3) and 7.2.2 5)c) with annex F.1.2: <gw-mcptt-usage> (xs:boolean) after <alert-ind-rcvd>.
+  const std::string mcptt_gateway_fixture =
+      R"(<?xml version="1.0"?><mcpttinfo xmlns="urn:3gpp:ns:mcpttInfo:1.0"><mcptt-Params><mcptt-client-id type="Normal"><mcpttString>urn:uuid:client-a</mcpttString></mcptt-client-id><gw-mcptt-usage>true</gw-mcptt-usage></mcptt-Params></mcpttinfo>)";
+  const auto mcptt_gateway = parse_service_info(mcptt_gateway_fixture, mcptt_service);
+  check(mcptt_gateway.gateway_usage == true, "<gw-mcptt-usage> must parse");
+  check(mcptt_info_xml(mcptt_gateway) == mcptt_gateway_fixture, "<gw-mcptt-usage> must round-trip byte for byte");
+  check(!parse_mcptt_info(mcptt_info_xml(McpttInfo{})).gateway_usage, "no <gw-mcptt-usage> unless set");
+  check(mcptt_info_xml(mcptt_gateway).find("gw-mcvideo-usage") == std::string::npos &&
+            service_info_xml(gateway, mcvideo_service).find("gw-mcptt-usage") == std::string::npos,
+        "each service writes its own gateway element");
   const std::string push_fixture =
       R"(<?xml version="1.0"?><mcvideoinfo xmlns="urn:3gpp:ns:mcvideoInfo:1.0"><mcvideo-Params><anyExt><video-push-url>https://mcvideo-server/recordings/0a1b</video-push-url></anyExt></mcvideo-Params></mcvideoinfo>)";
   const auto push = parse_service_info(push_fixture, mcvideo_service);
