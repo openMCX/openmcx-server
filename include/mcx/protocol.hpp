@@ -86,6 +86,10 @@ struct McpttInfo {
   // Ad hoc group call priority (TS 24.379 clause 17, <anyExt> booleans):
   // <adhoc-emergency-ind>, <adhoc-alert-ind>, <adhoc-grp-emg-alert-grp-ind>.
   std::optional<bool> adhoc_emergency, adhoc_alert, adhoc_emergency_alert_group, adhoc_alert_received;
+  // TS 24.379 annex F.1.3 al) and clause 17.2.2.1.1 10) c) iii) (TS 24.281 annex F.1.3): <end-to-end-security>, the
+  // originator's request that the controlling function determine the preconfigured group whose security related
+  // information protects the ad hoc group call (clause 17.4.2.2 11)).
+  std::optional<bool> end_to_end_security;
   // TS 24.281 annex F.1.3 (<anyExt>): <preconfigured-group-id> (xs:anyURI), the preconfigured group whose security
   // information an end-to-end protected ad hoc group call uses (TS 24.281 clauses 22.2.2.1.2 step 8 and 22.4.2.1.1
   // step 4 c)); <partner-mcvideo-id> and <primary-mcvideo-id> (contentType), the MCVideo IDs of a migrating user in the

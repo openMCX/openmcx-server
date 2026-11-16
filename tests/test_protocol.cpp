@@ -1210,6 +1210,14 @@ int main() {
   check(redirected.partner_mcvideo_id == migrated_call.partner_mcvideo_id &&
             redirected.primary_mcvideo_id == migrated_call.primary_mcvideo_id,
         "MCPTT redirection IDs lost");
+  // TS 24.379 clause 17.2.2.1.1 10) c) iii) and 17.4.2.2 11): <end-to-end-security>, then <preconfigured-group-id>.
+  McpttInfo secured_adhoc;
+  secured_adhoc.session_type = "adhoc";
+  secured_adhoc.end_to_end_security = true;
+  secured_adhoc.preconfigured_group_id = "sip:adhoc-config@example.com";
+  const auto secured = parse_mcptt_info(mcptt_info_xml(secured_adhoc));
+  check(secured.end_to_end_security == true && secured.preconfigured_group_id == secured_adhoc.preconfigured_group_id,
+        "end-to-end-security or preconfigured-group-id lost");
   // TS 24.379 clauses 11.1.8.2.3 and 11.1.8.2.1: announced transfer, <transfer-announced-ind> and
   // <replaces-header-value>.
   McpttInfo announced;

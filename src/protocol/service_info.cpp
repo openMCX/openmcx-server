@@ -206,6 +206,7 @@ std::string service_info_xml(const McpttInfo &info, const ServiceProfile &servic
   plain("adhoc-alert-ind", info.adhoc_alert);
   plain("adhoc-grp-emg-alert-grp-ind", info.adhoc_emergency_alert_group);
   plain("adhoc-alert-ind-rcvd", info.adhoc_alert_received);
+  plain("end-to-end-security", info.end_to_end_security);
   if (!info.preconfigured_group_id.empty()) {
     conference_uri(info.preconfigured_group_id);
     ext += "<preconfigured-group-id>" + xml_escape(info.preconfigured_group_id) + "</preconfigured-group-id>";
@@ -430,6 +431,7 @@ void parse_info_extensions(xmlNode *ext, const InfoNames &names, McpttInfo &out)
   out.adhoc_alert = ext_flag(ext, "adhoc-alert-ind", info_ns);
   out.adhoc_emergency_alert_group = ext_flag(ext, "adhoc-grp-emg-alert-grp-ind", info_ns);
   out.adhoc_alert_received = ext_flag(ext, "adhoc-alert-ind-rcvd", info_ns);
+  out.end_to_end_security = ext_flag(ext, "end-to-end-security", info_ns);
   // TS 24.281 annex F.1.3: <partner-mcvideo-id> and <primary-mcvideo-id> (contentType) and <preconfigured-group-id>
   // (xs:anyURI).
   // TS 24.379 clause 6.3.3.1.26 5) c): <partner-mcptt-id> and <primary-mcptt-id> for MCPTT.
