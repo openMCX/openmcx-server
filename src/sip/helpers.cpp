@@ -366,13 +366,16 @@ void add_headers(pjsip_tx_data *data, const std::vector<SipHeader> &headers) {
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 sections 7.3.1 and 20.37: adds a server's own header fields to its answer to an initial INVITE, or to its
-// initial INVITE: option tags of a Supported header field join the message's Supported header field; any other header
-// field is added unless the message already has one of that name.
+// RFC 3261 sections 7.3.1, 20.32 and 20.37: adds a server's own header fields to its answer to an initial INVITE, or to
+// its initial INVITE: option tags of a Supported or Require header field join the message's header field of that name
+// (the "timer" tag pjsip's session timer may have put in Require already stays once); any other header field is added
+// unless the message already has one of that name.
 void add_answer_headers(pjsip_tx_data *data, const std::vector<SipHeader> &headers) {
   for (const auto &header : headers) {
-    if (ascii_equal(header.name, "Supported")) {
-      auto *supported = static_cast<pjsip_supported_hdr *>(pjsip_msg_find_hdr(data->msg, PJSIP_H_SUPPORTED, nullptr));
+    const bool require = ascii_equal(header.name, "Require");
+    if (require || ascii_equal(header.name, "Supported")) {
+      auto *supported = static_cast<pjsip_generic_array_hdr *>(
+          pjsip_msg_find_hdr(data->msg, require ? PJSIP_H_REQUIRE : PJSIP_H_SUPPORTED, nullptr));
       if (supported == nullptr) {
         add_header(data, header);
         continue;
