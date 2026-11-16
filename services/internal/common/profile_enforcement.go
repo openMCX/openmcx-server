@@ -69,7 +69,9 @@ func applyProfile(user User, doc profileXML) User {
 		if on.AnyExt != nil {
 			private.IncomingFrom = on.AnyExt.IncomingList.uris()
 		}
-		if alert := on.EmergencyAlert; alert != nil && alert.Entry.URI != "" {
+		if alert := on.EmergencyAlert; alert != nil && alert.Entry.EntryInfo == "LocallyDetermined" {
+			private.AlertAny = true
+		} else if alert != nil && alert.Entry.URI != "" {
 			private.AlertRecipients = []string{alert.Entry.URI}
 		}
 	}

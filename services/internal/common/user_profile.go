@@ -481,8 +481,11 @@ func userProfileXML(user User) profileXML {
 		}
 		if private.Alert {
 			doc.Extension.AlertRecipients = recipients(private.AlertAny, private.AlertRecipients)
-			// The schema's single recipient, when the configuration has exactly one.
-			if !private.AlertAny && len(private.AlertRecipients) == 1 {
+			// The schema's single recipient, when the configuration has exactly one; "LocallyDetermined" when the user
+			// chooses the recipient (TS 24.484 clause 8.3.2.1 item 10 f), TS 24.379 clause 6.2.8.3.1.3 2)b)).
+			if private.AlertAny {
+				on.EmergencyAlert = &profileAlert{Entry: profileEntry{EntryInfo: "LocallyDetermined"}}
+			} else if len(private.AlertRecipients) == 1 {
 				on.EmergencyAlert = &profileAlert{Entry: profileEntry{EntryInfo: "UsePreConfigured", URI: private.AlertRecipients[0]}}
 			}
 		}

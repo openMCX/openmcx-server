@@ -55,6 +55,16 @@ func TestApplyProfileRoundTrip(test *testing.T) {
 		len(applyProfile(User{}, doc).RemoteGroupSelection) != 2 {
 		test.Fatalf("RemoteGroupSelectionURIList lost: %s", rendered)
 	}
+	// <PrivateEmergencyAlert> "LocallyDetermined" when the user chooses the alert's recipient (TS 24.484 clause 8.3.2.1
+	// item 10 f), TS 24.379 clause 6.2.8.3.1.3 2)b)), read back without the extension.
+	if !strings.Contains(string(rendered), `<PrivateEmergencyAlert><entry entry-info="LocallyDetermined">`) {
+		test.Fatalf("PrivateEmergencyAlert LocallyDetermined missing: %s", rendered)
+	}
+	plain := doc
+	plain.Extension = nil
+	if back := applyProfile(User{}, plain); !back.PrivateCall.AlertAny {
+		test.Fatalf("PrivateEmergencyAlert LocallyDetermined not read back: %+v", back.PrivateCall)
+	}
 	// The configured parts the document cannot express stay.
 	if back := applyProfile(user, doc); back.PrivateCall.ForwardImmediate != "sip:d@mcx.test" ||
 		len(back.MCData.Targets) != 1 {
