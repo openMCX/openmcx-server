@@ -94,6 +94,43 @@ std::set<std::string> parse_profile_actions(std::string_view xml) {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.3 (PrivateCallKMSURIEntryType): the <uri-entry> of the <PrivateCallKMSURI> entry of the
+// <PrivateCallKMSURI> in an <anyExt>; empty when absent.
+static std::string profile_private_call_kms(xmlNode *any_ext, const char *ns) {
+  if (auto outer = unique_child(any_ext, "PrivateCallKMSURI", ns, false))
+    if (auto inner = unique_child(outer, "PrivateCallKMSURI", ns, false))
+      if (auto value = unique_child(inner, "uri-entry", ns, false)) return text(value);
+  return {};
+}
+
+std::map<std::string, std::string> parse_profile_private_call_kms(std::string_view xml) {
+  auto doc = document(xml);
+  const char *ns = nullptr;
+  auto root = profile_root(doc.get(), &ns);
+  if (ns != profile_ns) invalid("not an MCPTT user profile");
+  std::map<std::string, std::string> out;
+  auto common = unique_child(root, "Common", ns, false);
+  auto call = common ? unique_child(common, "PrivateCall", ns, false) : nullptr;
+  auto list = call ? unique_child(call, "PrivateCallList", ns, false) : nullptr;
+  if (!list) return out;
+  // Item 8 d) i) C) I): the KMS URI of the MCPTT IDs of the list (clause 8.3.2.7).
+  std::string common_kms;
+  for (auto ext = list->children; ext; ext = ext->next)
+    if (is(ext, "anyExt", ns))
+      if (auto kms = profile_private_call_kms(ext, ns); !kms.empty()) common_kms = kms;
+  // Item 8 d) i) A) I): the KMS URI of one target, present when it differs from the list's (clause 8.3.2.7).
+  for (auto entry = list->children; entry; entry = entry->next) {
+    if (!is(entry, "PrivateCallURI", ns)) continue;
+    if (out.size() >= 256) invalid("too many private call targets");
+    auto target = text(unique_child(entry, "uri-entry", ns));
+    std::string kms;
+    if (auto ext = unique_child(entry, "anyExt", ns, false)) kms = profile_private_call_kms(ext, ns);
+    out[std::move(target)] = kms.empty() ? common_kms : kms;
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.484 clause 10.3.2.1: reads an MCData user profile: its index (item 4), the MCData ID (<Common>/<MCDataUserID>,
 // equal to "XUI-URI") and the granted rights of its ruleset (item 11 b).
 McdataProfile parse_mcdata_profile(std::string_view xml) {

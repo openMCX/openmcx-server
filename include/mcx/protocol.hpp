@@ -187,6 +187,14 @@ std::string parse_functional_alias_filter(std::string_view xml);
 std::set<std::string> parse_profile_actions(std::string_view xml);
 
 //------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.1 item 8 d) i) and clause 8.3.2.7 with TS 24.379 clause 6.2.8.3.9 1): the KMS URI of each
+// private call target of an MCPTT user profile, by the <uri-entry> of its <PrivateCallURI> in <Common>/<PrivateCall>/
+// <PrivateCallList>: the <PrivateCallKMSURI> in the <anyExt> of the target's <PrivateCallURI> when not empty, else
+// the <PrivateCallKMSURI> in the <anyExt> of the <PrivateCallList>; empty when neither gives one (then the KMS of the
+// initial configuration, clause 6.2.8.3.9 1)b)).
+std::map<std::string, std::string> parse_profile_private_call_kms(std::string_view xml);
+
+//------------------------------------------------------------------------------
 // TS 24.484 clause 9.3: the MCVideo user profile document as the MCVideo client
 // reads it: its identity and index, private call targets, groups and granted rights.
 struct McvideoProfile {

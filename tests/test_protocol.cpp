@@ -884,6 +884,31 @@ int main() {
   rejects([&] {
     (void)parse_profile_actions(profile_head + "<allow-private-call>yes</allow-private-call>" + profile_tail);
   });
+  // TS 24.484 clause 8.3.2.1 item 8 d) i) and clause 8.3.2.7 (TS 24.379 clause 6.2.8.3.9 1)): the <PrivateCallKMSURI>
+  // of a target's <PrivateCallURI>, else the list's; empty when neither (the KMS of the initial configuration).
+  {
+    const std::string kms_head =
+        "<mcptt-user-profile xmlns=\"urn:3gpp:mcptt:user-profile:1.0\" XUI-URI=\"sip:a@x\"><Common><PrivateCall>"
+        "<PrivateCallList><PrivateCallURI><uri-entry>sip:b@x</uri-entry><anyExt><PrivateCallKMSURI><PrivateCallKMSURI>"
+        "<uri-entry>https://kms2:8443</uri-entry></PrivateCallKMSURI></PrivateCallKMSURI></anyExt></PrivateCallURI>"
+        "<PrivateCallURI><uri-entry>sip:c@x</uri-entry></PrivateCallURI>";
+    const std::string kms_tail = "</PrivateCallList></PrivateCall></Common></mcptt-user-profile>";
+    check(parse_profile_private_call_kms(kms_head + kms_tail) ==
+              std::map<std::string, std::string>({{"sip:b@x", "https://kms2:8443"}, {"sip:c@x", ""}}),
+          "PrivateCallKMSURI of a PrivateCallURI");
+    check(parse_profile_private_call_kms(kms_head +
+                                         "<anyExt><PrivateCallKMSURI><PrivateCallKMSURI><uri-entry>https://kms3:8443"
+                                         "</uri-entry></PrivateCallKMSURI></PrivateCallKMSURI></anyExt>" +
+                                         kms_tail) ==
+              std::map<std::string, std::string>({{"sip:b@x", "https://kms2:8443"}, {"sip:c@x", "https://kms3:8443"}}),
+          "PrivateCallKMSURI of the PrivateCallList");
+    check(parse_profile_private_call_kms("<mcptt-user-profile xmlns=\"urn:3gpp:mcptt:user-profile:1.0\"/>").empty(),
+          "no PrivateCallList");
+    rejects([&] {
+      (void)parse_profile_private_call_kms(
+          "<mcvideo-user-profile xmlns=\"urn:3gpp:ns:mcvideo:user-profile:1.0\" XUI-URI=\"sip:v@x\"/>");
+    });
+  }
   // TS 26.179 clause 4.1.3: the AMR-WB format offers max-red 0, ptime 20, maxptime 240 and no mode-set; a peer's
   // mode-set (RFC 4867 section 8.1) is read and limits the mode sent.
   {
