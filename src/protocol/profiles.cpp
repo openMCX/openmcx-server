@@ -116,6 +116,11 @@ McdataProfile parse_mcdata_profile(std::string_view xml) {
         if (auto inner = unique_child(uri, "uri-entry", ns, false)) kms = text(inner);
       if (!id.empty()) out.one_to_one_kms[id] = kms;
     }
+  if (auto alert = unique_child(common, "GroupEmergencyAlert", ns, false))
+    if (auto entry = unique_child(alert, "entry", ns, false)) {
+      out.group_alert_entry_info = attr(entry, "entry-info");
+      if (auto uri = unique_child(entry, "uri-entry", ns, false)) out.group_alert_uri = text(uri);
+    }
   return out;
 }
 

@@ -218,6 +218,8 @@ type actionsXML struct {
 	VideoAllowEmergencyAlert   bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcvideo-allow-emergency-alert,omitempty"`
 	VideoAllowImminentPeril    bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcvideo-allow-imminent-peril-call,omitempty"`
 	DataAllowTransmitThisGroup bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-allow-transmit-data-in-this-group,omitempty"`
+	// TS 24.481 clauses 7.2.2 c), 7.2.8: the MCData emergency alert action (TS 24.282 clauses 6.2.8.1.6, 6.3.7.2.1).
+	DataAllowEmergencyAlert bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-allow-emergency-alert,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -277,6 +279,7 @@ func groupRules(group Group) *rulesetXML {
 	}
 	if data := group.MCData; data != nil {
 		all.DataAllowTransmitThisGroup = data.TransmitAll
+		all.DataAllowEmergencyAlert = data.AllowEmergencyAlert
 		grant(data.TransmitMembers, func(a *actionsXML) { a.DataAllowTransmitThisGroup = true })
 	}
 	ruleset := &rulesetXML{}
@@ -653,6 +656,7 @@ func readRules(group *Group, rules []ruleXML) {
 			}
 			if group.MCData != nil {
 				group.MCData.TransmitAll = group.MCData.TransmitAll || actions.DataAllowTransmitThisGroup
+				group.MCData.AllowEmergencyAlert = group.MCData.AllowEmergencyAlert || actions.DataAllowEmergencyAlert
 			}
 			continue
 		}

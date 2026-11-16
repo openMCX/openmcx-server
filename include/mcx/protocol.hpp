@@ -238,6 +238,9 @@ struct McdataProfile {
   // <One-to-One-CommunicationListEntry> of <Common>/<One-to-One-Communication>, with its <MCData-ID-KMSURI> ("" when
   // empty or absent).
   std::map<std::string, std::string> one_to_one_kms;
+  // TS 24.484 clause 10.3.2.1 (EntryType of clause 9.3.2.3): the <entry> of <Common>/<GroupEmergencyAlert>: its
+  // "entry-info" ("DedicatedGroup", "UseCurrentlySelectedGroup") and <uri-entry> (TS 24.282 clause 6.2.8.1.6).
+  std::string group_alert_entry_info, group_alert_uri;
 };
 
 //------------------------------------------------------------------------------

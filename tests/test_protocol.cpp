@@ -1572,6 +1572,14 @@ int main() {
               data.actions ==
                   std::set<std::string>({"allow-transmit-data", "allow-takeover-functional-alias-other-user"}),
           "MCData user profile");
+    check(data.group_alert_entry_info.empty() && data.group_alert_uri.empty(), "no GroupEmergencyAlert entry");
+    auto alerting = data_profile;
+    alerting.replace(alerting.find("</MCDataUserID>") + 15, 0,
+                     "<GroupEmergencyAlert><entry entry-info=\"DedicatedGroup\"><uri-entry>sip:g@x</uri-entry></entry>"
+                     "</GroupEmergencyAlert>");
+    const auto alert = parse_mcdata_profile(alerting);
+    check(alert.group_alert_entry_info == "DedicatedGroup" && alert.group_alert_uri == "sip:g@x",
+          "the <GroupEmergencyAlert> entry (TS 24.282 clause 6.2.8.1.6)");
     auto stranger = data_profile;
     stranger.replace(stranger.find("XUI-URI=\"sip:d@x\""), 17, "XUI-URI=\"sip:o@x\"");
     rejects([&] { (void)parse_mcdata_profile(stranger); });

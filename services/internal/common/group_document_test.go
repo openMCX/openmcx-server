@@ -131,12 +131,25 @@ func TestUploadedMCDataGroup(test *testing.T) {
 		`xmlns:cp="urn:ietf:params:xml:ns:common-policy"><list-service uri="sip:t@mcx.test">` +
 		`<cp:ruleset><cp:rule id="m"><cp:conditions><is-list-member/></cp:conditions><cp:actions>` +
 		`<gi:mcdata-allow-transmit-data-in-this-group>true</gi:mcdata-allow-transmit-data-in-this-group>` +
+		`<gi:mcdata-allow-emergency-alert>true</gi:mcdata-allow-emergency-alert>` +
 		`</cp:actions></cp:rule></cp:ruleset><gi:mcdata-protect-media>true</gi:mcdata-protect-media>` +
 		`<gi:mcdata-allow-short-data-service>true</gi:mcdata-allow-short-data-service>` +
 		`<gi:on-network-temporary><gi:constituent-MCPTT-group-IDs><gi:constituent-MCPTT-group-ID>sip:a@mcx.test` +
 		`</gi:constituent-MCPTT-group-ID></gi:constituent-MCPTT-group-IDs></gi:on-network-temporary></list-service></group>`)
 	group, err := parseGroupDocument(raw)
-	if err != nil || group.MCData == nil || !group.MCData.AllowSDS || !group.MCData.TransmitAll || !group.ProtectMedia {
+	if err != nil || group.MCData == nil || !group.MCData.AllowSDS || !group.MCData.TransmitAll || !group.ProtectMedia ||
+		!group.MCData.AllowEmergencyAlert {
 		test.Fatalf("MCData part: %v %#v", err, group.MCData)
 	}
 }
+
+// ------------------------------------------------------------------------------
+// TS 24.481 clauses 7.2.2 c), 7.2.8: an MCData group that allows emergency alerts grants its members the
+// <mcdata-allow-emergency-alert> action (TS 24.282 clause 6.2.8.1.6 b)).
+func TestMCDataEmergencyAlertAction(test *testing.T) {
+	rules := groupRules(Group{ID: "sip:a@mcx.test", MCData: &GroupMCData{AllowEmergencyAlert: true}})
+	if rules == nil || !rules.Rules[0].Actions.DataAllowEmergencyAlert {
+		test.Fatalf("no <mcdata-allow-emergency-alert> action: %#v", rules)
+	}
+}
+
