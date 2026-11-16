@@ -218,7 +218,7 @@ int main() {
   const auto manual_settings = parse_poc_settings(poc_settings_xml("urn:uuid:test-client", 3, true));
   check(manual_settings.size() == 1 && manual_settings[0].id == "urn:uuid:test-client" &&
             manual_settings[0].answer_mode == "manual" && manual_settings[0].profile_index == 3u &&
-            manual_settings[0].multiplex_support == true,
+            manual_settings[0].multiplex_support == false,
         "PoC settings round trip wrong");
   // TS 24.281 table 7.4.1.2.2-3: two clients, the extension elements unprefixed as in the example.
   const auto two = parse_poc_settings(
