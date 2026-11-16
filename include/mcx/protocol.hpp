@@ -546,6 +546,11 @@ struct MediaDescription {
   // control stream a pre-established session negotiated, for a call over it without floor control (TS 24.379 clause
   // 11.1.3.1.2, TS 24.380 clause 9.3.2.3.3 NOTE 1): the stream removed for the call, not the session.
   bool control_removed = false;
+  // TS 24.380 clauses 14.2.6 and 14.3.7 (TS 24.379 clause 11.1.2): "mc_no_floor_ctrl" of the media plane control
+  // channel: a private or first-to-answer call (or a pre-established session for one) without floor control. With it
+  // the floor control related fmtp attributes are neither written nor kept from a received SDP (14.3.7: "Shall
+  // discard"); "mc_floor_ssrc" identifies the channel and stays. MCPTT only.
+  bool no_floor_control = false;
 };
 
 //------------------------------------------------------------------------------

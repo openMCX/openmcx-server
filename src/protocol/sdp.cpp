@@ -129,6 +129,15 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id, st
   // TS 24.380 clause 14.2.7 (mc_floor_ssrc) or TS 24.581 clause 14.2.7 (mc_transmission_ssrc); the
   // parameters are ';'-separated as for MCPTT.
   out << "a=fmtp:" << control << (video ? " mc_transmission_ssrc=" : " mc_floor_ssrc=") << media.floor_ssrc;
+  // TS 24.380 clause 14.2.6: "mc_no_floor_ctrl", and none of the floor control related fmtp attributes.
+  if (media.no_floor_control) {
+    if (video) invalid("mc_no_floor_ctrl is an MCPTT attribute");
+    if (media.granted || media.granted_audio_ssrc || media.implicit_request || media.queueing || media.floor_priority)
+      invalid("floor control parameters with mc_no_floor_ctrl");
+    out << ";mc_no_floor_ctrl\r\n";
+    if (media.ice) write_ice_candidates(out, media.ice->control);
+    return out.str();
+  }
   if (media.floor_priority) {
     if (*media.floor_priority > 99) invalid("floor priority exceeds SDP range");
     out << ";mc_priority=" << unsigned(*media.floor_priority);
@@ -433,7 +442,7 @@ void parse_format_parameter(const std::string &parameter, const std::string &sec
   else if (section == "application" && key == "mc_implicit_request")
     out.implicit_request = true;
   else if (section == "application" && !transmission && key == "mc_no_floor_ctrl")
-    invalid("call requires floor control");
+    out.no_floor_control = true; // TS 24.380 clauses 14.2.6, 14.3.7
 }
 
 //------------------------------------------------------------------------------
@@ -513,6 +522,13 @@ void finish_sdp(MediaDescription &out, const SdpState &state) {
   // without floor control (TS 24.379 clause 11.1.2). Whether the call allows it is the
   // server's decision.
   if (!state.floor) out.control = MediaControl::none;
+  // TS 24.380 clause 14.3.7: with "mc_no_floor_ctrl", the floor control related fmtp attributes are discarded.
+  if (out.no_floor_control) {
+    if (!state.floor) invalid("mc_no_floor_ctrl without a media plane control channel");
+    out.granted = out.implicit_request = out.queueing = false;
+    out.floor_priority.reset();
+    out.granted_audio_ssrc = 0;
+  }
   if (!state.version || !state.audio || !state.matched_codec || (state.floor && !out.floor_ssrc))
     invalid("incomplete MCPTT SDP");
 

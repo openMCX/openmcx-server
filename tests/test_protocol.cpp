@@ -903,6 +903,21 @@ int main() {
               amr_wb_send_mode(0, {}) == 0 && amr_wb_send_mode(1, {4, 6}) == 4,
           "send mode within the mode-set");
     rejects([&] { (void)parse_sdp(std::string(sdp).replace(sdp.find("max-red=0"), 9, "mode-set=9")); });
+    // TS 24.380 clauses 14.2.6 and 14.3.7: "mc_no_floor_ctrl" written alone and read, the floor attributes discarded.
+    auto without = offer;
+    without.no_floor_control = true;
+    const auto no_floor_sdp = make_sdp(without, 1);
+    check(no_floor_sdp.find("a=fmtp:MCPTT mc_floor_ssrc=12345;mc_no_floor_ctrl\r\n") != std::string::npos,
+          "mc_no_floor_ctrl written");
+    check(parse_sdp(no_floor_sdp).no_floor_control, "mc_no_floor_ctrl read");
+    const auto with_floor_attributes =
+        std::string(no_floor_sdp).replace(no_floor_sdp.find(";mc_no_floor_ctrl"), 17,
+                                          ";mc_priority=5;mc_implicit_request;mc_no_floor_ctrl");
+    const auto discarded = parse_sdp(with_floor_attributes);
+    check(discarded.no_floor_control && !discarded.floor_priority && !discarded.implicit_request,
+          "floor control attributes discarded with mc_no_floor_ctrl");
+    without.floor_priority = 3;
+    rejects([&] { (void)make_sdp(without, 1); });
   }
   // TS 24.484 clauses 8.4.2.1 and 10.4.2.1: the resource priorities of the service configuration documents, RFC 8101
   // namespaces only; MCData's in the <anyExt> of <on-network>.
