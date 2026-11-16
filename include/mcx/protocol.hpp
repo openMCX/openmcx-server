@@ -90,6 +90,9 @@ struct McpttInfo {
   // originator's request that the controlling function determine the preconfigured group whose security related
   // information protects the ad hoc group call (clause 17.4.2.2 11)).
   std::optional<bool> end_to_end_security;
+  // TS 24.379 clauses 10.1.1.2.1.1 14) g) and 11.1.1.2.1.1 14A) D) (annex F.1.3, contentType with <mcpttBoolean>):
+  // <remotely-initiated-call-request-ind>, a call placed for a remotely initiated call request.
+  std::optional<bool> remotely_initiated_call_request;
   // TS 24.281 annex F.1.3 (<anyExt>): <preconfigured-group-id> (xs:anyURI), the preconfigured group whose security
   // information an end-to-end protected ad hoc group call uses (TS 24.281 clauses 22.2.2.1.2 step 8 and 22.4.2.1.1
   // step 4 c)); <partner-mcvideo-id> and <primary-mcvideo-id> (contentType), the MCVideo IDs of a migrating user in the

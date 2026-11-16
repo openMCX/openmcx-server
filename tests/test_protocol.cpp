@@ -1233,6 +1233,14 @@ int main() {
   const auto secured = parse_mcptt_info(mcptt_info_xml(secured_adhoc));
   check(secured.end_to_end_security == true && secured.preconfigured_group_id == secured_adhoc.preconfigured_group_id,
         "end-to-end-security or preconfigured-group-id lost");
+  // TS 24.379 clause 10.1.1.2.1.1 14) g): <remotely-initiated-call-request-ind> (contentType, <mcpttBoolean>).
+  McpttInfo remote_call;
+  remote_call.remotely_initiated_call_request = true;
+  const auto remote_call_xml = mcptt_info_xml(remote_call);
+  check(remote_call_xml.find("<remotely-initiated-call-request-ind type=\"Normal\"><mcpttBoolean>true</mcpttBoolean>") !=
+                std::string::npos &&
+            parse_mcptt_info(remote_call_xml).remotely_initiated_call_request == true,
+        "remotely-initiated-call-request-ind lost");
   // TS 24.379 clauses 11.1.8.2.3 and 11.1.8.2.1: announced transfer, <transfer-announced-ind> and
   // <replaces-header-value>.
   McpttInfo announced;
