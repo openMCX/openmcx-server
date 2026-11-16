@@ -110,9 +110,14 @@ func applyProfile(user User, doc profileXML) User {
 	user.FunctionalAliasBinding = rights["allow-functional-alias-binding-with-group"]
 	user.LocationWhenTalking = rights["allow-location-info-when-talking"]
 	user.TriggerRemoteFloorRequest = rights["allow-trigger-remote-floor-request"]
-	user.Groups, user.MaxAffiliations = nil, 0
+	user.Groups, user.MaxAffiliations, user.RemoteGroupSelection = nil, 0, nil
 	if on := doc.OnNetwork; on != nil {
 		user.MaxAffiliations = on.MaxAffiliationsN2
+		if on.AnyExt != nil && on.AnyExt.RemoteSelection != nil {
+			for _, entry := range on.AnyExt.RemoteSelection.Entries {
+				user.RemoteGroupSelection = append(user.RemoteGroupSelection, entry.URI)
+			}
+		}
 		if on.GroupInfo != nil {
 			for _, entry := range on.GroupInfo.Entries {
 				user.Groups = append(user.Groups, entry.URI)

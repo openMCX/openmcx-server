@@ -186,7 +186,10 @@ type profileAlert struct {
 // ------------------------------------------------------------------------------
 // TS 24.484 clause 8.3.2.1 item 10 g: the <anyExt> of <OnNetwork>.
 type profileOnNetworkExt struct {
-	IncomingList *privateCallList `xml:"IncomingPrivateCallList,omitempty"`
+	// Item 10 g i): <RemoteGroupSelectionURIList>, the users whose selected group this user may change (TS 24.379
+	// clause 10.1.4.2.1 1)).
+	RemoteSelection *profileEntryList `xml:"RemoteGroupSelectionURIList,omitempty"`
+	IncomingList    *privateCallList  `xml:"IncomingPrivateCallList,omitempty"`
 	// Item 10 g ii: <FunctionalAliasList>, the functional aliases the user may activate.
 	FunctionalAliasList *profileEntryList `xml:"FunctionalAliasList,omitempty"`
 }
@@ -482,6 +485,15 @@ func userProfileXML(user User) profileXML {
 			if !private.AlertAny && len(private.AlertRecipients) == 1 {
 				on.EmergencyAlert = &profileAlert{Entry: profileEntry{EntryInfo: "UsePreConfigured", URI: private.AlertRecipients[0]}}
 			}
+		}
+	}
+	if len(user.RemoteGroupSelection) > 0 {
+		if on.AnyExt == nil {
+			on.AnyExt = &profileOnNetworkExt{}
+		}
+		on.AnyExt.RemoteSelection = &profileEntryList{}
+		for _, id := range user.RemoteGroupSelection {
+			on.AnyExt.RemoteSelection.Entries = append(on.AnyExt.RemoteSelection.Entries, profileEntry{URI: id})
 		}
 	}
 	if on.GroupInfo != nil || on.MaxAffiliationsN2 > 0 || on.EmergencyAlert != nil || on.AnyExt != nil {

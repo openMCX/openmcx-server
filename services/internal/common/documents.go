@@ -47,12 +47,14 @@ type publicUser struct {
 	// <allow-location-info-when-talking> (TS 24.484 clause 8.3.2.7).
 	LocationWhenTalking bool `json:"location_when_talking,omitempty"`
 	// <allow-trigger-remote-floor-request> (TS 24.484 clause 8.3.2.7).
-	TriggerRemoteFloorRequest bool            `json:"trigger_remote_floor_request,omitempty"`
-	MCDataID                  string          `json:"mcdata_id,omitempty"`
-	MCData                    *MCDataPolicy   `json:"mcdata,omitempty"`
-	MCVideoID                 string          `json:"mcvideo_id,omitempty"`
-	MCVideo                   map[string]any  `json:"mcvideo,omitempty"`
-	Location                  *LocationPolicy `json:"location,omitempty"`
+	TriggerRemoteFloorRequest bool `json:"trigger_remote_floor_request,omitempty"`
+	// <RemoteGroupSelectionURIList> (TS 24.484 clause 8.3.2.1 item 10 g i)).
+	RemoteGroupSelection []string        `json:"remote_group_selection,omitempty"`
+	MCDataID             string          `json:"mcdata_id,omitempty"`
+	MCData               *MCDataPolicy   `json:"mcdata,omitempty"`
+	MCVideoID            string          `json:"mcvideo_id,omitempty"`
+	MCVideo              map[string]any  `json:"mcvideo,omitempty"`
+	Location             *LocationPolicy `json:"location,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -623,7 +625,7 @@ func (svc *service) getInternalUser(writer http.ResponseWriter, request *http.Re
 	user = svc.effectiveUser(user)
 	writeJSON(writer, http.StatusOK, publicUser{ProfileIndex: user.profileIndex(), MCID: user.MCID, MCPTTID: user.MCPTTID, SIPURI: user.SIPURI, ClientID: user.ClientID, Groups: user.Groups, PrivateCall: user.PrivateCall, AdhocCall: user.AdhocCall, GroupCall: user.GroupCall,
 		FunctionalAliasTakeover: user.FunctionalAliasTakeover, FunctionalAliasBinding: user.FunctionalAliasBinding, MaxAffiliations: user.MaxAffiliations,
-		Regroup: user.Regroup, LocationWhenTalking: user.LocationWhenTalking, TriggerRemoteFloorRequest: user.TriggerRemoteFloorRequest, MCDataID: user.MCDataID, MCData: user.MCData, MCVideoID: user.MCVideoID, MCVideo: user.MCVideo, Location: user.Location})
+		Regroup: user.Regroup, LocationWhenTalking: user.LocationWhenTalking, TriggerRemoteFloorRequest: user.TriggerRemoteFloorRequest, RemoteGroupSelection: user.RemoteGroupSelection, MCDataID: user.MCDataID, MCData: user.MCData, MCVideoID: user.MCVideoID, MCVideo: user.MCVideo, Location: user.Location})
 }
 
 // ------------------------------------------------------------------------------

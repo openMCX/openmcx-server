@@ -22,6 +22,7 @@ func TestApplyProfileRoundTrip(test *testing.T) {
 	user := User{MCPTTID: "sip:a@mcx.test", MCID: "sip:a.mc@mcx.test", SIPURI: "sip:a@mcx.test", ClientID: "urn:uuid:1",
 		Groups: []string{"sip:ops@mcx.test", "sip:fire@mcx.test"}, MaxAffiliations: 3,
 		FunctionalAliasTakeover: true, LocationWhenTalking: true, TriggerRemoteFloorRequest: true, MCDataID: "sip:a.data@mcx.test",
+		RemoteGroupSelection: []string{"sip:b@mcx.test", "sip:c@mcx.test"},
 		PrivateCall: &PrivateCallPolicy{Allow: true, AutomaticCommencement: true, Targets: []string{"sip:b@mcx.test"},
 			IncomingFrom: []string{"sip:c@mcx.test"}, Emergency: true, EmergencyRecipients: []string{"sip:b@mcx.test", "sip:c@mcx.test"},
 			EmergencyCancel: true, Alert: true, AlertAny: true, Transfer: true, ForwardImmediate: "sip:d@mcx.test", Callable: &no},
@@ -47,6 +48,12 @@ func TestApplyProfileRoundTrip(test *testing.T) {
 	if !strings.Contains(string(rendered), "allow-trigger-remote-floor-request") ||
 		!applyProfile(User{}, doc).TriggerRemoteFloorRequest {
 		test.Fatalf("allow-trigger-remote-floor-request lost: %s", rendered)
+	}
+	// <RemoteGroupSelectionURIList> in the <anyExt> of <OnNetwork> (TS 24.484 clauses 8.3.2.1 item 10 g i) and 8.3.2.7)
+	// is rendered and read back.
+	if !strings.Contains(string(rendered), "<anyExt><RemoteGroupSelectionURIList><entry><uri-entry>sip:b@mcx.test</uri-entry>") ||
+		len(applyProfile(User{}, doc).RemoteGroupSelection) != 2 {
+		test.Fatalf("RemoteGroupSelectionURIList lost: %s", rendered)
 	}
 	// The configured parts the document cannot express stay.
 	if back := applyProfile(user, doc); back.PrivateCall.ForwardImmediate != "sip:d@mcx.test" ||

@@ -147,6 +147,10 @@ type User struct {
 	// <allow-trigger-remote-floor-request> (TS 24.484 clauses 8.3.2.1 11) AB) and 8.3.2.7): the user may send a remote
 	// emergency floor request trigger (TS 24.379 clauses 18.1.1.1 1) and 18.1.2.1 4)).
 	TriggerRemoteFloorRequest bool `json:"trigger_remote_floor_request,omitempty"`
+	// <RemoteGroupSelectionURIList> in the <anyExt> of <OnNetwork> (TS 24.484 clauses 8.3.2.1 item 10 g i) and
+	// 8.3.2.7): the MCPTT IDs of the users whose selected group this user may change (TS 24.379 clauses 10.1.4.2.1 1)
+	// and 10.1.4.3.1).
+	RemoteGroupSelection []string `json:"remote_group_selection,omitempty"`
 	// <MaxAffiliationsN2>: simultaneous group affiliations; 0 means no limit.
 	MaxAffiliations int `json:"max_affiliations,omitempty"`
 	// MCData ID (TS 23.280 clause 8.1.2): a distinct identity; empty when the user has no
