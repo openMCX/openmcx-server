@@ -261,6 +261,10 @@ int main() {
                   std::string::npos &&
               back.binding == true && back.binding_fa_uri == "sip:fa@x",
           "MCData-Info functional alias to group binding");
+    Info received;
+    received.emergency = false;
+    received.emergency_received = true;
+    check(parse_info(info_xml(received)).emergency_received == true, "MCData-Info <emergency-ind-rcvd>");
   }
   DeferredListResponse listed;
   listed.count = 1;

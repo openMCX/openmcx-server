@@ -58,6 +58,9 @@ struct Info {
   // Emergency alert (TS 24.282 clause 16): <alert-ind>, <originated-by>, and the <anyExt>
   // <emergency-ind>, <alert-ind-rcvd> and <mc-org> elements.
   std::optional<bool> alert, emergency, imminent_peril, alert_received;
+  // <emergency-ind-rcvd> (<anyExt>, xs:boolean): the controlling function's receipt of an emergency cancellation
+  // (TS 24.282 6.2.7.5, 6.3.7.1.5).
+  std::optional<bool> emergency_received;
   std::string originated_by, organization;
   // Location (TS 24.282 clauses 6.3.7.1.6, 6.3.7.1.7, 17.3.3.2, <anyExt>): <emergency-alert-area-ind>,
   // <group-geo-area-ind> (with <associated-group-id>) and <location-of-functional-alias-URI>.

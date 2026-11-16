@@ -249,6 +249,7 @@ std::string info_xml(const Info &info) {
   plain("emergency-ind", info.emergency);
   plain("imminentperil-ind", info.imminent_peril);
   plain("alert-ind-rcvd", info.alert_received);
+  plain("emergency-ind-rcvd", info.emergency_received);
   if (!info.organization.empty()) ext += "<mc-org>" + xml_escape(info.organization) + "</mc-org>";
   if (info.call_to_functional_alias)
     ext += std::string("<call-to-functional-alias-ind>") + (*info.call_to_functional_alias ? "true" : "false") +
@@ -370,6 +371,7 @@ Info parse_info(std::string_view xml) {
     info.emergency = boolean(child(ext, "emergency-ind"));
     info.imminent_peril = boolean(child(ext, "imminentperil-ind"));
     info.alert_received = boolean(child(ext, "alert-ind-rcvd"));
+    info.emergency_received = boolean(child(ext, "emergency-ind-rcvd"));
     if (auto organization = child(ext, "mc-org")) info.organization = text(organization);
     info.emergency_alert_area = boolean(child(ext, "emergency-alert-area-ind"));
     info.group_geo_area = boolean(child(ext, "group-geo-area-ind"));
