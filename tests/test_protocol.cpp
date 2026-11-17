@@ -1798,7 +1798,8 @@ int main() {
         "version=\"2\" state=\"full\"><registration aor=\"sip:alice@mcx.test\" id=\"a1\" state=\"active\">"
         "<contact id=\"c1\" state=\"active\" event=\"shortened\" expires=\"60\" x:other=\"1\">"
         "<uri> sip:alice@192.0.2.1:5064;transport=tcp </uri><x:extension/></contact>"
-        "<contact id=\"c2\" state=\"terminated\" event=\"deactivated\"><uri>sip:alice@192.0.2.2</uri></contact>"
+        "<contact id=\"c2\" state=\"terminated\" event=\"deactivated\" callid=\" 3f7a@192.0.2.2 \" cseq=\"+012\">"
+        "<uri>sip:alice@192.0.2.2</uri></contact>"
         "</registration><x:other/></reginfo>");
     check(info.version == "2" && info.full && info.registrations.size() == 1 &&
               info.registrations[0].aor == "sip:alice@mcx.test" && info.registrations[0].state == "active" &&
@@ -1810,6 +1811,17 @@ int main() {
           "reginfo contact");
     check(!info.registrations[0].contacts[1].expires && info.registrations[0].contacts[1].event == "deactivated",
           "reginfo contact without expires");
+    // RFC 3680 section 5.1: the contact's id, and the Call-ID and CSeq of the REGISTER behind the binding (TS 24.229
+    // clause 5.1.1.7: the contact "belonging to this UE"); absent ones stay empty.
+    check(shortened.id == "c1" && shortened.callid.empty() && !shortened.cseq, "reginfo contact without callid");
+    check(info.registrations[0].contacts[1].id == "c2" && info.registrations[0].contacts[1].callid == "3f7a@192.0.2.2" &&
+              info.registrations[0].contacts[1].cseq == 12u,
+          "reginfo contact callid and cseq");
+    rejects([] {
+      (void)parse_reginfo("<reginfo xmlns=\"urn:ietf:params:xml:ns:reginfo\" version=\"0\" state=\"full\">"
+                          "<registration aor=\"sip:a@x\" id=\"r\" state=\"active\"><contact id=\"c\" state=\"active\" "
+                          "event=\"registered\" cseq=\"-1\"><uri>sip:a@h</uri></contact></registration></reginfo>");
+    });
     check(!parse_reginfo("<reginfo xmlns=\"urn:ietf:params:xml:ns:reginfo\" version=\"0\" state=\"partial\"/>").full,
           "reginfo partial state");
     rejects([] { (void)parse_reginfo("<reginfo xmlns=\"urn:ietf:params:xml:ns:reginfo\" state=\"full\"/>"); });

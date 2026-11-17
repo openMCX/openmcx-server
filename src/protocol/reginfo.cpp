@@ -60,8 +60,8 @@ std::string plus_one(std::string digits) {
 //------------------------------------------------------------------------------
 // RFC 3680 section 5.1: the <reginfo> root with its version and state ("full" or "partial"), its <registration>
 // elements (aor, state "init", "active" or "terminated") and their <contact> elements (state "active" or
-// "terminated", the event of RFC 3680 section 4.7.1, the optional expires, and the <uri>). Elements and attributes of
-// other namespaces are ignored (section 5.1).
+// "terminated", the event of RFC 3680 section 4.7.1, the optional expires, the id, the optional callid and cseq of the
+// REGISTER behind the binding, and the <uri>). Elements and attributes of other namespaces are ignored (section 5.1).
 RegInfo parse_reginfo(std::string_view xml) {
   auto doc = document(xml);
   auto *root = xmlDocGetRootElement(doc.get());
@@ -89,6 +89,9 @@ RegInfo parse_reginfo(std::string_view xml) {
         invalid("reginfo contact without state or event");
       if (const auto expires = attr(child, "expires"); !expires.empty())
         contact.expires = unsigned_long(expires);
+      contact.id = attr(child, "id");
+      contact.callid = trim(attr(child, "callid"));
+      if (const auto cseq = attr(child, "cseq"); !cseq.empty()) contact.cseq = unsigned_long(cseq);
       auto *uri = unique_child(child, "uri", reginfo_ns);
       contact.uri = trim(text(uri));
       registration.contacts.push_back(std::move(contact));

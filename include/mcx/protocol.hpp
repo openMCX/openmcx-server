@@ -320,13 +320,17 @@ std::string parse_initial_gms_uri(std::string_view xml);
 
 // RFC 3680 section 5: a registration information document (application/reginfo+xml) of the reg event package (TS
 // 24.229 clauses 5.1.1.3, 5.1.1.5A and 5.1.1.7): its version, whether it is the full state, and per registration its
-// address-of-record and state with its contacts (state, event, expires when given, URI). RFC 3680 section 5.4: the
-// version is an xs:nonNegativeInteger, without an upper bound, held as its canonical decimal digits (no leading zeros);
-// expires is an xs:unsignedLong.
+// address-of-record and state with its contacts (state, event, expires when given, URI, and the id, callid and cseq
+// that identify the registration of the binding). RFC 3680 section 5.4: the version is an xs:nonNegativeInteger,
+// without an upper bound, held as its canonical decimal digits (no leading zeros); expires and cseq are
+// xs:unsignedLong. RFC 3680 section 5.1: the contact's id identifies the binding across notifications; callid, when
+// present, "contains the current Call-ID which the UA used to register this contact", and cseq "the last CSeq value
+// used to register this contact", which tells a UE's own binding from an earlier one at the same contact address (TS 24.229 clauses 5.1.1.5A and 5.1.1.7:
+// the contact "that the UE registered", "belonging to this UE"). Empty and absent when the document has none.
 struct RegInfo {
   struct Contact {
-    std::string uri, state, event;
-    std::optional<std::uint64_t> expires;
+    std::string uri, state, event, id, callid;
+    std::optional<std::uint64_t> expires, cseq;
   };
   struct Registration {
     std::string aor, state;
