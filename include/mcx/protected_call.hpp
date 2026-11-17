@@ -481,10 +481,13 @@ public:
 // of this endpoint on it would repeat an SRTCP IV under AEAD_AES_128_GCM (ProtectedCall::floor_ssrc_used). The
 // stream going on with the SSRC it has ([current]: a re-INVITE, a later answer, a session refresh) is not a new
 // stream and is kept. A relay, which passes each side's SSRC on to the other side, has no SSRC of its own: [own] is
-// then the SSRC of the opposite direction, once known.
+// then the SSRC of the opposite direction, once known. No SSRC ([offered] 0: an SDP without "mc_floor_ssrc", TS 24.380
+// clause 14.2.7, no multiplexing) is never refused: each side then sends with its own SSRC, checked on its first
+// packet.
 inline bool floor_ssrc_refused(std::uint32_t offered, std::optional<std::uint32_t> own,
                                std::optional<std::uint32_t> current, const ProtectedCall *keys,
                                const std::set<std::uint32_t> &in_use = {}) {
+  if (!offered) return false;
   if (own && offered == *own) return true;
   if (current && *current == offered) return false;
   return keys && (keys->floor_ssrc_used(offered) || in_use.contains(offered));

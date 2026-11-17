@@ -343,6 +343,42 @@ private:
 };
 
 //------------------------------------------------------------------------------
+// TS 24.380 clause 4.3.3.1: the SSRC in the RTCP header of the floor control messages this endpoint sends in a
+// session. With multiplexing the peer allocated it ([remote]: its "mc_floor_ssrc", "the SSRC value [...] that the
+// distant entity shall use in the RTCP header of the floor control messages it sends"). Without ([remote] 0: the
+// peer's SDP had no "mc_floor_ssrc", clauses 14.2.7 and 14.3.8) it is this endpoint's own SSRC, the messages'
+// "SSRC of floor control server" or "SSRC of floor participant sending" (clauses 8.2.5 to 8.2.13; RFC 3550 section
+// 6.7: the SSRC of the sender): [local], the SSRC this endpoint allocated for the peer's messages, unless the peer was
+// given [local] in this endpoint's SDP and may send with it (clause 4.3.3.1), when this endpoint sends with another
+// one of its own ([own], non-zero) so that the two directions do not share an SSRC (RFC 3550 section 8.2; under one
+// SRTCP key their IVs would repeat, RFC 7714 section 9.1).
+constexpr std::uint32_t floor_send_ssrc(std::uint32_t local, std::uint32_t remote, std::uint32_t own = 0) {
+  return remote ? remote : own ? own : local;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 4.3.3.1: whether a floor control message from the peer, with [wire] in its RTCP header, belongs
+// to the session. With multiplexing ([remote], the peer's "mc_floor_ssrc", non-zero) it carries the SSRC this
+// endpoint allocated ([local]). Without, it carries the SSRC the peer sends with: the one learned from the peer's
+// first accepted message ([learned]), or, before that, any SSRC but the one this endpoint sends with
+// (floor_send_ssrc, [own]) and 0 (none): [local] when the peer was given it, else the peer's own SSRC, to be
+// learned. The caller checks the source address and port and, under a floor key, the SSRC's history
+// (floor_ssrc_refused) before it learns the SSRC.
+constexpr bool floor_receive_ok(std::uint32_t wire, std::uint32_t local, std::uint32_t remote, std::uint32_t learned,
+                                std::uint32_t own = 0) {
+  if (remote) return wire == local;
+  if (learned) return wire == learned;
+  return wire != 0 && wire != floor_send_ssrc(local, remote, own);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 4.3.3.1 and 8.2.13: the SSRC of the peer's Floor Ack: with multiplexing the one this endpoint
+// allocated ([local]); without, the one the peer sends with ([learned], 0 until its first message).
+constexpr std::uint32_t floor_ack_ssrc(std::uint32_t local, std::uint32_t remote, std::uint32_t learned) {
+  return remote ? local : learned;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.380 clause 8.2.13: bounded ACK delivery primitive (Floor Ack), not the complete TS 24.380 state machine.
 // Caller authenticates/binds the datagram endpoint. ACK has no transaction ID:
 // only one outstanding message per type is supported; send supersedes it.
@@ -353,6 +389,9 @@ class FloorAckRetry {
 public:
   FloorAckRetry(std::uint32_t local_ssrc, std::uint32_t peer_ssrc, std::uint16_t peer_source,
                 std::uint64_t retry_ms = 1000, unsigned max_transmissions = 3);
+  // TS 24.380 clauses 4.3.3.1 and 8.2.13: the SSRC of the peer's Floor Ack, once known: without multiplexing the
+  // peer's own SSRC, which this endpoint learns from the peer's first packet (floor_receive_ok); 0 matches no Ack.
+  void set_peer_ssrc(std::uint32_t peer_ssrc) { peer_ssrc_ = peer_ssrc; }
   // Caller transmits the initial packet; this method schedules repeats.
   void send(const FloorPacket &packet, std::uint64_t now_ms);
   bool receive(const FloorPacket &ack);

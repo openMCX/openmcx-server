@@ -626,6 +626,29 @@ MediaDescription session_media_keeping_control(const MediaDescription &negotiate
 }
 
 //------------------------------------------------------------------------------
+// TS 24.380 clause 14.2.7: "mc_floor_ssrc" in an offer only with multiplexing.
+MediaDescription floor_offer_media(MediaDescription local, bool multiplexing) {
+  if (local.control == MediaControl::floor && !multiplexing) local.floor_ssrc = 0;
+  return local;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 14.3.8: "mc_floor_ssrc" in an answer only when the offer had it.
+MediaDescription floor_answer_media(MediaDescription local, const MediaDescription &offer) {
+  if (local.control == MediaControl::floor && offer.control == MediaControl::floor && !offer.floor_ssrc)
+    local.floor_ssrc = 0;
+  return local;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 14.4: an answer's "mc_floor_ssrc" that the offer lacked is discarded.
+MediaDescription floor_answer_received(MediaDescription answer, const MediaDescription &offered) {
+  if (answer.control == MediaControl::floor && offered.control == MediaControl::floor && !offered.floor_ssrc)
+    answer.floor_ssrc = 0;
+  return answer;
+}
+
+//------------------------------------------------------------------------------
 // TS 26.179 clause 4.1.3 with RFC 4867 section 8.1: the AMR-WB mode allowed by a peer's mode-set.
 int amr_wb_send_mode(int wanted, const std::vector<std::uint8_t> &mode_set) {
   if (mode_set.empty() || std::find(mode_set.begin(), mode_set.end(), wanted) != mode_set.end()) return wanted;

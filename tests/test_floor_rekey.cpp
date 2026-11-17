@@ -369,6 +369,54 @@ void issue_skips_reserved() {
   check(keys.issue_ssrc(draw, {fresh}) == ended, "reserved SSRC skipped");
   check(keys.issue_ssrc(draw) == fresh, "not reserved: issued");
 }
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 4.3.3.1 and 14.2.7, without multiplexing (no "mc_floor_ssrc"): the client sends floor control
+// with its own SSRC, which the server learns from its first packet. A first SSRC already used under the CSK for
+// another stream, or the server's own for the leg, is refused before the packet is authenticated (no SRTCP context is
+// made for it; RFC 7714 sections 8.4 and 9.4); a learned SSRC goes on across a new CSK with its index (RFC 3711
+// section 3.4) as one of the continuing streams (floor_ssrcs_in_use), and is never issued by the server.
+void learned_ssrc() {
+  mcx::ProtectedCall server(false), client(false);
+  const auto key = csk(0x20000001, 0);
+  server.set_floor(key);
+  client.set_floor(key);
+  constexpr std::uint32_t server_own = 0x55555555, other_call = 0x77777777, client_own = 0x99999999;
+  // An earlier stream under the key.
+  check(server.unprotect_floor(client.protect_floor(rtcp(ended))) == rtcp(ended), "earlier stream");
+  const std::set<std::uint32_t> in_use{other_call};
+  // The first packet's SSRC (McServer::learned_floor_ssrc_refused): refused when used, under way or the server's own.
+  check(mcx::floor_ssrc_refused(ended, server_own, std::nullopt, &server, in_use), "used SSRC refused");
+  check(mcx::floor_ssrc_refused(other_call, server_own, std::nullopt, &server, in_use), "SSRC under way refused");
+  check(mcx::floor_ssrc_refused(server_own, server_own, std::nullopt, &server, in_use), "server's own refused");
+  check(mcx::floor_ssrc_refused(server_own, server_own, std::nullopt, nullptr), "server's own refused in the clear");
+  check(!mcx::floor_ssrc_refused(client_own, server_own, std::nullopt, &server, in_use), "fresh SSRC accepted");
+  // An SDP without "mc_floor_ssrc" negotiates no SSRC: never refused, also by a relay whose opposite side has none.
+  check(!mcx::floor_ssrc_refused(0, 0, std::nullopt, &server, in_use), "no SSRC refused");
+  check(!mcx::floor_ssrc_refused(0, server_own, 0, nullptr), "no SSRC refused in the clear");
+  // Refused before authentication: the refused SSRC got no context.
+  check(!server.floor_ssrc_used(other_call), "a refused SSRC has no SRTCP context");
+  // Learned from the first packet that authenticates; the server sends with its own.
+  Bytes up;
+  for (unsigned index = 0; index < 3; ++index) {
+    up = client.protect_floor(rtcp(client_own));
+    check(server.unprotect_floor(up) == rtcp(client_own), "the client's own SSRC authenticates");
+  }
+  const auto down = server.protect_floor(rtcp(server_own));
+  check(client.unprotect_floor(down) == rtcp(server_own), "the server's SSRC authenticates");
+  // A new CSK with the leg's streams going on (the learned SSRC among them): the index continues.
+  const auto new_key = csk(0x20000002, 0x40);
+  const std::set<std::uint32_t> continuing{client_own, server_own};
+  server.set_floor(new_key, continuing);
+  client.set_floor(new_key, continuing);
+  const auto next = client.protect_floor(rtcp(client_own));
+  check(srtcp_index(next) == srtcp_index(up) + 1, "the learned stream continues its index");
+  check(server.unprotect_floor(next) == rtcp(client_own), "the learned stream is accepted under the new CSK");
+  // The server never issues the learned SSRC (it has a context), nor one only reserved (in floor_ssrcs_in_use).
+  std::vector<std::uint32_t> draws{client_own, other_call, fresh};
+  std::size_t at = 0;
+  check(server.issue_ssrc([&] { return draws.at(at++); }, {other_call}) == fresh, "learned and reserved skipped");
+}
 } // namespace
 
 int main() {
@@ -385,7 +433,8 @@ int main() {
                     {"failed_rekey_breaks_stream", failed_rekey_breaks_stream},
                     {"failed_derivation_keeps_key", failed_derivation_keeps_key},
                     {"failed_key_copy_keeps_key", failed_key_copy_keeps_key},
-                    {"issue_skips_reserved", issue_skips_reserved}}) {
+                    {"issue_skips_reserved", issue_skips_reserved},
+                    {"learned_ssrc", learned_ssrc}}) {
     try {
       test.second();
       std::cout << "PASS " << test.first << '\n';

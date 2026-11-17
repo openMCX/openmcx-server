@@ -174,5 +174,39 @@ int main() {
   check(private_policy_flag({{"emergency_cancel", true}}, "emergency_cancel") &&
             !private_policy_flag({{"emergency_cancel", "true"}}, "emergency_cancel"),
         "cancel flag parsing");
+
+  // TS 24.380 clauses 14.2.7 and 14.3.8 (TS 24.379 clause 11.1.1.4.2.2 / 11.1.1.3.2): the answer of the controlling
+  // function to a private call offer without "mc_floor_ssrc" (no multiplexing) has none; one with it gets the
+  // function's own; clause 14.4: an "mc_floor_ssrc" in the answer to an offer without one is discarded.
+  {
+    MediaDescription client;
+    client.address = client.floor_address = "192.0.2.10";
+    client.audio_port = 40000;
+    client.rtcp_port = 40001;
+    client.floor_port = 40002;
+    client.floor_ssrc = 0;
+    MediaDescription server = client;
+    server.address = server.floor_address = "192.0.2.1";
+    server.floor_ssrc = 0x1234;
+    const auto offer = parse_sdp(make_sdp(client, 1));
+    check(offer.control == MediaControl::floor && offer.floor_ssrc == 0, "offer without mc_floor_ssrc refused");
+    const auto answer = make_sdp(floor_answer_media(server, offer), 2);
+    check(answer.find("mc_floor_ssrc") == std::string::npos, "answer to a non-multiplexed offer has mc_floor_ssrc");
+    check(parse_sdp(answer).floor_ssrc == 0, "answer without mc_floor_ssrc read back");
+    client.floor_ssrc = 0x5678;
+    const auto multiplexed = make_sdp(floor_answer_media(server, parse_sdp(make_sdp(client, 3))), 4);
+    check(multiplexed.find("mc_floor_ssrc=4660") != std::string::npos, "answer to a multiplexed offer lacks it");
+    // The terminating side: this server's offer with and without multiplexing (mcptt.offer_floor_ssrc).
+    check(floor_offer_media(server, true).floor_ssrc == 0x1234, "offer with multiplexing lacks mc_floor_ssrc");
+    check(make_sdp(floor_offer_media(server, false), 5).find("mc_floor_ssrc") == std::string::npos,
+          "offer without multiplexing has mc_floor_ssrc");
+    check(floor_answer_received(client, floor_offer_media(server, false)).floor_ssrc == 0,
+          "unoffered mc_floor_ssrc of an answer kept");
+    check(floor_answer_received(client, server).floor_ssrc == 0x5678, "offered mc_floor_ssrc of an answer lost");
+    // A call without floor control keeps its media as they are.
+    auto uncontrolled = server;
+    uncontrolled.control = MediaControl::none;
+    check(floor_answer_media(uncontrolled, offer).floor_ssrc == 0x1234, "no control channel changed");
+  }
   std::cout << "private call authorization and resource-list tests passed\n";
 }

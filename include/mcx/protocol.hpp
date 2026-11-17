@@ -591,6 +591,25 @@ MediaDescription session_media_keeping_control(const MediaDescription &negotiate
                                                const std::optional<MediaDescription> &previous);
 
 //------------------------------------------------------------------------------
+// TS 24.380 clause 14.2.7: this endpoint's media for an SDP offer: "mc_floor_ssrc" (floor_ssrc) of the MCPTT media
+// plane control channel only "if multiplexing is supported" ([multiplexing]); a channel without it is written without
+// the parameter (floor_ssrc 0). MCVideo transmission control (TS 24.581 clause 14.2.7) and media without a control
+// channel are left as they are.
+MediaDescription floor_offer_media(MediaDescription local, bool multiplexing);
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 14.3.8: this endpoint's media for the SDP answer to [offer]: "mc_floor_ssrc" only "if [...] the
+// "mc_floor_ssrc" fmtp attribute was received in the SDP offer"; otherwise the MCPTT media plane control channel is
+// answered without it (floor_ssrc 0).
+MediaDescription floor_answer_media(MediaDescription local, const MediaDescription &offer);
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 14.4: the SDP answer to an offer of this endpoint ([offered]) as it is processed: a "mc_floor_ssrc"
+// in the answer to an offer without one is a parameter "not present in the associated offer", discarded (floor_ssrc
+// 0).
+MediaDescription floor_answer_received(MediaDescription answer, const MediaDescription &offered);
+
+//------------------------------------------------------------------------------
 // TS 24.282 clause 9.2.3.2 and clause 10.2.5.2, TS 24.582: the MCData media plane offers and answers an
 // "m=message" section carrying MSRP. The MCPTT MediaDescription above
 // describes audio and floor control, so file and short data streams have their own.

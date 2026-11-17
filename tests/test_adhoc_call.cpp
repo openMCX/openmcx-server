@@ -108,5 +108,26 @@ int main() {
   rejects([&] { (void)split_participant_changes({bob + ";method=REFER"}); });
   rejects([&] { (void)split_participant_changes({bob + ";method=INVITE", bob + ";method=BYE"}); });
   rejects([&] { (void)split_participant_changes({bob + ";method=INVITE;method=BYE"}); });
+
+  // TS 24.380 clauses 14.2.7 and 14.3.8 (TS 24.379 clause 17.4.2.2 step 12): the controlling function's answer to an
+  // ad hoc group call offer without "mc_floor_ssrc" (no multiplexing) has none.
+  {
+    MediaDescription client;
+    client.address = client.floor_address = "192.0.2.10";
+    client.audio_port = 40000;
+    client.rtcp_port = 40001;
+    client.floor_port = 40002;
+    client.queueing = true;
+    MediaDescription server = client;
+    server.address = server.floor_address = "192.0.2.1";
+    server.floor_ssrc = 0x1234;
+    const auto offer = parse_sdp(make_sdp(client, 1));
+    check(offer.floor_ssrc == 0 && offer.queueing, "offer without mc_floor_ssrc read");
+    const auto answer = floor_answer_media(server, offer);
+    check(answer.floor_ssrc == 0 && answer.queueing, "answer keeps queueing, drops mc_floor_ssrc");
+    const auto written = make_sdp(answer, 2);
+    check(written.find("mc_floor_ssrc") == std::string::npos && written.find("mc_queueing") != std::string::npos,
+          "written answer without mc_floor_ssrc");
+  }
   std::cout << "ad hoc authorization and resource-list tests passed\n";
 }

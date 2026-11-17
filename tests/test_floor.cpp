@@ -1116,6 +1116,52 @@ void test_granted_duration() {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.380 clause 4.3.3.1 with clauses 14.2.7 and 14.3.8: the SSRCs of a floor control channel with and without
+// multiplexing (floor_send_ssrc, floor_receive_ok, floor_ack_ssrc), and clause 8.2.13: a Floor Ack carrying the
+// peer's own SSRC is matched once the SSRC is learned (FloorAckRetry::set_peer_ssrc).
+void test_floor_ssrc_without_multiplexing() {
+  constexpr std::uint32_t local = 0x1000, remote = 0x2000, own = 0x3000, client = 0x4000, other = 0x5000;
+  // With multiplexing: this endpoint sends with the peer's "mc_floor_ssrc" and receives its own allocation only.
+  static_assert(mcx::floor_send_ssrc(local, remote) == remote);
+  static_assert(mcx::floor_send_ssrc(local, remote, own) == remote);
+  static_assert(mcx::floor_receive_ok(local, local, remote, 0));
+  static_assert(!mcx::floor_receive_ok(remote, local, remote, 0));
+  static_assert(!mcx::floor_receive_ok(client, local, remote, client)); // a learned SSRC plays no part
+  static_assert(mcx::floor_ack_ssrc(local, remote, client) == local);
+  // Without (remote 0): this endpoint sends with its own SSRC, the local one unless the peer was given it.
+  static_assert(mcx::floor_send_ssrc(local, 0) == local);
+  static_assert(mcx::floor_send_ssrc(local, 0, own) == own);
+  // Before learning: any SSRC but 0 and the one this endpoint sends with.
+  static_assert(mcx::floor_receive_ok(client, local, 0, 0));
+  static_assert(!mcx::floor_receive_ok(0, local, 0, 0));
+  static_assert(!mcx::floor_receive_ok(local, local, 0, 0));
+  static_assert(mcx::floor_receive_ok(local, local, 0, 0, own)); // the peer was given local and uses it
+  static_assert(!mcx::floor_receive_ok(own, local, 0, 0, own));
+  // Once learned: only the learned one.
+  static_assert(mcx::floor_receive_ok(client, local, 0, client));
+  static_assert(!mcx::floor_receive_ok(other, local, 0, client));
+  static_assert(!mcx::floor_receive_ok(local, local, 0, client, own));
+  static_assert(mcx::floor_ack_ssrc(local, 0, 0) == 0);
+  static_assert(mcx::floor_ack_ssrc(local, 0, client) == client);
+
+  // A Floor Granted sent before the peer's first message: its Ack, with the peer's own SSRC, is matched only once
+  // that SSRC is learned.
+  mcx::FloorAckRetry retry(local, mcx::floor_ack_ssrc(local, 0, 0), 2, 100, 3);
+  mcx::FloorPacket idle{mcx::FloorType::Idle, true, local, {mcx::message_sequence_field(1)}};
+  retry.send(idle, 0);
+  const mcx::FloorPacket ack{
+      mcx::FloorType::Ack, false, client, {mcx::source_field(2), mcx::message_type_field(mcx::FloorType::Idle)}};
+  assert(!retry.receive(ack));
+  assert(retry.pending() == 1);
+  retry.set_peer_ssrc(client);
+  auto forged = ack;
+  forged.ssrc = other;
+  assert(!retry.receive(forged));
+  assert(retry.receive(ack));
+  assert(retry.pending() == 0);
+}
+
+//------------------------------------------------------------------------------
 // Runs every floor control test.
 int main() {
   test_preemptive_floor_request();
@@ -1142,5 +1188,6 @@ int main() {
   test_dynamic_authorization();
   test_departure_releases_owner();
   test_broadcast_fields();
+  test_floor_ssrc_without_multiplexing();
   std::cout << "floor tests passed\n";
 }
