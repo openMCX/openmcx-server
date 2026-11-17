@@ -24,6 +24,7 @@ import subprocess
 import time
 
 from lab_wait import holds
+import refusal_probe
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -408,7 +409,10 @@ def main():
         command('client-d', 'affiliate')
         wait('CH-15 client d reaffiliated', lambda: status('client-d').get('affiliated'))
 
-        # CH-16 chat group variants (TS 24.379 clause 10.1.2.4.1.1 steps 4b, 4c and 12a).
+        # CH-16 chat group variants (TS 24.379 clause 10.1.2.4.1.1 steps 4b, 4c and 12a). On a group whose document
+        # has <preconfigured-group-use-only> "true" the client does not call (clause 10.1.2.2.1.1 steps 1 and 2): its
+        # refusal is checked, and the server's 403/167 with the same chat INVITE sent raw as client-c
+        # (refusal_probe.py).
         site = json.loads((args.compose.resolve().parent / 'generated/site.json').read_text())
         restricted = {
             entry['id'].rsplit('-', 1)[-1].split('@')[0]: entry['id']
@@ -421,6 +425,30 @@ def main():
         ]:
             select('client-c', restricted[kind])
             wait(f'CH-16 client c on the {kind} chat group', on_group(['client-c'], restricted[kind]), 30)
+            if kind == 'preconfigured':
+                earlier = (status('client-c').get('last_call_failure') or {}).get('time_ms')
+                command('client-c', 'chat')
+                wait(
+                    'CH-16 the client does not call on a preconfigured-group-use-only group (10.1.2.2.1.1)',
+                    lambda group=restricted[kind], earlier=earlier: (
+                        lambda failure: (
+                            failure.get('time_ms') != earlier
+                            and failure.get('reason') == 'calls are not allowed on the preconfigured group'
+                            and failure.get('group') == group
+                            and failure.get('command') == 'chat'
+                            and status('client-c').get('call_state') == 'idle'
+                            and not chat_sessions()
+                        )
+                    )(status('client-c').get('last_call_failure') or {}),
+                )
+                answer = refusal_probe.run_in(cli, args.compose, 'client-c', ['--chat', restricted[kind]])['chat'][0]
+                observations['preconfigured_chat_probe'] = answer
+                wait(
+                    f'CH-16 chat on a {kind} group rejected with 403 warning {warning[:3]}',
+                    lambda answer=answer, warning=warning: answer['status'] == 403 and warning in answer['warning'],
+                    1,
+                )
+                continue
             command('client-c', 'chat')
             wait(
                 f'CH-16 chat on a {kind} group rejected with 403 warning {warning[:3]}',
