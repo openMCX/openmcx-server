@@ -852,6 +852,11 @@ def add_mcvideo_policy(fixture):
     # TS 24.281 clause 12.1A: client-a may also raise and cancel an ad hoc group emergency alert
     # (<allow-activate-adhoc-group-emergency-alert>, <allow-cancel-adhoc-group-emergency-alert>).
     video_rights['client-a']['adhoc_call'].update(alert=True, alert_cancel=True)
+    # MV-EM-03 (TS 24.281 clause 6.3.3.1.12): client-c holds <allow-emergency-group-call> and
+    # <allow-cancel-group-emergency> in its user profile, so its client sends the request (clause 6.2.8.1.8 checks
+    # the profile only), but is not named in the group's emergency_users, so the server refuses it for want of the
+    # group document's action.
+    video_rights['client-c']['group_call'] = dict(emergency=True, emergency_cancel=True)
     for role in roles:
         by_mcptt[configs[role]['mcptt']['user_id']]['mcvideo'] = dict(private_call=private[role], **video_rights[role])
     domain = group['id'].split('@', 1)[1]

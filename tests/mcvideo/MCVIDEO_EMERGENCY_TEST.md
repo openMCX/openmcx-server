@@ -24,7 +24,7 @@ Back to the [MCVideo test index](../MCVIDEO_TEST.md). Acceptance: [MCVideo stand
 | Emergency private call | Established with both parties in the emergency state | 24.281 §6.2.8.3 |
 | Emergency alert | MESSAGE with the MCVideo location body, delivered to the other members, then cancelled | §11.2 |
 
-Configuration: the lab of `tools/prepare-prearranged-test.py --mcvideo` gives group operations an MCVideo `priority_policy`: client-a and client-b may raise and cancel emergency, imminent peril and alerts (only client-a cancels alerts); client-c may not. client-a's MCVideo private-call ruleset allows emergency private calls to anyone. Clients and `mcvideo-server` have `mcvideo.resource_priority` (`mcpttp.0`, `mcpttp.10`, `mcpttp.15`).
+Configuration: the lab of `tools/prepare-prearranged-test.py --mcvideo` gives group operations an MCVideo `priority_policy`: client-a and client-b may raise and cancel emergency, imminent peril and alerts (only client-a cancels alerts); client-c may not: its MCVideo user profile has `<allow-emergency-group-call>` and `<allow-cancel-group-emergency>`, so its client sends the request, but the group's policy does not name it, so the server refuses it (TS 24.281 6.3.3.1.12: both are needed). client-a's MCVideo private-call ruleset allows emergency private calls to anyone. Clients and `mcvideo-server` have `mcvideo.resource_priority` (`mcpttp.0`, `mcpttp.10`, `mcpttp.15`).
 
 ### Client commands and status
 
@@ -52,7 +52,7 @@ The scenario makes 26 checks. Over TLS the wire checks (MV-EM-08) are skipped.
 |---|---|
 | MV-EM-01 | client-a calls operations as an emergency group call; all four join; all four in the emergency state |
 | MV-EM-02 | client-a cancels the emergency (200); all four back to normal |
-| MV-EM-03 | client-c, not authorised, raises an emergency: 403 (not the `150` of a malformed request); the call stays normal |
+| MV-EM-03 | client-c, authorised by its user profile but not by the group, raises an emergency: the server answers 403 (not the `150` of a malformed request); the call stays normal |
 | MV-EM-04 | client-b raises imminent peril; all four follow; client-b ends it |
 | MV-EM-05 | client-c transmits; client-a raises the emergency and requests transmission; client-a is granted and client-c revoked |
 | MV-EM-06 | client-a's emergency private call to client-b; both in the emergency state |
