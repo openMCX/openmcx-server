@@ -59,12 +59,73 @@ void McServer::validate_remote(const std::string &user, const MediaDescription &
 // (accept_implicit_floor_request). Only this answer carries them: the leg's later offers and answers do not
 // (clause 14.3.1: an answer has no parameter its offer lacks; clause 14.5).
 MediaDescription McServer::initial_answer_media(const Leg &leg) const {
-  auto media = leg.local;
+  auto media = answer_media(leg);
   if (leg.implicit_floor) {
     media.implicit_request = true;
     media.granted_audio_ssrc = leg.implicit_audio_ssrc;
   }
   return media;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 14.3.8: the leg's media for an SDP answer to the user's offer (leg.remote): without
+// "mc_floor_ssrc" when the offer had none (the user does not support multiplexing, clause 14.2.7).
+MediaDescription McServer::answer_media(const Leg &leg) const {
+  return leg.remote ? floor_answer_media(leg.local, *leg.remote) : leg.local;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 14.2.7: the leg's media for an SDP offer of this server: with "mc_floor_ssrc" when multiplexing is
+// offered (floor_ssrc_advertised: in the dialog's first offer when offers_floor_ssrc; a later offer keeps the
+// dialog's media plane control channel as negotiated, RFC 3264 section 8).
+MediaDescription McServer::offer_media(const Leg &leg) const {
+  return floor_offer_media(leg.local, floor_ssrc_advertised(leg));
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 14.2.7 and 14.3.8: whether this server's SDP in the leg's dialog carries "mc_floor_ssrc": in the
+// answer to the user's offer only when that offer had one; in this server's own first offer when offers_floor_ssrc.
+bool McServer::floor_ssrc_advertised(const Leg &leg) const {
+  if (leg.local.control != MediaControl::floor) return false;
+  return leg.incoming_offer ? leg.remote && leg.remote->floor_ssrc : offers_floor_ssrc();
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 14.2.7: this server supports multiplexing and includes "mc_floor_ssrc" in its offers; the MCPTT
+// configuration's "offer_floor_ssrc": false leaves it out (a lab setting, to exercise clients answering an offer
+// without it). MCVideo keeps "mc_transmission_ssrc" (TS 24.581 clause 14.2.7).
+bool McServer::offers_floor_ssrc() const {
+  return svc_.service != Service::mcptt || cfg_.at(svc_.name).value("offer_floor_ssrc", true);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 4.3.3.1: the user's media after an SDP offer or answer. A change of its media plane control
+// channel (the address, port or "mc_floor_ssrc") starts the floor control streams again: the SSRC learned without
+// multiplexing (Leg::learned_floor_ssrc) is forgotten, to be learned again from the user's next message, and the
+// Floor Ack retransmission of messages sent on the former channel (clause 8.2.13) ends.
+//
+// Without multiplexing, when this server's SDP gave the user local.floor_ssrc (floor_ssrc_advertised), which the user
+// "shall use" (clause 4.3.3.1), this server sends with an SSRC of its own (Leg::send_floor_ssrc), drawn as the leg's
+// local one is (make_leg: never issued under the floor key, none in use under it, not the local one).
+void McServer::set_leg_remote(Leg &leg, const MediaDescription &media) {
+  if (leg.remote && (leg.remote->floor_ssrc != media.floor_ssrc || leg.remote->floor_port != media.floor_port ||
+                     leg.remote->floor_address != media.floor_address)) {
+    leg.learned_floor_ssrc = 0;
+    leg.floor_retries.reset();
+  }
+  leg.remote = media;
+  if (media.control != MediaControl::floor || media.floor_ssrc || leg.send_floor_ssrc || !floor_ssrc_advertised(leg))
+    return;
+  const auto *user = floor_protected(leg) ? by_id(leg.user) : nullptr;
+  auto *keys = user ? floor_keys(*user) : nullptr;
+  if (keys) {
+    auto reserved = floor_ssrcs_in_use(keys);
+    reserved.insert(leg.local.floor_ssrc);
+    leg.send_floor_ssrc = keys->issue_ssrc(random_ssrc, reserved);
+  } else {
+    do leg.send_floor_ssrc = random_ssrc();
+    while (!leg.send_floor_ssrc || leg.send_floor_ssrc == leg.local.floor_ssrc);
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -214,7 +275,7 @@ void McServer::invite_member(const std::shared_ptr<Session> &session, const std:
   // session is invited over it (Connect, or re-INVITE then Connect); otherwise on demand (clause 4.1.2.2 NOTE).
   if (pre_session_invite_member(session, leg, *user, info)) return;
   if (!leg->replaces.empty()) headers.push_back({"Replaces", leg->replaces});
-  leg->dialog = sip_.invite(user->sip, leg->local, priority_parts(info), {}, user_route(*user, headers));
+  leg->dialog = sip_.invite(user->sip, offer_media(*leg), priority_parts(info), {}, user_route(*user, headers));
   add_leg(leg);
   event("call_fanout", {{"user_id", id}, {"session_uri", session->uri}});
 }
@@ -527,6 +588,10 @@ std::set<std::uint32_t> McServer::floor_ssrcs_in_use(const ProtectedCall *keys, 
     if (!user || floor_keys(*user) != keys) continue;
     ssrcs.insert(leg->local.floor_ssrc);
     if (leg->remote) ssrcs.insert(leg->remote->floor_ssrc);
+    // TS 24.380 clause 14.2.7: without multiplexing, the user's own SSRC (RFC 3711 section 3.4: it goes on across a
+    // new CSK like the others).
+    ssrcs.insert(leg->learned_floor_ssrc);
+    ssrcs.insert(leg->send_floor_ssrc);
   }
   // TS 33.180 clauses 9.4.2 and 9.4.5: a relayed call's floor control between the client and this server is under
   // the client's CSK, and between this server and the peer under their SPK (split_relay.cpp).
@@ -539,6 +604,8 @@ std::set<std::uint32_t> McServer::floor_ssrcs_in_use(const ProtectedCall *keys, 
     ssrcs.insert(relay->local.floor_ssrc);
     if (relay->client_remote) ssrcs.insert(relay->client_remote->floor_ssrc);
     if (relay->peer_remote) ssrcs.insert(relay->peer_remote->floor_ssrc);
+    ssrcs.insert(relay->client_seen_ssrc);
+    ssrcs.insert(relay->peer_seen_ssrc);
   }
   ssrcs.erase(0);
   return ssrcs;
@@ -567,6 +634,27 @@ bool McServer::peer_floor_ssrc_refused(const Leg &leg, std::uint32_t ssrc) {
   const auto *keys = user ? floor_keys(*user) : nullptr;
   const auto current = leg.remote ? std::optional(leg.remote->floor_ssrc) : std::nullopt;
   return floor_ssrc_refused(ssrc, leg.local.floor_ssrc, current, keys, floor_ssrcs_in_use(keys, &leg));
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 4.3.3.1 and 14.2.7: without multiplexing, the SSRC of the user's first floor control message,
+// before this server learns it (floor_packet): refused when it is this server's own for the leg (both directions on
+// one SSRC, RFC 3550 section 8.2), and, when the leg's floor control is protected, when it is already used under the
+// leg's floor key for another stream, or is one of another call under way (floor_ssrcs_in_use): the user's new
+// stream on it would repeat SRTCP IVs under AEAD_AES_128_GCM (RFC 7714 sections 8.4 and 9.4, RFC 3711 section 9.1;
+// mcx::floor_ssrc_refused). Checked before the packet is authenticated, so that a refused SSRC gets no SRTCP context.
+//
+// When this server gave the user local.floor_ssrc (Leg::send_floor_ssrc set), that SSRC is the stream this server
+// allocated for the user's messages, not a new one, and is accepted (floor_receive_ok leaves out the one this server
+// sends with).
+bool McServer::learned_floor_ssrc_refused(const Leg &leg, std::uint32_t ssrc) {
+  if (leg.send_floor_ssrc && ssrc == leg.local.floor_ssrc) return false;
+  const auto *user = floor_protected(leg) ? by_id(leg.user) : nullptr;
+  const auto *keys = user ? floor_keys(*user) : nullptr;
+  const auto own = floor_send_ssrc(leg.local.floor_ssrc, 0, leg.send_floor_ssrc);
+  const bool refused = floor_ssrc_refused(ssrc, own, std::nullopt, keys, floor_ssrcs_in_use(keys, &leg));
+  if (refused) event("floor_ssrc_refused", {{"user_id", leg.user}, {"ssrc", ssrc}, {"multiplexing", false}});
+  return refused;
 }
 
 //------------------------------------------------------------------------------

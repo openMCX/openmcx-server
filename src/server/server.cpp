@@ -649,16 +649,18 @@ McServer::McServer(const ServiceProfile &service, Json cfg, bool disable_tls)
 //------------------------------------------------------------------------------
 // The SDP answer of a leg this server offered: the answer must keep the media plane control, the floor SSRC, the
 // media protection, the floor priority and the queueing of the offer; otherwise the dialog is ended.
-void McServer::media_answered(std::string_view dialog, const MediaDescription &media) {
+void McServer::media_answered(std::string_view dialog, const MediaDescription &answered) {
   // TS 24.379 clause 8.3.2.2: the negotiated media of a pre-established session after its modification.
   if (const auto pre = pre_sessions_.find(std::string(dialog)); pre != pre_sessions_.end()) {
     // RFC 3264 section 8.2: a call over the session without floor control keeps the session's control channel.
-    pre->second->remote = session_media_keeping_control(media, pre->second->remote);
+    pre->second->remote = session_media_keeping_control(answered, pre->second->remote);
     return;
   }
   auto it = legs_.find(std::string(dialog));
   if (it != legs_.end()) {
     try {
+      // TS 24.380 clause 14.4: an "mc_floor_ssrc" this server's offer lacked (offer_media) is discarded.
+      const auto media = floor_answer_received(answered, offer_media(*it->second));
       const bool uncontrolled = it->second->session->no_media_control;
       // TS 24.380 clause 14.4: parameters the answer has that the offer lacked are discarded (an
       // "mc_implicit_request" is never read from a leg this server offered).
@@ -677,7 +679,7 @@ void McServer::media_answered(std::string_view dialog, const MediaDescription &m
         throw std::runtime_error("floor priority answer differs from offer");
       if (media.queueing && !it->second->local.queueing)
         throw std::runtime_error("unoffered floor queueing in SDP answer");
-      it->second->remote = media;
+      set_leg_remote(*it->second, media);
     } catch (const std::exception &error) {
       event("sdp_rejected", {{"reason", error.what()}});
       auto id = std::string(dialog);

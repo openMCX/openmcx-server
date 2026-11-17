@@ -104,6 +104,21 @@ void McServer::record_core_registration(const SipMessage &message, const std::st
 }
 
 //------------------------------------------------------------------------------
+// TS 24.380 clause 14.2.7: an offer for a pre-established session whose media plane control channel has no
+// "mc_floor_ssrc" (the client does not support multiplexing) is valid, but this server's pre-established sessions
+// tell their call control and floor control messages apart by the SSRCs "mc_floor_ssrc" negotiates (make_pre_session,
+// the calls over the session going on with its streams): such an offer is answered 488 (Not Acceptable Here, RFC
+// 3261 section 13.3.1.3), the session as it was. Returns whether it refused.
+bool McServer::pre_session_floor_ssrc_missing(const SipMessage &message, const User &user, SipResponse &response) {
+  if (!message.remote_media || message.remote_media->control != MediaControl::floor ||
+      message.remote_media->floor_ssrc)
+    return false;
+  response.status_code = 488;
+  event("pre_established_session_refused", {{"user_id", user.id}, {"reason", "no mc_floor_ssrc"}});
+  return true;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.379 clause 8.2.2 steps 3 to 5: refuses the session with 403 and warning 100 "function not allowed due to
 // pre-established session not supported" when resource sharing is not supported, or the SIP core's registration
 // token of the UE does not match the one of the INVITE's Feature-Caps. Returns whether it refused.
@@ -158,6 +173,7 @@ std::shared_ptr<McServer::PreSession> McServer::make_pre_session(const SipMessag
 // offered floor priority and implicit floor request kept (TS 24.380 clauses 14.3.3 and 14.3.5), and the ICE attributes
 // (RFC 8839); a new ICE agent when the offer's credentials are new (an ICE restart, RFC 8445 section 9).
 void McServer::pre_session_offer(const SipMessage &message, const User &user, SipResponse &response) {
+  if (pre_session_floor_ssrc_missing(message, user, response)) return;
   const auto &session = pre_sessions_.at(message.dialog_id);
   const auto &offer = *message.remote_media;
   const auto previous_ufrag =
@@ -232,6 +248,7 @@ void McServer::pre_session_invite(const SipMessage &message, const User &user, S
     event("pre_established_session_refused", {{"user_id", user.id}, {"reason", "no acceptable SDP offer"}});
     return;
   }
+  if (pre_session_floor_ssrc_missing(message, user, response)) return;
   auto session = make_pre_session(message, user);
   pre_sessions_[session->dialog] = session;
   try {

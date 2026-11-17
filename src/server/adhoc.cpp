@@ -47,7 +47,7 @@ std::shared_ptr<McServer::Leg> McServer::incoming_leg(const SipMessage &message,
   if (peer_floor_ssrc_refused(*leg, message.remote_media->floor_ssrc)) return nullptr;
   leg->dialog = message.dialog_id;
   leg->incoming_offer = true;
-  leg->remote = *message.remote_media;
+  set_leg_remote(*leg, *message.remote_media);
   leg->local.payload_type = message.remote_media->payload_type;
   leg->local.octet_aligned = message.remote_media->octet_aligned;
   leg->local.queueing = leg->local.queueing && message.remote_media->queueing;
@@ -84,7 +84,7 @@ SipResponse McServer::adhoc_rejoin(const SipMessage &message, const User &user, 
   auto leg = incoming_leg(message, user, session);
   if (!leg) return reject(488);
   response.status_code = 200;
-  response.local_media = leg->local;
+  response.local_media = answer_media(*leg);
   response.contact_uri = session->uri;
   response.focus = true;
   answer.calling_group = session->group;
@@ -119,7 +119,7 @@ std::optional<SipResponse> McServer::adhoc_alert_group_join(const SipMessage &me
     auto leg = incoming_leg(message, user, session);
     if (!leg) return reject(488);
     response.status_code = 200;
-    response.local_media = leg->local;
+    response.local_media = answer_media(*leg);
     response.contact_uri = session->uri;
     response.focus = true;
     answer.calling_group = session->group;
@@ -444,7 +444,7 @@ void McServer::invite_adhoc_member(const std::shared_ptr<Session> &session, cons
   auto headers = priority_headers(cfg_.at(svc_.name), session->priority);
   headers.push_back({"Answer-Mode", session->policy.value("answer_mode", "Auto")});
   headers.push_back({"Contact", focus_contact(*session)});
-  leg->dialog = sip_.invite(user->sip, leg->local, service_parts(info), {}, user_route(*user, headers));
+  leg->dialog = sip_.invite(user->sip, offer_media(*leg), service_parts(info), {}, user_route(*user, headers));
   add_leg(leg);
   event("adhoc_call_invite", {{"user_id", id}, {"group_id", session->group}});
 }
@@ -616,7 +616,7 @@ SipResponse McServer::adhoc_modify(const SipMessage &message, const User &user, 
     apply_participant_criteria(session);
   }
   response.status_code = 200;
-  response.local_media = leg->local;
+  response.local_media = answer_media(*leg);
   McpttInfo current;
   current.session_type = "adhoc";
   current.request_uri = user.id;

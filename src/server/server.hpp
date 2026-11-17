@@ -266,6 +266,14 @@ protected:
     bool receiving = true;
     std::uint16_t floor_sequence = 0;
     std::unique_ptr<FloorAckRetry> floor_retries;
+    // TS 24.380 clauses 4.3.3.1 and 14.2.7: without multiplexing (the user's SDP has no "mc_floor_ssrc",
+    // remote->floor_ssrc 0) the user's floor control messages carry its own SSRC, learned from its first accepted
+    // message (floor_receive_ok); 0 until then. Reset when the user's floor control channel changes (set_leg_remote).
+    std::uint32_t learned_floor_ssrc = 0;
+    // Without multiplexing, when this server's SDP gave the user local.floor_ssrc (clause 4.3.3.1: the user "shall use"
+    // it), the SSRC this server sends its own messages with, so that the two directions do not share one (RFC 3550
+    // section 8.2, RFC 7714 section 9.1); 0: this server sends with local.floor_ssrc (floor_send_ssrc).
+    std::uint32_t send_floor_ssrc = 0;
     // TS 24.380 clause 6.3.5.7 (TS 24.581 clause 6.3.5.7): 'U: not permitted but sends media', entered with a
     // Floor Revoke cause #3 and left on Floor Release (Transmission End Request) or a grant; T8 (TS 24.581: T3)
     // repeats the revoke. released_floor: the participant left 'U: permitted' with its own Floor Release, for
@@ -478,6 +486,11 @@ protected:
     std::string alias;
     MediaDescription local;
     std::optional<MediaDescription> client_remote, peer_remote;
+    // TS 24.380 clauses 4.3.3.1 and 14.2.7: without multiplexing (no "mc_floor_ssrc" in the SDP of the side the
+    // messages go to) each side sends floor control with its own SSRC, which the relay learns from that side's first
+    // accepted packet (relay_packets): the client's and the peer's; 0 until then. Reset when that side's floor
+    // control channel changes (set_relay_remote).
+    std::uint32_t client_seen_ssrc = 0, peer_seen_ssrc = 0;
     std::unique_ptr<UdpSocket> audio, floor, video;
     std::vector<BodyPart> bye_parts;
     // A group the user was implicitly affiliated to for this call (TS 24.379 clause 9.2.2.2.12).
@@ -663,6 +676,12 @@ protected:
   enum class RelayStream { audio, floor, video };
 
   void relay_packets(Relay &relay, RelayStream stream);
+
+  // The outcome of relay_floor_ssrc: the packet passes, passes and its SSRC is learned, or is refused.
+  enum class RelayFloorSsrc { pass, learn, refused };
+
+  RelayFloorSsrc relay_floor_ssrc(const Relay &relay, bool from_client, std::uint32_t ssrc,
+                                  const ProtectedCall *source_key, const ProtectedCall *target_key);
 
   // ---- Priority call conditions (priority.cpp): TS 24.379 clause 6.3.3.1 ----
   const PriorityState &call_priority(const Session &session);
@@ -884,6 +903,7 @@ protected:
   void pre_session_invite(const SipMessage &message, const User &user, SipResponse &response);
   void pre_session_offer(const SipMessage &message, const User &user, SipResponse &response);
   bool pre_session_refused(const SipMessage &message, const User &user, SipResponse &response);
+  bool pre_session_floor_ssrc_missing(const SipMessage &message, const User &user, SipResponse &response);
   std::shared_ptr<PreSession> make_pre_session(const SipMessage &message, const User &user);
   void pre_session_state(const std::shared_ptr<PreSession> &session, SipCallState state);
   void pre_session_poll();
@@ -922,6 +942,20 @@ protected:
   void validate_remote(const std::string &user, const MediaDescription &media, bool uncontrolled_allowed = false);
 
   [[nodiscard]] MediaDescription initial_answer_media(const Leg &leg) const;
+
+  [[nodiscard]] MediaDescription answer_media(const Leg &leg) const;
+
+  [[nodiscard]] MediaDescription offer_media(const Leg &leg) const;
+
+  [[nodiscard]] bool offers_floor_ssrc() const;
+
+  [[nodiscard]] bool floor_ssrc_advertised(const Leg &leg) const;
+
+  void set_leg_remote(Leg &leg, const MediaDescription &media);
+
+  void set_relay_remote(Relay &relay, bool client_side, const MediaDescription &media);
+
+  bool learned_floor_ssrc_refused(const Leg &leg, std::uint32_t ssrc);
 
   std::shared_ptr<Leg> make_leg(const std::string &id, const std::shared_ptr<Session> &session,
                                 std::optional<std::uint32_t> offered = std::nullopt);

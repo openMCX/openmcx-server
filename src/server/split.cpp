@@ -174,6 +174,20 @@ std::shared_ptr<McServer::Relay> McServer::make_relay(const std::string &user, c
 }
 
 //------------------------------------------------------------------------------
+// TS 24.380 clause 4.3.3.1: one side's media of a relay after an SDP offer or answer ([client_side]: the client's).
+// A change of that side's media plane control channel (its address, port or "mc_floor_ssrc") starts its floor control
+// stream again: the SSRC learned from it without multiplexing (Relay::client_seen_ssrc, peer_seen_ssrc) is learned
+// again from its next packet.
+void McServer::set_relay_remote(Relay &relay, bool client_side, const MediaDescription &media) {
+  auto &remote = client_side ? relay.client_remote : relay.peer_remote;
+  auto &seen = client_side ? relay.client_seen_ssrc : relay.peer_seen_ssrc;
+  if (remote && (remote->floor_ssrc != media.floor_ssrc || remote->floor_port != media.floor_port ||
+                 remote->floor_address != media.floor_address))
+    seen = 0;
+  remote = media;
+}
+
+//------------------------------------------------------------------------------
 // Helper: a media description with this server's addresses and ports in place of the other side's.
 MediaDescription McServer::mirror(MediaDescription media, const MediaDescription &local) {
   media.address = media.floor_address = local.address;

@@ -28,15 +28,6 @@ SipResponse McServer::incoming(const SipMessage &message) {
     refuse_unprotectable(message, response);
     return response;
   }
-  // TS 24.380 clause 14.2.7: an MCPTT media plane control channel without "mc_floor_ssrc" (the offerer does not
-  // support multiplexing) is valid, but this server tells its calls' floor control messages apart by the SSRC it
-  // allocates for them (floor_control.cpp), which only "mc_floor_ssrc" negotiates: such a session is not accepted here
-  // (RFC 3261 clause 21.4.26).
-  if (message.remote_media && message.remote_media->control == MediaControl::floor &&
-      !message.remote_media->floor_ssrc) {
-    response.status_code = 488;
-    return response;
-  }
   try {
     const auto peer = message.source_address == core_address_ ? std::string{} : peer_at(message.source_address);
     // Only the SIP core and the configured peer servers are trusted sources.
@@ -1294,7 +1285,7 @@ std::optional<SipResponse> McServer::plain_reinvite(const SipMessage &message, c
     return response;
   }
   response.status_code = 200;
-  response.local_media = leg->local;
+  response.local_media = answer_media(*leg);
   event("session_refreshed", {{"user_id", user.id}, {"offer", offer.has_value()}});
   return response;
 }
@@ -1648,7 +1639,7 @@ void McServer::priority_reinvite(const SipMessage &message, const User &user, Mc
   apply_priority(session->group, user.id, info, profile, message_location(message));
   if (session->chat && !was_priority && in_priority(session->group))
     schedule([this, session] { invite_chat_members(session); });
-  response.local_media = leg->local;
+  response.local_media = answer_media(*leg);
   auto current = info;
   current.request_uri = user.id;
   current.calling_group = session->group;
@@ -1760,7 +1751,7 @@ std::shared_ptr<McServer::Leg> McServer::group_call_leg(const SipMessage &messag
   leg->origin = creating;
   leg->incoming_offer = true;
   leg->pending_priority_info = correction;
-  leg->remote = *message.remote_media;
+  set_leg_remote(*leg, *message.remote_media);
   leg->local.payload_type = message.remote_media->payload_type;
   leg->local.octet_aligned = message.remote_media->octet_aligned;
   leg->local.queueing = leg->local.queueing && message.remote_media->queueing;

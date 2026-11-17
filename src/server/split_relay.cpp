@@ -158,7 +158,7 @@ SipResponse McServer::relay_outgoing(const SipMessage &message, User &user, cons
   if (outgoing.session_type != svc_.ambient) release_relayed_ambient(user.id, ambient_reason("initiated-by"));
   auto relay = make_relay(user.id, peer);
   relay->client_dialog = message.dialog_id;
-  relay->client_remote = *message.remote_media;
+  set_relay_remote(*relay, true, *message.remote_media);
   // The client's SSRC, which this server sends floor control to the client with under its CSK
   // (relay_floor_ssrc_refused): an offer with one refused is answered 488 (RFC 3261 section 13.3.1.3).
   if (relay_floor_ssrc_refused(*relay, true, *message.remote_media, std::nullopt, std::nullopt)) {
@@ -217,7 +217,7 @@ SipResponse McServer::relay_incoming(const SipMessage &message, const std::strin
   }
   auto relay = make_relay(user.id, peer);
   relay->peer_dialog = message.dialog_id;
-  relay->peer_remote = *message.remote_media;
+  set_relay_remote(*relay, false, *message.remote_media);
   // The peer's SSRC, which this server sends floor control to the peer with under the SPK
   // (relay_floor_ssrc_refused): an offer with one refused is answered 488 (RFC 3261 section 13.3.1.3).
   if (relay_floor_ssrc_refused(*relay, false, *message.remote_media, std::nullopt, std::nullopt)) {
@@ -295,7 +295,7 @@ void McServer::relay_answer(const std::shared_ptr<Relay> &relay, const SipRespon
       answer = {};
       answer.status_code = 500;
     } else {
-      (toward_peer ? relay->client_remote : relay->peer_remote) = *media;
+      set_relay_remote(*relay, toward_peer, *media);
       answer.local_media = mirror(*media, relay->local);
       answer.parts = application_parts(response.parts);
       const auto contact = get_header(response.headers, "Contact");
@@ -427,7 +427,7 @@ SipResponse McServer::relay_reinvite(const SipMessage &message, const std::share
     }
   }
   const auto &offer = *message.remote_media;
-  auto &own = from_peer ? relay->peer_remote : relay->client_remote;
+  const auto &own = from_peer ? relay->peer_remote : relay->client_remote;
   const auto &opposite = from_peer ? relay->client_remote : relay->peer_remote;
   // The offer's floor control SSRC, which this server sends with on this side's key (relay_floor_ssrc_refused): one
   // refused is answered 488 before the relay changes, so that the session goes on as it was (RFC 3261 section 14.2);
@@ -442,7 +442,7 @@ SipResponse McServer::relay_reinvite(const SipMessage &message, const std::share
     // A session refresh stays on its own side of the relay. One that changes the floor control SSRC goes on to the
     // other side like any change: the SSRC is passed on (mirror) and is the one the other side sends floor control
     // with (TS 24.380 clause 4.3.3.1), which an answer given here would leave unchanged.
-    own = offer;
+    set_relay_remote(*relay, !from_peer, offer);
     response.local_media = mirror(*opposite, relay->local);
     return response;
   }
@@ -502,8 +502,8 @@ SipResponse McServer::relayed_reinvite_answer(const SipResponse &answer, const s
     refusal.status_code = 500;
     return refusal;
   }
-  (from_peer ? relay->peer_remote : relay->client_remote) = offer;
-  answering = *media;
+  set_relay_remote(*relay, !from_peer, offer);
+  set_relay_remote(*relay, from_peer, *media);
   reply.local_media = mirror(*media, relay->local);
   reply.parts = application_parts(answer.parts);
   return reply;
@@ -643,6 +643,40 @@ SipResponse McServer::relay_conference(const SipMessage &message, const std::sha
 }
 
 //------------------------------------------------------------------------------
+// TS 24.380 clauses 4.3.3.1 and 14.2.7: the SSRC [ssrc] of a floor control packet from one side of a relay
+// ([from_client]: the client). With multiplexing (the other side's SDP has "mc_floor_ssrc") the side sends with the
+// SSRC the other side allocated, which the SDP checks covered (relay_floor_ssrc_refused): passed. Without, the side
+// sends with its own SSRC: the one learned from its first packet (any other is refused), or, before that, one to
+// learn, refused when it is the SSRC of the opposite direction or, where floor control is protected, one already
+// used under either key the packet passes ([source_key], under which it arrives, and [target_key], under which this
+// server sends it on: TS 33.180 clauses 9.4.2 and 9.4.5) for another stream, or one of another call or relay under
+// way (floor_ssrcs_in_use): a new stream on it would repeat SRTCP IVs (RFC 7714 sections 8.4 and 9.4).
+McServer::RelayFloorSsrc McServer::relay_floor_ssrc(const Relay &relay, bool from_client, std::uint32_t ssrc,
+                                                    const ProtectedCall *source_key, const ProtectedCall *target_key) {
+  const auto &receiving = from_client ? relay.peer_remote : relay.client_remote;
+  const auto &sending = from_client ? relay.client_remote : relay.peer_remote;
+  if (!receiving || receiving->control != MediaControl::floor || receiving->floor_ssrc) return RelayFloorSsrc::pass;
+  const auto seen = from_client ? relay.client_seen_ssrc : relay.peer_seen_ssrc;
+  if (seen) return ssrc == seen ? RelayFloorSsrc::pass : RelayFloorSsrc::refused;
+  // The opposite direction sends with the SSRC this side allocated, or without multiplexing with its own, once seen.
+  const auto seen_opposite = from_client ? relay.peer_seen_ssrc : relay.client_seen_ssrc;
+  const auto opposite_ssrc = sending && sending->floor_ssrc ? sending->floor_ssrc : seen_opposite;
+  const auto opposite = opposite_ssrc ? std::optional(opposite_ssrc) : std::nullopt;
+  const auto refused_under = [&](const ProtectedCall *keys) {
+    return floor_ssrc_refused(ssrc, opposite, std::nullopt, keys, floor_ssrcs_in_use(keys, nullptr, &relay));
+  };
+  if (!ssrc || refused_under(target_key) || (source_key && refused_under(source_key))) {
+    event("relay_floor_ssrc_refused", {{"user_id", relay.user},
+                                       {"ssrc", ssrc},
+                                       {"from", from_client ? "client" : "peer"},
+                                       {"multiplexing", false},
+                                       {"opposite", opposite == ssrc}});
+    return RelayFloorSsrc::refused;
+  }
+  return RelayFloorSsrc::learn;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.380 clauses 6.4.2 and 6.4.3 (TS 24.581 clauses 6.4.2 and 6.4.3): the participating function
 // passes floor (transmission) control messages and RTP media between the client and the peer.
 void McServer::relay_packets(Relay &relay, RelayStream stream) {
@@ -682,15 +716,29 @@ void McServer::relay_packets(Relay &relay, RelayStream stream) {
         continue;
       }
     }
+    // TS 24.380 clauses 4.3.3.1 and 14.2.7: without multiplexing a side sends floor control with its own SSRC, which
+    // the relay checks before the packet gets an SRTCP context, and learns once the packet passed (relay_floor_ssrc).
+    std::uint32_t learning = 0;
+    const auto learn_refused = [&](bool from_client) {
+      if (!floor || datagram->bytes.size() < 8) return false;
+      const auto ssrc = wire_ssrc(datagram->bytes, true);
+      const auto outcome = relay_floor_ssrc(relay, from_client, ssrc, from_client ? csk : spk, from_client ? spk : csk);
+      if (outcome == RelayFloorSsrc::learn) learning = ssrc;
+      return outcome == RelayFloorSsrc::refused;
+    };
     try {
       if (UdpSocket::matches(datagram->source, client_address, port(client))) {
+        if (learn_refused(true)) throw std::runtime_error("floor SSRC refused");
         const auto plain = csk ? csk->unprotect_floor(datagram->bytes) : datagram->bytes;
         if (floor && refuse_remote_request(relay, *socket, plain, csk)) continue;
         socket->send(csk ? spk->protect_floor(plain) : datagram->bytes, remote_address, port(remote));
-      } else if (UdpSocket::matches(datagram->source, remote_address, port(remote)))
+        if (learning) relay.client_seen_ssrc = learning;
+      } else if (UdpSocket::matches(datagram->source, remote_address, port(remote))) {
+        if (learn_refused(false)) throw std::runtime_error("floor SSRC refused");
         socket->send(csk ? csk->protect_floor(spk->unprotect_floor(datagram->bytes)) : datagram->bytes, client_address,
                      port(client));
-      else {
+        if (learning) relay.peer_seen_ssrc = learning;
+      } else {
         status_["relay_dropped"] = status_.value("relay_dropped", 0u) + 1;
         continue;
       }

@@ -527,7 +527,7 @@ McServer::private_caller_answer(const SipMessage &message, const User &user, con
   leg->dialog = message.dialog_id;
   leg->origin = true;
   leg->incoming_offer = true;
-  leg->remote = *message.remote_media;
+  set_leg_remote(*leg, *message.remote_media);
   leg->local.payload_type = message.remote_media->payload_type;
   leg->local.octet_aligned = message.remote_media->octet_aligned;
   leg->local.queueing = leg->local.queueing && message.remote_media->queueing;
@@ -724,7 +724,7 @@ void McServer::invite_private_target(const std::shared_ptr<Session> &session, co
   if (!leg->replaces.empty()) headers.push_back({"Replaces", leg->replaces});
   leg->local.key_mgmt = session->private_key_mgmt;
   leg->dialog = sip_.invite(
-      callee->sip, leg->local, priority_parts(info, &session->priority),
+      callee->sip, offer_media(*leg), priority_parts(info, &session->priority),
       [this, weak = std::weak_ptr<Session>(session)](const SipResponse &response) {
         const auto session = weak.lock();
         if (!session) return;
@@ -816,7 +816,7 @@ std::optional<SipResponse> McServer::private_hold_resume(const SipMessage &messa
     leg->remote->direction = message.remote_media->direction;
     leg->local.direction = leg->held ? "recvonly" : "sendrecv";
     response.status_code = 200;
-    response.local_media = leg->local;
+    response.local_media = answer_media(*leg);
     event(leg->held ? "private_call_held" : "private_call_resumed",
           {{"user_id", user.id}, {"session_uri", session.uri}});
     return response;
@@ -945,7 +945,7 @@ SipResponse McServer::private_reinvite(const SipMessage &message, const User &us
   state = next;
   leg->pending_priority_info = correction;
   response.status_code = 200;
-  response.local_media = leg->local;
+  response.local_media = answer_media(*leg);
   McpttInfo current;
   current.session_type = "private";
   current.request_uri = user.id;

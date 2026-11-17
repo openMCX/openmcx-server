@@ -24,7 +24,16 @@ void McpttServer::floor_packet(Leg &leg, const Datagram &datagram) {
   if ((!over_session && !eligible(leg)) || !leg.remote ||
       !UdpSocket::matches(datagram.source, leg.remote->floor_address, leg.remote->floor_port))
     return;
-  if (wire_ssrc(datagram.bytes, true) != leg.local.floor_ssrc) return;
+  // TS 24.380 clause 4.3.3.1: with multiplexing the SSRC this server allocated for the leg; without (clause 14.2.7:
+  // the user's SDP had no "mc_floor_ssrc"), the SSRC the user sends with (the leg's local one when this server's SDP
+  // gave it, else the user's own), learned from its first message; one already in use is refused
+  // (learned_floor_ssrc_refused) before the packet gets an SRTCP context.
+  const auto ssrc = wire_ssrc(datagram.bytes, true);
+  if (!floor_receive_ok(ssrc, leg.local.floor_ssrc, leg.remote->floor_ssrc, leg.learned_floor_ssrc,
+                        leg.send_floor_ssrc))
+    return;
+  const bool learning = !leg.remote->floor_ssrc && !leg.learned_floor_ssrc;
+  if (learning && learned_floor_ssrc_refused(leg, ssrc)) return;
   auto *user = by_id(leg.user);
   auto *keys = user ? floor_keys(*user) : nullptr;
   if (floor_protected(leg) && !keys) throw std::runtime_error("floor key unavailable");
@@ -38,8 +47,14 @@ void McpttServer::floor_packet(Leg &leg, const Datagram &datagram) {
   }
   if (!eligible(leg)) return;
   auto packet = decode_floor(bytes);
-  if (packet.ssrc != leg.local.floor_ssrc) return;
+  if (packet.ssrc != ssrc) return;
   validate_on_network_floor(packet);
+  // The first message that authenticates and decodes gives the user's SSRC: its Floor Acks carry it (clause 8.2.13).
+  if (learning) {
+    leg.learned_floor_ssrc = ssrc;
+    if (leg.floor_retries) leg.floor_retries->set_peer_ssrc(ssrc);
+    event("floor_ssrc_learned", {{"user_id", leg.user}, {"ssrc", ssrc}});
+  }
   const auto session = leg.session;
   auto &arbitrator = *session->arbitrator;
   std::string id;
@@ -53,7 +68,10 @@ void McpttServer::floor_packet(Leg &leg, const Datagram &datagram) {
     return;
   }
   if (packet.ack_required) {
-    FloorPacket ack{FloorType::Ack, false, leg.remote->floor_ssrc, {source_field(2), message_type_field(packet.type)}};
+    FloorPacket ack{FloorType::Ack,
+                    false,
+                    floor_send_ssrc(leg.local.floor_ssrc, leg.remote->floor_ssrc, leg.send_floor_ssrc),
+                    {source_field(2), message_type_field(packet.type)}};
     transmit_floor(leg, ack);
   }
   if (!id.empty() && id != leg.user) throw std::runtime_error("floor identity mismatch");
@@ -174,9 +192,12 @@ void McpttServer::floor_request(Leg &leg, const std::shared_ptr<Session> &sessio
 void McpttServer::send_floor_notice(Leg &leg, const FloorNotice &notice) {
   if (!leg.remote) return; // no SDP answer yet: no floor control channel (send_notice checks it too)
   FloorPacket packet;
-  packet.ssrc = leg.remote->floor_ssrc;
+  // TS 24.380 clause 4.3.3.1 (floor_send_ssrc): the user's "mc_floor_ssrc", or without multiplexing the "SSRC of
+  // floor control server", this server's own; the user's Floor Ack carries the SSRC the user sends with.
+  packet.ssrc = floor_send_ssrc(leg.local.floor_ssrc, leg.remote->floor_ssrc, leg.send_floor_ssrc);
   if (!leg.floor_retries)
-    leg.floor_retries = std::make_unique<FloorAckRetry>(leg.remote->floor_ssrc, leg.local.floor_ssrc, 0);
+    leg.floor_retries = std::make_unique<FloorAckRetry>(
+        packet.ssrc, floor_ack_ssrc(leg.local.floor_ssrc, leg.remote->floor_ssrc, leg.learned_floor_ssrc), 0);
   const auto &state = call_priority(*leg.session);
   const auto indicator = floor_call_type_bits(leg.session->broadcast, state.emergency, state.imminent);
   packet.fields.push_back(floor_indicator_field(indicator | (leg.local.queueing && leg.remote->queueing ? 0x0400 : 0)));

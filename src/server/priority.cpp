@@ -197,7 +197,7 @@ void McServer::send_priority_notification(const std::shared_ptr<Leg> &leg) {
   leg->priority_notification_pending = true;
   try {
     sip_.reinvite(
-        leg->dialog, leg->local, priority_parts(notification.info, &state),
+        leg->dialog, offer_media(*leg), priority_parts(notification.info, &state),
         [this, weak = std::weak_ptr<Leg>(leg)](const SipResponse &response) {
           if (response.status_code < 200) return;
           auto leg = weak.lock();

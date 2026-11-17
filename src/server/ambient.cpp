@@ -180,7 +180,7 @@ SipResponse McServer::ambient_invite(const SipMessage &message, const User &user
   leg->dialog = message.dialog_id;
   leg->origin = true;
   leg->incoming_offer = true;
-  leg->remote = *message.remote_media;
+  set_leg_remote(*leg, *message.remote_media);
   leg->local.payload_type = message.remote_media->payload_type;
   leg->local.octet_aligned = message.remote_media->octet_aligned;
   leg->local.queueing = leg->local.queueing && message.remote_media->queueing;
