@@ -35,6 +35,9 @@ void McpttServer::check_service_media(const MediaDescription &media, bool uncont
     throw std::runtime_error("media of another MC service");
   if (media.control == MediaControl::none && !uncontrolled_allowed)
     throw std::runtime_error("call requires floor control");
+  // TS 24.380 clauses 14.2.7 and 14.3.8: this server's floor control needs "mc_floor_ssrc" (McServer::incoming).
+  if (media.control == MediaControl::floor && !media.floor_ssrc)
+    throw std::runtime_error("floor control without mc_floor_ssrc is not supported");
 }
 
 //------------------------------------------------------------------------------

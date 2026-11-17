@@ -557,6 +557,31 @@ int main() {
     check(inactive.direction == "inactive", "inactive direction lost");
     check(parse_sdp(make_sdp(inactive, 794)).direction == "inactive", "inactive SDP round trip lost");
   }
+  // TS 24.380 clauses 14.2.7 and 14.3.8: "mc_floor_ssrc" only with multiplexing; an offer with "mc_priority" alone
+  // (clauses 14.2.1, 14.2.3) is valid, and an answer to it writes no "mc_floor_ssrc" (clause 14.3.1).
+  {
+    auto plain = sdp;
+    plain.replace(plain.find("mc_floor_ssrc=12345"), 19, "mc_priority=3");
+    const auto offer = parse_sdp(plain);
+    check(offer.control == MediaControl::floor && offer.floor_ssrc == 0 && offer.floor_priority == 3 &&
+              !offer.queueing,
+          "an offer without mc_floor_ssrc is valid");
+    const auto answer = make_sdp(offer, 796);
+    check(answer.find("a=fmtp:MCPTT mc_priority=3\r\n") != std::string::npos &&
+              answer.find("mc_floor_ssrc") == std::string::npos,
+          "the answer has no mc_floor_ssrc");
+    check(parse_sdp(answer).floor_ssrc == 0, "no mc_floor_ssrc round trip");
+    auto bare = sdp;
+    bare.erase(bare.find("a=fmtp:MCPTT"));
+    const auto no_fmtp = parse_sdp(bare);
+    check(no_fmtp.control == MediaControl::floor && no_fmtp.floor_ssrc == 0, "an offer without fmtp is valid");
+    const auto bare_answer = make_sdp(no_fmtp, 797);
+    check(bare_answer.find("a=fmtp:MCPTT") == std::string::npos &&
+              bare_answer.find("m=application 5000 udp MCPTT\r\n") != std::string::npos,
+          "the media plane control channel without fmtp parameters");
+    check(make_sdp(media, 798).find("a=fmtp:MCPTT mc_floor_ssrc=12345\r\n") != std::string::npos,
+          "mc_floor_ssrc written");
+  }
 
   {
     // An MCPTT offer stays exactly what it was before MCVideo (TS 24.379 clause 6.2.1).
@@ -606,6 +631,13 @@ int main() {
     auto colon = video_sdp;
     colon.replace(colon.find("mc_transmission_ssrc=12345;mc_queueing"), 38, "mc_transmission_ssrc=12345:mc_queueing");
     check(parse_sdp(colon).queueing, "colon-separated MCVideo parameters");
+    // TS 24.581 clause 14.2.7: MCVideo has "mc_transmission_ssrc" always.
+    auto no_ssrc = video_sdp;
+    no_ssrc.erase(no_ssrc.find("mc_transmission_ssrc=12345;"), 27);
+    rejects([&] { parse_sdp(no_ssrc); });
+    auto unset = mcv;
+    unset.floor_ssrc = 0;
+    rejects([&] { (void)make_sdp(unset, 3); });
     auto answer = mcv;
     answer.granted_audio_ssrc = 5;
     answer.granted_video_ssrc = 6;

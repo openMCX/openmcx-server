@@ -55,9 +55,12 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id, st
   const bool video =
       media.control == MediaControl::transmission || (media.control == MediaControl::none && media.video);
   const bool controlled = media.control != MediaControl::none;
+  // TS 24.380 clauses 14.2.7 and 14.3.8: an MCPTT offer or answer has "mc_floor_ssrc" only when multiplexing is
+  // supported, and an answer only when the offer had it: floor_ssrc 0 writes none. TS 24.581 clause 14.2.7: MCVideo
+  // always has "mc_transmission_ssrc".
   if (!media.audio_port || media.payload_type < 96 || media.payload_type > 127 ||
       (controlled && (!media.floor_port || media.audio_port == media.floor_port ||
-                      media.floor_port == media.rtcp_port || !media.floor_ssrc)))
+                      media.floor_port == media.rtcp_port || (video && !media.floor_ssrc))))
     invalid("invalid SDP media configuration");
 
   // TS 24.281 clause 6.2.1: an MCVideo offer has an audio and a video section; MCPTT has no video.
@@ -126,35 +129,42 @@ std::string make_sdp(const MediaDescription &media, std::uint64_t session_id, st
   if (!media.floor_address.empty() && media.floor_address != media.address)
     out << "c=IN IP4 " << media.floor_address << "\r\n";
 
-  // TS 24.380 clause 14.2.7 (mc_floor_ssrc) or TS 24.581 clause 14.2.7 (mc_transmission_ssrc); the
-  // parameters are ';'-separated as for MCPTT.
-  out << "a=fmtp:" << control << (video ? " mc_transmission_ssrc=" : " mc_floor_ssrc=") << media.floor_ssrc;
+  // TS 24.380 clause 14.2.7 (mc_floor_ssrc, none when floor_ssrc is 0: clauses 14.2.7 and 14.3.8) or TS 24.581
+  // clause 14.2.7 (mc_transmission_ssrc); the parameters are ';'-separated as for MCPTT. Without any parameter there is
+  // no "a=fmtp" line (TS 24.380 clauses 14.2.1 and 14.3.1: the fmtp attribute "may" be associated).
+  std::vector<std::string> parameters;
+  if (media.floor_ssrc)
+    parameters.push_back((video ? "mc_transmission_ssrc=" : "mc_floor_ssrc=") + std::to_string(media.floor_ssrc));
   // TS 24.380 clause 14.2.6: "mc_no_floor_ctrl", and none of the floor control related fmtp attributes.
   if (media.no_floor_control) {
     if (video) invalid("mc_no_floor_ctrl is an MCPTT attribute");
     if (media.granted || media.granted_audio_ssrc || media.implicit_request || media.queueing || media.floor_priority)
       invalid("floor control parameters with mc_no_floor_ctrl");
-    out << ";mc_no_floor_ctrl\r\n";
-    if (media.ice) write_ice_candidates(out, media.ice->control);
-    return out.str();
+    parameters.push_back("mc_no_floor_ctrl");
+  } else {
+    if (media.floor_priority) {
+      if (*media.floor_priority > 99) invalid("floor priority exceeds SDP range");
+      parameters.push_back("mc_priority=" + std::to_string(unsigned(*media.floor_priority)));
+    }
+    // TS 24.581 clauses 12.1.2.3 ("mc_reception_priority=" 1*2(DIGIT)), 14.2.6 and 14.3.6.
+    if (media.reception_priority) {
+      if (!video) invalid("reception priority without MCVideo transmission control");
+      if (*media.reception_priority > 99) invalid("reception priority exceeds SDP range");
+      parameters.push_back("mc_reception_priority=" + std::to_string(unsigned(*media.reception_priority)));
+    }
+    if (media.queueing) parameters.push_back("mc_queueing");
+    if (media.implicit_request) parameters.push_back("mc_implicit_request");
+    if (media.granted) parameters.push_back("mc_granted");
+    // TS 24.581 clause 14.3.7 (MCVideo "mc_audio_ssrc"), TS 24.380 clause 14.3.6 (MCPTT "mc_ssrc").
+    if (media.granted_audio_ssrc)
+      parameters.push_back((video ? "mc_audio_ssrc=" : "mc_ssrc=") + std::to_string(media.granted_audio_ssrc));
+    if (media.granted_video_ssrc) parameters.push_back("mc_video_ssrc=" + std::to_string(media.granted_video_ssrc));
   }
-  if (media.floor_priority) {
-    if (*media.floor_priority > 99) invalid("floor priority exceeds SDP range");
-    out << ";mc_priority=" << unsigned(*media.floor_priority);
+  if (!parameters.empty()) {
+    out << "a=fmtp:" << control << ' ';
+    for (std::size_t i = 0; i < parameters.size(); ++i) out << (i ? ";" : "") << parameters[i];
+    out << "\r\n";
   }
-  // TS 24.581 clauses 12.1.2.3 ("mc_reception_priority=" 1*2(DIGIT)), 14.2.6 and 14.3.6.
-  if (media.reception_priority) {
-    if (!video) invalid("reception priority without MCVideo transmission control");
-    if (*media.reception_priority > 99) invalid("reception priority exceeds SDP range");
-    out << ";mc_reception_priority=" << unsigned(*media.reception_priority);
-  }
-  if (media.queueing) out << ";mc_queueing";
-  if (media.implicit_request) out << ";mc_implicit_request";
-  if (media.granted) out << ";mc_granted";
-  // TS 24.581 clause 14.3.7 (MCVideo "mc_audio_ssrc"), TS 24.380 clause 14.3.6 (MCPTT "mc_ssrc").
-  if (media.granted_audio_ssrc) out << (video ? ";mc_audio_ssrc=" : ";mc_ssrc=") << media.granted_audio_ssrc;
-  if (media.granted_video_ssrc) out << ";mc_video_ssrc=" << media.granted_video_ssrc;
-  out << "\r\n";
   if (media.ice) write_ice_candidates(out, media.ice->control);
 
   return out.str();
@@ -529,7 +539,10 @@ void finish_sdp(MediaDescription &out, const SdpState &state) {
     out.floor_priority.reset();
     out.granted_audio_ssrc = 0;
   }
-  if (!state.version || !state.audio || !state.matched_codec || (state.floor && !out.floor_ssrc))
+  // TS 24.380 clauses 14.2.7 and 14.3.8: "mc_floor_ssrc" is there only when the sender supports multiplexing (0
+  // without it); TS 24.581 clause 14.2.7: MCVideo always has "mc_transmission_ssrc".
+  if (!state.version || !state.audio || !state.matched_codec ||
+      (state.floor && out.control == MediaControl::transmission && !out.floor_ssrc))
     invalid("incomplete MCPTT SDP");
 
   // MCPTT floor control has no video section, and MCVideo transmission control needs
