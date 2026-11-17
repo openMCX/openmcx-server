@@ -112,6 +112,9 @@ struct McpttInfo {
   std::string location_of_functional_alias;
   // <PrivateCallKMSURI> with its <uri-entry>: the KMS URI of the MCPTT ID (TS 24.379 clause 11.1.1.3.2 step 4a b iii).
   std::string private_call_kms_uri;
+  // TS 24.379 annex F.1.3 w): the <uri-entry> of each <entry> of <forwarding-other-list> (the forwardings on
+  // "no-answer" or "manual-input" of the call so far), as received (clauses 11.1.1.2.1.2 1), 11.1.9.2.1 1A)).
+  std::vector<std::string> forwarding_other_list;
   // Plain-text <anyExt> elements of the private call services (TS 24.379
   // clauses 11.1.5 to 11.1.9), keyed by element name: request-type, response-type,
   // urgency-ind, time-of-request, notify-remote-user, ric-app-level-priority,

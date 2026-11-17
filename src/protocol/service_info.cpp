@@ -51,6 +51,9 @@ const std::vector<std::pair<std::string, std::set<std::string>>> &service_elemen
       // TS 24.379 annex F.1.3 af) and clause 11.1.1.2.1.1 14B), 14C) a1): the number of forwardings of the call.
       {"forwarding-sequence-number", {}},
       {"forwarding-call-outcome", {"success", "fail"}},
+      // TS 24.379 annex F.1.3 ah) and clause 11.1.9.2.1 2) d) i) D): the functional alias the forwarding user was
+      // called at.
+      {"forwarded-by-functional-alias", {}},
       // Functional alias status determination (TS 24.379 clause 9A.2.1.3, TS 24.281 clause 20.2.1.3).
       {"req-type",
        {"mc-service-authorisation-notify-request", "functional-alias-status-determination",
@@ -427,6 +430,10 @@ void parse_info_extensions(xmlNode *ext, const InfoNames &names, McpttInfo &out)
   if (auto criteria = unique_child(ext, names.criteria.c_str(), info_ns, false))
     out.participant_criteria = scalar(criteria);
   parse_service_elements(ext, names, out);
+  if (auto list = unique_child(ext, "forwarding-other-list", info_ns, false))
+    for (auto entry = list->children; entry; entry = entry->next)
+      if (is(entry, "entry", info_ns))
+        out.forwarding_other_list.push_back(scalar(unique_child(entry, "uri-entry", info_ns)));
   out.functional_alias = ext_uri(ext, "functional-alias-URI", names);
   out.called_functional_alias = ext_uri(ext, "called-functional-alias-URI", names);
   out.call_to_functional_alias = ext_flag(ext, "call-to-functional-alias-ind", info_ns);

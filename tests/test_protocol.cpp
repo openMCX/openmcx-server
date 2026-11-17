@@ -1278,6 +1278,22 @@ int main() {
   check(parse_mcptt_info(wrapped_trigger).service.at("resp-type") ==
             "ad-hoc-emergency-alert-participant-criteria-modification",
         "<resp-type> in <mcpttString> not read");
+  // TS 24.379 annex F.1.3 w) and ah), clause 11.1.9.2.1 1A) and 2) d) i) D): <forwarding-other-list> entries read,
+  // <forwarded-by-functional-alias> written and read.
+  {
+    McpttInfo forwarding;
+    forwarding.service = {{"request-type", "forward-private-call-request"},
+                          {"forwarded-by-functional-alias", "sip:fa@example.com"}};
+    auto xml = mcptt_info_xml(forwarding);
+    const auto end = xml.find("</anyExt>");
+    check(end != std::string::npos, "forwarding anyExt written");
+    xml.insert(end, "<forwarding-other-list><entry><uri-entry>sip:b@example.com</uri-entry></entry>"
+                    "</forwarding-other-list>");
+    const auto parsed = parse_mcptt_info(xml);
+    check(parsed.forwarding_other_list == std::vector<std::string>{"sip:b@example.com"} &&
+              parsed.service.at("forwarded-by-functional-alias") == "sip:fa@example.com",
+          "forwarding-other-list / forwarded-by-functional-alias");
+  }
   // TS 24.379 clause 6.3.3.1.26 5) c): the ad hoc group call redirection, <partner-mcptt-id> and <primary-mcptt-id>.
   McpttInfo migrated_call;
   migrated_call.calling_group = "sip:adhoc-1@example.com";
