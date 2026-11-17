@@ -181,8 +181,11 @@ SipResponse DataServer::third_party_register(const SipMessage &request) {
   inner.body.clear();
   inner.parts = std::move(parts);
   inner.headers = {{"P-Asserted-Identity", "<" + identity + ">"}, {"Expires", "4294967295"}};
-  if (const auto found = users_.find(identity); found != users_.end() && !found->second.auth_etag.empty())
-    inner.headers.push_back({"SIP-If-Match", found->second.auth_etag});
+  std::string publication;
+  if (const auto found = users_.find(identity); found != users_.end() && !found->second.auth_etag.empty()) {
+    publication = found->second.auth_etag;
+    inner.headers.push_back({"SIP-If-Match", publication});
+  }
   // A renewal of an authorised user comes signed and with its XML encrypted, as its PUBLISH would. TS 24.282 clause
   // 6.5.1.4: its signatures first, under the CSK held for the identity; those of a REGISTER that uploads the CSK are
   // verified when it is accepted (authorise_csk).
@@ -198,6 +201,10 @@ SipResponse DataServer::third_party_register(const SipMessage &request) {
   if (auto refused = open_signalling(identity, inner)) return *refused;
   response = authorise(inner, true);
   if (response.status_code != 200) return response;
+  // The client's publication (its settings, clause 7.3.4) is not changed by a REGISTER: its entity tag, which the
+  // client names in a modification or its log-off (clause 7.3.5), stays.
+  if (const auto found = users_.find(identity); found != users_.end() && !publication.empty())
+    found->second.auth_etag = publication;
   response.headers = {{"Expires", expires.empty() ? "3600" : expires}};
   event("mcdata_authorised_by_register", {{"user", identity}});
   return response;
