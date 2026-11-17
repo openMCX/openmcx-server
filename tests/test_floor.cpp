@@ -173,7 +173,7 @@ void test_bounds_and_malformed_packets() {
   malformed.push_back(0); // undeclared trailing octet
   expect_runtime_error([&] { (void)mcx::decode_floor(malformed); });
   malformed = request;
-  malformed[0] = 0x87; // unsupported Floor Revoke Request subtype
+  malformed[0] = 0x8c; // subtype 01100: not in table 8.2.2.1-1
   expect_runtime_error([&] { (void)mcx::decode_floor(malformed); });
   malformed = request;
   malformed[0] = 0x90; // Request has no acknowledgement-bit form
@@ -214,6 +214,139 @@ void test_unknown_extension_field() {
   nonzero_padding.back() = 0xff;
   const auto decoded = mcx::decode_floor(nonzero_padding);
   assert((decoded.fields == std::vector<mcx::FloorField>{{200, {0xaa, 0xbb}}}));
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 8.2.14 to 8.2.17 (table 8.2.2.1-1 subtypes 01111, x1110, x1011, 00111) and the fields of
+// clauses 8.2.3.17 to 8.2.3.27 (table 8.2.3.1-2 IDs 15 to 25): hand-built Floor Release Multi Talker, multi-talker
+// Floor Taken, Queued Floor Requests, Unicast Media Flow Control and Floor Revoke Request round-trip byte for byte;
+// the list fields keep their order and pad as clause 8.1.3 does.
+void test_multi_talker_and_queue_messages() {
+  // Floor Release Multi Talker: User ID "sip:a" (7 octets, padded to 8) and the releasing participant's SSRC.
+  const Bytes release_multi{
+      0x8f, 0xcc, 0x00, 0x06, 0x00, 0x00, 0x00, 0x01, 'M',  'C',  'P',  'T',  0x06, 0x05,
+      's',  'i',  'p',  ':',  'a',  0x00, 0x0e, 0x06, 0x11, 0x22, 0x33, 0x44, 0x00, 0x00,
+  };
+  expect_packet(release_multi, mcx::FloorType::ReleaseMultiTalker, false, 1,
+                {mcx::user_id_field("sip:a"), mcx::audio_ssrc_field(0x11223344)});
+  auto with_ack = release_multi;
+  with_ack[0] = 0x9f; // 01111 has no x bit
+  expect_runtime_error([&] { (void)mcx::decode_floor(with_ack); });
+  assert(!mcx::decode_floor_received(with_ack));
+
+  // A multi-talker Floor Taken: List of Granted Users (2 entries, 13 octets: padded to 16), List of SSRCs in the
+  // same order, Message Sequence Number and the Floor Indicator I bit (multi-talker).
+  const Bytes taken_multi{
+      0x82, 0xcc, 0x00, 0x0b, 0x00, 0x00, 0x00, 0x02, 'M',  'C',  'P',  'T',  0x0f, 0x0d, 0x02, 0x05,
+      's',  'i',  'p',  ':',  'a',  0x05, 's',  'i',  'p',  ':',  'b',  0x00, 0x10, 0x0a, 0x02, 0x00,
+      0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x0b, 0x08, 0x02, 0x00, 0x07, 0x0d, 0x02, 0x00, 0x80,
+  };
+  const std::vector<mcx::FloorField> taken_fields{
+      mcx::uri_list_field(mcx::FloorFieldId::ListOfGrantedUsers, {"sip:a", "sip:b"}), mcx::ssrc_list_field({10, 11}),
+      mcx::message_sequence_field(7), mcx::floor_indicator_field(0x0080)};
+  expect_packet(taken_multi, mcx::FloorType::Taken, false, 2, taken_fields);
+  const auto taken = mcx::decode_floor(taken_multi);
+  mcx::validate_on_network_floor(taken); // no Audio SSRC: the List of SSRCs names the talkers
+  assert((mcx::read_uri_list(taken.fields[0]) == std::vector<std::string>{"sip:a", "sip:b"}));
+  assert((mcx::read_ssrc_list(taken.fields[1]) == std::vector<std::uint32_t>{10, 11}));
+  expect_runtime_error([] {
+    mcx::validate_on_network_floor({mcx::FloorType::Taken, false, 2, {mcx::message_sequence_field(1)}});
+  });
+
+  // Queued Floor Requests (x1110, acknowledgement required): Cancel Request for one queued user, with the
+  // requester's Functional Alias and identity (Requested Party's Identity, coded as the User ID).
+  const Bytes queued{
+      0x9e, 0xcc, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x03, 'M', 'C', 'P', 'T', 0x15, 0x02, 0x00, 0x00, 0x16, 0x07,
+      0x01, 0x05, 's',  'i',  'p',  ':',  'q',  0x00, 0x00, 0x00, 0x11, 0x06, 's', 'i', 'p', ':', 'f',  'a',
+      0x06, 0x05, 's',  'i',  'p',  ':',  'r',  0x00,
+  };
+  expect_packet(queued, mcx::FloorType::QueuedFloorRequests, true, 3,
+                {mcx::queued_requests_purpose_field(mcx::QueuedRequestsPurpose::CancelRequest),
+                 mcx::uri_list_field(mcx::FloorFieldId::ListOfQueuedUsers, {"sip:q"}),
+                 mcx::functional_alias_field("sip:fa"), mcx::user_id_field("sip:r")});
+  mcx::validate_on_network_floor(mcx::decode_floor(queued));
+  assert(mcx::read_queued_requests_purpose(
+             mcx::queued_requests_purpose_field(mcx::QueuedRequestsPurpose::CancelNotification)) == 2);
+  assert(mcx::read_queued_requests_result(mcx::queued_requests_result_field(255)) == 255);
+  assert(mcx::queued_requests_result_field(4).id == 23);
+  assert(mcx::read_functional_alias(mcx::functional_alias_field("sip:fa")) == "sip:fa");
+  // A Floor Ack for it names Message Type 14 (TS 24.380 clauses 6.2.4.7.6 and 6.2.4.9.15).
+  const mcx::FloorPacket ack{mcx::FloorType::Ack, false, 3,
+                             {mcx::source_field(0), mcx::message_type_field(mcx::FloorType::QueuedFloorRequests)}};
+  assert(mcx::decode_floor(mcx::encode_floor(ack)) == ack);
+  assert(mcx::message_type_field(mcx::FloorType::QueuedFloorRequests).value[0] == 14);
+  expect_runtime_error([] {
+    (void)mcx::encode_floor({mcx::FloorType::Ack,
+                             false,
+                             3,
+                             {mcx::source_field(0), mcx::message_type_field(mcx::FloorType::ReleaseMultiTalker)}});
+  });
+
+  // Unicast Media Flow Control (x1011): User ID and the Media Flow Control Indicator, bit A '0' (stop).
+  const Bytes flow{
+      0x8b, 0xcc, 0x00, 0x05, 0x00, 0x00, 0x00, 0x04, 'M', 'C', 'P', 'T', 0x06, 0x05,
+      's',  'i',  'p',  ':',  'u',  0x00, 0x18, 0x02, 0x00, 0x00,
+  };
+  expect_packet(flow, mcx::FloorType::UnicastMediaFlowControl, false, 4,
+                {mcx::user_id_field("sip:u"), mcx::media_flow_control_field(false)});
+  assert(mcx::read_media_flow_control(mcx::media_flow_control_field(true)));
+  assert(mcx::media_flow_control_field(true).value == Bytes({0x80, 0x00}));
+  assert(!mcx::read_media_flow_control(mcx::decode_floor(flow).fields[1]));
+
+  // Floor Revoke Request (00111): Floor Priority, Floor Revoke Request User Identity, the talker's Audio SSRC.
+  const Bytes revoke_request{
+      0x87, 0xcc, 0x00, 0x07, 0x00, 0x00, 0x00, 0x05, 'M',  'C',  'P',  'T',  0x00, 0x02, 0x05, 0x00,
+      0x19, 0x05, 's',  'i',  'p',  ':',  't',  0x00, 0x0e, 0x06, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00,
+  };
+  expect_packet(revoke_request, mcx::FloorType::RevokeRequest, false, 5,
+                {mcx::priority_field(5), mcx::revoke_request_user_field("sip:t"), mcx::audio_ssrc_field(10)});
+  assert(mcx::read_revoke_request_user(mcx::decode_floor(revoke_request).fields[1]) == "sip:t");
+  expect_runtime_error([] { mcx::validate_on_network_floor({mcx::FloorType::RevokeRequest, false, 5, {}}); });
+
+  // List of Functional Aliases, Location and List of Locations (types of table 8.2.3.21-3).
+  const auto aliases = mcx::uri_list_field(mcx::FloorFieldId::ListOfFunctionalAliases, {"sip:fa1", "sip:fa2"});
+  assert(aliases.id == 18 && (mcx::read_uri_list(aliases) == std::vector<std::string>{"sip:fa1", "sip:fa2"}));
+  const mcx::FloorLocation geo{6, {1, 2, 3, 4, 5, 6}};
+  assert(mcx::read_location(mcx::location_field(geo)) == geo);
+  assert(mcx::location_field({0, {}}) == mcx::location_not_provided_field());
+  const auto locations = mcx::location_list_field({{0, {}}, geo});
+  assert(locations.value == Bytes({2, 0, 6, 1, 2, 3, 4, 5, 6}));
+  assert((mcx::read_location_list(locations) == std::vector<mcx::FloorLocation>{{0, {}}, geo}));
+  expect_runtime_error([] { (void)mcx::location_field({6, {1}}); });
+  expect_runtime_error([] { (void)mcx::read_location({19, {9, 1}}); });
+  expect_runtime_error([] { (void)mcx::read_location_list({20, {2, 0}}); });
+  expect_runtime_error([] { (void)mcx::read_uri_list({15, {2, 1, 'a'}}); });
+  expect_runtime_error([] { (void)mcx::read_uri_list({15, {1, 1, 'a', 'b'}}); });
+  expect_runtime_error([] { (void)mcx::read_ssrc_list({16, {2, 0, 0, 0, 0, 1}}); });
+  expect_runtime_error([] { (void)mcx::uri_list_field(mcx::FloorFieldId::UserId, {"sip:a"}); });
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.1.4: a received message of an unknown subtype is ignored whole (item 1), a field of an
+// unspecified ID is kept for the caller to ignore (item 2) and a syntactically incorrect field is left out (item 3).
+void test_received_message_tolerance() {
+  const Bytes unknown{
+      0x8c, 0xcc, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 'M', 'C', 'P', 'T',
+  };
+  assert(!mcx::decode_floor_received(unknown));
+  // Floor Taken: a List of SSRCs whose count does not match, an unspecified field 30, then the Audio SSRC and
+  // Message Sequence Number.
+  const Bytes taken{
+      0x82, 0xcc, 0x00, 0x08, 0x00, 0x00, 0x00, 0x02, 'M',  'C',  'P',  'T',  0x10, 0x06, 0x02, 0x00,
+      0x00, 0x00, 0x00, 0x0a, 0x1e, 0x01, 0xff, 0x00, 0x0e, 0x06, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00,
+      0x08, 0x02, 0x00, 0x01,
+  };
+  expect_runtime_error([&] { (void)mcx::decode_floor(taken); });
+  const auto received = mcx::decode_floor_received(taken);
+  assert(received && received->type == mcx::FloorType::Taken);
+  assert(received->fields.size() == 3 && received->fields[0].id == 30);
+  assert(!mcx::find_floor_field(*received, mcx::FloorFieldId::ListOfSsrcs));
+  assert(mcx::read_audio_ssrc(*mcx::find_floor_field(*received, mcx::FloorFieldId::AudioSsrc)) == 10);
+  mcx::validate_on_network_floor(*received);
+  // The RTCP framing itself is still checked.
+  auto wrong_name = unknown;
+  wrong_name[8] = 'X';
+  expect_runtime_error([&] { (void)mcx::decode_floor_received(wrong_name); });
 }
 
 //------------------------------------------------------------------------------
@@ -551,6 +684,117 @@ void test_participant_timers() {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.380 clauses 6.2.4.3.7 to 6.2.4.3.10, 6.2.4.4.10, 6.2.4.6.9, 6.2.4.7.4 to 6.2.4.7.6, 6.2.4.9.14 and
+// 6.2.4.9.15: the participant's multi-talker and queue cancellation transitions, T134, Unicast Media Flow Control
+// and Floor Revoke Request in 'U: has no permission' only; table 11.2.1-1: C100, C101 and C104 one by one.
+void test_participant_multi_talker_and_queue_cancel() {
+  mcx::FloorParticipantTimerOptions options{100, 100, 100, 300, 200, 3};
+  options.queued_requests_ms = 500;
+  options.request_transmissions = 2;
+  options.release_transmissions = 4;
+  mcx::FloorParticipantTimers timers(options);
+  timers.set_user_id("sip:me");
+  const mcx::FloorPacket stop{mcx::FloorType::UnicastMediaFlowControl, false, 7,
+                              {mcx::user_id_field("sip:me"), mcx::media_flow_control_field(false)}};
+  timers.send(stop, 0);
+  assert(timers.state() == mcx::FloorParticipantState::NoPermission);
+  const mcx::FloorPacket revoke{mcx::FloorType::RevokeRequest, false, 7, {mcx::revoke_request_user_field("sip:t")}};
+  timers.send(revoke, 0);
+  assert(timers.state() == mcx::FloorParticipantState::NoPermission && timers.tick(1000).empty());
+
+  // Floor Release Multi Talker of another talker: no change in 'U: has no permission' and 'U: pending Request'.
+  const mcx::FloorPacket other_released{mcx::FloorType::ReleaseMultiTalker, false, 8, {mcx::user_id_field("sip:b")}};
+  timers.receive(other_released, 1000);
+  assert(timers.state() == mcx::FloorParticipantState::NoPermission);
+  const mcx::FloorPacket request{mcx::FloorType::Request, false, 7, {}};
+  timers.send(request, 1000);
+  expect_runtime_error([&] { timers.send(stop, 1000); });
+  timers.receive(other_released, 1010);
+  assert(timers.state() == mcx::FloorParticipantState::PendingRequest);
+  assert(timers.tick(1100).size() == 1); // C101 limit 2: one retransmission
+  assert(timers.tick(1200).empty() && timers.state() == mcx::FloorParticipantState::NoPermission);
+  assert(timers.take_failed() == std::vector<mcx::FloorType>{mcx::FloorType::Request});
+
+  // 'U: pending Release': another talker's release keeps the state, this participant's own ends it.
+  const mcx::FloorPacket release{mcx::FloorType::Release, false, 7, {}};
+  timers.send(release, 2000);
+  timers.receive(other_released, 2010);
+  assert(timers.state() == mcx::FloorParticipantState::PendingRelease);
+  for (std::uint64_t at = 2100; at <= 2400; at += 100) assert(timers.tick(at).size() == (at < 2400 ? 1u : 0u));
+  assert(timers.state() == mcx::FloorParticipantState::NoPermission); // C100 limit 4: three retransmissions
+  (void)timers.take_failed();
+  timers.send(release, 2500);
+  timers.receive({mcx::FloorType::ReleaseMultiTalker, false, 8, {mcx::user_id_field("sip:me")}}, 2510);
+  assert(timers.state() == mcx::FloorParticipantState::NoPermission && timers.tick(2600).empty());
+
+  // Queued Floor Requests: a Cancel Request starts T134 in any state; the Cancel Result stops it; its expiry is
+  // reported and changes no state.
+  const mcx::FloorPacket cancel{mcx::FloorType::QueuedFloorRequests, false, 7,
+                                {mcx::queued_requests_purpose_field(mcx::QueuedRequestsPurpose::CancelRequest)}};
+  timers.send(cancel, 3000);
+  assert(timers.queued_requests_pending());
+  timers.receive({mcx::FloorType::QueuedFloorRequests, true, 8,
+                  {mcx::queued_requests_purpose_field(mcx::QueuedRequestsPurpose::CancelResult),
+                   mcx::queued_requests_result_field(0)}},
+                 3100);
+  assert(!timers.queued_requests_pending() && timers.tick(3600).empty() && timers.take_failed().empty());
+  timers.send(cancel, 4000);
+  assert(timers.tick(4499).empty());
+  assert(timers.tick(4500).empty() && !timers.queued_requests_pending());
+  assert(timers.take_failed() == std::vector<mcx::FloorType>{mcx::FloorType::QueuedFloorRequests});
+  assert(timers.state() == mcx::FloorParticipantState::NoPermission);
+  expect_runtime_error([&] {
+    timers.send({mcx::FloorType::QueuedFloorRequests, false, 7,
+                 {mcx::queued_requests_purpose_field(mcx::QueuedRequestsPurpose::CancelNotification)}},
+                4600);
+  });
+
+  // 'U: queued': Floor Release Multi Talker keeps it; a Cancel Notification stops T104, enters 'U: has no permission'.
+  timers.send(request, 5000);
+  timers.receive({mcx::FloorType::QueuePositionInfo, false, 8, {mcx::queue_info_field(1, 0)}}, 5010);
+  assert(timers.state() == mcx::FloorParticipantState::Queued);
+  timers.receive(other_released, 5020);
+  assert(timers.state() == mcx::FloorParticipantState::Queued);
+  timers.send({mcx::FloorType::QueuePositionRequest, false, 7, {}}, 5030);
+  timers.receive({mcx::FloorType::QueuedFloorRequests, false, 8,
+                  {mcx::queued_requests_purpose_field(mcx::QueuedRequestsPurpose::CancelNotification),
+                   mcx::user_id_field("sip:dispatcher")}},
+                 5040);
+  assert(timers.state() == mcx::FloorParticipantState::NoPermission);
+  assert(timers.tick(5200).empty() && timers.take_failed().empty());
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 6.2.4.6.4 steps 5 and 6: in a session initiated as a broadcast group call, the Floor Idle in
+// 'U: pending Release' enters 'Releasing' (the media transmission is completed), unless its A-bit is set; a
+// session that is not a broadcast group call enters 'U: has no permission'.
+void test_participant_broadcast_release() {
+  mcx::FloorParticipantTimerOptions options;
+  options.broadcast = true;
+  mcx::FloorParticipantTimers broadcast(options);
+  const mcx::FloorPacket release{mcx::FloorType::Release, false, 7, {}};
+  broadcast.send(release, 0);
+  const auto idle = [](std::uint16_t indicator) {
+    return mcx::FloorPacket{
+        mcx::FloorType::Idle, false, 8, {mcx::message_sequence_field(1), mcx::floor_indicator_field(indicator)}};
+  };
+  broadcast.receive(idle(0x4000), 10);
+  assert(broadcast.state() == mcx::FloorParticipantState::Releasing);
+  assert(broadcast.tick(5000).empty());
+  expect_runtime_error([&] { broadcast.send(release, 5000); });
+
+  mcx::FloorParticipantTimers normal_bit(options);
+  normal_bit.send(release, 0);
+  normal_bit.receive(idle(0x8000), 10);
+  assert(normal_bit.state() == mcx::FloorParticipantState::NoPermission);
+
+  mcx::FloorParticipantTimers group;
+  group.send(release, 0);
+  group.receive({mcx::FloorType::Idle, false, 8, {mcx::message_sequence_field(1)}}, 10);
+  assert(group.state() == mcx::FloorParticipantState::NoPermission);
+}
+
+//------------------------------------------------------------------------------
 // TS 24.380 clause 6.2.4.6: in 'U: pending Release' a delayed Floor Granted does not regain the floor
 // (clause 6.2.4.6.8), a Floor Ack does not end the state, and Floor Taken ends it (clause 6.2.4.6.5).
 void test_release_state_reordering() {
@@ -880,6 +1124,8 @@ int main() {
   test_field_helpers();
   test_bounds_and_malformed_packets();
   test_unknown_extension_field();
+  test_multi_talker_and_queue_messages();
+  test_received_message_tolerance();
   test_on_network_fields_and_reliability();
   test_arbitration();
   test_timed_arbitration_and_queue();
@@ -887,6 +1133,8 @@ int main() {
   test_queued_grant_retransmission();
   test_granted_duration();
   test_participant_timers();
+  test_participant_multi_talker_and_queue_cancel();
+  test_participant_broadcast_release();
   test_release_state_reordering();
   test_implicit_grant();
   test_implicit_request_t101();

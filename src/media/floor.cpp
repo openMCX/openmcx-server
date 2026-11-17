@@ -69,16 +69,21 @@ std::uint8_t subtype(FloorType type) {
   case FloorType::Release:
   case FloorType::Idle:
   case FloorType::Revoke:
+  case FloorType::RevokeRequest:
   case FloorType::QueuePositionRequest:
   case FloorType::QueuePositionInfo:
-  case FloorType::Ack: return static_cast<std::uint8_t>(type);
+  case FloorType::Ack:
+  case FloorType::UnicastMediaFlowControl:
+  case FloorType::QueuedFloorRequests:
+  case FloorType::ReleaseMultiTalker: return static_cast<std::uint8_t>(type);
   }
   throw std::runtime_error("unsupported floor message type");
 }
 
 //------------------------------------------------------------------------------
 // TS 24.380 table 8.2.2.1-1: whether the message has the x bit to ask for a Floor Ack (Floor Granted, Floor Deny,
-// Floor Release, Floor Idle, Floor Taken, Floor Queue Position Info).
+// Floor Release, Floor Idle, Floor Taken, Floor Queue Position Info, Unicast Media Flow Control, Queued Floor
+// Requests).
 bool may_request_ack(FloorType type) {
   switch (type) {
   case FloorType::Granted:
@@ -86,7 +91,9 @@ bool may_request_ack(FloorType type) {
   case FloorType::Deny:
   case FloorType::Release:
   case FloorType::Idle:
-  case FloorType::QueuePositionInfo: return true;
+  case FloorType::QueuePositionInfo:
+  case FloorType::UnicastMediaFlowControl:
+  case FloorType::QueuedFloorRequests: return true;
   default: return false;
   }
 }
@@ -95,10 +102,16 @@ bool may_request_ack(FloorType type) {
 // TS 24.380 table 8.2.2.1-1: the floor control message of a received subtype, and its acknowledgement bit;
 // unsupported subtypes and an x bit on a message without one are refused.
 FloorType floor_type(std::uint8_t raw_subtype, bool &ack_required) {
+  // The x bit is the first subtype bit of the messages that have one; Floor Release Multi Talker (01111) and Floor
+  // Revoke Request (00111) have none, so their subtype is read in full.
   ack_required = (raw_subtype & 0x10) != 0;
   const auto base = static_cast<std::uint8_t>(raw_subtype & 0x0f);
   FloorType type;
   switch (base) {
+  case 7: type = FloorType::RevokeRequest; break;
+  case 11: type = FloorType::UnicastMediaFlowControl; break;
+  case 14: type = FloorType::QueuedFloorRequests; break;
+  case 15: type = FloorType::ReleaseMultiTalker; break;
   case 0: type = FloorType::Request; break;
   case 1: type = FloorType::Granted; break;
   case 2: type = FloorType::Taken; break;
@@ -159,6 +172,21 @@ void validate_field(const FloorField &field) {
   case 12: (void)read_message_type(field); break;
   case 13: (void)read_floor_indicator(field); break;
   case 14: (void)read_audio_ssrc(field); break;
+  case 15:
+  case 18:
+  case 22: (void)read_uri_list(field); break;
+  case 16: (void)read_ssrc_list(field); break;
+  case 17:
+  case 25:
+    if (field.value.empty()) throw std::runtime_error("empty floor identity");
+    break;
+  case 19: (void)read_location(field); break;
+  case 20: (void)read_location_list(field); break;
+  case 21:
+  case 23:
+    if (field.value.size() != 2) throw std::runtime_error("invalid two-octet floor field");
+    break;
+  case 24: (void)read_media_flow_control(field); break;
   default: break;
   }
 }
@@ -300,6 +328,31 @@ FloorPacket decode_floor(std::span<const std::uint8_t> bytes) {
   packet.ssrc = app.ssrc;
   for (auto &field : app.fields) validate_field(field);
   packet.fields = std::move(app.fields);
+  validate_packet(packet);
+  return packet;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.1.4: a received floor control message: nothing for an unknown subtype (item 1); unspecified
+// fields are kept for the caller to ignore (item 2); syntactically incorrect fields are left out (item 3).
+std::optional<FloorPacket> decode_floor_received(std::span<const std::uint8_t> bytes) {
+  auto app = decode_app(bytes);
+  if (app.name != kName) throw std::runtime_error("RTCP APP packet is not MCPT");
+  FloorPacket packet;
+  try {
+    packet.type = floor_type(app.subtype, packet.ack_required);
+  } catch (const std::runtime_error &) {
+    return std::nullopt;
+  }
+  packet.ssrc = app.ssrc;
+  for (auto &field : app.fields) {
+    try {
+      validate_field(field);
+    } catch (const std::runtime_error &) {
+      continue;
+    }
+    packet.fields.push_back(std::move(field));
+  }
   validate_packet(packet);
   return packet;
 }
@@ -448,6 +501,207 @@ FloorType read_message_type(const FloorField &field) {
 FloorField location_not_provided_field() { return {19, {0}}; }
 
 //------------------------------------------------------------------------------
+// TS 24.380 clauses 8.2.3.17, 8.2.3.20 and 8.2.3.24: a list field of URIs: <No of entries>, then <length> and URI.
+FloorField uri_list_field(FloorFieldId id, const std::vector<std::string> &uris) {
+  if (id != FloorFieldId::ListOfGrantedUsers && id != FloorFieldId::ListOfFunctionalAliases &&
+      id != FloorFieldId::ListOfQueuedUsers)
+    throw std::runtime_error("not a URI list floor field");
+  if (uris.empty() || uris.size() > 255) throw std::runtime_error("invalid floor URI list size");
+  FloorField field{static_cast<std::uint8_t>(id), {static_cast<std::uint8_t>(uris.size())}};
+  for (const auto &uri : uris) {
+    if (uri.empty() || uri.size() > 255) throw std::runtime_error("invalid floor URI list entry");
+    field.value.push_back(static_cast<std::uint8_t>(uri.size()));
+    field.value.insert(field.value.end(), uri.begin(), uri.end());
+  }
+  if (field.value.size() > 255) throw std::runtime_error("floor URI list is too large");
+  return field;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 8.2.3.17, 8.2.3.20 and 8.2.3.24: reads a list field of URIs, each one non-empty; the count must
+// match the entries (octets after the last entry are refused, as the field length excludes the padding).
+std::vector<std::string> read_uri_list(const FloorField &field) {
+  if (field.id != 15 && field.id != 18 && field.id != 22) throw std::runtime_error("not a URI list floor field");
+  if (field.value.empty()) throw std::runtime_error("empty floor URI list");
+  const auto count = field.value[0];
+  std::vector<std::string> uris;
+  std::size_t offset = 1;
+  for (unsigned i = 0; i < count; ++i) {
+    if (offset >= field.value.size()) throw std::runtime_error("truncated floor URI list");
+    const auto length = field.value[offset++];
+    if (!length || length > field.value.size() - offset) throw std::runtime_error("invalid floor URI list entry");
+    uris.emplace_back(field.value.begin() + static_cast<std::ptrdiff_t>(offset),
+                      field.value.begin() + static_cast<std::ptrdiff_t>(offset + length));
+    offset += length;
+  }
+  if (offset != field.value.size()) throw std::runtime_error("floor URI list length mismatch");
+  return uris;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.18: the List of SSRCs field: <Number of SSRCs>, a spare octet and the SSRCs.
+FloorField ssrc_list_field(const std::vector<std::uint32_t> &ssrcs) {
+  if (ssrcs.empty() || ssrcs.size() > 63) throw std::runtime_error("invalid floor SSRC list size");
+  FloorField field{static_cast<std::uint8_t>(FloorFieldId::ListOfSsrcs), {static_cast<std::uint8_t>(ssrcs.size()), 0}};
+  for (const auto ssrc : ssrcs) append_u32(field.value, ssrc);
+  return field;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.18: reads the List of SSRCs field; the spare octet is not checked (clause 8.1.4).
+std::vector<std::uint32_t> read_ssrc_list(const FloorField &field) {
+  if (field.id != 16 || field.value.size() < 2) throw std::runtime_error("invalid floor SSRC list");
+  const auto count = field.value[0];
+  if (field.value.size() != 2 + std::size_t{count} * 4) throw std::runtime_error("floor SSRC list length mismatch");
+  std::vector<std::uint32_t> ssrcs;
+  for (unsigned i = 0; i < count; ++i) ssrcs.push_back(read_u32(std::span(field.value).subspan(2 + i * 4, 4)));
+  return ssrcs;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.19: the Functional Alias field.
+FloorField functional_alias_field(std::string_view alias) {
+  auto field = user_id_field(alias);
+  field.id = static_cast<std::uint8_t>(FloorFieldId::FunctionalAlias);
+  return field;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.19: reads the Functional Alias field.
+std::string read_functional_alias(const FloorField &field) {
+  if (field.id != 17 || field.value.empty()) throw std::runtime_error("invalid functional alias field");
+  return {field.value.begin(), field.value.end()};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 table 8.2.3.21-3: the Location Value length of each Location Type.
+std::optional<std::size_t> location_value_size(std::uint8_t type) {
+  static constexpr std::array<std::size_t, 8> sizes{0, 7, 5, 3, 2, 1, 6, 2};
+  if (type >= sizes.size()) return std::nullopt;
+  return sizes[type];
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.21: the Location field.
+FloorField location_field(const FloorLocation &location) {
+  const auto size = location_value_size(location.type);
+  if (!size || *size != location.value.size()) throw std::runtime_error("invalid floor location value");
+  FloorField field{static_cast<std::uint8_t>(FloorFieldId::Location), {location.type}};
+  field.value.insert(field.value.end(), location.value.begin(), location.value.end());
+  return field;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.21: reads the Location field: a known type with its value length.
+FloorLocation read_location(const FloorField &field) {
+  if (field.id != 19 || field.value.empty()) throw std::runtime_error("invalid floor location field");
+  const auto size = location_value_size(field.value[0]);
+  if (!size || field.value.size() != 1 + *size) throw std::runtime_error("invalid floor location value");
+  return {field.value[0], {field.value.begin() + 1, field.value.end()}};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.22: the List of Locations field.
+FloorField location_list_field(const std::vector<FloorLocation> &locations) {
+  if (locations.empty() || locations.size() > 255) throw std::runtime_error("invalid floor location list size");
+  FloorField field{static_cast<std::uint8_t>(FloorFieldId::ListOfLocations),
+                   {static_cast<std::uint8_t>(locations.size())}};
+  for (const auto &location : locations) {
+    const auto entry = location_field(location);
+    field.value.insert(field.value.end(), entry.value.begin(), entry.value.end());
+  }
+  if (field.value.size() > 255) throw std::runtime_error("floor location list is too large");
+  return field;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.22: reads the List of Locations field; each entry's length follows from its type.
+std::vector<FloorLocation> read_location_list(const FloorField &field) {
+  if (field.id != 20 || field.value.empty()) throw std::runtime_error("invalid floor location list");
+  std::vector<FloorLocation> locations;
+  std::size_t offset = 1;
+  for (unsigned i = 0; i < field.value[0]; ++i) {
+    if (offset >= field.value.size()) throw std::runtime_error("truncated floor location list");
+    const auto size = location_value_size(field.value[offset]);
+    if (!size || *size > field.value.size() - offset - 1) throw std::runtime_error("invalid floor location list entry");
+    locations.push_back({field.value[offset],
+                         {field.value.begin() + static_cast<std::ptrdiff_t>(offset + 1),
+                          field.value.begin() + static_cast<std::ptrdiff_t>(offset + 1 + *size)}});
+    offset += 1 + *size;
+  }
+  if (offset != field.value.size()) throw std::runtime_error("floor location list length mismatch");
+  return locations;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.23: the Queued Floor Requests Purpose field.
+FloorField queued_requests_purpose_field(QueuedRequestsPurpose purpose) {
+  FloorField field{static_cast<std::uint8_t>(FloorFieldId::QueuedFloorRequestsPurpose), {}};
+  append_u16(field.value, static_cast<std::uint16_t>(purpose));
+  return field;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.23: reads the Queued Floor Requests Purpose field.
+std::uint16_t read_queued_requests_purpose(const FloorField &field) {
+  require_field(field, FloorFieldId::QueuedFloorRequestsPurpose, 2);
+  return read_u16(field.value);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.25: the Queued Floor Requests Result field.
+FloorField queued_requests_result_field(std::uint16_t result) {
+  FloorField field{static_cast<std::uint8_t>(FloorFieldId::QueuedFloorRequestsResult), {}};
+  append_u16(field.value, result);
+  return field;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.25: reads the Queued Floor Requests Result field.
+std::uint16_t read_queued_requests_result(const FloorField &field) {
+  require_field(field, FloorFieldId::QueuedFloorRequestsResult, 2);
+  return read_u16(field.value);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.26: the Media Flow Control Indicator field: the bit map (A = resume) and a spare octet.
+FloorField media_flow_control_field(bool resume) {
+  return {static_cast<std::uint8_t>(FloorFieldId::MediaFlowControlIndicator),
+          {static_cast<std::uint8_t>(resume ? 0x80 : 0), 0}};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.26: reads the Media Flow Control Indicator field: bit A; bits B to H and the spare octet
+// are not checked (clause 8.1.4).
+bool read_media_flow_control(const FloorField &field) {
+  require_field(field, FloorFieldId::MediaFlowControlIndicator, 2);
+  return (field.value[0] & 0x80) != 0;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.27: the Floor Revoke Request User Identity field.
+FloorField revoke_request_user_field(std::string_view user_id) {
+  auto field = user_id_field(user_id);
+  field.id = static_cast<std::uint8_t>(FloorFieldId::FloorRevokeRequestUserId);
+  return field;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.27: reads the Floor Revoke Request User Identity field.
+std::string read_revoke_request_user(const FloorField &field) {
+  if (field.id != 25 || field.value.empty()) throw std::runtime_error("invalid floor revoke request user identity");
+  return {field.value.begin(), field.value.end()};
+}
+
+//------------------------------------------------------------------------------
+// Helper: the first field of an ID in a message, or nullptr.
+const FloorField *find_floor_field(const FloorPacket &packet, FloorFieldId id) {
+  const auto it = std::find_if(packet.fields.begin(), packet.fields.end(),
+                               [id](const auto &field) { return field.id == static_cast<std::uint8_t>(id); });
+  return it == packet.fields.end() ? nullptr : &*it;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.380 clause 8.2.3.6: builds the Granted Party's Identity field.
 FloorField granted_party_identity_field(std::string_view identity) {
   auto field = user_id_field(identity);
@@ -570,13 +824,22 @@ void validate_on_network_floor(const FloorPacket &packet) {
     require(FloorFieldId::AudioSsrc);
     break;
   case FloorType::Taken:
-    require(FloorFieldId::AudioSsrc);
+    // Clause 8.2.9: the Audio SSRC of Granted Participant "is not used in multi-talker control scenario", where the
+    // List of SSRCs (with the List of Granted Users) names the talkers.
+    if (!counts[static_cast<std::uint8_t>(FloorFieldId::ListOfSsrcs)]) require(FloorFieldId::AudioSsrc);
     require(FloorFieldId::MessageSequence);
     break;
   case FloorType::Idle: require(FloorFieldId::MessageSequence); break;
   case FloorType::Deny:
   case FloorType::Revoke: require(FloorFieldId::RejectCause); break;
   case FloorType::QueuePositionInfo: require(FloorFieldId::QueueInfo); break;
+  // Clause 8.2.14: the User ID of the participant releasing the floor in a multi-talker group.
+  case FloorType::ReleaseMultiTalker: require(FloorFieldId::UserId); break;
+  // Clause 8.2.15: the purpose (Cancel Request, Cancel Result, Cancel Notification) decides the handling.
+  case FloorType::QueuedFloorRequests: require(FloorFieldId::QueuedFloorRequestsPurpose); break;
+  // Clauses 8.2.16 and 8.2.17: the stop / resume indicator, the user whose floor is to be revoked.
+  case FloorType::UnicastMediaFlowControl: require(FloorFieldId::MediaFlowControlIndicator); break;
+  case FloorType::RevokeRequest: require(FloorFieldId::FloorRevokeRequestUserId); break;
   default: break;
   }
   if ((packet.type == FloorType::Granted || packet.type == FloorType::Taken) && counts[6])
@@ -669,12 +932,22 @@ std::vector<FloorPacket> FloorAckRetry::tick(std::uint64_t now_ms) {
 std::vector<FloorType> FloorAckRetry::take_failed() { return std::exchange(failed_, {}); }
 
 //------------------------------------------------------------------------------
-// TS 24.380 clauses 11.1.1 and 11.2.1: the on-network floor participant timers T100, T101, T103, T104 and T132
-// and their counters.
+// TS 24.380 clauses 11.1.1 and 11.2.1: the on-network floor participant timers T100, T101, T103, T104, T132 and
+// T134 and the counters C100, C101 and C104.
 FloorParticipantTimers::FloorParticipantTimers(FloorParticipantTimerOptions options) : options_(options) {
   if (!options_.request_retry_ms || !options_.release_retry_ms || !options_.queue_retry_ms ||
-      !options_.queued_grant_action_ms || !options_.max_transmissions)
+      !options_.queued_grant_action_ms || !options_.max_transmissions || !options_.queued_requests_ms)
     throw std::runtime_error("invalid participant floor timer configuration");
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 table 11.2.1-1: the upper limit of the counter of a retransmitted message: C100 (Floor Release), C101
+// (Floor Request), C104 (Floor Queue Position Request).
+unsigned FloorParticipantTimers::limit(FloorType type) const {
+  const auto own = type == FloorType::Release   ? options_.release_transmissions
+                   : type == FloorType::Request ? options_.request_transmissions
+                                                : options_.queue_transmissions;
+  return own ? own : options_.max_transmissions;
 }
 
 //------------------------------------------------------------------------------
@@ -684,12 +957,31 @@ FloorParticipantTimers::FloorParticipantTimers(FloorParticipantTimerOptions opti
 void FloorParticipantTimers::send(const FloorPacket &packet, std::uint64_t now_ms) {
   (void)encode_floor(packet);
   switch (packet.type) {
+  case FloorType::QueuedFloorRequests: {
+    // Clause 6.2.4.7.4 (any state): a Cancel Request starts T134 and the participant remains in its state.
+    const auto *purpose = find_floor_field(packet, FloorFieldId::QueuedFloorRequestsPurpose);
+    constexpr auto cancel_request = static_cast<std::uint16_t>(QueuedRequestsPurpose::CancelRequest);
+    if (!purpose || read_queued_requests_purpose(*purpose) != cancel_request)
+      throw std::runtime_error("a participant's Queued Floor Requests is a Cancel Request");
+    if (state_ == FloorParticipantState::Releasing)
+      throw std::runtime_error("queued floor requests are not valid in participant state");
+    queued_requests_at_ = now_ms;
+    return;
+  }
+  case FloorType::UnicastMediaFlowControl:
+  case FloorType::RevokeRequest:
+    // Clauses 6.2.4.3.8 to 6.2.4.3.10: sent in 'U: has no permission', which the participant remains in; no timer.
+    if (state_ != FloorParticipantState::NoPermission)
+      throw std::runtime_error("unicast media flow control and floor revoke request need 'U: has no permission'");
+    return;
   case FloorType::Request:
     if (state_ != FloorParticipantState::NoPermission)
       throw std::runtime_error("floor request is not valid in participant state");
     state_ = FloorParticipantState::PendingRequest;
     break;
   case FloorType::Release:
+    if (state_ == FloorParticipantState::Releasing)
+      throw std::runtime_error("floor release is not valid in 'Releasing'");
     state_ = FloorParticipantState::PendingRelease;
     queued_granted_at_.reset();
     break;
@@ -778,11 +1070,42 @@ void FloorParticipantTimers::receive(const FloorPacket &packet, std::uint64_t no
   case FloorType::Idle:
     last_remote_media_.reset();
     if (state_ == FloorParticipantState::PendingRelease || state_ == FloorParticipantState::Queued) {
+      // Clause 6.2.4.6.4 steps 5 and 6: in a session initiated as a broadcast group call the Floor Idle ends the
+      // media transmission ('Releasing'), unless its Floor Indicator A-bit (Normal call) is set.
+      const auto *indicator = find_floor_field(packet, FloorFieldId::FloorIndicator);
+      const bool normal = indicator && (read_floor_indicator(*indicator) & 0x8000) != 0;
+      state_ = state_ == FloorParticipantState::PendingRelease && options_.broadcast && !normal
+                   ? FloorParticipantState::Releasing
+                   : FloorParticipantState::NoPermission;
+      queued_granted_at_.reset();
+      pending_.reset();
+    }
+    break;
+  case FloorType::ReleaseMultiTalker:
+    // Clauses 6.2.4.3.7, 6.2.4.4.10, 6.2.4.9.14: the participant remains in its state; clause 6.2.4.6.9 step 2: in
+    // 'U: pending Release', the release of this participant itself enters 'U: has no permission'.
+    if (state_ == FloorParticipantState::PendingRelease && !user_id_.empty()) {
+      const auto *user = find_floor_field(packet, FloorFieldId::UserId);
+      if (user && read_user_id(*user) == user_id_) {
+        state_ = FloorParticipantState::NoPermission;
+        pending_.reset();
+      }
+    }
+    break;
+  case FloorType::QueuedFloorRequests: {
+    const auto purpose =
+        read_queued_requests_purpose(*find_floor_field(packet, FloorFieldId::QueuedFloorRequestsPurpose));
+    if (purpose == static_cast<std::uint16_t>(QueuedRequestsPurpose::CancelResult)) {
+      queued_requests_at_.reset(); // clause 6.2.4.7.6 step 3: stop T134
+    } else if (purpose == static_cast<std::uint16_t>(QueuedRequestsPurpose::CancelNotification) &&
+               state_ == FloorParticipantState::Queued) {
+      // Clause 6.2.4.9.15 steps 4 and 5: stop T104, enter 'U: has no permission'.
       state_ = FloorParticipantState::NoPermission;
       queued_granted_at_.reset();
       pending_.reset();
     }
     break;
+  }
   default: break;
   }
 }
@@ -812,6 +1135,11 @@ std::vector<FloorPacket> FloorParticipantTimers::tick(std::uint64_t now_ms) {
     return now_ms >= start && now_ms - start >= interval;
   };
   if (last_remote_media_ && elapsed(*last_remote_media_, options_.media_idle_ms)) last_remote_media_.reset();
+  // Clause 6.2.4.7.5: T134 expiry is reported (a Queued Floor Requests timeout); the state does not change.
+  if (queued_requests_at_ && elapsed(*queued_requests_at_, options_.queued_requests_ms)) {
+    queued_requests_at_.reset();
+    failed_.push_back(FloorType::QueuedFloorRequests);
+  }
   if (queued_granted_at_ && elapsed(*queued_granted_at_, options_.queued_grant_action_ms)) {
     FloorPacket release{FloorType::Release, true, local_ssrc_, {}};
     // T132 expiry sends one Release then enters has-no-permission (TS 24.380 clause 6.2.4.9.13).
@@ -825,7 +1153,7 @@ std::vector<FloorPacket> FloorParticipantTimers::tick(std::uint64_t now_ms) {
                         : pending_->type == FloorType::Release ? options_.release_retry_ms
                                                                : options_.queue_retry_ms;
   if (!elapsed(last_sent_ms_, interval)) return {};
-  if (transmissions_ >= options_.max_transmissions) {
+  if (transmissions_ >= limit(pending_->type)) {
     failed_.push_back(pending_->type);
     if (pending_->type == FloorType::QueuePositionRequest) {
       // T104 exhaustion cancels the queued request using T100 (TS 24.380 clause 6.2.4.9.11).

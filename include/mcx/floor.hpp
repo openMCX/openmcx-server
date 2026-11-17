@@ -34,9 +34,13 @@ enum class FloorType : std::uint8_t {
   Release = 4,
   Idle = 5,
   Revoke = 6,
+  RevokeRequest = 7, // Floor Revoke Request (clause 8.2.17), client to server
   QueuePositionRequest = 8,
   QueuePositionInfo = 9,
   Ack = 10,
+  UnicastMediaFlowControl = 11, // clause 8.2.16, client to server
+  QueuedFloorRequests = 14,     // clause 8.2.15, both directions
+  ReleaseMultiTalker = 15,      // Floor Release Multi Talker (clause 8.2.14), server to client
 };
 
 //------------------------------------------------------------------------------
@@ -53,10 +57,21 @@ enum class FloorFieldId : std::uint8_t {
   MessageSequence = 8,
   QueuedUserId = 9,
   Source = 10,
+  TrackInfo = 11,
   MessageType = 12,
   FloorIndicator = 13,
   AudioSsrc = 14,
+  ListOfGrantedUsers = 15,
+  ListOfSsrcs = 16,
+  FunctionalAlias = 17,
+  ListOfFunctionalAliases = 18,
   Location = 19,
+  ListOfLocations = 20,
+  QueuedFloorRequestsPurpose = 21,
+  ListOfQueuedUsers = 22,
+  QueuedFloorRequestsResult = 23, // "Response State" in table 8.2.3.1-2, coded by clause 8.2.3.25
+  MediaFlowControlIndicator = 24,
+  FloorRevokeRequestUserId = 25,
 };
 
 //------------------------------------------------------------------------------
@@ -116,6 +131,13 @@ std::vector<std::uint8_t> encode_floor(const FloorPacket &packet);
 //------------------------------------------------------------------------------
 // TS 24.380 clause 8.2.2.1: decodes an RTCP APP packet named "MCPT" as a floor control message.
 FloorPacket decode_floor(std::span<const std::uint8_t> bytes);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.1.4: decodes a received floor control message as a receiver must: nothing (the whole message is
+// ignored) for an unknown subtype or an x bit on a message without one (item 1); a field of an unspecified field ID
+// is kept for the caller to ignore (item 2); a syntactically incorrect field is left out (item 3: the caller's
+// checks of the mandatory fields, validate_on_network_floor, refuse the message when one of those was it). The RTCP
+// framing (clause 8.1.2) and the "MCPT" name must still be right, or it throws.
+std::optional<FloorPacket> decode_floor_received(std::span<const std::uint8_t> bytes);
 
 //------------------------------------------------------------------------------
 // TS 24.380 clause 8.2.3.8: builds the User ID field (an MCPTT ID).
@@ -222,8 +244,89 @@ FloorField queued_user_id_field(std::string_view identity);
 std::string read_queued_user_id(const FloorField &field);
 
 //------------------------------------------------------------------------------
-// TS 24.380 clauses 8.2.5 to 8.2.12: additional schema checks for the single-talker on-network profile. Identity
-// may be omitted for privacy; extensions remain accepted by the generic codec.
+// TS 24.380 clauses 8.2.3.17, 8.2.3.20 and 8.2.3.24: the list fields of URIs: List of Granted Users, List of
+// Functional Aliases and List of Queued Users: <No of entries> (one octet), then per entry <length> (one octet) and
+// the URI; the field's padding to four octets is that of clause 8.1.3.
+FloorField uri_list_field(FloorFieldId id, const std::vector<std::string> &uris);
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 8.2.3.17, 8.2.3.20 and 8.2.3.24: reads a list field of URIs; throws when it does not parse.
+std::vector<std::string> read_uri_list(const FloorField &field);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.18: builds the List of SSRCs field: <Number of SSRCs> (one octet), a spare octet, the SSRCs.
+FloorField ssrc_list_field(const std::vector<std::uint32_t> &ssrcs);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.18: reads the List of SSRCs field.
+std::vector<std::uint32_t> read_ssrc_list(const FloorField &field);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.19: builds the Functional Alias field (a URI).
+FloorField functional_alias_field(std::string_view alias);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.19: reads the Functional Alias field.
+std::string read_functional_alias(const FloorField &field);
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.21 (table 8.2.3.21-2): a Location value: the Location Type of table 8.2.3.21-3 and its
+// Location Value octets (none for type 0, Not provided).
+struct FloorLocation {
+  std::uint8_t type{};
+  std::vector<std::uint8_t> value;
+  bool operator==(const FloorLocation &) const = default;
+};
+
+//------------------------------------------------------------------------------
+// TS 24.380 table 8.2.3.21-3: the length in octets of the Location Value of a Location Type; nullopt for a type the
+// table does not list.
+std::optional<std::size_t> location_value_size(std::uint8_t type);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.21: builds the Location field; the value length must be that of its type.
+FloorField location_field(const FloorLocation &location);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.21: reads the Location field.
+FloorLocation read_location(const FloorField &field);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.22: builds the List of Locations field: <Number of Locations> (one octet), then the
+// Location values (type and value) in the order of the List of Granted Users.
+FloorField location_list_field(const std::vector<FloorLocation> &locations);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.22: reads the List of Locations field.
+std::vector<FloorLocation> read_location_list(const FloorField &field);
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.23: the Queued Floor Requests Purpose values.
+enum class QueuedRequestsPurpose : std::uint16_t { CancelRequest = 0, CancelResult = 1, CancelNotification = 2 };
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.23: builds the Queued Floor Requests Purpose field.
+FloorField queued_requests_purpose_field(QueuedRequestsPurpose purpose);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.23: reads the Queued Floor Requests Purpose field (a reserved value is returned as it is).
+std::uint16_t read_queued_requests_purpose(const FloorField &field);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.25: builds the Queued Floor Requests Result field (field ID 23, "Response State").
+FloorField queued_requests_result_field(std::uint16_t result);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.25: reads the Queued Floor Requests Result field.
+std::uint16_t read_queued_requests_result(const FloorField &field);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.26: builds the Media Flow Control Indicator field: bit A '0' stop, '1' resume.
+FloorField media_flow_control_field(bool resume);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.26: reads the Media Flow Control Indicator field: true for a resume request.
+bool read_media_flow_control(const FloorField &field);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.27: builds the Floor Revoke Request User Identity field (coded as the User ID).
+FloorField revoke_request_user_field(std::string_view user_id);
+//------------------------------------------------------------------------------
+// TS 24.380 clause 8.2.3.27: reads the Floor Revoke Request User Identity field.
+std::string read_revoke_request_user(const FloorField &field);
+
+//------------------------------------------------------------------------------
+// Helper: the first field of an ID in a message, or nullptr.
+const FloorField *find_floor_field(const FloorPacket &packet, FloorFieldId id);
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 8.2.5 to 8.2.17: additional schema checks for the on-network messages (a multi-talker Floor Taken
+// may carry the List of SSRCs instead of the Audio SSRC). Identity may be omitted for privacy; extensions remain
+// accepted by the generic codec.
 void validate_on_network_floor(const FloorPacket &packet);
 
 //------------------------------------------------------------------------------
@@ -277,8 +380,9 @@ private:
 
 //------------------------------------------------------------------------------
 // TS 24.380 clause 6.2.4: the floor participant states 'U: has no permission', 'U: pending Request',
-// 'U: has permission', 'U: pending Release' and 'U: queued'.
-enum class FloorParticipantState { NoPermission, PendingRequest, HasPermission, PendingRelease, Queued };
+// 'U: has permission', 'U: pending Release', 'U: queued' and 'Releasing' (clause 6.2.4.8: entered from 'U: pending
+// Release' when the Floor Idle ends the media of a broadcast group call, clause 6.2.4.6.4 step 6).
+enum class FloorParticipantState { NoPermission, PendingRequest, HasPermission, PendingRelease, Queued, Releasing };
 
 //------------------------------------------------------------------------------
 // TS 24.380 clause 11.1.1 and clause 11.2.1: the on-network floor participant timers and counters.
@@ -290,14 +394,25 @@ struct FloorParticipantTimerOptions {
   std::uint64_t media_idle_ms{4000};          // T103; zero disables optional supervision
   std::uint64_t queued_grant_action_ms{2000}; // T132 default
   unsigned max_transmissions{3};              // C100/C101/C104 defaults
+  std::uint64_t queued_requests_ms{2000};     // T134 (Queued Floor Requests), default 2 s (table 11.1.1-1)
+  // The upper limits of C100 (Floor Release), C101 (Floor Request) and C104 (Floor Queue Position Request) one by
+  // one (table 11.2.1-1); 0 takes max_transmissions.
+  unsigned release_transmissions{0};
+  unsigned request_transmissions{0};
+  unsigned queue_transmissions{0};
+  // The session was initiated as a broadcast group call (TS 24.380 clause 6.2.4.6.4 step 6).
+  bool broadcast{false};
 };
 
 //------------------------------------------------------------------------------
-// TS 24.380 clause 6.2.4 with clauses 11.1.1 and 11.2.1: single-talker participant timer/state subset:
-// T100/101/103/104/132.
+// TS 24.380 clause 6.2.4 with clauses 11.1.1 and 11.2.1: the participant's states and timers T100/101/103/104/132/134
+// with counters C100/C101/C104; the messages of the multi-talker group (Floor Release Multi Talker), the queue
+// cancellation (Queued Floor Requests, T134), Unicast Media Flow Control and Floor Revoke Request (clauses 6.2.4.3.7
+// to 6.2.4.3.10, 6.2.4.4.10, 6.2.4.6.9, 6.2.4.7.4 to 6.2.4.7.6, 6.2.4.9.14, 6.2.4.9.15), and the 'Releasing' state of
+// a broadcast group call (clause 6.2.4.6.4).
 // Caller validates/binds incoming peers, filters duplicate/stale state packets,
 // acknowledges messages and reacts to Revoke by sending Release. Does not
-// implement broadcast, dual-floor, or user-interface policy.
+// implement user-interface policy.
 // Granted has no sequence/transaction field: a delayed old grant arriving during
 // a new PendingRequest cannot be distinguished here. The server must cancel
 // obsolete grant retries and enforce current floor ownership for every RTP packet.
@@ -319,8 +434,14 @@ public:
   std::vector<FloorPacket> tick(std::uint64_t now_ms);
   std::vector<FloorType> take_failed();
   bool confirm_queued_grant();
+  // The MCPTT ID of this participant: a Floor Release Multi Talker naming it ends 'U: pending Release'
+  // (clause 6.2.4.6.9 step 2).
+  void set_user_id(std::string user_id) { user_id_ = std::move(user_id); }
 
   bool awaiting_user_confirmation() const { return queued_granted_at_.has_value(); }
+
+  // T134 (Queued Floor Requests) runs: a Cancel Request awaits its Cancel Result (clause 6.2.4.7.4).
+  bool queued_requests_pending() const { return queued_requests_at_.has_value(); }
 
   bool remote_media_active() const { return last_remote_media_.has_value(); }
 
@@ -335,7 +456,11 @@ private:
   std::uint32_t local_ssrc_{};
   std::optional<std::uint64_t> last_remote_media_;
   std::optional<std::uint64_t> queued_granted_at_;
+  std::optional<std::uint64_t> queued_requests_at_;
+  std::string user_id_;
   std::vector<FloorType> failed_;
+
+  unsigned limit(FloorType type) const;
 };
 
 //------------------------------------------------------------------------------
