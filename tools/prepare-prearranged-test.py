@@ -551,6 +551,12 @@ def service_configuration(fixture, documents_only=False):
                 mcptt['floor_queue'] = True
                 # <floor-control-queue>/<depth>: room for the three clients other than the talker.
                 mcptt['floor_queue_depth'] = 3
+        if path.name == 'mcvideo-server.json' and cfg.get('mcvideo', {}).get('adhoc_call', {}).get('enabled'):
+            # <adhoc-group-call> of the MCVideo service configuration (TS 24.484 clauses 9.4.2.1 c), 9.4.2.3): absent,
+            # ad hoc group calls are not supported (clause 9.4.2.6) and the client does not start one (TS 24.281
+            # clause 22.2.2.1.1 steps 1-2). The same limit as the controlling server's mcvideo.adhoc_call.
+            limit = cfg['mcvideo']['adhoc_call']['max_participants']
+            mcvideo['adhoc_group_call'] = dict(allow=True, max_participants=limit)
         if path.name == 'mcdata-server.json':
             fd = cfg.get('mcdata', {}).get('fd', {})
             if 'default_file_availability_ms' in fd:

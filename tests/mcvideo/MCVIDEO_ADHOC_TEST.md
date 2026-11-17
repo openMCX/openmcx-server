@@ -16,7 +16,7 @@ Back to the [MCVideo test index](../MCVIDEO_TEST.md). Acceptance: [MCVideo stand
 - **Release** (§6.3.8.1): the call is released when one or no participant is left (item 2) or TNG3 expires (item 5). The initiator leaving does not end it (item 3 is for pre-arranged group calls), unlike an MCPTT ad hoc group call (TS 24.379 §6.3.8.1 item 3, local policy).
 - **Ad hoc group emergency alert.** The shared core's ad hoc alert (TS 24.379 12.1A, which TS 24.281 12.1A follows). A cancellation is confirmed to the originator by a receipt with `<adhoc-alert-ind>` false and `<adhoc-alert-ind-rcvd>` true (§12.1A.3.2 step 4 g)).
 - **Configuration.**
-  - `mcvideo-server` has `mcvideo.adhoc_call` (enabled, 3 participants besides the originator, timers).
+  - `mcvideo-server` has `mcvideo.adhoc_call` (enabled, 3 participants besides the originator, timers), and the CMS's MCVideo service configuration the matching `<adhoc-group-call>` (allowed, 3 participants; TS 24.484 9.4.2.3). Without it the client does not start an ad hoc group call (TS 24.484 9.4.2.6, TS 24.281 22.2.2.1.1 steps 1-2).
   - Each user's MCVideo profile has `adhoc_call.allow`, for `<allow-adhoc-group-call>`. client-d is not allowed; client-a may also modify participants.
 
 ## Client commands and status
