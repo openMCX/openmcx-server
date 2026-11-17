@@ -95,7 +95,10 @@ Over debug TCP SIP the run also captures at the MCPTT server and checks the capt
 `tests/integration/verify_private_call.py`, which reassembles TCP/5060 itself and does not need tshark.
 
 The `--private-services` option adds client-d's forwarding on no answer to client-a with a 3 s TNP1, and a user
-`offline` that never registers and forwards to client-a on no answer; client-a may call client-d.
+`offline` that never registers and forwards to client-a on no answer; client-a may call client-d. client-b, the
+transferred user of PS-06 to PS-08, has `<allow-force-auto-answer>`: its call to the transfer target carries
+Priv-Answer-Mode with the transferred call's value (§11.1.1.2.1.1 14A a)), which the participating function refuses
+with 403/143 without that right (§11.1.1.3.1.1 step 18 b)).
 
 ## Checks
 

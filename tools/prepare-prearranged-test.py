@@ -716,7 +716,8 @@ def add_manual_only_caller(fixture):
 def add_private_services(fixture):
     """Private call services (TS 24.379 clauses 11.1.5 to 11.1.9) on top of --private-call:
     client-a may request call-backs, remotely initiated calls and transfers and
-    forward manually; client-b may forward manually; client-c forwards every
+    forward manually; client-b may forward manually and force automatic commencement (the transferred user's
+    call to the target carries Priv-Answer-Mode, TS 24.379 clause 11.1.1.2.1.1 14A a)); client-c forwards every
     private call immediately to client-b, and may also call client-d (an announced
     transfer target); client-d becomes callable and forwards
     to client-a on no answer after 3 s (TS 24.379 clause 6.3.2.5). A fifth user,
@@ -736,7 +737,10 @@ def add_private_services(fixture):
             # client-a calls client-d to announce a transfer (TS 24.379 clause 11.1.8.2.3).
             policy['targets'] = sorted(set(policy.get('targets', [])) | {ids['client-d']})
         elif user['mcptt_id'] == ids['client-b']:
-            policy.update(forward_manual=True)
+            # client-b is the transferred user of PS-06 to PS-08: its client calls the target with a Priv-Answer-Mode
+            # of the transferred call's value (TS 24.379 clause 11.1.1.2.1.1 14A a)), which the participating function
+            # refuses without <allow-force-auto-answer> (clause 11.1.1.3.1.1 step 18 b), warning 143).
+            policy.update(forward_manual=True, force_auto_answer=True)
         elif user['mcptt_id'] == ids['client-c']:
             policy.update(forward_immediate=ids['client-b'])
         elif user['mcptt_id'] == ids['client-d']:
