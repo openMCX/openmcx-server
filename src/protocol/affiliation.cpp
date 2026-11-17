@@ -97,16 +97,17 @@ Affiliation parse_affiliation(std::string_view xml, std::string_view client) {
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 7.2.3 with clause 7.4.1.2.2: writes the application/poc-settings+xml of a client: automatic
-// answer mode, the selected user profile index and multiplex support.
+// answer mode, the selected user profile index and multiplex support "false" (the default of the overload below).
 std::string poc_settings_xml(std::string_view client_id, unsigned profile_index) {
   return poc_settings_xml(client_id, profile_index, false);
 }
 
 //------------------------------------------------------------------------------
 // TS 24.281 clauses 7.2.2 6) and 7.2.3 4) with clause 7.4.1.2.2: a) the current answer mode (RFC 4354 <answer-mode>
-// "automatic" or "manual"), b) the selected user profile index, c) <multiplex-support>. The OpenMCX clients do not
-// support multiplexing (TS 24.379 clause 6.2.10), so they advertise "false".
-std::string poc_settings_xml(std::string_view client_id, unsigned profile_index, bool manual_answer) {
+// "automatic" or "manual"), b) the selected user profile index, c) <multiplex-support>: whether the client supports
+// multiplexing (TS 24.379 clause 6.2.10, clause 7.2.2 6) c)), as it offers "mc_floor_ssrc" (TS 24.380 clause 14.2.7).
+std::string poc_settings_xml(std::string_view client_id, unsigned profile_index, bool manual_answer,
+                             bool multiplex_support) {
   if (client_id.empty()) throw std::invalid_argument("PoC client identity required");
   return "<?xml version=\"1.0\"?><poc-settings "
          "xmlns=\"urn:oma:params:xml:ns:poc:poc-settings\" "
@@ -116,8 +117,8 @@ std::string poc_settings_xml(std::string_view client_id, unsigned profile_index,
          "am-settings><mc:selected-user-profile-index><mc:user-profile-index>" +
          std::to_string(profile_index) +
          "</mc:user-profile-index></"
-         "mc:selected-user-profile-index><mc:multiplex-support>false</"
-         "mc:multiplex-support></entity></poc-settings>";
+         "mc:selected-user-profile-index><mc:multiplex-support>" +
+         (multiplex_support ? "true" : "false") + "</mc:multiplex-support></entity></poc-settings>";
 }
 
 //------------------------------------------------------------------------------

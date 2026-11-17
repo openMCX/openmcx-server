@@ -220,6 +220,16 @@ int main() {
             manual_settings[0].answer_mode == "manual" && manual_settings[0].profile_index == 3u &&
             manual_settings[0].multiplex_support == false,
         "PoC settings round trip wrong");
+  // TS 24.379 clauses 6.2.10 and 7.2.2 6) c): <multiplex-support> as the client supports multiplexing; false by
+  // default (the two-argument and three-argument forms).
+  check(parse_poc_settings(poc_settings_xml("urn:uuid:test-client"))[0].multiplex_support == false,
+        "default multiplex support not false");
+  const auto multiplexing = parse_poc_settings(poc_settings_xml("urn:uuid:test-client", 1, false, true));
+  check(multiplexing.size() == 1 && multiplexing[0].multiplex_support == true && multiplexing[0].profile_index == 1u &&
+            multiplexing[0].answer_mode == "automatic",
+        "multiplex support true lost");
+  check(parse_poc_settings(poc_settings_xml("urn:uuid:test-client", 1, true, false))[0].multiplex_support == false,
+        "multiplex support false lost");
   // TS 24.281 table 7.4.1.2.2-3: two clients, the extension elements unprefixed as in the example.
   const auto two = parse_poc_settings(
       R"(<?xml version="1.0"?><poc-settings xmlns="urn:oma:params:xml:ns:poc:poc-settings"><entity id="urn:uuid:a"><am-settings><answer-mode>automatic</answer-mode></am-settings><selected-user-profile-index><user-profile-index>1</user-profile-index></selected-user-profile-index><multiplex-support>true</multiplex-support></entity><entity id="urn:uuid:b"><am-settings><answer-mode>manual</answer-mode></am-settings><selected-user-profile-index><user-profile-index>2</user-profile-index></selected-user-profile-index></entity></poc-settings>)");

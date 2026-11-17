@@ -714,8 +714,11 @@ Affiliation parse_affiliation(std::string_view xml, std::string_view client = {}
 std::string poc_settings_xml(std::string_view client_id, unsigned profile_index = 0);
 //------------------------------------------------------------------------------
 // TS 24.281 clauses 7.2.2 6), 7.2.3 4) with clause 7.4.1.2.2 (RFC 4354): the same with the client's current answer
-// mode (<answer-mode> "manual" when manual_answer, else "automatic").
-std::string poc_settings_xml(std::string_view client_id, unsigned profile_index, bool manual_answer);
+// mode (<answer-mode> "manual" when manual_answer, else "automatic") and, with TS 24.379 clauses 6.2.10 and 7.2.2 6) c),
+// whether the client supports multiplexing (<multiplex-support>). multiplex_support defaults to false, what every
+// caller announced before it was a parameter, so that nothing changes until a client passes its own setting.
+std::string poc_settings_xml(std::string_view client_id, unsigned profile_index, bool manual_answer,
+                             bool multiplex_support = false);
 //------------------------------------------------------------------------------
 // RFC 4354 with TS 24.281 clause 7.4.1.2.2: the settings of one <entity> (one MC client) of a poc-settings document:
 // its "id", the <answer-mode> of <am-settings> (empty when absent), the <user-profile-index> of
