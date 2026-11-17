@@ -10,7 +10,9 @@ Checks (TS 24.379 clause 7.3.2, TS 24.229 clause 5.4.1.7):
     Authorization header is not in it;
   - with --integrity, the client's REGISTER also carries an application/vnd.3gpp.mcptt-signed+xml body (TS 24.379
     clause 7.2.1 step 7, clause 6.6.3);
-  - each is answered 200 (OK), and no client authorised by a poc-settings PUBLISH (clause 7.2.2) instead;
+  - each is answered 200 (OK), and no client authorised by a poc-settings PUBLISH (clause 7.2.2, the one with the
+    access token, encrypted or not) instead; a PUBLISH for the service settings only (clause 7.2.3, no access token,
+    which the client sends after an authorisation by REGISTER) is answered 200 (OK) (clause 7.3.4);
   - a de-registration (Expires 0, a client's log-off) carries the client's REGISTER with Expires 0 and no Authorization;
   - at least --users users were authorised so.
 
@@ -122,7 +124,18 @@ def main():
         for message in messages
         if message['request'] and message['method'] == 'PUBLISH' and 'poc-settings' in header(message, 'event')
     ]
-    check('no client authorised by a poc-settings PUBLISH instead', not publishes)
+    # A service authorisation PUBLISH (clause 7.2.2) carries the access token, whose element is there also when its
+    # content is encrypted (type="Encrypted", clause 6.6.2.3.3) or the body signed; the PUBLISH for the service
+    # settings only (clause 7.2.3, after an authorisation by REGISTER or an answer-mode change) has the request URI and
+    # client ID without it, and the server answers it 200 (clause 7.3.4 step 9).
+    access_token = re.compile(r'<(?:[\w.-]+:)?mcptt-access-token\b')
+    authorisations = [message for message in publishes if access_token.search(message['body'])]
+    settings = [message for message in publishes if message not in authorisations]
+    check('no client authorised by a poc-settings PUBLISH instead', not authorisations)
+    check(
+        'each PUBLISH for the service settings only answered 200',
+        all(finals.get((message['call_id'], header(message, 'cseq'))) == 200 for message in settings),
+    )
     result = dict(
         capture=str(args.capture),
         passed=not failures,
@@ -133,6 +146,8 @@ def main():
             deregistrations=len(removals),
             users=sorted(users),
             poc_settings_publishes=len(publishes),
+            service_authorisation_publishes=len(authorisations),
+            settings_only_publishes=len(settings),
         ),
     )
     args.output.write_text(json.dumps(result, indent=2) + '\n')
