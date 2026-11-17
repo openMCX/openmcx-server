@@ -653,6 +653,10 @@ std::string mcptt_info_xml(const McpttInfo &info);
 //------------------------------------------------------------------------------
 // TS 24.379 annex F.1.2: reads an <mcpttinfo> document.
 McpttInfo parse_mcptt_info(std::string_view xml);
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 7.3.3 and 7.3.4 (TS 24.281, TS 24.282 likewise): the names of the elements of the <prefix>-Params
+// of a service information document of the service, protected or not (e.g. "mcptt-access-token").
+std::set<std::string> service_info_params(std::string_view xml, const ServiceProfile &service);
 // RFC 4826: the MIME type of a resource list.
 inline constexpr const char *resource_lists_mime = "application/resource-lists+xml";
 //------------------------------------------------------------------------------

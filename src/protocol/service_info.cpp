@@ -516,4 +516,25 @@ McpttInfo parse_service_info(std::string_view xml, const ServiceProfile &service
 // TS 24.379 annex F.1.2: reads an <mcpttinfo> document.
 McpttInfo parse_mcptt_info(std::string_view xml) { return parse_service_info(xml, mcptt_service); }
 
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 7.3.3 and 7.3.4 (TS 24.281, TS 24.282 likewise): the names of the elements of <prefix>-Params of a
+// service information document (<mcpttinfo>, <mcvideoinfo>, <mcdatainfo>), whatever their content: an element whose
+// content is encrypted (TS 24.379 clause 6.6.2.3, "type" "Encrypted") is named as an unprotected one is.
+std::set<std::string> service_info_params(std::string_view xml, const ServiceProfile &service) {
+  // The names of InfoNames, which also holds names MCData's document does not have.
+  const std::string prefix = service.info_prefix;
+  const char *info_ns = service.info_ns;
+  auto doc = document(xml);
+  auto root = xmlDocGetRootElement(doc.get());
+  if (!is(root, (prefix + "info").c_str(), info_ns)) invalid("wrong service information root namespace");
+  std::set<std::string> out;
+  auto params = unique_child(root, (prefix + "-Params").c_str(), info_ns, false);
+  if (!params) return out;
+  for (auto node = params->children; node; node = node->next)
+    if (node->type == XML_ELEMENT_NODE && node->ns && node->ns->href &&
+        std::string_view(reinterpret_cast<const char *>(node->ns->href)) == info_ns)
+      out.insert(reinterpret_cast<const char *>(node->name));
+  return out;
+}
+
 } // namespace mcx

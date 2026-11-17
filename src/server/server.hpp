@@ -1844,6 +1844,14 @@ protected:
   bool terminating_request(const SipMessage &message, const std::string &peer, SipResponse &response);
   // TS 24.379 clause 7.3.3: service authorisation (PUBLISH of poc-settings).
   void service_authorization(const SipMessage &message, SipResponse &response);
+  // TS 24.379 clause 7.3.4: PUBLISH of poc-settings for the service settings only.
+  void service_settings_publish(const SipMessage &message, SipResponse &response);
+  // TS 24.379 clauses 7.3.3 and 7.3.4 steps 8 to 11: cache the client's service settings of the request.
+  bool cache_service_settings(User &user, const SipMessage &message, std::uint64_t expires);
+  // TS 24.379 clauses 6.3.2.2.5.2 and 6.3.2.2.6.2 step 5: the headers of an INVITE to the served user, with an
+  // Answer-Mode from its cached Answer-Mode Indication when they have neither Answer-Mode nor Priv-Answer-Mode.
+  [[nodiscard]] std::vector<SipHeader> with_cached_answer_mode(std::vector<SipHeader> headers,
+                                                               const User &user) const;
   // TS 24.379 clause 7.3.5: log-off (PUBLISH of poc-settings with Expires 0).
   void service_log_off(const SipMessage &message, SipResponse &response);
   // TS 24.379 clause 7.3.5 steps 3 and 4, clause 7.3.3 step 8: the end of a served user's service settings and the

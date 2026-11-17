@@ -49,8 +49,12 @@ SipResponse McServer::incoming(const SipMessage &message) {
     // Requests from a peer MCPTT/MCVideo server (another function of this system).
     if (!peer.empty() && peer_request(message, peer, event_name, response)) return response;
     if (message.method == "PUBLISH" && event_name == "poc-settings") {
-      if (get_header(message.headers, "Expires") == "0") service_log_off(message, response); // clause 7.3.5
-      else service_authorization(message, response);
+      if (get_header(message.headers, "Expires") == "0")
+        service_log_off(message, response); // clause 7.3.5
+      else if (poc_settings_publish_kind(parts_of(message), svc_) == PocSettingsPublish::settings_only)
+        service_settings_publish(message, response); // clause 7.3.4
+      else
+        service_authorization(message, response); // clause 7.3.3
       return response;
     }
     // TS 24.379 clause 7.3.2: the SIP core's third-party REGISTER (a REGISTER reaches a server only from the core).
@@ -304,6 +308,123 @@ void McServer::service_authorization(const SipMessage &message, SipResponse &res
     if (profile.empty()) throw std::runtime_error("empty Diameter user profile");
   }
   bind_authorized_user(claims, info, asserted, old, match, unknown_etag, uploaded, uploader, profile, response);
+  // Steps 8 and 10 to 12: the service settings of the PUBLISH (a REGISTER, clause 7.3.2, carries none).
+  if (response.status_code == 200)
+    if (const auto found = users_.find(asserted); found != users_.end())
+      cache_service_settings(found->second, request, max_expires_s);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 7.3.4 (TS 24.281 clause 7.3.4): a SIP PUBLISH for the service settings only, whose service
+// information names the MC service ID (<mcptt-request-uri>) and client ID (<mcptt-client-id>) and no access token
+// (TS 24.379 clause 7.2.3: sent by an authorised client to set or update its service settings, e.g. after a service
+// authorisation by REGISTER or when its answer mode changes):
+//   step 1: the IMS public user identity is the asserted one;
+//   steps 2 and 3 (clause 7.3.1A): the signatures were verified and the content decrypted with the user's CSK when the
+//     request was received (protect_incoming), content that could not be is refused with 403 and warning 139 or 140
+//     before it reaches here (refuse_unprotectable); content still protected here had no key: 403 with warning 140;
+//   steps 4 to 6: the binding of that identity, the MC service ID of the request and its client ID must exist and be
+//     valid, else 404 with warning 141 (TS 24.281 step 6 has no warning text). The step names "the IMS public user
+//     identity in the Request-URI", which in this request is the server's PSI (clause 7.2.3); the identity is the one
+//     of step 1. The user profile is the one of the authorisation (step 5, step 11);
+//   step 7: RFC 3903 (settings_publication); a publication takes the entity tag of the user's service authorisation,
+//     which the client modifies (clause 7.2.3), and gets a new one (RFC 3903 section 6 step 8), which a later log-off
+//     (clause 7.3.5) or re-registration names;
+//   steps 8 and 9: the settings are cached until the publication expires, and the answer is 200;
+//   step 10: <am-settings> is the client's current Answer-Mode Indication (its private calls, clauses 6.3.2.2.5.2 and
+//     6.3.2.2.6.2 step 5); step 10a: <multiplex-support> is kept with the binding; steps 11 and 12: the
+//     <selected-user-profile-index> is kept; this server holds one user profile per user (the one the CMS and, with
+//     MCPTT-2, the user database give), which is the active one whatever the index.
+// Not implemented: step 13, implicit affiliation from the user profile's <ImplicitAffiliations> (clause 9.2.2.2.15),
+// which the service authorisation (clause 7.3.3 step 13) does not do either.
+void McServer::service_settings_publish(const SipMessage &message, SipResponse &response) {
+  const auto asserted = asserted_identity(message); // step 1
+  if (asserted.empty() || asserted != message.from_uri) {
+    response.status_code = 403;
+    return;
+  }
+  const auto parts = parts_of(message);
+  // Steps 2 and 3: protected content left (no key held for it) cannot be read.
+  for (const auto &part : parts)
+    if (mcptt_xml_part(part.content_type) && xmlsec::is_protected(part.body)) {
+      ++xml_refused_;
+      event("xml_refused", {{"method", message.method}, {"reason", "settings publication not decrypted"}});
+      response.status_code = 403;
+      response.headers = {{"Warning", warning_value(warn(Warning::decrypt_failed))}};
+      return;
+    }
+  const auto info = message_info(message, svc_);
+  // Steps 4 and 6.
+  auto *user = settings_binding(users_, asserted, info.request_uri, info.client_id, std::time(nullptr));
+  if (!user) {
+    event("service_settings_refused", {{"user", asserted}, {"user_id", info.request_uri}, {"reason", "no binding"}});
+    response.status_code = 404;
+    if (svc_.service == Service::mcptt)
+      response.headers = {{"Warning", warning_value(warn(Warning::unknown_user))}};
+    return;
+  }
+  // Step 7.
+  const auto checked =
+      settings_publication(get_header(message.headers, "SIP-If-Match"), get_header(message.headers, "Expires"),
+                           user->auth_etag, !parts.empty());
+  if (checked.status) {
+    event("service_settings_refused", {{"user_id", user->id}, {"status", checked.status}});
+    response.status_code = checked.status;
+    return;
+  }
+  // Steps 8, 10, 10a and 11: a PUBLISH without the client's settings is not one of this clause.
+  if (!cache_service_settings(*user, message, checked.expires)) {
+    response.status_code = 400;
+    return;
+  }
+  user->auth_etag = random_id();
+  // Step 9.
+  response.headers = {{"SIP-ETag", user->auth_etag}, {"Expires", std::to_string(checked.expires)}};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 6.3.2.2.5.2 and 6.3.2.2.6.2 step 5 (TS 24.281 likewise) with clause 7.3.4 step 10: "if no
+// Answer-Mode header field was received in the incoming SIP INVITE request and the Answer-Mode Indication received in
+// the application/poc-settings+xml MIME body received from the invited MCPTT client as defined in clause 7.3.3 or
+// clause 7.3.4 is set to" automatic or manual answer, the INVITE to the client has Answer-Mode "Auto" or "Manual".
+// A Priv-Answer-Mode (steps 6) is passed on as it is. Without cached settings the headers are left as they are (the
+// client then decides by its own setting; clause 11.1.1.3.2 step 7a, refusing the call with 480 and warning 146, is
+// not done, so that a client authorised by REGISTER that never published its settings stays reachable).
+std::vector<SipHeader> McServer::with_cached_answer_mode(std::vector<SipHeader> headers, const User &user) const {
+  if (std::any_of(headers.begin(), headers.end(), [](const SipHeader &header) {
+        auto name = header.name;
+        for (auto &character : name) character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+        return name == "answer-mode" || name == "priv-answer-mode";
+      }))
+    return headers;
+  if (const auto mode = cached_answer_mode(user, std::time(nullptr)); !mode.empty())
+    headers.push_back({"Answer-Mode", mode});
+  return headers;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 7.3.3 and 7.3.4 steps 8, 10, 10a and 11 (TS 24.281 likewise): the client's service settings from
+// the application/poc-settings+xml of the request, cached for `expires` seconds. Returns false (nothing cached) when
+// the request has no readable settings of the client.
+bool McServer::cache_service_settings(User &user, const SipMessage &message, std::uint64_t expires) {
+  const auto parts = parts_of(message);
+  const auto body = std::find_if(parts.begin(), parts.end(),
+                                 [](const BodyPart &part) { return part.content_type == "application/poc-settings+xml"; });
+  if (body == parts.end()) return false;
+  try {
+    user.settings = read_service_settings(body->body, user.client,
+                                          std::time(nullptr) + static_cast<std::int64_t>(expires));
+  } catch (const std::exception &error) {
+    event("service_settings_unread", {{"user_id", user.id}, {"reason", error.what()}});
+    return false;
+  }
+  event("service_settings", {{"user_id", user.id},
+                             {"client_id", user.client},
+                             {"answer_mode", user.settings->answer_mode},
+                             {"profile_index", user.settings->profile_index ? Json(*user.settings->profile_index)
+                                                                            : Json(nullptr)},
+                             {"multiplex_support", user.settings->multiplex_support}});
+  return true;
 }
 
 //------------------------------------------------------------------------------

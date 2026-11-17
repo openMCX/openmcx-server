@@ -225,7 +225,7 @@ SipResponse McServer::relay_incoming(const SipMessage &message, const std::strin
     return response;
   }
   relay->ambient_party = info.session_type == svc_.ambient && info.ambient_listening_type == "remote-init";
-  auto headers = relayed_headers(message.headers);
+  auto headers = with_cached_answer_mode(relayed_headers(message.headers), user);
   if (const auto contact = get_header(message.headers, "Contact"); contact.find("isfocus") != std::string_view::npos) {
     relay->alias = session_alias(peer, header_uri(contact));
     headers.push_back({"Contact", focus_contact_header(relay->alias)});

@@ -944,10 +944,13 @@ bool McServer::pre_session_invite_member(const std::shared_ptr<Session> &call, c
   add_leg(leg);
   session->control->refer_received(); // 'G: Pre-established session in use' from now on (clause 9.3.2.3.3 step 5)
   bool manual = call->policy.value("answer_mode", "Auto") == "Manual";
-  if (call->private_call)
-    manual = std::any_of(call->answer_headers.begin(), call->answer_headers.end(), [](const SipHeader &header) {
+  if (call->private_call) {
+    // Clauses 6.3.2.2.5.3 and 6.3.2.2.6.3: the Answer-Mode of the call, else the user's cached Answer-Mode Indication.
+    const auto headers = with_cached_answer_mode(call->answer_headers, user);
+    manual = std::any_of(headers.begin(), headers.end(), [](const SipHeader &header) {
       return header.name == "Answer-Mode" && header.value == "Manual";
     });
+  }
   event("call_fanout", {{"user_id", user.id}, {"session_uri", call->uri}, {"pre_established", true},
                         {"commencement", manual ? "manual" : "automatic"}});
   // TS 24.380 clause 9.3.2.3.3 1 d (NOTE 1): a private call without floor control uses the speech stream only.

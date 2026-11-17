@@ -7,6 +7,9 @@
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19).
 
 #include "parts/served_users.hpp"
+#include "request_values.hpp"
+
+#include <algorithm>
 
 namespace mcx {
 
@@ -30,6 +33,77 @@ Affiliation affiliation_status(const ServiceProfile &service, const ServedUser &
     affiliation.statuses.push_back("affiliated");
   }
   return affiliation;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 7.3.3 and 7.3.4 condition 3: the request URI and client ID without an access token make a PUBLISH
+// for the service settings only; one service information body, readable, is needed for it.
+PocSettingsPublish poc_settings_publish_kind(const std::vector<BodyPart> &parts, const ServiceProfile &service) {
+  const BodyPart *info = nullptr;
+  for (const auto &part : parts)
+    if (part.content_type == service.info_mime) {
+      if (info) return PocSettingsPublish::service_authorisation;
+      info = &part;
+    }
+  if (!info) return PocSettingsPublish::service_authorisation;
+  std::set<std::string> params;
+  try {
+    params = service_info_params(info->body, service);
+  } catch (const std::exception &) {
+    return PocSettingsPublish::service_authorisation;
+  }
+  const std::string prefix = std::string(service.info_prefix) + "-";
+  if (params.contains(prefix + "access-token")) return PocSettingsPublish::service_authorisation;
+  if (params.contains(prefix + "request-uri") && params.contains(prefix + "client-id"))
+    return PocSettingsPublish::settings_only;
+  return PocSettingsPublish::service_authorisation;
+}
+
+//------------------------------------------------------------------------------
+// RFC 3903 section 6 steps 2 to 5 for the settings publication: Expires, then the entity tag (a single one, of the
+// user's publication), then a body for an initial publication.
+SettingsPublication settings_publication(std::string_view if_match, std::string_view expires, std::string_view etag,
+                                         bool has_body) {
+  SettingsPublication out;
+  out.expires = max_expires_s;
+  if (!expires.empty()) {
+    const auto value = parse_expires(expires);
+    if (!value) {
+      out.status = 400;
+      return out;
+    }
+    out.expires = *value;
+  }
+  if (if_match.find(',') != std::string_view::npos || (if_match.empty() && !has_body))
+    out.status = 400;
+  else if (!if_match.empty() && (etag.empty() || if_match != etag))
+    out.status = 412;
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// RFC 4354 <answer-mode> ("automatic", "manual"; TS 24.379 writes "auto-answer" and "manual-answer" in its text) as an
+// RFC 5373 value; <multiplex-support> absent is false (TS 24.379 clause 7.3.4 step 10a).
+ServiceSettings read_service_settings(std::string_view xml, std::string_view client_id, std::int64_t expires) {
+  const auto entities = parse_poc_settings(xml);
+  const auto entity = std::find_if(entities.begin(), entities.end(),
+                                   [&](const PocSettingsEntity &candidate) { return candidate.id == client_id; });
+  if (entity == entities.end()) throw std::runtime_error("poc-settings without the client's entity");
+  ServiceSettings settings;
+  if (entity->answer_mode == "automatic" || entity->answer_mode == "auto-answer")
+    settings.answer_mode = "Auto";
+  else if (entity->answer_mode == "manual" || entity->answer_mode == "manual-answer")
+    settings.answer_mode = "Manual";
+  settings.profile_index = entity->profile_index;
+  settings.multiplex_support = entity->multiplex_support.value_or(false);
+  settings.expires = expires;
+  return settings;
+}
+
+//------------------------------------------------------------------------------
+// Helper: the cached Answer-Mode Indication while the settings last.
+std::string cached_answer_mode(const ServedUser &user, std::int64_t now) {
+  return user.settings && user.settings->expires > now ? user.settings->answer_mode : std::string{};
 }
 
 //------------------------------------------------------------------------------

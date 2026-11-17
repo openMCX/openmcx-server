@@ -712,7 +712,7 @@ void McServer::invite_private_target(const std::shared_ptr<Session> &session, co
   if (session->called_alias.size()) info.called_functional_alias = session->called_alias;
   populate_priority(info, session->priority);
   if (session->transfer_announced) info.service["transfer-announced-ind"] = "true";
-  auto headers = session->answer_headers;
+  auto headers = with_cached_answer_mode(session->answer_headers, *callee);
   for (const auto &header : priority_headers(cfg_.at(svc_.name), session->priority)) headers.push_back(header);
   headers.push_back({"Contact", focus_contact(*session)});
   if (!session->replaces_header.empty()) headers.push_back({"Replaces", session->replaces_header});
