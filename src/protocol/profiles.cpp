@@ -520,6 +520,28 @@ std::vector<std::string> group_regrouped_tgis(std::string_view xml) {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.4.2: the audio cut-in and multi-talker elements of a group document.
+GroupFloorSettings parse_group_floor_settings(std::string_view xml) {
+  auto doc = document(xml);
+  auto list_service = group_list_service(doc.get());
+  GroupFloorSettings out;
+  out.audio_cut_in = group_flag(list_service, "mcptt-on-network-audio-cut-in");
+  out.multi_talker = group_flag(list_service, "multi-talker-control");
+  if (auto max = unique_child(list_service, "max-number-simultaneous-talkers", mcpttgi_ns, false)) {
+    out.max_talkers = number(scalar(max), 0xFFFFFFFFull);
+    if (!out.max_talkers) invalid("max-number-simultaneous-talkers is a positive integer");
+  }
+  // Table 7.2.2-1: a value other than "UE" or "NW" is interpreted as "NW".
+  if (auto entity = unique_child(list_service, "audio-mixing-entity", mcpttgi_ns, false))
+    if (scalar(entity) == "UE") out.mixing_entity = "UE";
+  if (auto list = unique_child(list_service, "list", poc_ns, false))
+    for (auto entry = list->children; entry; entry = entry->next)
+      if (is(entry, "entry", poc_ns) && unique_child(entry, "multi-talker-allowed", mcpttgi_ns, false))
+        out.multi_talker_allowed.push_back(attr(entry, "uri"));
+  return out;
+}
+
+//------------------------------------------------------------------------------
 McdataGroupSds parse_mcdata_group_sds(std::string_view xml) {
   auto doc = document(xml);
   auto list_service = group_list_service(doc.get());

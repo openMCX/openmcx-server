@@ -21,6 +21,8 @@ func TestGroupDocumentRoundTrip(test *testing.T) {
 	group := Group{ID: "sip:ops@mcx.test", Type: "chat", Members: []string{"sip:alice@mcx.test", "sip:erin@other.test"},
 		UserPriorities: map[string]int{"sip:erin@other.test": 3}, ProtectMedia: false, ProtectFloor: true,
 		PreconfiguredUseOnly: true, AllowGettingMemberList: true, SubordinateGroups: []string{"sip:sub@mcx.test"},
+		AudioCutIn:                      true,
+		MultiTalker:                     &GroupMultiTalker{MaxTalkers: 3, MixingEntity: "UE", Allowed: []string{"sip:erin@other.test"}},
 		CallPolicy:                      map[string]interface{}{"max_participants": float64(5), "setup_timeout_ms": float64(4000)},
 		PriorityPolicy:                  map[string]interface{}{"emergency_users": []interface{}{"sip:alice@mcx.test"}},
 		FloorPriorityCaps:               map[string]uint8{"sip:alice@mcx.test": 7},
@@ -45,7 +47,13 @@ func TestGroupDocumentRoundTrip(test *testing.T) {
 	for _, want := range []string{`<group xmlns="urn:oma:xml:poc:list-service">`, `<list-service uri="sip:ops@mcx.test">`,
 		`<entry uri="sip:erin@other.test">`, `enabler="urn:urn-7:3gpp-service.ims.icsi.mcptt"`,
 		`enabler="urn:urn-7:3gpp-service.ims.icsi.mcdata"`, `enabler="urn:urn-7:3gpp-service.ims.icsi.mcvideo"`, `<on-network-max-participant-count xmlns="urn:3gpp:ns:mcpttGroupInfo:1.0">5<`,
-		`<forbidden-deaffiliation-FAs xmlns="urn:3gpp:ns:mcpttGroupInfo:1.0"><entry `, `sip:dispatcher.fa@mcx.test</uri-entry>`} {
+		`<forbidden-deaffiliation-FAs xmlns="urn:3gpp:ns:mcpttGroupInfo:1.0"><entry `, `sip:dispatcher.fa@mcx.test</uri-entry>`,
+		// TS 24.481 clause 7.2.4.2: the multi-talker elements of <list-service> and of the member's <entry>.
+		`<multi-talker-control xmlns="urn:3gpp:ns:mcpttGroupInfo:1.0">true<`,
+		`<max-number-simultaneous-talkers xmlns="urn:3gpp:ns:mcpttGroupInfo:1.0">3<`,
+		`<audio-mixing-entity xmlns="urn:3gpp:ns:mcpttGroupInfo:1.0">UE<`,
+		`<mcptt-on-network-audio-cut-in xmlns="urn:3gpp:ns:mcpttGroupInfo:1.0">true<`,
+		`<multi-talker-allowed xmlns="urn:3gpp:ns:mcpttGroupInfo:1.0"></multi-talker-allowed>`} {
 		if !strings.Contains(string(raw), want) {
 			test.Fatalf("document lacks %s: %s", want, raw)
 		}
@@ -152,4 +160,3 @@ func TestMCDataEmergencyAlertAction(test *testing.T) {
 		test.Fatalf("no <mcdata-allow-emergency-alert> action: %#v", rules)
 	}
 }
-

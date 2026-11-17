@@ -1095,6 +1095,31 @@ int main() {
   check(group_preconfigured_use_only(
             group_doc + "<gi:preconfigured-group-use-only>true</gi:preconfigured-group-use-only>" + group_end),
         "preconfigured-group-use-only lost");
+  // TS 24.481 clause 7.2.4.2: the audio cut-in and multi-talker elements; absent, their defaults.
+  {
+    const auto none = parse_group_floor_settings(group_doc + group_end);
+    check(!none.audio_cut_in && !none.multi_talker && none.max_talkers == 1 && none.mixing_entity == "NW" &&
+              none.multi_talker_allowed.empty(),
+          "group floor settings defaults");
+    const auto set = parse_group_floor_settings(
+        "<group xmlns=\"urn:oma:xml:poc:list-service\" xmlns:gi=\"urn:3gpp:ns:mcpttGroupInfo:1.0\">"
+        "<list-service uri=\"sip:g@x\"><list><entry uri=\"sip:a@x\"><gi:multi-talker-allowed/></entry>"
+        "<entry uri=\"sip:b@x\"/></list><gi:mcptt-on-network-audio-cut-in>true</gi:mcptt-on-network-audio-cut-in>"
+        "<gi:multi-talker-control>true</gi:multi-talker-control>"
+        "<gi:max-number-simultaneous-talkers>3</gi:max-number-simultaneous-talkers>"
+        "<gi:audio-mixing-entity>UE</gi:audio-mixing-entity>" +
+        group_end);
+    check(set.audio_cut_in && set.multi_talker && set.max_talkers == 3 && set.mixing_entity == "UE" &&
+              set.multi_talker_allowed == std::vector<std::string>{"sip:a@x"},
+          "group floor settings");
+    check(parse_group_floor_settings(group_doc + "<gi:audio-mixing-entity>XY</gi:audio-mixing-entity>" + group_end)
+                  .mixing_entity == "NW",
+          "unknown audio mixing entity is NW");
+    rejects([&] {
+      (void)parse_group_floor_settings(group_doc + "<gi:multi-talker-control>maybe</gi:multi-talker-control>" +
+                                       group_end);
+    });
+  }
   // TS 24.481 clause 7.2.4.2: a temporary group's constituents, a constituent's regroups.
   check(group_temporary_constituents(group_doc +
                                      "<gi:on-network-temporary><gi:constituent-MCPTT-group-IDs><gi:constituent-MCPTT-"

@@ -93,6 +93,40 @@ def add_parallel_group(fixture, source):
 
 
 # ------------------------------------------------------------------------------
+def add_multi_talker(fixture, source, target):
+    """TS 24.481 clause 7.2.4.2: a multi-talker group (<multi-talker-control> "true", <max-number-simultaneous-talkers>
+    4, <audio-mixing-entity> "UE": the clients mix, TS 24.380 6.2.4.5.8) whose four members have <multi-talker-allowed>.
+    target "new": a group <group_user>-multitalker of client-a to client-d, which each client may select; otherwise
+    the ID of a group of the lab, which is marked so."""
+    site_file = fixture / 'generated/site.json'
+    site = json.loads(site_file.read_text())
+    roles = ['client-a', 'client-b', 'client-c', 'client-d']
+    configs = {role: json.loads((fixture / f'generated/{role}.json').read_text()) for role in roles}
+    members = [config['mcptt']['user_id'] for config in configs.values()]
+    if target == 'new':
+        group_id = f"sip:{source['group_user']}-multitalker@{source['domain']}"
+        site['groups'] = [group for group in site['groups'] if group['id'] != group_id]
+        site['groups'].append(dict(id=group_id, members=members, protect_media=False, protect_floor=False))
+        for user in site['users']:
+            if user['mcptt_id'] in members and group_id not in user['groups']:
+                user['groups'].append(group_id)
+        for role, config in configs.items():
+            allowed = config['mcptt'].get('allowed_groups')
+            if allowed is not None and group_id not in allowed:
+                allowed.append(group_id)
+                (fixture / f'generated/{role}.json').write_text(json.dumps(config, indent=2) + '\n')
+    else:
+        group_id = target
+    group = next((group for group in site['groups'] if group['id'] == group_id), None)
+    if group is None:
+        raise SystemExit(f'--multi-talker: no group {group_id} in site.json')
+    group['multi_talker'] = dict(
+        max_talkers=4, audio_mixing_entity='UE', allowed=[member for member in group['members'] if member in members]
+    )
+    site_file.write_text(json.dumps(site, indent=2) + '\n')
+
+
+# ------------------------------------------------------------------------------
 def add_admission_groups(fixture):
     """Four prearranged groups of the four clients, each refusing a group call for one reason (TS 24.379 clauses
     6.3.5.2 step 5a, 10.1.1.4.2 and 6.3.8.2): <on-network-disabled> (warning 115), initiation by client-b only (119),
@@ -2288,6 +2322,14 @@ def main():
         '--broadcast', action='store_true', help='Restrict broadcast group call initiation to client-a and client-b'
     )
     parser.add_argument(
+        '--multi-talker',
+        nargs='?',
+        const='new',
+        metavar='GROUP',
+        help='a multi-talker group (TS 24.481 <multi-talker-control>, 4 talkers, mixed in the UE): without GROUP a new '
+        'group <group>-multitalker of client-a to client-d, with GROUP that group of the lab',
+    )
+    parser.add_argument(
         '--regroup',
         action='store_true',
         help='Add a preconfigured group and two constituent groups for regroup (TS 24.379 clause 16)',
@@ -2810,6 +2852,8 @@ def main():
         ]
         server_file.write_text(json.dumps(server, indent=2) + '\n')
         add_broadcast_hierarchy(fixture, source)
+    if args.multi_talker:
+        add_multi_talker(fixture, source, args.multi_talker)
     if args.group_management:
         add_group_management(fixture)
     if args.msgstore:

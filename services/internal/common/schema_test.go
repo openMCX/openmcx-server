@@ -31,7 +31,8 @@ func TestSchemasCompile(test *testing.T) {
 // starts; this covers the optional parts.
 func TestGeneratedGroupDocumentsConform(test *testing.T) {
 	group := Group{ID: "sip:g@x", Members: []string{"sip:a@x", "sip:b@x"}, UserPriorities: map[string]int{"sip:b@x": 7},
-		AllowGettingMemberList: true, PreconfiguredUseOnly: true, ProtectMedia: true,
+		AllowGettingMemberList: true, PreconfiguredUseOnly: true, ProtectMedia: true, AudioCutIn: true,
+		MultiTalker:               &GroupMultiTalker{MaxTalkers: 2, MixingEntity: "UE", Allowed: []string{"sip:b@x"}},
 		CallPolicy:                map[string]interface{}{"max_participants": float64(4)},
 		TemporaryConstituents:     []string{"sip:c1@x"},
 		RegroupedBy:               &TemporaryRegroup{TGI: "sip:t@x", Requestor: "sip:a@x", Constituents: []string{"sip:g@x"}},

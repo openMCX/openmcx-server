@@ -360,6 +360,21 @@ std::string parse_initial_kms(std::string_view xml);
 bool group_preconfigured_use_only(std::string_view xml);
 
 //------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.4.2: the floor control settings of an MCPTT group document's <list-service>:
+// <mcptt-on-network-audio-cut-in> (false when absent), <multi-talker-control> (false when absent),
+// <max-number-simultaneous-talkers> (1 when absent), <audio-mixing-entity> ("UE" or "NW"; absent, or another value:
+// "NW", table 7.2.2-1), and the <entry> URIs of the members with <multi-talker-allowed>.
+struct GroupFloorSettings {
+  bool audio_cut_in = false;
+  bool multi_talker = false;
+  std::uint64_t max_talkers = 1;
+  std::string mixing_entity = "NW";
+  std::vector<std::string> multi_talker_allowed;
+};
+
+GroupFloorSettings parse_group_floor_settings(std::string_view xml);
+
+//------------------------------------------------------------------------------
 // TS 24.481 clause 7.2.2 with TS 24.282 clause 11.1 5), 10) and 9.2.2.2.1 3)a): the SDS elements of an MCData group
 // document's <list-service>: <mcdata-allow-short-data-service> (false when absent), <mcdata-on-network-max-data-size-
 // for-SDS> (no limit when absent) and <preconfigured-group-use-only>.

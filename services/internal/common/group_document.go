@@ -63,6 +63,12 @@ type listServiceXML struct {
 	// TS 24.481 clause 7.2.2 (MCData group document): <mcdata-protect-media>, read as the group's media protection.
 	MCDataProtectMedia *bool `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-protect-media,omitempty"`
 	ProtectFloor       bool  `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 protect-floor-control-signalling"`
+	// TS 24.481 clause 7.2.4.2: <mcptt-on-network-audio-cut-in>, <multi-talker-control>,
+	// <max-number-simultaneous-talkers> and <audio-mixing-entity> ("UE" or "NW", table 7.2.2-1).
+	AudioCutIn             bool   `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcptt-on-network-audio-cut-in,omitempty"`
+	MultiTalkerControl     bool   `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 multi-talker-control,omitempty"`
+	MaxSimultaneousTalkers int    `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 max-number-simultaneous-talkers,omitempty"`
+	AudioMixingEntity      string `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 audio-mixing-entity,omitempty"`
 	// MCData group (TS 24.481 clause 7.2.2): the short data service, file distribution and their size limits.
 	AllowSDS             *bool                  `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-allow-short-data-service,omitempty"`
 	AllowFD              *bool                  `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mcdata-allow-file-distribution,omitempty"`
@@ -168,6 +174,8 @@ type groupEntryXML struct {
 	UserPriority int    `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 user-priority,omitempty"`
 	// <on-network-recvonly> (TS 24.481 clause 7.2.4.2): the member only receives in the group's calls.
 	RecvOnly *struct{} `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-recvonly,omitempty"`
+	// <multi-talker-allowed> (TS 24.481 clause 7.2.4.2): the member is authorized for multi-talker floor control.
+	MultiTalkerAllowed *struct{} `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 multi-talker-allowed,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -357,7 +365,12 @@ type groupExtension struct {
 // read, as the group document. withList false leaves out <list> (TS 24.481 clause 6.3.16.3).
 func groupDocument(group Group, withList bool) ([]byte, error) {
 	ls := listServiceXML{URI: group.ID, ProtectMedia: group.ProtectMedia, ProtectFloor: group.ProtectFloor,
-		PreconfiguredUseOnly: group.PreconfiguredUseOnly}
+		PreconfiguredUseOnly: group.PreconfiguredUseOnly, AudioCutIn: group.AudioCutIn}
+	if group.MultiTalker != nil {
+		ls.MultiTalkerControl = true
+		ls.MaxSimultaneousTalkers = group.MultiTalker.MaxTalkers
+		ls.AudioMixingEntity = group.MultiTalker.MixingEntity
+	}
 	if group.Disabled {
 		ls.Disabled = &struct{}{}
 	}
@@ -370,6 +383,9 @@ func groupDocument(group Group, withList bool) ([]byte, error) {
 			entry := groupEntryXML{URI: id, UserPriority: group.UserPriorities[id]}
 			if slices.Contains(receiveOnly, id) {
 				entry.RecvOnly = &struct{}{}
+			}
+			if group.MultiTalker != nil && slices.Contains(group.MultiTalker.Allowed, id) {
+				entry.MultiTalkerAllowed = &struct{}{}
 			}
 			list.Entries = append(list.Entries, entry)
 		}
@@ -448,13 +464,19 @@ func parseGroupDocument(raw []byte) (Group, error) {
 	}
 	group := Group{ID: ls.URI, ProtectMedia: ls.ProtectMedia || (ls.MCDataProtectMedia != nil && *ls.MCDataProtectMedia),
 		ProtectFloor:         ls.ProtectFloor,
-		PreconfiguredUseOnly: ls.PreconfiguredUseOnly, Members: []string{}}
+		PreconfiguredUseOnly: ls.PreconfiguredUseOnly, AudioCutIn: ls.AudioCutIn, Members: []string{}}
+	if ls.MultiTalkerControl {
+		group.MultiTalker = &GroupMultiTalker{MaxTalkers: ls.MaxSimultaneousTalkers, MixingEntity: ls.AudioMixingEntity}
+	}
 	if ls.List != nil {
 		for _, entry := range ls.List.Entries {
 			if entry.URI == "" || slices.Contains(group.Members, entry.URI) {
 				return Group{}, errors.New("empty or repeated group entry")
 			}
 			group.Members = append(group.Members, entry.URI)
+			if entry.MultiTalkerAllowed != nil && group.MultiTalker != nil {
+				group.MultiTalker.Allowed = append(group.MultiTalker.Allowed, entry.URI)
+			}
 			if entry.UserPriority != 0 {
 				if group.UserPriorities == nil {
 					group.UserPriorities = map[string]int{}

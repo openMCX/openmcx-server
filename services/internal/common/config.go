@@ -406,6 +406,16 @@ type PrivateCallPolicy struct {
 	AmbientLocal  bool `json:"ambient_local,omitempty"`
 }
 
+// ------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.4.2: the multi-talker settings of an MCPTT group: <max-number-simultaneous-talkers> (0: absent,
+// "1" by default), <audio-mixing-entity> ("UE" or "NW"; empty: absent, mixing in the network) and the members with
+// <multi-talker-allowed> in their <entry>.
+type GroupMultiTalker struct {
+	MaxTalkers   int      `json:"max_talkers,omitempty"`
+	MixingEntity string   `json:"audio_mixing_entity,omitempty"`
+	Allowed      []string `json:"allowed,omitempty"`
+}
+
 type Group struct {
 	ID string `json:"id"`
 	// "prearranged" (default), "chat" (TS 24.379 clause 10.1.2), or a broadcast hierarchy
@@ -418,6 +428,10 @@ type Group struct {
 	// participant preemption at the limit (TS 24.379 clause 10.1.2.4.1 steps 4b, 4c and 12a).
 	PreconfiguredUseOnly bool `json:"preconfigured_use_only,omitempty"`
 	Regrouped            bool `json:"regrouped,omitempty"`
+	// <mcptt-on-network-audio-cut-in> (TS 24.481 clause 7.2.4.2): audio cut-in floor control on the group.
+	AudioCutIn bool `json:"audio_cut_in,omitempty"`
+	// <multi-talker-control> "true" with its settings (TS 24.481 clause 7.2.4.2); nil: not a multi-talker group.
+	MultiTalker *GroupMultiTalker `json:"multi_talker,omitempty"`
 	// <on-network-disabled> (TS 24.481 clause 7.2.4.2): the group takes no calls (TS 24.379 clause 6.3.5.2 step 5a,
 	// warning 115).
 	Disabled       bool           `json:"disabled,omitempty"`
@@ -724,6 +738,18 @@ func (cfg Config) Validate() error {
 		for member, priority := range group.UserPriorities {
 			if priority < 0 || priority > 255 || !slices.Contains(group.Members, member) {
 				return fmt.Errorf("group %q has invalid user priority for %q", group.ID, member)
+			}
+		}
+		// TS 24.481 clause 7.2.4.2 and table 7.2.2-1: a positive <max-number-simultaneous-talkers>, an
+		// <audio-mixing-entity> of "UE" or "NW", <multi-talker-allowed> on members only.
+		if talk := group.MultiTalker; talk != nil {
+			if talk.MaxTalkers < 0 || (talk.MixingEntity != "" && talk.MixingEntity != "UE" && talk.MixingEntity != "NW") {
+				return fmt.Errorf("group %q has invalid multi-talker settings", group.ID)
+			}
+			for _, member := range talk.Allowed {
+				if !slices.Contains(group.Members, member) {
+					return fmt.Errorf("group %q allows multi-talker for non-member %q", group.ID, member)
+				}
 			}
 		}
 	}
