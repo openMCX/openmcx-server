@@ -437,6 +437,8 @@ public:
   // The MCPTT ID of this participant: a Floor Release Multi Talker naming it ends 'U: pending Release'
   // (clause 6.2.4.6.9 step 2).
   void set_user_id(std::string user_id) { user_id_ = std::move(user_id); }
+  // The session was initiated as a broadcast group call (FloorParticipantTimerOptions::broadcast), once known.
+  void set_broadcast(bool broadcast) { options_.broadcast = broadcast; }
 
   bool awaiting_user_confirmation() const { return queued_granted_at_.has_value(); }
 
