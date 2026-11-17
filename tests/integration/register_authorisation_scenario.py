@@ -9,8 +9,9 @@ the PUBLISH of clause 7.2.2. The scenario checks that
   - RA-03 a group call with the four clients is set up and released;
   - RA-05 with a short token lifetime (--token-ttl), each client renews its token and authorises again by REGISTER,
     at each of the three servers;
-  - RA-04 a client's log-off de-registers it, and the SIP core's third-party REGISTER with Expires 0 removes its
-    binding at the three servers.
+  - RA-04 a client's log-off de-registers it, and its binding at the three servers is removed: by the SIP core's
+    third-party REGISTER with Expires 0 (clause 7.3.2), or before it by the PUBLISH with Expires 0 of a client that
+    published its service settings after its authorisation (clauses 7.2.3, 7.2.1A step 4, 7.3.5).
 The wire verifier (verify_third_party_register.py) checks the third-party REGISTERs at the MCPTT server.
 
 Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 24.229
@@ -150,10 +151,10 @@ def main():
             )
         command('client-d', 'log-off')
         wait(
-            'RA-04 the log-off of client-d removes its binding by a third-party REGISTER with Expires 0',
+            'RA-04 the log-off of client-d removes its binding (third-party REGISTER or PUBLISH with Expires 0)',
             lambda: all(
                 any(
-                    entry.get('reason') == 'deregistration'
+                    entry.get('reason') in ('deregistration', 'log-off')
                     for entry in server_events({'service_binding_removed'}, server)
                 )
                 for server in ('mcptt-server', 'mcvideo-server')
