@@ -2207,6 +2207,13 @@ def main():
                         '/tmp/kamailio-tls-keylog.txt, so a capture can be decrypted')
     parser.add_argument('--floor-queue', action='store_true')
     parser.add_argument(
+        '--no-offer-floor-ssrc',
+        action='store_true',
+        help='the MCPTT server offers its media plane control channel without "mc_floor_ssrc" (mcptt.offer_floor_ssrc: '
+        'false; TS 24.380 clause 14.2.7: only with multiplexing), so the clients it invites answer without it '
+        '(clause 14.3.8) and send floor control with their own SSRC',
+    )
+    parser.add_argument(
         '--multicast',
         action='store_true',
         help='MBMS delivery of group call media over a pre-activated bearer (TS 24.380 clause 10): client-d outside',
@@ -2683,6 +2690,8 @@ def main():
         cfg = json.loads(path.read_text())
         cfg['sip']['session_expires'] = 90
         cfg['mcptt']['floor_queue'] = args.floor_queue
+        if args.no_offer_floor_ssrc and role in servers:
+            cfg['mcptt']['offer_floor_ssrc'] = False
         path.write_text(json.dumps(cfg, indent=2) + '\n')
     if args.multicast or args.mbs:
         add_multicast(fixture, args.protected, args.mbs)

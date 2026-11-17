@@ -479,6 +479,27 @@ LABS = [
     # and the call goes on unchanged (RFC 3261 section 14.2); a join refused for its floor SSRC preempts nobody (TS
     # 24.379 clause 10.1.2.4.1.1 step 12a).
     lab('reinvite-ssrc', 'single', ['--private-call'] + KEYS, ['reinvite_ssrc_scenario'], ['mcptt', 'protected']),
+    # TS 24.380 clauses 14.2.7, 14.3.8 and 4.3.3.1: a client without multiplexing (no "mc_floor_ssrc" in its offer)
+    # is answered without it and its floor control messages, with its own SSRC, are taken (nomux_floor_scenario.py
+    # with nomux_probe.py); with the server offering without it (mcptt.offer_floor_ssrc false), the invited clients'
+    # floor control with their own SSRC under their CSK (TS 33.180 clause 9.4.2, RFC 7714 section 9.4).
+    lab('nomux-floor', 'single', ['--private-call'], ['nomux_floor_scenario'], ['mcptt']),
+    lab(
+        'nomux-protected',
+        'single',
+        ['--private-call', '--no-offer-floor-ssrc'] + KEYS,
+        ['protected_private_scenario'],
+        ['mcptt', 'protected'],
+    ),
+    # The same through participating functions: their relays learn each side's own SSRC and re-protect it under the
+    # CSK and the SPK (TS 33.180 clauses 9.4.2 and 9.4.5).
+    lab(
+        'nomux-protected-split',
+        'single',
+        ['--split', '--private-call', '--no-offer-floor-ssrc'] + KEYS,
+        ['prearranged_scenario'],
+        ['mcptt', 'protected', 'split'],
+    ),
     # TS 33.180 clauses 9.4.2 and 9.4.5: a participating function's relay refuses a floor SSRC it may not send with
     # under the client's CSK (488 before relaying).
     lab('split-ssrc', 'single', ['--split'] + KEYS, ['split_ssrc_scenario'], ['mcptt', 'protected', 'split']),

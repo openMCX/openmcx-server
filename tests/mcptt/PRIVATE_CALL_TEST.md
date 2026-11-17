@@ -70,10 +70,17 @@ regression:
 tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =call-types
 tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =private-services
 tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =negative
+tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select nomux-floor,nomux-protected,nomux-protected-split
 ```
 
 The `negative` lab runs PC-19: raw requests from client-a's container (`tests/integration/private_probe.py`) and
 client-d with `--manual-only-caller` (private calls with manual commencement only).
+
+The `nomux-floor` lab runs PC-20: a private call from a raw SIP user agent in client-a's container
+(`tests/integration/nomux_probe.py`) whose offer has no `mc_floor_ssrc`. The `nomux-protected` and
+`nomux-protected-split` labs (`--no-offer-floor-ssrc`: the server's `mcptt.offer_floor_ssrc` false) run the protected
+private call and prearranged scenarios with the server offering without `mc_floor_ssrc`, so every leg the server
+invites runs floor control without multiplexing under the client's CSK (and, split, the SPK).
 
 `--private-call` gives each user a different ruleset, so every rejection branch can be reached. It sets `setup_timeout_ms=5000`, `max_calls=1` and `maximum_duration_ms=30000`. A lab prepared by hand with `--private-refresh` raises the private call timer to 70 s and inactivity to 120 s, so the PC-12 call outlasts the 45 s refresh point of the 90 s SIP session timer; `verify_private_call.py --require-refresh` then also checks the refresh.
 
@@ -112,6 +119,7 @@ The `--private-services` option adds client-d's forwarding on no answer to clien
 | PC-17 | Unit and service tests: `test_private_call` (ruleset branches, unknown answer-mode values ignored, callee checks 127/159, first-to-answer 145/107/156/153 and filtering), `test_protocol` (`mcptt-called-party-id`, `release-reason`), Go `TestCMSServesCalleePrivateCallPolicy` |
 | PC-18 | Emergency private call: authorised emergency call with alert (caller MEPC 3 / MEPP 2 / MPEA 3; callee MEPP 2 with the caller's alert); unauthorised cancellation rejected with MEPP restored; authorised cancellation of call and alert; in-dialog upgrade; release resets the states; unauthorised emergency calls rejected (no permission, recipient not preconfigured); an unauthorised alert withdrawn by SIP INFO (MPEA 1) while the emergency call proceeds |
 | PC-19 | `negative` lab (`private_failure_scenario.py`). An `Answer-Mode` value RFC 5373 does not define and `Priv-Answer-Mode: Manual` are not refused for the commencement mode: to client-d both get the target's 403 with warning 144, and client-d is not called. A BYE and a re-INVITE in a dialog the server does not have → 481. Client-d's automatic commencement call → 403 with warning 125. A further call of client-a while it is in its one private call → 486 with warning 124; the callee is not called and the call goes on |
+| PC-20 | `nomux-floor` lab (`nomux_floor_scenario.py`). TS 24.380 clauses 14.2.7, 14.3.8 and 4.3.3.1: an offer without `mc_floor_ssrc` (no multiplexing) is accepted and answered without it; a Floor Request with the client's own SSRC gets Floor Granted with the server's SSRC; the client's Floor Ack with its own SSRC is matched (no repetition); a first message with the server's own SSRC and, once learned, a message with another SSRC are not taken; Floor Release gets Floor Idle; BYE ends the call. With the server offering without `mc_floor_ssrc` (`nomux-protected`, `nomux-protected-split`): the protected private call (PP-01 to PP-07) and prearranged scenarios pass with the invited clients' floor control on their own SSRC under the CSK, relayed under the SPK |
 
 ### Private call services
 

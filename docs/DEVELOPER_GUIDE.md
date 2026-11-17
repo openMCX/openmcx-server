@@ -632,6 +632,13 @@ then reads:
   `call_policy`, `private_call`, `adhoc_call`, `floor_ack`, `document_poll_ms`, `configuration_poll_ms`, and for
   MCVideo the `floor_*` timer settings and `reception_control`. A participating server without `controller`, or a
   controller that is not a configured peer, refuses to start.
+- `mcptt.offer_floor_ssrc` (default `true`): the server's SDP offers carry `mc_floor_ssrc` (TS 24.380 clause 14.2.7:
+  multiplexing supported). `false`, a lab setting (`tools/prepare-prearranged-test.py --no-offer-floor-ssrc`), leaves
+  it out, so the invited clients answer without it (clause 14.3.8). Either way an offer without `mc_floor_ssrc` is
+  accepted and answered without it: the leg's floor control port tells its messages apart, the server sends with its
+  own SSRC and learns the client's from its first message, refusing one already in use under the CSK
+  (`src/mcptt/floor_control.cpp`, `McServer::learned_floor_ssrc_refused`; relays: `McServer::relay_floor_ssrc`).
+  Pre-established sessions still need it (488).
 - `mcptt.resource_sharing` (`none`, `sip-core` or `rx`; default `none`): how TS 24.379 clause 8.1A resource sharing
   is supported. `none` refuses a pre-established session with 403 and warning 100; the others allow it
   (`src/server/pre_session.cpp`). `mcptt.pre_established_uri` is the PSI of pre-established session set-up (TS 24.379
