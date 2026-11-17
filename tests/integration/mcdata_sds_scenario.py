@@ -24,6 +24,7 @@ import subprocess
 import time
 
 from lab_wait import holds
+import refusal_probe
 
 ROOT = Path(__file__).resolve().parents[2]
 DELIVERED, READ, DELIVERED_AND_READ = 2, 3, 4
@@ -144,6 +145,62 @@ def main():
     # A text that no earlier message carried.
     def unique(label):
         return f'{label}-{secrets.token_hex(4)}'
+
+    # ------------------------------------------------------------------------------
+    # The client's JSON log entries whose 'event' is one of names, in log order.
+    def client_events(role, names):
+        run = subprocess.run(
+            cli + ['logs', '--no-color', '--no-log-prefix', role], capture_output=True, text=True, timeout=30
+        )
+        found = []
+        for line in run.stdout.splitlines():
+            start = line.find('{"')
+            try:
+                entry = json.loads(line[start:]) if start >= 0 else {}
+            except json.JSONDecodeError:
+                continue
+            if isinstance(entry, dict) and entry.get('event') in names:
+                found.append(entry)
+        return found
+
+    # ------------------------------------------------------------------------------
+    # TS 24.282 clause 11.1: the client reads the group document before a group SDS and does not send one the document
+    # does not allow (steps 2, 5 and 10; clause 9.2.2.2.1 step 3a for <mcdata-allow-short-data-service>). The command
+    # is refused with a new mcdata_sds_not_allowed event naming the group and the element, the error cites the clause,
+    # and nothing is sent.
+    def refused_by_client(role, group_id, text, reason, label):
+        earlier = len(client_events(role, ['mcdata_sds_not_allowed']))
+        sent = [record['message_id'] for record in status(role).get('mcdata_sent') or []]
+        command(role, f'sds-group {group_id} {text}')
+
+        def refused():
+            events = client_events(role, ['mcdata_sds_not_allowed'])
+            return (
+                len(events) > earlier
+                and events[-1].get('group') == group_id
+                and events[-1].get('reason') == reason
+                and f'({reason}, TS 24.282 clause 11.1)' in (status(role).get('last_error') or '')
+            )
+
+        wait(label, refused, 20)
+        check(
+            label + ': nothing sent',
+            [record['message_id'] for record in status(role).get('mcdata_sent') or []][-1:] == sent[-1:],
+        )
+
+    # ------------------------------------------------------------------------------
+    # The server's refusal of the request the client does not send: the same group SDS sent raw as the client
+    # (refusal_probe.py in its container), answered with the code and warning. The probe authenticates by digest and
+    # sends clear XML, so in the AKA labs and with protected MCData signalling (mcdata-xml, mcdata-integrity) only the
+    # client's refusal is checked (refusal_probe.usable).
+    def refused_by_server(role, group_id, size, code, warning, label):
+        if not refusal_probe.usable(args.compose, role, 'mcdata'):
+            observations.setdefault('server_refusals_not_probed', []).append(label)
+            observations.setdefault('not_probed', []).append(warning)  # for verify_mcdata_sds.py --results
+            return
+        answer = refusal_probe.run_in(cli, args.compose, role, ['--sds', group_id, str(size)])['sds'][0]
+        observations.setdefault('server_refusals', {})[label] = answer
+        check(label, answer['status'] == code and f'{warning} ' in answer['warning'])
 
     try:
         wait(
@@ -474,7 +531,10 @@ def main():
         check('SD-09 the de-affiliated member does not', holds(lambda: not inbox('client-d', text), 1))
 
         # SD-10 group rejections (TS 24.282 clause 9.2.2.4.2 step 6). With end-to-end protection
-        # (--protected) the client holds no GMK for these groups and refuses to send.
+        # (--protected) the client holds no GMK for these groups and refuses to send. A group whose document does not
+        # allow the SDS (TS 24.282 clause 11.1) the client refuses itself, protected or not; the server's refusal is
+        # then checked with the same request sent raw.
+        own_refusals = {'nosds': 'mcdata-allow-short-data-service'}
         for suffix, code, warning, label in [
             ('nosuch', 404, '163', 'SD-10 unknown group rejected with 404/163'),
             ('parallel', 403, '116', 'SD-10 group without the sender as MCData member rejected with 116'),
@@ -484,7 +544,16 @@ def main():
             ('regrouped', 403, '148', 'SD-10 regrouped group rejected with 148'),
         ]:
             target = f'sip:{group_user}-{suffix}@{domain}'
-            if protected:
+            if suffix in own_refusals:
+                refused_by_client(
+                    'client-a',
+                    target,
+                    unique(suffix),
+                    own_refusals[suffix],
+                    f'SD-10 {suffix}: the client refuses the group SDS without <{own_refusals[suffix]}> (11.1)',
+                )
+                refused_by_server('client-a', target, 16, code, warning, label)
+            elif protected:
                 command('client-a', f'sds-group {target} {unique(suffix)}')
                 wait(
                     f'SD-10 {suffix}: the client refuses to send without a group key for {target}',
@@ -492,23 +561,31 @@ def main():
                 )
             else:
                 send('client-a', f'sds-group {target} {unique(suffix)}', code, warning, label)
-        send(
+        # The group document of the group gives client-c no <mcdata-allow-transmit-data-in-this-group> and limits an
+        # SDS to 400 octets (<mcdata-on-network-max-data-size-for-SDS>): the client refuses these itself (TS 24.282
+        # clause 11.1 steps 2 and 5); the server's 201, 208 (over the 800 octets of a single request) and 217 are
+        # checked raw.
+        refused_by_client(
             'client-c',
-            f'sds-group {group} {unique("c")}',
-            403,
-            '201',
-            'SD-10 sender without transmit permission on the group rejected with 201',
+            group,
+            unique('c'),
+            'mcdata-allow-transmit-data-in-this-group',
+            'SD-10 the client refuses a group SDS without <mcdata-allow-transmit-data-in-this-group> (11.1 2))',
         )
-        send(
+        refused_by_server(
+            'client-c', group, 16, 403, '201', 'SD-10 sender without transmit permission on the group rejected with 201'
+        )
+        refused_by_client(
             'client-a',
-            f'sds-group {group} ' + 'x' * 900,
-            403,
-            '208',
-            'SD-10 over the per-request group limit rejected with 208',
+            group,
+            'x' * 900,
+            'mcdata-on-network-max-data-size-for-SDS',
+            'SD-10 the client refuses a group SDS over <mcdata-on-network-max-data-size-for-SDS> (11.1 5))',
         )
-        send(
-            'client-a', f'sds-group {group} ' + 'x' * 500, 403, '217', 'SD-10 over the group SDS size rejected with 217'
+        refused_by_server(
+            'client-a', group, 900, 403, '208', 'SD-10 over the per-request group limit rejected with 208'
         )
+        refused_by_server('client-a', group, 500, 403, '217', 'SD-10 over the group SDS size rejected with 217')
         send(
             'client-d',
             f'sds-group {group} {unique("d")}',
@@ -1021,7 +1098,45 @@ def main():
             ),
         )
         wait('EA-04 the other members see it cancelled', lambda: ids['client-a'] not in alerts('client-b'))
-        # EA-05 rejections (TS 24.282 clauses 6.3.7.2.1, 6.3.7.2.2).
+        # ------------------------------------------------------------------------------
+        # TS 24.282 clause 6.2.8.1.6: the client does not send an emergency alert its user profile's
+        # <GroupEmergencyAlert> entry or the group document does not authorise (clause 16.2.1.1: an unauthorised
+        # request is not sent): a new mcdata_alert_not_allowed event naming the group and the reason, the error citing
+        # the clause, no request (the last alert result unchanged).
+        def alert_refused_by_client(role, target, reason, label):
+            earlier = len(client_events(role, ['mcdata_alert_not_allowed']))
+            result = alert_result(role)
+            command(role, f'mcdata-alert group={target}')
+
+            def refused():
+                events = client_events(role, ['mcdata_alert_not_allowed'])
+                return (
+                    len(events) > earlier
+                    and events[-1].get('group') == target
+                    and events[-1].get('reason') == reason
+                    and f'({reason}, TS 24.282 clause 6.2.8.1.6)' in (status(role).get('last_error') or '')
+                )
+
+            wait(label, refused, 20)
+            check(label + ': nothing sent', alert_result(role) == result)
+
+        # ------------------------------------------------------------------------------
+        # The server's refusal of that alert, sent raw as the client (refusal_probe.py): the answer, or None where the
+        # probe cannot be used (refusal_probe.usable).
+        def alert_refused_by_server(role, target, warning, label):
+            if not refusal_probe.usable(args.compose, role, 'mcdata'):
+                observations.setdefault('server_refusals_not_probed', []).append(label)
+                if warning:
+                    observations.setdefault('not_probed', []).append(warning)  # for verify_mcdata_sds.py --results
+                return None
+            answer = refusal_probe.run_in(cli, args.compose, role, ['--mcdata-alert', target])['mcdata_alert'][0]
+            observations.setdefault('server_refusals', {})[label] = answer
+            check(label, answer['status'] == 403 and (warning is None or f'{warning} ' in answer['warning']))
+            return answer
+
+        # EA-05 rejections (TS 24.282 clauses 6.3.7.2.1, 6.3.7.2.2). The lab clients do not enforce the user profile's
+        # ruleset (mcptt.enforce_profile_ruleset), so client-c's request reaches the server; the group checks of
+        # clause 6.2.8.1.6 the client applies itself, and the server's refusals are checked raw.
         alert(
             'client-c',
             'mcdata-alert',
@@ -1029,21 +1144,41 @@ def main():
             'EA-05 a user without <allow-activate-emergency-alert> is rejected with 403',
         )
         check('EA-05 the rejection carries <alert-ind> false', alert_result('client-c').get('alert_ind') is False)
-        alert('client-b', 'mcdata-alert', 403, 'EA-05 a group outside the dedicated <EmergencyAlert> group is rejected')
-        alert(
-            'client-a',
-            f'mcdata-alert group=sip:{group_user}-nosupport@{domain}',
-            403,
-            'EA-05 a group without <mcdata-allow-emergency-alert> is rejected',
+        # client-b's <GroupEmergencyAlert> is "DedicatedGroup" operations-nosds (clause 6.2.8.1.6 2) a)).
+        alert_refused_by_client(
+            'client-b',
+            group,
+            'GroupEmergencyAlert DedicatedGroup names another group',
+            'EA-05 the client refuses an alert outside its dedicated <GroupEmergencyAlert> group (6.2.8.1.6 2) a))',
         )
-        alert(
-            'client-a',
-            f'mcdata-alert group=sip:{group_user}-preconf@{domain}',
-            403,
-            'EA-05 a preconfigured-use-only group is rejected with 168',
-            '168',
+        alert_refused_by_server(
+            'client-b', group, None, 'EA-05 a group outside the dedicated <EmergencyAlert> group is rejected'
         )
-        check('EA-05 the 168 rejection carries <alert-ind> false', alert_result('client-a').get('alert_ind') is False)
+        # client-a's is "UseCurrentlySelectedGroup" (clause 6.2.8.1.6 2) b)): the group document decides.
+        nosupport = f'sip:{group_user}-nosupport@{domain}'
+        alert_refused_by_client(
+            'client-a',
+            nosupport,
+            'mcdata-allow-emergency-alert',
+            'EA-05 the client refuses an alert on a group without <mcdata-allow-emergency-alert> (6.2.8.1.6 2) b))',
+        )
+        alert_refused_by_server(
+            'client-a', nosupport, None, 'EA-05 a group without <mcdata-allow-emergency-alert> is rejected'
+        )
+        preconf = f'sip:{group_user}-preconf@{domain}'
+        alert_refused_by_client(
+            'client-a',
+            preconf,
+            'preconfigured-group-use-only',
+            'EA-05 the client refuses an alert on a preconfigured-use-only group (6.2.8.1.6 1))',
+        )
+        answer = alert_refused_by_server(
+            'client-a', preconf, '168', 'EA-05 a preconfigured-use-only group is rejected with 168'
+        )
+        if answer is not None:
+            check('EA-05 the 168 rejection carries <alert-ind> false', answer.get('alert_ind') is False)
+        # The group document of operations-alertonly allows emergency alerts, so the client sends one; the server
+        # refuses it to a non-member (clause 16.2.3.1).
         alert(
             'client-a',
             f'mcdata-alert group=sip:{group_user}-alertonly@{domain}',
