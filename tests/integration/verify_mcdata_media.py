@@ -567,7 +567,10 @@ def main():
         for response in answers(message)
         if response['status'] >= 300
     ]
-    for code, expected in (('202', 403), ('208', 403), ('213', 403), ('214', 488), ('200', 403)):
+    # 208 and 213 do not reach the wire: the client reads the group document and offers no file over the group's
+    # <mcdata-on-network-max-data-size-for-FD> or without <mcdata-allow-file-distribution> (TS 24.282 clauses
+    # 10.2.5.2.3 9)a) and 11.1 6); MP-16 checks that refusal, mcdata_fd_scenario.py FD-04 the server's).
+    for code, expected in (('202', 403), ('214', 488), ('200', 403)):
         check(
             f'FD rejection {expected}/{code}',
             any(status == expected and f'"{code} ' in warning for status, warning in file_rejections),

@@ -176,7 +176,10 @@ def scenario_verifiers(scenario, flags):
             'mcdata-server',
             [['verify_location.py', '--service', MCDATA, '--mcdata'] + (['--protected'] if protected else [])],
         ),
-        'mcdata_sds_scenario': ('mcdata-server', [['verify_mcdata_sds.py', '--service', MCDATA]]),
+        'mcdata_sds_scenario': (
+            'mcdata-server',
+            [['verify_mcdata_sds.py', '--service', MCDATA, '--results', '{results}']],
+        ),
         'mcdata_fd_scenario': ('mcdata-server', [['verify_mcdata_fd.py', '--service', MCDATA]]),
         'mcdata_release_scenario': ('mcdata-server', [['verify_mcdata_release.py', '--service', MCDATA]]),
         'mcdata_status_scenario': ('mcdata-server', [['verify_mcdata_status.py', '--service', MCDATA]]),

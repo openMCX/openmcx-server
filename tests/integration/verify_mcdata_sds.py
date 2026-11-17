@@ -11,7 +11,12 @@ The procedures under test, all of TS 24.282: service authorisation (clause 7.2.2
 messages, functional aliases (clause 22), emergency alerts (clause 16.2) and the rejections with the warning texts of
 clause 4.9.2.
 
-Usage: verify_mcdata_sds.py capture.pcap --service sip:mcdata@DOMAIN --output result.json
+Usage: verify_mcdata_sds.py capture.pcap --service sip:mcdata@DOMAIN [--results mcdata-sds-results.json]
+       --output result.json
+
+Some rejections come only from requests the client refuses to send itself and the scenario sends raw
+(refusal_probe.py); where it cannot (an AKA client), the scenario lists their warning codes in its results'
+observations "not_probed", and with --results those rejections are not expected on the wire.
 
 Self-contained and independent of the C++ codecs: SIP messages are split from the reassembled TCP streams as bytes,
 multipart bodies are split by boundary, and the TS 24.282 clause 15 messages are decoded here from the tables.
@@ -212,7 +217,11 @@ def main():
     parser.add_argument('capture', type=Path)
     parser.add_argument('--service', required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--results', type=Path, help="the scenario's results: rejections it could not probe")
     args = parser.parse_args()
+    not_probed = set()
+    if args.results and args.results.is_file():
+        not_probed = set(json.loads(args.results.read_text()).get('observations', {}).get('not_probed', []))
     messages, seen = [], set()
     for _, stream in tcp_streams(args.capture):
         for head, body in sip_messages(stream):
@@ -762,7 +771,7 @@ def main():
     )
     check(
         'alert rejections 168 (preconfigured use only) and 120 (not a member)',
-        any('"168 ' in warning for _, _, warning in alert_rejections)
+        ('168' in not_probed or any('"168 ' in warning for _, _, warning in alert_rejections))
         and any('"120 ' in warning for _, _, warning in alert_rejections),
     )
     rejected = [
@@ -795,6 +804,8 @@ def main():
         '198': 403,
     }
     for code, status in expected.items():
+        if code in not_probed:
+            continue
         check(
             f'rejection {status}/{code}',
             any(status_code == status and f'"{code} ' in warning for status_code, warning in rejected),

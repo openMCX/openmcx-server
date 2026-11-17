@@ -78,7 +78,7 @@ captures at the MCPTT server and checks the capture with `tests/integration/veri
 | CH-13 | Unit and service tests: Go `TestGMSServesChatGroupTypeAndRejectsUnknownTypes`, the native suite and the Go tests |
 | CH-14 | Emergency and imminent-peril chat: unauthorised `chat emergency` → 403; an emergency join invites affiliated members up to `max_participants` and they learn the state; nobody beyond the limit is invited; cancellation returns everyone to normal; an imminent-peril upgrade of a two-member session invites the next member |
 | CH-15 | Implicit affiliation: an unaffiliated normal call → 403/120 (`call force`); an unaffiliated `chat` join is accepted and affiliates the member; a join refused at the limit (486/122) leaves no affiliation behind |
-| CH-16 | Chat variants: 403/167 on a preconfigured-use-only group, 403/148 on a regrouped group; at the limit a higher-priority joiner displaces exactly one participant |
+| CH-16 | Chat variants: on a preconfigured-use-only group the client does not call (TS 24.379 §10.1.2.2.1.1 steps 1-2: `last_call_failure` "calls are not allowed on the preconfigured group", no session), and the same chat INVITE sent raw as client-c (`refusal_probe.py`) gets 403/167; 403/148 on a regrouped group; at the limit a higher-priority joiner displaces exactly one participant |
 
 ## High-level call flow
 

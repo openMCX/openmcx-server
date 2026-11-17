@@ -74,6 +74,23 @@ def main():
             raise RuntimeError(f'{role} {text}: {run.stderr.strip() or run.stdout.strip()}')
 
     # ------------------------------------------------------------------------------
+    # The client's JSON log entries whose 'event' is one of names, in log order.
+    def client_events(role, names):
+        run = subprocess.run(
+            cli + ['logs', '--no-color', '--no-log-prefix', role], capture_output=True, text=True, timeout=30
+        )
+        found = []
+        for line in run.stdout.splitlines():
+            start = line.find('{"')
+            try:
+                entry = json.loads(line[start:]) if start >= 0 else {}
+            except json.JSONDecodeError:
+                continue
+            if isinstance(entry, dict) and entry.get('event') in names:
+                found.append(entry)
+        return found
+
+    # ------------------------------------------------------------------------------
     # Poll a predicate until it holds (the check passes) or the timeout expires (the scenario fails).
     def wait(label, predicate, timeout=25):
         deadline = time.monotonic() + timeout
@@ -146,6 +163,7 @@ def main():
         # MP-01 one-to-one standalone SDS over the media plane.
         text = f'media-{secrets.token_hex(4)}'
         before = counters().get('media_delivered', 0)
+        signalling_before = counters().get('sds_one_to_one', 0)
         send('client-a', ids['client-b'], text, label='MP-01 the INVITE offering the MSRP stream is accepted with 200')
         wait(
             'MP-01 the sender puts the payload on the MSRP connection and releases the session (TS 24.582 6.1.1.2.1)',
@@ -167,7 +185,15 @@ def main():
             'MP-01 the server counts the request and its delivery',
             lambda: counters().get('media_sds', 0) >= 1 and counters().get('media_delivered', 0) > before,
         )
-        check('MP-01 no signalling plane SDS was used', not (status('client-b').get('mcdata_inbox') or []))
+        # An SDS received over MSRP is delivered like one received by SIP MESSAGE (TS 24.282 clause 9.2.1.2, TS 24.582
+        # clause 6.1.2.6), so it is in the recipient's inbox too, marked as of the media plane; the server relayed no
+        # signalling plane SDS (TS 24.282 clause 9.2.2.4.2 step 5).
+        check(
+            'MP-01 no signalling plane SDS was used: the recipient\'s inbox holds only media plane messages, '
+            'and the server relayed no one-to-one SDS by SIP MESSAGE',
+            all(message.get('plane') == 'media' for message in status('client-b').get('mcdata_inbox') or [])
+            and counters().get('sds_one_to_one', 0) == signalling_before,
+        )
         check(
             'MP-01 without a requested priority the recipient\'s INVITE has no <used-priority>',
             media('client-b').get('used_priority') is None,
@@ -539,16 +565,31 @@ def main():
             'MP-12 a group that does not allow imminent peril communications answers 403/236 (6.3.7.2.4)',
             lambda: media('client-a').get('status') == 403 and '236' in media('client-a').get('warning', ''),
         )
-        # The same rejections from the user profile rather than the group document.
-        refused('client-c', f'sds-session group={group} emergency')
+        # The same rejection from the user profile rather than the group document: client-b may transmit on the
+        # group but has no <allow-emergency-group-call>. The lab clients leave the profile's ruleset to the server
+        # (mcptt.enforce_profile_ruleset false), so the request reaches it.
+        command('client-b', f'sds-session group={group} emergency')
         wait(
             'MP-12 a user without <allow-emergency-group-call> is rejected with 403/233 (6.3.7.2.6)',
-            lambda: media('client-c').get('status') == 403 and '233' in media('client-c').get('warning', ''),
+            lambda: media('client-b').get('status') == 403 and '233' in media('client-b').get('warning', ''),
         )
+        # client-c, the user without <allow-imminent-peril-call>, has no <mcdata-allow-transmit-data-in-this-group>
+        # either: its client reads the group document and opens no SDS session (TS 24.282 clause 11.1 2), clause
+        # 9.2.4.2.3 8)a)). The server's profile refusal (236) would need a raw SDS session INVITE with an MSRP offer;
+        # its group document refusal (236) is checked above.
+        earlier = len(client_events('client-c', ['mcdata_sds_not_allowed']))
         refused('client-c', f'sds-session group={group} imminent')
         wait(
-            'MP-12 a user without <allow-imminent-peril-call> is rejected with 403/236 (6.3.7.2.4)',
-            lambda: media('client-c').get('status') == 403 and '236' in media('client-c').get('warning', ''),
+            'MP-12 the client opens no SDS session without <mcdata-allow-transmit-data-in-this-group> (11.1 2))',
+            lambda: (
+                lambda events: (
+                    len(events) > earlier
+                    and events[-1].get('group') == group
+                    and events[-1].get('reason') == 'mcdata-allow-transmit-data-in-this-group'
+                    and '(mcdata-allow-transmit-data-in-this-group, TS 24.282 clause 11.1)'
+                    in (status('client-c').get('last_error') or '')
+                )
+            )(client_events('client-c', ['mcdata_sds_not_allowed'])),
         )
         check('MP-12 no in-progress state was raised by the refused requests', not server_group())
 
@@ -695,22 +736,43 @@ def main():
             '200',
             'MP-16 a user without <allow-transmit-data> is rejected with 200',
         )
+        # ------------------------------------------------------------------------------
+        # TS 24.282 clauses 10.2.4.2.1 and 10.2.5.2.3 9)a) with clause 11.1 2), 6): the client reads the group document
+        # before a group FD and does not offer a file it forbids: a new mcdata_fd_not_allowed event naming the group
+        # and the element, the error citing the clauses, no offer (the last media plane result unchanged). The
+        # server's own refusals (208, 213) would need a raw FD INVITE with an MSRP offer; they are checked for FD over
+        # HTTP by mcdata_fd_scenario.py (FD-04).
+        def fd_refused_by_client(role, target_group, path, reason, label):
+            earlier = len(client_events(role, ['mcdata_fd_not_allowed']))
+            result = media(role)
+            command(role, f'fd-media mandatory group={target_group} {path}')
+            wait(
+                label,
+                lambda: (
+                    lambda events: (
+                        len(events) > earlier
+                        and events[-1].get('group') == target_group
+                        and events[-1].get('reason') == reason
+                        and f'({reason}, TS 24.282 clauses 10.2.4.2.1, 11.1)' in (status(role).get('last_error') or '')
+                    )
+                )(client_events(role, ['mcdata_fd_not_allowed'])),
+            )
+            check(label + ': nothing offered', media(role) == result)
+
         group_over = make_file('client-a', 'groupover.bin', 2500)
-        fd_send(
+        fd_refused_by_client(
             'client-a',
-            f'group={group}',
+            group,
             group_over,
-            403,
-            '208',
-            'MP-16 a file over the group limit is rejected with 208',
+            'mcdata-on-network-max-data-size-for-FD',
+            'MP-16 the client offers no file over the group\'s <mcdata-on-network-max-data-size-for-FD> (11.1 6))',
         )
-        fd_send(
+        fd_refused_by_client(
             'client-a',
-            f'group=sip:{group_user}-nosds@{domain}',
+            f'sip:{group_user}-nosds@{domain}',
             small,
-            403,
-            '213',
-            'MP-16 a group where FD is not allowed is rejected with 213',
+            'mcdata-allow-file-distribution',
+            'MP-16 the client offers no file on a group without <mcdata-allow-file-distribution> (10.2.5.2.3 9)a))',
         )
         fd_send(
             'client-a',

@@ -24,6 +24,7 @@ import subprocess
 import time
 
 import capture
+import refusal_probe
 
 ROOT = Path(__file__).resolve().parents[2]
 ROLES = ['client-a', 'client-b', 'client-c', 'client-d']
@@ -124,6 +125,23 @@ def main():
     def idle(*roles):
         """Whether every given client has no MCVideo call."""
         return all(status(role).get('mcvideo_call_state') == 'idle' for role in roles)
+
+    # ------------------------------------------------------------------------------
+    def client_errors(role, reason):
+        """The role's client_error log entries with this reason, in log order."""
+        run = subprocess.run(
+            cli + ['logs', '--no-color', '--no-log-prefix', role], capture_output=True, text=True, timeout=30
+        )
+        found = []
+        for line in run.stdout.splitlines():
+            start = line.find('{"')
+            try:
+                entry = json.loads(line[start:]) if start >= 0 else {}
+            except json.JSONDecodeError:
+                continue
+            if isinstance(entry, dict) and entry.get('event') == 'client_error' and entry.get('reason') == reason:
+                found.append(entry)
+        return found
 
     # ------------------------------------------------------------------------------
     def refused(role, text, code, reason, label):
@@ -318,12 +336,40 @@ def main():
                 )
             ),
         )
+        # client-b has no <allow-activate-adhoc-group-emergency-alert>: its client does not send the alert (TS 24.281
+        # clause 12.1A, as TS 24.379 clause 12.1A.1.1 steps 1 and 2: tell the user, skip the procedure); the server's
+        # 403 (clause 12.1A.3.1 step 3a) is checked with the same MESSAGE sent raw as client-b (refusal_probe.py).
+        reason = (
+            'not authorised by the MCVideo user profile: ad hoc group emergency alert '
+            '(allow-activate-adhoc-group-emergency-alert)'
+        )
+        earlier = len(client_errors('client-b', reason))
+        earlier_result = status('client-b').get('mcvideo_adhoc_alert_result')
         command('client-b', f'mcvideo-adhoc-alert affiliated:{group}')
         wait(
-            'MV-AH-06 client-b, without <allow-activate-adhoc-group-emergency-alert>, is refused with 403',
+            'MV-AH-06 client-b, without <allow-activate-adhoc-group-emergency-alert>, does not send the alert',
             lambda: (
-                (status('client-b').get('mcvideo_adhoc_alert_result') or {}).get('status') == 403
+                len(client_errors('client-b', reason)) > earlier
+                and status('client-b').get('mcvideo_adhoc_alert_result') == earlier_result
                 and status('client-b').get('mcvideo_adhoc_alert_state') == 1
+            ),
+        )
+        answer = refusal_probe.run_in(cli, args.compose, 'client-b', ['--video-adhoc-alert', f'affiliated:{group}'])
+        answer = answer['video_adhoc_alert'][0]
+        observations['unauthorised_adhoc_alert_probe'] = answer
+        check(
+            'MV-AH-06 client-b, without <allow-activate-adhoc-group-emergency-alert>, is refused with 403',
+            answer['status'] == 403,
+            answer,
+        )
+        check(
+            'MV-AH-06 the refused alert reached nobody',
+            all(
+                not any(
+                    alert.get('initiator') == ids['client-b']
+                    for alert in (status(role).get('mcvideo_received_adhoc_alerts') or {}).values()
+                )
+                for role in ('client-a', 'client-c', 'client-d')
             ),
         )
 

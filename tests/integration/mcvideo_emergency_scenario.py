@@ -13,7 +13,7 @@ clause 11.2.1.2).
 Run against a fixture prepared with --mcvideo (add_mcvideo_policy in
 tools/prepare-prearranged-test.py): on group operations client-a and client-b may raise
 and cancel emergency and imminent peril and emergency alerts (only client-a cancels
-alerts); client-c may not; client-a may make emergency private calls. Check IDs match
+alerts); client-c may not (its user profile allows it, the group does not); client-a may make emergency private calls. Check IDs match
 tests/mcvideo/MCVIDEO_EMERGENCY_TEST.md.
 
 Specifications: TS 24.281 V19.6.0 (Rel-19), TS 24.581 V19.2.0 (Rel-19).
@@ -194,7 +194,9 @@ def main():
             lambda: (result_of('client-a', 'emergency', False) or {}).get('status') == 200,
         )
         wait('MV-EM-02 every member back to normal', lambda: all(priority(role) == 'normal' for role in ROLES))
-        # MV-EM-03 TS 24.281 clause 6.3.2.1.6.1: client-c may not raise an emergency on operations.
+        # MV-EM-03 TS 24.281 clause 6.3.2.1.6.1: client-c may not raise an emergency on operations. Its user profile
+        # allows it, so its client sends the request (clause 6.2.8.1.8); the group's policy does not, so the server
+        # refuses it (clause 6.3.3.1.12).
         command('client-c', 'mcvideo-emergency on')
         wait('MV-EM-03 client-c answered', lambda: result_of('client-c', 'emergency', True))
         refused = result_of('client-c', 'emergency', True)

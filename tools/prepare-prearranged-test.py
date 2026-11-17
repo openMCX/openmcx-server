@@ -551,6 +551,12 @@ def service_configuration(fixture, documents_only=False):
                 mcptt['floor_queue'] = True
                 # <floor-control-queue>/<depth>: room for the three clients other than the talker.
                 mcptt['floor_queue_depth'] = 3
+        if path.name == 'mcvideo-server.json' and cfg.get('mcvideo', {}).get('adhoc_call', {}).get('enabled'):
+            # <adhoc-group-call> of the MCVideo service configuration (TS 24.484 clauses 9.4.2.1 c), 9.4.2.3): absent,
+            # ad hoc group calls are not supported (clause 9.4.2.6) and the client does not start one (TS 24.281
+            # clause 22.2.2.1.1 steps 1-2). The same limit as the controlling server's mcvideo.adhoc_call.
+            limit = cfg['mcvideo']['adhoc_call']['max_participants']
+            mcvideo['adhoc_group_call'] = dict(allow=True, max_participants=limit)
         if path.name == 'mcdata-server.json':
             fd = cfg.get('mcdata', {}).get('fd', {})
             if 'default_file_availability_ms' in fd:
@@ -710,7 +716,8 @@ def add_manual_only_caller(fixture):
 def add_private_services(fixture):
     """Private call services (TS 24.379 clauses 11.1.5 to 11.1.9) on top of --private-call:
     client-a may request call-backs, remotely initiated calls and transfers and
-    forward manually; client-b may forward manually; client-c forwards every
+    forward manually; client-b may forward manually and force automatic commencement (the transferred user's
+    call to the target carries Priv-Answer-Mode, TS 24.379 clause 11.1.1.2.1.1 14A a)); client-c forwards every
     private call immediately to client-b, and may also call client-d (an announced
     transfer target); client-d becomes callable and forwards
     to client-a on no answer after 3 s (TS 24.379 clause 6.3.2.5). A fifth user,
@@ -730,7 +737,10 @@ def add_private_services(fixture):
             # client-a calls client-d to announce a transfer (TS 24.379 clause 11.1.8.2.3).
             policy['targets'] = sorted(set(policy.get('targets', [])) | {ids['client-d']})
         elif user['mcptt_id'] == ids['client-b']:
-            policy.update(forward_manual=True)
+            # client-b is the transferred user of PS-06 to PS-08: its client calls the target with a Priv-Answer-Mode
+            # of the transferred call's value (TS 24.379 clause 11.1.1.2.1.1 14A a)), which the participating function
+            # refuses without <allow-force-auto-answer> (clause 11.1.1.3.1.1 step 18 b), warning 143).
+            policy.update(forward_manual=True, force_auto_answer=True)
         elif user['mcptt_id'] == ids['client-c']:
             policy.update(forward_immediate=ids['client-b'])
         elif user['mcptt_id'] == ids['client-d']:
@@ -846,6 +856,11 @@ def add_mcvideo_policy(fixture):
     # TS 24.281 clause 12.1A: client-a may also raise and cancel an ad hoc group emergency alert
     # (<allow-activate-adhoc-group-emergency-alert>, <allow-cancel-adhoc-group-emergency-alert>).
     video_rights['client-a']['adhoc_call'].update(alert=True, alert_cancel=True)
+    # MV-EM-03 (TS 24.281 clause 6.3.3.1.12): client-c holds <allow-emergency-group-call> and
+    # <allow-cancel-group-emergency> in its user profile, so its client sends the request (clause 6.2.8.1.8 checks
+    # the profile only), but is not named in the group's emergency_users, so the server refuses it for want of the
+    # group document's action.
+    video_rights['client-c']['group_call'] = dict(emergency=True, emergency_cancel=True)
     for role in roles:
         by_mcptt[configs[role]['mcptt']['user_id']]['mcvideo'] = dict(private_call=private[role], **video_rights[role])
     domain = group['id'].split('@', 1)[1]
