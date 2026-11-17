@@ -106,7 +106,11 @@ def add_multi_talker(fixture, source, target):
     if target == 'new':
         group_id = f"sip:{source['group_user']}-multitalker@{source['domain']}"
         site['groups'] = [group for group in site['groups'] if group['id'] != group_id]
-        site['groups'].append(dict(id=group_id, members=members, protect_media=False, protect_floor=False))
+        # protected when the lab protects group media (--protected): a client then affiliates to a group only once it
+        # holds the group's GMK (TS 33.180 5.7), and the GMS issues GMKs to protected groups only
+        protected = [group for group in site['groups'] if group.get('protect_media')]
+        site['groups'].append(dict(id=group_id, members=members, protect_media=bool(protected),
+                                   protect_floor=any(group.get('protect_floor') for group in protected)))
         for user in site['users']:
             if user['mcptt_id'] in members and group_id not in user['groups']:
                 user['groups'].append(group_id)
