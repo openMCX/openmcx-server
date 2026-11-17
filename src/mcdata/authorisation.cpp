@@ -19,6 +19,9 @@ SipResponse DataServer::authorise(const SipMessage &request, bool from_register)
   const auto asserted = asserted_identity(request);
   if (asserted.empty() || asserted != request.from_uri) return reject(403, "", asserted, "authorisation");
   if (get_header(request.headers, "Expires") == "0") return log_off(request, asserted); // TS 24.282 clause 7.3.5
+  // TS 24.282 clause 7.3.4: the request URI and client ID without an access token (clause 7.2.3).
+  if (!from_register && poc_settings_publish_kind(parts_of(request), mcdata_service) == PocSettingsPublish::settings_only)
+    return settings_publish(request, asserted);
   const auto *info_part = part(request, mcdata::info_mime);
   // The PUBLISH carries poc-settings too (clause 7.2.2); the REGISTER the client sent only the MCData info (clause
   // 7.3.2).
@@ -83,6 +86,56 @@ SipResponse DataServer::authorise(const SipMessage &request, bool from_register)
 
   // TS 24.282 clause 17.2.2: location reporting is configured upon successful service authorisation.
   pending_.push_back([this, id] { location_.configure(id); });
+  return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 7.3.4: a SIP PUBLISH for the MCData service settings only (clause 7.2.3), from the asserted IMS
+// public user identity (step 1). Steps 2 and 3 (clause 7.3.1A): the request was opened with the user's keys when it was
+// received (incoming, open_signalling: 403, with warning 140 for XML that cannot be decrypted); content still
+// protected had no key (403, warning 140). Steps 4 and 6: the binding of the identity, the MCData ID of
+// <mcdata-request-uri> and the client ID of <mcdata-client-id> exists and is valid, else 404 (no warning text in
+// TS 24.282). Step 7: RFC 3903 (settings_publication) against the entity tag of the user's service authorisation,
+// replaced by a new one. Steps 8 to 11: the settings are cached (the <selected-user-profile-index>; this server holds
+// one user profile per user, the active one) and the answer is 200. Not implemented: step 12, implicit affiliation
+// again (done at the service authorisation, clause 7.3.3 step 13).
+SipResponse DataServer::settings_publish(const SipMessage &request, const std::string &asserted) {
+  const auto parts = parts_of(request);
+  for (const auto &body : parts)
+    if (xmlsec::is_xml_mime(body.content_type) && xmlsec::is_protected(body.body)) {
+      ++xml_refused_;
+      return reject(403, "140 unable to decrypt XML content", asserted, "settings");
+    }
+  const auto find = [&parts](std::string_view type) {
+    const auto found =
+        std::find_if(parts.begin(), parts.end(), [type](const BodyPart &body) { return body.content_type == type; });
+    return found == parts.end() ? nullptr : &*found;
+  };
+  const auto *info_part = find(mcdata::info_mime);
+  if (!info_part) return reject(400, "", asserted, "settings");
+  const auto info = mcdata::parse_info(info_part->body);
+  auto *user = settings_binding(users_, asserted, info.request_uri, info.client_id, std::time(nullptr));
+  if (!user) return reject(404, "", asserted, "settings");
+  const auto checked =
+      settings_publication(get_header(request.headers, "SIP-If-Match"), get_header(request.headers, "Expires"),
+                           user->auth_etag, !parts.empty());
+  if (checked.status) return reject(checked.status, "", user->id, "settings");
+  const auto *settings = find("application/poc-settings+xml");
+  if (!settings) return reject(400, "", user->id, "settings");
+  try {
+    user->settings = read_service_settings(settings->body, user->client,
+                                           std::time(nullptr) + static_cast<std::int64_t>(checked.expires));
+  } catch (const std::exception &) {
+    return reject(400, "", user->id, "settings");
+  }
+  user->auth_etag = random_id();
+  event("mcdata_service_settings",
+        {{"user_id", user->id},
+         {"client_id", user->client},
+         {"profile_index", user->settings->profile_index ? Json(*user->settings->profile_index) : Json(nullptr)}});
+  SipResponse response;
+  response.status_code = 200;
+  response.headers = {{"SIP-ETag", user->auth_etag}, {"Expires", std::to_string(checked.expires)}};
   return response;
 }
 

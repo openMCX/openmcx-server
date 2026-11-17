@@ -476,6 +476,9 @@ class DataServer {
   SipResponse authorise(const SipMessage &request, bool from_register = false);
   SipResponse third_party_register(const SipMessage &request);
 
+  // TS 24.282 clause 7.3.4: a SIP PUBLISH for the MCData service settings only.
+  SipResponse settings_publish(const SipMessage &request, const std::string &asserted);
+
   // authorise: a SIP PUBLISH with Expires 0 logs the user off.
   SipResponse log_off(const SipMessage &request, const std::string &asserted);
 
