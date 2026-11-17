@@ -125,6 +125,20 @@ def main():
         )
 
     # ------------------------------------------------------------------------------
+    def held(predicate, seconds, label):
+        """holds(), raising with every status as it was at the first look where the predicate failed."""
+        seen = {}
+
+        def look():
+            if predicate():
+                return True
+            seen.update(snapshot())
+            return False
+
+        if not holds(look, seconds):
+            raise AssertionError(label + ': ' + json.dumps(seen))
+
+    # ------------------------------------------------------------------------------
     def roster(wanted):
         """Each wanted user's conference roster lists exactly the wanted users."""
         expected = {ids[client] for client in wanted}
@@ -238,7 +252,7 @@ def main():
                 and all(status(client).get('call_state') == 'idle' for client in ['client-b', 'client-c'])
             ),
         )
-        assert holds(lambda: adhoc_active(['client-a']), 3), 'lone initiator released'
+        held(lambda: adhoc_active(['client-a']), 3, 'lone initiator released')
         checks.append('AH-05 lone initiator still active after 3 s')
 
         # AH-06 the initiator leaving releases the call and deletes the ad hoc group.
@@ -413,6 +427,15 @@ def main():
             lambda: all(status(client).get('floor_indicator') == 0x5000 for client in ['client-b', 'client-c']),
         )
         wait('AH-15b emergency broadcast ad hoc call released at transmission end', idle, 25)
+        # TS 24.379 annex G.1: the emergency ad hoc calls set the MCPTT emergency state; their release by TNG2 or at
+        # the transmission's end is no cancellation by the initiator, so the state stays set, and every ad hoc call
+        # client-a places would be an emergency one (clause 17.2.2.1.1 step 15). The user clears it ("MCPTT user
+        # manually clears the state") before the normal calls of AH-16.
+        if status('client-a').get('emergency_state') is True:
+            checks.append('AH-15 the MCPTT emergency state stays set after the emergency ad hoc calls end')
+            command('client-a', 'emergency clear')
+            wait('AH-15 the user clears the MCPTT emergency state',
+                 lambda: status('client-a').get('emergency_state') is False)
 
         # AH-16 criteria-based participants (TS 24.379 clause 17.4.6.1, local-policy criterion
         # "affiliated:<group>") with continuous re-evaluation, and participant
@@ -449,7 +472,7 @@ def main():
         )
         command('client-d', 'deaffiliate')
         wait('AH-16 departed user no longer meets the criteria', lambda: adhoc_active(['client-a', 'client-c']), 20)
-        assert holds(lambda: adhoc_active(['client-a', 'client-c']), 5), 'user outside the criteria re-invited'
+        held(lambda: adhoc_active(['client-a', 'client-c']), 5, 'user outside the criteria re-invited')
         checks.append('AH-16 a user outside the criteria is not re-invited')
         command('client-d', 'affiliate')
         wait(
@@ -469,8 +492,10 @@ def main():
         # TS 24.379 clause 17.4.5.2.1 steps 4a and 5a: the criteria do not remove a user invited by a modification
         # (client-b, not affiliated to the group) nor invite again one removed by a modification (client-d, still
         # affiliated).
-        assert holds(lambda: adhoc_active(['client-a', 'client-b', 'client-c', 'client-d']), 5), (
-            'manually invited user removed by the criteria'
+        held(
+            lambda: adhoc_active(['client-a', 'client-b', 'client-c', 'client-d']),
+            5,
+            'manually invited user removed by the criteria',
         )
         checks.append('AH-16 a user invited by a modification stays outside the criteria')
         command('client-a', f"adhoc-modify remove {ids['client-d']}")
@@ -478,8 +503,10 @@ def main():
             'AH-16 modify removes a user meeting the criteria',
             lambda: adhoc_active(['client-a', 'client-b', 'client-c']),
         )
-        assert holds(lambda: adhoc_active(['client-a', 'client-b', 'client-c']), 5), (
-            'manually removed user invited again by the criteria'
+        held(
+            lambda: adhoc_active(['client-a', 'client-b', 'client-c']),
+            5,
+            'manually removed user invited again by the criteria',
         )
         checks.append('AH-16 a user removed by a modification is not invited again by the criteria')
         command('client-a', 'hangup')
