@@ -46,7 +46,7 @@ The scenario makes 28 checks. Over TLS the wire checks (MV-AH-05) are skipped.
 | MV-AH-03 | Criteria `affiliated:<MCVideo group>`: every affiliated user is invited, and all four are in one ad hoc call |
 | MV-AH-04 | client-d is refused with 403 `185 user is not authorised to initiate the adhoc group call` (TS 24.281 clause 22.3.2.1.1 step 9; the table omits "is") |
 | MV-AH-05 | Captured at `mcvideo-server`: ad hoc INVITEs to the MCVideo PSI; the called MCVideo IDs in resource-lists; the criteria in `<call-participants-criteria>`; the 200 (OK) naming the ad hoc group in `<mcvideo-calling-group-id>` |
-| MV-AH-06 | Ad hoc group emergency alert (§12.1A). client-a's alert to the users affiliated to the group is answered 200 with its ad hoc group, confirmed to client-a with `<adhoc-alert-ind-rcvd>` and received by client-b, client-c and client-d; its cancellation clears it everywhere; client-b, without `<allow-activate-adhoc-group-emergency-alert>`, is refused with 403. On the wire the alert carries `<adhoc-alert-ind>true`, the criteria and an MCVideo location body |
+| MV-AH-06 | Ad hoc group emergency alert (§12.1A). client-a's alert to the users affiliated to the group is answered 200 with its ad hoc group, confirmed to client-a with `<adhoc-alert-ind-rcvd>` and received by client-b, client-c and client-d; its cancellation clears it everywhere; client-b, without `<allow-activate-adhoc-group-emergency-alert>`, sends nothing (its client refuses, TS 24.379 §12.1A.1.1 steps 1-2), and the same MESSAGE sent raw as client-b (`refusal_probe.py`) is refused with 403 (§12.1A.3.1 step 3a) and reaches nobody. On the wire the alert carries `<adhoc-alert-ind>true`, the criteria and an MCVideo location body |
 
 ## Coverage gaps
 
