@@ -14,7 +14,7 @@ The checks read what the server itself sends, independently of the C++ implement
 - its answers to a client's INVITE (clauses 6.3.2.1.4 and 6.3.3.2.3, SDP answer of clause 6.3.3.2.1);
 - the Resource-Priority namespace (clause 6.2.8.1.16);
 - its conference event NOTIFYs (clause 6.3.3.4, with the MCVideo extension namespace of clause 9.2.3.6.1.2);
-- the affiliation status NOTIFYs (clause 8.3.2.5 with the PIDF of clause 8.4.1) and the clients' affiliation
+- the affiliation status NOTIFYs (clause 8.2.2.2.5 with the PIDF of clause 8.3.1) and the clients' affiliation
   SUBSCRIBE (clause 8.2.1.3 step 2);
 - no repeated BYE on a dialog direction, and no MCPTT body or ICSI in what the server sends.
 
@@ -533,7 +533,7 @@ def main():
     ]
 
     def presence_ok(message):
-        """Clause 8.3.2.5 with 8.4.1: a PIDF of the MCVideo ID with affiliation elements in the MCVideo namespace."""
+        """Clause 8.2.2.2.5 with 8.3.1: a PIDF of the MCVideo ID with affiliation elements in the MCVideo namespace."""
         if not header(message, 'subscription-state'):
             return False
         xml = message['parts'].get('application/pidf+xml')
@@ -551,7 +551,7 @@ def main():
         )
 
     each(
-        '8.3.2.5 and 8.4.1: an affiliation NOTIFY has Subscription-State and a PIDF in the MCVideo namespace',
+        '8.2.2.2.5 and 8.3.1: an affiliation NOTIFY has Subscription-State and a PIDF in the MCVideo namespace',
         presence,
         presence_ok,
     )

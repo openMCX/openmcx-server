@@ -166,7 +166,7 @@ func newPrivateCallList(uris []string) privateCallList {
 // Helper: the <PrivateCallList> of the private call targets with their KMS URIs (TS 24.484 clause 8.3.2.1 item 8 d) i);
 // TS 24.379 clause 6.2.8.3.9 1)). A target that targetKMS names with a KMS URI gets it in the <PrivateCallKMSURI> of
 // the <anyExt> of its <PrivateCallURI> (item A) I)); the list's own <PrivateCallKMSURI> (item C) I)) is then present
-// and empty, so that the other targets keep the KMS of the initial configuration (clause 8.3.2.7: an entry is only
+// and empty, so that the other targets keep the KMS of the initial configuration (TS 24.484 clause 8.3.2.7: an entry is only
 // present when it differs from the list's KMS URI; an empty one stands for the KMS of the initial configuration).
 func newPrivateCallTargets(targets []string, targetKMS map[string]string) privateCallList {
 	list := newPrivateCallList(targets)

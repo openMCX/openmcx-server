@@ -45,7 +45,7 @@ labs it is skipped.
 | Answers to a client's INVITE | 200 (OK): `timer` in Require, Session-Expires with `refresher=uac` when the request named none, the server's identity, the focus Contact, `tdialog`, `norefersub`, `explicitsub` and `nosub` (6.3.2.1.4.2, 6.3.3.2.3.2); an SDP answer at the server with transmission control and `mc_transmission_ssrc` (6.3.3.2.1). Provisional answers: identity, focus Contact and `norefersub` (6.3.2.1.4.1, 6.3.3.2.3.1) |
 | Resource-Priority | Only the `mcpttp` namespace of RFC 8101, values 0 to 15 (6.2.8.1.16) |
 | Conference NOTIFY | The server's identity, Expires, the ICSI in P-Preferred-Service and an mcvideo-info body with the calling group and the subscriber (6.3.3.4); the group in `entity`, with extensions only in `urn:3gpp:ns:mcvideoConfInfo:1.0` (9.2.3.6.1.2) |
-| Affiliation | The client's SUBSCRIBE has an mcvideo-info body with `<mcvideo-request-uri>` (8.2.1.3 step 2); the server's NOTIFY has Subscription-State and a PIDF of affiliation elements in `urn:3gpp:ns:mcvideoPresInfo:1.0` (8.3.2.5, 8.4.1) |
+| Affiliation | The client's SUBSCRIBE has an mcvideo-info body with `<mcvideo-request-uri>` (8.2.1.3 step 2); the server's NOTIFY has Subscription-State and a PIDF of affiliation elements in `urn:3gpp:ns:mcvideoPresInfo:1.0` (8.2.2.2.5, 8.3.1) |
 | Release and separation | No BYE repeated with another CSeq on one dialog direction (6.3.3.1.4); no MCPTT ICSI, feature tag or mcptt-info body in anything the server sends |
 
 The group call, private call, emergency and affiliation scenarios also require the signalling they are about (`--expect`).

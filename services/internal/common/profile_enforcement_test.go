@@ -169,7 +169,7 @@ func TestCMSUploadedProfileEnforced(test *testing.T) {
 // TS 24.484 clause 8.3.2.1 item 8 d) i) and clause 8.3.2.7 with TS 24.379 clause 6.2.8.3.9 1): a private call target
 // the record gives a KMS URI (target_kms) has it in the <PrivateCallKMSURI> of the <anyExt> of its <PrivateCallURI>;
 // the list's <PrivateCallKMSURI> is empty (the KMS of the initial configuration) for the others. The document
-// conforms to the schema of clause 8.3.2.3 and reads back to the same KMS URIs.
+// conforms to the schema of TS 24.484 clause 8.3.2.3 and reads back to the same KMS URIs.
 func TestUserProfilePrivateCallKMS(test *testing.T) {
 	user := User{MCPTTID: "sip:a@mcx.test", MCID: "sip:a.mc@mcx.test", SIPURI: "sip:a@mcx.test", ClientID: "urn:uuid:1",
 		PrivateCall: &PrivateCallPolicy{Allow: true, Targets: []string{"sip:b@mcx.test", "sip:c@mcx.test"},
