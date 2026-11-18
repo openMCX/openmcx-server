@@ -4,7 +4,7 @@
 
 // Warning header field texts: the MCPTT and MCVideo warning code tables and the texts built from them.
 //
-// Specifications: TS 24.379 V19.8.0 (Rel-19), TS 24.281 V19.7.0 (Rel-19).
+// Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19).
 #ifdef NDEBUG
 #undef NDEBUG
 #endif

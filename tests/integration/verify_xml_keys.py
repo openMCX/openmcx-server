@@ -24,7 +24,7 @@ A client that holds no CSK therefore shows up as a clear or unsigned authorisati
 Self-contained (no tshark); reuses the SIP reassembly of verify_private_call.py and the body parser of
 verify_xml_signatures.py.
 
-Specifications: TS 24.379 V19.8.0 (Rel-19), TS 33.180 V19.5.0 (Rel-19).
+Specifications: TS 24.379 V19.7.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
 """
 
 import argparse

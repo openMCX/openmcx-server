@@ -13,7 +13,7 @@ Phase "before" (the test card's keys not yet in the SIP database):
 Phase "after" (keys loaded by tools/load-card-keys.py):
 - IMP-06: the same REGISTER is challenged, 401 (TS 24.229 clause 5.4.1.2.1A).
 
-Specifications: TS 24.229 V19.7.0, TS 29.228 V19.2.0, TS 33.180 V19.5.0, TS 33.203 V19.1.0, TS 23.228 V19.8.0.
+Specifications: TS 24.229 V19.7.0, TS 29.228 V19.2.0, TS 33.180 V19.4.0, TS 33.203 V19.1.0, TS 23.228 V19.8.0.
 """
 
 import argparse

@@ -6,7 +6,7 @@
 // IS proxy, and the XML signature of whole bodies (TS 33.180 clause 9.3, TS 24.379 clause 6.6, TS 24.282 clause 4.6,
 // TS 24.281 clause 4.8).
 //
-// Specifications: TS 33.180 V19.5.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19),
+// Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19),
 // TS 24.281 V19.6.0 (Rel-19), RFC 4231, RFC 2392, W3C XMLDSig Second Edition and 1.1, W3C Canonical XML 1.0,
 // W3C Exclusive XML Canonicalization 1.0.
 #include "mcx/xml_security.hpp"

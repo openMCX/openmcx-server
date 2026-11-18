@@ -14,7 +14,7 @@
 //   for a stream without a packet yet is not issued.
 // Skipped (exit 77) without OpenMCX's libsrtp patch (dependencies/libsrtp): the indices checked start at 0.
 //
-// Specifications: TS 33.180 V19.5.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19); RFC 3711, RFC 7714.
+// Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19); RFC 3711, RFC 7714.
 
 #include "mcx/protected_call.hpp"
 

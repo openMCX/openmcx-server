@@ -17,7 +17,7 @@ element encrypted (XK-02) under an XPK-ID other than client-a's CSK-IDs; the ref
 the signature and cipher values are placeholders. Checks: each answered 403 with the warning, client-a's refused counter up by two, client-a
 still authorised (XK-03). The check IDs match tests/mcptt/XML_PROTECTION_TEST.md.
 
-Specifications: TS 24.379 V19.8.0 (Rel-19), TS 33.180 V19.5.0 (Rel-19).
+Specifications: TS 24.379 V19.7.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
 """
 
 import argparse

@@ -7,7 +7,7 @@
 // TLS 1.2 only ECDHE with AEAD (clause 6.2.3); TLS 1.3 keeps crypto/tls's suites (RFC 8446 section 9.1). crypto/tls
 // has no finite field Diffie-Hellman and no SHA-1 signatures in TLS 1.2 handshakes.
 //
-// Specifications: TS 33.210 V19.3.0, TS 33.180 V19.5.0, TS 33.310 V19.5.0 (Rel-19); RFC 5246, RFC 8446.
+// Specifications: TS 33.210 V19.3.0, TS 33.180 V19.4.0, TS 33.310 V19.5.0 (Rel-19); RFC 5246, RFC 8446.
 
 package common
 

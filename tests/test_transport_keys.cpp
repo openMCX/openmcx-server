@@ -6,7 +6,7 @@
 // with the TrK integrity fallback, the annex F.1.4 derivation for 256-bit XPKs, HMAC-SHA256, the RFC 3394 key wrap
 // and the ETSI test suite's padding before it.
 //
-// Specifications: TS 33.180 V19.5.0 (Rel-19), TS 33.220 annex B, RFC 3394 section 4.
+// Specifications: TS 33.180 V19.4.0 (Rel-19), TS 33.220 annex B, RFC 3394 section 4.
 
 #include "mcx/transport_keys.hpp"
 #include "mcx/xml_security.hpp"

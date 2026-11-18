@@ -5,7 +5,7 @@
 // Application signalling security (XML protection): the XPK-derived keys, XML content and URI attribute encryption,
 // re-encryption by a server, and XML signatures over MIME bodies, for MCPTT, MCVideo and MCData.
 //
-// Specifications: TS 33.180 V19.5.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), RFC 4648,
+// Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), RFC 4648,
 // RFC 5288, RFC 2104, RFC 2392, RFC 3986, RFC 6839, RFC 7303, W3C XML Signature Syntax and Processing (Second Edition)
 // and Version 1.1, W3C Canonical XML 1.0 and 1.1, W3C Exclusive XML Canonicalization 1.0.
 #include "mcx/xml_security.hpp"

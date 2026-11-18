@@ -6,7 +6,7 @@
 // integrity of whole XML MIME bodies. Between a client and its server the XPK is the client's CSK, and the keys derive
 // from it and the client's MC service user ID (TS 33.180 annex F.1.4).
 //
-// Specifications: TS 33.180 V19.5.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.281
+// Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.281
 // V19.6.0 (Rel-19), W3C XML Signature Syntax and Processing (Second Edition), RFC 2392.
 #pragma once
 #include <array>

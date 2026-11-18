@@ -5,7 +5,7 @@
 // Verification and creation of the XML signature of a signed KMS message under a derived integrity key
 // (include/mcx/kms_xml_signature.hpp).
 //
-// Specifications: TS 33.180 V19.5.0 (Rel-19) annexes D.1, D.2.2, D.3.1 and D.3.5.1; W3C XML Signature Syntax and
+// Specifications: TS 33.180 V19.4.0 (Rel-19) annexes D.1, D.2.2, D.3.1 and D.3.5.1; W3C XML Signature Syntax and
 // Processing (Second Edition, 2008); W3C Canonical XML 1.0 and 1.1; W3C Exclusive XML Canonicalization 1.0.
 #include "mcx/kms_xml_signature.hpp"
 
@@ -207,7 +207,7 @@ std::string c14n(xmlDocPtr doc, const NodeSet &set, const Canonicalization &meth
 //------------------------------------------------------------------------------
 // XMLDSig Second Edition clause 4.3.3.3: the element a shortname XPointer names by an ID attribute; exactly one element
 // may carry it (each candidate is counted here, also a duplicate the parser did not register as an ID). ID attributes:
-// xml:id (W3C xml:id), and the unqualified Id attribute of the KMS schema. TS 33.180 V19.5.0 annex D.3.5.1 types that
+// xml:id (W3C xml:id), and the unqualified Id attribute of the KMS schema. TS 33.180 V19.4.0 annex D.3.5.1 types that
 // Id xsd:string, not xsd:ID (a schema defect, reported), although the References of annexes D.2.2/D.3.1 point to it;
 // resolving it as an ID is the reading of the ETSI test suite for TS 37.579 and of its test system (maintainer
 // decision 2026-11-01), not a stated 3GPP rule.

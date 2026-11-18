@@ -15,7 +15,7 @@ client-d hold none:
   TK-04 the status of client-a shows a TrK and an InK, that of client-b a TrK only.
 The protected group call of prearranged_scenario then uses the keys.
 
-Specifications: TS 33.180 V19.5.0 (Rel-19) clause 5.3.2, annexes D.2.2, D.3.1 and D.3.3.2.
+Specifications: TS 33.180 V19.4.0 (Rel-19) clause 5.3.2, annexes D.2.2, D.3.1 and D.3.3.2.
 """
 
 import argparse

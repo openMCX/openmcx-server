@@ -4,7 +4,7 @@
 
 // MCData signalling and XML protection with clients (CSK): signalling payloads, XML confidentiality and XML integrity.
 //
-// Specifications: TS 33.180 V19.5.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19).
+// Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19).
 
 #include "data_server.hpp"
 

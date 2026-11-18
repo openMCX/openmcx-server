@@ -6,7 +6,7 @@
 // written in canonical form by hand, so each digest and signature value here comes from OpenSSL over text this test
 // states, not from the code under test.
 //
-// Specifications: TS 33.180 V19.5.0 (Rel-19) annexes D.1, D.2.2, D.3.1 and D.3.5.1; W3C XML Signature Syntax and
+// Specifications: TS 33.180 V19.4.0 (Rel-19) annexes D.1, D.2.2, D.3.1 and D.3.5.1; W3C XML Signature Syntax and
 // Processing (Second Edition, 2008) clauses 3.2, 4.3.3 and 6.
 
 #include "mcx/key_documents.hpp"

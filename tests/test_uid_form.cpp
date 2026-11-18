@@ -6,7 +6,7 @@
 // ECCSI and SAKKE; spec defect, Known limitations "MIKEY-SAKKE UID form"): keys issued for either form, the key set
 // detection (raw first, then text) and its refusal under the text-only policy, and ECCSI and SAKKE in each form.
 //
-// Specifications: TS 33.180 V19.5.0 (Rel-19); RFC 6507, RFC 6508.
+// Specifications: TS 33.180 V19.4.0 (Rel-19); RFC 6507, RFC 6508.
 
 #include "mcx/key_documents.hpp"
 
