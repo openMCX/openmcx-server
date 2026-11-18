@@ -1,9 +1,12 @@
 # Specifications followed
 
 The versions the OpenMCX code follows (docs/CODING_STYLE.md section 2.2). A file header names the specifications of
-that file; the versions are these unless the header says otherwise. The texts are kept outside the repositories
-(ETSI copyright), as `~/openMCX/specs/ts_<number>.txt`, converted from the ETSI PDFs, to check the clauses the code
-cites against the text.
+that file; the versions are these unless the header says otherwise. The texts are the single source of truth of the
+specifications, the private repository [openMCX/ssot-specs](https://github.com/openMCX/ssot-specs), branch `v19`: one
+version of each, its `specs.toml` listing the version, file and SHA-256 of each. The code, the conformance tests
+(openmcx-conformance-tests) and the conformance dashboard follow it. The tables below list the same versions:
+`python3 ../ssot-specs/tools/check.py --specs-md docs/SPECS.md` checks it. A version is changed in ssot-specs and
+here in the same step.
 
 ## 3GPP (Release 19, as published by ETSI)
 
