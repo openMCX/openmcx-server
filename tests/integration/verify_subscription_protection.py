@@ -36,7 +36,7 @@ configuration management documents (org.3gpp.mcptt/mcvideo/mcdata application us
 Self-contained (no tshark); reuses the SIP reassembly of verify_private_call.py and the body parser of
 verify_xml_signatures.py.
 
-Specifications: TS 24.484 V19.6.0 (Rel-19), TS 24.481 V19.3.0 (Rel-19), TS 33.180 V19.5.0 (Rel-19), RFC 6665, RFC 5875.
+Specifications: TS 24.484 V19.6.0 (Rel-19), TS 24.481 V19.3.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), RFC 6665, RFC 5875.
 """
 
 import argparse

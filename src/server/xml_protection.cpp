@@ -4,7 +4,7 @@
 
 // XML integrity and confidentiality protection of the SIP bodies (member functions of McServer).
 //
-// Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 33.180 V19.5.0 (Rel-19).
+// Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
 
 #include "server.hpp"
 

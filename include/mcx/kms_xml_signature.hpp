@@ -20,7 +20,7 @@
 // The signature must cover the whole KmsRequest or KmsResponse (TS 33.180 annexes D.1, D.2.2 and D.3.1): one of its
 // References must identify that element or an ancestor of it, and every Reference must validate.
 //
-// Specifications: TS 33.180 V19.5.0 (Rel-19) clauses 9.3.3 and 9.3.5, annexes D.1, D.2.2, D.3.1 and D.3.5.1; W3C XML
+// Specifications: TS 33.180 V19.4.0 (Rel-19) clauses 9.3.3 and 9.3.5, annexes D.1, D.2.2, D.3.1 and D.3.5.1; W3C XML
 // Signature Syntax and Processing (Second Edition, 2008) clauses 3.2, 4.3.3 and 6; W3C Canonical XML 1.0 and 1.1;
 // W3C Exclusive XML Canonicalization 1.0; W3C xml:id.
 #pragma once

@@ -6,7 +6,7 @@
 // certificate a test CA issued: a valid CRL that does not list the server passes; a CRL listing it, an expired CRL,
 // only another CA's CRL, and CRLs outside the TS 33.310 clause 6.1a profile (version 1, SHA-1, delta) fail.
 //
-// Specifications: TS 33.180 V19.5.0 (Rel-19) clause 6.1.1; TS 33.310 V19.5.0 (Rel-19) clauses 6.1.1, 6.1a, 7.6;
+// Specifications: TS 33.180 V19.4.0 (Rel-19) clause 6.1.1; TS 33.310 V19.5.0 (Rel-19) clauses 6.1.1, 6.1a, 7.6;
 // RFC 5280 sections 5 and 6.3.
 #include "mcx/http.hpp"
 

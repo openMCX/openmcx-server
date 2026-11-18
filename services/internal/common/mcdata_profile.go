@@ -5,7 +5,7 @@
 // The MCData user profile document the CMS serves: rendering a user's "mcdata" record as the document, and the
 // validation constraints the schema does not express.
 //
-// Specifications: TS 24.484 V19.6.0 (Rel-19), TS 24.282 V19.6.0 (Rel-19), TS 23.282 V19.6.0 (Rel-19), RFC 4745.
+// Specifications: TS 24.484 V19.6.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 23.282 V19.10.0 (Rel-19), RFC 4745.
 package common
 
 import (

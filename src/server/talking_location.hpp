@@ -5,7 +5,7 @@
 #pragma once
 
 // The user's location in a call request the originating participating MCPTT function sends to the controlling
-// function (TS 24.379 V19.8.0), governed by <allow-location-info-when-talking> of the user profile (TS 24.484 V19.6.0
+// function (TS 24.379 V19.7.0), governed by <allow-location-info-when-talking> of the user profile (TS 24.484 V19.6.0
 // clause 8.3.2.7: "false" = "not authorised to be sent to the MCPTT server performing the controlling MCPTT function
 // for the call").
 

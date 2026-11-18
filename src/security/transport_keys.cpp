@@ -4,7 +4,7 @@
 
 // The KM client's transport key (TrK) and integrity key (InK) for KMS traffic (include/mcx/transport_keys.hpp).
 //
-// Specifications: TS 33.180 V19.5.0 (Rel-19), RFC 3394; the key-wrap padding of the ETSI test suite for TS 37.579.
+// Specifications: TS 33.180 V19.4.0 (Rel-19), RFC 3394; the key-wrap padding of the ETSI test suite for TS 37.579.
 #include "mcx/transport_keys.hpp"
 
 #include "mcx/xml_security.hpp"

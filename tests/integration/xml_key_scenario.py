@@ -19,7 +19,7 @@ configuration) and one client whose KMS cannot be reached (--kms-unreachable ROL
         where its protection is off).
 Check IDs match tests/mcptt/XML_PROTECTION_TEST.md.
 
-Specifications: TS 24.379 V19.8.0 (Rel-19), TS 24.282 V19.8.0 (Rel-19), TS 33.180 V19.5.0 (Rel-19).
+Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
 """
 
 import argparse

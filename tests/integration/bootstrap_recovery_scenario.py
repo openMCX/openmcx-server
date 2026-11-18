@@ -23,7 +23,7 @@ read from the CMS is the one the configuration NOTIFY prompts (an MCData user pr
 No clear or unsigned service authorisation goes out meanwhile (verify_subscription_protection.py and the lab's other
 wire checks).
 
-Specifications: TS 24.484 V19.6.0 (Rel-19), TS 24.379 V19.8.0 (Rel-19), TS 33.180 V19.5.0 (Rel-19), RFC 6665.
+Specifications: TS 24.484 V19.6.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), RFC 6665.
 """
 
 import argparse

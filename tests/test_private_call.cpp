@@ -177,7 +177,7 @@ int main() {
 
   // TS 24.380 clauses 14.2.7 and 14.3.8 (TS 24.379 clause 11.1.1.4.2.2 / 11.1.1.3.2): the answer of the controlling
   // function to a private call offer without "mc_floor_ssrc" (no multiplexing) has none; one with it gets the
-  // function's own; clause 14.4: an "mc_floor_ssrc" in the answer to an offer without one is discarded.
+  // function's own; TS 24.380 clause 14.4: an "mc_floor_ssrc" in the answer to an offer without one is discarded.
   {
     MediaDescription client;
     client.address = client.floor_address = "192.0.2.10";

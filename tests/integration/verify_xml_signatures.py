@@ -26,7 +26,7 @@ The HMAC values are not checked: they need the CSK, which the capture does not s
 
 Self-contained (no tshark); reuses the SIP reassembly of verify_private_call.py.
 
-Specifications: TS 33.180 V19.5.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 24.282
+Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 24.282
 V19.7.0 (Rel-19).
 """
 

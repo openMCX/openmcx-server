@@ -6,8 +6,8 @@
 // (clause 10.4), one per mission critical organisation, from the site's service_config; and the same values on the
 // internal interface for the MC service servers.
 //
-// Specifications: TS 24.484 V19.6.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.4.0 (Rel-19),
-// TS 24.281 V19.6.0 (Rel-19), TS 24.282 V19.6.0 (Rel-19), RFC 8101, RFC 4412.
+// Specifications: TS 24.484 V19.6.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19),
+// TS 24.281 V19.6.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), RFC 8101, RFC 4412.
 package common
 
 import (

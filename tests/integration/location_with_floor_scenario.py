@@ -8,7 +8,7 @@
 Run against a split fixture prepared with --split --private-call --chat --adhoc --location-when-talking client-a
 --location-when-talking-always client-c. Check labels carry the IDs LWF-01 to LWF-06.
 
-The procedures under test (TS 24.379 V19.8.0, TS 24.484 V19.6.0 clause 8.3.2.7 <allow-location-info-when-talking>):
+The procedures under test (TS 24.379 V19.7.0, TS 24.484 V19.6.0 clause 8.3.2.7 <allow-location-info-when-talking>):
 the client includes a location-info <Report> with an implicit floor request when the element is "true" (clauses
 10.1.1.2.1.1 step 16 a), 11.1.1.2.1.1 step 13 a), 17.2.2.1.1 step 14a a)); the originating participating function passes
 it to the controlling function only when the element is "true" for private and ad hoc calls (clauses 6.3.2.1.3 step
@@ -18,7 +18,7 @@ condition (a conflict of the specification, Known limitations "Location in call 
 participating function's check). mcptt-part-1 serves client-a and client-c, mcptt-part-2 client-b and client-d. The
 outcome is read from the participating functions' "talking_location" events and the clients' "talking_location_sent".
 
-Specifications: TS 24.379 V19.8.0 (Rel-19), TS 24.484 V19.6.0 (Rel-19).
+Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.484 V19.6.0 (Rel-19).
 """
 
 import argparse

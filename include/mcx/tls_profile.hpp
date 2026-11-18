@@ -9,7 +9,7 @@
 // its security level 2, its other defaults (SNI, RFC 5746, extended master secret, no compression) follow clause
 // 6.2.1.
 //
-// Specifications: TS 33.210 V19.3.0, TS 33.180 V19.5.0, TS 33.310 V19.5.0 (Rel-19); RFC 5246, RFC 8446.
+// Specifications: TS 33.210 V19.3.0, TS 33.180 V19.4.0, TS 33.310 V19.5.0 (Rel-19); RFC 5246, RFC 8446.
 
 #pragma once
 

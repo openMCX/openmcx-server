@@ -6,7 +6,7 @@
 // the CMS serves it, and the MC service servers apply the rights it grants. This file reads such a document back
 // into the user record the servers enforce.
 //
-// Specifications: TS 24.484 V19.6.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.6.0 (Rel-19), RFC 4745.
+// Specifications: TS 24.484 V19.6.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), RFC 4745.
 package common
 
 import (

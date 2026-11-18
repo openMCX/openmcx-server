@@ -14,7 +14,7 @@
 // ETSI test suite for TS 37.579 (maintainer decision 2026-11-01), not a 3GPP rule, and is reported as a spec defect.
 // The KMS documents (include/mcx/key_documents.hpp) use these keys for the signed and TrK-wrapped KMS exchange.
 //
-// Specifications: TS 33.180 V19.5.0 (Rel-19) clauses 5.3.2, 5.3.3, 5.11.1, 9.3.3, annexes D and F.1.4; RFC 3394.
+// Specifications: TS 33.180 V19.4.0 (Rel-19) clauses 5.3.2, 5.3.3, 5.11.1, 9.3.3, annexes D and F.1.4; RFC 3394.
 #pragma once
 #include <nlohmann/json.hpp>
 #include <openssl/crypto.h>
@@ -95,7 +95,7 @@ std::vector<std::uint8_t> unwrap(std::span<const std::uint8_t> kek, std::span<co
 
 //------------------------------------------------------------------------------
 // Key material of any length (the 32-octet SSK, the 65-octet PVT, the 257-octet RSK of TS 33.180 D.3.3.2) under
-// kw-aes256. TS 33.180 V19.5.0 clause 9.3.4.2 ("The AES-256 key wrap algorithm as defined in RFC 3394 [34] shall be
+// kw-aes256. TS 33.180 V19.4.0 clause 9.3.4.2 ("The AES-256 key wrap algorithm as defined in RFC 3394 [34] shall be
 // supported") and TS 37.579-1 V18.1.0 table 5.5.4.10.8-1 (EncryptionAlgorithm "AES256") give no padding rule for
 // lengths RFC 3394 cannot wrap (a spec defect, reported). This is the rule of the ETSI test suite for TS 37.579
 // (MCX_SecurityFunctions.ttcn f_MCX_XML_EncryptKey, "padding according to ... xmlenc-core1 clause 5.2.1"), the test
