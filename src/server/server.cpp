@@ -193,6 +193,7 @@ void McServer::tick() {
   seal_tick();
   mbms_tick(now);
   group_dynamic_data_tick(now);
+  settings_subscription_tick(now);
   for (auto &[dialog, leg] : legs_)
     if (leg->active && !floor_key_ready(*leg)) stop_unkeyed_leg(*leg, "floor key expired or unavailable");
   for (const auto &[dialog, sub] : key_subscriptions_)

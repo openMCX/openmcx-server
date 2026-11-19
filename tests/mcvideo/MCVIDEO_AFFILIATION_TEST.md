@@ -61,7 +61,7 @@ The scenario makes 17 checks.
 | Area | Gap |
 |---|---|
 | Service authorisation by REGISTER | §7.2.1 and §7.3.2 (third-party registration) are not implemented; the client authorises by PUBLISH |
-| Service settings | Subscription to and notification of service settings (§7.2.4, §7.3.6) and PUBLISH for settings only (§7.3.4) are not exercised |
+| Service settings | Subscription to and notification of service settings (§7.3.6) and PUBLISH for settings only (§7.3.4) are implemented at the server (shared with MCPTT; unit tests in `tests/test_settings_subscriptions.cpp` and `tests/test_served_users.cpp`) but not exercised by a scenario; the client side (§7.2.4) is not |
 | Affiliation variants | Negotiated mode (§8.2.1.4, §8.2.1.5), group dynamic data (§8.2.1.6), rules-based affiliation (§8.2.1.7), implicit affiliation (§8.2.2.2.15) and affiliation across servers (§8.2.2.2.6) are not exercised |
 | Security | The CSK upload and protected signalling of §7.2.2 steps 3-4 and §7.2.5 are tested in the [protected call tests](MCVIDEO_PROTECTED_TEST.md) and the [XML protection tests](MCVIDEO_XML_PROTECTION_TEST.md) |
 | Wire evidence | The scenario checks client and server state; the wire verifier `verify_mcvideo.py --expect affiliation` checks the SUBSCRIBE body and the affiliation NOTIFYs on the wire (see the [MCVideo test index](../MCVIDEO_TEST.md#wire-verifier)) |

@@ -42,7 +42,8 @@ SipResponse McServer::incoming(const SipMessage &message) {
       return relay_request(message, relay->second, !peer.empty());
     if (const auto relay = conference_relays_.find(message.dialog_id); relay != conference_relays_.end())
       return relay_conference(message, relay->second, !peer.empty());
-    // TS 24.281 clause 8.2.2.2.16: a request in the dialog of a subscription to group dynamic data relayed here.
+    // TS 24.281 clause 8.2.2.2.16 (TS 24.379 clause 9.2.2.2.16): a request in the dialog of a subscription to group
+    // dynamic data relayed here.
     if (const auto relay = gdd_relays_.find(message.dialog_id); relay != gdd_relays_.end())
       return relay_gdd_in_dialog(message, relay->second);
     if (message.method == "BYE") ambient_bye_from_participant(message);
@@ -147,8 +148,9 @@ bool McServer::peer_request(const SipMessage &message, const std::string &peer, 
   if (message.method == "PUBLISH" && event_name == "presence" && peer_presence_publish(message, peer, response))
     return true;
 
-  // TS 24.281 clause 8.2.2.3.9: a participating function's subscription to group dynamic data (its per-group dynamic
-  // data filter tells it from the functional alias status subscription below), or a request in its dialog.
+  // TS 24.281 clause 8.2.2.3.9 (TS 24.379 clause 9.2.2.3.9): a participating function's subscription to group dynamic
+  // data (its per-group dynamic data filter tells it from the functional alias status subscription below), or a
+  // request in its dialog.
   if (peer_group_dynamic_data_subscribe(message, peer, event_name, response)) return true;
   // TS 24.379 clauses 9A.2.2.3.4 and 9A.2.2.2.7: a serving server's subscription to a user's status for an alias,
   // and the owning server's NOTIFY to this serving server.
@@ -418,6 +420,8 @@ bool McServer::cache_service_settings(User &user, const SipMessage &message, std
     event("service_settings_unread", {{"user_id", user.id}, {"reason", error.what()}});
     return false;
   }
+  // TS 24.379 clause 7.3.6.2: the subscribers to the settings learn of the change.
+  schedule([this] { settings_changed(); });
   event("service_settings", {{"user_id", user.id},
                              {"client_id", user.client},
                              {"answer_mode", user.settings->answer_mode},
@@ -612,6 +616,7 @@ void McServer::remove_binding(std::map<std::string, User>::iterator found, const
     sip_.notify(user.subscription, "presence", "terminated;reason=noresource", "application/pidf+xml",
                 affiliation_xml(affiliation_status(svc_, user, {}), true));
   user.subscription.clear();
+  end_settings_subscriptions(id, reason); // TS 24.379 clause 7.3.6 with RFC 6665 section 4.2.2
   deactivate_functional_aliases(id);
   disconnect_user(id);
   end_user_relays(id);
@@ -706,8 +711,13 @@ void McServer::user_request(const SipMessage &message, User &user, const std::st
   }
   // TS 24.379 clause 10.1.3.4.1: a participant's subscription to the conference event package of its call.
   if (message.method == "SUBSCRIBE" && event_name == "conference") return conference_subscribe(message, user, response);
-  // TS 24.281 clause 8.2.1.6: subscription to group dynamic data (clauses 8.2.2.2.16 and 8.2.2.3.9), new or in its
-  // dialog; told from the affiliation status subscription by its per-group dynamic data filter (clause 8.3.2.2).
+  // TS 24.379 clause 7.3.6.1 (TS 24.281 clause 7.3.6.1): subscription to the user's service settings, new or in its
+  // dialog.
+  if (message.method == "SUBSCRIBE" && event_name == poc_settings_event)
+    return settings_subscribe(message, user, response);
+  // TS 24.281 clause 8.2.1.6 (TS 24.379 clause 9.2.1.6): subscription to group dynamic data (clauses 8.2.2.2.16 and
+  // 8.2.2.3.9; 9.2.2.2.16 and 9.2.2.3.9), new or in its dialog; told from the affiliation status and functional alias
+  // status subscriptions by its per-group dynamic data filter (clause 8.3.2.2; 9.3.2.2).
   if (group_dynamic_data_subscribe(message, user, event_name, response)) return;
   if (message.method == "SUBSCRIBE" && event_name == "presence" && alias_status_subscribe(message, user, response))
     return;

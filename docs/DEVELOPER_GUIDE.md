@@ -217,15 +217,19 @@ procedure must be placed in it deliberately:
 2. Source neither the SIP core nor a configured peer: 403. `OPTIONS`: 200.
 3. A request in the dialog of a call relayed by this participating function goes to the other side
    (`relay_request`, `relay_conference`).
-4. A request from a peer server: location, affiliation and functional alias PUBLISH, regroup, the terminating
-   participating function for users served here (`peer_request`, `peer_presence_publish`, `terminating_request`).
+4. A request from a peer server: location, affiliation and functional alias PUBLISH, a participating function's
+   subscription to group dynamic data of a group owned here (`peer_group_dynamic_data_subscribe`), regroup, the
+   terminating participating function for users served here (`peer_request`, `peer_presence_publish`,
+   `terminating_request`).
 5. `PUBLISH` with `Event: poc-settings`: service authorisation (`service_authorization`).
 6. `BYE` of a leg: only the leg's own user may end it (481 otherwise).
 7. `MESSAGE` from a local client: location report (`location_.from_client`).
 8. `SUBSCRIBE` to `xcap-diff` from an MCS server of this system (`server_document_subscribe`).
 9. Otherwise the sender must be an authorised user (`authenticated`, which throws `UnknownUser`), and
-   `user_request` dispatches by method and `Event`: document and GKTP subscriptions, `conference`, functional alias
-   status, affiliation status (`SUBSCRIBE`); affiliation (`PUBLISH presence`); `user_message` (MESSAGE);
+   `user_request` dispatches by method and `Event`: document and GKTP subscriptions, `conference`, service settings
+   (`poc-settings`, `settings_subscribe`, TS 24.379 clause 7.3.6), group dynamic data (`presence` with a per-group
+   dynamic data filter, `group_dynamic_data_subscribe`, TS 24.379 clause 9.2.2.3.9 and TS 24.281 clause 8.2.2.3.9),
+   functional alias status, affiliation status (`SUBSCRIBE`); affiliation (`PUBLISH presence`); `user_message` (MESSAGE);
    `invite_request` (INVITE); anything else 405.
 
 Exceptions map to answers in one place: `CapacityReached` to 500 with `Retry-After`, `UnknownUser` to 404 with
@@ -257,8 +261,8 @@ through their host (`ServiceHost::send_message`, `publish`, `respond`, `schedule
 `DataServer::incoming` (`src/mcdata/sip_dispatch.cpp`) first removes the MCData signalling protection (CSK) and the
 XML confidentiality protection of the request (`open_from`, `decrypt_xml`), refusing with 403 (Warning 140 for XML)
 when that fails, then `DataServer::dispatch` chooses by method and `Event` or `Info-Package`: `PUBLISH poc-settings`
-(`authorise`), `PUBLISH presence` (`affiliate` or `functional_alias_publish`), `SUBSCRIBE presence`
-(`affiliation_subscribe`), `NOTIFY xcap-diff` (group document changes), `INVITE` (`media_invite`, the media plane
+(`authorise`), `PUBLISH presence` (`affiliate` or `functional_alias_publish`), `SUBSCRIBE poc-settings`
+(`settings_subscribe`, TS 24.282 clause 7.3.6), `SUBSCRIBE presence` (`affiliation_subscribe`), `NOTIFY xcap-diff` (group document changes), `INVITE` (`media_invite`, the media plane
 and IP connectivity), `INFO` of the communication release package (`com_release_info`), `MESSAGE` (location, then
 `message`). `DataServer::message` (`src/mcdata/message.cpp`) then chooses by the MCData info body, the ICSI in
 `Accept-Contact` and the binary message type of the `mcdata-signalling` body (SDS signalling, SDS notification, FD

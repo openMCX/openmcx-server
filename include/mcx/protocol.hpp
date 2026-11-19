@@ -740,6 +740,12 @@ struct PocSettingsEntity {
 // RFC 4354 with TS 24.281 clause 7.4.1.2.2: reads an application/poc-settings+xml document (one entry per <entity>).
 std::vector<PocSettingsEntity> parse_poc_settings(std::string_view xml);
 //------------------------------------------------------------------------------
+// RFC 4354 section 5.1 with TS 24.379 clause 7.4.1.2.2: writes an application/poc-settings+xml document of the
+// entities given, as a notifier does (TS 24.379 clause 7.3.6.2 step 1): one <entity> per client, with <am-settings>
+// only when its answer mode ("automatic" or "manual") is set, <selected-user-profile-index> and <multiplex-support>
+// only when present.
+std::string poc_settings_xml(const std::vector<PocSettingsEntity> &entities);
+//------------------------------------------------------------------------------
 // Helper: the emergency location of a multipart body (the location-info MIME part), if any.
 std::optional<EmergencyLocation> parse_emergency_location_parts(const std::vector<BodyPart> &parts);
 //------------------------------------------------------------------------------

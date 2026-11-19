@@ -50,6 +50,7 @@
 #include "parts/peers.hpp"
 #include "parts/program.hpp"
 #include "parts/served_users.hpp"
+#include "parts/settings_subscriptions.hpp"
 #include "parts/task_queue.hpp"
 #include "request_values.hpp"
 
@@ -1587,7 +1588,7 @@ protected:
   void mbms_group_dynamic_data_tick();
 
   // ---- Subscription to group dynamic data (group_dynamic_data.cpp): TS 24.281 clauses 8.2.2.2.16, 8.2.2.3.9 and
-  // 8.2.2.3.10, MCVideo only ----
+  // 8.2.2.3.10 (MCVideo), TS 24.379 clauses 9.2.2.2.16, 9.2.2.3.9 and 9.2.2.3.10 (MCPTT) ----
   // TS 24.380 clause 10A.1 with TS 24.379 clause 9.2.1.6 (TS 24.581 clause 10.5.1, TS 24.281 clause 8.2.1.6): a
   // group's dynamic data, the one source of the MBMS Group Dynamic Data Notify and of the PIDF of clause 8.3.1.2.
   GroupDynamicData group_dynamic_data(const std::string &group) const;
@@ -1852,6 +1853,24 @@ protected:
   // Answer-Mode from its cached Answer-Mode Indication when they have neither Answer-Mode nor Priv-Answer-Mode.
   [[nodiscard]] std::vector<SipHeader> with_cached_answer_mode(std::vector<SipHeader> headers,
                                                                const User &user) const;
+  // ---- Subscription to and notification of the service settings (settings_subscription.cpp): TS 24.379 clause
+  // 7.3.6, TS 24.281 clause 7.3.6 ----
+  SettingsSubscriptions settings_subscriptions_;
+  std::uint64_t settings_next_check_ = 0;
+  // TS 24.379 clause 7.3.6.1: a SUBSCRIBE for poc-settings, initial or in the dialog of a subscription.
+  void settings_subscribe(const SipMessage &message, User &user, SipResponse &response);
+  // RFC 6665 section 4.2.1.2: a SUBSCRIBE in the dialog of a subscription held here (refresh, or Expires 0 its end).
+  void settings_resubscribe(const SipMessage &message, const User &user, SipResponse &response);
+  // TS 24.379 clause 7.3.6.2: the body of a subscription, from the settings its user's client cached.
+  [[nodiscard]] std::string settings_body(const SettingsSubscriptions::Subscription &subscription) const;
+  // TS 24.379 clause 7.3.6.2 step 2: the NOTIFY of a subscription; with `state` "terminated;..." its end.
+  void notify_settings(const std::string &dialog, const std::string &body, const std::string &state);
+  // TS 24.379 clause 7.3.6.2: a NOTIFY to each subscription whose settings changed (clauses 7.3.3 and 7.3.4).
+  void settings_changed();
+  // RFC 6665 section 4.2.2: the subscriptions to a user's settings end (its service authorisation ended).
+  void end_settings_subscriptions(const std::string &user, const char *reason);
+  // RFC 6665 section 4.2.2: expired subscriptions end; changes are notified.
+  void settings_subscription_tick(std::uint64_t now);
   // TS 24.379 clause 7.3.5: log-off (PUBLISH of poc-settings with Expires 0).
   void service_log_off(const SipMessage &message, SipResponse &response);
   // TS 24.379 clause 7.3.5 steps 3 and 4, clause 7.3.3 step 8: the end of a served user's service settings and the
