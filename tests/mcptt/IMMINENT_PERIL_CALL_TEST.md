@@ -12,6 +12,7 @@ Back to the [test index by call type](../MCPTT_TEST.md). Related: [emergency cal
 - **Below emergency.** An emergency overrides imminent peril: the group moves to emergency and the imminent state is cleared. An imminent request while an emergency is in progress is answered with warning 149, and a SIP INFO confirms that the emergency takes precedence.
 - **Floor.** Floor messages carry the Floor Indicator E-bit (0x0800). An imminent-peril originator ranks below an emergency originator and above a permitted numeric preemptor.
 - **Ending.** `imminent off` by an authorised user returns the call to normal with an explicit `imminentperil-ind` false, or the call ends normally. Unlike emergency, there is no imminent-peril timer.
+- **Cancel outside a call.** The group keeps its in-progress imminent-peril state after the call ends. `imminent off` with no call on the group sends a SIP MESSAGE with `imminentperil-ind` false (§10.1.6.2.1). The server checks the ICSI, the affiliation and `<allow-cancel-imminent-peril>`, clears the state, tells each affiliated member in a SIP MESSAGE (a participant of a call on the group in a re-INVITE) and answers 200 (§10.1.6.3.1.1, §10.1.6.4.1.1).
 
 ## Imminent-peril variants by call type
 
@@ -33,6 +34,7 @@ Back to the [test index by call type](../MCPTT_TEST.md). Related: [emergency cal
 | Emergency precedence | An emergency upgrade clears imminent peril; an imminent request during an emergency gets 200 with warning 149 and a post-ACK SIP INFO | §10.1.1.4.1 steps 14–15, 23 |
 | Floor | E-bit on floor messages; imminent originator ranks between emergency originator and permitted numeric preemptor | 24.380 §8.2.3.15 |
 | Cancellation | `imminentperil-ind` false from `imminent_cancel_users` | §6.2.8.1.11–12 |
+| Cancellation outside a call | SIP MESSAGE with `imminentperil-ind` false and no `emergency-ind` or `alert-ind`: state cleared, affiliated members told, 200; unauthorised → 403 | §10.1.6.3.1.1, §10.1.6.4.1.1 |
 
 ### Client commands
 

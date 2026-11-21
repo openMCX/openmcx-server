@@ -1209,8 +1209,9 @@ void McServer::affiliation_publish(const SipMessage &message, User &user, SipRes
 //------------------------------------------------------------------------------
 // SIP MESSAGE from a served user: an MBMS listening status (TS 24.379 clause 14.2.3), regroup (TS 24.379 clause
 // 16), private call services (TS 24.379 clauses 11.1.5 to 11.1.9), functional alias binding (TS 24.379 clause
-// 9A.4), ad hoc alerts (TS 24.379 clause 12.1A) and group emergency alerts (TS 24.379 clause 12.1.3); a request for a
-// function controlled elsewhere is passed on.
+// 9A.4), ad hoc alerts (TS 24.379 clause 12.1A), group emergency alerts (TS 24.379 clause 12.1.3) and the cancel of a
+// group's in-progress imminent peril state (TS 24.379 clause 10.1.6); a request for a function controlled elsewhere
+// is passed on.
 void McServer::user_message(const SipMessage &message, User &user, SipResponse &response) {
   // TS 24.379 clause 14.2.3: a listening status report for the IP multicast profile (src/server/multicast.cpp).
   if (const auto usage = mbms_usage_part(message)) {
@@ -1288,7 +1289,9 @@ bool McServer::message_to_controller(const SipMessage &message, User &user, cons
 //------------------------------------------------------------------------------
 // TS 24.379 clauses 12.1.3.1 to 12.1.3.3: an emergency alert, its cancellation or a change of the in-progress
 // emergency (or imminent peril) state of a group, with implicit affiliation for an alert (TS 24.379 clause
-// 9.2.2.3.6); the guard of that affiliation lives until the answer is final.
+// 9.2.2.3.6); the guard of that affiliation lives until the answer is final. TS 24.379 clauses 10.1.6.3.1.1 and
+// 10.1.6.4.1.1: the cancel of a group's in-progress imminent peril state outside a call (steps 2 to 4 of each: the
+// MCPTT ICSI, the affiliation, the authorisation of clause 6.3.3.1.13.6 in validate_priority).
 void McServer::group_alert_message(const SipMessage &message, User &user, McpttInfo &info, SipResponse &response) {
   // TS 24.379 clauses 12.1.3.1 to 12.1.3.3: an emergency alert, its cancellation or a change of the
   // in-progress emergency (or imminent peril) state of a group, with implicit affiliation for an alert.
@@ -1309,7 +1312,9 @@ void McServer::group_alert_message(const SipMessage &message, User &user, McpttI
   if (!validate_priority(message, user, profile, info, response, correction, true)) return;
   apply_priority(info.request_uri, user.id, info, profile, message_location(message));
   schedule([this, info, id = user.id] {
-    priority_fanout(info.request_uri, id, info, !info.emergency);
+    // An imminent peril state cancel (TS 24.379 clause 10.1.6.4.1.1 steps 4 to 6) is a state change, like an
+    // emergency one: each affiliated member is told, a participant of a call on the group in its dialog.
+    priority_fanout(info.request_uri, id, info, !info.emergency && !info.imminent_peril);
     if (auto *target = by_id(id)) {
       auto receipt = info;
       receipt.calling_group = info.request_uri;
