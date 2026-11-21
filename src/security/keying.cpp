@@ -10,14 +10,12 @@
 // RFC 6508, RFC 5116.
 #include "mcx/keying.hpp"
 
+#include "ibe.hpp"
+
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
-#include <wolfssl/options.h>
-#include <wolfssl/wolfcrypt/eccsi.h>
-#include <wolfssl/wolfcrypt/random.h>
-#include <wolfssl/wolfcrypt/sakke.h>
 
 #include <algorithm>
 #include <ctime>
@@ -27,74 +25,15 @@
 
 namespace mcx::keying {
 namespace {
+
+// An octet of the MIKEY payloads and key material.
+using byte = std::uint8_t;
+
 //------------------------------------------------------------------------------
 // Helper: throws the given error when a condition fails.
 void require(bool ok, const char *what) {
   if (!ok) throw std::runtime_error(what);
 }
-
-//------------------------------------------------------------------------------
-// Helper: throws on a non-zero wolfCrypt result.
-void checked(int result, const char *what) {
-  if (result != 0) throw std::runtime_error(std::string(what) + ": " + std::to_string(result));
-}
-
-//------------------------------------------------------------------------------
-// Helper: an owned wolfCrypt random number generator.
-struct Random {
-  WC_RNG value{};
-
-  Random() { checked(wc_InitRng(&value), "initialize crypto RNG"); }
-
-  ~Random() { wc_FreeRng(&value); }
-};
-
-//------------------------------------------------------------------------------
-// Helper: an owned wolfCrypt ECCSI key (RFC 6507).
-struct Eccsi {
-  EccsiKey value{};
-
-  Eccsi() { checked(wc_InitEccsiKey(&value, nullptr, INVALID_DEVID), "initialize ECCSI"); }
-
-  ~Eccsi() { wc_FreeEccsiKey(&value); }
-};
-
-//------------------------------------------------------------------------------
-// Helper: an owned wolfCrypt SAKKE key (RFC 6508).
-struct Sakke {
-  SakkeKey value{};
-
-  Sakke() { checked(wc_InitSakkeKey(&value, nullptr, INVALID_DEVID), "initialize SAKKE"); }
-
-  ~Sakke() { wc_FreeSakkeKey(&value); }
-};
-
-//------------------------------------------------------------------------------
-// Helper: an owned multi-precision integer, wiped when freed.
-struct Scalar {
-  mp_int value{};
-
-  Scalar() { checked(mp_init(&value), "initialize scalar"); }
-
-  ~Scalar() {
-    mp_forcezero(&value);
-    mp_clear(&value);
-  }
-};
-
-//------------------------------------------------------------------------------
-// Helper: an owned elliptic curve point.
-struct Point {
-  ecc_point *value = wc_ecc_new_point();
-
-  Point() { require(value != nullptr, "allocate EC point"); }
-
-  ~Point() { wc_ecc_del_point(value); }
-};
-
-//------------------------------------------------------------------------------
-// Helper: the bytes of a string.
-const byte *bytes(std::string_view text) { return reinterpret_cast<const byte *>(text.data()); }
 
 //------------------------------------------------------------------------------
 // Helper: appends a value as a big-endian integer of the given width in octets.
@@ -137,50 +76,15 @@ void check_identity_period(const PublicParameters &parameters, const IdentityKey
 }
 
 //------------------------------------------------------------------------------
-// TS 33.180 clause 5.3.5: imports the KMS Public Authentication Key (KPAK of RFC 6507) of the KMS certificate.
-void public_auth(Eccsi &key, const PublicParameters &parameters) {
-  require(parameters.authentication_key.size() == 65, "invalid KMS authentication key length");
-  checked(wc_ImportEccsiPublicKey(&key.value, parameters.authentication_key.data(),
-                                  static_cast<word32>(parameters.authentication_key.size()), 0),
-          "import KMS authentication key");
-}
+// Helper: the octets of an identifier (a UID in its text or raw form).
+ibe::ByteView view(std::string_view text) { return {reinterpret_cast<const byte *>(text.data()), text.size()}; }
 
 //------------------------------------------------------------------------------
-// TS 33.180 clause 5.3.5: imports the KMS Public Confidentiality Key (Z_T of RFC 6508) of the KMS certificate.
-void public_enc(Sakke &key, const PublicParameters &parameters) {
-  require(parameters.encryption_key.size() == 257, "invalid KMS encryption key length");
-  checked(wc_ImportSakkePublicKey(&key.value, parameters.encryption_key.data(),
-                                  static_cast<word32>(parameters.encryption_key.size()), 0),
-          "import KMS encryption key");
-}
-
-//------------------------------------------------------------------------------
-// RFC 6507: sets the hash HS of the KPAK, the identity (UID) and the PVT for signing and verification.
-void identity_hash(Eccsi &key, std::string_view id, ecc_point *pvt) {
-  std::array<byte, 32> hash{};
-  byte length = hash.size();
-  checked(wc_HashEccsiId(&key.value, WC_HASH_TYPE_SHA256, bytes(id), id.size(), pvt, hash.data(), &length),
-          "ECCSI identity hash");
-  checked(wc_SetEccsiHash(&key.value, hash.data(), length), "set ECCSI identity hash");
-}
-
-//------------------------------------------------------------------------------
-// Helper: decodes the SSK and PVT (RFC 6507) of the identity keys.
-void import_pair(Eccsi &key, const IdentityKeys &id, Scalar &scalar, Point &point) {
-  require(id.signing_pair.size() == 96, "invalid ECCSI signing pair length");
-  checked(wc_DecodeEccsiPair(&key.value, id.signing_pair.data(), id.signing_pair.size(), &scalar.value, point.value),
-          "decode ECCSI signing pair");
-}
-
-//------------------------------------------------------------------------------
-// Helper: serialises key material through a wolfCrypt export function into a buffer of the given capacity.
-template <class Serialize> Bytes export_key(std::size_t capacity, Serialize &&serialize) {
-  Bytes result(capacity);
-  word32 length = result.size();
-  checked(serialize(result.data(), &length), "serialize key material");
-  require(length <= result.size(), "invalid exported key size");
-  result.resize(length);
-  return result;
+// TS 33.180 clause 5.3.5: the KMS certificate's KPAK (RFC 6507, 65 octets) and Z_T (RFC 6508, 257 octets) have their
+// canonical lengths; their points are checked to lie on the curves where they are used.
+void check_public_keys(const PublicParameters &parameters) {
+  require(parameters.authentication_key.size() == ibe::eccsi_point_bytes, "invalid KMS authentication key length");
+  require(parameters.encryption_key.size() == ibe::sakke_point_bytes, "invalid KMS encryption key length");
 }
 
 //------------------------------------------------------------------------------
@@ -674,21 +578,14 @@ std::string identifier(std::string_view identity, const PublicParameters &parame
 // (KPAK of RFC 6507, Z_T of RFC 6508) for a key period.
 Authority create_authority(const Period &period) {
   (void)period_number(period, period.offset);
-  Random rng;
-  Eccsi auth;
-  Sakke enc;
-  checked(wc_MakeEccsiKey(&auth.value, &rng.value), "generate ECCSI authority");
-  checked(wc_MakeSakkeKey(&enc.value, &rng.value), "generate SAKKE authority");
+  auto authentication = ibe::eccsi_create_authority();
+  auto encryption = ibe::sakke_create_authority();
   Authority authority;
   authority.public_parameters.period = period;
-  authority.authentication_secret =
-      export_key(256, [&](auto *buffer, auto *size) { return wc_ExportEccsiKey(&auth.value, buffer, size); });
-  authority.encryption_secret =
-      export_key(512, [&](auto *buffer, auto *size) { return wc_ExportSakkeKey(&enc.value, buffer, size); });
-  authority.public_parameters.authentication_key =
-      export_key(65, [&](auto *buffer, auto *size) { return wc_ExportEccsiPublicKey(&auth.value, buffer, size, 0); });
-  authority.public_parameters.encryption_key =
-      export_key(257, [&](auto *buffer, auto *size) { return wc_ExportSakkePublicKey(&enc.value, buffer, size, 0); });
+  authority.authentication_secret = std::move(authentication.secret);
+  authority.encryption_secret = std::move(encryption.secret);
+  authority.public_parameters.authentication_key = std::move(authentication.public_key);
+  authority.public_parameters.encryption_key = std::move(encryption.public_key);
   return authority;
 }
 
@@ -697,139 +594,80 @@ Authority create_authority(const Period &period) {
 // (RFC 6507) and RSK (RFC 6508) for the UID of the user's URI.
 IdentityKeys issue(const Authority &authority, std::string_view uri, std::uint64_t time) {
   const auto identity = identifier(uri, authority.public_parameters, time);
-  Random rng;
-  Eccsi auth;
-  Sakke enc;
-  Scalar ssk;
-  Point pvt;
-  Point rsk;
-
-  checked(
-      wc_ImportEccsiKey(&auth.value, authority.authentication_secret.data(), authority.authentication_secret.size()),
-      "import ECCSI authority");
-  checked(wc_ImportSakkeKey(&enc.value, authority.encryption_secret.data(), authority.encryption_secret.size()),
-          "import SAKKE authority");
-  checked(wc_MakeEccsiPair(&auth.value, &rng.value, WC_HASH_TYPE_SHA256, bytes(identity), identity.size(), &ssk.value,
-                           pvt.value),
-          "issue ECCSI identity");
-  checked(wc_MakeSakkeRsk(&enc.value, bytes(identity), identity.size(), rsk.value), "issue SAKKE identity");
-
+  require(authority.authentication_secret.size() == ibe::eccsi_secret_bytes, "invalid ECCSI authority length");
+  require(authority.encryption_secret.size() == ibe::sakke_secret_bytes, "invalid SAKKE authority length");
   IdentityKeys result;
   result.uri = uri;
   result.period_number = period_number(authority.public_parameters.period, time);
-  result.signing_pair = export_key(96, [&](auto *buffer, auto *size) {
-    return wc_EncodeEccsiPair(&auth.value, &ssk.value, pvt.value, buffer, size);
-  });
-  result.receiver_secret = export_key(
-      257, [&](auto *buffer, auto *size) { return wc_EncodeSakkeRsk(&enc.value, rsk.value, buffer, size, 0); });
+  result.signing_pair = ibe::eccsi_issue(authority.authentication_secret, view(identity));
+  result.receiver_secret = ibe::sakke_issue(authority.encryption_secret, view(identity));
   return result;
 }
 
 //------------------------------------------------------------------------------
-// RFC 6507 and RFC 6508: validates provisioned identity keys (the SSK/PVT pair against the KPAK and the RSK against
-// Z_T) for the UID of the key period of the given time.
+// RFC 6507 section 5.1.2 and RFC 6508 section 6.1.2: validates provisioned identity keys (the SSK/PVT pair against
+// the KPAK and the RSK against Z_T) for the UID of the key period of the given time.
 void validate_identity(const PublicParameters &parameters, const IdentityKeys &id, std::uint64_t time) {
   check_identity_period(parameters, id, time);
   const auto identity = identifier(id.uri, parameters, time);
-  Eccsi auth;
-  Sakke enc;
-  Scalar ssk;
-  Point pvt;
-  Point rsk;
-  public_auth(auth, parameters);
-  public_enc(enc, parameters);
-  import_pair(auth, id, ssk, pvt);
-  int valid = 0;
-  checked(wc_ValidateEccsiPair(&auth.value, WC_HASH_TYPE_SHA256, bytes(identity), identity.size(), &ssk.value,
-                               pvt.value, &valid),
-          "validate ECCSI pair");
-  require(valid == 1, "invalid ECCSI identity key");
-  require(id.receiver_secret.size() == 257, "invalid SAKKE receiver key size");
-  checked(wc_DecodeSakkeRsk(&enc.value, id.receiver_secret.data(), id.receiver_secret.size(), rsk.value),
-          "decode SAKKE receiver key");
-  checked(wc_ValidateSakkeRsk(&enc.value, bytes(identity), identity.size(), rsk.value, &valid),
-          "validate SAKKE receiver key");
-  require(valid == 1, "invalid SAKKE identity key");
+  check_public_keys(parameters);
+  require(id.signing_pair.size() == ibe::eccsi_pair_bytes, "invalid ECCSI signing pair length");
+  require(ibe::eccsi_validate(parameters.authentication_key, view(identity), id.signing_pair),
+          "invalid ECCSI identity key");
+  require(id.receiver_secret.size() == ibe::sakke_point_bytes, "invalid SAKKE receiver key size");
+  require(ibe::sakke_validate(parameters.encryption_key, view(identity), id.receiver_secret),
+          "invalid SAKKE identity key");
 }
 
 //------------------------------------------------------------------------------
-// RFC 6507: an ECCSI signature (r || s || PVT, 129 octets) of a message by the identity for its key period.
+// RFC 6507 section 5.2.1: an ECCSI signature (r || s || PVT, 129 octets) of a message by the identity for its key
+// period.
 Bytes sign(const PublicParameters &parameters, const IdentityKeys &id, std::uint64_t time,
            std::span<const byte> message) {
   check_identity_period(parameters, id, time);
-  Eccsi auth;
-  Random rng;
-  Scalar ssk;
-  Point pvt;
-  public_auth(auth, parameters);
-  import_pair(auth, id, ssk, pvt);
-  identity_hash(auth, identifier(id.uri, parameters, time), pvt.value);
-  checked(wc_SetEccsiPair(&auth.value, &ssk.value, pvt.value), "set ECCSI signing pair");
-  return export_key(129, [&](auto *buffer, auto *size) {
-    return wc_SignEccsiHash(&auth.value, &rng.value, WC_HASH_TYPE_SHA256, message.data(), message.size(), buffer, size);
-  });
+  check_public_keys(parameters);
+  require(id.signing_pair.size() == ibe::eccsi_pair_bytes, "invalid ECCSI signing pair length");
+  const auto identity = identifier(id.uri, parameters, time);
+  return ibe::eccsi_sign(parameters.authentication_key, view(identity), id.signing_pair, message);
 }
 
 //------------------------------------------------------------------------------
-// RFC 6507: verifies an ECCSI signature of a message by the UID of a URI for the key period of the given time.
+// RFC 6507 section 5.2.2: verifies an ECCSI signature of a message by the UID of a URI for the key period of the given
+// time.
 bool verify(const PublicParameters &parameters, std::string_view uri, std::uint64_t time, std::span<const byte> message,
             std::span<const byte> signature) {
-  if (signature.size() != 129 || message.size() > 65535) return false;
+  if (signature.size() != ibe::eccsi_signature_bytes || message.size() > 65535) return false;
   try {
-    Eccsi auth;
-    Point pvt;
-    public_auth(auth, parameters);
-    checked(wc_DecodeEccsiPvtFromSig(&auth.value, signature.data(), signature.size(), pvt.value),
-            "decode signature PVT");
-    identity_hash(auth, identifier(uri, parameters, time), pvt.value);
-    int valid = 0;
-    checked(wc_VerifyEccsiHash(&auth.value, WC_HASH_TYPE_SHA256, message.data(), message.size(), signature.data(),
-                               signature.size(), &valid),
-            "verify ECCSI");
-    return valid == 1;
+    check_public_keys(parameters);
+    const auto identity = identifier(uri, parameters, time);
+    return ibe::eccsi_verify(parameters.authentication_key, view(identity), message, signature);
   } catch (const std::exception &) {
+    // An invalid KMS key or key period: the signature cannot be valid.
     return false;
   }
 }
 
 //------------------------------------------------------------------------------
-// RFC 6508: SAKKE encapsulation of a 128-bit key (the SSV) to the UID of the recipient: the Encapsulated Data
-// R (257 octets) || H (16 octets).
+// RFC 6508 section 6.2.1: SAKKE encapsulation of a 128-bit key (the SSV) to the UID of the recipient: the Encapsulated
+// Data R (257 octets) || H (16 octets).
 Bytes encapsulate(const PublicParameters &parameters, std::string_view recipient, std::uint64_t time,
                   std::span<const byte, 16> key) {
-  Sakke enc;
-  public_enc(enc, parameters);
+  check_public_keys(parameters);
   const auto identity = identifier(recipient, parameters, time);
-  checked(wc_SetSakkeIdentity(&enc.value, bytes(identity), identity.size()), "set SAKKE recipient");
-  Bytes result(273);
-  std::copy(key.begin(), key.end(), result.begin() + 257);
-  word16 length = 257;
-  checked(wc_MakeSakkeEncapsulatedSSV(&enc.value, WC_HASH_TYPE_SHA256, result.data() + 257, 16, result.data(), &length),
-          "encapsulate SAKKE key");
-  require(length == 257, "unexpected SAKKE parameter set");
-  return result;
+  return ibe::sakke_encapsulate(parameters.encryption_key, view(identity), key);
 }
 
 //------------------------------------------------------------------------------
-// RFC 6508: recovers the 128-bit key of SAKKE Encapsulated Data with the RSK of the identity for its key period.
+// RFC 6508 section 6.2.2: recovers the 128-bit key of SAKKE Encapsulated Data with the RSK of the identity for its key
+// period.
 std::array<byte, 16> decapsulate(const PublicParameters &parameters, const IdentityKeys &id, std::uint64_t time,
                                  std::span<const byte> data) {
   check_identity_period(parameters, id, time);
-  require(data.size() == 273, "invalid SAKKE encapsulation size");
-  Sakke enc;
-  public_enc(enc, parameters);
+  require(data.size() == ibe::sakke_encapsulated_bytes, "invalid SAKKE encapsulation size");
+  check_public_keys(parameters);
+  require(id.receiver_secret.size() == ibe::sakke_point_bytes, "invalid SAKKE receiver key size");
   const auto identity = identifier(id.uri, parameters, time);
-  checked(wc_SetSakkeIdentity(&enc.value, bytes(identity), identity.size()), "set SAKKE recipient");
-  require(id.receiver_secret.size() == 257, "invalid SAKKE receiver key size");
-  Point rsk;
-  checked(wc_DecodeSakkeRsk(&enc.value, id.receiver_secret.data(), id.receiver_secret.size(), rsk.value),
-          "decode SAKKE receiver key");
-  checked(wc_SetSakkeRsk(&enc.value, rsk.value, nullptr, 0), "set SAKKE receiver key");
-  std::array<byte, 16> key{};
-  std::copy(data.begin() + 257, data.end(), key.begin());
-  checked(wc_DeriveSakkeSSV(&enc.value, WC_HASH_TYPE_SHA256, key.data(), key.size(), data.data(), 257),
-          "decapsulate SAKKE key");
-  return key;
+  return ibe::sakke_decapsulate(parameters.encryption_key, view(identity), id.receiver_secret, data);
 }
 
 //------------------------------------------------------------------------------

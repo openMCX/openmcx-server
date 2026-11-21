@@ -60,7 +60,7 @@ struct Authority {
 struct IdentityKeys {
   std::string uri;
   std::uint64_t period_number = 0;
-  Bytes signing_pair; // wolfCrypt serialization of SSK and PVT; never send to peers.
+  Bytes signing_pair; // SSK || PVT_x || PVT_y (RFC 6507, 96 octets); never send to peers.
   Bytes receiver_secret;
   UidForm uid_form = UidForm::text; // the UID form these keys validated for (parse_kms_keyprov)
 };

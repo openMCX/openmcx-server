@@ -17,8 +17,11 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_library(UUID uuid REQUIRED)
 find_library(AMRWB_DEC opencore-amrwb REQUIRED)
 find_library(AMRWB_ENC vo-amrwbenc REQUIRED)
-find_path(WOLFSSL_INCLUDE_DIR wolfssl/options.h HINTS /opt/wolfssl/include REQUIRED)
-find_library(WOLFSSL_LIBRARY wolfssl HINTS /opt/wolfssl/lib REQUIRED)
+# wolfSSL is not part of any OpenMCX program: ECCSI and SAKKE are OpenMCX's own, on OpenSSL (src/security/eccsi.cpp,
+# src/security/sakke.cpp). When a development image still has it, test_ibe_wolfssl cross-checks the two
+# implementations (tests only, never installed).
+find_path(WOLFSSL_INCLUDE_DIR wolfssl/options.h HINTS /opt/wolfssl/include)
+find_library(WOLFSSL_LIBRARY wolfssl HINTS /opt/wolfssl/lib)
 
 add_library(mcx_dependencies INTERFACE)
 target_include_directories(mcx_dependencies INTERFACE include ${PJ_INCLUDE_DIRS})
@@ -45,9 +48,9 @@ if(BUILD_TESTING)
     add_test(NAME transfer_record COMMAND test_transfer_record)
 endif()
 
-add_library(mcx_keying src/security/keying.cpp src/security/key_documents.cpp)
-target_include_directories(mcx_keying PRIVATE ${WOLFSSL_INCLUDE_DIR})
-target_link_libraries(mcx_keying PUBLIC mcx_dependencies PRIVATE ${WOLFSSL_LIBRARY})
+add_library(mcx_keying src/security/keying.cpp src/security/key_documents.cpp src/security/eccsi.cpp
+    src/security/sakke.cpp)
+target_link_libraries(mcx_keying PUBLIC mcx_dependencies)
 target_compile_options(mcx_keying PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(mcx-keytool src/keytool/keytool.cpp)
 target_link_libraries(mcx-keytool PRIVATE mcx_keying)
@@ -74,9 +77,19 @@ if(BUILD_TESTING)
     foreach(component keying key_documents uid_form)
         add_executable(test_${component} tests/test_${component}.cpp)
         target_link_libraries(test_${component} PRIVATE mcx_keying)
-        target_include_directories(test_${component} PRIVATE ${WOLFSSL_INCLUDE_DIR})
         add_test(NAME ${component} COMMAND test_${component})
     endforeach()
+    # The ECCSI and SAKKE primitives (src/security/ibe.hpp, private) and the RFC 6507 and RFC 6508 test vectors.
+    add_executable(test_ibe tests/test_ibe.cpp)
+    target_include_directories(test_ibe PRIVATE src/security)
+    target_link_libraries(test_ibe PRIVATE mcx_keying)
+    add_test(NAME ibe COMMAND test_ibe)
+    if(WOLFSSL_INCLUDE_DIR AND WOLFSSL_LIBRARY)
+        add_executable(test_ibe_wolfssl tests/test_ibe_wolfssl.cpp)
+        target_include_directories(test_ibe_wolfssl PRIVATE src/security ${WOLFSSL_INCLUDE_DIR})
+        target_link_libraries(test_ibe_wolfssl PRIVATE mcx_keying ${WOLFSSL_LIBRARY})
+        add_test(NAME ibe_wolfssl COMMAND test_ibe_wolfssl)
+    endif()
 endif()
 
 # IMS AKA in the UE (TS 33.203): the software ISIM on hostap's MILENAGE, vendored unmodified in dependencies/hostap

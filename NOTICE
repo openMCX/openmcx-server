@@ -15,7 +15,6 @@ Third-party software
 Built into the OpenMCX programs or their images (versions pinned in dependencies/lock.json and docker/packages; the
 source archives are fetched from the listed upstream and verified by SHA-256):
 
-  wolfSSL 5.8.2            GPL-3.0-or-later         https://github.com/wolfSSL/wolfssl
   pjproject (PJSIP) 2.17   GPL-2.0-or-later         https://github.com/pjsip/pjproject
                            with OpenMCX's patch in dependencies/pjproject (the IMS AKA TCP client port)
   hostap MILENAGE (src/crypto/milenage.c and .h of hostap_2_11, unmodified, in dependencies/hostap)
@@ -38,6 +37,11 @@ source archives are fetched from the listed upstream and verified by SHA-256):
   Python 3.12 (setup image, python:3.12-slim)
                            PSF-2.0                  https://www.python.org
   Ubuntu 24.04 packages    their own licences       /usr/share/doc/*/copyright in each image
+
+In the development image only (docker/Dockerfile.dev, and the openmcx-all image built on it), for the test that
+cross-checks OpenMCX's ECCSI and SAKKE against it (tests/test_ibe_wolfssl.cpp); no OpenMCX program links it:
+
+  wolfSSL 5.8.2            GPL-3.0-or-later         https://github.com/wolfSSL/wolfssl
 
 Separate programs run alongside OpenMCX, not linked with it:
 

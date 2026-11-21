@@ -9,8 +9,8 @@ listed in `docs/IMAGES.md`.
 docker build -t openmcx-dev:0.4 -f docker/Dockerfile.dev .
 ```
 
-Ubuntu 24.04 with the compilers and the libraries the programs link, plus pjsip, wolfSSL and Go built from pinned
-sources. The build downloads each source archive itself and checks its SHA-256 (`docker/fetch`); the versions,
+Ubuntu 24.04 with the compilers and the libraries the programs link, plus pjsip, wolfSSL (for one
+cross-check test only, no program links it) and Go built from pinned sources. The build downloads each source archive itself and checks its SHA-256 (`docker/fetch`); the versions,
 URLs and hashes are the build arguments at the top of `docker/Dockerfile.dev`, kept equal to
 `dependencies/lock.json` by `tools/check-dependencies.py`. For an offline build, put the archives on a web server
 under their lock-file names and add `--build-arg DEPS_MIRROR=https://mirror.example/deps`.
