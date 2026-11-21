@@ -17,9 +17,9 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_library(UUID uuid REQUIRED)
 find_library(AMRWB_DEC opencore-amrwb REQUIRED)
 find_library(AMRWB_ENC vo-amrwbenc REQUIRED)
-# wolfSSL is not part of any OpenMCX program: ECCSI and SAKKE are OpenMCX's own, on OpenSSL (src/security/eccsi.cpp,
-# src/security/sakke.cpp). When a development image still has it, test_ibe_wolfssl cross-checks the two
-# implementations (tests only, never installed).
+# wolfSSL is not part of any OpenMCX program or image: ECCSI and SAKKE are OpenMCX's own, on OpenSSL
+# (src/security/eccsi.cpp, src/security/sakke.cpp). When it has been built by hand (dependencies/wolfssl/README.md),
+# test_ibe_wolfssl cross-checks the two implementations (a test only, never installed).
 find_path(WOLFSSL_INCLUDE_DIR wolfssl/options.h HINTS /opt/wolfssl/include)
 find_library(WOLFSSL_LIBRARY wolfssl HINTS /opt/wolfssl/lib)
 

@@ -9,8 +9,8 @@ listed in `docs/IMAGES.md`.
 docker build -t openmcx-dev:0.4 -f docker/Dockerfile.dev .
 ```
 
-Ubuntu 24.04 with the compilers and the libraries the programs link, plus pjsip, wolfSSL (for one
-cross-check test only, no program links it) and Go built from pinned sources. The build downloads each source archive itself and checks its SHA-256 (`docker/fetch`); the versions,
+Ubuntu 24.04 with the compilers and the libraries the programs link, plus pjsip and Go built from pinned
+sources. The build downloads each source archive itself and checks its SHA-256 (`docker/fetch`); the versions,
 URLs and hashes are the build arguments at the top of `docker/Dockerfile.dev`, kept equal to
 `dependencies/lock.json` by `tools/check-dependencies.py`. For an offline build, put the archives on a web server
 under their lock-file names and add `--build-arg DEPS_MIRROR=https://mirror.example/deps`.
@@ -50,7 +50,7 @@ tools/build-images --ubuntu 26.04 0.1-u2604   # builds openmcx-dev:0.4-ubuntu26.
 The pinned base image of each release is in `dependencies/lock.json` (`base_images`; `base_image` is the default,
 which the Dockerfiles' `BASE_IMAGE` and `RUNTIME_BASE` defaults must equal, checked by `tools/check-dependencies.py`).
 Package names differ between releases (for example `libxml2` / `libxml2-16`, freeDiameter 6 / 7, the OpenH264
-version); `docker/packages <release> <part>` lists them for both Dockerfiles. pjsip, wolfSSL and Go are built or
+version); `docker/packages <release> <part>` lists them for both Dockerfiles. pjsip and Go are built or
 fetched from the same pinned sources on both. By hand:
 
 ```sh

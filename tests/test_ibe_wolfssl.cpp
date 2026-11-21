@@ -8,7 +8,7 @@
 // sets stored by earlier OpenMCX versions keep working. Then a differential test: on randomly mutated signatures and
 // Encapsulated Data the two give the same verdict, a refusal.
 //
-// Built only when the development image provides wolfSSL (CMakeLists.txt); wolfSSL is not linked into any program.
+// Built only when wolfSSL has been built by hand (dependencies/wolfssl/README.md); no program or image has it.
 //
 // Specifications: RFC 6507, RFC 6508, RFC 6509.
 

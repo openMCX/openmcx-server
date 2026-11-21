@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# wolfCrypt ECCSI/SAKKE backend; see README.md for license and provenance.
+# wolfCrypt with ECCSI and SAKKE, for the optional cross-check test only (tests/test_ibe_wolfssl.cpp); see README.md.
 prefix=${1:?usage: build.sh INSTALL_PREFIX [WORK_DIRECTORY]}
 work=${2:-/tmp/openmcx-wolfssl-build}
 version=5.8.2-stable

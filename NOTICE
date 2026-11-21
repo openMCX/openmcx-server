@@ -38,11 +38,6 @@ source archives are fetched from the listed upstream and verified by SHA-256):
                            PSF-2.0                  https://www.python.org
   Ubuntu 24.04 packages    their own licences       /usr/share/doc/*/copyright in each image
 
-In the development image only (docker/Dockerfile.dev, and the openmcx-all image built on it), for the test that
-cross-checks OpenMCX's ECCSI and SAKKE against it (tests/test_ibe_wolfssl.cpp); no OpenMCX program links it:
-
-  wolfSSL 5.8.2            GPL-3.0-or-later         https://github.com/wolfSSL/wolfssl
-
 Separate programs run alongside OpenMCX, not linked with it:
 
   Kamailio 6.1.4 (SIP core, image openmcx-kamailio)

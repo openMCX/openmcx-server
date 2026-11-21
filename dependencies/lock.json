@@ -40,7 +40,7 @@
       "url": "https://github.com/wolfSSL/wolfssl/archive/refs/tags/v5.8.2-stable.tar.gz",
       "sha256": "3ef126e3466e2f8f6ebb62b916a7f8fb26c6709dbdf2b63a167759f2fdb53068",
       "bytes": 25185074,
-      "use": "image"
+      "use": "optional: built by dependencies/wolfssl/build.sh for tests/test_ibe_wolfssl.cpp only, in no image"
     },
     {
       "file": "libsrtp-2.8.1.tar.gz",
