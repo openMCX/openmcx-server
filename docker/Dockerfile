@@ -9,7 +9,7 @@
 #
 # Targets: openmcx-mcptt-server, openmcx-mcvideo-server, openmcx-mcdata-server, openmcx-common (the common services
 # and the key tool), openmcx-http-proxy, openmcx-user-db; openmcx-all holds every program (the former single image).
-# The build stage runs on the development image (docker/Dockerfile.dev: compilers, pjsip, wolfSSL, Go); each runtime
+# The build stage runs on the development image (docker/Dockerfile.dev: compilers, pjsip, Go); each runtime
 # image is Ubuntu with only its program's run-time packages and the program stripped of its debug information (the
 # machine code is the same -O2 build), plus curl and Python for the lab's health checks.
 

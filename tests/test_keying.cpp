@@ -2,18 +2,14 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// MIKEY-SAKKE key distribution and MCData payload security: the ECCSI and SAKKE primitives, the MIKEY-SAKKE UID,
-// I_MESSAGE creation and opening for GMK and PCK, MCData protected and authenticated payloads, and keys across KMSs.
+// MIKEY-SAKKE key distribution and MCData payload security: the MIKEY-SAKKE UID, I_MESSAGE creation and opening for
+// GMK and PCK, MCData protected and authenticated payloads, and keys across KMSs. The ECCSI and SAKKE primitives
+// and their RFC test vectors are tests/test_ibe.cpp.
 //
 // Specifications: TS 33.180 V19.4.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19); RFC 6507
 // (ECCSI), RFC 6508 (SAKKE), RFC 6509 (MIKEY-SAKKE).
 
-#include "keying_vectors.hpp"
 #include "mcx/keying.hpp"
-
-#include <wolfssl/options.h>
-#include <wolfssl/wolfcrypt/eccsi.h>
-#include <wolfssl/wolfcrypt/sakke.h>
 
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
@@ -23,6 +19,9 @@
 #include <iostream>
 #include <memory>
 #include <stdexcept>
+
+// An octet of the MIKEY payloads.
+using byte = std::uint8_t;
 
 //------------------------------------------------------------------------------
 // Throws the text when the condition does not hold.
@@ -163,43 +162,6 @@ void aes_256_gcm_payloads() {
   auto unknown = wire;
   unknown[11] = 3;
   rejected([&] { open_payload(unknown, csk, profile_256, true); }, "unknown payload algorithm accepted");
-}
-
-//------------------------------------------------------------------------------
-// RFC 6507 appendix A: the ECCSI test vector verifies; RFC 6508 appendix A: the SAKKE encapsulation
-// of the test SSV matches the vector.
-void primitive_vectors() {
-  using namespace keying_vectors;
-  EccsiKey signer{};
-  check(wc_InitEccsiKey(&signer, nullptr, INVALID_DEVID) == 0, "initialize ECCSI vector");
-  auto *pvt = wc_ecc_new_point();
-  check(pvt != nullptr, "allocate vector PVT");
-  check(wc_ImportEccsiPublicKey(&signer, eccsi_pubData.data(), eccsi_pubData.size(), 0) == 0, "RFC6507 KPAK");
-  check(wc_DecodeEccsiPvtFromSig(&signer, eccsi_sig.data(), eccsi_sig.size(), pvt) == 0, "RFC6507 signature PVT");
-  std::array<unsigned char, 32> hash{};
-  byte hash_size = hash.size();
-  check(wc_HashEccsiId(&signer, WC_HASH_TYPE_SHA256, eccsi_id.data(), eccsi_id.size(), pvt, hash.data(), &hash_size) ==
-            0,
-        "RFC6507 HS");
-  check(wc_SetEccsiHash(&signer, hash.data(), hash_size) == 0, "set RFC6507 HS");
-  int valid = 0;
-  check(wc_VerifyEccsiHash(&signer, WC_HASH_TYPE_SHA256, eccsi_msg.data(), eccsi_msg.size(), eccsi_sig.data(),
-                           eccsi_sig.size(), &valid) == 0 &&
-            valid == 1,
-        "RFC6507 Appendix A signature");
-  wc_ecc_del_point(pvt);
-  wc_FreeEccsiKey(&signer);
-  SakkeKey recipient{};
-  check(wc_InitSakkeKey(&recipient, nullptr, INVALID_DEVID) == 0, "initialize SAKKE vector");
-  check(wc_ImportSakkePublicKey(&recipient, sakke_pubData.data(), sakke_pubData.size(), 0) == 0, "RFC6508 public key");
-  check(wc_SetSakkeIdentity(&recipient, sakke_id.data(), sakke_id.size()) == 0, "RFC6508 identity");
-  auto ssv = sakke_ssv;
-  std::array<unsigned char, 257> auth{};
-  word16 size = auth.size();
-  check(wc_MakeSakkeEncapsulatedSSV(&recipient, WC_HASH_TYPE_SHA256, ssv.data(), ssv.size(), auth.data(), &size) == 0,
-        "RFC6508 encapsulation");
-  check(auth == sakke_expAuth && ssv == sakke_encSsv, "RFC6508 Appendix A encapsulation vector");
-  wc_FreeSakkeKey(&recipient);
 }
 
 //------------------------------------------------------------------------------
@@ -395,7 +357,6 @@ void key_in_use() {
 int main() {
   try {
     using namespace mcx::keying;
-    primitive_vectors();
     relaxed_readers();
     aes_256_gcm_payloads();
     key_in_use();

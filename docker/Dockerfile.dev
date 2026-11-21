@@ -20,9 +20,6 @@ ARG GO_SHA256=63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445
 ARG PJSIP_FILE=pjproject-2.17.tar.gz
 ARG PJSIP_URL=https://github.com/pjsip/pjproject/archive/refs/tags/2.17.tar.gz
 ARG PJSIP_SHA256=065fe06c06788d97c35f563796d59f00ce52fe9558a52d7b490a042a966facce
-ARG WOLFSSL_FILE=wolfssl-5.8.2-stable.tar.gz
-ARG WOLFSSL_URL=https://github.com/wolfSSL/wolfssl/archive/refs/tags/v5.8.2-stable.tar.gz
-ARG WOLFSSL_SHA256=3ef126e3466e2f8f6ebb62b916a7f8fb26c6709dbdf2b63a167759f2fdb53068
 ARG LIBSRTP_FILE=libsrtp-2.8.1.tar.gz
 ARG LIBSRTP_URL=https://github.com/cisco/libsrtp/archive/6ff02afa8d2dc3f2e8896af391d137c1c66ff6fa.tar.gz
 ARG LIBSRTP_SHA256=1ef3e6315e0ea3cd05f4980c8b5f7a9df369e3d586f5e0616e6cc4c778401d4c
@@ -63,11 +60,6 @@ RUN fetch "$PJSIP_FILE" "$PJSIP_URL" "$PJSIP_SHA256" /tmp/pjproject.tar.gz \
 ENV PKG_CONFIG_PATH="/opt/pjsip/lib/pkgconfig"
 RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UBUNTU" dev-autotools) \
     && rm -rf /var/lib/apt/lists/*
-COPY dependencies/wolfssl/build.sh /tmp/build-wolfssl.sh
-RUN mkdir -p /tmp/openmcx-wolfssl-build \
-    && fetch "$WOLFSSL_FILE" "$WOLFSSL_URL" "$WOLFSSL_SHA256" /tmp/openmcx-wolfssl-build/wolfssl-5.8.2-stable.tar.gz \
-    && bash /tmp/build-wolfssl.sh /opt/wolfssl /tmp/openmcx-wolfssl-build \
-    && rm -rf /tmp/openmcx-wolfssl-build /tmp/build-wolfssl.sh
 # H.264 for MCVideo (TS 26.281 4.1.1): Cisco's BSD-licensed OpenH264 encoder and
 # decoder, which the client uses for its test pattern and for decoding received video.
 RUN apt-get update && apt-get install -y --no-install-recommends $(packages "$UBUNTU" dev-openh264) \

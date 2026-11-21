@@ -58,6 +58,16 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   - the KMS URI the KMS's documents carry (clause 3.1, a security domain identifier) and the address the KMS is
     contacted at (TS 24.484 clause 7.2.2.7 `<kms>`) can differ, and no configuration item gives the first: the Linux
     and Android clients' `security.kms_id`, by default the address;
+- **ECCSI and SAKKE implementation.** ECCSI (RFC 6507) and SAKKE (RFC 6508, parameter set 1 of RFC 6509) are
+  OpenMCX's own, on OpenSSL (`src/security/eccsi.cpp`, `src/security/sakke.cpp`). They reproduce the test data of
+  RFC 6507 and RFC 6508 appendix A, agree with wolfCrypt's implementation, also on mutated inputs, and refuse
+  hostile inputs: points off the curve or outside E(F_p)[q] (Z_T and the RSK are checked to be of order q),
+  Identifiers outside the range 2 to q - 1, KMS secrets that do not match their public keys (`tests/test_ibe.cpp`,
+  `tests/test_ibe_hostile.cpp`, `tests/test_ibe_wolfssl.cpp`). Secret intermediate octets are wiped. Secret values take OpenSSL's constant-time paths where it has them (scalar
+  multiplication, the Fermat inversions, `BN_FLG_CONSTTIME`), the SAKKE pairing's loop depends on the public q only
+  and g^r is a Montgomery ladder with constant-time swaps; but F_p subtraction and the modular reductions are
+  OpenSSL's general big number code, which is not constant time. The implementation has had no independent
+  cryptographic or side-channel review.
 - **MIKEY-SAKKE UID form** (spec defect, reported). TS 33.180 annex F.2.1.1 says "The full 256-bit output shall be
   used as the identifier within MIKEY-SAKKE (referred to as 'ID' in IETF RFC 6507 [9] and 'a' or 'b' within IETF
   RFC 6508 [10]. The resulting UID shall be base64 encoded." It does not say whether ECCSI (RFC 6507) and SAKKE

@@ -15,7 +15,6 @@ Third-party software
 Built into the OpenMCX programs or their images (versions pinned in dependencies/lock.json and docker/packages; the
 source archives are fetched from the listed upstream and verified by SHA-256):
 
-  wolfSSL 5.8.2            GPL-3.0-or-later         https://github.com/wolfSSL/wolfssl
   pjproject (PJSIP) 2.17   GPL-2.0-or-later         https://github.com/pjsip/pjproject
                            with OpenMCX's patch in dependencies/pjproject (the IMS AKA TCP client port)
   hostap MILENAGE (src/crypto/milenage.c and .h of hostap_2_11, unmodified, in dependencies/hostap)
