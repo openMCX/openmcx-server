@@ -2,14 +2,20 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// Subscription to group dynamic data (members of McServer): the participating MCVideo function passes the client's
-// subscription on to the controlling MCVideo function of the group (TS 24.281 clause 8.2.2.2.16), which accepts it
-// (clause 8.2.2.3.9) and notifies every change of the group's dynamic data (clause 8.2.2.3.10). A server with both
-// roles takes a subscription to a group it owns as the controlling function itself. The group's dynamic data is the
-// one the MBMS Group Dynamic Data Notify carries (mbms.cpp), with the affiliated members of clause 8.3.1.2.
-// MCVideo only: the MCPTT and MCData servers answer these requests as before.
+// Subscription to group dynamic data (members of McServer): the participating function passes the client's
+// subscription on to the controlling function of the group (TS 24.281 clause 8.2.2.2.16, TS 24.379 clause
+// 9.2.2.2.16), which accepts it (TS 24.281 clause 8.2.2.3.9, TS 24.379 clause 9.2.2.3.9) and notifies every change of
+// the group's dynamic data (TS 24.281 clause 8.2.2.3.10, TS 24.379 clause 9.2.2.3.10). A server with both roles takes
+// a subscription to a group it owns as the controlling function itself. The group's dynamic data is the one the MBMS
+// Group Dynamic Data Notify carries (mbms.cpp), with the affiliated members of TS 24.281 clause 8.3.1.2 (TS 24.379
+// clause 9.3.1.2). The MCPTT and MCVideo procedures are the same with the service's ICSI, service information
+// (<mcptt-request-uri>, <mcptt-calling-user-id>; <mcvideo-...>) and presence namespace (TS 24.379 table 9.3.1.2-2,
+// TS 24.281 table 8.3.1.2-2); the clause references below name the MCVideo clause, the MCPTT one is its 9.x twin
+// (8.2.1.6 is 9.2.1.6, 8.2.2.2.16 is 9.2.2.2.16, 8.2.2.3.9 and 8.2.2.3.10 are 9.2.2.3.9 and 9.2.2.3.10, 8.3.1.2 and
+// 8.3.2.2 are 9.3.1.2 and 9.3.2.2).
 //
-// Specifications: TS 24.281 V19.6.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19), RFC 3856, RFC 6665.
+// Specifications: TS 24.281 V19.6.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19), RFC 3856,
+// RFC 6665.
 
 #include "server.hpp"
 
@@ -102,26 +108,24 @@ GroupDynamicDataDocument McServer::group_dynamic_data_document(const std::string
 }
 
 //------------------------------------------------------------------------------
-// TS 24.281 clause 8.2.2.3.10 step 2: the body of a subscription, restricted by its filter (clause 8.3.2.2).
+// TS 24.281 clause 8.2.2.3.10 step 2 (TS 24.379 clause 9.2.2.3.10 step 2): the body of a subscription, restricted by
+// its filter (clause 8.3.2.2), in the service's presence namespace (TS 24.379 table 9.3.1.2-2 for MCPTT).
 std::string McServer::gdd_body(const GroupDynamicDataSubscriptions::Subscription &subscription) const {
-  return group_dynamic_data_xml(group_dynamic_data_document(subscription.group), &subscription.filter);
+  return group_dynamic_data_xml(group_dynamic_data_document(subscription.group), &subscription.filter, svc_.service);
 }
 
 //------------------------------------------------------------------------------
 // TS 24.281 clause 8.2.2.2.16 condition 4 and clause 8.2.2.3.9 condition 4 (Event "presence") with condition 2 and
 // clause 8.3.2.2 (the per-group dynamic data filter, which tells this subscription from the affiliation status
-// determination of clause 8.2.1.3 and the functional alias status subscriptions in the same event package).
+// determination of clause 8.2.1.3 and the functional alias status subscriptions in the same event package); for
+// MCPTT TS 24.379 clauses 9.2.2.2.16 and 9.2.2.3.9 conditions 4 with clause 9.3.2.2 (and clause 9.2.1.3, 9A).
 bool McServer::is_gdd_subscribe(const SipMessage &message, const std::string &event_name) const {
-  if (svc_.service != Service::mcvideo || message.method != "SUBSCRIBE" || event_name != "presence") return false;
+  if (svc_.service == Service::mcdata || message.method != "SUBSCRIBE" || event_name != "presence") return false;
   if (gdd_subscriptions_.contains(message.dialog_id)) return true;
   const auto parts = parts_of(message);
   const auto *filter = filter_part(parts);
-  if (!filter) return false;
-  try {
-    return parse_group_dynamic_data_filter(filter->body).has_value();
-  } catch (const std::exception &) {
-    return true; // a per-group dynamic data filter that breaks clause 8.3.2.2, or no filter at all: 400 below
-  }
+  // A per-group dynamic data filter that breaks clause 8.3.2.2, or no filter at all, is answered 400 below.
+  return classify_gdd_filter(filter ? &filter->body : nullptr) != GddSubscribeBody::other;
 }
 
 //------------------------------------------------------------------------------
@@ -153,12 +157,12 @@ bool McServer::group_dynamic_data_subscribe(const SipMessage &message, User &use
   try {
     info = message_info(message, svc_);
   } catch (const std::exception &) {
-    return refuse(403, "no mcvideo-info");
+    return refuse(403, "no " + std::string(svc_.info_prefix) + "-info");
   }
-  if (info.request_uri.empty()) return refuse(403, "no mcvideo-request-uri");
+  if (info.request_uri.empty()) return refuse(403, "no " + std::string(svc_.info_prefix) + "-request-uri");
   if (const auto service = get_header(message.headers, "P-Asserted-Service");
       !service.empty() && service.find(svc_.icsi) == std::string_view::npos)
-    return refuse(403, "P-Asserted-Service is not the MCVideo ICSI");
+    return refuse(403, "P-Asserted-Service is not the service's ICSI");
   if (const auto owner = group_controller(info.request_uri); !owner.empty()) {
     response = relay_gdd_subscribe(message, user, info.request_uri, owner);
     return true;
@@ -194,10 +198,11 @@ bool McServer::peer_group_dynamic_data_subscribe(const SipMessage &message, cons
   try {
     info = message_info(message, svc_);
   } catch (const std::exception &) {
-    return refuse(403, "no mcvideo-info");
+    return refuse(403, "no " + std::string(svc_.info_prefix) + "-info");
   }
   if (info.request_uri.empty() || info.calling_user.empty())
-    return refuse(403, "mcvideo-request-uri or mcvideo-calling-user-id missing");
+    return refuse(403,
+                  std::string(svc_.info_prefix) + "-request-uri or " + svc_.info_prefix + "-calling-user-id missing");
   if (!group_controller(info.request_uri).empty()) return refuse(403, "group not owned here");
   response = owned_gdd_subscribe(message, info.request_uri, info.calling_user, peer, filter);
   return true;

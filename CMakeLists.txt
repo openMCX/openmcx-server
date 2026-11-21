@@ -167,6 +167,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/server/parts/peers.cpp
         src/server/parts/program.cpp
         src/server/parts/served_users.cpp
+        src/server/parts/settings_subscriptions.cpp
         src/server/parts/message_parts.cpp)
     target_include_directories(mcx_service_parts PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/server)
     target_link_libraries(mcx_service_parts PUBLIC mcx_sip)
@@ -201,6 +202,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/server/server.cpp
         src/server/service_parts.cpp
         src/server/service_info.cpp
+        src/server/settings_subscription.cpp
         src/server/sip_dispatch.cpp
         src/server/temporary_groups.cpp
         src/server/users.cpp
@@ -251,6 +253,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         src/mcdata/release.cpp
         src/mcdata/sds.cpp
         src/mcdata/service_parts.cpp
+        src/mcdata/settings_subscription.cpp
         src/mcdata/sip_dispatch.cpp)
     target_link_libraries(openmcx-mcdata-server PRIVATE mcx_service_parts)
     target_compile_options(openmcx-mcdata-server PRIVATE -Wall -Wextra -Wpedantic)
@@ -267,7 +270,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         add_test(NAME sip_tcp COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sip_tls.py $<TARGET_FILE:test_sip> tcp)
         set_tests_properties(sip_tls sip_tcp PROPERTIES TIMEOUT 45 RUN_SERIAL TRUE)
         # The service profiles (include/mcx/service.hpp) and the service parts (src/server/parts).
-        foreach(component service location_service peers alias_registry served_users runtime_parts)
+        foreach(component service location_service peers alias_registry served_users settings_subscriptions runtime_parts)
             add_executable(test_${component} tests/test_${component}.cpp)
             target_link_libraries(test_${component} PRIVATE mcx_service_parts)
             add_test(NAME ${component} COMMAND test_${component})

@@ -122,6 +122,17 @@ std::string group_dynamic_data_filter_xml(const GroupDynamicDataFilter &filter, 
 std::optional<GroupDynamicDataFilter> parse_group_dynamic_data_filter(std::string_view xml);
 
 //------------------------------------------------------------------------------
+// TS 24.281 clauses 8.2.2.2.16 and 8.2.2.3.9 condition 5 with clause 8.3.2.2 (TS 24.379 clauses 9.2.2.2.16 and
+// 9.2.2.3.9 with clause 9.3.2.2 for MCPTT): what the application/simple-filter+xml body of a presence SUBSCRIBE
+// (nullptr: none) makes of it: `other`, no filter or a filter of another kind (per-client or per-user: the affiliation
+// status determination, TS 24.379 clause 9.2.1.3, or a functional alias status subscription, clause 9A), for the
+// other presence procedures; `filter`, a subscription to group dynamic data; `invalid`, a body that is no
+// simple-filter or a per-group dynamic data filter breaking clause 8.3.2.2 (9.3.2.2), answered 400 as such a
+// subscription.
+enum class GddSubscribeBody { other, filter, invalid };
+GddSubscribeBody classify_gdd_filter(const std::string *body);
+
+//------------------------------------------------------------------------------
 // TS 24.281 clause 8.2.1.6 steps 4 and 5 and clause 8.2.2.3.9 step 3: the Expires header field of a subscription to
 // group dynamic data. RFC 6665 section 4.1.2.1 with RFC 3261 section 20.19: a decimal of at most 4294967295.
 enum class GddExpires {

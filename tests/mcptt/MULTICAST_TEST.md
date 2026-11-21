@@ -87,7 +87,7 @@ Debug TCP SIP, 2026-10-28, images from the multicast branches (server and client
 | Floor Release Multi Talker | The server has no multi-talker floor control. |
 | Refused key downloads | The client's 488 with warning 136 (an I_MESSAGE from another initiator or that fails) and the server's unicast fallback for a user without the MuSiK are implemented but not driven by a scenario. |
 | Explicit MuSiK downloads, MuSiK per group, key renewal | The server sends one default MuSiK; the client takes explicit downloads as the default one. |
-| Subscription to group dynamic data | The server has no SIP subscription to group dynamic data (TS 24.379 §9.2.1.6, §9.2.2.3.9); it sends Group Dynamic Data Notify over MBMS on every change instead of in place of a NOTIFY. Broadcast and regroup aliases are not sent. |
+| Subscription to group dynamic data | The SIP subscription to group dynamic data (TS 24.379 §9.2.1.6, §9.2.2.3.9, §9.2.2.3.10) is implemented beside the MBMS path (unit tests in `tests/test_group_dynamic_data.cpp`) and not exercised in this lab; over MBMS the server sends Group Dynamic Data Notify on every change. Broadcast aliases are not sent. |
 | Application Paging before a unicast call | Sent only when a conversation moves to unicast (§4.1.3.6), not before a call starts on unicast (§4.1.3.5). |
 | eMBMS and 5G MBS co-existence | `<eMBMS-bearer-info>` in an MBS announcement is not written or read; a server announces MBMS bearers and MBS sessions in separate bodies of one MESSAGE. |
 | MBS session IDs | Only TMGI-typed MBS session IDs; a source specific IP multicast address is not used. |

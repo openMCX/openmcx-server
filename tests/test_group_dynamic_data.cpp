@@ -7,7 +7,10 @@
 // is refused), the Expires rule and answers of clause 8.2.2.3.9, and the subscriptions of clause 8.2.2.3.10 (a
 // NOTIFY on every change and only then).
 //
-// Specifications: TS 24.281 V19.6.0 (Rel-19), RFC 3863, RFC 4661, RFC 6665.
+// The same for MCPTT (TS 24.379 clauses 9.2.2.2.16, 9.2.2.3.9, 9.2.2.3.10, 9.3.1.2 and 9.3.2.2): which presence
+// SUBSCRIBE is one to group dynamic data, and the NOTIFY bodies of a group call that starts and ends.
+//
+// Specifications: TS 24.281 V19.6.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), RFC 3863, RFC 4661, RFC 6665.
 
 #include "mcx/group_dynamic_data.hpp"
 
@@ -279,13 +282,79 @@ static void subscription_lifecycle() {
   expect(subscriptions.find("d1") == nullptr && subscriptions.find("d2")->peer == "peer-a", "find");
 }
 
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 9.2.2.2.16 and 9.2.2.3.9 condition 5 with clause 9.3.2.2: an MCPTT per-group dynamic data filter
+// makes the presence SUBSCRIBE a subscription to group dynamic data; the per-user filter of a functional alias status
+// subscription (clause 9A.3.2.2) and the per-client one of the affiliation status determination (clause 9.2.1.3) do
+// not; a filter breaking clause 9.3.2.2 (items 5 B, 5 C, 7 A) or a body that is no simple-filter is invalid (400).
+static void mcptt_filter_dispatch() {
+  GroupDynamicDataFilter filter;
+  filter.group = "sip:group-a@mcptt.example";
+  filter.call_ongoing = true;
+  const auto mcptt = group_dynamic_data_filter_xml(filter, Service::mcptt);
+  expect(classify_gdd_filter(&mcptt) == GddSubscribeBody::filter, "MCPTT filter accepted");
+  const std::string per_user =
+      "<filter-set xmlns=\"urn:ietf:params:xml:ns:simple-filter\"><ns-bindings>"
+      "<ns-binding prefix=\"pidf\" urn=\"urn:ietf:params:xml:ns:pidf\"/>"
+      "<ns-binding prefix=\"mcpttPI10\" urn=\"urn:3gpp:ns:mcpttPresInfo:1.0\"/></ns-bindings><filter id=\"fa-user\">"
+      "<what><include>//pidf:presence/pidf:tuple[@id=\"sip:alice@mcptt.example\"]</include></what></filter>"
+      "</filter-set>";
+  expect(classify_gdd_filter(&per_user) == GddSubscribeBody::other, "per-user filter goes to the other procedures");
+  expect(classify_gdd_filter(nullptr) == GddSubscribeBody::other, "no filter goes to the other procedures");
+  const std::string with_uri =
+      "<filter-set xmlns=\"urn:ietf:params:xml:ns:simple-filter\"><filter id=\"1\" uri=\"sip:a@x\"><what><include>"
+      "//pidf:presence/mcpttPI10:additionalData/@mcpttPI10:groupCallOngoing</include></what></filter></filter-set>";
+  expect(classify_gdd_filter(&with_uri) == GddSubscribeBody::invalid, "filter with uri refused (item 5 B)");
+  const std::string junk = "<not-a-filter/>";
+  expect(classify_gdd_filter(&junk) == GddSubscribeBody::invalid, "no simple-filter refused");
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 9.2.2.3.9 and 9.2.2.3.10 with clause 9.3.1.2: an MCPTT subscription's NOTIFY bodies are in the
+// MCPTT presence namespace; a group call that starts and one that ends are each notified (groupCallOngoing, item 8),
+// and nothing while the call goes on; the MCVideo body of the same data is unchanged (mcvideoPI10).
+static void mcptt_notifications() {
+  GroupDynamicDataSubscriptions subscriptions;
+  GroupDynamicDataDocument group;
+  group.group = "sip:group-a@mcptt.example";
+  group.call_ongoing = false;
+  group.members = {{"sip:alice@mcptt.example", {{"urn:uuid:client-a", "2026-11-14T12:00:00Z"}}, {}}};
+  const auto body_of = [&](const GroupDynamicDataSubscriptions::Subscription &held) {
+    return group_dynamic_data_xml(group, &held.filter, Service::mcptt);
+  };
+  subscriptions.add("d1", {group.group, "sip:alice@mcptt.example", {}, {}, {}});
+  const auto initial = subscriptions.current("d1", body_of);
+  expect(has(initial, "xmlns:mcpttPI10=\"urn:3gpp:ns:mcpttPresInfo:1.0\"") &&
+             has(initial, "<mcpttPI10:additionalData groupCallOngoing=\"false\"/>") &&
+             has(initial, "<tuple id=\"sip:alice@mcptt.example\"><status><mcpttPI10:affiliation "
+                          "client=\"urn:uuid:client-a\" expires=\"2026-11-14T12:00:00Z\"/>"),
+         "initial MCPTT NOTIFY (items 1, 2, 8 to 14, clause 9.2.2.3.10 step 2 a)");
+  expect(!has(initial, "mcvideo"), "no MCVideo namespace in the MCPTT body");
+
+  group.call_ongoing = true;
+  auto changes = subscriptions.changed(body_of);
+  expect(changes.size() == 1 && has(changes[0].second, "groupCallOngoing=\"true\""), "call start notified");
+  expect(subscriptions.changed(body_of).empty(), "nothing while the call goes on");
+  group.call_ongoing = false;
+  changes = subscriptions.changed(body_of);
+  expect(changes.size() == 1 && has(changes[0].second, "groupCallOngoing=\"false\""), "call end notified");
+  const auto parsed = parse_group_dynamic_data(changes[0].second, Service::mcptt);
+  expect(parsed == group, "the MCPTT client reads the body back (clause 9.2.1.6)");
+
+  const auto video = group_dynamic_data_xml(group);
+  expect(has(video, "<mcvideoPI10:additionalData groupCallOngoing=\"false\"/>") && !has(video, "mcpttPI10"),
+         "MCVideo body unchanged");
+}
+
 int main() {
   const std::pair<const char *, void (*)()> cases[] = {{"pidf_coding", pidf_coding},
                                                        {"pidf_filtered", pidf_filtered},
                                                        {"filter_coding", filter_coding},
                                                        {"mcptt_coding", mcptt_coding},
                                                        {"subscribe_rules", subscribe_rules},
-                                                       {"subscription_lifecycle", subscription_lifecycle}};
+                                                       {"subscription_lifecycle", subscription_lifecycle},
+                                                       {"mcptt_filter_dispatch", mcptt_filter_dispatch},
+                                                       {"mcptt_notifications", mcptt_notifications}};
   int failed = 0;
   for (const auto &[name, run] : cases) try {
       run();

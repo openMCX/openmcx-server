@@ -233,6 +233,18 @@ std::optional<GroupDynamicDataFilter> parse_group_dynamic_data_filter(std::strin
 }
 
 //------------------------------------------------------------------------------
+// TS 24.281 clause 8.2.2.3.9 condition 5 (TS 24.379 clause 9.2.2.3.9 condition 5): a per-group dynamic data filter
+// makes the subscription one to group dynamic data; a body that cannot be read as a filter is refused as one.
+GddSubscribeBody classify_gdd_filter(const std::string *body) {
+  if (!body) return GddSubscribeBody::other;
+  try {
+    return parse_group_dynamic_data_filter(*body) ? GddSubscribeBody::filter : GddSubscribeBody::other;
+  } catch (const std::exception &) {
+    return GddSubscribeBody::invalid;
+  }
+}
+
+//------------------------------------------------------------------------------
 // RFC 6665 section 4.1.2.1 with RFC 3261 section 20.19 (delta-seconds, at most 2^32-1), TS 24.281 clause
 // 8.2.2.3.9 step 3: the Expires of a subscription to group dynamic data.
 GddExpires classify_gdd_expires(std::optional<std::string_view> header) {

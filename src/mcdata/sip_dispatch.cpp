@@ -4,7 +4,7 @@
 
 // Incoming SIP requests: the signalling and XML protection is removed and the request dispatched to its procedure.
 //
-// Specifications: TS 24.282 V19.7.0 (Rel-19), TS 23.282 V19.10.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
+// Specifications: TS 24.282 V19.7.0 (Rel-19), TS 23.282 V19.10.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), RFC 4354.
 
 #include "data_server.hpp"
 
@@ -124,6 +124,8 @@ SipResponse DataServer::dispatch(const SipMessage &request) {
       auto *user = sender();
       if (!user)
         return reject(404, "141 user unknown to the participating function", asserted, "affiliation-subscription");
+      // TS 24.282 clause 7.3.6.1: subscription to the user's service settings, new or in its dialog.
+      if (event_name == poc_settings_event) return settings_subscribe(request, *user);
       if (event_name != "presence") {
         response.status_code = 489;
         return response;

@@ -341,7 +341,13 @@ bool McServer::validate_priority(const SipMessage &message, const User &user, co
   if (!alert_only && ((info.emergency == true && (!info.alert || info.imminent_peril)) ||
                       (info.imminent_peril && (info.emergency || info.alert)) || (!info.emergency && info.alert)))
     return reject(warn(Warning::invalid_mime_combination));
-  if (alert_only && ((!info.alert && info.emergency != false) || info.imminent_peril || info.emergency == true))
+  // TS 24.379 clauses 10.1.6.3.1.1 and 10.1.6.4.1.1: outside a call, a SIP MESSAGE with <imminentperil-ind> "false"
+  // and neither <emergency-ind> nor <alert-ind> cancels the group's in-progress imminent peril state (the
+  // authorisation of clause 6.3.3.1.13.6 below); every other alert MESSAGE is an emergency alert or its cancellation
+  // (clause 12.1.3).
+  const bool imminent_state_cancel = alert_only && info.imminent_peril == false && !info.emergency && !info.alert;
+  if (alert_only && !imminent_state_cancel &&
+      ((!info.alert && info.emergency != false) || info.imminent_peril || info.emergency == true))
     return reject(warn(Warning::invalid_mime_combination));
 
   // TS 24.379 clause 6.3.3.1.13 and TS 24.281 clause 6.3.3.1.12: the rights of the caller's user profile, the profile's group entry

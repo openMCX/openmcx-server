@@ -129,6 +129,7 @@ SipResponse DataServer::settings_publish(const SipMessage &request, const std::s
     return reject(400, "", user->id, "settings");
   }
   user->auth_etag = random_id();
+  pending_.push_back([this] { settings_changed(); }); // TS 24.282 clause 7.3.6.2: the subscribers learn of it
   event("mcdata_service_settings",
         {{"user_id", user->id},
          {"client_id", user->client},
@@ -244,6 +245,7 @@ void DataServer::remove_binding(std::map<std::string, User>::iterator found, con
   auto &user = found->second;
   user.groups.clear();
   notify_affiliation(user, {}, true);
+  end_settings_subscriptions(user.id, reason); // TS 24.282 clause 7.3.6 with RFC 6665 section 4.2.2
   deactivate_aliases(user.id);
   event("mcdata_binding_removed", {{"user_id", user.id}, {"client_id", user.client}, {"reason", reason}});
   users_.erase(found);

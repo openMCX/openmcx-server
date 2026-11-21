@@ -45,6 +45,7 @@ void DataServer::tick() {
   const auto now = monotonic_ms();
   refresh_service_config(now);
   location_.tick(now);
+  settings_subscription_tick(now);
   for (auto &[group, sub] : group_subscriptions_)
     if (sub.active && now >= sub.refresh) {
       sub.refresh = now + 3000000;

@@ -122,6 +122,34 @@ std::string poc_settings_xml(std::string_view client_id, unsigned profile_index,
 }
 
 //------------------------------------------------------------------------------
+// RFC 4354 section 5.1 with TS 24.379 clause 7.4.1.2.2 (table 7.4.1.2.2-2: <selected-user-profile-index> and
+// <multiplex-support> in the mcsSettings namespace) and clause 7.3.6.2 step 1: a) <am-settings> with the client's
+// current <answer-mode>, b) <selected-user-profile-index> with the active user profile; every element of an entity
+// is optional (RFC 4354 section 5.1), so a client whose settings are not known is an <entity> with its "id" only.
+std::string poc_settings_xml(const std::vector<PocSettingsEntity> &entities) {
+  std::string out = "<?xml version=\"1.0\"?><poc-settings xmlns=\"urn:oma:params:xml:ns:poc:poc-settings\" "
+                    "xmlns:mc=\"urn:3gpp:mcsSettings:1.0\">";
+  for (const auto &entity : entities) {
+    if (entity.id.empty()) throw std::invalid_argument("PoC client identity required");
+    if (!entity.answer_mode.empty() && entity.answer_mode != "automatic" && entity.answer_mode != "manual")
+      throw std::invalid_argument("answer mode neither automatic nor manual");
+    out += "<entity id=\"" + xml_escape(entity.id) + "\">";
+    if (!entity.answer_mode.empty())
+      out += "<am-settings><answer-mode>" + entity.answer_mode + "</answer-mode></am-settings>";
+    if (entity.profile_index)
+      out += "<mc:selected-user-profile-index><mc:user-profile-index>" + std::to_string(*entity.profile_index) +
+             "</mc:user-profile-index></mc:selected-user-profile-index>";
+    if (entity.multiplex_support)
+      out += std::string("<mc:multiplex-support>") + (*entity.multiplex_support ? "true" : "false") +
+             "</mc:multiplex-support>";
+    out += "</entity>";
+  }
+  out += "</poc-settings>";
+  bounded(out);
+  return out;
+}
+
+//------------------------------------------------------------------------------
 // RFC 4354 with TS 24.281 clause 7.4.1.2.2: reads a poc-settings document: the <poc-settings> root and its <entity>
 // elements (RFC 4354 namespace). <selected-user-profile-index> and <multiplex-support> are in the mcsSettings
 // namespace (table 7.4.1.2.2-2); the example of table 7.4.1.2.2-3 writes them unprefixed, so they are read in either.

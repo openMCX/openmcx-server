@@ -39,6 +39,7 @@
 #include "parts/message_parts.hpp"
 #include "parts/program.hpp"
 #include "parts/served_users.hpp"
+#include "parts/settings_subscriptions.hpp"
 #include "parts/task_queue.hpp"
 
 #include <algorithm>
@@ -478,6 +479,22 @@ class DataServer {
 
   // TS 24.282 clause 7.3.4: a SIP PUBLISH for the MCData service settings only.
   SipResponse settings_publish(const SipMessage &request, const std::string &asserted);
+
+  // ---- Subscription to and notification of the service settings (settings_subscription.cpp): TS 24.282 clause
+  // 7.3.6 ----
+  SettingsSubscriptions settings_subscriptions_;
+  std::uint64_t settings_next_check_ = 0;
+  // TS 24.282 clause 7.3.6.1: a SUBSCRIBE for poc-settings, initial or in the dialog of a subscription.
+  SipResponse settings_subscribe(const SipMessage &request, const User &user);
+  // TS 24.282 clause 7.3.6.2: the body of a subscription, and its NOTIFY (with `state` "terminated;..." its end).
+  [[nodiscard]] std::string settings_body(const SettingsSubscriptions::Subscription &subscription) const;
+  void notify_settings(const std::string &dialog, const std::string &body, const std::string &state);
+  // TS 24.282 clause 7.3.6.2: a NOTIFY to each subscription whose settings changed (clause 7.3.4).
+  void settings_changed();
+  // RFC 6665 section 4.2.2: the subscriptions to a user's settings end (its service authorisation ended).
+  void end_settings_subscriptions(const std::string &user, const char *reason);
+  // RFC 6665 section 4.2.2: expired subscriptions end; changes are notified.
+  void settings_subscription_tick(std::uint64_t now);
 
   // authorise: a SIP PUBLISH with Expires 0 logs the user off.
   SipResponse log_off(const SipMessage &request, const std::string &asserted);
