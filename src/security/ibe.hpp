@@ -70,6 +70,9 @@ std::array<std::uint8_t, sakke_ssv_bytes> sakke_decapsulate(ByteView public_key,
                                                             ByteView receiver_key, ByteView encapsulated);
 
 // The deterministic steps under the random choices, for the known-answer tests of RFC 6507 and RFC 6508 appendix A.
+// They take the ephemeral and secret values from the caller, which a program must never do, so they exist only in the
+// test build (MCX_IBE_KNOWN_ANSWER, set for tests/test_ibe.cpp alone): the library of the programs has none.
+#ifdef MCX_IBE_KNOWN_ANSWER
 namespace known_answer {
 // RFC 6507 section 4.2 with the given KSAK.
 AuthorityKeys eccsi_authority(const BIGNUM *ksak);
@@ -84,5 +87,6 @@ Bignum hash_to_integer_range(ByteView data, const BIGNUM *limit);
 // RFC 6508 section 3.2: the pairing <R, Q>, as its representative in F_p (L octets).
 Bytes pairing(ByteView first, ByteView second);
 } // namespace known_answer
+#endif
 
 } // namespace mcx::ibe

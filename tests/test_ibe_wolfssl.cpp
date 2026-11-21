@@ -4,8 +4,9 @@
 
 // Cross-check of OpenMCX's ECCSI and SAKKE (src/security/ibe.hpp, on OpenSSL) against wolfCrypt's, the
 // implementation OpenMCX used before: keys, signatures and Encapsulated Data made by either are accepted by the other,
-// and the deterministic results (an RSK, the Encapsulated Data of an SSV) are the same octets. KMS secrets and key
-// sets stored by earlier OpenMCX versions therefore keep working.
+// and the deterministic results (an RSK, the Encapsulated Data of an SSV) are the same octets, so KMS secrets and key
+// sets stored by earlier OpenMCX versions keep working. Then a differential test: on randomly mutated signatures and
+// Encapsulated Data the two give the same verdict, a refusal.
 //
 // Built only when the development image provides wolfSSL (CMakeLists.txt); wolfSSL is not linked into any program.
 //
@@ -273,6 +274,109 @@ void sakke_cross(const mcx::ibe::AuthorityKeys &authority, ByteView identifier, 
         label + ": OpenMCX decapsulates");
 }
 
+//------------------------------------------------------------------------------
+// Helper: whether wolfCrypt verifies a signature (a wolfCrypt error is a refusal).
+bool wolf_accepts_signature(ByteView kpak, ByteView identifier, ByteView message, ByteView signature) {
+  try {
+    return wolf_eccsi_verify(kpak, identifier, message, signature);
+  } catch (const std::exception &) {
+    // wolfCrypt refused to decode the input: not verified.
+    return false;
+  }
+}
+
+//------------------------------------------------------------------------------
+// Helper: whether an implementation's decapsulation returns an SSV (an exception is a refusal).
+template <class Decapsulate> bool decapsulates(Decapsulate &&decapsulate) {
+  try {
+    decapsulate();
+    return true;
+  } catch (const std::exception &) {
+    // refused
+    return false;
+  }
+}
+
+// A fixed-seed xorshift generator for the differential mutations: reproducible, not for keys.
+class MutationSource {
+public:
+  std::uint64_t next() {
+    state_ ^= state_ << 13;
+    state_ ^= state_ >> 7;
+    state_ ^= state_ << 17;
+    return state_;
+  }
+
+  std::uint8_t octet() { return static_cast<std::uint8_t>(next()); }
+
+  std::size_t below(std::size_t limit) { return static_cast<std::size_t>(next() % limit); }
+
+private:
+  std::uint64_t state_ = 0x2545f4914f6cdd1dULL;
+};
+
+// The rounds of the differential mutations: ECCSI is fast, SAKKE decapsulation takes milliseconds in each.
+constexpr int eccsi_differential_rounds = 3000;
+constexpr int sakke_differential_rounds = 60;
+
+//------------------------------------------------------------------------------
+// RFC 6507 section 5.2.2: on mutated signatures, messages and identifiers OpenMCX and wolfCrypt give the same verdict,
+// and neither verifies a mutated input.
+void eccsi_differential(MutationSource &source) {
+  const auto authority = mcx::ibe::eccsi_create_authority();
+  const Bytes identifier{'s', 'i', 'p', ':', 'a'};
+  const Bytes message{'m', 'e', 's', 's', 'a', 'g', 'e'};
+  const auto pair = mcx::ibe::eccsi_issue(authority.secret, identifier);
+  const auto signature = mcx::ibe::eccsi_sign(authority.public_key, identifier, pair, message);
+  for (int round = 0; round < eccsi_differential_rounds; ++round) {
+    auto altered_signature = signature;
+    auto altered_message = message;
+    auto altered_identifier = identifier;
+    switch (source.below(4)) {
+    case 0:
+      altered_signature[source.below(signature.size())] ^= static_cast<std::uint8_t>(1U << source.below(8));
+      break;
+    case 1:
+      for (auto &octet : altered_signature) octet = source.octet();
+      break;
+    case 2: altered_message[source.below(message.size())] ^= 1; break;
+    default: altered_identifier[source.below(identifier.size())] ^= 1; break;
+    }
+    const bool own =
+        mcx::ibe::eccsi_verify(authority.public_key, altered_identifier, altered_message, altered_signature);
+    const bool reference =
+        wolf_accepts_signature(authority.public_key, altered_identifier, altered_message, altered_signature);
+    check(own == reference, "ECCSI differential: OpenMCX and wolfCrypt disagree in round " + std::to_string(round));
+    check(!own, "ECCSI differential: a mutated input verified in round " + std::to_string(round));
+  }
+}
+
+//------------------------------------------------------------------------------
+// RFC 6508 section 6.2.2: on mutated Encapsulated Data OpenMCX and wolfCrypt give the same verdict, and neither
+// decapsulates a mutated input.
+void sakke_differential(MutationSource &source) {
+  const auto authority = mcx::ibe::sakke_create_authority();
+  const Bytes identifier{'s', 'i', 'p', ':', 'b'};
+  const auto receiver_key = mcx::ibe::sakke_issue(authority.secret, identifier);
+  Ssv ssv{};
+  for (auto &octet : ssv) octet = source.octet();
+  const auto encapsulated = mcx::ibe::sakke_encapsulate(authority.public_key, identifier, ssv);
+  for (int round = 0; round < sakke_differential_rounds; ++round) {
+    auto altered = encapsulated;
+    if (source.below(2) == 0)
+      altered[source.below(altered.size())] ^= static_cast<std::uint8_t>(1U << source.below(8));
+    else
+      for (std::size_t index = mcx::ibe::sakke_point_bytes; index < altered.size(); ++index)
+        altered[index] = source.octet();
+    const bool own =
+        decapsulates([&] { mcx::ibe::sakke_decapsulate(authority.public_key, identifier, receiver_key, altered); });
+    const bool reference =
+        decapsulates([&] { wolf_sakke_decapsulate(authority.public_key, identifier, receiver_key, altered); });
+    check(own == reference, "SAKKE differential: OpenMCX and wolfCrypt disagree in round " + std::to_string(round));
+    check(!own, "SAKKE differential: mutated Encapsulated Data decapsulated in round " + std::to_string(round));
+  }
+}
+
 } // namespace
 
 int main() {
@@ -294,6 +398,9 @@ int main() {
       sakke_cross(wolf_sakke, identifier, name + ", wolfCrypt KMS");
       sakke_cross(own_sakke, identifier, name + ", OpenMCX KMS");
     }
+    MutationSource source;
+    eccsi_differential(source);
+    sakke_differential(source);
   } catch (const std::exception &error) {
     std::cerr << "FAIL: " << error.what() << '\n';
     return 1;

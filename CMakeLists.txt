@@ -79,11 +79,20 @@ if(BUILD_TESTING)
         target_link_libraries(test_${component} PRIVATE mcx_keying)
         add_test(NAME ${component} COMMAND test_${component})
     endforeach()
-    # The ECCSI and SAKKE primitives (src/security/ibe.hpp, private) and the RFC 6507 and RFC 6508 test vectors.
-    add_executable(test_ibe tests/test_ibe.cpp)
+    # The ECCSI and SAKKE primitives (src/security/ibe.hpp, private) and the RFC 6507 and RFC 6508 test vectors. The
+    # known-answer hooks (caller-chosen ephemerals) are compiled into this test's own copy of the sources only, never
+    # into mcx_keying.
+    add_executable(test_ibe tests/test_ibe.cpp src/security/eccsi.cpp src/security/sakke.cpp)
     target_include_directories(test_ibe PRIVATE src/security)
-    target_link_libraries(test_ibe PRIVATE mcx_keying)
+    target_compile_definitions(test_ibe PRIVATE MCX_IBE_KNOWN_ANSWER)
+    target_link_libraries(test_ibe PRIVATE OpenSSL::Crypto)
     add_test(NAME ibe COMMAND test_ibe)
+    # Hostile inputs to the primitives: malformed and off-subgroup points, out-of-range values, inconsistent KMS
+    # secrets, mutated signatures and Encapsulated Data.
+    add_executable(test_ibe_hostile tests/test_ibe_hostile.cpp)
+    target_include_directories(test_ibe_hostile PRIVATE src/security)
+    target_link_libraries(test_ibe_hostile PRIVATE mcx_keying)
+    add_test(NAME ibe_hostile COMMAND test_ibe_hostile)
     if(WOLFSSL_INCLUDE_DIR AND WOLFSSL_LIBRARY)
         add_executable(test_ibe_wolfssl tests/test_ibe_wolfssl.cpp)
         target_include_directories(test_ibe_wolfssl PRIVATE src/security ${WOLFSSL_INCLUDE_DIR})

@@ -82,12 +82,28 @@ AuthorityKeys authority_from(const Curve &curve, const BIGNUM *ksak) {
 }
 
 //------------------------------------------------------------------------------
+// RFC 6507 section 4.2: a stored KMS secret KSAK || KPAK_x || KPAK_y: the KSAK is a non-zero integer modulo q and
+// KPAK = [KSAK]G; a secret that does not hold together (corrupted, truncated, of another KMS) is refused before it
+// issues keys.
+Bignum import_ksak(const Curve &curve, ByteView secret) {
+  require(secret.size() == eccsi_secret_bytes, "ECCSI: invalid KMS secret length");
+  auto ksak = from_bytes(secret.first(eccsi_scalar_bytes));
+  BN_set_flags(ksak.get(), BN_FLG_CONSTTIME);
+  require(BN_is_zero(ksak.get()) == 0 && BN_cmp(ksak.get(), curve.order()) < 0,
+          "ECCSI: KSAK not a non-zero integer modulo q");
+  auto expected = authority_from(curve, ksak.get());
+  const bool is_consistent = CRYPTO_memcmp(expected.secret.data(), secret.data(), secret.size()) == 0;
+  wipe(expected.secret);
+  require(is_consistent, "ECCSI: KMS secret does not match its KPAK");
+  return ksak;
+}
+
+//------------------------------------------------------------------------------
 // RFC 6507 section 5.1.1 steps 2 to 6: PVT = [v]G, HS, SSK = ( KSAK + HS * v ) modulo q; empty when SSK or HS is zero
 // modulo q (step 5: the caller restarts with a fresh v).
 Bytes issue_with(const Curve &curve, ByteView secret, ByteView identifier, const BIGNUM *ephemeral) {
-  require(secret.size() == eccsi_secret_bytes, "ECCSI: invalid KMS secret length");
-  const auto ksak = from_bytes(secret.first(eccsi_scalar_bytes));
-  BN_set_flags(ksak.get(), BN_FLG_CONSTTIME);
+  require(!identifier.empty(), "ECCSI: empty Identifier");
+  const auto ksak = import_ksak(curve, secret);
   Bytes kpak{POINT_CONVERSION_UNCOMPRESSED};
   kpak.insert(kpak.end(), secret.begin() + eccsi_scalar_bytes, secret.end());
 
@@ -244,6 +260,7 @@ bool eccsi_verify(ByteView kpak, ByteView identifier, ByteView message, ByteView
   }
 }
 
+#ifdef MCX_IBE_KNOWN_ANSWER
 //------------------------------------------------------------------------------
 // RFC 6507 appendix A: the KMS keys of a given KSAK.
 AuthorityKeys known_answer::eccsi_authority(const BIGNUM *ksak) {
@@ -265,5 +282,7 @@ Bytes known_answer::eccsi_sign(ByteView kpak, ByteView identifier, ByteView pair
   const Curve curve;
   return sign_with(curve, kpak, identifier, pair, message, ephemeral);
 }
+
+#endif // MCX_IBE_KNOWN_ANSWER
 
 } // namespace mcx::ibe

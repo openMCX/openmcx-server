@@ -12,6 +12,7 @@
 #pragma once
 
 #include <openssl/bn.h>
+#include <openssl/crypto.h>
 #include <openssl/ec.h>
 
 #include <cstdint>
@@ -29,6 +30,32 @@ using Bytes = std::vector<std::uint8_t>;
 inline void require(bool is_ok, const char *what) {
   if (!is_ok) throw std::runtime_error(what);
 }
+
+//------------------------------------------------------------------------------
+// Helper: wipes octets that held a secret or a value derived from one (OPENSSL_cleanse, which the compiler does not
+// remove).
+inline void wipe(std::span<std::uint8_t> data) { OPENSSL_cleanse(data.data(), data.size()); }
+
+// Octets of a secret or of a value derived from one, wiped when destroyed. The capacity is reserved up front where it
+// is known, so that growing does not leave an unwiped copy behind.
+class SecretBytes {
+public:
+  SecretBytes() = default;
+
+  explicit SecretBytes(Bytes value) : data_(std::move(value)) {}
+
+  SecretBytes(const SecretBytes &) = delete;
+  SecretBytes &operator=(const SecretBytes &) = delete;
+
+  ~SecretBytes() { wipe(data_); }
+
+  Bytes &data() { return data_; }
+
+  const Bytes &data() const { return data_; }
+
+private:
+  Bytes data_;
+};
 
 struct BignumFree {
   void operator()(BIGNUM *value) const { BN_clear_free(value); }

@@ -392,16 +392,22 @@ Bignum hash_to_integer_range(ByteView data, const BIGNUM *limit, BN_CTX *ctx) {
   const bool is_power_of_two = BN_num_bits(below.get()) < bits;
   const int blocks = is_power_of_two ? (bits - 1 + hash_bits - 1) / hash_bits : (bits - 1) / hash_bits + 1;
 
-  const auto digest = hash({data});
+  // The input is an SSV or g^r, so every value below is derived from a secret and wiped.
+  auto digest = hash({data});
   std::array<std::uint8_t, hash_bytes> chain{};
-  Bytes concatenated;
+  SecretBytes concatenated;
+  concatenated.data().reserve(static_cast<std::size_t>(blocks) * hash_bytes);
   for (int block = 0; block < blocks; ++block) {
     chain = hash({chain});
-    const auto part = hash({chain, digest});
-    concatenated.insert(concatenated.end(), part.begin(), part.end());
+    auto part = hash({chain, digest});
+    concatenated.data().insert(concatenated.data().end(), part.begin(), part.end());
+    wipe(part);
   }
+  wipe(chain);
+  wipe(digest);
   auto result = secret_bignum();
-  require(BN_nnmod(result.get(), from_bytes(concatenated).get(), limit, ctx) == 1, "SAKKE: hash modulo n");
+  const auto value = from_bytes(concatenated.data());
+  require(BN_nnmod(result.get(), value.get(), limit, ctx) == 1, "SAKKE: hash modulo n");
   return result;
 }
 
@@ -418,20 +424,45 @@ Bignum ssv_range() {
 // represented in L octets (RFC 6508 section 4).
 std::array<std::uint8_t, sakke_ssv_bytes> mask(const Parameters &parameters, const BIGNUM *power,
                                                std::span<const std::uint8_t> value) {
-  const auto encoded = to_bytes(power, sakke_field_bytes);
-  const auto masking =
-      to_bytes(hash_to_integer_range(encoded, ssv_range().get(), parameters.ctx.get()).get(), sakke_ssv_bytes);
+  // g^r (or w) and the mask give away the SSV: wiped.
+  const SecretBytes encoded(to_bytes(power, sakke_field_bytes));
+  const SecretBytes masking(
+      to_bytes(hash_to_integer_range(encoded.data(), ssv_range().get(), parameters.ctx.get()).get(), sakke_ssv_bytes));
   std::array<std::uint8_t, sakke_ssv_bytes> result{};
-  std::transform(value.begin(), value.end(), masking.begin(), result.begin(),
+  std::transform(value.begin(), value.end(), masking.data().begin(), result.begin(),
                  [](std::uint8_t left, std::uint8_t right) { return static_cast<std::uint8_t>(left ^ right); });
   return result;
 }
 
 //------------------------------------------------------------------------------
+// RFC 6508 section 2.2: Z_T and an RSK are "a point of order q in E(F_p)". A point of E(F_p) that is not in
+// E(F_p)[q] (the curve has order 4q, RFC 6509 appendix A) is refused: it lies on E (decode_point) and [q]X = 0.
+Point decode_subgroup_point(const Parameters &parameters, ByteView data) {
+  auto result = decode_point(parameters.group.get(), data, parameters.ctx.get());
+  auto multiple = point(parameters.group.get());
+  require(EC_POINT_mul(parameters.group.get(), multiple.get(), nullptr, result.get(), parameters.order.get(),
+                       parameters.ctx.get()) == 1,
+          "SAKKE: [q]X");
+  require(EC_POINT_is_at_infinity(parameters.group.get(), multiple.get()) == 1,
+          "SAKKE: RFC 6508 section 2.2, the point is not of order q");
+  return result;
+}
+
+//------------------------------------------------------------------------------
+// RFC 6508 section 2.2: "An Identifier is an integer in the range 2 to q-1"; others are refused.
+Bignum identifier_value(const Parameters &parameters, ByteView identifier) {
+  require(!identifier.empty(), "SAKKE: empty Identifier");
+  auto value = from_bytes(identifier);
+  require(BN_cmp(value.get(), BN_value_one()) > 0 && BN_cmp(value.get(), parameters.order.get()) < 0,
+          "SAKKE: RFC 6508 section 2.2, the Identifier is not in the range 2 to q-1");
+  return value;
+}
+
+//------------------------------------------------------------------------------
 // RFC 6508 sections 6.1.2, 6.2.1 step 3 and 6.2.2 step 5: [b]P + Z_S, with the Identifier b as an integer.
 Point identity_point(const Parameters &parameters, ByteView public_key, ByteView identifier) {
-  const auto kms_point = decode_point(parameters.group.get(), public_key, parameters.ctx.get());
-  const auto identity = from_bytes(identifier);
+  const auto kms_point = decode_subgroup_point(parameters, public_key);
+  const auto identity = identifier_value(parameters, identifier);
   auto result = point(parameters.group.get());
   require(
       EC_POINT_mul(parameters.group.get(), result.get(), identity.get(), nullptr, nullptr, parameters.ctx.get()) == 1 &&
@@ -446,9 +477,12 @@ Point identity_point(const Parameters &parameters, ByteView public_key, ByteView
 // R_(b,S) = [r]([b]P + Z_S); r is returned through the given big number.
 Point encapsulation_point(const Parameters &parameters, ByteView public_key, ByteView identifier, ByteView ssv,
                           Bignum &exponent) {
-  Bytes input(ssv.begin(), ssv.end());
-  input.insert(input.end(), identifier.begin(), identifier.end());
-  exponent = hash_to_integer_range(input, parameters.order.get(), parameters.ctx.get());
+  // SSV || b gives away the SSV: wiped.
+  SecretBytes input;
+  input.data().reserve(ssv.size() + identifier.size());
+  input.data().insert(input.data().end(), ssv.begin(), ssv.end());
+  input.data().insert(input.data().end(), identifier.begin(), identifier.end());
+  exponent = hash_to_integer_range(input.data(), parameters.order.get(), parameters.ctx.get());
   const auto identity = identity_point(parameters, public_key, identifier);
   auto result = point(parameters.group.get());
   require(EC_POINT_mul(parameters.group.get(), result.get(), nullptr, identity.get(), exponent.get(),
@@ -471,6 +505,22 @@ AuthorityKeys authority_from(const Parameters &parameters, const BIGNUM *master_
   return keys;
 }
 
+//------------------------------------------------------------------------------
+// RFC 6508 section 6.1: a stored KMS secret z_T || Z_T_x || Z_T_y: z_T is in the range 2 to q - 1 and Z_T = [z_T]P;
+// a secret that does not hold together (corrupted, truncated, of another KMS) is refused before it issues keys.
+Bignum import_master_secret(const Parameters &parameters, ByteView secret) {
+  require(secret.size() == sakke_secret_bytes, "SAKKE: invalid KMS secret length");
+  auto master_secret = from_bytes(secret.first(sakke_field_bytes));
+  BN_set_flags(master_secret.get(), BN_FLG_CONSTTIME);
+  require(BN_cmp(master_secret.get(), BN_value_one()) > 0 && BN_cmp(master_secret.get(), parameters.order.get()) < 0,
+          "SAKKE: KMS secret z_T not in the range 2 to q-1");
+  auto expected = authority_from(parameters, master_secret.get());
+  const bool is_consistent = CRYPTO_memcmp(expected.secret.data(), secret.data(), secret.size()) == 0;
+  wipe(expected.secret);
+  require(is_consistent, "SAKKE: KMS secret does not match its Z_T");
+  return master_secret;
+}
+
 } // namespace
 
 //------------------------------------------------------------------------------
@@ -484,13 +534,11 @@ AuthorityKeys sakke_create_authority() {
 //------------------------------------------------------------------------------
 // RFC 6508 section 6.1.1: K_(a,T) = [(a + z_T)^-1]P, the inversion modulo q.
 Bytes sakke_issue(ByteView secret, ByteView identifier) {
-  require(secret.size() == sakke_secret_bytes, "SAKKE: invalid KMS secret length");
   const Parameters parameters;
-  const auto master_secret = from_bytes(secret.first(sakke_field_bytes));
-  BN_set_flags(master_secret.get(), BN_FLG_CONSTTIME);
+  const auto master_secret = import_master_secret(parameters, secret);
   auto sum = secret_bignum();
-  require(BN_mod_add(sum.get(), from_bytes(identifier).get(), master_secret.get(), parameters.order.get(),
-                     parameters.ctx.get()) == 1,
+  require(BN_mod_add(sum.get(), identifier_value(parameters, identifier).get(), master_secret.get(),
+                     parameters.order.get(), parameters.ctx.get()) == 1,
           "SAKKE: a + z_T");
   // RFC 6508 section 2.2: an Identifier is in the range 2 to q - 1, so a + z_T is zero modulo q only for a KMS secret
   // that is the negation of the Identifier; such an RSK does not exist.
@@ -508,7 +556,7 @@ Bytes sakke_issue(ByteView secret, ByteView identifier) {
 bool sakke_validate(ByteView public_key, ByteView identifier, ByteView receiver_key) {
   try {
     const Parameters parameters;
-    const auto receiver_point = decode_point(parameters.group.get(), receiver_key, parameters.ctx.get());
+    const auto receiver_point = decode_subgroup_point(parameters, receiver_key);
     const auto identity = identity_point(parameters, public_key, identifier);
     const auto value = pairing(parameters, identity.get(), receiver_point.get());
     return BN_cmp(value.get(), parameters.pairing_base.get()) == 0;
@@ -541,7 +589,7 @@ std::array<std::uint8_t, sakke_ssv_bytes> sakke_decapsulate(ByteView public_key,
   const Parameters parameters;
   const auto received =
       decode_point(parameters.group.get(), encapsulated.first(sakke_point_bytes), parameters.ctx.get());
-  const auto receiver_point = decode_point(parameters.group.get(), receiver_key, parameters.ctx.get());
+  const auto receiver_point = decode_subgroup_point(parameters, receiver_key);
   const auto power = pairing(parameters, received.get(), receiver_point.get());
   const auto ssv = mask(parameters, power.get(), encapsulated.subspan(sakke_point_bytes));
 
@@ -552,6 +600,7 @@ std::array<std::uint8_t, sakke_ssv_bytes> sakke_decapsulate(ByteView public_key,
   return ssv;
 }
 
+#ifdef MCX_IBE_KNOWN_ANSWER
 //------------------------------------------------------------------------------
 // RFC 6508 appendix A: the KMS keys of a given z_T.
 AuthorityKeys known_answer::sakke_authority(const BIGNUM *master_secret) {
@@ -574,5 +623,7 @@ Bytes known_answer::pairing(ByteView first, ByteView second) {
   const auto second_point = decode_point(parameters.group.get(), second, parameters.ctx.get());
   return to_bytes(mcx::ibe::pairing(parameters, first_point.get(), second_point.get()).get(), sakke_field_bytes);
 }
+
+#endif // MCX_IBE_KNOWN_ANSWER
 
 } // namespace mcx::ibe
