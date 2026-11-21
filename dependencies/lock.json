@@ -36,13 +36,6 @@
       "use": "host"
     },
     {
-      "file": "wolfssl-5.8.2-stable.tar.gz",
-      "url": "https://github.com/wolfSSL/wolfssl/archive/refs/tags/v5.8.2-stable.tar.gz",
-      "sha256": "3ef126e3466e2f8f6ebb62b916a7f8fb26c6709dbdf2b63a167759f2fdb53068",
-      "bytes": 25185074,
-      "use": "optional: built by dependencies/wolfssl/build.sh for tests/test_ibe_wolfssl.cpp only, in no image"
-    },
-    {
       "file": "libsrtp-2.8.1.tar.gz",
       "url": "https://github.com/cisco/libsrtp/archive/6ff02afa8d2dc3f2e8896af391d137c1c66ff6fa.tar.gz",
       "sha256": "1ef3e6315e0ea3cd05f4980c8b5f7a9df369e3d586f5e0616e6cc4c778401d4c",

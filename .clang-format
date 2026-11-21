@@ -21,7 +21,7 @@ IncludeCategories:
     Priority: 1
   - Regex: '^<(mcx|openmcx)/'
     Priority: 2
-  - Regex: '^<[a-z0-9_]+\.h(pp)?>$|^<(pj|nlohmann|openssl|libxml|curl|srtp|wolfssl)'
+  - Regex: '^<[a-z0-9_]+\.h(pp)?>$|^<(pj|nlohmann|openssl|libxml|curl|srtp)'
     Priority: 3
   - Regex: '^<'
     Priority: 4

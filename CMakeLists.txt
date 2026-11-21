@@ -17,11 +17,6 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_library(UUID uuid REQUIRED)
 find_library(AMRWB_DEC opencore-amrwb REQUIRED)
 find_library(AMRWB_ENC vo-amrwbenc REQUIRED)
-# wolfSSL is not part of any OpenMCX program or image: ECCSI and SAKKE are OpenMCX's own, on OpenSSL
-# (src/security/eccsi.cpp, src/security/sakke.cpp). When it has been built by hand (dependencies/wolfssl/README.md),
-# test_ibe_wolfssl cross-checks the two implementations (a test only, never installed).
-find_path(WOLFSSL_INCLUDE_DIR wolfssl/options.h HINTS /opt/wolfssl/include)
-find_library(WOLFSSL_LIBRARY wolfssl HINTS /opt/wolfssl/lib)
 
 add_library(mcx_dependencies INTERFACE)
 target_include_directories(mcx_dependencies INTERFACE include ${PJ_INCLUDE_DIRS})
@@ -93,12 +88,6 @@ if(BUILD_TESTING)
     target_include_directories(test_ibe_hostile PRIVATE src/security)
     target_link_libraries(test_ibe_hostile PRIVATE mcx_keying)
     add_test(NAME ibe_hostile COMMAND test_ibe_hostile)
-    if(WOLFSSL_INCLUDE_DIR AND WOLFSSL_LIBRARY)
-        add_executable(test_ibe_wolfssl tests/test_ibe_wolfssl.cpp)
-        target_include_directories(test_ibe_wolfssl PRIVATE src/security ${WOLFSSL_INCLUDE_DIR})
-        target_link_libraries(test_ibe_wolfssl PRIVATE mcx_keying ${WOLFSSL_LIBRARY})
-        add_test(NAME ibe_wolfssl COMMAND test_ibe_wolfssl)
-    endif()
 endif()
 
 # IMS AKA in the UE (TS 33.203): the software ISIM on hostap's MILENAGE, vendored unmodified in dependencies/hostap

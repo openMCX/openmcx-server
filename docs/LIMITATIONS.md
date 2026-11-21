@@ -60,10 +60,10 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
     and Android clients' `security.kms_id`, by default the address;
 - **ECCSI and SAKKE implementation.** ECCSI (RFC 6507) and SAKKE (RFC 6508, parameter set 1 of RFC 6509) are
   OpenMCX's own, on OpenSSL (`src/security/eccsi.cpp`, `src/security/sakke.cpp`). They reproduce the test data of
-  RFC 6507 and RFC 6508 appendix A, agree with wolfCrypt's implementation, also on mutated inputs, and refuse
+  RFC 6507 and RFC 6508 appendix A, and refuse
   hostile inputs: points off the curve or outside E(F_p)[q] (Z_T and the RSK are checked to be of order q),
   Identifiers outside the range 2 to q - 1, KMS secrets that do not match their public keys (`tests/test_ibe.cpp`,
-  `tests/test_ibe_hostile.cpp`, `tests/test_ibe_wolfssl.cpp`). Secret intermediate octets are wiped. Secret values take OpenSSL's constant-time paths where it has them (scalar
+  `tests/test_ibe_hostile.cpp`). Secret intermediate octets are wiped. Secret values take OpenSSL's constant-time paths where it has them (scalar
   multiplication, the Fermat inversions, `BN_FLG_CONSTTIME`), the SAKKE pairing's loop depends on the public q only
   and g^r is a Montgomery ladder with constant-time swaps; but F_p subtraction and the modular reductions are
   OpenSSL's general big number code, which is not constant time. The implementation has had no independent
