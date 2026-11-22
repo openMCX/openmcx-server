@@ -142,6 +142,12 @@ void SipEngine::Impl::ensure_started() const {
 //------------------------------------------------------------------------------
 // One wait of at most the timeout for the stack's sockets and timers (a signal ends it early), then every request
 // and response its transaction user received.
+// reSIProcate's SipStack::process(timeout) runs the transaction layer and then waits, and its wait does not count the
+// messages a transaction user has queued: a message read during one process reaches this engine's queue at the start
+// of the next, whose wait then still runs its full length before the application sees the message (an answer to an
+// INVITE a poll timeout after its 100). So the transaction layer runs first without waiting, the wait is left out
+// when the queue already holds a message, the transaction layer runs again over what the wait read, and once more
+// after the application's callbacks, for what they sent.
 void SipEngine::Impl::poll(std::chrono::milliseconds timeout) {
   ensure_started();
   if (timeout.count() < 0) throw std::invalid_argument("invalid SIP poll timeout");
@@ -153,7 +159,11 @@ void SipEngine::Impl::poll(std::chrono::milliseconds timeout) {
     const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(due - now);
     wait = std::min(wait, std::max(left, std::chrono::milliseconds(0)));
   }
-  stack->process(static_cast<unsigned>(wait.count()));
+  stack->process(0);
+  if (!user.pending()) {
+    stack->process(static_cast<unsigned>(wait.count()));
+    stack->process(0);
+  }
   while (auto message = user.next()) {
     // The message in hand, named in what is reported meanwhile (report_error).
     handling = message->isRequest()
@@ -185,6 +195,8 @@ void SipEngine::Impl::poll(std::chrono::milliseconds timeout) {
       report_error("unknown SIP timer error");
     }
   }
+  // What the callbacks and timers sent leaves now, not at the start of the next poll.
+  stack->process(0);
 }
 
 //------------------------------------------------------------------------------

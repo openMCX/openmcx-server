@@ -245,6 +245,23 @@ void test_native_mutual_tls_request_callbacks_when_configured() {
   }
   check(request_received && response_received, "PJSIP-style leading MIME framing is normalized before strict parsing");
 
+  // A request answered from the callback and its response leave within the polls that see them: no poll waits out
+  // its timeout with a message for the application or the wire in hand (each step ends the wait by its own I/O).
+  request_received = false;
+  response_received = false;
+  engine.publish("sips:service@openmcx.test", "multipart/mixed; boundary=" + boundary, published_body, {},
+                 [&](const mcx::SipResponse &response) { response_received = response.status_code == 200; });
+  const auto exchange_start = std::chrono::steady_clock::now();
+  for (int iteration = 0; iteration < 20 && !response_received; ++iteration) {
+    engine.poll(std::chrono::milliseconds(200));
+  }
+  const auto exchange_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                                                                 exchange_start)
+                               .count();
+  check(request_received && response_received && exchange_ms < 150,
+        "a request and its answer cross without waiting out a poll timeout");
+  if (exchange_ms >= 150) std::cerr << "exchange diagnostic: " << exchange_ms << " ms with 200 ms polls\n";
+
   int unsupported_invite_status = 0;
   engine.request("INVITE", "sips:service@openmcx.test", "application/sdp", mcx::make_sdp(media, 9),
                  {{"Require", "x-unsupported"}},

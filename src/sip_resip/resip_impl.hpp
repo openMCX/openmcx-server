@@ -48,6 +48,8 @@ public:
   const resip::Data &name() const override;
   // The next message of the queue, if any.
   std::unique_ptr<resip::SipMessage> next();
+  // Whether the queue holds a message (SipEngine::Impl::poll does not wait then).
+  bool pending() { return mFifo.messageAvailable(); }
 };
 
 struct SipEngine::Impl {
