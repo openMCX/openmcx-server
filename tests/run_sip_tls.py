@@ -5,11 +5,13 @@
 
 """Provision ephemeral trust and run native self-loop and two-process SIP tests.
 
-Usage: run_sip_tls.py SIP_TEST_BINARY [tcp]. Creates a one-day self-signed certificate for
+Usage: run_sip_tls.py SIP_TEST_BINARY [tcp|core]. Creates a one-day self-signed certificate for
 127.0.0.1, runs the SIP test binary's self-loop test (over TLS only), its server and client
 roles as two processes (registration and call), the BYE authentication test against an
 independent raw SIP peer below, and the transaction failure test. The raw peer checks the
 SIP digest retry of RFC 3261 section 22.3 with the response of RFC 2617 section 3.2.2.1.
+With "core", only the self-loop test runs: the engine on reSIProcate until its dialog phases
+(prototype/resiprocate/PLAN.md, phases 3c and 3d).
 
 Specifications: RFC 3261, RFC 2617; the SDP offered is an MCPTT offer (TS 24.379 V19.7.0).
 """
@@ -245,6 +247,8 @@ with tempfile.TemporaryDirectory(prefix='openmcx-sip-tls-') as directory:
         env['OPENMCX_SIP_TEST_TCP'] = '1'
     else:
         subprocess.run([binary], env=env, check=True, timeout=20)
+        if len(sys.argv) > 2 and sys.argv[2] == 'core':
+            sys.exit(0)
     for prefix in ('', 'call-'):
         ready = pathlib.Path(directory) / ('ready-' + prefix)
         env['OPENMCX_SIP_TEST_READY_FILE'] = str(ready)

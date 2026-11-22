@@ -65,3 +65,22 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
   needed for either pjproject patch (`README.md`).
 - Phase 1: done. Also SIP over TLS with the TLS profile, judged by the regression's TLS checks, and multipart
   bodies octet for octet (`README.md`).
+- Phase 3a, step 1: the stack-independent helpers (configuration checks, identities, Contact and service tags, SDP
+  origin, header lookup) moved to `src/sip_common`, shared by both engines (`daa4f6a`).
+- Phase 3a, step 2: the engine core on reSIProcate in `src/sip_resip` (built with `-DMCX_SIP_STACK=resip`): the stack
+  in one epoll poll group driven from `SipEngine::poll`, TLS with the TLS profile and a client certificate required,
+  or debug TCP; requests outside dialogs with the core Route, written as text as the pjproject engine's are and sent
+  on the transaction layer (no DUM yet); received requests and responses as `SipMessage` and `SipResponse` with their
+  parts; both body filters, on the next hop's or the source's address; deferred responses; 420 before the application
+  for an unknown required extension; the later phases' operations throw naming their phase. `test_sip`'s self-loop
+  test is split: its dialog half (SUBSCRIBE 482, INVITE collision, failed answer) is left out with `MCX_SIP_RESIP`,
+  and `sip_tls` runs the self-loop only (`run_sip_tls.py ... core`). Results: `resip` 57 of 57 (no `sip_tcp`, whose
+  runner has only two-process roles), `pjsip` 58 of 58.
+  Left for later phases, found while writing it:
+  - digest authentication of requests outside dialogs (a 401 or 407 retry) goes with registration in phase 3b;
+  - the body filters are not run by any test on `resip` yet (the self-loop sets none): the server suites of phase 5
+    are the first; a test of their own belongs in 3b;
+  - the Via sent-by names the listen address for reSIProcate's transport choice and is rewritten to the advertised
+    address once the transport is chosen (a message decorator): to check with a wildcard listen address in 3b;
+  - reSIProcate logs a missing `$HOME/.sipCerts` at error level on every start (ctest sets `HOME` to the build
+    directory); the log mapping of phase 6 should drop it.

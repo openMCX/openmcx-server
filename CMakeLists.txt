@@ -23,8 +23,9 @@ if(MCX_SIP_STACK STREQUAL "resip")
     if(NOT RESIPROCATE_FOUND)
         message(FATAL_ERROR "MCX_SIP_STACK=resip needs reSIProcate (dependencies/resiprocate/build.sh)")
     endif()
-    message(FATAL_ERROR "MCX_SIP_STACK=resip: the SIP engine on reSIProcate is not written yet "
-                        "(prototype/resiprocate/PLAN.md phase 3a)")
+    # The engine core is written (PLAN.md phase 3a); registration, dialogs and subscriptions refuse until their
+    # phases.
+    message(STATUS "SIP engine on reSIProcate (prototype/resiprocate/PLAN.md, phase 3a: the engine core)")
 elseif(NOT MCX_SIP_STACK STREQUAL "pjsip")
     message(FATAL_ERROR "MCX_SIP_STACK must be pjsip or resip, not ${MCX_SIP_STACK}")
 endif()
@@ -36,6 +37,13 @@ pkg_check_modules(SRTP REQUIRED IMPORTED_TARGET libsrtp2)
 pkg_check_modules(OPENH264 REQUIRED IMPORTED_TARGET openh264)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
+if(RESIPROCATE_FOUND)
+    # reSIProcate's stack, DUM and their resolver, with OpenSSL for its TLS.
+    add_library(mcx_resiprocate INTERFACE)
+    target_include_directories(mcx_resiprocate SYSTEM INTERFACE ${RESIPROCATE_INCLUDE_DIR})
+    target_link_libraries(mcx_resiprocate INTERFACE ${RESIPROCATE_DUM_LIBRARY} ${RESIPROCATE_RESIP_LIBRARY}
+        ${RESIPROCATE_RUTIL_LIBRARY} ${RESIPROCATE_ARES_LIBRARY} OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
+endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_library(UUID uuid REQUIRED)
 find_library(AMRWB_DEC opencore-amrwb REQUIRED)
@@ -114,10 +122,6 @@ if(BUILD_TESTING)
     # The reSIProcate prototype (prototype/resiprocate/README.md): built when reSIProcate is found; no program links
     # it.
     if(RESIPROCATE_FOUND)
-        add_library(mcx_resiprocate INTERFACE)
-        target_include_directories(mcx_resiprocate SYSTEM INTERFACE ${RESIPROCATE_INCLUDE_DIR})
-        target_link_libraries(mcx_resiprocate INTERFACE ${RESIPROCATE_DUM_LIBRARY} ${RESIPROCATE_RESIP_LIBRARY}
-            ${RESIPROCATE_RUTIL_LIBRARY} ${RESIPROCATE_ARES_LIBRARY} OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
         add_executable(test_resip_probe prototype/resiprocate/resip_probe.cpp)
         target_link_libraries(test_resip_probe PRIVATE mcx_resiprocate)
         add_test(NAME resip_probe COMMAND test_resip_probe)
@@ -201,8 +205,22 @@ if(BUILD_TESTING)
     set_tests_properties(rx PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
-    add_library(mcx_sip src/media/ice.cpp src/sip/helpers.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp src/sip/messages.cpp src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp src/sip/ims_aka.cpp src/sip_common/sip_common.cpp src/common/runtime.cpp src/common/multicast.cpp src/security/key_client.cpp src/security/xfrm.cpp)
+    # The SIP engine on the stack MCX_SIP_STACK names; the parts that do not depend on it are shared.
+    if(MCX_SIP_STACK STREQUAL "resip")
+        set(MCX_SIP_ENGINE_SOURCES src/sip_resip/incoming.cpp src/sip_resip/lifecycle.cpp src/sip_resip/messages.cpp
+            src/sip_resip/requests.cpp src/sip_resip/sip_engine.cpp src/sip_resip/tls_security.cpp)
+    else()
+        set(MCX_SIP_ENGINE_SOURCES src/sip/helpers.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp src/sip/messages.cpp
+            src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp
+            src/sip/ims_aka.cpp)
+    endif()
+    add_library(mcx_sip src/media/ice.cpp ${MCX_SIP_ENGINE_SOURCES} src/sip_common/sip_common.cpp src/common/runtime.cpp src/common/multicast.cpp src/security/key_client.cpp src/security/xfrm.cpp)
     target_link_libraries(mcx_sip PUBLIC mcx_core mcx_keying mcx_ims_aka)
+    if(MCX_SIP_STACK STREQUAL "resip")
+        target_link_libraries(mcx_sip PRIVATE mcx_resiprocate)
+        # tests/test_sip.cpp leaves out the dialog half of its self-loop test until phases 3c and 3d.
+        target_compile_definitions(mcx_sip PUBLIC MCX_SIP_RESIP)
+    endif()
     target_include_directories(mcx_sip PRIVATE src/sip_common)
     target_compile_options(mcx_sip PRIVATE -Wall -Wextra -Wpedantic)
     # The service parts shared by the MCPTT and MCVideo core and the MCData server:
@@ -314,9 +332,15 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         add_executable(test_sdp_origin tests/test_sdp_origin.cpp)
         target_link_libraries(test_sdp_origin PRIVATE mcx_sip)
         add_test(NAME sdp_origin COMMAND test_sdp_origin)
-        add_test(NAME sip_tls COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sip_tls.py $<TARGET_FILE:test_sip>)
-        add_test(NAME sip_tcp COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sip_tls.py $<TARGET_FILE:test_sip> tcp)
-        set_tests_properties(sip_tls sip_tcp PROPERTIES TIMEOUT 45 RUN_SERIAL TRUE)
+        if(MCX_SIP_STACK STREQUAL "resip")
+            # The engine core only (prototype/resiprocate/PLAN.md phase 3a): the two-process roles need dialogs.
+            add_test(NAME sip_tls COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sip_tls.py $<TARGET_FILE:test_sip> core)
+            set_tests_properties(sip_tls PROPERTIES TIMEOUT 45 RUN_SERIAL TRUE ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}")
+        else()
+            add_test(NAME sip_tls COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sip_tls.py $<TARGET_FILE:test_sip>)
+            add_test(NAME sip_tcp COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sip_tls.py $<TARGET_FILE:test_sip> tcp)
+            set_tests_properties(sip_tls sip_tcp PROPERTIES TIMEOUT 45 RUN_SERIAL TRUE)
+        endif()
         # The service profiles (include/mcx/service.hpp) and the service parts (src/server/parts).
         foreach(component service location_service peers alias_registry served_users settings_subscriptions runtime_parts)
             add_executable(test_${component} tests/test_${component}.cpp)
