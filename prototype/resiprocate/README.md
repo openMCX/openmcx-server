@@ -39,45 +39,50 @@ group. It checks:
   `accept`; otherwise the NOTIFY carries no usable state and reaches `onUpdateExtension`). With the UAS in "Required"
   mode, DUM sends provisional responses reliably and waits for the PRACK.
 
-## IMS AKA registration through the lab's P-CSCF
+## IMS AKA through the lab's P-CSCF, TCP and UDP
 
 `aka_probe.cpp` registers the lab's `sip:aka-probe@mcx.test` subscriber (its own ISIM, provisioned in the HSS)
-through the lab's Kamailio P-CSCF (`ims_ipsec_pcscf`), TCP case of TS 33.203 clause 7.1. The REGISTERs are written
-as text and sent through reSIProcate's transaction layer; the ISIM, digest, sec-agree mechanisms and ESP keys are
-OpenMCX's `include/mcx/ims_aka.hpp`, the SAs its `include/mcx/xfrm.hpp`. `run-aka-probe.sh` builds everything,
-prepares and starts the lab, runs the probe in a container with CAP_NET_ADMIN, and tears the lab down (about 90 s).
+through the lab's Kamailio P-CSCF (`ims_ipsec_pcscf`), in the TCP and the UDP case of TS 33.203 clause 7.1. The
+requests are written as text and sent through reSIProcate's transaction layer; the ISIM, digest, sec-agree
+mechanisms and ESP keys are OpenMCX's `include/mcx/ims_aka.hpp`, the SAs its `include/mcx/xfrm.hpp`.
+`run-aka-probe.sh ... tcp|udp` builds it, prepares and starts the lab (`udp`: as the regression's `aka-udp` lab),
+runs the probe in a container with CAP_NET_ADMIN, and tears the lab down (about 90 s).
 
-| Check | Specification | Result |
-|---|---|---|
-| 401 to the unprotected initial REGISTER, with an AKA challenge (AKAv2-SHA-256) | TS 24.229 clause 5.1.1.2.2, RFC 3310 | ok |
-| The ISIM accepts RAND and AUTN | TS 33.102 clause 6.3.3 | ok |
-| A mechanism of the Security-Server is chosen (alg null, ealg aes-gcm-us) | TS 33.203 clause 7.2 | ok |
-| The four SAs are installed | TS 33.203 clause 7.1 | ok |
-| 200 to the protected REGISTER, on a TCP connection from port_uc to port_ps; P-Associated-URI and Service-Route | TS 24.229 clause 5.1.1.5.1, TS 33.203 clause 7.1 | ok |
-| 200 to the deregistration over the set in use | TS 24.229 clause 5.1.1.6.2 | ok |
-| On the wire (capture in the probe's namespace): the protected leg is ESP only, no plaintext SIP on its ports | TS 33.203 clause 7.1 | ok: 15 ESP, 0 plaintext |
+| Step | Specification | TCP | UDP |
+|---|---|---|---|
+| 401 to the unprotected initial REGISTER, AKAv2-SHA-256 challenge, the ISIM accepts it | TS 24.229 clause 5.1.1.2.2, RFC 3310, TS 33.102 clause 6.3.3 | ok | ok |
+| A mechanism of the Security-Server (alg null, ealg aes-gcm-us); four SAs installed | TS 33.203 clauses 7.1 and 7.2 | ok | ok |
+| 200 to the protected REGISTER, sent from port_uc to port_ps; the 200 on the connection from port_uc (TCP) or to port_us (UDP) | TS 24.229 clause 5.1.1.5.1, TS 33.203 clause 7.1 | ok | ok |
+| SUBSCRIBE to the own reg event; its NOTIFY comes to port_us (TCP: on the P-CSCF's connection; UDP: the probe's 200 leaves from port_uc) and is not retransmitted | TS 24.229 clause 5.1.1.3, RFC 3680, TS 33.203 clause 7.1 | ok | ok |
+| A MESSAGE of 2,866 bytes goes over TCP from port_uc; its response on that connection | RFC 3261 section 18.1.1, TS 24.229 clause 4.2A | | ok (403 from the lab's core, see below) |
+| Reregistration with a new offer: 401, a new set, its REGISTER's 200, the old SAs deleted | TS 24.229 clauses 5.1.1.4 and 5.1.1.5.1, TS 33.203 clause 7.4 | | ok |
+| Deregistration over the set in use | TS 24.229 clause 5.1.1.6.2 | ok | ok |
+| On the wire (TCP run, capture in the probe's namespace): the protected leg is ESP only | TS 33.203 clause 7.1 | ok: 15 ESP, 0 plaintext | |
 
 Findings:
 
-- **The fixed TCP client port needs no patch.** pjproject needs `dependencies/pjproject/0001-tcp-client-port.patch`
-  for the connection from port_uc. In reSIProcate, a TCP transport on port_uc in "symmetric connections" mode
-  (`RESIP_TRANSPORT_FLAG_SYMMETRIC_CONNECTIONS`) sets up its connections from port_uc, and the top Via's sent-by
-  chooses that transport for a request. The Via then names port_uc, not port_us as with pjsip; Kamailio accepts it
-  (`dependencies/kamailio/0002`, any Via port).
+- **No reSIProcate patch replaces the pjproject patches.**
+  - TCP (pjproject `0001-tcp-client-port.patch`): a TCP transport on port_uc in "symmetric connections" mode
+    (`RESIP_TRANSPORT_FLAG_SYMMETRIC_CONNECTIONS`) sets up its connections from port_uc; the top Via's sent-by
+    chooses it. The Via then names port_uc (pjsip: port_us); Kamailio accepts it (`dependencies/kamailio/0002`).
+  - UDP (pjproject `0002-udp-to-tcp.patch` and the engine's `aka_udp_send`): `ProtectedUdpTransport`, a
+    `resip::UdpTransport` on port_us that overrides `send`: what the stack sends on it (requests with Via port_us,
+    and responses to the P-CSCF's requests) leaves from a socket on port_uc of the set in use, to port_ps; nothing
+    without a set. A request of 1300 bytes or more is sent over TCP from port_uc instead (the engine decides from
+    its size; reSIProcate does not switch by itself).
 - **The next hop is a forced target.** `SipStack::sendTo(message, Tuple)` does not override the target the
-  transaction resolves (the Request-URI's domain, here unresolvable: a local 503); `SipMessage::setForceTarget` with
-  the P-CSCF's numeric address and port does.
-- **A REGISTER over the set in use carries a new offer** (new SPIs and port_uc in its Security-Client), as
-  `src/sip/ims_aka.cpp` does: the P-CSCF refuses one that offers the set's port_uc again ("protected client port
-  already in use", 400).
+  transaction resolves; `SipMessage::setForceTarget` with the P-CSCF's numeric address and port does.
+- **What the engine already does, the port must keep:** a REGISTER over the set in use carries a new Security-Client
+  offer (else 400, "protected client port already in use"); every request over the set carries Security-Verify and
+  Require and Proxy-Require "sec-agree" (else 494).
+- The lab's SIP core relays requests between users only through an application server (403 "Route forbidden" to the
+  MESSAGE to the own identity), so a large request from the P-CSCF over TCP to port_us in the UDP case is not
+  exercised; the TCP case shows the P-CSCF's requests on its connection to port_us.
 
 ## Not yet covered
 
-- The UDP case of TS 33.203 clause 7.1: requests pinned to the set's UDP port_uc, large requests and dialogs whose
-  route set names TCP over the TCP connection (`dependencies/pjproject/0002-udp-to-tcp.patch` today).
-- Requests of the P-CSCF to port_us (the reg event NOTIFY), re-registration with the switch to the new set and the
-  deletion of the old one, the resynchronisation (AUTS) and refused challenges.
-- TLS, multipart bodies (MIKEY and XML together), shutdown, and load.
+- TLS with OpenMCX's cipher profile; multipart bodies (MIKEY and XML together); resynchronisation (AUTS) and refused
+  challenges; shutdown; load.
 
 ## Running it
 
@@ -96,5 +101,6 @@ log, `PROBE_TRACE=1` the subscription callbacks.
 The IMS AKA registration against a lab (server and client images of a tag; about 90 s):
 
 ```sh
-prototype/resiprocate/run-aka-probe.sh sakke1 openmcx-client:sakke1
+prototype/resiprocate/run-aka-probe.sh sakke1 openmcx-client:sakke1 tcp
+prototype/resiprocate/run-aka-probe.sh sakke1 openmcx-client:sakke1 udp
 ```

@@ -60,3 +60,6 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
   `dependencies/lock.json` as an image dependency; the `MCX_SIP_STACK` switch (`pjsip` by default; `resip` stops until
   phase 3a); the prototype builds and its loopback probe runs in the development image's ctest (58 tests). Still to
   do: patch 0001 proposed upstream.
+- Phase 1, in part: IMS AKA over UDP and TCP against the lab (registration, a request of the P-CSCF to port_us,
+  a large request over TCP, reregistration with the switch to the new set, deregistration); no reSIProcate patch
+  needed for either pjproject patch (`README.md`). Still to do: TLS with OpenMCX's cipher profile, multipart bodies.
