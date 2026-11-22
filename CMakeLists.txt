@@ -5,6 +5,29 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 include(CTest)
 find_package(PkgConfig REQUIRED)
+# The SIP stack of the SIP engine (include/mcx/sip.hpp): pjproject (today's) or reSIProcate (the migration of
+# prototype/resiprocate/PLAN.md). The development image has both; reSIProcate is in /opt/resiprocate
+# (dependencies/resiprocate), or wherever CMAKE_PREFIX_PATH points.
+set(MCX_SIP_STACK "pjsip" CACHE STRING "SIP stack of the SIP engine: pjsip or resip")
+set_property(CACHE MCX_SIP_STACK PROPERTY STRINGS pjsip resip)
+find_path(RESIPROCATE_INCLUDE_DIR resip/dum/DialogUsageManager.hxx HINTS /opt/resiprocate/include)
+find_library(RESIPROCATE_DUM_LIBRARY dum HINTS /opt/resiprocate/lib)
+find_library(RESIPROCATE_RESIP_LIBRARY resip HINTS /opt/resiprocate/lib)
+find_library(RESIPROCATE_RUTIL_LIBRARY rutil HINTS /opt/resiprocate/lib)
+find_library(RESIPROCATE_ARES_LIBRARY resipares HINTS /opt/resiprocate/lib)
+if(RESIPROCATE_INCLUDE_DIR AND RESIPROCATE_DUM_LIBRARY AND RESIPROCATE_RESIP_LIBRARY AND RESIPROCATE_RUTIL_LIBRARY
+   AND RESIPROCATE_ARES_LIBRARY)
+    set(RESIPROCATE_FOUND TRUE)
+endif()
+if(MCX_SIP_STACK STREQUAL "resip")
+    if(NOT RESIPROCATE_FOUND)
+        message(FATAL_ERROR "MCX_SIP_STACK=resip needs reSIProcate (dependencies/resiprocate/build.sh)")
+    endif()
+    message(FATAL_ERROR "MCX_SIP_STACK=resip: the SIP engine on reSIProcate is not written yet "
+                        "(prototype/resiprocate/PLAN.md phase 3a)")
+elseif(NOT MCX_SIP_STACK STREQUAL "pjsip")
+    message(FATAL_ERROR "MCX_SIP_STACK must be pjsip or resip, not ${MCX_SIP_STACK}")
+endif()
 pkg_check_modules(PJ REQUIRED libpjproject)
 pkg_check_modules(XML REQUIRED IMPORTED_TARGET libxml-2.0)
 pkg_check_modules(CURL REQUIRED IMPORTED_TARGET libcurl)
@@ -88,19 +111,15 @@ if(BUILD_TESTING)
     target_include_directories(test_ibe_hostile PRIVATE src/security)
     target_link_libraries(test_ibe_hostile PRIVATE mcx_keying)
     add_test(NAME ibe_hostile COMMAND test_ibe_hostile)
-    # The reSIProcate SIP stack prototype (prototype/resiprocate/README.md): built only when reSIProcate has been built
-    # by hand with dependencies/resiprocate/build.sh (pass its prefix in CMAKE_PREFIX_PATH); no program links it.
-    find_path(RESIPROCATE_INCLUDE_DIR resip/dum/DialogUsageManager.hxx)
-    find_library(RESIPROCATE_DUM_LIBRARY dum)
-    find_library(RESIPROCATE_RESIP_LIBRARY resip)
-    find_library(RESIPROCATE_RUTIL_LIBRARY rutil)
-    find_library(RESIPROCATE_ARES_LIBRARY resipares)
-    if(RESIPROCATE_INCLUDE_DIR AND RESIPROCATE_DUM_LIBRARY AND RESIPROCATE_RESIP_LIBRARY AND RESIPROCATE_RUTIL_LIBRARY
-       AND RESIPROCATE_ARES_LIBRARY)
-        add_executable(test_resip_probe prototype/resiprocate/resip_probe.cpp)
-        target_include_directories(test_resip_probe SYSTEM PRIVATE ${RESIPROCATE_INCLUDE_DIR})
-        target_link_libraries(test_resip_probe PRIVATE ${RESIPROCATE_DUM_LIBRARY} ${RESIPROCATE_RESIP_LIBRARY}
+    # The reSIProcate prototype (prototype/resiprocate/README.md): built when reSIProcate is found; no program links
+    # it.
+    if(RESIPROCATE_FOUND)
+        add_library(mcx_resiprocate INTERFACE)
+        target_include_directories(mcx_resiprocate SYSTEM INTERFACE ${RESIPROCATE_INCLUDE_DIR})
+        target_link_libraries(mcx_resiprocate INTERFACE ${RESIPROCATE_DUM_LIBRARY} ${RESIPROCATE_RESIP_LIBRARY}
             ${RESIPROCATE_RUTIL_LIBRARY} ${RESIPROCATE_ARES_LIBRARY} OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
+        add_executable(test_resip_probe prototype/resiprocate/resip_probe.cpp)
+        target_link_libraries(test_resip_probe PRIVATE mcx_resiprocate)
         add_test(NAME resip_probe COMMAND test_resip_probe)
         # reSIProcate looks for TLS certificates in $HOME/.sipCerts and logs when it is missing.
         set_tests_properties(resip_probe PROPERTIES ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}")
@@ -109,9 +128,7 @@ if(BUILD_TESTING)
         add_executable(aka_probe prototype/resiprocate/aka_probe.cpp prototype/resiprocate/runtime_shim.cpp
             src/security/xfrm.cpp)
         target_include_directories(aka_probe PRIVATE include)
-        target_include_directories(aka_probe SYSTEM PRIVATE ${RESIPROCATE_INCLUDE_DIR})
-        target_link_libraries(aka_probe PRIVATE mcx_ims_aka ${RESIPROCATE_DUM_LIBRARY} ${RESIPROCATE_RESIP_LIBRARY}
-            ${RESIPROCATE_RUTIL_LIBRARY} ${RESIPROCATE_ARES_LIBRARY} OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
+        target_link_libraries(aka_probe PRIVATE mcx_ims_aka mcx_resiprocate)
     endif()
 endif()
 

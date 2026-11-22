@@ -41,3 +41,5 @@ cmake -S "$source" -B "$source/build" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_
   -DWITH_C_ARES=OFF -DENABLE_LOG_REPOSITORY_DETAILS=OFF -DRESIP_ASSERT_SYSLOG=OFF >/dev/null
 cmake --build "$source/build" -j"${MCX_BUILD_JOBS:-8}"
 cmake --install "$source/build" >/dev/null
+# The licence, kept with the libraries for the images that carry them.
+install -D -m 644 "$source/LICENSE.md" "$prefix/share/doc/resiprocate/LICENSE.md"

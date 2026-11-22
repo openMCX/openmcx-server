@@ -40,7 +40,7 @@
       "url": "https://github.com/resiprocate/resiprocate/archive/refs/tags/resiprocate-1.14.0.tar.gz",
       "sha256": "f132e4d0fcae0c155f91e5dad608a9985e199e4e3c09b6029a70b1b3b6d0b156",
       "bytes": 30787415,
-      "use": "prototype: built by dependencies/resiprocate/build.sh for prototype/resiprocate only, in no image"
+      "use": "image"
     },
     {
       "file": "libsrtp-2.8.1.tar.gz",

@@ -1,13 +1,14 @@
-# reSIProcate (prototype)
+# reSIProcate
 
 Pinned source: [reSIProcate 1.14.0](https://github.com/resiprocate/resiprocate/releases/tag/resiprocate-1.14.0),
-archive SHA-256 `f132e4d0fcae0c155f91e5dad608a9985e199e4e3c09b6029a70b1b3b6d0b156` (also in `dependencies/lock.json`,
-marked for the prototype). Licence: the Vovida Software License 1.0 (BSD-style, with a clause on the name "VOCAL") for
+archive SHA-256 `f132e4d0fcae0c155f91e5dad608a9985e199e4e3c09b6029a70b1b3b6d0b156` (also in `dependencies/lock.json`). Licence: the Vovida Software License 1.0 (BSD-style, with a clause on the name "VOCAL") for
 rutil, the stack and DUM; the bundled `rutil/dns/ares` is under the MIT-style c-ares licence.
 
-For the SIP stack prototype only (`prototype/resiprocate/README.md`); no program or image contains it. `build.sh`
-downloads the release, checks its SHA-256, applies the patches here and builds the static rutil, resip and dum
-libraries with OpenSSL (repro, media, TURN, tests, popt, GeoIP and DTLS off):
+The SIP stack that replaces pjproject (`prototype/resiprocate/PLAN.md`). The development image builds it
+(`docker/Dockerfile.dev`, into `/opt/resiprocate`); no program links it yet. `build.sh` downloads the release unless
+the work directory already has it, checks its SHA-256, applies the patches here and builds the static rutil, resip
+and dum libraries with OpenSSL (repro, media, TURN, tests, popt, GeoIP and DTLS off), with the licence in
+`share/doc/resiprocate`:
 
 ```sh
 dependencies/resiprocate/build.sh /tmp/resiprocate /tmp/resiprocate-build

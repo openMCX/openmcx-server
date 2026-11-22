@@ -56,3 +56,7 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
 ## Progress
 
 - Phase 0: done (`README.md`; commits `d80f9ea`, `12f08f6`).
+- Phase 2, in part: reSIProcate in `docker/Dockerfile.dev` (`/opt/resiprocate`, with its licence) and in
+  `dependencies/lock.json` as an image dependency; the `MCX_SIP_STACK` switch (`pjsip` by default; `resip` stops until
+  phase 3a); the prototype builds and its loopback probe runs in the development image's ctest (58 tests). Still to
+  do: patch 0001 proposed upstream.
