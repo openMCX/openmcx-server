@@ -16,6 +16,7 @@ group. It checks:
 | The caller refreshes the session at half the interval (`--refresh`, about 45 s) | RFC 4028 section 10 | ok (UPDATE) |
 | SUBSCRIBE, 200, NOTIFY with a body, a second NOTIFY, termination | RFC 6665 | ok |
 | The same with the initial NOTIFY reaching the subscriber before its 200 | RFC 6665 section 4.1.2.4 | ok with patch 0001 only |
+| A MESSAGE in the dialog with a multipart/mixed body (SDP, MC service XML, binary octets with CRLFs, a near-boundary line, NUL and every octet value), built as `MultipartMixedContents` and written as text: the three parts arrive octet for octet | RFC 3428, RFC 2046 section 5.1 | ok |
 | Media packets handled within 1 ms (p99) with SIP and media in one epoll | | ok: median 50 to 100 us, p99 about 0.2 ms |
 
 ## Findings
@@ -79,10 +80,26 @@ Findings:
   MESSAGE to the own identity), so a large request from the P-CSCF over TCP to port_us in the UDP case is not
   exercised; the TCP case shows the P-CSCF's requests on its connection to port_us.
 
+## SIP over TLS with OpenMCX's TLS profile
+
+`tls_probe.cpp` runs a TLS listener and a TLS client on reSIProcate with the profile of `include/mcx/tls_profile.hpp`
+(TS 33.210 clause 6.2), as `src/sip/lifecycle.cpp` sets it on pjsip: `ProfileSecurity` applies TLS 1.2 to 1.3, the
+TLS 1.2 ECDHE AEAD suites and the profile's groups to every SSL_CTX the stack creates (its own and, through
+`createDomainCtx`, each TLS transport's); the listener requires a client certificate
+(`SecurityTypes::Mandatory`). `run-tls-probe.sh` makes test certificates and judges it by the regression's rules
+(`tests/integration/tls_profile_check.py`: its refused handshakes, its allowed suites and groups):
+
+| Check | Specification | Result |
+|---|---|---|
+| A call over TLS with a client certificate gets its 200 | TS 33.180 clause 6.1 | ok |
+| The listener accepts the profile's suites and refuses RSA key exchange, ECDHE with CBC, DHE, ffdhe2048 only, TLS 1.1 | TS 33.210 clause 6.2 | ok |
+| The listener refuses a client without a certificate | TS 33.180 clause 6.1 | ok |
+| The client's ClientHello offers only TLS 1.3 suites, the six TLS 1.2 ECDHE AEAD suites and the SCSV, and the groups X25519, P-256, P-384, P-521 | TS 33.210 clause 6.2 | ok |
+| The client refuses a server whose certificate another CA issued | RFC 3261 section 26.2 | ok |
+
 ## Not yet covered
 
-- TLS with OpenMCX's cipher profile; multipart bodies (MIKEY and XML together); resynchronisation (AUTS) and refused
-  challenges; shutdown; load.
+- Resynchronisation (AUTS) and refused challenges; shutdown; load (phases 3 and 6 of `PLAN.md`).
 
 ## Running it
 
@@ -97,6 +114,12 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" -w /workspace op
 
 `test_resip_probe --refresh` also waits for the session refresh. `PROBE_LOG=Info` (or `Debug`) shows reSIProcate's
 log, `PROBE_TRACE=1` the subscription callbacks.
+
+SIP over TLS with the TLS profile, on loopback (about 30 s):
+
+```sh
+prototype/resiprocate/run-tls-probe.sh
+```
 
 The IMS AKA registration against a lab (server and client images of a tag; about 90 s):
 

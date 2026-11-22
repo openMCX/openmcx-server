@@ -129,6 +129,11 @@ if(BUILD_TESTING)
             src/security/xfrm.cpp)
         target_include_directories(aka_probe PRIVATE include)
         target_link_libraries(aka_probe PRIVATE mcx_ims_aka mcx_resiprocate)
+        # SIP over TLS with the TLS profile (prototype/resiprocate/run-tls-probe.sh): not a ctest, it needs the openssl
+        # tool and test certificates.
+        add_executable(tls_probe prototype/resiprocate/tls_probe.cpp)
+        target_include_directories(tls_probe PRIVATE include)
+        target_link_libraries(tls_probe PRIVATE mcx_resiprocate)
     endif()
 endif()
 

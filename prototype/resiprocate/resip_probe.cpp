@@ -21,6 +21,8 @@
 #include "resip/dum/ServerInviteSession.hxx"
 #include "resip/dum/ServerSubscription.hxx"
 #include "resip/dum/SubscriptionHandler.hxx"
+#include "resip/stack/MultipartMixedContents.hxx"
+#include "resip/stack/OctetContents.hxx"
 #include "resip/stack/PlainContents.hxx"
 #include "resip/stack/SdpContents.hxx"
 #include "resip/stack/SipMessage.hxx"
@@ -109,6 +111,8 @@ struct Observed {
   int notifies = 0;              // alice: NOTIFYs with a body
   std::string last_notify_body;
   bool subscription_ended = false; // bob: the subscription terminated
+  // bob: the parts of each MESSAGE received in the dialog (content type, octets), from its parsed multipart body.
+  std::vector<std::vector<std::pair<std::string, std::string>>> message_parts;
 };
 
 // alice's and bob's INVITE handling (DUM callbacks); bob answers with a reliable 183, then 200.
@@ -209,7 +213,26 @@ public:
 
   void onInfoFailure(resip::InviteSessionHandle, const resip::SipMessage &) override {}
 
-  void onMessage(resip::InviteSessionHandle session, const resip::SipMessage &) override { session->acceptNIT(); }
+  //------------------------------------------------------------------------------
+  // RFC 3428 and RFC 2046 section 5.1: bob receives a MESSAGE in the dialog and keeps the parts of its multipart body
+  // as reSIProcate parsed them.
+  void onMessage(resip::InviteSessionHandle session, const resip::SipMessage &message) override {
+    std::vector<std::pair<std::string, std::string>> parts;
+    if (const auto *mixed = dynamic_cast<const resip::MultipartMixedContents *>(message.getContents())) {
+      for (const auto *part : mixed->parts()) {
+        const auto octets = part->getBodyData();
+        parts.emplace_back(std::string(part->getType().type().c_str()) + "/" + part->getType().subType().c_str(),
+                           std::string(octets.data(), octets.size()));
+      }
+    }
+    if (is_callee_) observed_.message_parts.push_back(parts);
+    session->acceptNIT();
+  }
+
+  // Alice sends a MESSAGE in the dialog with the given body.
+  void send_message(const resip::Contents &body) {
+    if (client_session_.isValid()) client_session_->message(body);
+  }
 
   void onMessageSuccess(resip::InviteSessionHandle, const resip::SipMessage &) override {}
 
@@ -438,6 +461,8 @@ struct Agent {
     profile->addSupportedMethod(resip::PRACK);
     profile->addSupportedMethod(resip::UPDATE);
     profile->addSupportedMimeType(resip::NOTIFY, resip::PlainContents::getStaticType());
+    profile->addSupportedMethod(resip::MESSAGE);
+    profile->addSupportedMimeType(resip::MESSAGE, resip::Mime("multipart", "mixed"));
     profile->addAllowedEvent(resip::Token(probe_event));
     dum->setMasterProfile(profile);
   }
@@ -448,6 +473,38 @@ struct Agent {
     return result;
   }
 };
+
+// The parts of the multipart test bodies: an SDP offer, MC service XML (as an MCPTT INVITE carries them, TS 24.379
+// clause 6.2.1), and octets that a multipart parser must keep exactly: CRLFs, a line that starts like a boundary,
+// NUL and every other octet value.
+struct TestPart {
+  std::string type, subtype, octets;
+};
+
+//------------------------------------------------------------------------------
+// Helper: the three test parts; the binary one avoids the given boundary but comes close to it.
+std::vector<TestPart> test_parts(const std::string &near_boundary) {
+  std::string binary = "\r\n--" + near_boundary.substr(0, near_boundary.size() - 1) + "\r\n";
+  for (int value = 0; value < 256; ++value) binary.push_back(static_cast<char>(value));
+  binary += std::string("\0\r\n\r\n--\r\n", 9);
+  return {{"application", "sdp",
+           "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\nc=IN IP4 127.0.0.1\r\nt=0 0\r\nm=audio 4000 RTP/AVP 96\r\n"},
+          {"application", "vnd.3gpp.mcptt-info+xml",
+           "<?xml version=\"1.0\"?>\r\n<mcpttinfo xmlns=\"urn:3gpp:ns:mcpttInfo:1.0\"><mcptt-Params>"
+           "<session-type>private</session-type></mcptt-Params></mcpttinfo>"},
+          {"application", "octet-stream", binary}};
+}
+
+//------------------------------------------------------------------------------
+// Helper: whether received parts are the test parts, type and octets.
+bool same_parts(const std::vector<std::pair<std::string, std::string>> &received, const std::vector<TestPart> &sent) {
+  if (received.size() != sent.size()) return false;
+  for (std::size_t index = 0; index < sent.size(); ++index) {
+    if (received[index].first != sent[index].type + "/" + sent[index].subtype) return false;
+    if (received[index].second != sent[index].octets) return false;
+  }
+  return true;
+}
 
 //------------------------------------------------------------------------------
 // One turn of the OpenMCX event loop: one epoll wait for everything (both stacks' sockets and the media socket), then
@@ -546,6 +603,33 @@ int main(int argc, char **argv) {
                   alice, bob, [&] { return observed.subscription_ended; }, flow_timeout),
               "RFC 6665: the subscription ends");
       }
+
+      std::cout << "MESSAGE in the dialog with multipart/mixed bodies (RFC 2046 section 5.1)\n";
+      // reSIProcate's own multipart: the parts as OctetContents of their types, the boundary its own.
+      const auto parts = test_parts("openmcx-raw-boundary-7f3a");
+      resip::MultipartMixedContents mixed;
+      for (const auto &part : parts)
+        mixed.parts().push_back(new resip::OctetContents(resip::Data(part.octets.data(), part.octets.size()),
+                                                         resip::Mime(part.type.c_str(), part.subtype.c_str())));
+      caller.send_message(mixed);
+      check(run_until(
+                alice, bob, [&] { return observed.message_parts.size() >= 1; }, flow_timeout) &&
+                same_parts(observed.message_parts[0], parts),
+            "a body built as MultipartMixedContents arrives with its three parts, octet for octet");
+      // A body written as text (as the engine builds its multipart bodies today), sent as it is.
+      const std::string boundary = "openmcx-raw-boundary-7f3a";
+      std::string raw;
+      for (const auto &part : parts)
+        raw +=
+            "--" + boundary + "\r\nContent-Type: " + part.type + "/" + part.subtype + "\r\n\r\n" + part.octets + "\r\n";
+      raw += "--" + boundary + "--\r\n";
+      resip::Mime raw_type("multipart", "mixed");
+      raw_type.param(resip::p_boundary) = resip::Data(boundary);
+      caller.send_message(resip::OctetContents(resip::Data(raw.data(), raw.size()), raw_type));
+      check(run_until(
+                alice, bob, [&] { return observed.message_parts.size() >= 2; }, flow_timeout) &&
+                same_parts(observed.message_parts[1], parts),
+            "a multipart body written as text arrives parsed into the same three parts, octet for octet");
 
       caller.hang_up();
       check(run_until(alice, bob, [&] { return observed.call_ended; }, flow_timeout), "RFC 3261: BYE ends the call");

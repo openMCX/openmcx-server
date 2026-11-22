@@ -62,4 +62,6 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
   do: patch 0001 proposed upstream.
 - Phase 1, in part: IMS AKA over UDP and TCP against the lab (registration, a request of the P-CSCF to port_us,
   a large request over TCP, reregistration with the switch to the new set, deregistration); no reSIProcate patch
-  needed for either pjproject patch (`README.md`). Still to do: TLS with OpenMCX's cipher profile, multipart bodies.
+  needed for either pjproject patch (`README.md`).
+- Phase 1: done. Also SIP over TLS with the TLS profile, judged by the regression's TLS checks, and multipart
+  bodies octet for octet (`README.md`).
