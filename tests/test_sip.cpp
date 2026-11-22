@@ -983,6 +983,47 @@ void run_bye_auth_server(const std::string &directory) {
 }
 
 //------------------------------------------------------------------------------
+// Role "register-digest", against the raw registrar of run_sip_tls.py (RFC 3261 sections 10.2 and 22.2): registers
+// with digest credentials (the registrar challenges with 401), keeps the registration refreshed (granted 4 s: the
+// refresh comes half way, TS 24.229 clause 5.1.1.4.1), sends a MESSAGE that the registrar challenges with 407, and
+// removes the registration.
+void run_register_digest(const std::string &directory) {
+  auto config = process_config(directory, 15062, "sip:registering@openmcx.test", "sip:127.0.0.1:15063;transport=tls");
+  if (std::getenv("OPENMCX_SIP_TEST_TCP")) config.core_uri = "sip:127.0.0.1:15063;transport=tcp";
+  config.username = "registering-user";
+  config.password = "registering-test-password";
+  std::string error;
+  mcx::SipCallbacks callbacks;
+  callbacks.on_error = [&](std::string_view text) { error = text; };
+  mcx::SipEngine engine(config, callbacks);
+  engine.start();
+  int registered = 0, message_status = 0, removed_status = 0;
+  bool message_sent = false, removing = false;
+  engine.register_account(4, [&](const mcx::SipResponse &response) {
+    if (response.status_code == 200) ++registered;
+    else error = "REGISTER answered " + std::to_string(response.status_code);
+  });
+  for (int iteration = 0; iteration < 1000 && removed_status == 0; ++iteration) {
+    engine.poll(std::chrono::milliseconds(10));
+    if (registered >= 2 && !message_sent) {
+      message_sent = true;
+      engine.request("MESSAGE", "sip:peer@openmcx.test", "text/plain", "hello", {},
+                     [&](const mcx::SipResponse &response) { message_status = response.status_code; });
+    }
+    if (message_status != 0 && !removing) {
+      removing = true;
+      engine.unregister_account([&](const mcx::SipResponse &response) { removed_status = response.status_code; });
+    }
+  }
+  check(registered >= 2, "digest REGISTER is retried with credentials and refreshed before it expires");
+  check(message_status == 200, "a MESSAGE challenged with 407 is retried with Proxy-Authorization");
+  check(removed_status == 200, "the registration is removed with Expires 0");
+  if (removed_status != 200) std::cerr << "registration diagnostic: registered=" << registered << " message="
+                                       << message_status << " error='" << error << "'\n";
+  engine.stop();
+}
+
+//------------------------------------------------------------------------------
 // Role "transaction-failure": a SUBSCRIBE towards a port where nothing listens fails at the transport and invokes
 // its response callback exactly once with an error status.
 void run_transaction_failure(const std::string &directory) {
@@ -1014,7 +1055,9 @@ int main() {
       return 2;
     }
     try {
-      if (std::string_view(role) == "bye-auth-server") {
+      if (std::string_view(role) == "register-digest") {
+        run_register_digest(certificate_directory);
+      } else if (std::string_view(role) == "bye-auth-server") {
         run_bye_auth_server(certificate_directory);
       } else if (std::string_view(role) == "transaction-failure") {
         run_transaction_failure(certificate_directory);

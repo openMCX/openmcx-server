@@ -98,6 +98,7 @@ void SipEngine::Impl::send_response(const resip::SipMessage &request, const SipR
   const resip::Data wire(text);
   std::unique_ptr<resip::SipMessage> message(resip::SipMessage::make(wire, false));
   if (message == nullptr) throw std::invalid_argument("invalid SIP response");
+  if (response.status_code >= 200) transaction_ended(request.getTransactionId().c_str());
   stack->send(std::move(message), &user);
 }
 

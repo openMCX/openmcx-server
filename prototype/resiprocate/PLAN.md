@@ -84,3 +84,27 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
     address once the transport is chosen (a message decorator): to check with a wildcard listen address in 3b;
   - reSIProcate logs a missing `$HOME/.sipCerts` at error level on every start (ctest sets `HOME` to the build
     directory); the log mapping of phase 6 should drop it.
+- Phase 3b: registration on reSIProcate.
+  - Digest (`src/sip_resip/requests.cpp`): REGISTER with the registration's Call-ID and rising CSeq through the core,
+    the refresh 600 s before expiry or half way (TS 24.229 clause 5.1.1.4.1), Expires 0 to remove it, the TLS
+    connection closed 2 s after `registration_ended`; every request outside a dialog answered 401 or 407 is retried
+    once with credentials (reSIProcate's `Helper::addAuthorization`, CSeq incremented). New two-process test: the
+    `register-digest` role against a raw registrar in `run_sip_tls.py` (401 on REGISTER, refresh after 2 s of a 4 s
+    grant, 407 on a MESSAGE, removal), passing on both engines over TLS and TCP.
+  - IMS AKA (`src/sip_resip/ims_aka.cpp`, the port of `src/sip/ims_aka.cpp`, same procedure and timers): the receive
+    filter of TS 33.203 clause 7.1 rules 4 and 7 is in the transports, before the transaction layer
+    (`aka_transports.hpp`: `pushRxMsgUp`); each set adds its own TCP transport on port_uc in symmetric-connections mode
+    (and over UDP a UDP one), removed with the set; the UDP transport of port_us sends from port_uc of the set in use;
+    a request of 1300 bytes or more over UDP moves to TCP before it is handed to the stack. The Via of a protected
+    request names port_us after the transport is chosen (the message decorator): the prototype's port_uc Via, which
+    leaned on the lab's Kamailio patch, is gone.
+  - `tests/run_ims_aka.py` (needs `--cap-add NET_ADMIN`, skipped by ctest): scenarios 1 to 4 pass on both engines
+    (registration, the filter, deregistration, resynchronisation, reregistration with a new set and the old set's
+    deletion, MAC failure, the TS 34.108 test algorithm). Two problems found on main, not the migration's:
+    - the test's `Security-Client` check still expected HMAC-SHA-1-96 with AES-CBC first; the engine offers AES-GCM
+      first since `2fdc66b`. Fixed here (the combination must be among the offers).
+    - scenario 5 (UDP) fails on both engines: with eight mechanisms the initial REGISTER is over 1300 bytes, so the
+      engine sends it over TCP (RFC 3261 section 18.1.1) to a test P-CSCF that listens on UDP only. Undecided: fewer
+      offers over UDP, or the test (and the lab's P-CSCF) taking the REGISTER over TCP.
+  - Not yet run: the `aka` and `aka-udp` labs, which need the client on reSIProcate (subscriptions, phase 3d); a
+    wildcard listen address.

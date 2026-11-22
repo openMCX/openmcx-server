@@ -5,12 +5,12 @@
 
 """Provision ephemeral trust and run native self-loop and two-process SIP tests.
 
-Usage: run_sip_tls.py SIP_TEST_BINARY [tcp|core]. Creates a one-day self-signed certificate for
+Usage: run_sip_tls.py SIP_TEST_BINARY [tcp] [core]. Creates a one-day self-signed certificate for
 127.0.0.1, runs the SIP test binary's self-loop test (over TLS only), its server and client
 roles as two processes (registration and call), the BYE authentication test against an
 independent raw SIP peer below, and the transaction failure test. The raw peer checks the
 SIP digest retry of RFC 3261 section 22.3 with the response of RFC 2617 section 3.2.2.1.
-With "core", only the self-loop test runs: the engine on reSIProcate until its dialog phases
+With "core", only the self-loop test and the digest registration run: the engine on reSIProcate until its dialog phases
 (prototype/resiprocate/PLAN.md, phases 3c and 3d).
 
 Specifications: RFC 3261, RFC 2617; the SDP offered is an MCPTT offer (TS 24.379 V19.7.0).
@@ -77,6 +77,125 @@ class SipWire:
         copied = [('Via', value) for value in fields['via']]
         copied += [(key, fields[key.lower()][0]) for key in ['From', 'To', 'Call-ID', 'CSeq']]
         self.send('SIP/2.0 ' + status, copied + list(extra))
+
+
+# ------------------------------------------------------------------------------
+def digest_values(header):
+    """The parameters of a Digest credentials header field value."""
+    return {match[0].lower(): match[1] or match[2] for match in re.findall(r'(\w+)=(?:"([^"]*)"|([^,\s]+))', header)}
+
+
+# ------------------------------------------------------------------------------
+def check_digest(header, method, username, password, realm, nonce):
+    """RFC 2617 section 3.2.2.1: the response of credentials with qop auth (or without qop)."""
+    values = digest_values(header)
+    assert values['username'] == username and values['realm'] == realm and values['nonce'] == nonce, header
+    digest = lambda value: hashlib.md5(value.encode()).hexdigest()
+    ha1 = digest(username + ':' + realm + ':' + password)
+    ha2 = digest(method + ':' + values['uri'])
+    if values.get('qop') == 'auth':
+        expected = digest(':'.join([ha1, nonce, values['nc'], values['cnonce'], 'auth', ha2]))
+    else:
+        expected = digest(':'.join([ha1, nonce, ha2]))
+    assert hmac.compare_digest(values['response'], expected), 'digest response is incorrect: ' + header
+
+
+# ------------------------------------------------------------------------------
+def run_register_digest(binary, directory, env):
+    """A raw registrar (RFC 3261 section 10.3) for the "register-digest" role: it challenges every REGISTER without
+    credentials with 401 and checks the retry (same Call-ID, higher CSeq, a correct digest); grants 4 s and expects
+    the refresh half way; challenges the MESSAGE with 407; and expects the removal with Expires 0."""
+    tcp = env.get('OPENMCX_SIP_TEST_TCP') == '1'
+    listener = socket.socket()
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(('127.0.0.1', 15063))
+    listener.listen(4)
+    username, password = 'registering-user', 'registering-test-password'
+    realm, nonce = 'openmcx-register-test', 'register-nonce-1'
+    role_env = env.copy()
+    role_env['OPENMCX_SIP_TEST_ROLE'] = 'register-digest'
+    process = subprocess.Popen([binary], env=role_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    wires = {}
+    try:
+        def accept():
+            connection, _ = listener.accept()
+            if not tcp:
+                server_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                server_tls.load_cert_chain(directory + '/cert.pem', directory + '/key.pem')
+                server_tls.load_verify_locations(cafile=directory + '/cert.pem')
+                server_tls.verify_mode = ssl.CERT_REQUIRED
+                connection = server_tls.wrap_socket(connection, server_side=True)
+            wires[connection] = SipWire(connection)
+
+        def receive():
+            """The next request on any connection (a new connection is accepted)."""
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                for wire in wires.values():
+                    if wire.buffer:
+                        return wire, wire.receive()
+                ready, _, _ = select.select([listener] + list(wires), [], [], 0.5)
+                for item in ready:
+                    if item is listener:
+                        accept()
+                    else:
+                        return wires[item], wires[item].receive()
+            raise AssertionError('registrar: no request from the engine')
+
+        call_id, cseq, registrations, refreshes = None, 0, 0, 0
+        expect_removal = False
+        while True:
+            wire, request = receive()
+            method = request[0].split()[0]
+            fields = request[1]
+            number = int(fields['cseq'][0].split()[0])
+            if method == 'REGISTER':
+                assert request[0] == 'REGISTER sip:openmcx.test SIP/2.0', request[0]
+                assert '127.0.0.1:15063' in fields['route'][0] and ';lr' in fields['route'][0], fields.get('route')
+                assert call_id in (None, fields['call-id'][0]), 'the registration keeps its Call-ID'
+                assert number > cseq, 'every REGISTER of the registration has a higher CSeq'
+                call_id, cseq = fields['call-id'][0], number
+                expires = int(fields['expires'][0])
+                if 'authorization' not in fields:
+                    wire.respond(request, '401 Unauthorized',
+                                 [('WWW-Authenticate', f'Digest realm="{realm}", nonce="{nonce}", algorithm=MD5, qop="auth"')])
+                    continue
+                check_digest(fields['authorization'][0], 'REGISTER', username, password, realm, nonce)
+                if expires == 0:
+                    assert expect_removal, 'removal before the MESSAGE'
+                    wire.respond(request, '200 OK')
+                    break
+                assert expires == 4, 'Expires asks for what register_account asked'
+                registrations += 1
+                if registrations == 1:
+                    first_at = time.monotonic()
+                else:
+                    refreshes += 1
+                    elapsed = time.monotonic() - first_at
+                    assert 1.0 <= elapsed <= 3.5, f'refresh half way through 4 s, not after {elapsed:.1f} s'
+                wire.respond(request, '200 OK', [('Contact', fields['contact'][0] + ';expires=4')])
+            elif method == 'MESSAGE':
+                if 'proxy-authorization' not in fields:
+                    wire.respond(request, '407 Proxy Authentication Required',
+                                 [('Proxy-Authenticate', f'Digest realm="{realm}", nonce="{nonce}", algorithm=MD5, qop="auth"')])
+                    continue
+                check_digest(fields['proxy-authorization'][0], 'MESSAGE', username, password, realm, nonce)
+                wire.respond(request, '200 OK')
+                expect_removal = True
+            else:
+                raise AssertionError('registrar: unexpected ' + request[0])
+        assert refreshes >= 1, 'the registration was refreshed'
+        output, _ = process.communicate(timeout=10)
+        print(output, end='')
+        assert process.returncode == 0, 'digest registration regression failed'
+        print('digest registration, refresh, 407 retry and removal verified over ' + ('tcp' if tcp else 'tls'))
+    finally:
+        for connection in wires:
+            connection.close()
+        listener.close()
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=5)
 
 
 # ------------------------------------------------------------------------------
@@ -243,12 +362,13 @@ with tempfile.TemporaryDirectory(prefix='openmcx-sip-tls-') as directory:
     )
     env = os.environ.copy()
     env['OPENMCX_SIP_TEST_CERT_DIR'] = directory
-    if len(sys.argv) > 2 and sys.argv[2] == 'tcp':
+    if 'tcp' in sys.argv[2:]:
         env['OPENMCX_SIP_TEST_TCP'] = '1'
     else:
         subprocess.run([binary], env=env, check=True, timeout=20)
-        if len(sys.argv) > 2 and sys.argv[2] == 'core':
-            sys.exit(0)
+    run_register_digest(binary, directory, env)
+    if 'core' in sys.argv[2:]:
+        sys.exit(0)
     for prefix in ('', 'call-'):
         ready = pathlib.Path(directory) / ('ready-' + prefix)
         env['OPENMCX_SIP_TEST_READY_FILE'] = str(ready)

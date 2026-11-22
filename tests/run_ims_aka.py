@@ -354,10 +354,11 @@ def accept_initial(listener):
         and 'response=""' in fields["authorization"][0],
         "initial Authorization (TS 24.229 clause 5.1.1.2.2 a)",
     )
+    # TS 33.203 clause 7.2: one mechanism per algorithm combination of the UE (its preferred first, AES-GCM since
+    # 2fdc66b); the combination the P-CSCF of this test selects is among them.
     check(
-        fields["security-client"][0].startswith(
-            "ipsec-3gpp;alg=hmac-sha-1-96;ealg=aes-cbc;prot=esp;mod=trans;"
-        ),
+        fields["security-client"][0].startswith("ipsec-3gpp;")
+        and "alg=hmac-sha-1-96;ealg=aes-cbc;prot=esp;mod=trans;" in fields["security-client"][0],
         "Security-Client",
     )
     client = {

@@ -12,6 +12,7 @@
 
 #include "rutil/Log.hxx"
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace mcx {
@@ -51,8 +52,6 @@ SipEngine::Impl::~Impl() { stop(); }
 // on the listen address and port.
 void SipEngine::Impl::start() {
   if (started) return;
-  if (config.aka.enabled)
-    throw std::logic_error("IMS AKA on reSIProcate: prototype/resiprocate/PLAN.md phase 3b");
   static const bool logging = [] {
     resip::Log::initialize(resip::Log::Cerr, resip::Log::Err, "openmcx");
     return true;
@@ -68,7 +67,17 @@ void SipEngine::Impl::start() {
   }
   stack = std::make_unique<resip::SipStack>(options);
   const resip::Data interface(config.listen_address);
-  if (config.tls.enabled) {
+  if (config.aka.enabled) {
+    // TS 33.203 clause 7: IMS AKA, its transports and security associations (ims_aka.cpp).
+    try {
+      aka_start();
+    } catch (...) {
+      aka_stop();
+      stack.reset();
+      poll_group.reset();
+      throw;
+    }
+  } else if (config.tls.enabled) {
     stack->addTransport(resip::TLS, config.listen_port, resip::V4, resip::StunDisabled, interface,
                         resip::Data(config.advertise_address), resip::Data::Empty, resip::SecurityTypes::SSLv23, 0,
                         resip::Data(config.tls.cert_file), resip::Data(config.tls.key_file),
@@ -84,6 +93,8 @@ void SipEngine::Impl::start() {
 // Stops the stack: its transactions and connections go with it; requests still pending get no response.
 void SipEngine::Impl::stop() noexcept {
   if (!started) return;
+  // The IMS AKA security associations go first, while the stack and its transports exist.
+  aka_stop();
   try {
     stack->unregisterTransactionUser(user);
   } catch (...) {
@@ -93,6 +104,10 @@ void SipEngine::Impl::stop() noexcept {
   poll_group.reset();
   pending.clear();
   deferred.clear();
+  registration.reset();
+  ending_flow.reset();
+  timers.clear();
+  transactions.clear();
   started = false;
 }
 
@@ -108,12 +123,75 @@ void SipEngine::Impl::ensure_started() const {
 void SipEngine::Impl::poll(std::chrono::milliseconds timeout) {
   ensure_started();
   if (timeout.count() < 0) throw std::invalid_argument("invalid SIP poll timeout");
-  stack->process(static_cast<unsigned>(timeout.count()));
+  // The wait ends at the engine's next timer at the latest (the stack bounds it by its own).
+  auto wait = timeout;
+  const auto now = Clock::now();
+  for (const auto &[timer, due] : timers) {
+    (void)timer;
+    const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(due - now);
+    wait = std::min(wait, std::max(left, std::chrono::milliseconds(0)));
+  }
+  stack->process(static_cast<unsigned>(wait.count()));
   while (auto message = user.next()) {
     if (message->isRequest())
       receive_request(*message);
     else
       receive_response(*message);
+  }
+  // The timers due now, each once.
+  std::vector<Timer> due;
+  for (const auto &[timer, at] : timers)
+    if (at <= Clock::now()) due.push_back(timer);
+  for (const auto timer : due) {
+    timers.erase(timer);
+    try {
+      fire(timer);
+    } catch (const std::exception &error) {
+      report_error(error.what());
+    } catch (...) {
+      report_error("unknown SIP timer error");
+    }
+  }
+}
+
+//------------------------------------------------------------------------------
+// Helper: (re)starts one of the engine's timers.
+void SipEngine::Impl::schedule(Timer timer, std::chrono::milliseconds delay) { timers[timer] = Clock::now() + delay; }
+
+//------------------------------------------------------------------------------
+// Helper: stops one of the engine's timers.
+void SipEngine::Impl::cancel(Timer timer) noexcept { timers.erase(timer); }
+
+//------------------------------------------------------------------------------
+// The engine's timers: the refresh of a digest registration (RFC 3261 section 10.2.1), the end of a registration's
+// connection (registration_ended), and the IMS AKA timers: the refresh (TS 24.229 clause 5.1.1.4.1), the end of the
+// temporary set (reg-await-auth, clause 5.1.1.5.1), the end of the old set (TS 33.203 clause 7.4.1a) and the end of
+// the set in use at its lifetime ("The UE shall delete any SA whose lifetime is exceeded").
+void SipEngine::Impl::fire(Timer timer) {
+  switch (timer) {
+  case Timer::registration_refresh:
+    if (registration && registration->expires != 0) register_digest(registration->expires, {}, {}, registration->handler);
+    break;
+  case Timer::flow_end:
+    end_registration();
+    break;
+  case Timer::aka_refresh:
+    if (aka && !aka->busy && aka->current) aka_register(aka->expires, {}, {}, aka->handler);
+    break;
+  case Timer::aka_pending:
+    if (aka) aka_delete(aka->pending);
+    break;
+  case Timer::aka_old:
+    if (aka) aka_old_check();
+    break;
+  case Timer::aka_expiry:
+    if (aka) {
+      aka_delete(aka->old);
+      aka_delete(aka->current);
+      aka_use(nullptr);
+      report_error("IMS AKA: the security associations expired; the registration has ended");
+    }
+    break;
   }
 }
 

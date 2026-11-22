@@ -208,7 +208,8 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
     # The SIP engine on the stack MCX_SIP_STACK names; the parts that do not depend on it are shared.
     if(MCX_SIP_STACK STREQUAL "resip")
         set(MCX_SIP_ENGINE_SOURCES src/sip_resip/incoming.cpp src/sip_resip/lifecycle.cpp src/sip_resip/messages.cpp
-            src/sip_resip/requests.cpp src/sip_resip/sip_engine.cpp src/sip_resip/tls_security.cpp)
+            src/sip_resip/requests.cpp src/sip_resip/sip_engine.cpp src/sip_resip/tls_security.cpp
+            src/sip_resip/ims_aka.cpp src/sip_resip/aka_transports.cpp)
     else()
         set(MCX_SIP_ENGINE_SOURCES src/sip/helpers.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp src/sip/messages.cpp
             src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp
@@ -333,9 +334,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         target_link_libraries(test_sdp_origin PRIVATE mcx_sip)
         add_test(NAME sdp_origin COMMAND test_sdp_origin)
         if(MCX_SIP_STACK STREQUAL "resip")
-            # The engine core only (prototype/resiprocate/PLAN.md phase 3a): the two-process roles need dialogs.
+            # The engine core and the digest registration (prototype/resiprocate/PLAN.md phases 3a and 3b): the other
+            # two-process roles need dialogs.
             add_test(NAME sip_tls COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sip_tls.py $<TARGET_FILE:test_sip> core)
-            set_tests_properties(sip_tls PROPERTIES TIMEOUT 45 RUN_SERIAL TRUE ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}")
+            add_test(NAME sip_tcp COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sip_tls.py $<TARGET_FILE:test_sip> tcp core)
+            set_tests_properties(sip_tls sip_tcp PROPERTIES TIMEOUT 45 RUN_SERIAL TRUE ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}")
         else()
             add_test(NAME sip_tls COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sip_tls.py $<TARGET_FILE:test_sip>)
             add_test(NAME sip_tcp COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_sip_tls.py $<TARGET_FILE:test_sip> tcp)

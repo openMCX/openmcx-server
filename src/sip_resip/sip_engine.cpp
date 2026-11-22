@@ -43,21 +43,55 @@ void SipEngine::set_body_filters(SipBodyFilter outgoing, SipBodyFilter incoming)
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 10.2: registration needs digest credentials (or IMS AKA); written in phase 3b.
-void SipEngine::register_account(unsigned, SipResponseHandler) {
+// RFC 3261 section 10.2: registers (or refreshes the registration of) the identity: with IMS AKA its own procedure
+// (TS 24.229 clauses 5.1.1.2.2 and 5.1.1.4.2, ims_aka.cpp), otherwise with digest credentials through the SIP core.
+void SipEngine::register_account(unsigned expires, SipResponseHandler handler) {
   impl_->ensure_started();
-  if (!impl_->config.aka.enabled && !sip_detail::has_credentials(impl_->config))
+  if (expires == 0) throw std::invalid_argument("SIP registration expiry must be nonzero");
+  if (impl_->aka) return impl_->aka_register(expires, {}, {}, std::move(handler));
+  if (!sip_detail::has_credentials(impl_->config))
     throw std::invalid_argument("SIP REGISTER requires digest credentials");
-  later("registration", "3b");
+  impl_->register_digest(expires, {}, {}, std::move(handler));
 }
 
-void SipEngine::register_account(unsigned, std::string_view, std::string_view, SipResponseHandler) {
-  later("registration", "3b");
+//------------------------------------------------------------------------------
+// RFC 3261 section 10.2 and TS 24.379 clause 7.2.1: a REGISTER with a body (for example the service authorisation
+// document) on the existing registration.
+void SipEngine::register_account(unsigned expires, std::string_view content_type, std::string_view body,
+                                 SipResponseHandler handler) {
+  impl_->ensure_started();
+  if (impl_->aka) return impl_->aka_register(expires, content_type, body, std::move(handler));
+  if (!impl_->registration) throw std::logic_error("a REGISTER with a body follows the initial registration");
+  impl_->register_digest(expires, content_type, body, std::move(handler));
 }
 
-void SipEngine::unregister_account(SipResponseHandler) { later("registration", "3b"); }
+//------------------------------------------------------------------------------
+// RFC 3261 section 10.2.2: removes the registration of this engine's Contact (Expires 0; TS 24.229 clause 5.1.1.6.2
+// with IMS AKA, protected by the set in use, whose 200 removes the SAs); no refresh follows.
+void SipEngine::unregister_account(SipResponseHandler handler) {
+  impl_->ensure_started();
+  if (impl_->aka) return impl_->aka_register(0, {}, {}, std::move(handler));
+  if (!impl_->registration) throw std::logic_error("no SIP registration to remove");
+  impl_->register_digest(0, {}, {}, std::move(handler));
+}
 
-void SipEngine::registration_ended() { later("registration", "3b"); }
+//------------------------------------------------------------------------------
+// TS 24.229 clause 5.1.1.7: the S-CSCF ended the registration (reg event NOTIFY): "the UE shall delete all security
+// associations or TLS sessions towards the P-CSCF". Digest: the registration goes with its refresh, and its TLS
+// connection is closed once the transactions still on it (the NOTIFY's answer) had time to end; the next
+// register_account opens a new one. IMS AKA: aka_registration_ended().
+void SipEngine::registration_ended() {
+  if (impl_->aka) return impl_->aka_registration_ended();
+  if (!impl_->registration) return;
+  const auto flow = impl_->registration->flow;
+  impl_->registration.reset();
+  impl_->cancel(Impl::Timer::registration_refresh);
+  if (flow && impl_->config.tls.enabled) {
+    impl_->end_registration(); // an earlier one first
+    impl_->ending_flow = flow;
+    impl_->schedule(Impl::Timer::flow_end, std::chrono::seconds(2));
+  }
+}
 
 //------------------------------------------------------------------------------
 // RFC 3261 section 8.1: a request outside a dialog (Impl::send_request).
@@ -132,8 +166,6 @@ std::string SipEngine::contact_target() const { return sip_detail::contact_targe
 // No dialogs before phase 3c.
 std::optional<DialogIdentifiers> SipEngine::dialog_identifiers(std::string_view) const { return std::nullopt; }
 
-// No security agreement before phase 3b.
-std::optional<SipSecurityStatus> SipEngine::security_status() const { return std::nullopt; }
 
 void SipEngine::bye(std::string_view, SipResponseHandler, const std::vector<SipHeader> &,
                     const std::vector<BodyPart> &) {
