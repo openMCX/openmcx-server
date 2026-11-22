@@ -36,6 +36,13 @@
       "use": "host"
     },
     {
+      "file": "resiprocate-1.14.0.tar.gz",
+      "url": "https://github.com/resiprocate/resiprocate/archive/refs/tags/resiprocate-1.14.0.tar.gz",
+      "sha256": "f132e4d0fcae0c155f91e5dad608a9985e199e4e3c09b6029a70b1b3b6d0b156",
+      "bytes": 30787415,
+      "use": "prototype: built by dependencies/resiprocate/build.sh for prototype/resiprocate only, in no image"
+    },
+    {
       "file": "libsrtp-2.8.1.tar.gz",
       "url": "https://github.com/cisco/libsrtp/archive/6ff02afa8d2dc3f2e8896af391d137c1c66ff6fa.tar.gz",
       "sha256": "1ef3e6315e0ea3cd05f4980c8b5f7a9df369e3d586f5e0616e6cc4c778401d4c",

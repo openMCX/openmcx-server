@@ -88,6 +88,23 @@ if(BUILD_TESTING)
     target_include_directories(test_ibe_hostile PRIVATE src/security)
     target_link_libraries(test_ibe_hostile PRIVATE mcx_keying)
     add_test(NAME ibe_hostile COMMAND test_ibe_hostile)
+    # The reSIProcate SIP stack prototype (prototype/resiprocate/README.md): built only when reSIProcate has been built
+    # by hand with dependencies/resiprocate/build.sh (pass its prefix in CMAKE_PREFIX_PATH); no program links it.
+    find_path(RESIPROCATE_INCLUDE_DIR resip/dum/DialogUsageManager.hxx)
+    find_library(RESIPROCATE_DUM_LIBRARY dum)
+    find_library(RESIPROCATE_RESIP_LIBRARY resip)
+    find_library(RESIPROCATE_RUTIL_LIBRARY rutil)
+    find_library(RESIPROCATE_ARES_LIBRARY resipares)
+    if(RESIPROCATE_INCLUDE_DIR AND RESIPROCATE_DUM_LIBRARY AND RESIPROCATE_RESIP_LIBRARY AND RESIPROCATE_RUTIL_LIBRARY
+       AND RESIPROCATE_ARES_LIBRARY)
+        add_executable(test_resip_probe prototype/resiprocate/resip_probe.cpp)
+        target_include_directories(test_resip_probe SYSTEM PRIVATE ${RESIPROCATE_INCLUDE_DIR})
+        target_link_libraries(test_resip_probe PRIVATE ${RESIPROCATE_DUM_LIBRARY} ${RESIPROCATE_RESIP_LIBRARY}
+            ${RESIPROCATE_RUTIL_LIBRARY} ${RESIPROCATE_ARES_LIBRARY} OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
+        add_test(NAME resip_probe COMMAND test_resip_probe)
+        # reSIProcate looks for TLS certificates in $HOME/.sipCerts and logs when it is missing.
+        set_tests_properties(resip_probe PROPERTIES ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}")
+    endif()
 endif()
 
 # IMS AKA in the UE (TS 33.203): the software ISIM on hostap's MILENAGE, vendored unmodified in dependencies/hostap
