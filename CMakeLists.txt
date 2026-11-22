@@ -104,6 +104,14 @@ if(BUILD_TESTING)
         add_test(NAME resip_probe COMMAND test_resip_probe)
         # reSIProcate looks for TLS certificates in $HOME/.sipCerts and logs when it is missing.
         set_tests_properties(resip_probe PROPERTIES ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}")
+        # IMS AKA registration over reSIProcate against a lab's P-CSCF (prototype/resiprocate/run-aka-probe.sh): not a
+        # ctest, it needs the lab and CAP_NET_ADMIN.
+        add_executable(aka_probe prototype/resiprocate/aka_probe.cpp prototype/resiprocate/runtime_shim.cpp
+            src/security/xfrm.cpp)
+        target_include_directories(aka_probe PRIVATE include)
+        target_include_directories(aka_probe SYSTEM PRIVATE ${RESIPROCATE_INCLUDE_DIR})
+        target_link_libraries(aka_probe PRIVATE mcx_ims_aka ${RESIPROCATE_DUM_LIBRARY} ${RESIPROCATE_RESIP_LIBRARY}
+            ${RESIPROCATE_RUTIL_LIBRARY} ${RESIPROCATE_ARES_LIBRARY} OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
     endif()
 endif()
 

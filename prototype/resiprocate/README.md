@@ -39,15 +39,49 @@ group. It checks:
   `accept`; otherwise the NOTIFY carries no usable state and reaches `onUpdateExtension`). With the UAS in "Required"
   mode, DUM sends provisional responses reliably and waits for the PRACK.
 
+## IMS AKA registration through the lab's P-CSCF
+
+`aka_probe.cpp` registers the lab's `sip:aka-probe@mcx.test` subscriber (its own ISIM, provisioned in the HSS)
+through the lab's Kamailio P-CSCF (`ims_ipsec_pcscf`), TCP case of TS 33.203 clause 7.1. The REGISTERs are written
+as text and sent through reSIProcate's transaction layer; the ISIM, digest, sec-agree mechanisms and ESP keys are
+OpenMCX's `include/mcx/ims_aka.hpp`, the SAs its `include/mcx/xfrm.hpp`. `run-aka-probe.sh` builds everything,
+prepares and starts the lab, runs the probe in a container with CAP_NET_ADMIN, and tears the lab down (about 90 s).
+
+| Check | Specification | Result |
+|---|---|---|
+| 401 to the unprotected initial REGISTER, with an AKA challenge (AKAv2-SHA-256) | TS 24.229 clause 5.1.1.2.2, RFC 3310 | ok |
+| The ISIM accepts RAND and AUTN | TS 33.102 clause 6.3.3 | ok |
+| A mechanism of the Security-Server is chosen (alg null, ealg aes-gcm-us) | TS 33.203 clause 7.2 | ok |
+| The four SAs are installed | TS 33.203 clause 7.1 | ok |
+| 200 to the protected REGISTER, on a TCP connection from port_uc to port_ps; P-Associated-URI and Service-Route | TS 24.229 clause 5.1.1.5.1, TS 33.203 clause 7.1 | ok |
+| 200 to the deregistration over the set in use | TS 24.229 clause 5.1.1.6.2 | ok |
+| On the wire (capture in the probe's namespace): the protected leg is ESP only, no plaintext SIP on its ports | TS 33.203 clause 7.1 | ok: 15 ESP, 0 plaintext |
+
+Findings:
+
+- **The fixed TCP client port needs no patch.** pjproject needs `dependencies/pjproject/0001-tcp-client-port.patch`
+  for the connection from port_uc. In reSIProcate, a TCP transport on port_uc in "symmetric connections" mode
+  (`RESIP_TRANSPORT_FLAG_SYMMETRIC_CONNECTIONS`) sets up its connections from port_uc, and the top Via's sent-by
+  chooses that transport for a request. The Via then names port_uc, not port_us as with pjsip; Kamailio accepts it
+  (`dependencies/kamailio/0002`, any Via port).
+- **The next hop is a forced target.** `SipStack::sendTo(message, Tuple)` does not override the target the
+  transaction resolves (the Request-URI's domain, here unresolvable: a local 503); `SipMessage::setForceTarget` with
+  the P-CSCF's numeric address and port does.
+- **A REGISTER over the set in use carries a new offer** (new SPIs and port_uc in its Security-Client), as
+  `src/sip/ims_aka.cpp` does: the P-CSCF refuses one that offers the set's port_uc again ("protected client port
+  already in use", 400).
+
 ## Not yet covered
 
-- REGISTER with IMS AKA through the lab's Kamailio, and the two transport behaviours of the pjproject patches
-  (`dependencies/pjproject`): the fixed TCP client port of a security association (reSIProcate's "symmetric
-  connections" mode binds client sockets to the listener's port, which may cover it) and TCP requests pinned to a UDP
-  security association.
-- TLS, multipart bodies (MIKEY and XML together), SIP over UDP with large requests, shutdown, and load.
+- The UDP case of TS 33.203 clause 7.1: requests pinned to the set's UDP port_uc, large requests and dialogs whose
+  route set names TCP over the TCP connection (`dependencies/pjproject/0002-udp-to-tcp.patch` today).
+- Requests of the P-CSCF to port_us (the reg event NOTIFY), re-registration with the switch to the new set and the
+  deletion of the old one, the resynchronisation (AUTS) and refused challenges.
+- TLS, multipart bodies (MIKEY and XML together), shutdown, and load.
 
 ## Running it
+
+The loopback probe (no lab needed):
 
 ```sh
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" -w /workspace openmcx-dev:0.4 bash -lc '
@@ -58,3 +92,9 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" -w /workspace op
 
 `test_resip_probe --refresh` also waits for the session refresh. `PROBE_LOG=Info` (or `Debug`) shows reSIProcate's
 log, `PROBE_TRACE=1` the subscription callbacks.
+
+The IMS AKA registration against a lab (server and client images of a tag; about 90 s):
+
+```sh
+prototype/resiprocate/run-aka-probe.sh sakke1 openmcx-client:sakke1
+```
