@@ -165,3 +165,29 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
     a, b`, RFC 3261 section 7.3.1). `tests/integration/verify_mcdata_sds.py` now reads list header fields value by
     value; the other wire verifiers may need the same (phase 6).
   - Seen once: `sip_tcp` failed under load during an image build (quiet output, not reproduced in 12 runs since).
+- Phase 6, under way (2026-11-22): the full IP regression (93 labs, TCP and TLS) on both stacks, then the MCPTT, MCData
+  and MCVideo conformance suites (openmcx-conformance-tests, the SS emulator in place of the MCx server, the DUT client
+  on each engine and nothing else changed). Defects found and fixed, each with a test that fails without the fix:
+  - engine (`1695c88`): the response to this side's CANCEL (it has the INVITE's transaction identifier) was taken for
+    the INVITE's final response; the advertised Via sent-by host was replaced by the stack's address (hostnames now
+    kept, also on the stack's own CANCEL and failure ACK).
+  - client (openmcx-client `0d97581`): after log-off and log-on, Kamailio's first reg NOTIFY still lists the binding
+    the log-off removed, under the same REGISTER Call-ID; the client took it for its own and stayed deregistered
+    (bootstrap-recovery BR-04). A contact whose cseq is below the current REGISTER's is stale (RFC 3680 section 5.1).
+    reSIProcate exposed it by subscribing 1 ms after the 200, pjsip 75 ms.
+  - engine (`9c97d05`): `SipStack::process(timeout)` waits out its timeout with a message queued for the transaction
+    user, so an answer left a poll timeout (5 ms) after the 100: call setup median 7.7 ms against pjsip's 2.5 ms in the
+    regression's TCP captures.
+  - engine (`b854b01`): a message left at the end of the poll instead of in the call that sends it, so an HTTP GET the
+    client issued after its FD NOTIFICATION "accepted" reached the wire first (MCData 6.2.2, 6.2.4, 6.2.6, 6.2.8,
+    D.4.4); a Content-Type with Content-Length 0 reached the application as an empty document, and the final NOTIFY of
+    a functional alias subscription was answered 400 (MCData 5.7, MCPTT 5.8, MCVideo 5.6).
+  - wire verifiers: tshark JSON merged several SIP messages of one frame (`--no-duplicate-keys`).
+  - Conformance before `b854b01` (DUT pjsip / reSIProcate): MCPTT 117+1 inconclusive / 116+1 fail+1 inconclusive,
+    MCData 120 / 114+6 fail, MCVideo 144+3 N/A / 143+1 fail+3 N/A; every difference is one of the two defects above.
+  - Resource use over the 306 labs of both regressions (before `9c97d05`): CPU about 3 % more on reSIProcate beyond a
+    2 % run-wide difference, peak memory lower but for the MCVideo server (+2 MB).
+  - Left: the regression, the conformance suites, both mixed pairs (pjsip servers with the reSIProcate client and the
+    reverse) and the soak (`--select smoke,mcdata --duration 3h`, both stacks at once) on the images with all fixes.
+  - Not changed: the wire verifiers' exact P-Preferred-Service compares (`verify_mcdata_media.py`,
+    `verify_mcdata_fd.py`): one ICSI per request on both engines, and the regression passes.
