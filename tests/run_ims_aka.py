@@ -23,10 +23,11 @@ preloaded Route, a MESSAGE of the P-CSCF from port_pc to port_us, an unprotected
 ESP counters, and the deregistration that removes every SA. (2) a restarted UE with the same SQN file and a replayed
 SQN: AUTS, resynchronisation, AKAv1-MD5 this time, registration; then a refresh over the set, a new challenge,
 a new set (new port_uc and port_pc) taking over, and the old set deleted 32 s after the first P-CSCF message on it. (3) a wrong key: MAC failure, empty response, 403,
-no SA left. (5, below 4 in the file) SIP over UDP (TS 24.229 clause 4.2A, TS 33.203 clause 7.1 UDP case): the
-unprotected REGISTER over UDP with rport, the protected REGISTER from port_uc to port_ps, a MESSAGE over UDP, a
-MESSAGE of more than 1300 bytes over TCP from port_uc (RFC 3261 section 18.1.1), a large INVITE whose 200
-Record-Routes over TCP with its ACK and BYE over that connection, the 200 to a request of the P-CSCF
+no SA left. (5, below 4 in the file) SIP over UDP (TS 24.229 clause 4.2A, TS 33.203 clause 7.1 UDP case), each request
+over UDP or, at 1300 bytes or more, over TCP (RFC 3261 section 18.1.1; the REGISTERs carry every mechanism of the
+UE's Security-Client and may be that large): the unprotected REGISTER from UE:5060 with rport, the protected REGISTER
+from port_uc to port_ps, a MESSAGE over UDP, a MESSAGE of more than 1300 bytes over TCP from port_uc, a large INVITE
+whose 200 Record-Routes over TCP with its ACK and BYE over that connection, the 200 to a request of the P-CSCF
 on port_us sent from port_uc to port_ps, and the deregistration. (4) the UE's ISIM on the test algorithm of TS 34.108 clause 8.1.2 (vectors computed here): AMF_RESYNCH
 answered with its AUTS (clause 8.1.2.3.3), then an AKAv1-MD5 challenge answered with the 16-byte RES, registration
 over the set, a MESSAGE and the deregistration.
@@ -37,10 +38,12 @@ RFC 2617, RFC 7616.
 """
 
 import base64
+import collections
 import hashlib
 import hmac
 import os
 import re
+import select
 import socket
 import subprocess
 import sys
@@ -95,6 +98,7 @@ class SipWire:
         while len(rest) < size:
             rest += self.connection.recv(65536)
         self.buffer = rest[size:]
+        self.last_size = len(header) + 4 + size
         return lines[0], fields, rest[:size].decode()
 
     # ------------------------------------------------------------------------------
@@ -125,6 +129,7 @@ class DatagramWire:
     def receive(self):
         """One SIP message as SipWire.receive; its source address is kept in source."""
         data, self.source = self.sock.recvfrom(65536)
+        self.last_size = len(data)
         header, _, body = data.partition(b"\r\n\r\n")
         lines = header.decode().split("\r\n")
         fields = {}
@@ -143,6 +148,73 @@ class DatagramWire:
             + body
         )
         self.sock.sendto(message.encode(), peer or self.peer or self.source)
+
+
+# ------------------------------------------------------------------------------
+# A request the P-CSCF received on a PortWire: the message, "udp" or "tcp", its source, its size in bytes and the wire
+# its response goes on (the TCP connection it came on, or the UDP socket).
+Received = collections.namedtuple("Received", "message transport source size wire")
+
+
+# ------------------------------------------------------------------------------
+class PortWire:
+    """The P-CSCF's UDP socket and TCP listener on one port: the next message over either (connections accepted as
+    they come); RFC 3261 section 18.1.1 decides which a UE uses for each request."""
+
+    # ------------------------------------------------------------------------------
+    def __init__(self, sock, listener, peer=None):
+        """Wrap the UDP socket (its replies go to peer, or to the source) and the TCP listener."""
+        self.datagrams = DatagramWire(sock, peer)
+        self.listener = listener
+        self.connections = {}
+
+    # ------------------------------------------------------------------------------
+    def receive(self, timeout=10):
+        """The next message as a Received; TimeoutError when none comes in time."""
+        deadline = time.monotonic() + timeout
+        while True:
+            for wire, peer in self.connections.values():
+                if b"\r\n\r\n" in wire.buffer:
+                    return Received(wire.receive(), "tcp", peer, wire.last_size, wire)
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise TimeoutError("no SIP message")
+            ready, _, _ = select.select(
+                [self.datagrams.sock, self.listener] + list(self.connections), [], [], left
+            )
+            for item in ready:
+                if item is self.listener:
+                    connection, peer = self.listener.accept()
+                    self.connections[connection] = (SipWire(connection), peer)
+                elif item is self.datagrams.sock:
+                    message = self.datagrams.receive()
+                    return Received(message, "udp", self.datagrams.source, self.datagrams.last_size, self.datagrams)
+                elif not item.recv(1, socket.MSG_PEEK):
+                    del self.connections[item]  # the UE closed it
+                    item.close()
+                else:
+                    wire, peer = self.connections[item]
+                    return Received(wire.receive(), "tcp", peer, wire.last_size, wire)
+
+    # ------------------------------------------------------------------------------
+    def close(self):
+        """Close the accepted connections."""
+        for connection in self.connections:
+            connection.close()
+        self.connections.clear()
+
+
+# ------------------------------------------------------------------------------
+def check_transport(received, what):
+    """RFC 3261 section 18.1.1 and TS 24.229 clause 4.2A: a request of 1300 bytes or more over TCP, a smaller one over
+    UDP, with the transport in its top Via."""
+    expected = "tcp" if received.size >= 1300 else "udp"
+    via = received.message[1]["via"][0]
+    check(
+        received.transport == expected and via.startswith(f"SIP/2.0/{expected.upper()} "),
+        f"{what}: {received.size} bytes over {received.transport} with Via {via} (RFC 3261 section 18.1.1)",
+    )
+    print(f"ims_aka_sip:   {what}: {received.size} bytes over {received.transport.upper()}")
 
 
 # ------------------------------------------------------------------------------
@@ -354,10 +426,11 @@ def accept_initial(listener):
         and 'response=""' in fields["authorization"][0],
         "initial Authorization (TS 24.229 clause 5.1.1.2.2 a)",
     )
+    # TS 33.203 clause 7.2: one mechanism per algorithm combination of the UE (its preferred first, AES-GCM since
+    # 2fdc66b); the combination the P-CSCF of this test selects is among them.
     check(
-        fields["security-client"][0].startswith(
-            "ipsec-3gpp;alg=hmac-sha-1-96;ealg=aes-cbc;prot=esp;mod=trans;"
-        ),
+        fields["security-client"][0].startswith("ipsec-3gpp;")
+        and "alg=hmac-sha-1-96;ealg=aes-cbc;prot=esp;mod=trans;" in fields["security-client"][0],
         "Security-Client",
     )
     client = {
@@ -896,28 +969,31 @@ def scenario_test_algorithm(binary, listener, protected_listener, sqn_file):
 
 
 # ------------------------------------------------------------------------------
-def scenario_udp(binary, protected_listener, sqn_file):
-    """Scenario 5: SIP over UDP (see the module text)."""
-    unprotected, ps, pc = udp_socket(5060), udp_socket(PORT_PS), udp_socket(PORT_PC)
+def scenario_udp(binary, listener, protected_listener, sqn_file):
+    """Scenario 5: SIP over UDP (see the module text). Each request takes UDP or TCP by its size (RFC 3261 section
+    18.1.1, TS 24.229 clause 4.2A): the REGISTERs, which carry every mechanism of the UE's Security-Client, may be
+    over 1300 bytes and so over TCP; the small requests over UDP."""
+    unprotected = PortWire(udp_socket(5060), listener)
+    ps_socket, pc = udp_socket(PORT_PS), udp_socket(PORT_PC)
+    protected = PortWire(ps_socket, protected_listener)
     process = start_ue(binary, sqn_file, udp=True)
     client = None
-    connection = None
     try:
-        wire = DatagramWire(unprotected)
-        request = wire.receive()
+        initial = unprotected.receive()
+        request = initial.message
         fields = request[1]
+        check_transport(initial, "unprotected REGISTER")
+        # Over UDP the datagram leaves the unprotected port; over TCP the connection's port is the system's, and the
+        # unprotected port is the Via's sent-by (as in scenario 1).
         check(
-            wire.source == (UE, 5060),
-            f"unprotected REGISTER from UE:5060, not {wire.source}",
+            initial.transport == "tcp" or initial.source == (UE, 5060),
+            f"unprotected REGISTER from UE:5060, not {initial.source}",
         )
         check(
-            fields["via"][0].startswith(f"SIP/2.0/UDP {UE}:5060")
-            and ";rport" in fields["via"][0],
-            f"Via over UDP with rport (TS 24.229 clause 5.1.1.2.1 d): {fields['via'][0]}",
+            fields["via"][0].split(" ", 1)[1].startswith(f"{UE}:5060") and ";rport" in fields["via"][0],
+            f"Via sent-by UE:5060 with rport (TS 24.229 clause 5.1.1.2.1 d): {fields['via'][0]}",
         )
-        check(
-            f"@{UE}:5060;transport=udp" in fields["contact"][0], "Contact transport=udp"
-        )
+        check(f"@{UE}:5060;transport=udp" in fields["contact"][0], "Contact transport=udp")
         client = {
             name: int(value)
             for name, value in parameters(fields["security-client"][0]).items()
@@ -927,94 +1003,83 @@ def scenario_udp(binary, protected_listener, sqn_file):
             f"ipsec-3gpp;alg=hmac-sha-1-96;ealg=aes-cbc;spi-c={SPI_PC};spi-s={SPI_PS};"
             f"port-c={PORT_PC};port-s={PORT_PS}"
         )
-        nonce, res, ck, ik = challenge(
-            wire, request, binary, "000000000200", os.urandom(16), server
-        )
+        nonce, res, ck, ik = challenge(initial.wire, request, binary, "000000000200", os.urandom(16), server)
         pcscf_policies(client, proto="udp")
         pcscf_policies(client, proto="tcp")
 
-        # TS 33.203 clause 7.1, UDP case: the UE sends from port_uc to port_ps, the P-CSCF from port_pc to port_us.
-        protected = DatagramWire(ps)
-        second = protected.receive()
+        # TS 33.203 clause 7.1, UDP case: the UE sends from port_uc to port_ps, the P-CSCF from port_pc to port_us
+        # (over TCP, the response goes back on the UE's connection from port_uc).
+        to_ue = DatagramWire(pc, peer=(UE, PORT_US))
+        protected_register = protected.receive()
+        second = protected_register.message
+        check_transport(protected_register, "protected REGISTER")
         check(
-            protected.source == (UE, client["port-c"]),
-            f"protected REGISTER from port_uc, not {protected.source}",
+            protected_register.source == (UE, client["port-c"]),
+            f"protected REGISTER from port_uc, not {protected_register.source}",
         )
         check(
-            second[1]["via"][0].startswith(f"SIP/2.0/UDP {UE}:{PORT_US}")
+            second[1]["via"][0].split(" ", 1)[1].startswith(f"{UE}:{PORT_US}")
             and f"@{UE}:{PORT_US};transport=udp" in second[1]["contact"][0],
-            f"Via and Contact on port_us over UDP: {second[1]['via'][0]} {second[1]['contact'][0]}",
+            f"Via and Contact on port_us: {second[1]['via'][0]} {second[1]['contact'][0]}",
         )
         authorization = parameters(second[1]["authorization"][0])
-        password = base64.b64encode(
-            hmac.new(
-                res + ik + ck, b"http-digest-akav2-password", hashlib.sha256
-            ).digest()
-        )
+        password = base64.b64encode(hmac.new(res + ik + ck, b"http-digest-akav2-password", hashlib.sha256).digest())
         check(
-            authorization["response"]
-            == digest("AKAv2-SHA-256", password, nonce, authorization),
+            authorization["response"] == digest("AKAv2-SHA-256", password, nonce, authorization),
             "AKAv2-SHA-256 response",
         )
-        to_ue = DatagramWire(pc, peer=(UE, PORT_US))
         expires = second[1]["expires"][0]
-        to_ue.send(
-            response_to(
-                second,
-                200,
-                "OK",
-                f"Contact: {second[1]['contact'][0]};expires={expires}\n"
-                f"Service-Route: <sip:orig@scscf.{REALM};lr>\nP-Associated-URI: <sip:alice@{REALM}>",
-            )
+        registered = response_to(
+            second,
+            200,
+            "OK",
+            f"Contact: {second[1]['contact'][0]};expires={expires}\n"
+            f"Service-Route: <sip:orig@scscf.{REALM};lr>\nP-Associated-URI: <sip:alice@{REALM}>",
         )
+        (protected_register.wire if protected_register.transport == "tcp" else to_ue).send(registered)
         check("hmac-sha-1-96 aes-cbc" in wait_line(process, "sa "), "SA set in use")
-        message = protected.receive()
+        small = protected.receive()
+        message = small.message
+        check_transport(small, "MESSAGE")
         check(
-            message[0].startswith("MESSAGE sip:bob@example.org")
-            and protected.source == (UE, client["port-c"]),
-            f"MESSAGE over UDP from port_uc: {message[0]} from {protected.source}",
+            message[0].startswith("MESSAGE sip:bob@example.org") and small.source == (UE, client["port-c"]),
+            f"MESSAGE over UDP from port_uc: {message[0]} from {small.source}",
         )
-        routes = [
-            route.strip() for value in message[1]["route"] for route in value.split(",")
-        ]
-        check(
-            routes[0].startswith(f"<sip:{PCSCF}:{PORT_PS};")
-            and "transport=udp" in routes[0],
-            f"Route {routes}",
-        )
+        routes = [route.strip() for value in message[1]["route"] for route in value.split(",")]
+        check(routes[0].startswith(f"<sip:{PCSCF}:{PORT_PS};") and "transport=udp" in routes[0], f"Route {routes}")
         to_ue.send(response_to(message, 200, "OK"))
         check("200" in wait_line(process, "message answered"), "MESSAGE answered")
 
-        # RFC 3261 section 18.1.1: the MESSAGE of more than 1300 bytes over TCP from port_uc to port_ps.
-        connection, peer = protected_listener.accept()
+        # RFC 3261 section 18.1.1: the MESSAGE of more than 1300 bytes over TCP from port_uc to port_ps, on the
+        # connection of the protected REGISTER when that went over TCP.
+        large_request = protected.receive()
+        large = large_request.message
+        check_transport(large_request, "large MESSAGE")
         check(
-            peer == (UE, client["port-c"]), f"TCP connection from port_uc, not {peer}"
+            large_request.source == (UE, client["port-c"]),
+            f"TCP connection from port_uc, not {large_request.source}",
         )
-        large_wire = SipWire(connection)
-        large = large_wire.receive()
-        check(
-            large[0].startswith("MESSAGE")
-            and len(large[2]) == 1500
-            and large[1]["via"][0].startswith("SIP/2.0/TCP"),
-            f"large MESSAGE over TCP with a TCP Via: {large[1]['via'][0]}",
-        )
+        check(large[0].startswith("MESSAGE") and len(large[2]) == 1500, f"large MESSAGE: {large[0]}")
+        large_wire = large_request.wire
         large_wire.send(response_to(large, 200, "OK"))
         check("200" in wait_line(process, "large answered"), "large MESSAGE answered")
-        protected.sock.settimeout(1.5)
+        protected.datagrams.sock.settimeout(1.5)
         try:
-            again = protected.receive()
+            again = protected.datagrams.receive()
             raise AssertionError(f"the large MESSAGE also went over UDP: {again[0]}")
         except TimeoutError:
             pass
-        protected.sock.settimeout(10)
+        protected.datagrams.sock.settimeout(10)
 
         # The large INVITE over the same connection; its 200 Record-Routes the P-CSCF over TCP (as the P-CSCF does for
         # a request it received over TCP), so the dialog's ACK and BYE go over that connection too (RFC 3261 section
         # 12.2.1.1), not refused for the UDP transport the dialog is pinned to.
-        invite = large_wire.receive()
+        invite_request = protected.receive()
+        invite = invite_request.message
+        check_transport(invite_request, "large INVITE")
         check(
-            invite[0].startswith("INVITE sip:bob@example.org") and invite[1]["via"][0].startswith("SIP/2.0/TCP"),
-            f"large INVITE over TCP: {invite[0]} {invite[1]['via'][0]}",
+            invite[0].startswith("INVITE sip:bob@example.org") and invite_request.wire is large_wire,
+            f"large INVITE over the connection: {invite[0]} {invite[1]['via'][0]}",
         )
         answer_sdp = (
             "v=0\r\no=- 2 2 IN IP4 127.0.0.2\r\ns=-\r\nc=IN IP4 127.0.0.2\r\nt=0 0\r\n"
@@ -1032,11 +1097,17 @@ def scenario_udp(binary, protected_listener, sqn_file):
             + "\n\n"
             + answer_sdp
         )
-        ack = large_wire.receive()
-        check(ack[0].startswith("ACK sip:bob@") and ack[1]["via"][0].startswith("SIP/2.0/TCP"), f"ACK over TCP: {ack[0]}")
-        bye = large_wire.receive()
-        check(bye[0].startswith("BYE sip:bob@"), f"BYE over the connection: {bye[0]}")
-        large_wire.send(response_to(bye, 200, "OK"))
+        ack = protected.receive()
+        check(
+            ack.message[0].startswith("ACK sip:bob@") and ack.wire is large_wire,
+            f"ACK over the connection: {ack.message[0]}",
+        )
+        bye = protected.receive()
+        check(
+            bye.message[0].startswith("BYE sip:bob@") and bye.wire is large_wire,
+            f"BYE over the connection: {bye.message[0]}",
+        )
+        large_wire.send(response_to(bye.message, 200, "OK"))
         check("200" in wait_line(process, "bye answered"), "BYE answered")
 
         # A request of the P-CSCF from port_pc to port_us; the UE's 200 from port_uc to port_ps.
@@ -1048,32 +1119,27 @@ def scenario_udp(binary, protected_listener, sqn_file):
         )
         answer = protected.receive()
         check(
-            answer[0] == "SIP/2.0 200 OK"
-            and protected.source == (UE, client["port-c"]),
-            f"the UE's 200 from port_uc to port_ps: {answer[0]} from {protected.source}",
+            answer.message[0] == "SIP/2.0 200 OK"
+            and answer.transport == "udp"
+            and answer.source == (UE, client["port-c"]),
+            f"the UE's 200 from port_uc to port_ps: {answer.message[0]} over {answer.transport} from {answer.source}",
         )
-        dereg = protected.receive()
-        check(
-            dereg[0].startswith("REGISTER") and dereg[1]["expires"] == ["0"],
-            "deregistration over UDP",
-        )
-        to_ue.send(
-            response_to(
-                dereg, 200, "OK", f"Contact: {dereg[1]['contact'][0]};expires=0"
-            )
-        )
+        deregistration = protected.receive()
+        dereg = deregistration.message
+        check(dereg[0].startswith("REGISTER") and dereg[1]["expires"] == ["0"], "deregistration")
+        check_transport(deregistration, "deregistration")
+        removed = response_to(dereg, 200, "OK", f"Contact: {dereg[1]['contact'][0]};expires=0")
+        (deregistration.wire if deregistration.transport == "tcp" else to_ue).send(removed)
         wait_line(process, "deregistered")
         check(process.wait(10) == 0, "UE exit")
-        check(
-            xfrm("state", "list").strip() == "", "every SA removed after deregistration"
-        )
+        check(xfrm("state", "list").strip() == "", "every SA removed after deregistration")
     finally:
-        if connection is not None:
-            connection.close()
+        unprotected.close()
+        protected.close()
         if client is not None:
             pcscf_policies(client, add=False, proto="udp")
             pcscf_policies(client, add=False, proto="tcp")
-        for sock in (unprotected, ps, pc):
+        for sock in (unprotected.datagrams.sock, ps_socket, pc):
             sock.close()
         stop_ue(process)
 
@@ -1117,7 +1183,7 @@ def main():
         print(
             "ims_aka_sip: TS 34.108 test algorithm, resynchronisation and registration ok"
         )
-        scenario_udp(binary, protected_listener, sqn_file)
+        scenario_udp(binary, listener, protected_listener, sqn_file)
         print(
             "ims_aka_sip: SIP over UDP, large request over TCP, responses from port_uc ok"
         )
