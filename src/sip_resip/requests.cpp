@@ -73,6 +73,9 @@ public:
   }
 
   resip::MessageDecorator *clone() const override { return new AdvertisedVia(host_, port_); }
+  // RFC 3261 sections 9.1 and 17.1.1.3: the stack's CANCEL and its ACK of a failure response carry the INVITE's Via.
+  bool copyToStackCancels() const override { return true; }
+  bool copyToStackFailureAcks() const override { return true; }
 
 private:
   std::string host_;
@@ -128,13 +131,11 @@ SipEngine::Impl::Hop SipEngine::Impl::default_hop() const {
 // fields, P-Access-Network-Info when configured (TS 24.229 clause 5.1.2A.1.1, not in ACK and CANCEL), the body.
 std::string SipEngine::Impl::write_request(const OutgoingRequest &request, const Hop &hop) const {
   std::string text = request.method + " " + request.request_uri + " SIP/2.0\r\n";
-  // Without IMS AKA the engine has one transport per protocol, so the Via names the advertised address at once (the
-  // stack's own ACK of a failure response copies it); with IMS AKA the sent-by port picks the transport of the set
-  // and is rewritten once chosen (AdvertisedVia).
-  const auto &sent_by = aka ? config.listen_address : config.advertise_address;
-  text += "Via: SIP/2.0/" + std::string(resip::toData(hop.type).c_str()) + " " + sent_by + ":" +
-          std::to_string(aka ? hop.via_port : hop.advertised_port) + ";branch=z9hG4bK" + random_hex(12) +
-          ";rport\r\n";
+  // The sent-by names the listen address and the port that picks the transport (with IMS AKA, the one of the set);
+  // once the transport is chosen it is rewritten to the advertised address and port (AdvertisedVia): the stack
+  // replaces a sent-by that is not an address of its own (a host name) with the interface's address.
+  text += "Via: SIP/2.0/" + std::string(resip::toData(hop.type).c_str()) + " " + config.listen_address + ":" +
+          std::to_string(hop.via_port) + ";branch=z9hG4bK" + random_hex(12) + ";rport\r\n";
   text += "Max-Forwards: 70\r\n";
   for (const auto &route : request.routes) text += "Route: " + route + "\r\n";
   text += "From: " + sip_detail::name_addr(request.from) + ";tag=" + request.from_tag + "\r\n";
@@ -235,7 +236,7 @@ std::string SipEngine::Impl::send_message(std::unique_ptr<resip::SipMessage> req
   if (!hop.force_target.empty()) request->setForceTarget(resip::Uri(resip::Data(hop.force_target)));
   entry.text = resip_engine::text_of(*request);
   entry.hop = hop;
-  if (aka) request->addOutboundDecorator(std::make_unique<AdvertisedVia>(config.advertise_address, hop.advertised_port));
+  request->addOutboundDecorator(std::make_unique<AdvertisedVia>(config.advertise_address, hop.advertised_port));
   const std::string transaction = request->getTransactionId().c_str();
   // RFC 3261 section 17.1.1.3: an ACK of a 2xx is sent without a transaction and gets no response.
   if (request->method() != resip::ACK) {
@@ -293,6 +294,9 @@ bool SipEngine::Impl::retry_with_credentials(const resip::SipMessage &challenge,
 // what its request was sent for: the application's handler (after a digest retry), the digest registration, or the
 // IMS AKA registration procedure; provisional responses are not passed.
 void SipEngine::Impl::receive_response(const resip::SipMessage &message) {
+  // RFC 3261 section 9.1: the response to this side's CANCEL (the stack gives it the INVITE's transaction identifier)
+  // says nothing of the INVITE, whose own final response follows.
+  if (message.header(resip::h_CSeq).method() == resip::CANCEL) return;
   const std::string transaction = message.getTransactionId().c_str();
   const auto found = pending.find(transaction);
   if (found == pending.end()) {

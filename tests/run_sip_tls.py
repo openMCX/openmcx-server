@@ -147,6 +147,9 @@ def run_register_digest(binary, directory, env):
             method = request[0].split()[0]
             fields = request[1]
             number = int(fields['cseq'][0].split()[0])
+            # The host only: over a connection the port may be the connection's own (pjproject over TLS).
+            sent_by = fields['via'][0].split()[1].split(';')[0]
+            assert sent_by.split(':')[0] == 'localhost', f'the Via sent-by names the advertised host, not {sent_by}'
             if method == 'REGISTER':
                 assert request[0] == 'REGISTER sip:openmcx.test SIP/2.0', request[0]
                 assert '127.0.0.1:15063' in fields['route'][0] and ';lr' in fields['route'][0], fields.get('route')

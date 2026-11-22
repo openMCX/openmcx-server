@@ -623,7 +623,9 @@ def main():
         ]
         for preference in args.tshark_option:
             command += ['-o', preference]
-        command += ['-Y', 'sip', '-T', 'json', '-x', '-J', 'frame sip']
+        # Several SIP messages in one segment (a stack writing what it has queued at once) are several "sip" keys of
+        # one packet object: merged into an array, else JSON parsing keeps only the last.
+        command += ['-Y', 'sip', '-T', 'json', '--no-duplicate-keys', '-x', '-J', 'frame sip']
         run = subprocess.run(command, check=True, capture_output=True, text=True)
         packets = json.loads(run.stdout)
         messages = []

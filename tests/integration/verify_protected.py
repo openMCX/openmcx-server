@@ -436,6 +436,8 @@ def read_sip(args):
         'sip',
         '-T',
         'json',
+        # Several SIP messages in one segment are several "sip" keys of one packet: merged into an array.
+        '--no-duplicate-keys',
         '-x',
         '-J',
         'frame sip',

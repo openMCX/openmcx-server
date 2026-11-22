@@ -899,13 +899,18 @@ void run_call_client(const std::string &directory) {
   early = 0;
   const auto cancel_target =
       std::getenv("OPENMCX_SIP_TEST_TCP") ? "sip:cancel@127.0.0.1:15061;transport=tcp" : "sips:cancel@127.0.0.1:15061";
-  const auto canceled = engine.invite(cancel_target, call_media(43000), {}, {}, route);
+  int canceled_status = 0;
+  const auto canceled = engine.invite(
+      cancel_target, call_media(43000), {},
+      [&](const mcx::SipResponse &response) { canceled_status = response.status_code; }, route);
   for (int iteration = 0; iteration < 500 && !early; ++iteration) engine.poll(std::chrono::milliseconds(10));
   check(early > 0, "pending call receives provisional response before cancellation");
   engine.bye(canceled);
   engine.bye(canceled);
   for (int iteration = 0; iteration < 500 && disconnected < 2; ++iteration) engine.poll(std::chrono::milliseconds(10));
   check(disconnected == 2 && confirmed == 1, "early call is canceled without a confirmed dialog or duplicate teardown");
+  // RFC 3261 section 9.1: the 200 to the CANCEL is not the INVITE's answer; the INVITE ends with 487.
+  check(canceled_status == 487, "a canceled INVITE ends with its 487, got " + std::to_string(canceled_status));
   engine.bye(canceled);
   const auto immediate = engine.invite(cancel_target, call_media(43000), {}, {}, route);
   engine.bye(immediate);
@@ -988,6 +993,8 @@ void run_register_digest(const std::string &directory) {
   if (std::getenv("OPENMCX_SIP_TEST_TCP")) config.core_uri = "sip:127.0.0.1:15063;transport=tcp";
   config.username = "registering-user";
   config.password = "registering-test-password";
+  // The advertised address may be a host name: the Via sent-by names it (checked by the registrar).
+  config.advertise_address = "localhost";
   std::string error;
   mcx::SipCallbacks callbacks;
   callbacks.on_error = [&](std::string_view text) { error = text; };
@@ -999,7 +1006,9 @@ void run_register_digest(const std::string &directory) {
     if (response.status_code == 200) ++registered;
     else error = "REGISTER answered " + std::to_string(response.status_code);
   });
-  for (int iteration = 0; iteration < 1000 && removed_status == 0; ++iteration) {
+  // Bounded by time, not by polls: a poll returns early when the stack has work, and the refresh is due after 2 s.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (removed_status == 0 && std::chrono::steady_clock::now() < deadline) {
     engine.poll(std::chrono::milliseconds(10));
     if (registered >= 2 && !message_sent) {
       message_sent = true;
