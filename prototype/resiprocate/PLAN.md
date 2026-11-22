@@ -45,8 +45,9 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
    re-INVITEs, a Contact per answer and pinned route sets; under DUM each would be a rewrite of messages DUM built.
    Requests are written as text as the rest of the engine's are, so the outgoing protection and the IMS AKA hop
    apply to every one. DUM is no longer linked by the engine (the prototype's probe still uses it).
-2. **Patch 0001 stays OpenMCX's** (decided 2026-11-22: not proposed upstream); `dependencies/resiprocate` carries it,
-   and every reSIProcate update re-applies it. With decision 1 it only matters to the prototype's DUM probe; it can go
+2. **Patch 0001 stays OpenMCX's** (decided 2026-11-22: not proposed upstream). reSIProcate is kept in OpenMCX's fork
+   (github.com/openMCX/resiprocate, decided 2026-11-22): the release with OpenMCX's commits on `openmcx-1.14`, pinned by
+   tag (`dependencies/resiprocate/README.md`); a new upstream release gets a new branch with the commits cherry-picked. With decision 1 it only matters to the prototype's DUM probe; it can go
    once the engine's subscriptions (phase 3d) replace that probe's coverage.
 3. **The event loop (phase 4) within this project**: the main performance gain, but it changes the server and client
    main loops, so it is verified in the same pass.

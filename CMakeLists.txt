@@ -25,7 +25,7 @@ if(MCX_SIP_STACK STREQUAL "resip")
     endif()
     # The engine core is written (PLAN.md phase 3a); registration, dialogs and subscriptions refuse until their
     # phases.
-    message(STATUS "SIP engine on reSIProcate (prototype/resiprocate/PLAN.md, phase 3a: the engine core)")
+    message(STATUS "SIP engine on reSIProcate (prototype/resiprocate/PLAN.md)")
 elseif(NOT MCX_SIP_STACK STREQUAL "pjsip")
     message(FATAL_ERROR "MCX_SIP_STACK must be pjsip or resip, not ${MCX_SIP_STACK}")
 endif()

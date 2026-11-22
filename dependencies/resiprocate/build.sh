@@ -2,18 +2,18 @@
 #
 # OpenMCX Licence Information : AGPL-3.0-or-later
 #
-# reSIProcate for the SIP stack prototype (prototype/resiprocate, dependencies/resiprocate/README.md): downloads the
-# pinned release, checks its SHA-256, applies OpenMCX's patches in this directory, and builds the static rutil, resip
-# and dum libraries with OpenSSL only (no repro, media, TURN, tests, popt, GeoIP, DTLS).
+# reSIProcate for the SIP engine (prototype/resiprocate, dependencies/resiprocate/README.md): downloads the pinned tag
+# of OpenMCX's fork (github.com/openMCX/resiprocate: the 1.14.0 release with OpenMCX's patches as commits), checks its
+# SHA-256, and builds the static rutil, resip and dum libraries with OpenSSL only (no repro, media, TURN, tests, popt,
+# GeoIP, DTLS).
 #
 #   dependencies/resiprocate/build.sh INSTALL_PREFIX [WORK_DIRECTORY]
 set -euo pipefail
 prefix=${1:?usage: build.sh INSTALL_PREFIX [WORK_DIRECTORY]}
 work=${2:-/tmp/openmcx-resiprocate-build}
-here=$(cd -- "$(dirname -- "$0")" && pwd)
-version=1.14.0
-url="https://github.com/resiprocate/resiprocate/archive/refs/tags/resiprocate-$version.tar.gz"
-sha256=f132e4d0fcae0c155f91e5dad608a9985e199e4e3c09b6029a70b1b3b6d0b156
+version=openmcx-1.14.0-1
+url="https://github.com/openMCX/resiprocate/archive/refs/tags/$version.tar.gz"
+sha256=a04a018a1e6be6321f979b0aa9f3abb9c30daddf7936b5caa853db650a7dc1e8
 archive="$work/resiprocate-$version.tar.gz"
 source="$work/resiprocate-$version"
 
@@ -23,16 +23,13 @@ if [ ! -f "$archive" ]; then
 fi
 printf '%s  %s\n' "$sha256" "$archive" | sha256sum --check --strict
 
-# A fresh source tree each time, so that the patches apply to the pinned release only.
+# A fresh source tree each time, the pinned tag only.
 if [ -e "$source" ]; then
   echo "build.sh: $source exists; remove it or pass another WORK_DIRECTORY" >&2
   exit 1
 fi
 mkdir -p "$source"
 tar -xzf "$archive" -C "$source" --strip-components=1
-for patch_file in "$here"/*.patch; do
-  patch -d "$source" -p1 --forward --quiet < "$patch_file"
-done
 
 cmake -S "$source" -B "$source/build" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_INSTALL_PREFIX="$prefix" \
   -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DWITH_SSL=ON -DUSE_POPT=OFF -DUSE_DTLS=OFF \

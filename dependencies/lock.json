@@ -36,10 +36,11 @@
       "use": "host"
     },
     {
-      "file": "resiprocate-1.14.0.tar.gz",
-      "url": "https://github.com/resiprocate/resiprocate/archive/refs/tags/resiprocate-1.14.0.tar.gz",
-      "sha256": "f132e4d0fcae0c155f91e5dad608a9985e199e4e3c09b6029a70b1b3b6d0b156",
-      "bytes": 30787415,
+      "file": "resiprocate-openmcx-1.14.0-1.tar.gz",
+      "url": "https://github.com/openMCX/resiprocate/archive/refs/tags/openmcx-1.14.0-1.tar.gz",
+      "sha256": "a04a018a1e6be6321f979b0aa9f3abb9c30daddf7936b5caa853db650a7dc1e8",
+      "bytes": 30795612,
+      "commit": "2843a5771 (tag openmcx-1.14.0-1: resiprocate-1.14.0 with OpenMCX's patches)",
       "use": "image"
     },
     {

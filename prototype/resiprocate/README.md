@@ -32,9 +32,9 @@ group. It checks:
   refuses any NOTIFY with a To tag for which no dialog exists yet), and the notifier then ends the subscription. On TCP
   this happens when the NOTIFY comes on a connection of the notifier's while the 200 comes on the subscriber's: it was
   first seen in a `--refresh` run. The probe forces that order (bob sends the 200 only after alice answered the
-  NOTIFY): the unpatched library fails, `dependencies/resiprocate/0001-dum-NOTIFY-before-the-2xx-of-its-SUBSCRIBE.patch`
+  NOTIFY): the unpatched library fails, OpenMCX's commit on its reSIProcate fork (`dependencies/resiprocate/README.md`)
   lets the NOTIFY create the dialog when its dialog set sent the SUBSCRIBE (or REFER), which DUM's `Dialog` already
-  supports. A candidate for upstream.
+  supports. Kept in the fork, not proposed upstream (PLAN.md decision 2).
 - **API notes for the port.** reSIProcate parses message contents lazily from the buffer it was given (keep SDP text
   alive with its `SdpContents`). A notifier sets `Subscription-State` itself (`setSubscriptionState(Active)` before
   `accept`; otherwise the NOTIFY carries no usable state and reaches `onUpdateExtension`). With the UAS in "Required"

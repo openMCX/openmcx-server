@@ -20,9 +20,9 @@ ARG GO_SHA256=63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445
 ARG PJSIP_FILE=pjproject-2.17.tar.gz
 ARG PJSIP_URL=https://github.com/pjsip/pjproject/archive/refs/tags/2.17.tar.gz
 ARG PJSIP_SHA256=065fe06c06788d97c35f563796d59f00ce52fe9558a52d7b490a042a966facce
-ARG RESIPROCATE_FILE=resiprocate-1.14.0.tar.gz
-ARG RESIPROCATE_URL=https://github.com/resiprocate/resiprocate/archive/refs/tags/resiprocate-1.14.0.tar.gz
-ARG RESIPROCATE_SHA256=f132e4d0fcae0c155f91e5dad608a9985e199e4e3c09b6029a70b1b3b6d0b156
+ARG RESIPROCATE_FILE=resiprocate-openmcx-1.14.0-1.tar.gz
+ARG RESIPROCATE_URL=https://github.com/openMCX/resiprocate/archive/refs/tags/openmcx-1.14.0-1.tar.gz
+ARG RESIPROCATE_SHA256=a04a018a1e6be6321f979b0aa9f3abb9c30daddf7936b5caa853db650a7dc1e8
 ARG LIBSRTP_FILE=libsrtp-2.8.1.tar.gz
 ARG LIBSRTP_URL=https://github.com/cisco/libsrtp/archive/6ff02afa8d2dc3f2e8896af391d137c1c66ff6fa.tar.gz
 ARG LIBSRTP_SHA256=1ef3e6315e0ea3cd05f4980c8b5f7a9df369e3d586f5e0616e6cc4c778401d4c
@@ -61,7 +61,7 @@ RUN fetch "$PJSIP_FILE" "$PJSIP_URL" "$PJSIP_SHA256" /tmp/pjproject.tar.gz \
     && make dep && make -j4 && make install \
     && rm -rf /tmp/pjproject /tmp/pjproject.tar.gz /tmp/pjproject-patches
 ENV PKG_CONFIG_PATH="/opt/pjsip/lib/pkgconfig"
-# reSIProcate with OpenMCX's patches (dependencies/resiprocate/README.md), the SIP stack that replaces pjproject
+# reSIProcate from OpenMCX's fork, with its patches (dependencies/resiprocate/README.md), the SIP stack that replaces pjproject
 # (prototype/resiprocate/PLAN.md): static rutil, resip and dum in /opt/resiprocate, found by CMakeLists.txt.
 COPY dependencies/resiprocate/ /tmp/resiprocate/
 RUN mkdir -p /tmp/resiprocate-work \
