@@ -5,13 +5,11 @@
 
 """Provision ephemeral trust and run native self-loop and two-process SIP tests.
 
-Usage: run_sip_tls.py SIP_TEST_BINARY [tcp] [nosubscriptions]. Creates a one-day self-signed certificate for
+Usage: run_sip_tls.py SIP_TEST_BINARY [tcp]. Creates a one-day self-signed certificate for
 127.0.0.1, runs the SIP test binary's self-loop test (over TLS only), its server and client
 roles as two processes (registration and call), the BYE authentication test against an
 independent raw SIP peer below, and the transaction failure test. The raw peer checks the
 SIP digest retry of RFC 3261 section 22.3 with the response of RFC 2617 section 3.2.2.1.
-With "nosubscriptions", the subscription roles and the transaction failure test (a SUBSCRIBE) are left out: the engine
-on reSIProcate until phase 3d of prototype/resiprocate/PLAN.md.
 
 Specifications: RFC 3261, RFC 2617; the SDP offered is an MCPTT offer (TS 24.379 V19.7.0).
 """
@@ -199,6 +197,84 @@ def run_register_digest(binary, directory, env):
 
 
 # ------------------------------------------------------------------------------
+def run_notify_first(binary, directory, env):
+    """A raw notifier for the "notify-first" role (RFC 6665 section 4.1.2.4): it takes the SUBSCRIBE, sends an active
+    NOTIFY to the subscriber's Contact on a connection of its own and waits for its 200 before it answers the SUBSCRIBE
+    200, then sends a terminating NOTIFY."""
+    tcp = env.get('OPENMCX_SIP_TEST_TCP') == '1'
+    transport = 'tcp' if tcp else 'tls'
+    listener = socket.socket()
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(('127.0.0.1', 15063))
+    listener.listen(2)
+    listener.settimeout(10)
+    role_env = env.copy()
+    role_env['OPENMCX_SIP_TEST_ROLE'] = 'notify-first'
+    process = subprocess.Popen([binary], env=role_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    connections = []
+    try:
+        incoming, _ = listener.accept()
+        if not tcp:
+            server_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            server_tls.load_cert_chain(directory + '/cert.pem', directory + '/key.pem')
+            server_tls.load_verify_locations(cafile=directory + '/cert.pem')
+            server_tls.verify_mode = ssl.CERT_REQUIRED
+            incoming = server_tls.wrap_socket(incoming, server_side=True)
+        connections.append(incoming)
+        wire = SipWire(incoming)
+        subscribe = wire.receive()
+        assert subscribe[0].startswith('SUBSCRIBE '), subscribe[0]
+        fields = subscribe[1]
+        target = fields['contact'][0].split('<', 1)[1].split('>', 1)[0]
+        to_tag = 'notifier-tag'
+        notify_fields = lambda cseq, state: [
+            ('Via', f'SIP/2.0/{transport.upper()} 127.0.0.1:15063;branch=z9hG4bK-notify-{cseq};rport'),
+            ('Max-Forwards', '70'),
+            ('From', fields['to'][0] + ';tag=' + to_tag),
+            ('To', fields['from'][0]),
+            ('Call-ID', fields['call-id'][0]),
+            ('CSeq', f'{cseq} NOTIFY'),
+            ('Contact', '<sip:notifier@127.0.0.1:15063;transport=' + transport + '>'),
+            ('Event', 'presence'),
+            ('Subscription-State', state),
+        ]
+        outgoing = socket.create_connection(('127.0.0.1', 15062), timeout=5)
+        if not tcp:
+            client_tls = ssl.create_default_context(cafile=directory + '/cert.pem')
+            client_tls.load_cert_chain(directory + '/cert.pem', directory + '/key.pem')
+            outgoing = client_tls.wrap_socket(outgoing, server_hostname='127.0.0.1')
+        connections.append(outgoing)
+        notifier = SipWire(outgoing)
+        notifier.send('NOTIFY ' + target + ' SIP/2.0', notify_fields(1, 'active;expires=600'))
+        answer = notifier.receive()
+        assert answer[0] == 'SIP/2.0 200 OK', 'NOTIFY before the 200 answered ' + answer[0]
+        # The 200 carries the NOTIFY's From tag as its To tag (RFC 6665 section 4.1.2.4).
+        wire.send(
+            'SIP/2.0 200 OK',
+            [('Via', value) for value in fields['via']]
+            + [('From', fields['from'][0]), ('To', fields['to'][0] + ';tag=' + to_tag)]
+            + [('Call-ID', fields['call-id'][0]), ('CSeq', fields['cseq'][0])]
+            + [('Contact', '<sip:notifier@127.0.0.1:15063;transport=' + transport + '>'), ('Expires', '600')],
+        )
+        # The 200 and this NOTIFY take different connections, which keep no order between them: the 200 first.
+        time.sleep(0.5)
+        notifier.send('NOTIFY ' + target + ' SIP/2.0', notify_fields(2, 'terminated;reason=noresource'))
+        answer = notifier.receive()
+        assert answer[0] == 'SIP/2.0 200 OK', 'terminating NOTIFY answered ' + answer[0]
+        output, _ = process.communicate(timeout=15)
+        print(output, end='')
+        assert process.returncode == 0, 'NOTIFY before the 200 regression failed'
+        print('NOTIFY before the 200 of its SUBSCRIBE verified over ' + transport)
+    finally:
+        for connection in connections:
+            connection.close()
+        listener.close()
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=5)
+
+
+# ------------------------------------------------------------------------------
 def run_uas_bye_auth(binary, directory, env):
     """An independent raw peer challenges a BYE sent by a native UAS dialog: it calls the native
     UAS, answers its BYE with 407 Proxy Authentication Required and checks the retried BYE's
@@ -367,10 +443,8 @@ with tempfile.TemporaryDirectory(prefix='openmcx-sip-tls-') as directory:
     else:
         subprocess.run([binary], env=env, check=True, timeout=20)
     run_register_digest(binary, directory, env)
-    # Without subscriptions (the engine on reSIProcate before phase 3d of prototype/resiprocate/PLAN.md): the call
-    # roles and the BYE authentication only.
-    subscriptions = 'nosubscriptions' not in sys.argv[2:]
-    for prefix in ('', 'call-') if subscriptions else ('call-',):
+    run_notify_first(binary, directory, env)
+    for prefix in ('', 'call-'):
         ready = pathlib.Path(directory) / ('ready-' + prefix)
         env['OPENMCX_SIP_TEST_READY_FILE'] = str(ready)
         server_env = env.copy()
@@ -400,7 +474,6 @@ with tempfile.TemporaryDirectory(prefix='openmcx-sip-tls-') as directory:
                 server.terminate()
                 server.wait(timeout=5)
     run_uas_bye_auth(binary, directory, env)
-    if subscriptions:
-        failure_env = env.copy()
-        failure_env['OPENMCX_SIP_TEST_ROLE'] = 'transaction-failure'
-        subprocess.run([binary], env=failure_env, check=True, timeout=15)
+    failure_env = env.copy()
+    failure_env['OPENMCX_SIP_TEST_ROLE'] = 'transaction-failure'
+    subprocess.run([binary], env=failure_env, check=True, timeout=15)

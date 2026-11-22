@@ -943,16 +943,30 @@ void SipEngine::Impl::receive_in_dialog(const resip::SipMessage &message) {
     response.headers = std::move(headers);
     send_response(message, response);
   };
-  if (found == dialogs.end() || found->second->local_tag != to_tag || found->second->remote_tag != from_tag)
+  if (found == dialogs.end() || found->second->local_tag != to_tag)
     return respond(481, "Call/Transaction Does Not Exist");
   auto &dialog = *found->second;
+  // RFC 6665 section 4.1.2.4: "the subscriber MUST be prepared to receive NOTIFY requests before the SUBSCRIBE
+  // transaction has completed": a NOTIFY to this side's SUBSCRIBE dialog without its remote tag establishes it.
+  if (!dialog.invite && dialog.uac && dialog.remote_tag.empty() && message.method() == resip::NOTIFY && !from_tag.empty()) {
+    dialog.remote_tag = from_tag;
+    if (message.exists(resip::h_Contacts) && !message.header(resip::h_Contacts).empty())
+      dialog.remote_target = resip_engine::text_of(message.header(resip::h_Contacts).front().uri());
+    if (!dialog.route_frozen && message.exists(resip::h_RecordRoutes)) {
+      dialog.route_set.clear();
+      for (const auto &route : message.header(resip::h_RecordRoutes))
+        dialog.route_set.push_back(resip_engine::text_of(route));
+    }
+    dialog.state = Dialog::State::confirmed;
+  }
+  if (dialog.remote_tag != from_tag) return respond(481, "Call/Transaction Does Not Exist");
   const auto cseq = message.header(resip::h_CSeq).sequence();
   if (dialog.remote_cseq && cseq <= *dialog.remote_cseq) return respond(500, "Server Internal Error");
   dialog.remote_cseq = cseq;
   const auto method = message.method();
   const auto id = dialog.id;
 
-  if (method == resip::BYE) {
+  if (method == resip::BYE && dialog.invite) {
     respond(200, "OK");
     try {
       (void)safe_application_response(message_from(message));
@@ -970,16 +984,16 @@ void SipEngine::Impl::receive_in_dialog(const resip::SipMessage &message) {
     terminate(id, 200);
     return;
   }
-  if (method == resip::PRACK) return respond(200, "OK");
+  if (method == resip::PRACK && dialog.invite) return respond(200, "OK");
   const auto [type, body] = body_and_type(message);
   const bool offer = !sdp_of(type, body).empty();
-  if (method == resip::INVITE || (method == resip::UPDATE && offer)) {
+  if (dialog.invite && (method == resip::INVITE || (method == resip::UPDATE && offer))) {
     if (dialog.offer_handler) return respond(491, "Request Pending");
     if (dialog.incoming_offer) return respond(500, "Server Internal Error", {{"Retry-After", "1"}});
     update_target(dialog, message, false);
     return receive_offer(dialog, message);
   }
-  if (method == resip::UPDATE) {
+  if (method == resip::UPDATE && dialog.invite) {
     // RFC 4028 section 7: a session refresh without offer.
     update_target(dialog, message, false);
     session_timer_from(dialog, message, true);
@@ -991,15 +1005,156 @@ void SipEngine::Impl::receive_in_dialog(const resip::SipMessage &message) {
     send_dialog_response(dialog, message, ok, extra);
     return;
   }
-  // INFO, MESSAGE and the others: as outside a dialog (the application's response, deferrable).
+  // INFO, MESSAGE, NOTIFY, SUBSCRIBE and the others: as outside a dialog (the application's response, deferrable but
+  // for a SUBSCRIBE refresh).
   SipMessage request = message_from(message);
   request.transaction_id = std::to_string(++next_transaction);
   SipResponse response = safe_application_response(request);
   if (response.deferred) {
+    if (method == resip::SUBSCRIBE) throw std::invalid_argument("an in-dialog SUBSCRIBE cannot be deferred");
     deferred[request.transaction_id] = std::make_unique<resip::SipMessage>(message);
     return;
   }
+  // RFC 6665 section 4.2.1: the 2xx to a SUBSCRIBE refresh carries the notifier's Contact.
+  if (method == resip::SUBSCRIBE && response.status_code / 100 == 2 &&
+      std::none_of(response.headers.begin(), response.headers.end(),
+                   [](const SipHeader &header) { return ascii_equal(header.name, "Contact"); }))
+    response.headers.insert(response.headers.begin(), {"Contact", dialog.contact});
   send_response(message, response);
+  // RFC 6665 section 4.1.3: a NOTIFY with Subscription-State "terminated", accepted, ends the subscription.
+  if (!dialog.invite && method == resip::NOTIFY && response.status_code / 100 == 2 &&
+      sip_detail::ascii_lower(std::string(get_header(request.headers, "Subscription-State"))).starts_with("terminated"))
+    dialogs.erase(id);
+}
+
+//------------------------------------------------------------------------------
+// RFC 6665 section 4.1.2 (as create_subscribe of the pjproject engine): a subscription dialog and its initial
+// SUBSCRIBE: From the identity with a new tag, To the Request-URI, a new Call-ID and CSeq, this side's Contact (or the
+// application's, which the dialog keeps), a pinned route set for an application Route (otherwise the preloaded route),
+// Event, Expires, the application's header fields and body. Returns the dialog id (its Call-ID).
+std::string SipEngine::Impl::create_subscribe(std::string_view request_uri, std::string_view event, unsigned expires,
+                                              const std::vector<SipHeader> &headers, SipResponseHandler handler,
+                                              std::string_view content_type, std::string_view body) {
+  ensure_started();
+  if (request_uri.empty() || request_uri.find_first_of("\r\n \t<>") != std::string_view::npos)
+    throw std::invalid_argument("invalid SIP request URI");
+  if (event.find_first_of("\r\n") != std::string_view::npos || content_type.find_first_of("\r\n") != std::string_view::npos)
+    throw std::invalid_argument("invalid SUBSCRIBE event or content type");
+  for (const auto &header : headers) resip_engine::check_header(header);
+  auto dialog = std::make_unique<Dialog>();
+  dialog->uac = true;
+  dialog->invite = false;
+  dialog->id = dialog->call_id = resip_engine::random_hex(16);
+  dialog->local_tag = resip_engine::random_hex(8);
+  dialog->local_name = sip_detail::name_addr(config.identity);
+  dialog->remote_name = sip_detail::name_addr(request_uri);
+  dialog->remote_target = std::string(request_uri);
+  dialog->local_cseq = initial_cseq();
+  dialog->sips = sips_target(request_uri);
+  const auto override_contact = get_header(headers, "Contact");
+  dialog->contact = override_contact.empty() ? contact_uri() : std::string(override_contact);
+  if (dialog->sips) {
+    const auto at = dialog->contact.starts_with('<') ? 1U : 0U;
+    if (dialog->contact.compare(at, 4, "sip:") == 0) dialog->contact.insert(at + 3, "s");
+  }
+  if (const auto route = get_header(headers, "Route"); !route.empty()) {
+    dialog->route_set = {std::string(route)};
+    dialog->route_frozen = true;
+  }
+  auto request = dialog_request(*dialog, "SUBSCRIBE");
+  if (request.routes.empty()) request.routes = aka ? aka_routes() : std::vector<std::string>{[&] {
+    auto route = "<" + config.core_uri;
+    if (route.find(";lr") == std::string::npos) route += ";lr";
+    return route + ">";
+  }()};
+  request.headers = {{"Event", std::string(event)}, {"Expires", std::to_string(expires)}};
+  for (const auto &header : headers)
+    if (!ascii_equal(header.name, "Route") && !ascii_equal(header.name, "Contact")) request.headers.push_back(header);
+  if (!body.empty()) {
+    request.content_type = std::string(content_type);
+    request.body = std::string(body);
+  }
+  const auto id = dialog->id;
+  auto &stored = *dialog;
+  dialogs[id] = std::move(dialog);
+  try {
+    Pending entry;
+    entry.purpose = Purpose::subscribe;
+    entry.handler = std::move(handler);
+    send_in_dialog(stored, std::move(request), std::move(entry));
+  } catch (...) {
+    dialogs.erase(id);
+    throw;
+  }
+  return id;
+}
+
+//------------------------------------------------------------------------------
+// RFC 6665 section 4.1.2.1: the final response to the initial SUBSCRIBE: a 2xx establishes the dialog (unless a
+// NOTIFY already has), a failure ends it (no dialog is kept); then the handler.
+void SipEngine::Impl::subscribe_response(const resip::SipMessage &message, Pending &entry) {
+  const int status = status_of(message);
+  if (const auto found = dialogs.find(entry.dialog_id); found != dialogs.end()) {
+    if (status / 100 == 2) {
+      update_target(*found->second, message, true);
+      found->second->state = Dialog::State::confirmed;
+    } else if (status >= 300) {
+      dialogs.erase(found);
+    }
+  }
+  SipResponse response;
+  try {
+    response = response_from(message);
+  } catch (const std::exception &error) {
+    report_error(std::string("received SIP response: ") + error.what());
+    response.status_code = status;
+  }
+  dispatch_response(response, entry.handler);
+}
+
+//------------------------------------------------------------------------------
+// RFC 6665 section 4.2.1 (as accept_subscription of the pjproject engine): the notifier's dialog of an initial
+// SUBSCRIBE that the application accepts: a new local tag, the subscriber's tag, target and route set, this side's
+// Contact (SIPS for a SIPS request); then the 2xx with that Contact.
+void SipEngine::Impl::accept_subscription(const resip::SipMessage &message, const SipResponse &response) {
+  const std::string call_id = message.header(resip::h_CallId).value().c_str();
+  if (dialogs.contains(call_id)) throw std::invalid_argument("SIP Call-ID collision");
+  if (!message.exists(resip::h_Contacts) || message.header(resip::h_Contacts).empty())
+    throw std::invalid_argument("SUBSCRIBE without Contact (RFC 6665 section 4.1.2)");
+  auto dialog = std::make_unique<Dialog>();
+  dialog->invite = false;
+  dialog->id = dialog->call_id = call_id;
+  dialog->local_tag = resip_engine::random_hex(8);
+  dialog->remote_tag = message.header(resip::h_From).exists(resip::p_tag)
+                           ? message.header(resip::h_From).param(resip::p_tag).c_str()
+                           : "";
+  dialog->local_name = without_tag(message.header(resip::h_To));
+  dialog->remote_name = without_tag(message.header(resip::h_From));
+  dialog->remote_target = resip_engine::text_of(message.header(resip::h_Contacts).front().uri());
+  if (message.exists(resip::h_RecordRoutes))
+    for (const auto &route : message.header(resip::h_RecordRoutes))
+      dialog->route_set.push_back(resip_engine::text_of(route));
+  dialog->remote_cseq = message.header(resip::h_CSeq).sequence();
+  dialog->local_cseq = initial_cseq();
+  const auto lower = [](const std::string &text) { return sip_detail::ascii_lower(text); };
+  const std::string request_uri = resip_engine::text_of(message.header(resip::h_RequestLine).uri());
+  dialog->sips = lower(request_uri).starts_with("sips:") ||
+                 (!dialog->route_set.empty() ? lower(dialog->route_set.front()).find("<sips:") != std::string::npos
+                                             : lower(dialog->remote_target).starts_with("sips:"));
+  dialog->contact = contact_uri();
+  if (dialog->sips) {
+    const auto at = dialog->contact.starts_with('<') ? 1U : 0U;
+    if (dialog->contact.compare(at, 4, "sip:") == 0) dialog->contact.insert(at + 3, "s");
+  }
+  dialog->state = Dialog::State::confirmed;
+  auto &stored = *dialog;
+  dialogs[call_id] = std::move(dialog);
+  try {
+    send_dialog_response(stored, message, response, {{"Contact", stored.contact}});
+  } catch (...) {
+    dialogs.erase(call_id);
+    throw;
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -1085,7 +1240,8 @@ void SipEngine::Impl::answer_offer(Dialog &dialog, const resip::SipMessage &offe
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 12.2.1 (as send_dialog_request of the pjproject engine): INFO or MESSAGE in a dialog, with the
+// RFC 3261 section 12.2.1 (as send_dialog_request of the pjproject engine): INFO, MESSAGE, SUBSCRIBE or NOTIFY in a
+// dialog, with the
 // application's header fields and body; the handler gets the final response (after a digest retry).
 void SipEngine::Impl::send_dialog_request(std::string_view dialog_id, std::string_view method,
                                           const std::vector<SipHeader> &headers, std::string_view content_type,
@@ -1102,6 +1258,10 @@ void SipEngine::Impl::send_dialog_request(std::string_view dialog_id, std::strin
   request.body = std::string(body);
   Pending entry;
   entry.handler = std::move(handler);
+  // RFC 6665 section 4.2.2: this side's NOTIFY that terminates the subscription ends the dialog once answered.
+  entry.ends_subscription =
+      method == "NOTIFY" &&
+      sip_detail::ascii_lower(std::string(get_header(headers, "Subscription-State"))).starts_with("terminated");
   send_in_dialog(*found->second, std::move(request), std::move(entry));
 }
 

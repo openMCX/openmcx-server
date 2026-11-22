@@ -256,8 +256,6 @@ void test_native_mutual_tls_request_callbacks_when_configured() {
         "unsupported INVITE extension receives 420 Bad Extension (RFC 3261 section 8.2.2.3)");
   check(invite_application_calls == 0, "unsupported INVITE is rejected before the application commits call state");
 
-  // Subscriptions: on reSIProcate from phase 3d of prototype/resiprocate/PLAN.md.
-#ifndef MCX_SIP_RESIP
   int subscription_status = 0;
   const std::string subscription_dialog =
       engine.subscribe("sips:service@openmcx.test", "presence", 3600, {},
@@ -267,8 +265,6 @@ void test_native_mutual_tls_request_callbacks_when_configured() {
     engine.poll(std::chrono::milliseconds(10));
   }
   check(subscription_status == 482, "self-routed SUBSCRIBE collision receives a final response");
-
-#endif
 
   int colliding_invite_status = 0;
   const std::string colliding_dialog =
@@ -1024,6 +1020,46 @@ void run_register_digest(const std::string &directory) {
 }
 
 //------------------------------------------------------------------------------
+// Role "notify-first", against the raw notifier of run_sip_tls.py (RFC 6665 section 4.1.2.4: "the subscriber MUST be
+// prepared to receive NOTIFY requests before the SUBSCRIBE transaction has completed"): the NOTIFY comes on a
+// connection of the notifier's before the 200 to the SUBSCRIBE; it reaches the application in the subscription's
+// dialog, the 200 then completes the SUBSCRIBE, and a terminating NOTIFY ends the dialog.
+void run_notify_first(const std::string &directory) {
+  auto config = process_config(directory, 15062, "sip:client@openmcx.test", "sip:127.0.0.1:15063;transport=tls");
+  if (std::getenv("OPENMCX_SIP_TEST_TCP")) config.core_uri = "sip:127.0.0.1:15063;transport=tcp";
+  std::string dialog;
+  std::vector<std::string> states;
+  bool in_dialog = true;
+  mcx::SipCallbacks callbacks;
+  callbacks.on_request = [&](const mcx::SipMessage &message) {
+    in_dialog = in_dialog && message.method == "NOTIFY" && message.dialog_id == dialog;
+    states.push_back(std::string(mcx::get_header(message.headers, "Subscription-State")));
+    mcx::SipResponse response;
+    response.status_code = 200;
+    response.reason = "OK";
+    return response;
+  };
+  mcx::SipEngine engine(config, callbacks);
+  engine.start();
+  int status = 0;
+  std::size_t notifies_before_200 = 0;
+  dialog = engine.subscribe(config.core_uri, "presence", 600, {}, [&](const mcx::SipResponse &response) {
+    status = response.status_code;
+    notifies_before_200 = states.size();
+  });
+  for (int iteration = 0; iteration < 1000 && (status == 0 || states.size() < 2); ++iteration)
+    engine.poll(std::chrono::milliseconds(10));
+  check(notifies_before_200 == 1 && status == 200, "a NOTIFY before the 200 of its SUBSCRIBE is taken, then the 200");
+  if (notifies_before_200 != 1 || status != 200)
+    std::cerr << "NOTIFY-first diagnostic: status=" << status << " notifies before it=" << notifies_before_200
+              << " notifies=" << states.size() << "\n";
+  check(in_dialog && states.size() == 2 && states[0].starts_with("active") && states[1].starts_with("terminated"),
+        "both NOTIFY requests reach the application in the subscription's dialog");
+  check(engine.subscription_count() == 0, "the terminating NOTIFY ends the subscription dialog");
+  engine.stop();
+}
+
+//------------------------------------------------------------------------------
 // Role "transaction-failure": a SUBSCRIBE towards a port where nothing listens fails at the transport and invokes
 // its response callback exactly once with an error status.
 void run_transaction_failure(const std::string &directory) {
@@ -1055,7 +1091,9 @@ int main() {
       return 2;
     }
     try {
-      if (std::string_view(role) == "register-digest") {
+      if (std::string_view(role) == "notify-first") {
+        run_notify_first(certificate_directory);
+      } else if (std::string_view(role) == "register-digest") {
         run_register_digest(certificate_directory);
       } else if (std::string_view(role) == "bye-auth-server") {
         run_bye_auth_server(certificate_directory);

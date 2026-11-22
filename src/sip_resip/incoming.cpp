@@ -140,8 +140,6 @@ void SipEngine::Impl::receive_request(const resip::SipMessage &message) {
     SipResponse response = safe_application_response(request);
 
     if (response.deferred && !invite) {
-      if (method == resip::SUBSCRIBE)
-        throw std::logic_error("deferred SUBSCRIBE on reSIProcate: prototype/resiprocate/PLAN.md phase 3d");
       // RFC 3261 section 17.2.2: the server transaction waits for the response (SipEngine::respond).
       deferred[request.transaction_id] = std::make_unique<resip::SipMessage>(message);
       return;
@@ -152,8 +150,7 @@ void SipEngine::Impl::receive_request(const resip::SipMessage &message) {
       return;
     }
     if (method == resip::SUBSCRIBE && response.status_code >= 200 && response.status_code < 300) {
-      report_error("subscriptions on reSIProcate: prototype/resiprocate/PLAN.md phase 3d");
-      send_response(message, status(501, "Not Implemented"));
+      accept_subscription(message, response);
       return;
     }
     send_response(message, response);
@@ -197,6 +194,10 @@ void SipEngine::Impl::respond_deferred(const std::string &transaction_id, const 
     throw std::invalid_argument("invalid deferred response status");
   const auto request = std::move(found->second);
   deferred.erase(found);
+  // A deferred initial SUBSCRIBE: accepted, it creates the notifier's dialog (RFC 6665 section 4.2.1).
+  if (request->method() == resip::SUBSCRIBE && !request->header(resip::h_To).exists(resip::p_tag) &&
+      response.status_code / 100 == 2)
+    return accept_subscription(*request, response);
   send_response(*request, response);
 }
 

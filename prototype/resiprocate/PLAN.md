@@ -130,3 +130,14 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
   - Written but run by no test yet: the session refresh and expiry (the tests' sessions last 1800 s), the 2xx
     retransmission over UDP, PRACK (no peer of the tests sends reliable provisional responses), 422, 491 glare, a digest
     retry of an INVITE, dialogs over IMS AKA (scenario 5 of `run_ims_aka.py`, blocked on main).
+- Phase 3d: subscriptions on the same dialog layer (`dialogs.cpp`): the subscriber's dialog from SUBSCRIBE, made by
+  its 2xx or by a NOTIFY that comes first (RFC 6665 section 4.1.2.4, the case of the fork's DUM commit), ended by a
+  failure of the initial SUBSCRIBE; the notifier's dialog of an accepted SUBSCRIBE (at once or deferred), with its
+  Contact in the 2xx; NOTIFY and SUBSCRIBE refreshes both ways through the application; a terminating NOTIFY, sent and
+  answered or received and accepted, ends the dialog; `subscription_count`. Every operation of `include/mcx/sip.hpp`
+  is now written on reSIProcate: phase 3 is done.
+  - Tests: `test_sip` runs whole on both stacks again (`MCX_SIP_RESIP` and `nosubscriptions` are gone); a new
+    `notify-first` role against a raw notifier in `run_sip_tls.py` sends the NOTIFY on its own connection before the
+    200 (both stacks, TLS and TCP). resip 58 of 58, pjsip 58 of 58, on `openmcx-dev:0.4-resip` rebuilt with the fork's
+    `openmcx-1.14.0-1`.
+  - Seen: reSIProcate logs an `SSL_shutdown` error when a TLS connection closes at stop (noise, for phase 6).

@@ -3,7 +3,6 @@
 //
 
 // mcx::SipEngine (include/mcx/sip.hpp) on reSIProcate: the public operations over SipEngine::Impl (resip_impl.hpp).
-// The operations of later phases of prototype/resiprocate/PLAN.md throw std::logic_error naming their phase.
 //
 // Specifications: RFC 3261, RFC 3903, TS 24.379 V19.7.0 (Rel-19) clause 7.2.
 
@@ -11,18 +10,10 @@
 
 #include "mcx/runtime.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace mcx {
-namespace {
-//------------------------------------------------------------------------------
-// Helper: the refusal of an operation that a later phase of the migration writes.
-[[noreturn]] void later(std::string_view what, std::string_view phase) {
-  throw std::logic_error(std::string(what) + " on reSIProcate: prototype/resiprocate/PLAN.md phase " +
-                         std::string(phase));
-}
-} // namespace
-
 SipEngine::SipEngine(SipConfig config, SipCallbacks callbacks)
     : impl_(std::make_unique<Impl>(std::move(config), std::move(callbacks))) {}
 
@@ -36,8 +27,11 @@ bool SipEngine::running() const noexcept { return impl_->started; }
 
 void SipEngine::poll(std::chrono::milliseconds timeout) { impl_->poll(timeout); }
 
-// No subscription dialogs before phase 3d.
-std::size_t SipEngine::subscription_count() const noexcept { return 0; }
+// The dialogs that are not INVITE sessions (the subscription dialogs of RFC 6665).
+std::size_t SipEngine::subscription_count() const noexcept {
+  return static_cast<std::size_t>(std::count_if(impl_->dialogs.begin(), impl_->dialogs.end(),
+                                                [](const auto &entry) { return !entry.second->invite; }));
+}
 
 void SipEngine::set_body_filters(SipBodyFilter outgoing, SipBodyFilter incoming) {
   impl_->outgoing_filter = std::move(outgoing);
@@ -109,14 +103,25 @@ void SipEngine::publish(std::string_view request_uri, std::string_view content_t
   request("PUBLISH", request_uri, content_type, body, headers, std::move(handler));
 }
 
-std::string SipEngine::subscribe(std::string_view, std::string_view, unsigned, const std::vector<SipHeader> &,
-                                 SipResponseHandler, std::string_view, std::string_view) {
-  later("subscriptions", "3d");
+std::string SipEngine::subscribe(std::string_view request_uri, std::string_view event, unsigned expires,
+                                 const std::vector<SipHeader> &headers, SipResponseHandler handler,
+                                 std::string_view content_type, std::string_view body) {
+  if (event.empty()) throw std::invalid_argument("SUBSCRIBE requires event");
+  return impl_->create_subscribe(request_uri, event, expires, headers, std::move(handler), content_type, body);
 }
 
-void SipEngine::notify(std::string_view, std::string_view, std::string_view, std::string_view, std::string_view,
-                       const std::vector<SipHeader> &, SipResponseHandler) {
-  later("subscriptions", "3d");
+//------------------------------------------------------------------------------
+// RFC 6665 section 4.2.2: a NOTIFY with Event and Subscription-State in a subscription dialog; "terminated" ends it
+// once answered.
+void SipEngine::notify(std::string_view dialog_id, std::string_view event, std::string_view subscription_state,
+                       std::string_view content_type, std::string_view body, const std::vector<SipHeader> &headers,
+                       SipResponseHandler handler) {
+  if (event.empty() || subscription_state.empty())
+    throw std::invalid_argument("NOTIFY requires Event and Subscription-State");
+  auto notify_headers = headers;
+  notify_headers.push_back({"Event", std::string(event)});
+  notify_headers.push_back({"Subscription-State", std::string(subscription_state)});
+  impl_->send_dialog_request(dialog_id, "NOTIFY", notify_headers, content_type, body, std::move(handler));
 }
 
 
@@ -132,12 +137,13 @@ void SipEngine::refer(std::string_view request_uri, const std::vector<BodyPart> 
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 12.2.1: INFO or MESSAGE in an INVITE dialog (SUBSCRIBE refreshes come with phase 3d).
+// RFC 3261 section 12.2.1: INFO or MESSAGE in an INVITE dialog, or SUBSCRIBE in a subscription dialog.
 void SipEngine::request_in_dialog(std::string_view dialog_id, std::string_view method, std::string_view type,
                                   std::string_view body, const std::vector<SipHeader> &headers,
                                   SipResponseHandler handler) {
-  if (method == "SUBSCRIBE") later("subscriptions", "3d");
-  if (method != "INFO" && method != "MESSAGE") throw std::invalid_argument("unsupported application dialog method");
+  // SUBSCRIBE: the refresh or end of a subscription this engine created (RFC 6665 section 4.1.2).
+  if (method != "INFO" && method != "MESSAGE" && method != "SUBSCRIBE")
+    throw std::invalid_argument("unsupported application dialog method");
   impl_->send_dialog_request(dialog_id, method, headers, type, body, std::move(handler));
 }
 

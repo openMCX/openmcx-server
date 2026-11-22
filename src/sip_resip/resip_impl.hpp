@@ -8,10 +8,9 @@
 // the pjproject engine builds them through pjsip, and parsed into reSIProcate messages; the body filters run before a
 // message is handed to the stack, on the next hop's address.
 //
-// Phase 3a: the engine core (requests and responses outside dialogs, deferred responses, the body filters). Phase 3b:
-// registration with digest authentication (and the digest retry of other requests), and IMS AKA (ims_aka.cpp) with
-// its sets of security associations and transports (aka_transports.hpp). INVITE sessions (3c) and subscriptions (3d)
-// refuse with a std::logic_error naming their phase.
+// The engine core (requests, responses, deferred responses, body filters), registration with digest authentication
+// and IMS AKA (ims_aka.cpp, aka_transports.hpp), and dialogs on the engine's own dialog layer (dialogs.cpp): INVITE
+// sessions and subscriptions (PLAN.md phases 3a to 3d).
 //
 // Private to src/sip_resip/.
 //
@@ -77,7 +76,7 @@ struct SipEngine::Impl {
   };
 
   // What a response to a request sent goes to.
-  enum class Purpose { request, registration, aka_register, invite, offer, bye, prack };
+  enum class Purpose { request, registration, aka_register, invite, offer, bye, prack, subscribe };
 
   struct Pending {
     SipResponseHandler handler;
@@ -88,6 +87,8 @@ struct SipEngine::Impl {
     bool retried = false;
     // The dialog of an in-dialog request or initial INVITE (its identifier).
     std::string dialog_id;
+    // RFC 6665 section 4.2.2: a NOTIFY with Subscription-State "terminated": its final response ends the dialog.
+    bool ends_subscription = false;
   };
 
   // RFC 3261 section 12: a dialog of this engine, an INVITE session (dialogs.cpp), keyed by its Call-ID.
@@ -95,6 +96,8 @@ struct SipEngine::Impl {
     enum class State { calling, early, connecting, confirmed, terminated };
     std::string id;
     bool uac = false;
+    // An INVITE session, or a subscription dialog (RFC 6665).
+    bool invite = true;
     State state = State::calling;
     std::string call_id, local_tag, remote_tag;
     // The From or To header field values of this side and of the peer, without tags.
@@ -255,6 +258,11 @@ struct SipEngine::Impl {
   std::string send_in_dialog(Dialog &dialog, OutgoingRequest request, Pending entry);
   void send_dialog_request(std::string_view dialog_id, std::string_view method, const std::vector<SipHeader> &headers,
                            std::string_view content_type, std::string_view body, SipResponseHandler handler);
+  [[nodiscard]] std::string create_subscribe(std::string_view request_uri, std::string_view event, unsigned expires,
+                                             const std::vector<SipHeader> &headers, SipResponseHandler handler,
+                                             std::string_view content_type, std::string_view body);
+  void subscribe_response(const resip::SipMessage &message, Pending &entry);
+  void accept_subscription(const resip::SipMessage &message, const SipResponse &response);
   void invite_response(const resip::SipMessage &message, Pending &entry);
   void offer_response(const resip::SipMessage &message, Pending &entry);
   void bye_response(const resip::SipMessage &message, Pending &entry);

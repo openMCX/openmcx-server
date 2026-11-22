@@ -301,6 +301,7 @@ void SipEngine::Impl::receive_response(const resip::SipMessage &message) {
   if (entry.purpose == Purpose::offer) return offer_response(message, entry);
   if (entry.purpose == Purpose::bye) return bye_response(message, entry);
   if (entry.purpose == Purpose::prack) return;
+  if (entry.purpose == Purpose::subscribe) return subscribe_response(message, entry);
   SipResponse response;
   try {
     response = response_from(message);
@@ -310,6 +311,10 @@ void SipEngine::Impl::receive_response(const resip::SipMessage &message) {
     response.reason = "Invalid SIP response";
   }
   dispatch_response(response, entry.handler);
+  // RFC 6665 section 4.2.2: this side's terminating NOTIFY, answered: the subscription dialog goes.
+  if (entry.ends_subscription)
+    if (const auto dialog = dialogs.find(entry.dialog_id); dialog != dialogs.end() && !dialog->second->invite)
+      dialogs.erase(dialog);
 }
 
 //------------------------------------------------------------------------------
