@@ -165,7 +165,8 @@ std::pair<std::string, std::string> body_and_type(const resip::SipMessage &messa
   const auto &raw = message.getRawBody();
   std::string body = raw.getBuffer() == nullptr ? std::string() : std::string(raw.getBuffer(), raw.getLength());
   std::string type;
-  if (message.exists(resip::h_ContentType)) type = resip_engine::text_of(message.header(resip::h_ContentType));
+  if (!body.empty() && message.exists(resip::h_ContentType))
+    type = resip_engine::text_of(message.header(resip::h_ContentType));
   if (sip_detail::ascii_lower(type).starts_with("multipart/") && body.starts_with("\r\n--")) body.erase(0, 2);
   return {type, body};
 }
@@ -661,6 +662,7 @@ void SipEngine::Impl::end_dialog(std::string_view dialog_id, SipResponseHandler 
   if (dialog.uac && (dialog.state == Dialog::State::calling || dialog.state == Dialog::State::early)) {
     // RFC 3261 section 9.1: the stack sends the CANCEL once a provisional response has arrived.
     stack->cancelClientInviteTransaction(resip::Data(dialog.invite_transaction), nullptr);
+    transmit();
     return;
   }
   if (!dialog.uac && !dialog.final_answer && dialog.invite_request) {

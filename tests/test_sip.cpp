@@ -10,7 +10,12 @@
 #include "mcx/runtime.hpp"
 #include "mcx/sip.hpp"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <poll.h>
 #include <pthread.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <chrono>
 #include <csignal>
@@ -261,6 +266,20 @@ void test_native_mutual_tls_request_callbacks_when_configured() {
   check(request_received && response_received && exchange_ms < 150,
         "a request and its answer cross without waiting out a poll timeout");
   if (exchange_ms >= 150) std::cerr << "exchange diagnostic: " << exchange_ms << " ms with 200 ms polls\n";
+
+  // RFC 3261 section 20.15 and RFC 6665 section 4.1.2.3: a Content-Type with Content-Length 0 is no body; the request
+  // reaches the application without a content type (a final NOTIFY without state is not an empty document).
+  observed_content_type = "unset";
+  int empty_body_status = 0;
+  engine.request("MESSAGE", "sips:service@openmcx.test", "application/pidf+xml", "", {},
+                 [&](const mcx::SipResponse &response) { empty_body_status = response.status_code; });
+  for (int iteration = 0; iteration < 200 && empty_body_status == 0; ++iteration) {
+    engine.poll(std::chrono::milliseconds(10));
+  }
+  check(empty_body_status == 200 && observed_content_type.empty(),
+        "a Content-Type without a body reaches the application as no body");
+  if (!observed_content_type.empty())
+    std::cerr << "empty body diagnostic: content type '" << observed_content_type << "'\n";
 
   int unsupported_invite_status = 0;
   engine.request("INVITE", "sips:service@openmcx.test", "application/sdp", mcx::make_sdp(media, 9),
@@ -1107,6 +1126,73 @@ void run_transaction_failure(const std::string &directory) {
 } // namespace
 
 //------------------------------------------------------------------------------
+// RFC 3261 section 18.1.1: a request is on the wire when the call that sends it returns (pjsip writes it there), so it
+// goes before what the application does next: TS 24.282 clause 10.2.1.2.2, the FD NOTIFICATION "accepted" before
+// the HTTP GET of the file. Against a plain TCP listener (debug TCP configuration): once the connection stands, a
+// second request is readable from the socket without any poll of the engine.
+void test_request_on_wire_at_return() {
+  const int listener = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+  const int yes = 1;
+  (void)::setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_port = htons(15072);
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  if (listener < 0 || ::bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0 ||
+      ::listen(listener, 1) != 0) {
+    check(false, "test listener on 127.0.0.1:15072");
+    if (listener >= 0) ::close(listener);
+    return;
+  }
+  mcx::SipConfig config;
+  config.listen_address = "127.0.0.1";
+  config.advertise_address = "127.0.0.1";
+  config.listen_port = 15071;
+  config.core_uri = "sip:127.0.0.1:15072;transport=tcp";
+  config.identity = "sip:wire@openmcx.test";
+  config.tls.enabled = false;
+  config.tls.ca_file.clear();
+  config.tls.cert_file.clear();
+  config.tls.key_file.clear();
+  mcx::SipEngine engine(config, {});
+  engine.start();
+  // Reads what the connection holds within the wait, appended to received.
+  std::string received;
+  int connection = -1;
+  const auto read_for = [&](int wait_ms) {
+    pollfd item{connection, POLLIN, 0};
+    while (::poll(&item, 1, wait_ms) > 0) {
+      char buffer[4096];
+      const auto count = ::recv(connection, buffer, sizeof(buffer), 0);
+      if (count <= 0) break;
+      received.append(buffer, static_cast<std::size_t>(count));
+      wait_ms = 0;
+    }
+  };
+  engine.request("MESSAGE", "sip:peer@openmcx.test", "text/plain", "first", {}, [](const mcx::SipResponse &) {});
+  for (int iteration = 0; iteration < 200 && connection < 0; ++iteration) {
+    engine.poll(std::chrono::milliseconds(10));
+    pollfd item{listener, POLLIN, 0};
+    if (::poll(&item, 1, 0) > 0) connection = ::accept4(listener, nullptr, nullptr, SOCK_CLOEXEC);
+  }
+  check(connection >= 0, "the engine connects to the TCP listener");
+  if (connection >= 0) {
+    for (int iteration = 0; iteration < 200 && received.find("first") == std::string::npos; ++iteration) {
+      engine.poll(std::chrono::milliseconds(10));
+      read_for(0);
+    }
+    check(received.find("first") != std::string::npos, "the first request reaches the listener");
+    received.clear();
+    engine.request("MESSAGE", "sip:peer@openmcx.test", "text/plain", "second", {}, [](const mcx::SipResponse &) {});
+    read_for(500);
+    check(received.find("second") != std::string::npos,
+          "a request is on the wire when the call that sends it returns (no poll in between)");
+    ::close(connection);
+  }
+  ::close(listener);
+}
+
+//------------------------------------------------------------------------------
 // Runs one role of a multi-process test (OPENMCX_SIP_TEST_ROLE) or the single-process tests.
 int main() {
   // The SIP message log of both processes (src/sip/lifecycle.cpp), for a failing exchange.
@@ -1144,6 +1230,7 @@ int main() {
   test_case_insensitive_header_lookup();
   test_tls_and_identity_configuration_are_required();
   test_native_mutual_tls_request_callbacks_when_configured();
+  test_request_on_wire_at_return();
   if (failures != 0) {
     return 1;
   }

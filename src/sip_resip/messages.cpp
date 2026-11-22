@@ -91,7 +91,10 @@ namespace {
 std::pair<std::string, std::string> body_of(const resip::SipMessage &message) {
   const auto &raw = message.getRawBody();
   std::string body(raw.getBuffer() == nullptr ? "" : std::string(raw.getBuffer(), raw.getLength()));
-  const auto content_type = std::string(get_header(headers_of(message), "Content-Type"));
+  // As the pjproject engine (no body object for Content-Length 0): a Content-Type without a body is not reported, so
+  // that an empty final NOTIFY "application/pidf+xml" is a NOTIFY without state (RFC 6665 section 4.1.2.3), not an
+  // empty document.
+  const auto content_type = body.empty() ? std::string() : std::string(get_header(headers_of(message), "Content-Type"));
   // A multipart body may start with a line break before its first delimiter (RFC 2046 section 5.1.1 preamble).
   if (content_type.starts_with("multipart/") && body.starts_with("\r\n--")) body.erase(0, 2);
   return {content_type, body};

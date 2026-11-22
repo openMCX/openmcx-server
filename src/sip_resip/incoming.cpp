@@ -104,6 +104,7 @@ std::string SipEngine::Impl::send_response(const resip::SipMessage &request, con
   if (message == nullptr) throw std::invalid_argument("invalid SIP response");
   if (response.status_code >= 200) transaction_ended(request.getTransactionId().c_str());
   stack->send(std::move(message), &user);
+  transmit();
   return text;
 }
 

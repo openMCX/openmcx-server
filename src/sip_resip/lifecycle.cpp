@@ -143,11 +143,11 @@ void SipEngine::Impl::ensure_started() const {
 // One wait of at most the timeout for the stack's sockets and timers (a signal ends it early), then every request
 // and response its transaction user received.
 // reSIProcate's SipStack::process(timeout) runs the transaction layer and then waits, and its wait does not count the
-// messages a transaction user has queued: a message read during one process reaches this engine's queue at the start
-// of the next, whose wait then still runs its full length before the application sees the message (an answer to an
-// INVITE a poll timeout after its 100). So the transaction layer runs first without waiting, the wait is left out
-// when the queue already holds a message, the transaction layer runs again over what the wait read, and once more
-// after the application's callbacks, for what they sent.
+// messages a transaction user has queued: a message the stack had read reaches this engine's queue at the start of a
+// process whose wait then still runs its full length before the application sees the message (an answer to an
+// INVITE a poll timeout after its 100). So the stack first runs without waiting while it has work due now (drain),
+// the wait is left out when the queue then holds a message, the stack drains again over what the wait read, and
+// once more after the application's callbacks and the timers, for what they sent.
 void SipEngine::Impl::poll(std::chrono::milliseconds timeout) {
   ensure_started();
   if (timeout.count() < 0) throw std::invalid_argument("invalid SIP poll timeout");
@@ -159,10 +159,10 @@ void SipEngine::Impl::poll(std::chrono::milliseconds timeout) {
     const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(due - now);
     wait = std::min(wait, std::max(left, std::chrono::milliseconds(0)));
   }
-  stack->process(0);
+  drain();
   if (!user.pending()) {
-    stack->process(static_cast<unsigned>(wait.count()));
-    stack->process(0);
+    run_stack(static_cast<unsigned>(wait.count()));
+    drain();
   }
   while (auto message = user.next()) {
     // The message in hand, named in what is reported meanwhile (report_error).
@@ -195,8 +195,33 @@ void SipEngine::Impl::poll(std::chrono::milliseconds timeout) {
       report_error("unknown SIP timer error");
     }
   }
-  // What the callbacks and timers sent leaves now, not at the start of the next poll.
-  stack->process(0);
+  // What the callbacks and timers sent leaves now, not at the start of the next poll (transmit sends most at once).
+  drain();
+}
+
+//------------------------------------------------------------------------------
+void SipEngine::Impl::run_stack(unsigned wait_ms) {
+  struct Running {
+    bool &flag;
+    explicit Running(bool &value) : flag(value) { flag = true; }
+    ~Running() { flag = false; }
+  } running(stack_running);
+  stack->process(wait_ms);
+}
+
+//------------------------------------------------------------------------------
+// A message passes the transaction layer, the target's resolution and the transport's queue, one process each: the
+// stack runs without waiting while it has work due now (getTimeTillNextProcessMS 0), a few rounds at most.
+void SipEngine::Impl::drain() {
+  for (int round = 0; round < 8; ++round) {
+    run_stack(0);
+    if (stack->getTimeTillNextProcessMS() != 0) break;
+  }
+}
+
+//------------------------------------------------------------------------------
+void SipEngine::Impl::transmit() {
+  if (!stack_running && stack) drain();
 }
 
 //------------------------------------------------------------------------------

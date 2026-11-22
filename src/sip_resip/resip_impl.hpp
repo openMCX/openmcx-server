@@ -230,6 +230,15 @@ struct SipEngine::Impl {
   void start();
   void stop() noexcept;
   void poll(std::chrono::milliseconds timeout);
+  // One SipStack::process of at most the given wait, marked as under way (transmit).
+  void run_stack(unsigned wait_ms);
+  // The stack's work due now, without waiting (lifecycle.cpp).
+  void drain();
+  // What was just handed to the stack goes to the wire now, as pjsip writes it in the call that sends it: a request
+  // or response leaves before what the application does next (an HTTP GET after the SIP notification that announces
+  // it, TS 24.282 clause 10.2.1.2.2). Nothing when called from within the stack's own processing.
+  void transmit();
+  bool stack_running = false;
   // PLAN.md phase 4: the application's sockets that end the stack's wait (lifecycle.cpp).
   void watch(std::span<const int> sockets);
   void ensure_started() const;

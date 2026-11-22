@@ -244,6 +244,7 @@ std::string SipEngine::Impl::send_message(std::unique_ptr<resip::SipMessage> req
     pending[transaction] = std::move(entry);
   }
   stack->send(std::move(request), &user);
+  transmit();
   return transaction;
 }
 
