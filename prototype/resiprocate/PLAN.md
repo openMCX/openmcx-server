@@ -25,7 +25,7 @@ rolled back until pjproject is removed.
 |---|---|---|---|---|
 | 0 | Prototype (done) | One event loop, 100rel, session timers, subscriptions, IMS AKA over TCP; reSIProcate patch 0001 (NOTIFY before its 200) | Probes pass on loopback and against the AKA lab | done |
 | 1 | Remaining risks | IMS AKA over UDP (send from port_uc, Via port_us, requests of 1300 bytes or more over TCP); requests of the P-CSCF to port_us with responses from port_uc; re-registration with the switch to the new set of SAs; TLS with OpenMCX's cipher profile; multipart bodies (MIKEY and XML) | Probes pass in the `aka-udp` and `tls_profile_check` labs | 1 to 2 weeks |
-| 2 | Foundations | reSIProcate in `docker/Dockerfile.dev` (`dependencies/resiprocate/build.sh` with its patches); the CMake switch; patch 0001 proposed upstream | The development image builds both | 1 week |
+| 2 | Foundations | reSIProcate in `docker/Dockerfile.dev` (`dependencies/resiprocate/build.sh` with its patches); the CMake switch | The development image builds both | 1 week |
 | 3a | Engine core | start, stop, poll; UDP, TCP and TLS transports; requests and responses outside dialogs; message and body conversion; the body protection filters; deferred responses | The core cases of `test_sip` pass with `resip` | 1 to 2 weeks |
 | 3b | Registration | Digest; the port of `src/sip/ims_aka.cpp` (about 1,200 lines: only its pjsip transport hooks change) | `test_ims_aka_sip`, the `aka` and `aka-udp` labs pass | 1 to 2 weeks |
 | 3c | Dialogs | INVITE as caller and callee, answer, re-INVITE and UPDATE, 100rel, session timers, BYE, `dialog_identifiers` | The call scenarios pass | 1 to 2 weeks |
@@ -42,7 +42,8 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
 1. **Which reSIProcate layer.** Its dialog layer (DUM) for INVITE sessions and subscriptions; its transaction layer
    for REGISTER with IMS AKA and for requests the engine builds itself (as the AKA probe does). Confirmed or changed
    after phase 3a.
-2. **Patch 0001 upstream**, so that OpenMCX carries less of its own.
+2. **Patch 0001 stays OpenMCX's** (decided 2026-11-22: not proposed upstream); `dependencies/resiprocate` carries it,
+   and every reSIProcate update re-applies it.
 3. **The event loop (phase 4) within this project**: the main performance gain, but it changes the server and client
    main loops, so it is verified in the same pass.
 
@@ -58,8 +59,7 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
 - Phase 0: done (`README.md`; commits `d80f9ea`, `12f08f6`).
 - Phase 2, in part: reSIProcate in `docker/Dockerfile.dev` (`/opt/resiprocate`, with its licence) and in
   `dependencies/lock.json` as an image dependency; the `MCX_SIP_STACK` switch (`pjsip` by default; `resip` stops until
-  phase 3a); the prototype builds and its loopback probe runs in the development image's ctest (58 tests). Still to
-  do: patch 0001 proposed upstream.
+  phase 3a); the prototype builds and its loopback probe runs in the development image's ctest (58 tests). Done.
 - Phase 1, in part: IMS AKA over UDP and TCP against the lab (registration, a request of the P-CSCF to port_us,
   a large request over TCP, reregistration with the switch to the new set, deregistration); no reSIProcate patch
   needed for either pjproject patch (`README.md`).

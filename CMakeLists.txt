@@ -201,8 +201,9 @@ if(BUILD_TESTING)
     set_tests_properties(rx PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
-    add_library(mcx_sip src/media/ice.cpp src/sip/helpers.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp src/sip/messages.cpp src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp src/sip/ims_aka.cpp src/common/runtime.cpp src/common/multicast.cpp src/security/key_client.cpp src/security/xfrm.cpp)
+    add_library(mcx_sip src/media/ice.cpp src/sip/helpers.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp src/sip/messages.cpp src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp src/sip/ims_aka.cpp src/sip_common/sip_common.cpp src/common/runtime.cpp src/common/multicast.cpp src/security/key_client.cpp src/security/xfrm.cpp)
     target_link_libraries(mcx_sip PUBLIC mcx_core mcx_keying mcx_ims_aka)
+    target_include_directories(mcx_sip PRIVATE src/sip_common)
     target_compile_options(mcx_sip PRIVATE -Wall -Wextra -Wpedantic)
     # The service parts shared by the MCPTT and MCVideo core and the MCData server:
     # each reaches its server through a small host interface, called per request.

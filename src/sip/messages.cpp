@@ -55,27 +55,12 @@ pj_status_t SipEngine::Impl::access_network_info_outgoing(pjsip_tx_data *data) {
 // RFC 3261 section 8.1.1.8: the bare Contact URI of this endpoint, a sip: URI with the transport in use
 // (transport=tls, or transport=tcp for debug), with ;ob for an RFC 5626 outbound client (section 5.4). IMS uses no
 // SIPS (TS 24.229): TLS protects the hop, and a SIPS Contact is only sent where RFC 3261 requires it (as_sips).
-[[nodiscard]] std::string SipEngine::Impl::contact_target() const {
-  return "sip:" + identity_user(config.identity) + "@" + config.advertise_address + ":" +
-         std::to_string(config.listen_port) +
-         (config.tls.enabled ? ";transport=tls"
-          : config.aka.udp   ? ";transport=udp"
-                             : ";transport=tcp") +
-         (config.outbound_instance.empty() ? "" : ";ob");
-}
+[[nodiscard]] std::string SipEngine::Impl::contact_target() const { return sip_detail::contact_target(config); }
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 7.2.1, TS 24.281 clause 7.2.1 and TS 24.282 clause 7.2.1: the media feature tags and the
 // g.3gpp.icsi-ref ICSI values of the configured services for the Contact header field (RFC 3840).
-[[nodiscard]] std::string SipEngine::Impl::service_tags() const {
-  std::string tags = std::string(";+") + config.service->feature_tag;
-  std::string icsis = config.service->icsi_encoded;
-  for (const auto *other : config.other_services) {
-    tags += std::string(";+") + other->feature_tag;
-    icsis += std::string(",") + other->icsi_encoded;
-  }
-  return tags + ";+g.3gpp.icsi-ref=\"" + icsis + "\"";
-}
+[[nodiscard]] std::string SipEngine::Impl::service_tags() const { return sip_detail::service_tags(config); }
 
 //------------------------------------------------------------------------------
 // RFC 3261 section 8.1.1.8 and RFC 4579: the Contact of an INVITE response: this endpoint's, or the checked public URI
