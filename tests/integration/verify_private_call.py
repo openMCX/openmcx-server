@@ -273,8 +273,12 @@ def main():
 
     # ------------------------------------------------------------------------------
     def modes(group, name):
-        """How often each value of the header field name occurs in the messages of group."""
-        return collections.Counter(header(message, name) for message in group if header(message, name))
+        """How often each answer-mode-value of the header field name occurs in the messages of group: the token before
+        any parameter (RFC 5373), so that a caller's "Auto;require" (TS 37.579-2 table 6.2.5.3.3-1) and the "Auto"
+        the server forwards to the callee count as the same mode."""
+        return collections.Counter(
+            header(message, name).split(';', 1)[0].strip() for message in group if header(message, name)
+        )
 
     for name in ('Answer-Mode', 'Priv-Answer-Mode'):
         orig, term = modes(originating, name), modes(terminating, name)
