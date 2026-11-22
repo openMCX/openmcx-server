@@ -178,7 +178,7 @@ void SipEngine::Impl::notify_call_state(std::string_view id, SipCallState state,
   try {
     callbacks.on_call_state(id, state, cause);
   } catch (const std::exception &error) {
-    report_error(error.what());
+    report_error(std::string("call state callback (") + std::to_string(cause) + "): " + error.what());
   } catch (...) {
     report_error("unknown SIP call state callback error");
   }
@@ -196,7 +196,7 @@ SipResponse SipEngine::Impl::safe_application_response(const SipMessage &request
   try {
     return callbacks.on_request(request);
   } catch (const std::exception &error) {
-    report_error(error.what());
+    report_error("request handler (" + request.method + "): " + error.what());
   } catch (...) {
     report_error("unknown SIP application error");
   }
@@ -442,11 +442,12 @@ void SipEngine::Impl::invite_response(const resip::SipMessage &message, Pending 
     const auto headers = resip_engine::headers_of(message);
     dialog.peer_allows_update = lists(headers, "Allow", "UPDATE");
     session_timer_from(dialog, message, false);
+    // The application's callbacks below may end the dialog: what they need is taken first.
+    auto handler = std::move(dialog.initial_handler);
+    dialog.initial_handler = {};
     const auto [type, body] = body_and_type(message);
     report_media(dialog, type, body);
     notify_call_state(id, SipCallState::confirmed, status);
-    auto handler = std::move(dialog.initial_handler);
-    dialog.initial_handler = {};
     dispatch_response(response, handler);
     return;
   }
@@ -511,7 +512,7 @@ void SipEngine::Impl::bye_response(const resip::SipMessage &message, Pending &en
 
 //------------------------------------------------------------------------------
 // Helper: the dialog ends: its timers stop, it is forgotten and the application hears it disconnected with the cause.
-void SipEngine::Impl::terminate(const std::string &dialog_id, int cause) {
+void SipEngine::Impl::terminate(std::string dialog_id, int cause) {
   const auto found = dialogs.find(dialog_id);
   if (found == dialogs.end()) return;
   for (const auto timer : {Timer::answer_retransmit, Timer::answer_timeout, Timer::session_refresh,
@@ -1015,14 +1016,21 @@ void SipEngine::Impl::receive_in_dialog(const resip::SipMessage &message) {
     deferred[request.transaction_id] = std::make_unique<resip::SipMessage>(message);
     return;
   }
+  // The application may have ended the dialog meanwhile.
+  const auto still = dialogs.find(id);
+  if (still == dialogs.end()) {
+    send_response(message, response);
+    return;
+  }
+  auto &current = *still->second;
   // RFC 6665 section 4.2.1: the 2xx to a SUBSCRIBE refresh carries the notifier's Contact.
   if (method == resip::SUBSCRIBE && response.status_code / 100 == 2 &&
       std::none_of(response.headers.begin(), response.headers.end(),
                    [](const SipHeader &header) { return ascii_equal(header.name, "Contact"); }))
-    response.headers.insert(response.headers.begin(), {"Contact", dialog.contact});
+    response.headers.insert(response.headers.begin(), {"Contact", current.contact});
   send_response(message, response);
   // RFC 6665 section 4.1.3: a NOTIFY with Subscription-State "terminated", accepted, ends the subscription.
-  if (!dialog.invite && method == resip::NOTIFY && response.status_code / 100 == 2 &&
+  if (!current.invite && method == resip::NOTIFY && response.status_code / 100 == 2 &&
       sip_detail::ascii_lower(std::string(get_header(request.headers, "Subscription-State"))).starts_with("terminated"))
     dialogs.erase(id);
 }

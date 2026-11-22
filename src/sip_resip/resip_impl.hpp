@@ -35,6 +35,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -227,6 +228,8 @@ struct SipEngine::Impl {
   void start();
   void stop() noexcept;
   void poll(std::chrono::milliseconds timeout);
+  // PLAN.md phase 4: the application's sockets that end the stack's wait (lifecycle.cpp).
+  void watch(std::span<const int> sockets);
   void ensure_started() const;
   void report_error(std::string_view error) const noexcept;
   void schedule(Timer timer, std::chrono::milliseconds delay, const std::string &key = {});
@@ -281,7 +284,8 @@ struct SipEngine::Impl {
                   const std::vector<BodyPart> &parts, SipResponseHandler handler, const std::vector<SipHeader> &headers);
   void end_dialog(std::string_view dialog_id, SipResponseHandler handler, const std::vector<SipHeader> &headers,
                   const std::vector<BodyPart> &parts);
-  void terminate(const std::string &dialog_id, int cause);
+  // The identifier is a copy: callers pass the dialog's own, which goes with it.
+  void terminate(std::string dialog_id, int cause);
   void report_media(const Dialog &dialog, const std::string &content_type, const std::string &body);
   void session_timer_from(Dialog &dialog, const resip::SipMessage &message, bool as_uas);
   void refresh_session(const std::string &dialog_id);
@@ -340,11 +344,22 @@ struct SipEngine::Impl {
   SipBodyFilter outgoing_filter, incoming_filter;
   bool started = false;
   std::unique_ptr<resip::FdPollGrp> poll_group;
+  // PLAN.md phase 4: an epoll set of the application's sockets, itself one item of the stack's poll group (readable
+  // while one of them is); the sockets in it, by descriptor with their inode (a closed descriptor leaves the set, and
+  // its number may come back for another socket).
+  struct WakeItem : resip::FdPollItemIf {
+    void processPollEvent(resip::FdPollEventMask) override {}
+  } wake_item;
+  int wake_epoll = -1;
+  resip::FdPollItemHandle wake_handle = nullptr;
+  std::map<int, unsigned long> wake_sockets;
   std::unique_ptr<resip::SipStack> stack;
   ResipUser user;
   std::map<std::string, Pending> pending;
   std::map<std::string, std::unique_ptr<resip::SipMessage>> deferred;
   unsigned long next_transaction = 0;
+  // The received message being handled, for error reports ("INVITE of <Call-ID>", "486 to INVITE of <Call-ID>").
+  std::string handling;
   std::optional<Registration> registration;
   // A registration's connection to close once the transactions on it are over (registration_ended).
   std::optional<resip::Tuple> ending_flow;

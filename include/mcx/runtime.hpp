@@ -89,6 +89,8 @@ public:
   void join(const std::string &group, const std::string &interface);
   // The bound port, which the system chose when the socket was bound to port 0.
   std::uint16_t port() const;
+  // The socket's descriptor, for an event loop's wait (SipEngine::poll); the socket keeps it.
+  [[nodiscard]] int fd() const noexcept { return fd_; }
 
 private:
   int fd_ = -1;

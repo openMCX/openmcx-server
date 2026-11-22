@@ -27,6 +27,11 @@ bool SipEngine::running() const noexcept { return impl_->started; }
 
 void SipEngine::poll(std::chrono::milliseconds timeout) { impl_->poll(timeout); }
 
+void SipEngine::poll(std::chrono::milliseconds timeout, std::span<const int> wake_sockets) {
+  impl_->watch(wake_sockets);
+  impl_->poll(timeout);
+}
+
 // The dialogs that are not INVITE sessions (the subscription dialogs of RFC 6665).
 std::size_t SipEngine::subscription_count() const noexcept {
   return static_cast<std::size_t>(std::count_if(impl_->dialogs.begin(), impl_->dialogs.end(),

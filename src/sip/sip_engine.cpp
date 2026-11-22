@@ -61,6 +61,10 @@ void SipEngine::poll(std::chrono::milliseconds timeout) {
 
 //------------------------------------------------------------------------------
 // Helper: sets the filters applied to outgoing and incoming message bodies (for example signalling protection).
+//------------------------------------------------------------------------------
+// pjsip's I/O queue cannot wait on the application's sockets: the wait is poll(timeout)'s.
+void SipEngine::poll(std::chrono::milliseconds timeout, std::span<const int>) { poll(timeout); }
+
 void SipEngine::set_body_filters(SipBodyFilter outgoing, SipBodyFilter incoming) {
   impl_->outgoing_filter = std::move(outgoing);
   impl_->incoming_filter = std::move(incoming);

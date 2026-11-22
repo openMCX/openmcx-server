@@ -690,8 +690,35 @@ void McServer::media_answered(std::string_view dialog, const MediaDescription &a
 }
 
 //------------------------------------------------------------------------------
+// prototype/resiprocate/PLAN.md phase 4: the sockets whose packets end the SIP wait of the run loop: the floor
+// control, audio and video sockets of every leg, relay and pre-established session.
+std::vector<int> McServer::media_sockets() const {
+  std::vector<int> sockets;
+  const auto add = [&sockets](const std::unique_ptr<UdpSocket> &socket) {
+    if (socket) sockets.push_back(socket->fd());
+  };
+  for (const auto &[id, leg] : legs_) {
+    add(leg->floor);
+    add(leg->audio);
+    add(leg->video);
+  }
+  for (const auto &[id, relay] : relays_)
+    if (id == relay->client_dialog) {
+      add(relay->floor);
+      add(relay->audio);
+      add(relay->video);
+    }
+  for (const auto &[id, session] : pre_sessions_) {
+    add(session->audio);
+    add(session->rtcp);
+    add(session->floor);
+  }
+  return sockets;
+}
+
+//------------------------------------------------------------------------------
 // The run loop: provision the security keys, install the SIP body protection filters (TS 33.180 clause 9.3),
-// then poll SIP, run the scheduled tasks, the control commands, the floor, audio and video packets of every leg
+// then poll SIP (the wait ends early for a packet on a media socket, media_sockets), run the scheduled tasks, the control commands, the floor, audio and video packets of every leg
 // and the relays, and tick; on quit, release every dialog.
 void McServer::run() {
   if (cfg_.contains("security")) {
@@ -710,7 +737,8 @@ void McServer::run() {
   sip_.start();
   event("server_started");
   while (!stopping) {
-    sip_.poll(std::chrono::milliseconds(5));
+    const auto sockets = media_sockets();
+    sip_.poll(std::chrono::milliseconds(5), sockets);
     pending_.run();
     for (auto &command : control_.read()) {
       if (command == "quit")

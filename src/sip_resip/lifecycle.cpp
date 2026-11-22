@@ -12,7 +12,12 @@
 
 #include "rutil/Log.hxx"
 
+#include <sys/epoll.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <algorithm>
+#include <cerrno>
 #include <stdexcept>
 
 namespace mcx {
@@ -66,6 +71,10 @@ void SipEngine::Impl::start() {
     options.mSecurity = security.release(); // owned by the stack
   }
   stack = std::make_unique<resip::SipStack>(options);
+  // PLAN.md phase 4: the set of the application's sockets, waited on with the stack's.
+  wake_epoll = ::epoll_create1(EPOLL_CLOEXEC);
+  if (wake_epoll < 0) throw std::runtime_error("cannot create the SIP engine's wake set");
+  wake_handle = poll_group->addPollItem(wake_epoll, FPEM_Read, &wake_item);
   const resip::Data interface(config.listen_address);
   if (config.aka.enabled) {
     // TS 33.203 clause 7: IMS AKA, its transports and security associations (ims_aka.cpp).
@@ -108,6 +117,11 @@ void SipEngine::Impl::stop() noexcept {
     // Nothing is left to tell: the stack goes.
   }
   stack.reset();
+  if (wake_handle != nullptr) poll_group->delPollItem(wake_handle);
+  wake_handle = nullptr;
+  if (wake_epoll >= 0) ::close(wake_epoll);
+  wake_epoll = -1;
+  wake_sockets.clear();
   poll_group.reset();
   pending.clear();
   deferred.clear();
@@ -141,10 +155,21 @@ void SipEngine::Impl::poll(std::chrono::milliseconds timeout) {
   }
   stack->process(static_cast<unsigned>(wait.count()));
   while (auto message = user.next()) {
-    if (message->isRequest())
-      receive_request(*message);
-    else
-      receive_response(*message);
+    // The message in hand, named in what is reported meanwhile (report_error).
+    handling = message->isRequest()
+                   ? std::string(message->methodStr().c_str())
+                   : std::to_string(message->header(resip::h_StatusLine).statusCode()) + " to " +
+                         std::string(resip::getMethodName(message->header(resip::h_CSeq).method()).c_str());
+    handling += " of " + std::string(message->header(resip::h_CallId).value().c_str());
+    try {
+      if (message->isRequest())
+        receive_request(*message);
+      else
+        receive_response(*message);
+    } catch (const std::exception &error) {
+      report_error(error.what());
+    }
+    handling.clear();
   }
   // The timers due now, each once.
   std::vector<TimerKey> due;
@@ -159,6 +184,37 @@ void SipEngine::Impl::poll(std::chrono::milliseconds timeout) {
     } catch (...) {
       report_error("unknown SIP timer error");
     }
+  }
+}
+
+//------------------------------------------------------------------------------
+// PLAN.md phase 4: the wake set becomes the given sockets: new ones (or a descriptor now naming another socket) are
+// added, readable level-triggered; those no longer given are removed (an error for one that was closed meanwhile, and
+// so already left the set, is ignored).
+void SipEngine::Impl::watch(std::span<const int> sockets) {
+  ensure_started();
+  std::map<int, unsigned long> wanted;
+  for (const int fd : sockets) {
+    struct stat status {};
+    if (fd >= 0 && ::fstat(fd, &status) == 0) wanted[fd] = static_cast<unsigned long>(status.st_ino);
+  }
+  for (auto known = wake_sockets.begin(); known != wake_sockets.end();) {
+    const auto found = wanted.find(known->first);
+    if (found != wanted.end() && found->second == known->second) {
+      ++known;
+      continue;
+    }
+    (void)::epoll_ctl(wake_epoll, EPOLL_CTL_DEL, known->first, nullptr);
+    known = wake_sockets.erase(known);
+  }
+  for (const auto &[fd, inode] : wanted) {
+    if (wake_sockets.contains(fd)) continue;
+    epoll_event event{};
+    event.events = EPOLLIN;
+    event.data.fd = fd;
+    if (::epoll_ctl(wake_epoll, EPOLL_CTL_ADD, fd, &event) != 0 && errno == EEXIST)
+      (void)::epoll_ctl(wake_epoll, EPOLL_CTL_MOD, fd, &event);
+    wake_sockets[fd] = inode;
   }
 }
 
@@ -241,7 +297,10 @@ void SipEngine::Impl::fire(Timer timer, const std::string &key) {
 void SipEngine::Impl::report_error(std::string_view error) const noexcept {
   if (!callbacks.on_error) return;
   try {
-    callbacks.on_error(error);
+    if (handling.empty())
+      callbacks.on_error(error);
+    else
+      callbacks.on_error(std::string(error) + " (handling " + handling + ")");
   } catch (...) {
     // The application's error callback failed: nothing more can be reported.
   }

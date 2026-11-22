@@ -506,6 +506,9 @@ protected:
 
   std::map<std::string, std::shared_ptr<Relay>> relays_; // by either dialog
 
+  // The sockets whose readability ends the run loop's SIP wait (server.cpp).
+  std::vector<int> media_sockets() const;
+
   //------------------------------------------------------------------------------
   // A peer controlling function's session URI, presented to local clients as a
   // session URI of this server so that the SIP core routes it here (project mechanism for the

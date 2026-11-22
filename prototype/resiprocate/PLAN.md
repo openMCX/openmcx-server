@@ -141,3 +141,27 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
     200 (both stacks, TLS and TCP). resip 58 of 58, pjsip 58 of 58, on `openmcx-dev:0.4-resip` rebuilt with the fork's
     `openmcx-1.14.0-1`.
   - Seen: reSIProcate logs an `SSL_shutdown` error when a TLS connection closes at stop (noise, for phase 6).
+- Phase 4: one event loop. `SipEngine::poll(timeout, wake_sockets)`: the application's sockets end the wait as soon as
+  one is readable. On reSIProcate they form an epoll set of their own (kept by descriptor and inode, since a closed
+  descriptor leaves the set and its number comes back), itself one item of the stack's poll group; pjsip waits as
+  before. The MCPTT/MCVideo server passes the sockets of its legs, relays and pre-established sessions, the client
+  (openmcx-client branch `resiprocate-prototype`) its floor control, audio, live audio and video, MCVideo, multicast,
+  MBMS, pre-established and IP connectivity sockets; the MCData server, whose media plane is MSRP in its tick, keeps
+  its loop. Both images take `--build-arg MCX_SIP_STACK=resip` (on `openmcx-dev:0.4-resip`).
+  - Measured (`prototype/resiprocate/relay_delay.py` on the server's capture of the `smoke` lab, 692 relayed RTP
+    packets, the same code on both stacks): pjsip median 2.265 ms, p90 4.845, p99 7.732; reSIProcate median 0.056 ms,
+    p90 0.079, p99 1.799. Phase 4 is done.
+  - `tools/regress.py --select smoke`: 8 of 8 on both stacks, the first run of the servers and the client on
+    reSIProcate. It found three engine defects, fixed:
+    - send order: reSIProcate resolves next hops asynchronously, SRV then A for a Route without port (a proxy's
+      Record-Route), so a NOTIFY sent before an INVITE left after it, and a client refused the late-entry INVITE as not
+      yet affiliated. Every request now gets a forced target with host, port and transport (one A lookup, as pjsip's
+      `getaddrinfo`; the host stays a name for TLS).
+    - a dangling dialog identifier given to `on_call_state` after the dialog was erased (`terminate`), and dialog
+      references kept across application callbacks; the SIP tests run clean under ASan and UBSan.
+    - the stack's own ACK of a failure response named the listen address in Via: outside IMS AKA the advertised
+      sent-by is now written directly.
+  - Behaviour that differs and stays: reSIProcate joins repeated list header fields on one line (`P-Preferred-Service:
+    a, b`, RFC 3261 section 7.3.1). `tests/integration/verify_mcdata_sds.py` now reads list header fields value by
+    value; the other wire verifiers may need the same (phase 6).
+  - Seen once: `sip_tcp` failed under load during an image build (quiet output, not reproduced in 12 runs since).

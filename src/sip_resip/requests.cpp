@@ -128,8 +128,13 @@ SipEngine::Impl::Hop SipEngine::Impl::default_hop() const {
 // fields, P-Access-Network-Info when configured (TS 24.229 clause 5.1.2A.1.1, not in ACK and CANCEL), the body.
 std::string SipEngine::Impl::write_request(const OutgoingRequest &request, const Hop &hop) const {
   std::string text = request.method + " " + request.request_uri + " SIP/2.0\r\n";
-  text += "Via: SIP/2.0/" + std::string(resip::toData(hop.type).c_str()) + " " + config.listen_address + ":" +
-          std::to_string(hop.via_port) + ";branch=z9hG4bK" + random_hex(12) + ";rport\r\n";
+  // Without IMS AKA the engine has one transport per protocol, so the Via names the advertised address at once (the
+  // stack's own ACK of a failure response copies it); with IMS AKA the sent-by port picks the transport of the set
+  // and is rewritten once chosen (AdvertisedVia).
+  const auto &sent_by = aka ? config.listen_address : config.advertise_address;
+  text += "Via: SIP/2.0/" + std::string(resip::toData(hop.type).c_str()) + " " + sent_by + ":" +
+          std::to_string(aka ? hop.via_port : hop.advertised_port) + ";branch=z9hG4bK" + random_hex(12) +
+          ";rport\r\n";
   text += "Max-Forwards: 70\r\n";
   for (const auto &route : request.routes) text += "Route: " + route + "\r\n";
   text += "From: " + sip_detail::name_addr(request.from) + ";tag=" + request.from_tag + "\r\n";
@@ -205,6 +210,22 @@ std::string SipEngine::Impl::dispatch(std::string text, Hop hop, Pending entry) 
   std::unique_ptr<resip::SipMessage> request(resip::SipMessage::make(wire, false));
   if (request == nullptr) throw std::invalid_argument("invalid SIP request");
   if (aka) aka_size_hop(*request, hop);
+  // As the pjproject engine resolves (one address lookup of the next hop's host, no NAPTR or SRV), and so that the
+  // requests to one next hop leave in the order sent: a reSIProcate SRV lookup for a Route without port (a proxy's
+  // Record-Route) would let a later request with a port overtake it. The host stays a name, which TLS verifies.
+  if (hop.force_target.empty()) {
+    const auto &next = request->exists(resip::h_Routes) && !request->header(resip::h_Routes).empty()
+                           ? request->header(resip::h_Routes).front().uri()
+                           : request->header(resip::h_RequestLine).uri();
+    const bool secure = next.scheme() == "sips" || hop.type == resip::TLS;
+    std::string transport = next.exists(resip::p_transport) ? next.param(resip::p_transport).c_str()
+                                                            : std::string(resip::toData(hop.type).c_str());
+    if (next.scheme() == "sips") transport = "tls";
+    const auto port = next.port() != 0 ? next.port() : (secure ? 5061 : 5060);
+    std::string target_host = next.host().c_str();
+    if (target_host.find(':') != std::string::npos && !target_host.starts_with('[')) target_host = "[" + target_host + "]";
+    hop.force_target = "sip:" + target_host + ":" + std::to_string(port) + ";transport=" + sip_detail::ascii_lower(transport);
+  }
   return send_message(std::move(request), std::move(hop), std::move(entry));
 }
 
@@ -214,7 +235,7 @@ std::string SipEngine::Impl::send_message(std::unique_ptr<resip::SipMessage> req
   if (!hop.force_target.empty()) request->setForceTarget(resip::Uri(resip::Data(hop.force_target)));
   entry.text = resip_engine::text_of(*request);
   entry.hop = hop;
-  request->addOutboundDecorator(std::make_unique<AdvertisedVia>(config.advertise_address, hop.advertised_port));
+  if (aka) request->addOutboundDecorator(std::make_unique<AdvertisedVia>(config.advertise_address, hop.advertised_port));
   const std::string transaction = request->getTransactionId().c_str();
   // RFC 3261 section 17.1.1.3: an ACK of a 2xx is sent without a transaction and gets no response.
   if (request->method() != resip::ACK) {
@@ -325,7 +346,7 @@ void SipEngine::Impl::dispatch_response(const SipResponse &response, const SipRe
     if (callbacks.on_response) callbacks.on_response(response);
     if (handler) handler(response);
   } catch (const std::exception &error) {
-    report_error(error.what());
+    report_error(std::string("response handler (") + std::to_string(response.status_code) + "): " + error.what());
   } catch (...) {
     report_error("unknown SIP response handler error");
   }

@@ -59,6 +59,31 @@ def sip_messages(stream):
         offset = body_end
 
 
+# RFC 3261 section 7.3.1: header fields whose values are comma-separated lists, which a sender may put on one line
+# (reSIProcate does) or repeat; the values are taken one by one either way.
+LIST_HEADERS = {'p-preferred-service', 'p-asserted-service', 'supported', 'require', 'allow'}
+
+
+# ------------------------------------------------------------------------------
+def list_values(value):
+    """The comma-separated values of a list header field value; commas in quotes or angle brackets do not separate."""
+    values, current, quoted, angle = [], '', False, False
+    for character in value:
+        if character == '"' and not angle:
+            quoted = not quoted
+        elif character == '<' and not quoted:
+            angle = True
+        elif character == '>' and not quoted:
+            angle = False
+        elif character == ',' and not quoted and not angle:
+            values.append(current.strip())
+            current = ''
+            continue
+        current += character
+    values.append(current.strip())
+    return [entry for entry in values if entry]
+
+
 # ------------------------------------------------------------------------------
 def parse(head, body):
     """A SIP message as a dict: request or response, line, headers (compact forms expanded), multipart parts, the
@@ -77,7 +102,10 @@ def parse(head, body):
                 'c': 'content-type',
                 'a': 'accept-contact',
             }.get(name.strip().lower(), name.strip().lower())
-            headers[name].append(value.strip())
+            if name in LIST_HEADERS:
+                headers[name].extend(list_values(value))
+            else:
+                headers[name].append(value.strip())
     request = not lines[0].startswith('SIP/2.0')
     parts, signalling_bodies = {}, []
     ctype = headers['content-type'][0] if headers['content-type'] else ''

@@ -8,3 +8,8 @@ build-*
 config/generated
 **/__pycache__
 .cache/toolchains
+.cache/build-*
+.cache/client-*
+.cache/resip-*
+.cache/*-wire.txt
+.cache/*-trace.txt

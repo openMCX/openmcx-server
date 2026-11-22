@@ -119,9 +119,9 @@ if(BUILD_TESTING)
     target_include_directories(test_ibe_hostile PRIVATE src/security)
     target_link_libraries(test_ibe_hostile PRIVATE mcx_keying)
     add_test(NAME ibe_hostile COMMAND test_ibe_hostile)
-    # The reSIProcate prototype (prototype/resiprocate/README.md): built when reSIProcate is found; no program links
-    # it.
-    if(RESIPROCATE_FOUND)
+    # The reSIProcate prototype (prototype/resiprocate/README.md): built when reSIProcate is found and the prototype
+    # is in the tree (an image build copies only what the programs need); no program links it.
+    if(RESIPROCATE_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/prototype/resiprocate")
         add_executable(test_resip_probe prototype/resiprocate/resip_probe.cpp)
         target_link_libraries(test_resip_probe PRIVATE mcx_resiprocate)
         add_test(NAME resip_probe COMMAND test_resip_probe)

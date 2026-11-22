@@ -14,6 +14,9 @@
 # machine code is the same -O2 build), plus curl and Python for the lab's health checks.
 
 ARG DEV_IMAGE=openmcx-dev:0.4
+# The SIP stack of the SIP engine (CMakeLists.txt MCX_SIP_STACK): pjsip, or resip on a development image with
+# reSIProcate (prototype/resiprocate/PLAN.md).
+ARG MCX_SIP_STACK=pjsip
 ARG RUNTIME_BASE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
 # The Ubuntu release of RUNTIME_BASE and of the development image; its package names are in docker/packages.
 ARG UBUNTU=24.04
@@ -21,6 +24,7 @@ ARG UBUNTU=24.04
 #------------------------------------------------------------------------------
 # Build: Go services and tests, C++ programs and unit tests; stripped copies in /install/stripped.
 FROM ${DEV_IMAGE} AS build
+ARG MCX_SIP_STACK
 COPY services /services
 RUN cd /services && go test ./... && go build -trimpath -o /install/bin/mcx-common ./cmd/mcx-common \
     && go build -trimpath -o /install/bin/mcx-http-proxy ./cmd/mcx-http-proxy
@@ -29,7 +33,7 @@ COPY dependencies/hostap /src/dependencies/hostap
 COPY include /src/include
 COPY src /src/src
 COPY tests /src/tests
-RUN cmake -S /src -B /build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+RUN cmake -S /src -B /build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMCX_SIP_STACK=${MCX_SIP_STACK} \
     && cmake --build /build -j4 \
     && ctest --test-dir /build --output-on-failure -E diameter_sctp \
     && cmake --install /build --prefix /install \
