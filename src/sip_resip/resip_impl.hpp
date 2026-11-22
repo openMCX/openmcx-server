@@ -77,7 +77,7 @@ struct SipEngine::Impl {
   };
 
   // What a response to a request sent goes to.
-  enum class Purpose { request, registration, aka_register };
+  enum class Purpose { request, registration, aka_register, invite, offer, bye, prack };
 
   struct Pending {
     SipResponseHandler handler;
@@ -86,6 +86,63 @@ struct SipEngine::Impl {
     std::string text;
     Hop hop;
     bool retried = false;
+    // The dialog of an in-dialog request or initial INVITE (its identifier).
+    std::string dialog_id;
+  };
+
+  // RFC 3261 section 12: a dialog of this engine, an INVITE session (dialogs.cpp), keyed by its Call-ID.
+  struct Dialog {
+    enum class State { calling, early, connecting, confirmed, terminated };
+    std::string id;
+    bool uac = false;
+    State state = State::calling;
+    std::string call_id, local_tag, remote_tag;
+    // The From or To header field values of this side and of the peer, without tags.
+    std::string local_name, remote_name;
+    // RFC 3261 section 12.1: the remote target (the peer's Contact URI) and the route set, in the order used.
+    std::string remote_target;
+    std::vector<std::string> route_set;
+    // A pinned route set (a Route of the application, a peer route): not replaced by Record-Route.
+    bool route_frozen = false;
+    std::uint32_t local_cseq = 0;
+    std::optional<std::uint32_t> remote_cseq;
+    // This side's Contact in its requests, and in its answers (UAS).
+    std::string contact, response_contact;
+    bool sips = false;
+    // UAC: the initial INVITE's transaction (CANCEL) and its handler; the ACK of the 2xx, sent again for a
+    // retransmission (RFC 3261 section 13.2.2.4).
+    std::string invite_transaction;
+    SipResponseHandler initial_handler;
+    std::string ack_text;
+    std::uint32_t ack_cseq = 0;
+    bool provisional_reported = false;
+    // UAS: the initial INVITE until its final answer; the application headers of the last provisional answer, which
+    // the final one keeps (as the pjproject engine's INVITE session does) unless it sets them itself.
+    std::unique_ptr<resip::SipMessage> invite_request;
+    std::vector<SipHeader> provisional_headers;
+    bool final_answer = false;
+    bool answer_sdp_pending = false;
+    // RFC 3262: the INVITE requires reliable provisional responses; the last RSeq sent.
+    bool reliable = false;
+    std::uint32_t rseq = 0;
+    // RFC 3261 section 13.3.1.4: the 2xx sent, retransmitted over UDP until its ACK.
+    std::string answer_text;
+    std::chrono::milliseconds answer_interval{0};
+    std::optional<std::uint32_t> pending_ack_cseq;
+    // RFC 3261 section 14 and RFC 3311: the offer this side sent (re-INVITE or UPDATE) and its handler; a received
+    // offer waiting for its answer (SipEngine::respond); its method.
+    SipResponseHandler offer_handler;
+    std::uint32_t offer_cseq = 0;
+    std::unique_ptr<resip::SipMessage> incoming_offer;
+    bool terminating = false;
+    std::vector<BodyPart> bye_parts;
+    sip_detail::SdpOrigin sdp_origin;
+    // The last SDP this side sent (a session refresh by re-INVITE repeats it).
+    std::string local_sdp;
+    // RFC 4028: the session interval and whether this side refreshes; whether the peer allows UPDATE.
+    unsigned session_expires = 0;
+    bool refresher = false;
+    bool peer_allows_update = false;
   };
 
   // RFC 3261 section 10.2 (the pjproject engine's pjsip_regc): the digest registration of the identity.
@@ -105,7 +162,14 @@ struct SipEngine::Impl {
     aka_pending,
     aka_old,
     aka_expiry,
+    // Per INVITE dialog (keyed by its identifier): the 2xx retransmission and the end of the wait for its ACK
+    // (RFC 3261 section 13.3.1.4), the session refresh and the session's expiry (RFC 4028 section 10).
+    answer_retransmit,
+    answer_timeout,
+    session_refresh,
+    session_expiry,
   };
+  using TimerKey = std::pair<Timer, std::string>;
 
   // TS 33.203 clause 7.1: one set of IPsec security associations, its ports and SPIs, and its transports.
   struct AkaSet {
@@ -162,16 +226,17 @@ struct SipEngine::Impl {
   void poll(std::chrono::milliseconds timeout);
   void ensure_started() const;
   void report_error(std::string_view error) const noexcept;
-  void schedule(Timer timer, std::chrono::milliseconds delay);
-  void cancel(Timer timer) noexcept;
-  void fire(Timer timer);
+  void schedule(Timer timer, std::chrono::milliseconds delay, const std::string &key = {});
+  void cancel(Timer timer, const std::string &key = {}) noexcept;
+  void fire(Timer timer, const std::string &key);
 
   // requests.cpp
   void send_request(std::string_view method, std::string_view request_uri, std::string_view content_type,
                     std::string_view body, const std::vector<SipHeader> &headers, SipResponseHandler handler);
   [[nodiscard]] std::string write_request(const OutgoingRequest &request, const Hop &hop) const;
-  void dispatch(std::string text, Hop hop, Pending pending);
-  void send_message(std::unique_ptr<resip::SipMessage> message, Hop hop, Pending pending);
+  // Both return the request's transaction identifier.
+  std::string dispatch(std::string text, Hop hop, Pending pending);
+  std::string send_message(std::unique_ptr<resip::SipMessage> message, Hop hop, Pending pending);
   void receive_response(const resip::SipMessage &message);
   [[nodiscard]] bool retry_with_credentials(const resip::SipMessage &challenge, Pending &pending);
   void dispatch_response(const SipResponse &response, const SipResponseHandler &handler) const;
@@ -182,9 +247,47 @@ struct SipEngine::Impl {
   void end_registration();
   [[nodiscard]] std::string register_contact() const;
 
+  // dialogs.cpp
+  [[nodiscard]] std::string create_invite(std::string_view request_uri, const MediaDescription &local_media,
+                                          const std::vector<BodyPart> &parts, SipResponseHandler handler,
+                                          const std::vector<SipHeader> &headers, const std::string *sdp_text);
+  [[nodiscard]] OutgoingRequest dialog_request(Dialog &dialog, std::string_view method) const;
+  std::string send_in_dialog(Dialog &dialog, OutgoingRequest request, Pending entry);
+  void send_dialog_request(std::string_view dialog_id, std::string_view method, const std::vector<SipHeader> &headers,
+                           std::string_view content_type, std::string_view body, SipResponseHandler handler);
+  void invite_response(const resip::SipMessage &message, Pending &entry);
+  void offer_response(const resip::SipMessage &message, Pending &entry);
+  void bye_response(const resip::SipMessage &message, Pending &entry);
+  void send_ack(Dialog &dialog, std::uint32_t cseq);
+  void receive_in_dialog(const resip::SipMessage &message);
+  void receive_cancel(const resip::SipMessage &message);
+  void receive_ack(const resip::SipMessage &message);
+  [[nodiscard]] bool receive_initial_invite(const resip::SipMessage &message, SipMessage &request,
+                                            const SipResponse &response);
+  void receive_offer(Dialog &dialog, const resip::SipMessage &message);
+  void answer_offer(Dialog &dialog, const resip::SipMessage &offer, SipResponse response);
+  void answer_invite(Dialog &dialog, const SipResponse &response);
+  void send_dialog_response(Dialog &dialog, const resip::SipMessage &request, const SipResponse &response,
+                            const std::vector<SipHeader> &extra);
+  void send_offer(std::string_view dialog_id, std::string_view method, std::string sdp,
+                  const std::vector<BodyPart> &parts, SipResponseHandler handler, const std::vector<SipHeader> &headers);
+  void end_dialog(std::string_view dialog_id, SipResponseHandler handler, const std::vector<SipHeader> &headers,
+                  const std::vector<BodyPart> &parts);
+  void terminate(const std::string &dialog_id, int cause);
+  void report_media(const Dialog &dialog, const std::string &content_type, const std::string &body);
+  void session_timer_from(Dialog &dialog, const resip::SipMessage &message, bool as_uas);
+  void refresh_session(const std::string &dialog_id);
+  void update_target(Dialog &dialog, const resip::SipMessage &message, bool from_response);
+  [[nodiscard]] std::vector<SipHeader> session_headers(const Dialog &dialog, bool request) const;
+  [[nodiscard]] std::string response_contact(const SipResponse &response) const;
+  void notify_call_state(std::string_view id, SipCallState state, int cause) const noexcept;
+  [[nodiscard]] SipResponse safe_application_response(const SipMessage &request);
+
   // incoming.cpp
   void receive_request(const resip::SipMessage &message);
-  void send_response(const resip::SipMessage &request, const SipResponse &response);
+  // Returns the response as sent; to_tag names the To tag of an answer that creates a dialog.
+  std::string send_response(const resip::SipMessage &request, const SipResponse &response,
+                            const std::string &to_tag = {});
   void respond_deferred(const std::string &transaction_id, const SipResponse &response);
 
   // messages.cpp
@@ -237,8 +340,9 @@ struct SipEngine::Impl {
   std::optional<Registration> registration;
   // A registration's connection to close once the transactions on it are over (registration_ended).
   std::optional<resip::Tuple> ending_flow;
-  std::map<Timer, Clock::time_point> timers;
+  std::map<TimerKey, Clock::time_point> timers;
   std::unique_ptr<Aka> aka;
+  std::map<std::string, std::unique_ptr<Dialog>> dialogs;
   // TS 33.203 clause 7.4.1a: when each transaction of a set ended (none: still running), and whether it was over UDP.
   struct TransactionEnd {
     std::optional<Clock::time_point> at;

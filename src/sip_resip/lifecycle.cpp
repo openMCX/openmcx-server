@@ -93,6 +93,13 @@ void SipEngine::Impl::start() {
 // Stops the stack: its transactions and connections go with it; requests still pending get no response.
 void SipEngine::Impl::stop() noexcept {
   if (!started) return;
+  // What was handed to the stack last (a final answer just before stop, as pjsip sends at once) is written first: the
+  // stack sends from its own processing.
+  try {
+    for (int round = 0; round < 10; ++round) stack->process(10);
+  } catch (...) {
+    // Stopping goes on regardless.
+  }
   // The IMS AKA security associations go first, while the stack and its transports exist.
   aka_stop();
   try {
@@ -106,6 +113,7 @@ void SipEngine::Impl::stop() noexcept {
   deferred.clear();
   registration.reset();
   ending_flow.reset();
+  dialogs.clear();
   timers.clear();
   transactions.clear();
   started = false;
@@ -139,13 +147,13 @@ void SipEngine::Impl::poll(std::chrono::milliseconds timeout) {
       receive_response(*message);
   }
   // The timers due now, each once.
-  std::vector<Timer> due;
+  std::vector<TimerKey> due;
   for (const auto &[timer, at] : timers)
     if (at <= Clock::now()) due.push_back(timer);
-  for (const auto timer : due) {
+  for (const auto &timer : due) {
     timers.erase(timer);
     try {
-      fire(timer);
+      fire(timer.first, timer.second);
     } catch (const std::exception &error) {
       report_error(error.what());
     } catch (...) {
@@ -156,18 +164,20 @@ void SipEngine::Impl::poll(std::chrono::milliseconds timeout) {
 
 //------------------------------------------------------------------------------
 // Helper: (re)starts one of the engine's timers.
-void SipEngine::Impl::schedule(Timer timer, std::chrono::milliseconds delay) { timers[timer] = Clock::now() + delay; }
+void SipEngine::Impl::schedule(Timer timer, std::chrono::milliseconds delay, const std::string &key) {
+  timers[{timer, key}] = Clock::now() + delay;
+}
 
 //------------------------------------------------------------------------------
 // Helper: stops one of the engine's timers.
-void SipEngine::Impl::cancel(Timer timer) noexcept { timers.erase(timer); }
+void SipEngine::Impl::cancel(Timer timer, const std::string &key) noexcept { timers.erase({timer, key}); }
 
 //------------------------------------------------------------------------------
 // The engine's timers: the refresh of a digest registration (RFC 3261 section 10.2.1), the end of a registration's
 // connection (registration_ended), and the IMS AKA timers: the refresh (TS 24.229 clause 5.1.1.4.1), the end of the
 // temporary set (reg-await-auth, clause 5.1.1.5.1), the end of the old set (TS 33.203 clause 7.4.1a) and the end of
 // the set in use at its lifetime ("The UE shall delete any SA whose lifetime is exceeded").
-void SipEngine::Impl::fire(Timer timer) {
+void SipEngine::Impl::fire(Timer timer, const std::string &key) {
   switch (timer) {
   case Timer::registration_refresh:
     if (registration && registration->expires != 0) register_digest(registration->expires, {}, {}, registration->handler);
@@ -190,6 +200,37 @@ void SipEngine::Impl::fire(Timer timer) {
       aka_delete(aka->current);
       aka_use(nullptr);
       report_error("IMS AKA: the security associations expired; the registration has ended");
+    }
+    break;
+  case Timer::answer_retransmit:
+    if (const auto found = dialogs.find(key); found != dialogs.end() && !found->second->answer_text.empty()) {
+      auto &dialog = *found->second;
+      // RFC 3261 section 13.3.1.4: the 2xx again, the interval doubling up to T2 (4 s).
+      const resip::Data wire(dialog.answer_text);
+      if (std::unique_ptr<resip::SipMessage> again(resip::SipMessage::make(wire, false)); again)
+        stack->send(std::move(again), &user);
+      dialog.answer_interval = std::min(dialog.answer_interval * 2, std::chrono::milliseconds(4000));
+      schedule(Timer::answer_retransmit, dialog.answer_interval, key);
+    }
+    break;
+  case Timer::answer_timeout:
+    // RFC 3261 section 13.3.1.4: no ACK within 64*T1: the session ends with BYE.
+    if (const auto found = dialogs.find(key); found != dialogs.end() && found->second->pending_ack_cseq) {
+      report_error("SIP: no ACK for the 2xx of dialog " + key + " (RFC 3261 section 13.3.1.4)");
+      found->second->answer_text.clear();
+      cancel(Timer::answer_retransmit, key);
+      found->second->pending_ack_cseq.reset();
+      end_dialog(key, {}, {}, {});
+    }
+    break;
+  case Timer::session_refresh:
+    refresh_session(key);
+    break;
+  case Timer::session_expiry:
+    // RFC 4028 section 10: the session was not refreshed in time: this side ends it with BYE.
+    if (dialogs.contains(key)) {
+      report_error("SIP: session of dialog " + key + " expired without refresh (RFC 4028 section 10)");
+      end_dialog(key, {}, {}, {});
     }
     break;
   }

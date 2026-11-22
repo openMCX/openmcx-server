@@ -5,13 +5,13 @@
 
 """Provision ephemeral trust and run native self-loop and two-process SIP tests.
 
-Usage: run_sip_tls.py SIP_TEST_BINARY [tcp] [core]. Creates a one-day self-signed certificate for
+Usage: run_sip_tls.py SIP_TEST_BINARY [tcp] [nosubscriptions]. Creates a one-day self-signed certificate for
 127.0.0.1, runs the SIP test binary's self-loop test (over TLS only), its server and client
 roles as two processes (registration and call), the BYE authentication test against an
 independent raw SIP peer below, and the transaction failure test. The raw peer checks the
 SIP digest retry of RFC 3261 section 22.3 with the response of RFC 2617 section 3.2.2.1.
-With "core", only the self-loop test and the digest registration run: the engine on reSIProcate until its dialog phases
-(prototype/resiprocate/PLAN.md, phases 3c and 3d).
+With "nosubscriptions", the subscription roles and the transaction failure test (a SUBSCRIBE) are left out: the engine
+on reSIProcate until phase 3d of prototype/resiprocate/PLAN.md.
 
 Specifications: RFC 3261, RFC 2617; the SDP offered is an MCPTT offer (TS 24.379 V19.7.0).
 """
@@ -367,9 +367,10 @@ with tempfile.TemporaryDirectory(prefix='openmcx-sip-tls-') as directory:
     else:
         subprocess.run([binary], env=env, check=True, timeout=20)
     run_register_digest(binary, directory, env)
-    if 'core' in sys.argv[2:]:
-        sys.exit(0)
-    for prefix in ('', 'call-'):
+    # Without subscriptions (the engine on reSIProcate before phase 3d of prototype/resiprocate/PLAN.md): the call
+    # roles and the BYE authentication only.
+    subscriptions = 'nosubscriptions' not in sys.argv[2:]
+    for prefix in ('', 'call-') if subscriptions else ('call-',):
         ready = pathlib.Path(directory) / ('ready-' + prefix)
         env['OPENMCX_SIP_TEST_READY_FILE'] = str(ready)
         server_env = env.copy()
@@ -399,6 +400,7 @@ with tempfile.TemporaryDirectory(prefix='openmcx-sip-tls-') as directory:
                 server.terminate()
                 server.wait(timeout=5)
     run_uas_bye_auth(binary, directory, env)
-    failure_env = env.copy()
-    failure_env['OPENMCX_SIP_TEST_ROLE'] = 'transaction-failure'
-    subprocess.run([binary], env=failure_env, check=True, timeout=15)
+    if subscriptions:
+        failure_env = env.copy()
+        failure_env['OPENMCX_SIP_TEST_ROLE'] = 'transaction-failure'
+        subprocess.run([binary], env=failure_env, check=True, timeout=15)

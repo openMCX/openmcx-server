@@ -256,8 +256,7 @@ void test_native_mutual_tls_request_callbacks_when_configured() {
         "unsupported INVITE extension receives 420 Bad Extension (RFC 3261 section 8.2.2.3)");
   check(invite_application_calls == 0, "unsupported INVITE is rejected before the application commits call state");
 
-  // The dialog half (subscriptions and INVITE sessions): on reSIProcate from phases 3c and 3d of
-  // prototype/resiprocate/PLAN.md.
+  // Subscriptions: on reSIProcate from phase 3d of prototype/resiprocate/PLAN.md.
 #ifndef MCX_SIP_RESIP
   int subscription_status = 0;
   const std::string subscription_dialog =
@@ -268,6 +267,8 @@ void test_native_mutual_tls_request_callbacks_when_configured() {
     engine.poll(std::chrono::milliseconds(10));
   }
   check(subscription_status == 482, "self-routed SUBSCRIBE collision receives a final response");
+
+#endif
 
   int colliding_invite_status = 0;
   const std::string colliding_dialog =
@@ -299,7 +300,6 @@ void test_native_mutual_tls_request_callbacks_when_configured() {
   check(invite_disconnected, "an INVITE whose answer failed is reported disconnected");
   check(engine.subscription_count() == 0, "no subscription dialog is left behind");
 
-#endif
 
   struct sigaction signal_action{};
   struct sigaction previous_action{};

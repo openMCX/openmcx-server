@@ -39,11 +39,15 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
 
 ## Decisions
 
-1. **Which reSIProcate layer.** Its dialog layer (DUM) for INVITE sessions and subscriptions; its transaction layer
-   for REGISTER with IMS AKA and for requests the engine builds itself (as the AKA probe does). Confirmed or changed
-   after phase 3a.
+1. **Which reSIProcate layer** (decided 2026-11-22, at phase 3c): the transaction layer only, with the engine's own
+   dialog layer (`src/sip_resip/dialogs.cpp`), not DUM. The engine's API needs per-request header fields and
+   handlers on INFO, MESSAGE and BYE, UPDATE offers in a confirmed dialog, provisional answers to deferred
+   re-INVITEs, a Contact per answer and pinned route sets; under DUM each would be a rewrite of messages DUM built.
+   Requests are written as text as the rest of the engine's are, so the outgoing protection and the IMS AKA hop
+   apply to every one. DUM is no longer linked by the engine (the prototype's probe still uses it).
 2. **Patch 0001 stays OpenMCX's** (decided 2026-11-22: not proposed upstream); `dependencies/resiprocate` carries it,
-   and every reSIProcate update re-applies it.
+   and every reSIProcate update re-applies it. With decision 1 it only matters to the prototype's DUM probe; it can go
+   once the engine's subscriptions (phase 3d) replace that probe's coverage.
 3. **The event loop (phase 4) within this project**: the main performance gain, but it changes the server and client
    main loops, so it is verified in the same pass.
 
@@ -108,3 +112,20 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
       offers over UDP, or the test (and the lab's P-CSCF) taking the REGISTER over TCP.
   - Not yet run: the `aka` and `aka-udp` labs, which need the client on reSIProcate (subscriptions, phase 3d); a
     wildcard listen address.
+- Phase 3c: INVITE sessions on reSIProcate's transaction layer (`src/sip_resip/dialogs.cpp`, decision 1): the UAC's
+  INVITE (Allow, Supported and Require "timer", Session-Expires, Min-SE, the MCPTT service, as captured from the
+  pjproject engine on the wire), early dialogs, ACK of the 2xx and of its retransmissions, CANCEL through the stack and
+  BYE after a 2xx that crossed it; the UAS dialog with immediate or deferred answers (the final one keeping the last
+  provisional's header fields but Alert-Info), 487 to a cancelled or locally ended INVITE, the 2xx retransmitted over
+  UDP until its ACK (64*T1, then BYE); re-INVITE and UPDATE offers both ways with 491 for a crossing offer, deferred
+  re-INVITE answers, in-dialog INFO and MESSAGE, BYE both ways (the application sees a received BYE first), 481 and
+  the CSeq check of RFC 3261 section 12.2.2, 482 for a Call-ID collision, PRACK both ways, the session timer (refresh
+  by UPDATE or re-INVITE half way, BYE before expiry, 422 below Min-SE), digest retries in dialogs, REFER outside a
+  dialog. `stop()` lets the stack write what was queued last (pjsip sends at once).
+  - Tests: `test_sip`'s self-loop has its INVITE half back (only the SUBSCRIBE check waits for 3d); `sip_tls` and
+    `sip_tcp` run every two-process role but the subscription ones and `transaction-failure` (a SUBSCRIBE), with the
+    `nosubscriptions` argument: the call roles and the BYE digest retry pass over TLS and TCP. resip 58 of 58, pjsip 58
+    of 58; `run_ims_aka.py` scenarios 1 to 4 still pass on resip.
+  - Written but run by no test yet: the session refresh and expiry (the tests' sessions last 1800 s), the 2xx
+    retransmission over UDP, PRACK (no peer of the tests sends reliable provisional responses), 422, 491 glare, a digest
+    retry of an INVITE, dialogs over IMS AKA (scenario 5 of `run_ims_aka.py`, blocked on main).

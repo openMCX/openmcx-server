@@ -194,7 +194,7 @@ void SipEngine::Impl::send_request(std::string_view method, std::string_view req
 //------------------------------------------------------------------------------
 // TS 33.180 clause 9.3: the outgoing filter on the next hop's address (the forced target's, or the Route's or
 // Request-URI's), then the request to the stack; a refusal of the filter sends nothing.
-void SipEngine::Impl::dispatch(std::string text, Hop hop, Pending entry) {
+std::string SipEngine::Impl::dispatch(std::string text, Hop hop, Pending entry) {
   std::string host;
   if (!hop.force_target.empty())
     host = resip::Uri(resip::Data(hop.force_target)).host().c_str();
@@ -205,20 +205,24 @@ void SipEngine::Impl::dispatch(std::string text, Hop hop, Pending entry) {
   std::unique_ptr<resip::SipMessage> request(resip::SipMessage::make(wire, false));
   if (request == nullptr) throw std::invalid_argument("invalid SIP request");
   if (aka) aka_size_hop(*request, hop);
-  send_message(std::move(request), std::move(hop), std::move(entry));
+  return send_message(std::move(request), std::move(hop), std::move(entry));
 }
 
 //------------------------------------------------------------------------------
 // Helper: a request (protected, final) to the stack on its hop; its response goes to the entry.
-void SipEngine::Impl::send_message(std::unique_ptr<resip::SipMessage> request, Hop hop, Pending entry) {
+std::string SipEngine::Impl::send_message(std::unique_ptr<resip::SipMessage> request, Hop hop, Pending entry) {
   if (!hop.force_target.empty()) request->setForceTarget(resip::Uri(resip::Data(hop.force_target)));
   entry.text = resip_engine::text_of(*request);
   entry.hop = hop;
   request->addOutboundDecorator(std::make_unique<AdvertisedVia>(config.advertise_address, hop.advertised_port));
   const std::string transaction = request->getTransactionId().c_str();
-  if (aka) aka_track_sent(transaction, hop);
-  pending[transaction] = std::move(entry);
+  // RFC 3261 section 17.1.1.3: an ACK of a 2xx is sent without a transaction and gets no response.
+  if (request->method() != resip::ACK) {
+    if (aka) aka_track_sent(transaction, hop);
+    pending[transaction] = std::move(entry);
+  }
   stack->send(std::move(request), &user);
+  return transaction;
 }
 
 //------------------------------------------------------------------------------
@@ -248,8 +252,18 @@ bool SipEngine::Impl::retry_with_credentials(const resip::SipMessage &challenge,
     return false;
   }
   if (entry.purpose == Purpose::registration && registration) registration->cseq = cseq.sequence();
+  // A request of a dialog: its CSeq is the dialog's next one; a retried INVITE or offer keeps the dialog's view.
+  const auto purpose = entry.purpose;
+  const auto dialog_id = entry.dialog_id;
+  Dialog *dialog = nullptr;
+  if (const auto found = dialogs.find(dialog_id); !dialog_id.empty() && found != dialogs.end()) {
+    dialog = found->second.get();
+    dialog->local_cseq = std::max(dialog->local_cseq, cseq.sequence());
+    if (purpose == Purpose::offer) dialog->offer_cseq = cseq.sequence();
+  }
   entry.retried = true;
-  send_message(std::move(request), entry.hop, std::move(entry));
+  const auto transaction = send_message(std::move(request), entry.hop, std::move(entry));
+  if (dialog != nullptr && purpose == Purpose::invite) dialog->invite_transaction = transaction;
   return true;
 }
 
@@ -258,10 +272,21 @@ bool SipEngine::Impl::retry_with_credentials(const resip::SipMessage &challenge,
 // what its request was sent for: the application's handler (after a digest retry), the digest registration, or the
 // IMS AKA registration procedure; provisional responses are not passed.
 void SipEngine::Impl::receive_response(const resip::SipMessage &message) {
-  if (status_of(message) < 200) return;
   const std::string transaction = message.getTransactionId().c_str();
   const auto found = pending.find(transaction);
-  if (found == pending.end()) return;
+  if (found == pending.end()) {
+    // RFC 3261 section 13.2.2.4: a retransmitted 2xx of an INVITE (its transaction is over): the ACK again.
+    if (status_of(message) / 100 == 2 && message.header(resip::h_CSeq).method() == resip::INVITE) {
+      const auto dialog = dialogs.find(message.header(resip::h_CallId).value().c_str());
+      if (dialog != dialogs.end() && dialog->second->uac && dialog->second->ack_cseq == message.header(resip::h_CSeq).sequence())
+        send_ack(*dialog->second, dialog->second->ack_cseq);
+    }
+    return;
+  }
+  if (status_of(message) < 200) {
+    if (found->second.purpose == Purpose::invite) invite_response(message, found->second);
+    return;
+  }
   Pending entry = std::move(found->second);
   pending.erase(found);
   transaction_ended(transaction);
@@ -272,6 +297,10 @@ void SipEngine::Impl::receive_response(const resip::SipMessage &message) {
     return;
   if (entry.purpose == Purpose::aka_register) return aka_registration_result(message);
   if (entry.purpose == Purpose::registration) return registration_result(message);
+  if (entry.purpose == Purpose::invite) return invite_response(message, entry);
+  if (entry.purpose == Purpose::offer) return offer_response(message, entry);
+  if (entry.purpose == Purpose::bye) return bye_response(message, entry);
+  if (entry.purpose == Purpose::prack) return;
   SipResponse response;
   try {
     response = response_from(message);

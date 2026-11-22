@@ -61,7 +61,8 @@ SipResponse status(int code, std::string reason) {
 // RFC 3261 section 8.2.6: a response to a received request: the request's Via, From, To (with a tag), Call-ID and
 // CSeq, the application's header fields and body (one body, or its parts as multipart/mixed); outgoing protection on
 // the request's source address; the stack sends it in the request's server transaction.
-void SipEngine::Impl::send_response(const resip::SipMessage &request, const SipResponse &response) {
+std::string SipEngine::Impl::send_response(const resip::SipMessage &request, const SipResponse &response,
+                                           const std::string &to_tag) {
   if (response.status_code < 100 || response.status_code > 699) throw std::invalid_argument("invalid SIP status");
   if (response.reason.find_first_of("\r\n") != std::string::npos ||
       response.content_type.find_first_of("\r\n") != std::string::npos)
@@ -82,12 +83,15 @@ void SipEngine::Impl::send_response(const resip::SipMessage &request, const SipR
   resip::SipMessage base;
   resip::Helper::makeResponse(base, request, response.status_code,
                               response.reason.empty() ? resip::Data::Empty : resip::Data(response.reason));
+  if (!to_tag.empty()) base.header(resip::h_To).param(resip::p_tag) = resip::Data(to_tag);
   // The prepared response as text, without its Content-Length, with the application's header fields and body.
   auto text = resip_engine::text_of(base);
   text.erase(text.find("\r\n\r\n") + 2);
   std::string section;
+  // Helper::makeResponse adds an empty Contact to an answer that creates a dialog: the engine sets its own.
   for (const auto &header : resip_engine::headers_of(base))
-    if (!sip_detail::ascii_equal(header.name, "Content-Length")) section += header.name + ": " + header.value + "\r\n";
+    if (!sip_detail::ascii_equal(header.name, "Content-Length") && !sip_detail::ascii_equal(header.name, "Contact"))
+      section += header.name + ": " + header.value + "\r\n";
   for (const auto &header : response.headers) section += header.name + ": " + header.value + "\r\n";
   if (!content_type.empty()) section += "Content-Type: " + content_type + "\r\n";
   const auto start_line = text.substr(0, text.find("\r\n"));
@@ -100,20 +104,29 @@ void SipEngine::Impl::send_response(const resip::SipMessage &request, const SipR
   if (message == nullptr) throw std::invalid_argument("invalid SIP response");
   if (response.status_code >= 200) transaction_ended(request.getTransactionId().c_str());
   stack->send(std::move(message), &user);
+  return text;
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 8.2: a received request: ACK and CANCEL are the INVITE usage's (phase 3c); 420 Bad Extension for an
-// initial INVITE with an unknown required extension (section 8.2.2.3), before the application; otherwise the
-// application's response, sent at once or kept for SipEngine::respond (deferred); 400 Bad Request when the request
-// cannot be handled.
+// RFC 3261 section 8.2 (as receive_request of the pjproject engine): a received request. ACK and CANCEL go to the
+// INVITE dialogs (dialogs.cpp), as does any request with a To tag. An initial request whose Call-ID is a dialog's
+// gets 482 (Loop Detected, a merged request, section 8.2.2.2), an initial INVITE with an unknown required extension
+// 420 (Bad Extension, section 8.2.2.3), both before the application. Otherwise the application's response: kept for
+// SipEngine::respond (deferred), the UAS dialog of an INVITE answered 1xx or 2xx with media (or deferred provisional),
+// or sent at once; 400 Bad Request when the request cannot be handled.
 void SipEngine::Impl::receive_request(const resip::SipMessage &message) {
   const auto method = message.method();
-  if (method == resip::ACK || method == resip::CANCEL) return;
   try {
-    SipMessage request = message_from(message);
+    if (method == resip::ACK) return receive_ack(message);
+    if (method == resip::CANCEL) return receive_cancel(message);
+    if (message.header(resip::h_To).exists(resip::p_tag)) return receive_in_dialog(message);
     const bool invite = method == resip::INVITE;
-    if (invite && !message.header(resip::h_To).exists(resip::p_tag)) {
+    if (dialogs.contains(message.header(resip::h_CallId).value().c_str())) {
+      send_response(message, status(482, "Loop Detected"));
+      return;
+    }
+    SipMessage request = message_from(message);
+    if (invite) {
       const auto unsupported = unsupported_required(config, request.headers);
       if (!unsupported.empty()) {
         auto refusal = status(420, "Bad Extension");
@@ -124,17 +137,7 @@ void SipEngine::Impl::receive_request(const resip::SipMessage &message) {
     }
 
     request.transaction_id = std::to_string(++next_transaction);
-    SipResponse response = [&] {
-      if (!callbacks.on_request) return status(501, "Not Implemented");
-      try {
-        return callbacks.on_request(request);
-      } catch (const std::exception &error) {
-        report_error(error.what());
-      } catch (...) {
-        report_error("unknown SIP application error");
-      }
-      return status(500, "Application Error");
-    }();
+    SipResponse response = safe_application_response(request);
 
     if (response.deferred && !invite) {
       if (method == resip::SUBSCRIBE)
@@ -143,9 +146,9 @@ void SipEngine::Impl::receive_request(const resip::SipMessage &message) {
       deferred[request.transaction_id] = std::make_unique<resip::SipMessage>(message);
       return;
     }
-    if (invite && response.status_code < 300) {
-      report_error("INVITE sessions on reSIProcate: prototype/resiprocate/PLAN.md phase 3c");
-      send_response(message, status(501, "Not Implemented"));
+    if (invite && response.status_code >= 100 && response.status_code < 300 &&
+        (response.local_media || response.local_sdp || (response.deferred && response.status_code < 200))) {
+      (void)receive_initial_invite(message, request, response);
       return;
     }
     if (method == resip::SUBSCRIBE && response.status_code >= 200 && response.status_code < 300) {
@@ -160,6 +163,7 @@ void SipEngine::Impl::receive_request(const resip::SipMessage &message) {
   } catch (...) {
     report_error("unknown SIP request handling error");
   }
+  if (method == resip::ACK) return;
   try {
     send_response(message, status(400, "Bad Request"));
   } catch (...) {
@@ -173,6 +177,22 @@ void SipEngine::Impl::receive_request(const resip::SipMessage &message) {
 void SipEngine::Impl::respond_deferred(const std::string &transaction_id, const SipResponse &response) {
   const auto found = deferred.find(transaction_id);
   if (found == deferred.end()) return;
+  // A deferred re-INVITE (dialogs.cpp): a provisional answer keeps it waiting; its dialog may have ended meanwhile.
+  if (found->second->method() == resip::INVITE) {
+    const auto dialog = dialogs.find(found->second->header(resip::h_CallId).value().c_str());
+    if (dialog == dialogs.end() || !dialog->second->incoming_offer) {
+      deferred.erase(found);
+      return;
+    }
+    if (response.status_code > 100 && response.status_code < 200) {
+      answer_offer(*dialog->second, *found->second, response);
+      return;
+    }
+    const auto request = std::move(found->second);
+    deferred.erase(found);
+    answer_offer(*dialog->second, *request, response);
+    return;
+  }
   if (response.status_code < 200 || response.status_code > 699)
     throw std::invalid_argument("invalid deferred response status");
   const auto request = std::move(found->second);
