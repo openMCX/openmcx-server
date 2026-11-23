@@ -119,11 +119,20 @@ def main():
 
     # ------------------------------------------------------------------------------
     def hangup_all(label):
-        """Hang up every client still in a call and wait until the controlling function holds no session."""
-        for role in ROLES:
-            if status(role).get('call_state') != 'idle':
-                command(role, 'hangup')
-        wait(label, idle, 30)
+        """Hang up every client in a call and wait until the controlling function holds no session. call() returns
+        once the participating function has handled the INVITE, which can be before the caller's status shows the
+        call: a client is hung up (once) whenever it shows a call during the wait, not only at its start."""
+        hung_up = set()
+
+        def released():
+            for role in ROLES:
+                state = status(role).get('call_state')
+                if role not in hung_up and state is not None and state != 'idle':
+                    command(role, 'hangup')
+                    hung_up.add(role)
+            return idle()
+
+        wait(label, released, 30)
 
     # ------------------------------------------------------------------------------
     def call(label, role, text, session_type, implicit, outcome, sent):
