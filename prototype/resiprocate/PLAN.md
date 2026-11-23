@@ -255,7 +255,7 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
   - Unit tests: 59 of 59 on `openmcx-dev:0.5`; CentOS 56 of 57.
   - Regression (`p7`, 95 labs): TCP 257 of 257, TLS 174 of 175, the miss `mbs` (client-c and client-d decoded
     different speech).
-  - Open, found in that miss: `mbs` over TLS fails now and then with reSIProcate builds from phase 5 on, and has not
+  - Found in that miss: `mbs` over TLS failed now and then with reSIProcate builds from phase 5 on, and has not
     failed on pjproject. Runs of the lab (TLS, all kept runs and the isolation runs of 2026-11-23):
     - pjproject on both sides: 24 of 24 (p6 2, p6e 6, the phase 5 pjsip build 8, main `ef5cd62` with client
       `b818103` 8).
@@ -268,7 +268,18 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
     joins it after the conversation's first multicast packets were sent: one or two packets fewer, no drop counter
     moved, its recording a 20 ms frame shorter, which the final comparison of client-c's and client-d's speech
     (warm-up bursts included, where the listeners join "while it goes on") catches. The ICE agent is not created in
-    this lab. Next: a capture of the Map Group To Bearer, the join and the first packets, server and listener side.
+    this lab.
+  - The miss found and fixed (openmcx-client, "Client loop: floor control packets again before the speech"): the
+    lost packet is the talk burst's first, sent by unicast. Each pass of the client loop serves the floor control
+    socket, then the MBMS subchannels (where a listener joins on Map Group To Bearer and sends a SIP request), then
+    the speech. A Floor Taken that arrived during the subchannel work waited for the next pass, and the speech packet
+    behind it, its SSRC not known yet, was dropped without a counter: the listener handled Floor Taken 1 to 2 ms
+    into the burst but rendered from 22 ms, one frame late, in every miss that shows it. The same late start is seen
+    once in the 28 runs on pjproject or before phase 5 (client-b, which the lab does not compare): the race is older,
+    the reSIProcate builds' longer subchannel work widened it. The loop now serves the floor control socket again
+    just before the speech. With the fix 16 of 16 `mbs` runs, none losing the first packet (unfixed 10 of 43 lost it;
+    a control of 8 unfixed runs the same evening lost none), and twelve floor and media labs pass, TCP 19 of 19, TLS
+    12 of 12.
   - CentOS Stream 10: quay.io no longer served the pinned base image digests (they go when the tags move); pinned
     again in `dependencies/lock.json` and `docker/Dockerfile.centos` (docs/BUILD.md says how). `test_http_crl`
     could not sign its SHA-1 CRL there (the default crypto policy refuses SHA-1 signatures, and verifies none
