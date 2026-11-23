@@ -32,7 +32,7 @@ rolled back until pjproject is removed.
 | 3d | Subscriptions and the rest | subscribe, notify, `subscription_count`, refer, publish | All C++ tests pass on both | 1 week |
 | 4 | One event loop | The engine takes media and floor control sockets into its epoll; the server and client loops drop the 5 ms SIP poll | Wire captures show relay delay near 0.1 ms (today a median of 2.75 ms) | 1 week |
 | 5 | ICE without pjnath | OpenMCX's own ICE agent: host candidates, STUN binding checks, nomination | `test_ice`, `test_ice_sdp` and the pre-established session labs pass | 1 to 2 weeks |
-| 6 | Verification | The full IP regression (no RAN labs) over TCP and TLS on both; the MCPTT, MCData and MCVideo conformance suites; a client on one and a server on the other; a soak run; call setup time and CPU | No new failures compared with pjproject | 2 weeks |
+| 6 | Verification (done) | The full IP regression (no RAN labs) over TCP and TLS on both; the MCPTT, MCData and MCVideo conformance suites; a client on one and a server on the other; a soak run; call setup time and CPU | No new failures compared with pjproject | 2 weeks |
 | 7 | Switch and remove | `resip` the default; pjproject removed from the development images, `dependencies/lock.json`, `dependencies/pjproject` and the NOTICE files of both repositories; the binaries checked for pjsip symbols; the licence scan repeated | No GPL code linked into any OpenMCX program | 1 week |
 
 In all, about 11 to 15 weeks, mostly phases 3 and 6.
@@ -165,7 +165,7 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
     a, b`, RFC 3261 section 7.3.1). `tests/integration/verify_mcdata_sds.py` now reads list header fields value by
     value; the other wire verifiers may need the same (phase 6).
   - Seen once: `sip_tcp` failed under load during an image build (quiet output, not reproduced in 12 runs since).
-- Phase 6, under way (2026-11-22): the full IP regression (93 labs, TCP and TLS) on both stacks, then the MCPTT, MCData
+- Phase 6, done (2026-11-23): the full IP regression (93 labs, TCP and TLS) on both stacks, then the MCPTT, MCData
   and MCVideo conformance suites (openmcx-conformance-tests, the SS emulator in place of the MCx server, the DUT client
   on each engine and nothing else changed). Defects found and fixed, each with a test that fails without the fix:
   - engine (`1695c88`): the response to this side's CANCEL (it has the INVITE's transaction identifier) was taken for
@@ -187,7 +187,24 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
     MCData 120 / 114+6 fail, MCVideo 144+3 N/A / 143+1 fail+3 N/A; every difference is one of the two defects above.
   - Resource use over the 306 labs of both regressions (before `9c97d05`): CPU about 3 % more on reSIProcate beyond a
     2 % run-wide difference, peak memory lower but for the MCVideo server (+2 MB).
-  - Left: the regression, the conformance suites, both mixed pairs (pjsip servers with the reSIProcate client and the
-    reverse) and the soak (`--select smoke,mcdata --duration 3h`, both stacks at once) on the images with all fixes.
+  - test (`55ed604`): `location_with_floor_scenario.py` read the caller's status once, right after its call command,
+    to choose whom to hang up; with requests now on the wire sooner it could still read idle (LWF-01, 1 run in 6). A
+    client is now hung up whenever it shows a call during the wait: 29 of 30 runs since, the one miss (LWF-05) not
+    reproduced.
+  - Final results, images with all fixes (`p6e`), no new failure compared with pjproject:
+    - regression on reSIProcate: TCP 256 of 257 (the LWF-01 race above), TLS 175 of 175.
+    - mixed pairs: pjsip servers with the reSIProcate client 432 of 432; reSIProcate servers with the pjsip client 431
+      of 432, the miss `rx` over TCP (its mock PCRF container not running at the start, no check run; 3 of 3 on
+      repeat).
+    - conformance (DUT pjsip / reSIProcate): MCPTT 117+1 inconclusive / 116+2 inconclusive (5.7 on both; 6.1.1.2 the
+      bench's T132 of 2 s missed under load, 3 of 3 on repeat on each), MCData 120 / 120, MCVideo 144+3 N/A on both
+      with all 149 verdicts identical; MCPTT against the real server 18 / 18.
+    - soak (`--select smoke,mcdata --duration 3h --jobs 2`, both stacks at once): 8 rounds, 552 of 552 on each.
+    - call setup time in the soak's TCP captures (744 calls each): pjsip median 1.80 ms, p90 4.63, p99 40.45;
+      reSIProcate 1.87, 4.53, 40.57 (median per-lab difference +0.14 ms).
+    - resources over the soak's 384 labs (`tools/perf-compare.py`), reSIProcate against pjsip: CPU MCPTT server
+      +1.3 %, MCData server +1.6 %, MCVideo server +0.6 %, SIP core -0.8 %, clients +3.0 %, common services -1.3 %.
+      Peak memory -1 % to -3 % but the MCData server, whose maximum is +17 % (18.8 MB against 16.1) from two labs;
+      its per-lab median is 13.7 MB against 13.5 and p90 14.5 against 14.4, with no growth across the rounds.
   - Not changed: the wire verifiers' exact P-Preferred-Service compares (`verify_mcdata_media.py`,
     `verify_mcdata_fd.py`): one ICSI per request on both engines, and the regression passes.
