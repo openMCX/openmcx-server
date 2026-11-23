@@ -4,13 +4,13 @@
 
 // ICE for a pre-established session (TS 24.379 clauses 4.9, 8.2.1 steps 1 and 9, 8.2.2 steps 9 e and 12): an agent
 // with host candidates on the session's own UDP sockets (the speech RTP and RTCP ports and the media plane control
-// port) that runs the connectivity checks of RFC 8445 through pjnath's ICE session, one per media section, with the
-// same credentials. The caller owns the sockets: it passes received STUN packets (is_stun_packet, RFC 7983) to
-// receive, transmits what the sender callback gives it, and calls tick on its poll loop.
+// port) that runs the connectivity checks of RFC 8445 (src/media/ice.cpp, OpenMCX's own agent), one check list per
+// media section, with the same credentials. The caller owns the sockets: it passes received STUN packets
+// (is_stun_packet, RFC 7983) to receive, transmits what the sender callback gives it, and calls tick on its poll
+// loop; the state moves to Completed or Failed in tick only, never in receive.
 //
-// Deviation from RFC 8445: pjnath implements the checks of RFC 5245 (pacing, the candidate pair states, the
-// role-conflict repair), which RFC 8445 changed in details; the agent uses regular nomination, the only nomination
-// RFC 8445 keeps (section 8.1.1), and does not claim the "ice2" option (RFC 8839 section 5.6).
+// The agent uses regular nomination, the only nomination RFC 8445 keeps (section 8.1.1), and does not claim the
+// "ice2" option (RFC 8839 section 5.6): its timers are those pjnath had (src/media/ice.cpp), not all RFC 8445's.
 // Not implemented: server reflexive and relayed candidates (RFC 8445 section 5.1.1.2): no STUN or TURN server is
 // configured, so only UDP host candidates are gathered, on the address the session uses for MCPTT service (TS 24.379
 // clause 8.2.1 NOTE 1: "only gathered on interfaces that the MCPTT UE uses to obtain MCPTT service").
@@ -61,11 +61,11 @@ struct IceLocalSockets {
 
 //------------------------------------------------------------------------------
 // RFC 8445: a full ICE agent for one pre-established session. The offerer is controlling (RFC 8445 section 6.1.1);
-// pjnath repairs a role conflict (section 7.3.1.1).
+// a role conflict is repaired (section 7.3.1.1).
 class IceAgent {
 public:
   // RFC 8445 sections 5.1.1.1 and 5.3: gathers a host candidate per component and draws the credentials. Throws when
-  // a port is missing or pjnath fails.
+  // a port is missing.
   IceAgent(bool controlling, IceLocalSockets sockets, IceSender sender);
   ~IceAgent();
   IceAgent(const IceAgent &) = delete;
@@ -82,10 +82,11 @@ public:
   // the agent took it.
   bool receive(IceStream stream, unsigned component, std::span<const std::uint8_t> packet, const std::string &host,
                std::uint16_t port);
-  // The retransmissions and paced checks due by now (pjnath's timers).
+  // The retransmissions, paced checks, nomination and keep-alives due by now; the state's only change point.
   void tick();
 
   [[nodiscard]] IceState state() const noexcept { return state_; }
+
   // RFC 8445 section 8.1.1: the peer address of a component's nominated pair, once its stream completed.
   [[nodiscard]] std::optional<std::pair<std::string, std::uint16_t>> selected(IceStream stream,
                                                                               unsigned component) const;

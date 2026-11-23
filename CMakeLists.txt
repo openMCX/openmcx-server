@@ -215,7 +215,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
             src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp
             src/sip/ims_aka.cpp)
     endif()
-    add_library(mcx_sip src/media/ice.cpp ${MCX_SIP_ENGINE_SOURCES} src/sip_common/sip_common.cpp src/common/runtime.cpp src/common/multicast.cpp src/security/key_client.cpp src/security/xfrm.cpp)
+    add_library(mcx_sip src/media/ice.cpp src/media/stun.cpp ${MCX_SIP_ENGINE_SOURCES} src/sip_common/sip_common.cpp src/common/runtime.cpp src/common/multicast.cpp src/security/key_client.cpp src/security/xfrm.cpp)
     target_link_libraries(mcx_sip PUBLIC mcx_core mcx_keying mcx_ims_aka)
     if(MCX_SIP_STACK STREQUAL "resip")
         target_link_libraries(mcx_sip PRIVATE mcx_resiprocate)
@@ -349,10 +349,26 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         add_test(NAME multicast COMMAND test_multicast)
         # TS 24.380 clauses 8.4 to 8.6, TS 24.581 clauses 9.3 to 9.5, TS 24.379 and TS 24.281 annex F.2: the MBMS and
         # MBS subchannel control messages, the MBMS notifications and the MBMS usage information bodies.
+        # RFC 8445 and RFC 5389: OpenMCX's ICE agent (src/media/ice.cpp) and its STUN messages (src/media/stun.cpp,
+        # with the RFC 5769 test vectors).
+        add_executable(test_stun tests/test_stun.cpp)
+        target_include_directories(test_stun PRIVATE src/media)
+        target_link_libraries(test_stun PRIVATE mcx_sip)
+        add_test(NAME stun COMMAND test_stun)
         add_executable(test_ice tests/test_ice.cpp)
+        target_include_directories(test_ice PRIVATE tests src/media)
         target_link_libraries(test_ice PRIVATE mcx_sip)
         add_test(NAME ice COMMAND test_ice)
         set_tests_properties(ice PROPERTIES TIMEOUT 60)
+        # The agent against the pjnath one it replaced (tests/support/ice_pjnath.cpp), while pjproject is in the
+        # development image (prototype/resiprocate/PLAN.md phase 7 removes both).
+        if(PJ_FOUND)
+            add_executable(test_ice_interop tests/test_ice_interop.cpp tests/support/ice_pjnath.cpp)
+            target_include_directories(test_ice_interop PRIVATE tests)
+            target_link_libraries(test_ice_interop PRIVATE mcx_sip)
+            add_test(NAME ice_interop COMMAND test_ice_interop)
+            set_tests_properties(ice_interop PROPERTIES TIMEOUT 60)
+        endif()
         add_executable(test_mbms tests/test_mbms.cpp)
         target_link_libraries(test_mbms PRIVATE mcx_core)
         add_test(NAME mbms COMMAND test_mbms)

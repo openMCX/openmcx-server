@@ -31,7 +31,7 @@ rolled back until pjproject is removed.
 | 3c | Dialogs | INVITE as caller and callee, answer, re-INVITE and UPDATE, 100rel, session timers, BYE, `dialog_identifiers` | The call scenarios pass | 1 to 2 weeks |
 | 3d | Subscriptions and the rest | subscribe, notify, `subscription_count`, refer, publish | All C++ tests pass on both | 1 week |
 | 4 | One event loop | The engine takes media and floor control sockets into its epoll; the server and client loops drop the 5 ms SIP poll | Wire captures show relay delay near 0.1 ms (today a median of 2.75 ms) | 1 week |
-| 5 | ICE without pjnath | OpenMCX's own ICE agent: host candidates, STUN binding checks, nomination | `test_ice`, `test_ice_sdp` and the pre-established session labs pass | 1 to 2 weeks |
+| 5 | ICE without pjnath (done) | OpenMCX's own ICE agent: host candidates, STUN binding checks, nomination | `test_ice`, `test_ice_sdp` and the pre-established session labs pass | 1 to 2 weeks |
 | 6 | Verification (done) | The full IP regression (no RAN labs) over TCP and TLS on both; the MCPTT, MCData and MCVideo conformance suites; a client on one and a server on the other; a soak run; call setup time and CPU | No new failures compared with pjproject | 2 weeks |
 | 7 | Switch and remove | `resip` the default; pjproject removed from the development images, `dependencies/lock.json`, `dependencies/pjproject` and the NOTICE files of both repositories; the binaries checked for pjsip symbols; the licence scan repeated | No GPL code linked into any OpenMCX program | 1 week |
 
@@ -165,6 +165,29 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
     a, b`, RFC 3261 section 7.3.1). `tests/integration/verify_mcdata_sds.py` now reads list header fields value by
     value; the other wire verifiers may need the same (phase 6).
   - Seen once: `sip_tcp` failed under load during an image build (quiet output, not reproduced in 12 runs since).
+- Phase 5, done (2026-11-23): OpenMCX's own ICE agent (`src/media/ice.cpp`, the interface of `include/mcx/ice.hpp`
+  unchanged) on its own STUN messages (`src/media/stun.cpp`: Binding requests, responses and indications,
+  MESSAGE-INTEGRITY, FINGERPRINT, XOR-MAPPED-ADDRESS); no pjnath in either build.
+  - The agent: host candidates, a check list per stream with the frozen and waiting states, paced and triggered
+    checks, checks received before the peer's description, peer-reflexive local and remote candidates, the role
+    conflict repaired, regular nomination, keep-alives. The timers are pjnath's (Ta 20 ms, an RTO of 100 ms doubling
+    over seven transmissions), so a session behaves as before.
+  - Tests: `test_stun` (the RFC 5769 sample request and response, reproduced byte for byte), `test_ice` (4 cases to 10:
+    early checks, lost datagrams, a peer-reflexive candidate, a nomination never answered, both agents controlled or
+    controlling, the refusals of start), `test_ice_interop` (the agent against the pjnath agent it replaced, kept as a
+    test peer in `tests/support/` until phase 7, both roles and the role conflicts).
+  - Found in the labs: the agent completed inside `receive`, while the server and the client look for the state's
+    change around `tick` (pjnath changed it from its timers); the session stayed "checking". The state now changes in
+    `tick` only (`include/mcx/ice.hpp`), and the test harness fails when `receive` changes it.
+  - Found in review: a nomination check that failed left its pair valid, nominated again without end; a refused
+    `start` left the peer's candidates for the next.
+  - The `pre-established` lab, five runs over TCP and TLS each (40 of 40): the agent on both sides on reSIProcate and
+    on pjsip, and against pjnath across the containers (p6e servers with the p5 client, p5 servers with the p6e
+    client).
+  - ICE time from the client's session request to its ICE outcome: 106 ms with the agent as controlling client (110
+    against pjnath's server), 34 ms with pjnath's client; pjnath on both sides 25 to 29 ms. The difference is the
+    nomination: three USE-CANDIDATE checks paced at Ta after the three first checks, where pjnath sent them at once.
+    A pre-established session is set up ahead of the call, so it does not add to call setup time.
 - Phase 6, done (2026-11-23): the full IP regression (93 labs, TCP and TLS) on both stacks, then the MCPTT, MCData
   and MCVideo conformance suites (openmcx-conformance-tests, the SS emulator in place of the MCx server, the DUT client
   on each engine and nothing else changed). Defects found and fixed, each with a test that fails without the fix:
