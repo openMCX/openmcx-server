@@ -245,7 +245,10 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
   - Found: the CentOS images lacked OpenMCX's LICENSE and NOTICE, the hostap README, and the licences of the libraries
     copied in (OpenH264, freeDiameter, opencore-amrwb, vo-amrwbenc, libidn); all are now copied.
   - Symbols: none of the 8 programs of the 7 Ubuntu images has a pjproject symbol or string; nor the CentOS MCPTT
-    server.
+    server. The dispatcher image (`openmcx-dispatcher:p7` on `openmcx-client:p7`): its Go program is static, with
+    `golang.org/x/net` (BSD-3) its only module, and the engine beside it is the client's; the dispatcher lab on the p7
+    images (DSP-01 to DSP-56: scenario, actions, services, functional alias, store, ad hoc, session and MCData
+    functional alias) passes 77 of 77.
   - Licence scan (`ldd` of each program, the owning package's licence, Ubuntu and CentOS): every shared library is
     LGPL, dual-licensed or permissive; the GCC runtime is GPL with the runtime library exception. Linked statically:
     reSIProcate (VSL, c-ares MIT), libsrtp (BSD), hostap (BSD). Go modules of the user database: BSD-3 and MPL-2.0.
