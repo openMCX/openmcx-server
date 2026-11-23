@@ -255,14 +255,20 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
   - Unit tests: 59 of 59 on `openmcx-dev:0.5`; CentOS 56 of 57.
   - Regression (`p7`, 95 labs): TCP 257 of 257, TLS 174 of 175, the miss `mbs` (client-c and client-d decoded
     different speech).
-  - Open, found in that miss: `mbs` over TLS fails now and then since phase 5. Over all kept runs, images before
-    phase 5 pass 32 of 32 (p6 to p6e, both stacks), those from phase 5 on 15 of 21 (p5 5 of 6, p7 10 of 15),
-    and eight p6e and p7 runs taken in turn give 8 of 8 against 6 of 8. In a miss, a listener on the subchannel
-    joins it after the conversation's first multicast packets were sent: it receives one or two packets fewer, no
-    drop counter moves, and its recording is a 20 ms frame shorter, which the final comparison of client-c's and
-    client-d's speech (warm-up bursts included) catches. The ICE agent is not created in this lab; the client
-    binary changed at phase 5 only by no longer linking pjnath and pjlib. Not yet isolated to the client or the
-    servers (a run of p7 servers with the p6e client would tell).
+  - Open, found in that miss: `mbs` over TLS fails now and then with reSIProcate builds from phase 5 on, and has not
+    failed on pjproject. Runs of the lab (TLS, all kept runs and the isolation runs of 2026-11-23):
+    - pjproject on both sides: 24 of 24 (p6 2, p6e 6, the phase 5 pjsip build 8, main `ef5cd62` with client
+      `b818103` 8).
+    - reSIProcate before phase 5: 14 of 14 on both sides (p6, p6d, p6e), 4 of 4 paired with pjproject.
+    - reSIProcate from phase 5 on: 35 of 45 (p5 5 of 6, p7 17 of 23; p7 servers with the p6e client 7 of 8, p6e
+      servers with the p7 client 6 of 8).
+    At about one miss in four or five, 14 clean runs before phase 5 would come about 1 time in 30, and 24 on
+    pjproject about 1 time in 300: the stack plays a part, phase 5 probably too, and the misses with either side
+    from phase 5 on point to timing rather than one program's change. In a miss, a listener on the subchannel
+    joins it after the conversation's first multicast packets were sent: one or two packets fewer, no drop counter
+    moved, its recording a 20 ms frame shorter, which the final comparison of client-c's and client-d's speech
+    (warm-up bursts included, where the listeners join "while it goes on") catches. The ICE agent is not created in
+    this lab. Next: a capture of the Map Group To Bearer, the join and the first packets, server and listener side.
   - CentOS Stream 10: quay.io no longer served the pinned base image digests (they go when the tags move); pinned
     again in `dependencies/lock.json` and `docker/Dockerfile.centos` (docs/BUILD.md says how). `test_http_crl`
     could not sign its SHA-1 CRL there (the default crypto policy refuses SHA-1 signatures, and verifies none
