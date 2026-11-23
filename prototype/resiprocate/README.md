@@ -106,7 +106,7 @@ TLS 1.2 ECDHE AEAD suites and the profile's groups to every SSL_CTX the stack cr
 The loopback probe (no lab needed):
 
 ```sh
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" -w /workspace openmcx-dev:0.4 bash -lc '
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/workspace" -w /workspace openmcx-dev:0.5 bash -lc '
   dependencies/resiprocate/build.sh /tmp/resiprocate /tmp/resiprocate-build &&
   cmake -S . -B /tmp/build-resip -DCMAKE_PREFIX_PATH=/tmp/resiprocate >/dev/null &&
   cmake --build /tmp/build-resip -j8 --target test_resip_probe && /tmp/build-resip/test_resip_probe'

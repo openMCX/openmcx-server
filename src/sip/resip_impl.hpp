@@ -4,15 +4,15 @@
 
 // The private implementation of mcx::SipEngine (include/mcx/sip.hpp) on reSIProcate 1.14 (prototype/resiprocate/
 // PLAN.md): the stack in one epoll poll group driven from SipEngine::poll, its transports, and a transaction user that
-// turns received requests and responses into the engine's SipMessage and SipResponse. Requests are written as text, as
-// the pjproject engine builds them through pjsip, and parsed into reSIProcate messages; the body filters run before a
+// turns received requests and responses into the engine's SipMessage and SipResponse. Requests are written as text
+// and parsed into reSIProcate messages; the body filters run before a
 // message is handed to the stack, on the next hop's address.
 //
 // The engine core (requests, responses, deferred responses, body filters), registration with digest authentication
 // and IMS AKA (ims_aka.cpp, aka_transports.hpp), and dialogs on the engine's own dialog layer (dialogs.cpp): INVITE
 // sessions and subscriptions (PLAN.md phases 3a to 3d).
 //
-// Private to src/sip_resip/.
+// Private to src/sip/.
 //
 // Specifications: RFC 3261, RFC 2046, RFC 5621, RFC 3329, TS 24.229 V19.7.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19),
 // TS 33.180 V19.4.0 (Rel-19), TS 33.203 V19.1.0 (Rel-19).
@@ -123,7 +123,7 @@ struct SipEngine::Impl {
     std::uint32_t ack_cseq = 0;
     bool provisional_reported = false;
     // UAS: the initial INVITE until its final answer; the application headers of the last provisional answer, which
-    // the final one keeps (as the pjproject engine's INVITE session does) unless it sets them itself.
+    // the final one keeps unless it sets them itself.
     std::unique_ptr<resip::SipMessage> invite_request;
     std::vector<SipHeader> provisional_headers;
     bool final_answer = false;
@@ -151,7 +151,7 @@ struct SipEngine::Impl {
     bool peer_allows_update = false;
   };
 
-  // RFC 3261 section 10.2 (the pjproject engine's pjsip_regc): the digest registration of the identity.
+  // RFC 3261 section 10.2: the digest registration of the identity.
   struct Registration {
     std::string call_id, from_tag;
     unsigned cseq = 0, expires = 0;
@@ -234,7 +234,7 @@ struct SipEngine::Impl {
   void run_stack(unsigned wait_ms);
   // The stack's work due now, without waiting (lifecycle.cpp).
   void drain();
-  // What was just handed to the stack goes to the wire now, as pjsip writes it in the call that sends it: a request
+  // What was just handed to the stack goes to the wire now, in the call that sends it: a request
   // or response leaves before what the application does next (an HTTP GET after the SIP notification that announces
   // it, TS 24.282 clause 10.2.1.2.2). Nothing when called from within the stack's own processing.
   void transmit();

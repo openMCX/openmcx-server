@@ -8,13 +8,6 @@
   },
   "software": [
     {
-      "file": "pjproject-2.17.tar.gz",
-      "url": "https://github.com/pjsip/pjproject/archive/refs/tags/2.17.tar.gz",
-      "sha256": "065fe06c06788d97c35f563796d59f00ce52fe9558a52d7b490a042a966facce",
-      "bytes": 10996639,
-      "use": "image"
-    },
-    {
       "file": "kamailio-6.1.4.tar.gz",
       "url": "https://github.com/kamailio/kamailio/archive/refs/tags/6.1.4.tar.gz",
       "sha256": "d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6",

@@ -17,9 +17,6 @@ ARG DEPS_MIRROR=
 ARG GO_FILE=go1.27.1.linux-amd64.tar.gz
 ARG GO_URL=https://go.dev/dl/go1.27.1.linux-amd64.tar.gz
 ARG GO_SHA256=63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445
-ARG PJSIP_FILE=pjproject-2.17.tar.gz
-ARG PJSIP_URL=https://github.com/pjsip/pjproject/archive/refs/tags/2.17.tar.gz
-ARG PJSIP_SHA256=065fe06c06788d97c35f563796d59f00ce52fe9558a52d7b490a042a966facce
 ARG RESIPROCATE_FILE=resiprocate-openmcx-1.14.0-1.tar.gz
 ARG RESIPROCATE_URL=https://github.com/openMCX/resiprocate/archive/refs/tags/openmcx-1.14.0-1.tar.gz
 ARG RESIPROCATE_SHA256=a04a018a1e6be6321f979b0aa9f3abb9c30daddf7936b5caa853db650a7dc1e8
@@ -31,9 +28,9 @@ ARG LIBSRTP_PATCH_SHA256=965965cd8718165a3617ebaf8e0744d79d9b7d367cf3eff25d5b602
 COPY docker/fetch /usr/local/bin/fetch
 RUN fetch "$GO_FILE" "$GO_URL" "$GO_SHA256" /tmp/go.tar.gz \
     && tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
-ENV PATH="/usr/local/go/bin:/opt/pjsip/bin:${PATH}"
+ENV PATH="/usr/local/go/bin:${PATH}"
 # libsrtp from its pinned source with OpenMCX's patch (dependencies/libsrtp/README.md): the first SRTCP index is zero
-# (RFC 3711 section 3.4). A static library in /usr/local, used by pjproject and the OpenMCX programs; its licence is
+# (RFC 3711 section 3.4). A static library in /usr/local, used by the OpenMCX programs; its licence is
 # kept for the runtime images.
 COPY dependencies/libsrtp/${LIBSRTP_PATCH} /tmp/libsrtp-patches/
 RUN fetch "$LIBSRTP_FILE" "$LIBSRTP_URL" "$LIBSRTP_SHA256" /tmp/libsrtp.tar.gz \
@@ -45,24 +42,8 @@ RUN fetch "$LIBSRTP_FILE" "$LIBSRTP_URL" "$LIBSRTP_SHA256" /tmp/libsrtp.tar.gz \
     && make -j4 && make install \
     && install -D -m 644 LICENSE /usr/local/share/doc/libsrtp/LICENSE \
     && rm -rf /tmp/libsrtp /tmp/libsrtp.tar.gz /tmp/libsrtp-patches
-# OpenMCX's pjproject patches (dependencies/pjproject/README.md): the TCP client port of IMS AKA (TS 33.203 7.1)
-# and TCP for requests pinned to a UDP transport (RFC 3261 18.1.1, TCP next hops).
-COPY dependencies/pjproject/0001-tcp-client-port.patch dependencies/pjproject/0002-udp-to-tcp.patch /tmp/pjproject-patches/
-RUN fetch "$PJSIP_FILE" "$PJSIP_URL" "$PJSIP_SHA256" /tmp/pjproject.tar.gz \
-    && mkdir /tmp/pjproject && tar -xzf /tmp/pjproject.tar.gz -C /tmp/pjproject --strip-components=1 \
-    && cd /tmp/pjproject \
-    && for p in /tmp/pjproject-patches/*.patch; do patch -p1 --forward < "$p" || exit 1; done \
-    && printf '/* SIP over TCP carries access tokens, MIKEY-SAKKE I_MESSAGEs and XML bodies */\n#define PJSIP_MAX_PKT_LEN 16000\n' \
-       > pjlib/include/pj/config_site.h \
-    && ./configure --prefix=/opt/pjsip --disable-video --disable-sound --disable-libyuv \
-       --disable-opencore-amr --disable-speex-aec --disable-gsm-codec --disable-speex-codec \
-       --disable-ilbc-codec --disable-g7221-codec --with-external-srtp CFLAGS='-fPIC' CXXFLAGS='-fPIC' \
-    && grep -q "guid_uuid.o" pjlib/build/os-auto.mak \
-    && make dep && make -j4 && make install \
-    && rm -rf /tmp/pjproject /tmp/pjproject.tar.gz /tmp/pjproject-patches
-ENV PKG_CONFIG_PATH="/opt/pjsip/lib/pkgconfig"
-# reSIProcate from OpenMCX's fork, with its patches (dependencies/resiprocate/README.md), the SIP stack that replaces pjproject
-# (prototype/resiprocate/PLAN.md): static rutil, resip and dum in /opt/resiprocate, found by CMakeLists.txt.
+# reSIProcate from OpenMCX's fork, with its patches (dependencies/resiprocate/README.md), the SIP stack of the SIP
+# engine: static rutil, resip and dum in /opt/resiprocate, found by CMakeLists.txt.
 COPY dependencies/resiprocate/ /tmp/resiprocate/
 RUN mkdir -p /tmp/resiprocate-work \
     && fetch "$RESIPROCATE_FILE" "$RESIPROCATE_URL" "$RESIPROCATE_SHA256" /tmp/resiprocate-work/$RESIPROCATE_FILE \

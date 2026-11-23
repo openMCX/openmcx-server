@@ -6,7 +6,7 @@ Back to the [MCData test index](../MCDATA_TEST.md). The same message over the si
 
 ## How it works
 
-- **MSRP.** The media plane uses MSRP (IETF RFC 4975 with the connection binding of RFC 6135). PJSIP has no MSRP stack, so OpenMCX has its own module covering the subset TS 24.582 uses: SEND and REPORT framing with the seven-hyphen end-line and its continuation flag, chunking and reassembly, and a TCP endpoint driven from the application's poll loop.
+- **MSRP.** The media plane uses MSRP (IETF RFC 4975 with the connection binding of RFC 6135). The SIP stack has no MSRP, so OpenMCX has its own module covering the subset TS 24.582 uses: SEND and REPORT framing with the seven-hyphen end-line and its continuation flag, chunking and reassembly, and a TCP endpoint driven from the application's poll loop.
 - **Who connects.** TS 24.582 §5.1.1 makes the MCData client and the controlling function the MSRP endpoints; a relay appears only when a separate participating function sits between them. Here the participating and controlling functions are collocated, so there is no relay: the server always listens (`a=setup:passive`) and each client connects.
 - **The exchange.** The client offers an `m=message` stream in an INVITE to the MCData PSI, with `a=path`, `a=setup:actpass` and the two MCData types in `a=accept-types`. The server answers 200 with its own passive stream. The client connects, binds the connection with an empty SEND, and sends the SDS SIGNALLING PAYLOAD and DATA PAYLOAD as one `multipart/mixed` body. When the SEND is answered the client releases the SIP session (§6.1.1.2.1).
 - **Delivery.** The server decodes the bodies, offers a second media plane leg to the recipient with the same ICSI, and forwards the bodies unchanged once that connection is bound. Both sessions are released when their purpose is served.
@@ -57,7 +57,7 @@ python3 tools/prepare-prearranged-test.py --directory artifacts/mcdata-media-lab
 C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-mcdata-media -f artifacts/mcdata-media-lab/compose.json"
 $C up -d mcdata-server                      # start the capture before the clients authorise
 docker run -d --rm --name openmcx-mcdata-media-capture --network "container:$($C ps -q mcdata-server)" \
-  --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.4 \
+  --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.5 \
   sh -c "tcpdump -Z root -i eth0 -U --immediate-mode -s 0 -w /tmp/c.pcap tcp"
 $C up -d
 python3 tests/integration/mcdata_media_scenario.py \

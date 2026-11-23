@@ -271,7 +271,7 @@ def start(args, cli):
     with open(pcap, 'wb') as out, open(log, 'wb') as err:
         subprocess.Popen(
             ['docker', 'run', '--rm', '--name', name, '--network', f'container:{server}', '--cap-drop', 'ALL']
-            + ['--cap-add', 'NET_RAW', 'openmcx-dev:0.4', 'tcpdump', '-Z', 'root', '-i', 'eth0', '-U']
+            + ['--cap-add', 'NET_RAW', 'openmcx-dev:0.5', 'tcpdump', '-Z', 'root', '-i', 'eth0', '-U']
             + ['--immediate-mode', '-s', '0', '-w', '-', 'tcp or (udp and not port 53)'],
             stdout=out,
             stderr=err,

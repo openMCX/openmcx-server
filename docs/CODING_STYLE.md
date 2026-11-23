@@ -148,12 +148,12 @@ Formatting changes go in commits of their own, listed in `.git-blame-ignore-revs
 
 ## 7. Tools
 
-All tools run in the `openmcx-lint:0.1` image (`docker/Dockerfile.lint`: the development image plus clang-format
+All tools run in the `openmcx-lint:0.2` image (`docker/Dockerfile.lint`: the development image plus clang-format
 and clang-tidy 23.1, golangci-lint 2.14.0 and ruff 0.16.9, pinned); nothing is installed on the host.
 
 | Command | What it does |
 |---|---|
-| `tools/lint-image` | builds `openmcx-lint:0.1` (needs the golangci-lint and ruff archives in `.cache/deps`) |
+| `tools/lint-image` | builds `openmcx-lint:0.2` (needs the golangci-lint and ruff archives in `.cache/deps`) |
 | `tools/format` | formats C++, Go and Python in place |
 | `tools/format --check` | lists what is not formatted; fails if anything is |
 | `tools/lint [cpp\|go\|py]` | clang-tidy (`.clang-tidy`), golangci-lint (`services/.golangci.yml`), ruff and `tools/check-names.py`; findings in `artifacts/lint/`, counts on the terminal |

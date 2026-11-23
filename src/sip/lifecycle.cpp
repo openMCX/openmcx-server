@@ -2,382 +2,422 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// SIP engine lifecycle over pjsip: construction, start and stop, ACK and reference bookkeeping.
+// SipEngine::Impl on reSIProcate: configuration, start and stop, the transports (TLS with the TLS profile, or debug
+// TCP), the SIP message log of log level debug, and poll, one epoll wait for the stack and the dispatch of what its
+// transaction user received.
 //
-// Specifications: RFC 3261, RFC 3262, RFC 4028, RFC 6665, TS 33.180 V19.4.0 (Rel-19).
+// Specifications: RFC 3261 sections 18 and 26.2, TS 33.180 V19.4.0 (Rel-19) clause 6.1, TS 33.210 V19.3.0 clause 6.2.
+
+#include "resip_impl.hpp"
+#include "tls_security.hpp"
 
 #include "mcx/runtime.hpp"
-#include "mcx/tls_profile.hpp"
-#include "sip_impl.hpp"
+
+#include "resip/stack/Transport.hxx"
+#include "rutil/DataStream.hxx"
+#include "rutil/Log.hxx"
+
+#include <sys/epoll.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <cerrno>
+#include <stdexcept>
 
 namespace mcx {
-
-//------------------------------------------------------------------------------
-// RFC 3261 section 22.2: returns (and forgets) the request token waiting for the digest retry sent in this client
-// transaction, matched by dialog, method and CSeq.
-SipEngine::Impl::RequestToken *SipEngine::Impl::adopt_auth_retry(pjsip_transaction *transaction) {
-  if (transaction->role != PJSIP_ROLE_UAC) return nullptr;
-  auto *dialog = pjsip_tsx_get_dlg(transaction);
-  const auto found = auth_retries.find(dialog);
-  if (found == auth_retries.end()) return nullptr;
-  const auto method = string_from(transaction->method.name);
-  auto &waiting = found->second;
-  for (auto it = waiting.begin(); it != waiting.end(); ++it) {
-    if (it->method != method || it->cseq != static_cast<std::uint32_t>(transaction->cseq)) continue;
-    auto *token = it->token;
-    waiting.erase(it);
-    if (waiting.empty()) auth_retries.erase(found);
-    return token;
-  }
-  return nullptr;
-}
-
-//------------------------------------------------------------------------------
-// RFC 3261 section 13.3.1.4: notes the ACK that confirms a 2xx sent with pending_ack_cseq; never consumes it.
-pj_bool_t SipEngine::Impl::observe_ack(pjsip_rx_data *data) {
-  auto *owner = active.load();
-  if (!owner || data->msg_info.msg->line.req.method.id != PJSIP_ACK_METHOD) return PJ_FALSE;
-  guarded(owner, [&] {
-    auto found = owner->dialogs.find(call_id_from(data->msg_info.msg));
-    if (found != owner->dialogs.end() && found->second->dialog == pjsip_rdata_get_dlg(data) &&
-        found->second->pending_ack_cseq == data->msg_info.cseq->cseq) {
-      found->second->pending_ack_cseq = -1;
-      owner->pending_acks.push_back(found->first);
-    }
-  });
-  return PJ_FALSE;
-}
-
-//------------------------------------------------------------------------------
-// Helper: ends an outgoing dialog whose creation failed part way: its entry goes, then its session (which destroys
-// it once its transactions end), or the dialog itself while it has no session (pjsip_dlg_terminate).
-void SipEngine::Impl::abandon_dialog(pjsip_dialog *dialog, const std::string &id, bool session) noexcept {
-  if (const auto found = dialogs.find(id); found != dialogs.end() && found->second->dialog == dialog)
-    dialogs.erase(found);
-  if (!session) {
-    (void)pjsip_dlg_terminate(dialog);
-    return;
-  }
-  (void)pjsip_dlg_set_mod_data(dialog, module.id, nullptr);
-  (void)pjsip_dlg_dec_session(dialog, &module);
-}
-
-//------------------------------------------------------------------------------
-// Helper: ends an INVITE session whose creation or answer failed part way: its entry goes, an incoming INVITE is
-// answered 500 in its dialog where that is still possible (RFC 3261 section 13.3.1), and the session is terminated
-// without a call-state report (pjsip_inv_terminate), which releases its dialog.
-void SipEngine::Impl::abandon_invite(pjsip_inv_session *invite, const std::string &id,
-                                     pjsip_rx_data *request) noexcept {
-  if (const auto found = dialogs.find(id); found != dialogs.end() && found->second->invite == invite)
-    dialogs.erase(found);
-  invite->mod_data[module.id] = nullptr;
-  if (request != nullptr)
-    (void)pjsip_dlg_respond(invite->dlg, request, PJSIP_SC_INTERNAL_SERVER_ERROR, nullptr, nullptr, nullptr);
-  (void)pjsip_inv_terminate(invite, PJSIP_SC_INTERNAL_SERVER_ERROR, PJ_FALSE);
-}
-
-//------------------------------------------------------------------------------
-// Helper: drops the INVITE session references held while sent BYE transactions ran.
-void SipEngine::Impl::release_bye_references() {
-  auto released = std::move(released_bye_references);
-  released_bye_references.clear();
-  for (auto *invite : released) (void)pjsip_inv_dec_ref(invite);
-}
-
-//------------------------------------------------------------------------------
-// RFC 6665 section 4.1.3: releases the dialogs of subscriptions terminated by a NOTIFY once callback dispatch
-// has finished.
-void SipEngine::Impl::release_pending_subscriptions() {
-  auto pending = std::move(pending_subscription_cleanup);
-  pending_subscription_cleanup.clear();
-  for (const auto &id : pending) {
-    auto found = dialogs.find(id);
-    if (found == dialogs.end() || found->second->invite != nullptr) continue;
-    auto *dialog = found->second->dialog;
-    // Keep the application entry alive until PJSIP callback dispatch and
-    // deferred responses have finished. Transactions retain their own refs.
-    dialog->mod_data[module.id] = nullptr;
-    (void)pjsip_dlg_dec_session(dialog, &module);
-    dialogs.erase(found);
-  }
-}
-
-//------------------------------------------------------------------------------
-// Helper: stores and validates the configuration and callbacks.
-SipEngine::Impl::Impl(SipConfig value, SipCallbacks handlers)
-    : config(std::move(value)), callbacks(std::move(handlers)) {
-  validate_config(config);
-}
-
-//------------------------------------------------------------------------------
-// RFC 3261, RFC 3262 and RFC 4028: starts pjsip (transactions, user agent, INVITE usage, 100rel, session timers),
-// registers the application, body protection (TS 33.180 clause 9.3) and ACK observer modules, and the TLS
-// transport with mutual certificate authentication (TCP only for debug).
-void SipEngine::Impl::start() {
-  if (started) {
-    return;
-  }
-  Impl *expected = nullptr;
-  if (!active.compare_exchange_strong(expected, this)) {
-    throw std::runtime_error("only one SIP engine may run in a process");
-  }
-  try {
-    require_success(pj_init(), "initialize pjlib");
-    pj_initialized = true;
-    unsigned random_seed = 0;
-    if (RAND_bytes(reinterpret_cast<unsigned char *>(&random_seed), sizeof(random_seed)) != 1) {
-      throw std::runtime_error("could not seed PJSIP random generator");
-    }
-    pj_srand(random_seed);
-    pj_log_set_level(3);
-    require_success(pjlib_util_init(), "initialize pjlib-util");
-    pj_caching_pool_init(&cache, &pj_pool_factory_default_policy, 0);
-    cache_initialized = true;
-    require_success(pjsip_endpt_create(&cache.factory, "openmcx", &endpoint), "create PJSIP endpoint");
-    require_success(pjsip_tsx_layer_init_module(endpoint), "initialize PJSIP transactions");
-    require_success(pjsip_ua_init_module(endpoint, nullptr), "initialize PJSIP user agent");
-
-    pjsip_inv_callback invite_callbacks{};
-    invite_callbacks.on_state_changed = &Impl::invite_state_changed;
-    invite_callbacks.on_media_update = &Impl::invite_media_updated;
-    invite_callbacks.on_rx_reinvite = &Impl::receive_reinvite;
-    invite_callbacks.on_rx_offer2 = &Impl::receive_offer;
-    invite_callbacks.on_tsx_state_changed = &Impl::invite_transaction_changed;
-    require_success(pjsip_inv_usage_init(endpoint, &invite_callbacks), "initialize PJSIP INVITE usage");
-    require_success(pjsip_100rel_init_module(endpoint), "initialize PJSIP 100rel support");
-    require_success(pjsip_timer_init_module(endpoint), "initialize PJSIP session timers");
-
-    module.name = pj_view("mod-openmcx");
-    module.id = -1;
-    module.priority = PJSIP_MOD_PRIORITY_APPLICATION;
-    module.on_rx_request = &Impl::receive_request;
-    module.on_tsx_state = &Impl::dialog_transaction_state;
-    require_success(pjsip_endpt_register_module(endpoint, &module), "register OpenMCX SIP module");
-    protection_module.name = pj_view("mod-openmcx-protection");
-    protection_module.id = -1;
-    protection_module.priority = PJSIP_MOD_PRIORITY_TRANSPORT_LAYER + 1;
-    protection_module.on_tx_request = &Impl::protect_outgoing;
-    protection_module.on_tx_response = &Impl::protect_outgoing;
-    require_success(pjsip_endpt_register_module(endpoint, &protection_module), "register body protection");
-    if (!config.access_network_info.empty()) {
-      if (config.access_network_info.find_first_of("\r\n") != std::string::npos)
-        throw std::invalid_argument("invalid P-Access-Network-Info value");
-      access_network_info_module.name = pj_view("mod-openmcx-access-network-info");
-      access_network_info_module.id = -1;
-      // Above the body protection: before the transport layer prints the message.
-      access_network_info_module.priority = PJSIP_MOD_PRIORITY_TRANSPORT_LAYER + 2;
-      access_network_info_module.on_tx_request = &Impl::access_network_info_outgoing;
-      access_network_info_module.on_tx_response = &Impl::access_network_info_outgoing;
-      require_success(pjsip_endpt_register_module(endpoint, &access_network_info_module),
-                      "register P-Access-Network-Info");
-    }
-    ack_module.name = pj_view("mod-openmcx-ack");
-    ack_module.id = -1;
-    ack_module.priority = PJSIP_MOD_PRIORITY_DIALOG_USAGE - 1;
-    ack_module.on_rx_request = &Impl::observe_ack;
-    require_success(pjsip_endpt_register_module(endpoint, &ack_module), "register ACK observer");
-    if (log_level() == LogLevel::debug) {
-      trace_module.name = pj_view("mod-openmcx-trace");
-      trace_module.id = -1;
-      // Below the transport layer: the first to see a received message and the last to see a sent one, after the
-      // body protection.
-      trace_module.priority = PJSIP_MOD_PRIORITY_TRANSPORT_LAYER - 1;
-      trace_module.on_rx_request = &Impl::trace_received;
-      trace_module.on_rx_response = &Impl::trace_received;
-      trace_module.on_tx_request = &Impl::trace_sent;
-      trace_module.on_tx_response = &Impl::trace_sent;
-      require_success(pjsip_endpt_register_module(endpoint, &trace_module), "register SIP message log");
-    }
-
-    pjsip_tls_setting tls{};
-    pjsip_tls_setting_default(&tls);
-    tls.ca_list_file = pj_view(config.tls.ca_file);
-    tls.cert_file = pj_view(config.tls.cert_file);
-    tls.privkey_file = pj_view(config.tls.key_file);
-    tls.verify_server = config.tls.verify_server ? PJ_TRUE : PJ_FALSE;
-    tls.verify_client = PJ_TRUE;
-    tls.require_client_cert = PJ_TRUE;
-    tls.proto = PJ_SSL_SOCK_PROTO_TLS1_2 | PJ_SSL_SOCK_PROTO_TLS1_3;
-    // TS 33.210 clause 6.2 (mcx/tls_profile.hpp): TLS 1.2 only with ECDHE and AEAD (TLS 1.3 keeps the library's
-    // suites); the groups P-256, P-384 and P-521, no ffdhe (pjproject names no x25519).
-    std::array<pj_ssl_cipher, PJ_SSL_SOCK_MAX_CIPHERS> available{};
-    unsigned available_count = available.size();
-    require_success(pj_ssl_cipher_get_availables(available.data(), &available_count), "list the TLS cipher suites");
-    std::vector<pj_ssl_cipher> ciphers;
-    const std::string allowed = std::string(":") + tls_profile::tls12_ciphers + ":";
-    for (unsigned i = 0; i < available_count; ++i) {
-      const char *name = pj_ssl_cipher_name(available[i]);
-      if (name != nullptr && allowed.find(std::string(":") + name + ":") != std::string::npos)
-        ciphers.push_back(available[i]);
-    }
-    if (ciphers.empty()) throw std::runtime_error("no TLS 1.2 cipher suite of the TS 33.210 profile available");
-    tls.ciphers = ciphers.data();
-    tls.ciphers_num = static_cast<unsigned>(ciphers.size());
-    std::array<pj_ssl_curve, 3> curves{PJ_TLS_CURVE_SECP256R1, PJ_TLS_CURVE_SECP384R1, PJ_TLS_CURVE_SECP521R1};
-    tls.curves = curves.data();
-    tls.curves_num = static_cast<unsigned>(curves.size());
-
-    pj_sockaddr local{};
-    auto listen = pj_view(config.listen_address);
-    require_success(pj_sockaddr_init(pj_AF_INET(), &local, &listen, config.listen_port), "parse SIP listen address");
-    pjsip_host_port advertised{};
-    advertised.host = pj_view(config.advertise_address);
-    advertised.port = config.listen_port;
-    if (config.aka.enabled) {
-      // TS 33.203 clause 7: IMS AKA, its TCP transports and security associations (ims_aka.cpp).
-      aka_start(local, advertised);
-    } else if (config.tls.enabled) {
-      require_success(pjsip_tls_transport_start2(endpoint, &tls, &local, &advertised, 1, &tls_factory),
-                      "start SIP TLS transport");
-    } else {
-      require_success(pjsip_tcp_transport_start2(endpoint, &local.ipv4, &advertised, 1, &tls_factory),
-                      "start debug SIP TCP transport");
-    }
-    started = true;
-  } catch (...) {
-    stop();
-    throw;
-  }
-}
-
-//------------------------------------------------------------------------------
-// Helper: releases the IMS AKA state, pending responses, the registration and the dialogs, then destroys the
-// endpoint, pool cache and pjlib; safe after a partial start.
-void SipEngine::Impl::stop() noexcept {
-  // The IMS AKA security associations, their connections and timers go first, while the endpoint exists.
-  aka_stop();
-  for (const auto &response : pending_responses) {
-    if (response.data != nullptr) {
-      pjsip_tx_data_dec_ref(response.data);
-    }
-  }
-  pending_responses.clear();
-
-  // Requests waiting for the application's answer: the SUBSCRIBE copies, the prepared responses and the references
-  // that kept their transactions.
-  for (auto &[id, deferred] : deferred_responses) {
-    (void)id;
-    if (deferred.subscribe != nullptr) (void)pjsip_rx_data_free_cloned(deferred.subscribe);
-    if (deferred.data != nullptr) (void)pjsip_tx_data_dec_ref(deferred.data);
-    if (!deferred.reinvite && deferred.subscribe == nullptr && deferred.transaction != nullptr)
-      (void)pj_grp_lock_dec_ref(deferred.transaction->grp_lock);
-  }
-  deferred_responses.clear();
-
-  // The tokens of digest retries the INVITE session layer sent and whose answers never came.
-  for (auto &[dialog, retries] : auth_retries) {
-    (void)dialog;
-    for (const auto &retry : retries) destroy_token(retry.token);
-  }
-  auth_retries.clear();
-
-  // The INVITE sessions kept while our BYEs ran.
-  for (auto *invite : bye_references) (void)pjsip_inv_dec_ref(invite);
-  bye_references.clear();
-  release_bye_references();
-  pending_acks.clear();
-  pending_subscription_cleanup.clear();
-  if (registration != nullptr) {
-    (void)pjsip_regc_destroy(registration);
-    registration = nullptr;
-  }
-  for (auto &[id, entry] : dialogs) {
-    (void)id;
-    if (entry->invite != nullptr && module.id >= 0) {
-      entry->invite->mod_data[module.id] = nullptr;
-    } else if (entry->dialog != nullptr && module.id >= 0) {
-      (void)pjsip_dlg_set_mod_data(entry->dialog, module.id, nullptr);
-      (void)pjsip_dlg_dec_session(entry->dialog, &module);
-    }
-  }
-  dialogs.clear();
-  if (endpoint != nullptr) {
-    pjsip_endpt_destroy(endpoint);
-    endpoint = nullptr;
-  }
-  if (cache_initialized) {
-    pj_caching_pool_destroy(&cache);
-    cache_initialized = false;
-  }
-  if (pj_initialized) {
-    pj_shutdown();
-    pj_initialized = false;
-  }
-  started = false;
-  Impl *expected = this;
-  (void)active.compare_exchange_strong(expected, nullptr);
-}
-
-//------------------------------------------------------------------------------
-// Helper: throws std::logic_error when the engine is not started.
-void SipEngine::Impl::ensure_started() const {
-  if (!started || endpoint == nullptr) {
-    throw std::logic_error("SIP engine is not started");
-  }
-}
-
 namespace {
-//------------------------------------------------------------------------------
-// Helper: the text of a URI in a header, for the SIP message log.
-std::string trace_uri(pjsip_uri_context_e context, const pjsip_uri *uri) {
-  if (!uri) return {};
-  char text[512];
-  const int length = pjsip_uri_print(context, uri, text, sizeof(text));
-  return length > 0 ? std::string(text, static_cast<std::size_t>(length)) : std::string{};
-}
 
 //------------------------------------------------------------------------------
 // Helper: what a SIP message is, for the log: the method and Request-URI, or the status.
-std::string trace_what(const pjsip_msg *message) {
-  if (message->type == PJSIP_REQUEST_MSG)
-    return std::string(message->line.req.method.name.ptr, message->line.req.method.name.slen) + " " +
-           trace_uri(PJSIP_URI_IN_REQ_URI, message->line.req.uri);
-  return std::to_string(message->line.status.code);
+std::string trace_what(const resip::SipMessage &message) {
+  if (message.isRequest()) {
+    return std::string(message.methodStr().c_str()) + " " +
+           resip::Data::from(message.const_header(resip::h_RequestLine).uri()).c_str();
+  }
+  return std::to_string(message.const_header(resip::h_StatusLine).responseCode());
 }
 
 //------------------------------------------------------------------------------
 // Helper: the dialog fields of a SIP message for the log, " | " separated: From, To, Call-ID and CSeq; never the body
 // (it may carry keys and access tokens).
-std::string trace_fields(const pjsip_msg *message) {
+std::string trace_fields(const resip::SipMessage &message) {
   std::string out;
-  if (auto *from = static_cast<const pjsip_fromto_hdr *>(pjsip_msg_find_hdr(message, PJSIP_H_FROM, nullptr)))
-    out += " | from <" + trace_uri(PJSIP_URI_IN_FROMTO_HDR, from->uri) + ">";
-  if (auto *to = static_cast<const pjsip_fromto_hdr *>(pjsip_msg_find_hdr(message, PJSIP_H_TO, nullptr)))
-    out += " | to <" + trace_uri(PJSIP_URI_IN_FROMTO_HDR, to->uri) + ">";
-  if (auto *cid = static_cast<const pjsip_cid_hdr *>(pjsip_msg_find_hdr(message, PJSIP_H_CALL_ID, nullptr)))
-    out += " | call-id " + std::string(cid->id.ptr, cid->id.slen);
-  if (auto *cseq = static_cast<const pjsip_cseq_hdr *>(pjsip_msg_find_hdr(message, PJSIP_H_CSEQ, nullptr)))
-    out += " | cseq " + std::to_string(cseq->cseq) + " " + std::string(cseq->method.name.ptr, cseq->method.name.slen);
+  if (message.exists(resip::h_From))
+    out += std::string(" | from <") + resip::Data::from(message.const_header(resip::h_From).uri()).c_str() + ">";
+  if (message.exists(resip::h_To))
+    out += std::string(" | to <") + resip::Data::from(message.const_header(resip::h_To).uri()).c_str() + ">";
+  if (message.exists(resip::h_CallId))
+    out += std::string(" | call-id ") + message.const_header(resip::h_CallId).value().c_str();
+  if (message.exists(resip::h_CSeq)) {
+    const auto &cseq = message.const_header(resip::h_CSeq);
+    const auto &method =
+        cseq.method() == resip::UNKNOWN ? cseq.unknownMethodName() : resip::getMethodName(cseq.method());
+    out += " | cseq " + std::to_string(cseq.sequence()) + " " + method.c_str();
+  }
   return out;
 }
+
+//------------------------------------------------------------------------------
+// Helper: the peer's address and the transport of a message, and its size as encoded.
+std::string trace_peer(const resip::Tuple &peer, const resip::SipMessage &message) {
+  resip::Data encoded;
+  {
+    resip::DataStream stream(encoded);
+    message.encode(stream);
+  }
+  return std::string(" | ") + resip::Tuple::inet_ntop(peer).c_str() + ":" + std::to_string(peer.getPort()) + " " +
+         resip::toData(peer.getType()).c_str() + " | " + std::to_string(encoded.size()) + " bytes";
+}
+
+//------------------------------------------------------------------------------
+// The SIP message log (log level debug), on every transport of the stack: a line on stderr per message received
+// (before the transaction layer) and sent (after the body protection), without its body:
+// "SIP <- INVITE sip:... | from <...> | to <...> | call-id ... | cseq 2 INVITE | 172.31.19.10:5061 TLS | 2310 bytes".
+// Retransmissions of the transaction layer are not logged.
+class SipTrace : public resip::Transport::SipMessageLoggingHandler {
+public:
+  void outboundMessage(const resip::Tuple &, const resip::Tuple &destination,
+                       const resip::SipMessage &message) override {
+    try {
+      debug_line("SIP -> " + trace_what(message) + trace_fields(message) + trace_peer(destination, message));
+    } catch (...) {
+      // the log never stops a message
+    }
+  }
+
+  void inboundMessage(const resip::Tuple &source, const resip::Tuple &, const resip::SipMessage &message) override {
+    try {
+      debug_line("SIP <- " + trace_what(message) + trace_fields(message) + trace_peer(source, message));
+    } catch (...) {
+      // the log never stops a message
+    }
+  }
+};
+
 } // namespace
 
 //------------------------------------------------------------------------------
-// The SIP message log (log level debug): a received message, before any module handles it, as a line on stderr:
-// "SIP <- INVITE sip:... | from <...> | to <...> | call-id ... | cseq 2 INVITE | 172.31.19.10:5061 TLS | 2310 bytes".
-pj_bool_t SipEngine::Impl::trace_received(pjsip_rx_data *data) {
-  try {
-    const auto *message = data->msg_info.msg;
-    debug_line("SIP <- " + trace_what(message) + trace_fields(message) + " | " + std::string(data->pkt_info.src_name) +
-               ":" + std::to_string(data->pkt_info.src_port) + " " +
-               (data->tp_info.transport ? data->tp_info.transport->type_name : "") + " | " +
-               std::to_string(data->msg_info.len) + " bytes");
-  } catch (const std::exception &) {}
-  return PJ_FALSE;
+// The transaction user's name in reSIProcate's log.
+const resip::Data &ResipUser::name() const {
+  static const resip::Data user_name("openmcx-sip-engine");
+  return user_name;
 }
 
 //------------------------------------------------------------------------------
-// The SIP message log: a message about to be sent, after the body protection:
-// "SIP -> 100 | from <...> | to <...> | call-id ... | cseq 2 INVITE | 172.31.19.10:5061 TLS | 412 bytes".
-pj_status_t SipEngine::Impl::trace_sent(pjsip_tx_data *data) {
+// The next SIP message of the queue (other messages, such as transaction terminations, are dropped).
+std::unique_ptr<resip::SipMessage> ResipUser::next() {
+  while (mFifo.messageAvailable()) {
+    std::unique_ptr<resip::Message> message(mFifo.getNext());
+    if (auto *sip = dynamic_cast<resip::SipMessage *>(message.get())) {
+      message.release();
+      return std::unique_ptr<resip::SipMessage>(sip);
+    }
+  }
+  return nullptr;
+}
+
+//------------------------------------------------------------------------------
+// Helper: stores and validates the configuration and callbacks (the checks of src/sip_common).
+SipEngine::Impl::Impl(SipConfig value, SipCallbacks handlers)
+    : config(std::move(value)), callbacks(std::move(handlers)) {
+  sip_detail::validate_config(config);
+}
+
+SipEngine::Impl::~Impl() { stop(); }
+
+//------------------------------------------------------------------------------
+// RFC 3261 section 18 and TS 33.180 clause 6.1: starts the stack in its own epoll poll group with the TLS transport
+// (the TLS profile, a client certificate required, the server's verified against the CA) or the debug TCP transport,
+// on the listen address and port.
+void SipEngine::Impl::start() {
+  if (started) return;
+  static const bool logging = [] {
+    resip::Log::initialize(resip::Log::Cerr, resip::Log::Err, "openmcx");
+    return true;
+  }();
+  (void)logging;
+  poll_group.reset(resip::FdPollGrp::create("epoll"));
+  resip::SipStackOptions options;
+  options.mPollGrp = poll_group.get();
+  if (config.tls.enabled) {
+    auto security = std::make_unique<resip_engine::ProfileSecurity>();
+    security->addCAFile(resip::Data(config.tls.ca_file));
+    options.mSecurity = security.release(); // owned by the stack
+  }
+  stack = std::make_unique<resip::SipStack>(options);
+  // Before any transport is added: the stack hands the log to each, the IMS AKA ones included (ims_aka.cpp).
+  if (log_level() == LogLevel::debug) stack->setTransportSipMessageLoggingHandler(std::make_shared<SipTrace>());
+  // PLAN.md phase 4: the set of the application's sockets, waited on with the stack's.
+  wake_epoll = ::epoll_create1(EPOLL_CLOEXEC);
+  if (wake_epoll < 0) throw std::runtime_error("cannot create the SIP engine's wake set");
+  wake_handle = poll_group->addPollItem(wake_epoll, FPEM_Read, &wake_item);
+  const resip::Data interface(config.listen_address);
+  if (config.aka.enabled) {
+    // TS 33.203 clause 7: IMS AKA, its transports and security associations (ims_aka.cpp).
+    try {
+      aka_start();
+    } catch (...) {
+      aka_stop();
+      stack.reset();
+      poll_group.reset();
+      throw;
+    }
+  } else if (config.tls.enabled) {
+    stack->addTransport(resip::TLS, config.listen_port, resip::V4, resip::StunDisabled, interface,
+                        resip::Data(config.advertise_address), resip::Data::Empty, resip::SecurityTypes::SSLv23, 0,
+                        resip::Data(config.tls.cert_file), resip::Data(config.tls.key_file),
+                        resip::SecurityTypes::Mandatory);
+  } else {
+    stack->addTransport(resip::TCP, config.listen_port, resip::V4, resip::StunDisabled, interface);
+  }
+  stack->registerTransactionUser(user);
+  started = true;
+}
+
+//------------------------------------------------------------------------------
+// Stops the stack: its transactions and connections go with it; requests still pending get no response.
+void SipEngine::Impl::stop() noexcept {
+  if (!started) return;
+  // What was handed to the stack last (a final answer just before stop) is written first: the
+  // stack sends from its own processing.
   try {
-    std::string size;
-    if (data->buf.cur > data->buf.start) size = " | " + std::to_string(data->buf.cur - data->buf.start) + " bytes";
-    debug_line("SIP -> " + trace_what(data->msg) + trace_fields(data->msg) + " | " +
-               std::string(data->tp_info.dst_name) + ":" + std::to_string(data->tp_info.dst_port) + " " +
-               (data->tp_info.transport ? data->tp_info.transport->type_name : "") + size);
-  } catch (const std::exception &) {}
-  return PJ_SUCCESS;
+    for (int round = 0; round < 10; ++round) stack->process(10);
+  } catch (...) {
+    // Stopping goes on regardless.
+  }
+  // The IMS AKA security associations go first, while the stack and its transports exist.
+  aka_stop();
+  try {
+    stack->unregisterTransactionUser(user);
+  } catch (...) {
+    // Nothing is left to tell: the stack goes.
+  }
+  stack.reset();
+  if (wake_handle != nullptr) poll_group->delPollItem(wake_handle);
+  wake_handle = nullptr;
+  if (wake_epoll >= 0) ::close(wake_epoll);
+  wake_epoll = -1;
+  wake_sockets.clear();
+  poll_group.reset();
+  pending.clear();
+  deferred.clear();
+  registration.reset();
+  ending_flow.reset();
+  dialogs.clear();
+  timers.clear();
+  transactions.clear();
+  started = false;
+}
+
+//------------------------------------------------------------------------------
+// Throws std::logic_error unless the engine is started.
+void SipEngine::Impl::ensure_started() const {
+  if (!started || !stack) throw std::logic_error("SIP engine is not started");
+}
+
+//------------------------------------------------------------------------------
+// One wait of at most the timeout for the stack's sockets and timers (a signal ends it early), then every request
+// and response its transaction user received.
+// reSIProcate's SipStack::process(timeout) runs the transaction layer and then waits, and its wait does not count the
+// messages a transaction user has queued: a message the stack had read reaches this engine's queue at the start of a
+// process whose wait then still runs its full length before the application sees the message (an answer to an
+// INVITE a poll timeout after its 100). So the stack first runs without waiting while it has work due now (drain),
+// the wait is left out when the queue then holds a message, the stack drains again over what the wait read, and
+// once more after the application's callbacks and the timers, for what they sent.
+void SipEngine::Impl::poll(std::chrono::milliseconds timeout) {
+  ensure_started();
+  if (timeout.count() < 0) throw std::invalid_argument("invalid SIP poll timeout");
+  // The wait ends at the engine's next timer at the latest (the stack bounds it by its own).
+  auto wait = timeout;
+  const auto now = Clock::now();
+  for (const auto &[timer, due] : timers) {
+    (void)timer;
+    const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(due - now);
+    wait = std::min(wait, std::max(left, std::chrono::milliseconds(0)));
+  }
+  drain();
+  if (!user.pending()) {
+    run_stack(static_cast<unsigned>(wait.count()));
+    drain();
+  }
+  while (auto message = user.next()) {
+    // The message in hand, named in what is reported meanwhile (report_error).
+    handling = message->isRequest()
+                   ? std::string(message->methodStr().c_str())
+                   : std::to_string(message->header(resip::h_StatusLine).statusCode()) + " to " +
+                         std::string(resip::getMethodName(message->header(resip::h_CSeq).method()).c_str());
+    handling += " of " + std::string(message->header(resip::h_CallId).value().c_str());
+    try {
+      if (message->isRequest())
+        receive_request(*message);
+      else
+        receive_response(*message);
+    } catch (const std::exception &error) {
+      report_error(error.what());
+    }
+    handling.clear();
+  }
+  // The timers due now, each once.
+  std::vector<TimerKey> due;
+  for (const auto &[timer, at] : timers)
+    if (at <= Clock::now()) due.push_back(timer);
+  for (const auto &timer : due) {
+    timers.erase(timer);
+    try {
+      fire(timer.first, timer.second);
+    } catch (const std::exception &error) {
+      report_error(error.what());
+    } catch (...) {
+      report_error("unknown SIP timer error");
+    }
+  }
+  // What the callbacks and timers sent leaves now, not at the start of the next poll (transmit sends most at once).
+  drain();
+}
+
+//------------------------------------------------------------------------------
+void SipEngine::Impl::run_stack(unsigned wait_ms) {
+  struct Running {
+    bool &flag;
+    explicit Running(bool &value) : flag(value) { flag = true; }
+    ~Running() { flag = false; }
+  } running(stack_running);
+  stack->process(wait_ms);
+}
+
+//------------------------------------------------------------------------------
+// A message passes the transaction layer, the target's resolution and the transport's queue, one process each: the
+// stack runs without waiting while it has work due now (getTimeTillNextProcessMS 0), a few rounds at most.
+void SipEngine::Impl::drain() {
+  for (int round = 0; round < 8; ++round) {
+    run_stack(0);
+    if (stack->getTimeTillNextProcessMS() != 0) break;
+  }
+}
+
+//------------------------------------------------------------------------------
+void SipEngine::Impl::transmit() {
+  if (!stack_running && stack) drain();
+}
+
+//------------------------------------------------------------------------------
+// PLAN.md phase 4: the wake set becomes the given sockets: new ones (or a descriptor now naming another socket) are
+// added, readable level-triggered; those no longer given are removed (an error for one that was closed meanwhile, and
+// so already left the set, is ignored).
+void SipEngine::Impl::watch(std::span<const int> sockets) {
+  ensure_started();
+  std::map<int, unsigned long> wanted;
+  for (const int fd : sockets) {
+    struct stat status {};
+    if (fd >= 0 && ::fstat(fd, &status) == 0) wanted[fd] = static_cast<unsigned long>(status.st_ino);
+  }
+  for (auto known = wake_sockets.begin(); known != wake_sockets.end();) {
+    const auto found = wanted.find(known->first);
+    if (found != wanted.end() && found->second == known->second) {
+      ++known;
+      continue;
+    }
+    (void)::epoll_ctl(wake_epoll, EPOLL_CTL_DEL, known->first, nullptr);
+    known = wake_sockets.erase(known);
+  }
+  for (const auto &[fd, inode] : wanted) {
+    if (wake_sockets.contains(fd)) continue;
+    epoll_event event{};
+    event.events = EPOLLIN;
+    event.data.fd = fd;
+    if (::epoll_ctl(wake_epoll, EPOLL_CTL_ADD, fd, &event) != 0 && errno == EEXIST)
+      (void)::epoll_ctl(wake_epoll, EPOLL_CTL_MOD, fd, &event);
+    wake_sockets[fd] = inode;
+  }
+}
+
+//------------------------------------------------------------------------------
+// Helper: (re)starts one of the engine's timers.
+void SipEngine::Impl::schedule(Timer timer, std::chrono::milliseconds delay, const std::string &key) {
+  timers[{timer, key}] = Clock::now() + delay;
+}
+
+//------------------------------------------------------------------------------
+// Helper: stops one of the engine's timers.
+void SipEngine::Impl::cancel(Timer timer, const std::string &key) noexcept { timers.erase({timer, key}); }
+
+//------------------------------------------------------------------------------
+// The engine's timers: the refresh of a digest registration (RFC 3261 section 10.2.1), the end of a registration's
+// connection (registration_ended), and the IMS AKA timers: the refresh (TS 24.229 clause 5.1.1.4.1), the end of the
+// temporary set (reg-await-auth, clause 5.1.1.5.1), the end of the old set (TS 33.203 clause 7.4.1a) and the end of
+// the set in use at its lifetime ("The UE shall delete any SA whose lifetime is exceeded").
+void SipEngine::Impl::fire(Timer timer, const std::string &key) {
+  switch (timer) {
+  case Timer::registration_refresh:
+    if (registration && registration->expires != 0) register_digest(registration->expires, {}, {}, registration->handler);
+    break;
+  case Timer::flow_end:
+    end_registration();
+    break;
+  case Timer::aka_refresh:
+    if (aka && !aka->busy && aka->current) aka_register(aka->expires, {}, {}, aka->handler);
+    break;
+  case Timer::aka_pending:
+    if (aka) aka_delete(aka->pending);
+    break;
+  case Timer::aka_old:
+    if (aka) aka_old_check();
+    break;
+  case Timer::aka_expiry:
+    if (aka) {
+      aka_delete(aka->old);
+      aka_delete(aka->current);
+      aka_use(nullptr);
+      report_error("IMS AKA: the security associations expired; the registration has ended");
+    }
+    break;
+  case Timer::answer_retransmit:
+    if (const auto found = dialogs.find(key); found != dialogs.end() && !found->second->answer_text.empty()) {
+      auto &dialog = *found->second;
+      // RFC 3261 section 13.3.1.4: the 2xx again, the interval doubling up to T2 (4 s).
+      const resip::Data wire(dialog.answer_text);
+      if (std::unique_ptr<resip::SipMessage> again(resip::SipMessage::make(wire, false)); again)
+        stack->send(std::move(again), &user);
+      dialog.answer_interval = std::min(dialog.answer_interval * 2, std::chrono::milliseconds(4000));
+      schedule(Timer::answer_retransmit, dialog.answer_interval, key);
+    }
+    break;
+  case Timer::answer_timeout:
+    // RFC 3261 section 13.3.1.4: no ACK within 64*T1: the session ends with BYE.
+    if (const auto found = dialogs.find(key); found != dialogs.end() && found->second->pending_ack_cseq) {
+      report_error("SIP: no ACK for the 2xx of dialog " + key + " (RFC 3261 section 13.3.1.4)");
+      found->second->answer_text.clear();
+      cancel(Timer::answer_retransmit, key);
+      found->second->pending_ack_cseq.reset();
+      end_dialog(key, {}, {}, {});
+    }
+    break;
+  case Timer::session_refresh:
+    refresh_session(key);
+    break;
+  case Timer::session_expiry:
+    // RFC 4028 section 10: the session was not refreshed in time: this side ends it with BYE.
+    if (dialogs.contains(key)) {
+      report_error("SIP: session of dialog " + key + " expired without refresh (RFC 4028 section 10)");
+      end_dialog(key, {}, {}, {});
+    }
+    break;
+  }
+}
+
+//------------------------------------------------------------------------------
+// Helper: passes an error text to the application's error callback, ignoring its exceptions.
+void SipEngine::Impl::report_error(std::string_view error) const noexcept {
+  if (!callbacks.on_error) return;
+  try {
+    if (handling.empty())
+      callbacks.on_error(error);
+    else
+      callbacks.on_error(std::string(error) + " (handling " + handling + ")");
+  } catch (...) {
+    // The application's error callback failed: nothing more can be reported.
+  }
 }
 
 } // namespace mcx

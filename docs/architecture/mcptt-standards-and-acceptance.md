@@ -71,7 +71,7 @@ conformance list. The versions of the specifications are in [SPECS.md](../SPECS.
 | Floor (FLOOR-01, FLOOR-02) | Literal RTCP APP fixtures, one talker, acknowledgement and retry timers, T3 grace, queueing, confirmation and priority pre-emption | Exhaustive TS 24.380 conformance and an independent peer |
 | Speech (MEDIA-01, MEDIA-02) | Native AMR-WB modes 0–8, bandwidth-efficient and octet-aligned payloads, RTP and decoded WAV | A production jitter, loss and reordering scheduler; bundling and interleaving; complete RTCP reporting |
 | Security (SEC-01) | HTTPS and mutual TLS SIP; KMS identity provisioning, ECCSI/SAKKE MIKEY, GKTP, AES-GCM SRTP and SRTCP; SPKs between servers; MCPTT XML confidentiality and xmldsig integrity under the CSK or SPK (TS 24.379 §6.6.2, §6.6.3; [XML protection tests](../../tests/mcptt/XML_PROTECTION_TEST.md)) | A qualified Gm security profile; interoperability of the E.6 wire profile with an independent peer; every optional protection profile |
-| Deployment (OPS-01) | Pinned PJSIP, Kamailio and Go sources, generated run-time configuration, separate service containers, readiness checks | Qualification beyond the tested Linux and Docker lab |
+| Deployment (OPS-01) | Pinned reSIProcate, Kamailio and Go sources, generated run-time configuration, separate service containers, readiness checks | Qualification beyond the tested Linux and Docker lab |
 
 The default lab uses clear media. The protected fixtures use an explicitly configured E.6 numeric wire profile and
 fail closed on missing keys; the KMS serves authenticated provisioning requests and reports ready only once its

@@ -69,14 +69,14 @@ Values not assigned by the specifications:
 ## Run a separate lab
 
 ```bash
-docker build -t openmcx-dev:0.4 -f docker/Dockerfile.dev .   # pjsip with PJSIP_MAX_PKT_LEN 16000
+docker build -t openmcx-dev:0.5 -f docker/Dockerfile.dev .
 docker build -t openmcx:<tag> -f docker/Dockerfile .
 python3 tools/prepare-prearranged-test.py --directory artifacts/dpp-lab --project openmcx-dpp \
   --debug-sip --private-call --mcdata --protected --key-parameters-iei 0x79 --image openmcx:<tag>
 C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-dpp -f artifacts/dpp-lab/compose.json"
 $C up -d --wait mcdata-server
 docker run -d --rm --name openmcx-dpp-capture --network "container:$($C ps -q mcdata-server)" \
-  --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.4 tcpdump -Z root -i eth0 -U --immediate-mode -s 0 -w /tmp/c.pcap tcp   # SIP and MSRP
+  --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.5 tcpdump -Z root -i eth0 -U --immediate-mode -s 0 -w /tmp/c.pcap tcp   # SIP and MSRP
 $C up -d --wait
 python3 tests/integration/mcdata_protected_scenario.py \
   --compose artifacts/dpp-lab/compose.json --artifacts artifacts/dpp-lab/artifacts --project openmcx-dpp
@@ -160,7 +160,7 @@ The media plane and FD scenarios were not run with payload protection. Many of t
 
 The same scenarios run clear in the `mcdata` and `mcdata-ipconn` labs.
 
-The image build also raises pjsip's `PJSIP_MAX_PKT_LEN` from 4000 to 16000. A service authorisation PUBLISH carrying the access token, the CSK I_MESSAGE and the XML bodies exceeded 4000 octets once the token carried the MCData key management scope. The long identities of client-c and client-d crossed the limit first, and the send failed with `PJSIP_EMSGTOOLONG`.
+A service authorisation PUBLISH carrying the access token, the CSK I_MESSAGE and the XML bodies exceeds 4000 octets once the token carries the MCData key management scope (the long identities of client-c and client-d first). The SIP engine sends such messages over TCP (RFC 3261 section 18.1.1), where reSIProcate sets no limit of that size.
 
 ## Coverage gaps
 

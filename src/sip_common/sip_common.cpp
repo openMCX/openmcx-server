@@ -2,8 +2,7 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// The SIP engine's stack-independent helpers, shared by its pjproject implementation (src/sip/) and its reSIProcate
-// one (src/sip_resip/): ASCII header name comparison, SIP identities, the configuration checks, the Contact target and
+// The SIP engine's stack-independent helpers (the engine is in src/sip/): ASCII header name comparison, SIP identities, the configuration checks, the Contact target and
 // service feature tags, the SDP origin of a dialog, and get_header.
 //
 // Specifications: RFC 3261, RFC 3264, RFC 3840, RFC 4028, RFC 4566, RFC 5626, TS 24.229 V19.7.0 (Rel-19),
@@ -28,7 +27,7 @@ namespace sip_detail {
 namespace {
 //------------------------------------------------------------------------------
 // RFC 4566 section 5.2: the <sess-id> of the "o=" line is unique for each new session description (an NTP-like
-// number, then counted up); pjmedia keeps a dialog's origin in its later offers and answers (RFC 3264 section 8).
+// number, then counted up); a dialog keeps its origin in its later offers and answers (RFC 3264 section 8).
 // TS 37.579-2 table 6.2.23.3.3-6: the answer of a call replacing a pre-established session has another sess-id.
 std::uint64_t next_sdp_session_id() {
   static std::atomic<std::uint64_t> next{static_cast<std::uint64_t>(std::time(nullptr))};

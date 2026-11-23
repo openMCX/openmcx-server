@@ -2,286 +2,276 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// SIP messages: contacts, bodies and their protection hooks, conversion of pjsip messages to the engine's types.
+// SipEngine::Impl on reSIProcate: received requests and responses as the application sees them (SipMessage,
+// SipResponse), the body filters of application signalling protection, and the header and address helpers.
 //
-// Specifications: RFC 3261, RFC 3840, RFC 4579, RFC 5621, RFC 2046, RFC 2392, TS 24.379 V19.7.0 (Rel-19),
-// TS 24.281 V19.6.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), TS 24.229.
+// Specifications: RFC 3261 sections 7, 8.1.1.8, 8.1.2 and 20, RFC 2046 section 5.1, RFC 5621, TS 33.180 V19.4.0
+// (Rel-19) clause 9.3, TS 24.379 V19.7.0 (Rel-19) clause 6.6.
 
-#include "sip_impl.hpp"
+#include "resip_impl.hpp"
+
+#include "resip/stack/Uri.hxx"
+
+#include <arpa/inet.h>
+#include <netdb.h>
+
+#include <stdexcept>
 
 namespace mcx {
+namespace resip_engine {
 
 //------------------------------------------------------------------------------
-// SipConfig::access_network_info: the P-Access-Network-Info header field of a message about to be sent (TS 24.229
-// clause 5.1.2A.1.1: not in CANCEL requests or their responses; optional in ACK, left out). False when there is none
-// to add or the message has it already (a retransmission, or added before the send).
-bool SipEngine::Impl::add_access_network_info(pjsip_tx_data *data) const {
-  const auto &value = config.access_network_info;
-  if (value.empty() || data == nullptr || data->msg == nullptr) return false;
-  const auto *message = data->msg;
-  if (message->type == PJSIP_REQUEST_MSG) {
-    const auto method = message->line.req.method.id;
-    if (method == PJSIP_CANCEL_METHOD || method == PJSIP_ACK_METHOD) return false;
-  } else {
-    const auto *cseq = static_cast<const pjsip_cseq_hdr *>(pjsip_msg_find_hdr(message, PJSIP_H_CSEQ, nullptr));
-    if (cseq == nullptr || cseq->method.id == PJSIP_CANCEL_METHOD) return false;
-  }
-  static const pj_str_t name = pj_str(const_cast<char *>("P-Access-Network-Info"));
-  if (pjsip_msg_find_hdr_by_name(message, &name, nullptr) != nullptr) return false;
-  pj_str_t text{};
-  pj_strdup2_with_null(data->pool, &text, value.c_str());
-  pjsip_msg_add_hdr(data->msg, reinterpret_cast<pjsip_hdr *>(pjsip_generic_string_hdr_create(data->pool, &name, &text)));
-  return true;
-}
-
-//------------------------------------------------------------------------------
-// The header fields a request gets before pjsip encodes it, so that its size decides between UDP and TCP (RFC 3261
-// section 18.1.1): the sec-agree ones of IMS AKA (aka_sec_agree) and P-Access-Network-Info. The send hooks add them
-// to the messages pjsip makes itself.
-void SipEngine::Impl::before_send(pjsip_tx_data *data) {
-  aka_sec_agree(data);
-  (void)add_access_network_info(data);
-}
-
-//------------------------------------------------------------------------------
-// The send hook of SipConfig::access_network_info (requests and responses), before the transport layer prints them.
-pj_status_t SipEngine::Impl::access_network_info_outgoing(pjsip_tx_data *data) {
-  auto *owner = active.load();
-  if (owner != nullptr && owner->add_access_network_info(data)) pjsip_tx_data_invalidate_msg(data);
-  return PJ_SUCCESS;
-}
-
-//------------------------------------------------------------------------------
-// RFC 3261 section 8.1.1.8: the bare Contact URI of this endpoint, a sip: URI with the transport in use
-// (transport=tls, or transport=tcp for debug), with ;ob for an RFC 5626 outbound client (section 5.4). IMS uses no
-// SIPS (TS 24.229): TLS protects the hop, and a SIPS Contact is only sent where RFC 3261 requires it (as_sips).
-[[nodiscard]] std::string SipEngine::Impl::contact_target() const { return sip_detail::contact_target(config); }
-
-//------------------------------------------------------------------------------
-// TS 24.379 clause 7.2.1, TS 24.281 clause 7.2.1 and TS 24.282 clause 7.2.1: the media feature tags and the
-// g.3gpp.icsi-ref ICSI values of the configured services for the Contact header field (RFC 3840).
-[[nodiscard]] std::string SipEngine::Impl::service_tags() const { return sip_detail::service_tags(config); }
-
-//------------------------------------------------------------------------------
-// RFC 3261 section 8.1.1.8 and RFC 4579: the Contact of an INVITE response: this endpoint's, or the checked public URI
-// with the service tags (or the response's own), with ;isfocus for a conference focus.
-[[nodiscard]] std::string SipEngine::Impl::response_contact(const SipResponse &response) const {
-  std::string contact = contact_uri();
-  if (!response.contact_uri.empty()) {
-    const auto &uri = response.contact_uri;
-    if (uri.size() > 2048 || uri.find_first_of("<>\r\n \t") != uri.npos ||
-        (!uri.starts_with("sip:") && !uri.starts_with("sips:"))) {
-      throw std::invalid_argument("invalid public SIP Contact URI");
+// RFC 3261 section 7.3: the header fields of a message as it is encoded, in order (folded lines joined).
+std::vector<SipHeader> headers_of(const resip::SipMessage &message) {
+  const auto wire = text_of(message);
+  const auto end = wire.find("\r\n\r\n");
+  const auto section = wire.substr(0, end == std::string::npos ? wire.size() : end);
+  std::vector<SipHeader> headers;
+  std::size_t at = section.find("\r\n"); // past the start line
+  while (at != std::string::npos && at < section.size()) {
+    at += 2;
+    auto line_end = section.find("\r\n", at);
+    std::string line = section.substr(at, line_end == std::string::npos ? std::string::npos : line_end - at);
+    // RFC 3261 section 7.3.1: a line starting with white space continues the previous one.
+    while (line_end != std::string::npos && line_end + 2 < section.size() &&
+           (section[line_end + 2] == ' ' || section[line_end + 2] == '\t')) {
+      const auto next = section.find("\r\n", line_end + 2);
+      line += " " + section.substr(line_end + 2, next == std::string::npos ? std::string::npos : next - line_end - 2);
+      line_end = next;
     }
-    contact = "<" + uri + ">" + (response.contact_tags.empty() ? service_tags() : response.contact_tags);
-  } else if (!response.contact_tags.empty()) {
-    // this endpoint's URI with the response's own tags, e.g. an MCData client's 200 (OK) to an SDS INVITE with the
-    // g.3gpp.mcdata.sds tag and its ICSI (TS 24.282 clause 9.2.3.2.4 steps 7-8)
-    contact = "<" + contact_target() + ">" + response.contact_tags;
+    const auto colon = line.find(':');
+    if (colon != std::string::npos) {
+      auto value = line.substr(colon + 1);
+      value.erase(0, value.find_first_not_of(" \t"));
+      auto name = line.substr(0, colon);
+      name.erase(name.find_last_not_of(" \t") + 1);
+      headers.push_back({name, value});
+    }
+    at = line_end;
   }
-  if (response.focus) contact += ";isfocus";
-  // TS 24.229 clause 5.1.4.1: a UE's responses to an INVITE carry its media feature tags (SipConfig::media_feature_tags).
-  return contact + config.media_feature_tags;
+  return headers;
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 sections 8.1.1.8 and 12.1.1: a Contact header field value with its sip: URI made a SIPS URI, for a
-// request to a SIPS target and for the answer to a request that started a dialog with one.
-[[nodiscard]] std::string SipEngine::Impl::as_sips(std::string contact) {
-  const auto at = contact.starts_with('<') ? 1U : 0U;
-  if (contact.compare(at, 4, "sip:") == 0) contact.insert(at + 3, "s");
-  return contact;
+// Helper: the numeric IPv4 address of a host, or the host as it is when it does not resolve.
+std::string resolve_address(const std::string &host) {
+  addrinfo hints{};
+  hints.ai_family = AF_INET;
+  addrinfo *found = nullptr;
+  if (getaddrinfo(host.c_str(), nullptr, &hints, &found) != 0 || found == nullptr) return host;
+  char text[INET_ADDRSTRLEN] = {};
+  inet_ntop(AF_INET, &reinterpret_cast<sockaddr_in *>(found->ai_addr)->sin_addr, text, sizeof text);
+  freeaddrinfo(found);
+  return text;
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 8.1.1.8: whether a request to this Request-URI, routed through the SIP core (the top Route),
-// carries a SIPS URI that the Contact must then match.
-[[nodiscard]] bool SipEngine::Impl::sips_target(std::string_view request_uri) const {
-  return ascii_lower(std::string(request_uri)).starts_with("sips:") ||
-         ascii_lower(config.core_uri).starts_with("sips:");
+// RFC 3261 section 8.1.2: the next hop of a request: the host of its top Route (a loose route), else of its
+// Request-URI.
+std::string next_hop_host(const std::string &text) {
+  const resip::Data wire(text);
+  std::unique_ptr<resip::SipMessage> message(resip::SipMessage::make(wire, false));
+  if (message == nullptr) throw std::invalid_argument("invalid SIP request");
+  if (message->exists(resip::h_Routes) && !message->header(resip::h_Routes).empty())
+    return message->header(resip::h_Routes).front().uri().host().c_str();
+  return message->header(resip::h_RequestLine).uri().host().c_str();
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 12.1.1: whether a request that starts a dialog has a SIPS URI in its Request-URI, in its top
-// Record-Route or, without Record-Route, in its Contact.
-[[nodiscard]] bool SipEngine::Impl::sips_request(const pjsip_rx_data *data) {
-  const auto *msg = data->msg_info.msg;
-  if (PJSIP_URI_SCHEME_IS_SIPS(msg->line.req.uri)) return true;
-  if (const auto *route = data->msg_info.record_route; route != nullptr)
-    return PJSIP_URI_SCHEME_IS_SIPS(route->name_addr.uri);
-  const auto *contact = static_cast<const pjsip_contact_hdr *>(pjsip_msg_find_hdr(msg, PJSIP_H_CONTACT, nullptr));
-  return contact != nullptr && contact->uri != nullptr && PJSIP_URI_SCHEME_IS_SIPS(contact->uri);
+// RFC 3261 section 7.3: a header field must have a name and neither may hold CR or LF (no header injection).
+void check_header(const SipHeader &header) {
+  if (header.name.empty() || header.name.find_first_of("\r\n: \t") != std::string::npos ||
+      header.value.find_first_of("\r\n") != std::string::npos)
+    throw std::invalid_argument("invalid SIP header");
+}
+
+namespace {
+//------------------------------------------------------------------------------
+// Helper: the raw body of a message, and its Content-Type as sent (empty without a body).
+std::pair<std::string, std::string> body_of(const resip::SipMessage &message) {
+  const auto &raw = message.getRawBody();
+  std::string body(raw.getBuffer() == nullptr ? "" : std::string(raw.getBuffer(), raw.getLength()));
+  // No body for Content-Length 0: a Content-Type without a body is not reported, so
+  // that an empty final NOTIFY "application/pidf+xml" is a NOTIFY without state (RFC 6665 section 4.1.2.3), not an
+  // empty document.
+  const auto content_type = body.empty() ? std::string() : std::string(get_header(headers_of(message), "Content-Type"));
+  // A multipart body may start with a line break before its first delimiter (RFC 2046 section 5.1.1 preamble).
+  if (content_type.starts_with("multipart/") && body.starts_with("\r\n--")) body.erase(0, 2);
+  return {content_type, body};
 }
 
 //------------------------------------------------------------------------------
-// Helper: true when two body part lists have the same content types, bodies and Content-IDs in the same order.
-bool SipEngine::Impl::same_parts(const std::vector<BodyPart> &left, const std::vector<BodyPart> &right) {
-  if (left.size() != right.size()) return false;
-  for (std::size_t index = 0; index < left.size(); ++index)
-    if (left[index].content_type != right[index].content_type || left[index].body != right[index].body ||
-        left[index].content_id != right[index].content_id)
-      return false;
-  return true;
+// Helper: the transmission of a message for the body filters.
+SipTransmission transmission_of(const resip::SipMessage &message, const std::string &address,
+                                const std::vector<SipHeader> &headers) {
+  SipTransmission transmission;
+  transmission.response = message.isResponse();
+  transmission.address = address;
+  if (transmission.response) {
+    // RFC 3261 section 20.16: a response's method is its CSeq's.
+    const auto &cseq = message.header(resip::h_CSeq);
+    transmission.method = cseq.method() == resip::UNKNOWN ? cseq.unknownMethodName().c_str()
+                                                          : resip::getMethodName(cseq.method()).c_str();
+  } else {
+    transmission.method = message.methodStr().c_str();
+  }
+  if (!transmission.response) transmission.request_uri = text_of(message.header(resip::h_RequestLine).uri());
+  transmission.from_uri = text_of(message.header(resip::h_From).uri());
+  transmission.to_uri = text_of(message.header(resip::h_To).uri());
+  transmission.headers = headers;
+  transmission.call_id = message.header(resip::h_CallId).value().c_str();
+  return transmission;
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 20.16: the method of a message's CSeq header field (empty without one).
-std::string SipEngine::Impl::cseq_method(pjsip_msg *message) {
-  const auto *cseq = static_cast<const pjsip_cseq_hdr *>(pjsip_msg_find_hdr(message, PJSIP_H_CSEQ, nullptr));
-  return cseq == nullptr ? std::string{} : string_from(cseq->method.name);
-}
-
-//------------------------------------------------------------------------------
-// TS 33.180 clause 9.3: the transmit hook for application signalling protection; runs after every sending path,
-// before the message is printed, passes the body parts to the outgoing filter and rebuilds the body
-// (multipart/mixed with Content-ID per RFC 5621, RFC 2392) when the filter changed them.
-pj_status_t SipEngine::Impl::protect_outgoing(pjsip_tx_data *data) {
-  auto *owner = active.load();
-  if (owner == nullptr || !owner->outgoing_filter || data == nullptr || data->msg == nullptr ||
-      data->msg->body == nullptr)
-    return PJ_SUCCESS;
+// TS 33.180 clause 9.3: the parts through the incoming filter; the raw
+// body is kept consistent with them; a refusal is the message's protection_error.
+template <class Received>
+void protect_incoming(const SipBodyFilter &filter, const resip::SipMessage &message, const std::string &source,
+                      Received &result) {
+  if (!filter || result.parts.empty()) return;
   try {
-    auto *message = data->msg;
-    SipTransmission transmission;
-    transmission.response = message->type == PJSIP_RESPONSE_MSG;
-    transmission.address = data->tp_info.dst_name;
-    transmission.method = transmission.response ? cseq_method(message) : string_from(message->line.req.method.name);
-    if (!transmission.response) transmission.request_uri = print_uri(message->line.req.uri);
-    transmission.from_uri = bare_header_uri(message, PJSIP_H_FROM);
-    transmission.to_uri = bare_header_uri(message, PJSIP_H_TO);
-    transmission.headers = collect_headers(message);
-    transmission.call_id = call_id_from(message);
-
-    const auto type = content_type_from(message);
-    auto text = print_body(message->body);
-    // A multipart body is printed with a leading line break before its first delimiter.
-    if (type.starts_with("multipart/") && text.starts_with("\r\n--")) text.erase(0, 2);
-    if (type.empty() || text.empty()) return PJ_SUCCESS;
-    std::vector<BodyPart> parts;
-    try {
-      parts = parse_body_parts(type, text);
-    } catch (const std::exception &) {
-      return PJ_SUCCESS; // not a body the filter protects
-    }
-
-    auto filtered = owner->outgoing_filter(transmission, parts);
-    if (same_parts(parts, filtered)) return PJ_SUCCESS;
-    if (filtered.size() == 1 && !type.starts_with("multipart/"))
-      message->body = make_text_body(data->pool, filtered.front().content_type, filtered.front().body);
-    else {
-      // A real multipart body: the INVITE session later looks for the SDP in it.
-      message->body = make_multipart_body(data->pool, filtered);
-    }
-    pjsip_tx_data_invalidate_msg(data);
-  } catch (const std::exception &error) {
-    owner->report_error(std::string("outgoing body protection: ") + error.what());
-    return PJ_EINVAL;
-  } catch (...) {
-    owner->report_error("outgoing body protection: unknown error");
-    return PJ_EINVAL;
-  }
-  return PJ_SUCCESS;
-}
-
-//------------------------------------------------------------------------------
-// RFC 3261 section 7.2 and RFC 5621: converts a received response (status, reason, body and parts, headers,
-// Call-ID) and applies incoming protection; 503 when there is no message (transport failure).
-[[nodiscard]] SipResponse SipEngine::Impl::response_from(pjsip_rx_data *data) const {
-  SipResponse response;
-  if (data == nullptr || data->msg_info.msg == nullptr) {
-    response.status_code = 503;
-    response.reason = "SIP transport failure";
-    return response;
-  }
-  auto *message = data->msg_info.msg;
-  response.status_code = message->line.status.code;
-  response.reason = string_from(message->line.status.reason);
-  response.content_type = content_type_from(message);
-  if (response.content_type.starts_with("multipart/") && message->body) {
-    pj_str_t raw{};
-    if (pjsip_multipart_get_raw(message->body, nullptr, &raw) != PJ_SUCCESS || !raw.ptr || raw.slen < 0 ||
-        static_cast<std::size_t>(raw.slen) > kMaximumSipBodyBytes)
-      throw std::invalid_argument("multipart response lacks retained MIME data");
-    response.body = string_from(raw);
-    if (response.body.starts_with("\r\n--")) response.body.erase(0, 2);
-  } else
-    response.body = print_body(message->body);
-  if (!response.body.empty()) response.parts = parse_body_parts(response.content_type, response.body);
-  response.headers = collect_headers(message);
-  protect_incoming(message, data->pkt_info.src_name, response);
-  response.dialog_id = call_id_from(message);
-  return response;
-}
-
-//------------------------------------------------------------------------------
-// RFC 3261 section 7.1 and RFC 5621: converts a received request (method, URIs, Call-ID, body and parts, the
-// audio or video SDP, headers) and applies incoming protection.
-[[nodiscard]] SipMessage SipEngine::Impl::message_from(pjsip_rx_data *data) const {
-  auto *message = data->msg_info.msg;
-  SipMessage result;
-  result.method = string_from(message->line.req.method.name);
-  result.request_uri = print_uri(message->line.req.uri);
-  result.from_uri = bare_header_uri(message, PJSIP_H_FROM);
-  result.to_uri = bare_header_uri(message, PJSIP_H_TO);
-  result.call_id = call_id_from(message);
-  result.dialog_id = result.call_id;
-  result.source_address = data->pkt_info.src_name;
-
-  result.content_type = content_type_from(message);
-  if (result.content_type.starts_with("multipart/") && message->body != nullptr) {
-    pj_str_t raw_body{};
-    if (pjsip_multipart_get_raw(message->body, nullptr, &raw_body) == PJ_SUCCESS && raw_body.ptr != nullptr &&
-        raw_body.slen >= 0 && static_cast<std::size_t>(raw_body.slen) <= kMaximumSipBodyBytes) {
-      result.body = string_from(raw_body);
-      if (result.body.starts_with("\r\n--")) {
-        result.body.erase(0, 2);
-      }
+    auto filtered = filter(transmission_of(message, source, result.headers), result.parts);
+    const bool same = filtered.size() == result.parts.size() &&
+                      std::equal(filtered.begin(), filtered.end(), result.parts.begin(), [](const auto &a, const auto &b) {
+                        return a.content_type == b.content_type && a.body == b.body && a.content_id == b.content_id;
+                      });
+    if (same) return;
+    result.parts = std::move(filtered);
+    if (result.parts.size() == 1) {
+      result.content_type = result.parts.front().content_type;
+      result.body = result.parts.front().body;
     } else {
-      throw std::invalid_argument("multipart body does not retain raw MIME data");
+      result.content_type = "multipart/mixed; boundary=mcx-opened";
+      result.body = multipart_body(result.parts, "mcx-opened");
     }
-  } else {
-    result.body = print_body(message->body);
+  } catch (const std::exception &error) {
+    result.protection_error = error.what();
   }
+}
+} // namespace
+} // namespace resip_engine
 
-  result.headers = collect_headers(message);
+using namespace resip_engine;
+
+//------------------------------------------------------------------------------
+// RFC 3261 section 7.1 and RFC 5621: a received request: method, URIs,
+// Call-ID (also its dialog identifier), source, body and parts, the audio or video SDP, header fields; then incoming
+// protection.
+SipMessage SipEngine::Impl::message_from(const resip::SipMessage &message) const {
+  SipMessage result;
+  result.method = message.methodStr().c_str();
+  result.request_uri = text_of(message.header(resip::h_RequestLine).uri());
+  result.from_uri = text_of(message.header(resip::h_From).uri());
+  result.to_uri = text_of(message.header(resip::h_To).uri());
+  result.call_id = message.header(resip::h_CallId).value().c_str();
+  result.dialog_id = result.call_id;
+  result.source_address = resip::Tuple::inet_ntop(message.getSource()).c_str();
+  std::tie(result.content_type, result.body) = body_of(message);
+  if (result.body.size() > sip_detail::kMaximumSipBodyBytes) throw std::invalid_argument("SIP body exceeds bound");
+  result.headers = headers_of(message);
   if (!result.body.empty()) {
     try {
-      if (result.content_type.starts_with("multipart/")) {
+      if (result.content_type.starts_with("multipart/"))
         result.parts = parse_body_parts(result.content_type, result.body);
-      } else {
+      else
         result.parts.push_back({result.content_type, result.body});
-      }
       for (const auto &part : result.parts) {
-        // The SDP of a MESSAGE offers no session: the MBMS bearer announcement describes multicast subchannels
-        // (TS 24.379 clause 14.2.2.2 step 5), left to the application.
+        // The SDP of a MESSAGE offers no session (TS 24.379 clause 14.2.2.2 step 5); other media than audio and video
+        // (the MSRP stream of the MCData media plane) is left to the application.
         if (part.content_type.starts_with("application/sdp") && result.method != "MESSAGE") {
-          // Media that is not MCPTT or MCVideo audio and video, such as the
-          // MSRP stream of the MCData media plane, is left to the application.
           if (part.body.find("m=audio") != std::string::npos || part.body.find("m=video") != std::string::npos)
             result.remote_media = parse_sdp(part.body);
           break;
         }
       }
     } catch (const std::exception &error) {
-      throw std::invalid_argument(std::string("invalid incoming SIP body with Content-Type '") + result.content_type +
+      throw std::invalid_argument("invalid incoming SIP body with Content-Type '" + result.content_type +
                                   "': " + error.what());
     }
   }
-
-  protect_incoming(message, result.source_address, result);
+  protect_incoming(incoming_filter, message, result.source_address, result);
   return result;
 }
 
 //------------------------------------------------------------------------------
-// Helper: passes an error text to the application's error callback, ignoring its exceptions.
-void SipEngine::Impl::report_error(std::string_view error) noexcept {
-  if (callbacks.on_error) {
-    try {
-      callbacks.on_error(error);
-    } catch (...) {
-      // The error report is the last resort: a failing error callback has nowhere left to report to.
-    }
+// RFC 3261 section 7.2 and RFC 5621: a received or locally generated
+// response (a timeout's 408, a transport failure's 503): status, reason, body and parts, header fields, its Call-ID as
+// dialog identifier; then incoming protection.
+SipResponse SipEngine::Impl::response_from(const resip::SipMessage &message) const {
+  SipResponse response;
+  response.status_code = message.header(resip::h_StatusLine).statusCode();
+  response.reason = message.header(resip::h_StatusLine).reason().c_str();
+  std::tie(response.content_type, response.body) = body_of(message);
+  if (!response.body.empty()) {
+    response.parts = response.content_type.starts_with("multipart/")
+                         ? parse_body_parts(response.content_type, response.body)
+                         : std::vector<BodyPart>{{response.content_type, response.body}};
   }
+  response.headers = headers_of(message);
+  const std::string source = resip::Tuple::inet_ntop(message.getSource()).c_str();
+  protect_incoming(incoming_filter, message, source, response);
+  response.dialog_id = message.header(resip::h_CallId).value().c_str();
+  return response;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 clause 9.3: the body parts of a message about to be sent to
+// the address through the outgoing filter; when it changed them, the body is rebuilt: one part as a plain body (of a
+// message that had no multipart body), several as multipart/mixed (RFC 5621, RFC 2392).
+std::string SipEngine::Impl::protect_outgoing(const std::string &text, const std::string &address) const {
+  if (!outgoing_filter) return text;
+  const resip::Data wire(text);
+  std::unique_ptr<resip::SipMessage> message(resip::SipMessage::make(wire, false));
+  if (message == nullptr) throw std::invalid_argument("invalid SIP message");
+  const auto [type, body] = body_of(*message);
+  if (type.empty() || body.empty()) return text;
+  std::vector<BodyPart> parts;
+  try {
+    parts = parse_body_parts(type, body);
+  } catch (const std::exception &) {
+    return text; // not a body the filter protects
+  }
+  const auto headers = headers_of(*message);
+  auto filtered = outgoing_filter(transmission_of(*message, address, headers), parts);
+  const bool same = filtered.size() == parts.size() &&
+                    std::equal(filtered.begin(), filtered.end(), parts.begin(), [](const auto &a, const auto &b) {
+                      return a.content_type == b.content_type && a.body == b.body && a.content_id == b.content_id;
+                    });
+  if (same) return text;
+  std::string new_type, new_body;
+  if (filtered.size() == 1 && !type.starts_with("multipart/")) {
+    new_type = filtered.front().content_type;
+    new_body = filtered.front().body;
+  } else {
+    new_type = "multipart/mixed; boundary=mcx-protected";
+    new_body = multipart_body(filtered, "mcx-protected");
+  }
+  // The header section with the new Content-Type and Content-Length, then the new body.
+  std::string section;
+  for (const auto &line_header : headers) {
+    if (sip_detail::ascii_equal(line_header.name, "Content-Type") ||
+        sip_detail::ascii_equal(line_header.name, "Content-Length"))
+      continue;
+    section += line_header.name + ": " + line_header.value + "\r\n";
+  }
+  const auto start_line = text.substr(0, text.find("\r\n"));
+  return start_line + "\r\n" + section + "Content-Type: " + new_type +
+         "\r\nContent-Length: " + std::to_string(new_body.size()) + "\r\n\r\n" + new_body;
+}
+
+//------------------------------------------------------------------------------
+// RFC 3261 section 8.1.1.8: this endpoint's Contact header field value with the service tags (contact_target and
+// service_tags of src/sip_common).
+std::string SipEngine::Impl::contact_uri() const {
+  return "<" + sip_detail::contact_target(config) + ">" + sip_detail::service_tags(config);
+}
+
+//------------------------------------------------------------------------------
+// RFC 3261 section 8.1.1.8: whether a request goes to a SIPS URI (its Request-URI's, or the core's).
+bool SipEngine::Impl::sips_target(std::string_view request_uri) const {
+  return sip_detail::ascii_lower(std::string(request_uri)).starts_with("sips:") ||
+         sip_detail::ascii_lower(config.core_uri).starts_with("sips:");
 }
 
 } // namespace mcx

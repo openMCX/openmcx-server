@@ -66,7 +66,7 @@ Over the signalling plane: persistent storage of undelivered messages across a r
 
 ## SDS over the media plane
 
-A standalone SDS whose payload travels over MSRP rather than in the SIP MESSAGE (TS 24.282 §9.2.3, TS 24.582 §6.1.1). OpenMCX has its own MSRP module, since PJSIP provides none.
+A standalone SDS whose payload travels over MSRP rather than in the SIP MESSAGE (TS 24.282 §9.2.3, TS 24.582 §6.1.1). OpenMCX has its own MSRP module, since the SIP stack provides none.
 
 ### Test descriptions and commands
 

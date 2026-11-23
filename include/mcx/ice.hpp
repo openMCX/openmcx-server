@@ -10,7 +10,7 @@
 // loop; the state moves to Completed or Failed in tick only, never in receive.
 //
 // The agent uses regular nomination, the only nomination RFC 8445 keeps (section 8.1.1), and does not claim the
-// "ice2" option (RFC 8839 section 5.6): its timers are those pjnath had (src/media/ice.cpp), not all RFC 8445's.
+// "ice2" option (RFC 8839 section 5.6): its timers are not all RFC 8445's (src/media/ice.cpp).
 // Not implemented: server reflexive and relayed candidates (RFC 8445 section 5.1.1.2): no STUN or TURN server is
 // configured, so only UDP host candidates are gathered, on the address the session uses for MCPTT service (TS 24.379
 // clause 8.2.1 NOTE 1: "only gathered on interfaces that the MCPTT UE uses to obtain MCPTT service").

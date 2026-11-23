@@ -11,10 +11,10 @@
 #   4. the client's ClientHello (seen by openssl s_server -trace) offers only the profile's suites and groups;
 #   5. the client refuses a server whose certificate another CA issued.
 #
-#   prototype/resiprocate/run-tls-probe.sh        (MCX_DEV_IMAGE picks the development image, default openmcx-dev:0.4)
+#   prototype/resiprocate/run-tls-probe.sh        (MCX_DEV_IMAGE picks the development image, default openmcx-dev:0.5)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-dev_image=${MCX_DEV_IMAGE:-openmcx-dev:0.4}
+dev_image=${MCX_DEV_IMAGE:-openmcx-dev:0.5}
 work=.cache/resip-prototype
 mkdir -p "$work"
 docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/workspace" -w /workspace "$dev_image" bash -c '

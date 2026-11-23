@@ -13,10 +13,11 @@ upstream release with OpenMCX's patches as commits on a release branch, each bui
 Licence: the Vovida Software License 1.0 (BSD-style, with a clause on the name "VOCAL") for rutil, the stack and DUM;
 the bundled `rutil/dns/ares` is under the MIT-style c-ares licence. OpenMCX's commits are under the same licence.
 
-The SIP stack that replaces pjproject (`prototype/resiprocate/PLAN.md`). The development image builds it
-(`docker/Dockerfile.dev`, into `/opt/resiprocate`). `build.sh` downloads the pinned tag unless the work directory
-already has it, checks its SHA-256 and builds the static rutil, resip and dum libraries with OpenSSL (repro, media,
-TURN, tests, popt, GeoIP and DTLS off), with the licence in `share/doc/resiprocate`:
+The SIP stack of the SIP engine (`src/sip/`), which replaced pjproject (`prototype/resiprocate/PLAN.md`). The
+development image builds it (`docker/Dockerfile.dev`, into `/opt/resiprocate`; `docker/Dockerfile.centos` likewise).
+`build.sh` downloads the pinned tag unless the work directory already has it, checks its SHA-256 and builds the static
+rutil, resip and dum libraries with OpenSSL (repro, media, TURN, tests, popt, GeoIP and DTLS off), with the licence in
+`share/doc/resiprocate`, which every image carries as `/usr/share/doc/openmcx/resiprocate-LICENSE.md`:
 
 ```sh
 dependencies/resiprocate/build.sh /tmp/resiprocate /tmp/resiprocate-build

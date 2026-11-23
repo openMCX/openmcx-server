@@ -2,17 +2,16 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// The transports of IMS AKA on reSIProcate (TS 33.203 clause 7.1), the counterparts of what the pjproject engine gets
-// from dependencies/pjproject and its send hooks:
+// The transports of IMS AKA on reSIProcate (TS 33.203 clause 7.1):
 //   - every message received on them passes a filter before the transaction layer (rules 4 and 7: a message not on
-//     its security association is "rejected or silently discarded"), as pjsip's receive filter module does;
+//     its security association is "rejected or silently discarded");
 //   - the TCP transports of the protected client port port_uc (one per set of security associations) and of the
 //     unprotected port open their connections from their own port (reSIProcate's "symmetric connections");
 //   - UDP: the transport on port_uc of a set sends that set's requests; the transport on the protected server port
 //     port_us receives everything, and what the stack sends on it (responses to the P-CSCF's requests) leaves from
 //     port_uc of the set in use (ProtectedUdpTransport).
 //
-// Private to src/sip_resip/.
+// Private to src/sip/.
 //
 // Specifications: TS 33.203 V19.1.0 (Rel-19) clause 7.1, TS 24.229 V19.7.0 (Rel-19) clause 4.2A.
 #pragma once

@@ -6,8 +6,8 @@
 // list per stream, the connectivity checks of RFC 8445 section 7 over STUN (src/media/stun.hpp) and regular
 // nomination, driven from the caller's poll loop.
 //
-// Values chosen where RFC 8445 leaves them configurable (as pjnath had them, so the sessions behave as before):
-// Ta 20 ms between checks (section 14.2: configurable, at least 5 ms); a check retransmitted after 100 ms, doubling,
+// Values chosen where RFC 8445 leaves them configurable (those of the pjnath agent this one replaced, so that the
+// sessions behave as before): Ta 20 ms between checks (section 14.2: configurable, at least 5 ms); a check retransmitted after 100 ms, doubling,
 // seven transmissions and a last wait of 1.6 s (RFC 5389 section 7.2.1 with Rc 7 and Rm 16, an RTO below the
 // 500 ms of RFC 8445 section 14.3); keep-alives every 15 s (section 11); a controlled agent whose peer has not
 // nominated 10 s after its checks ended completes on its best valid pairs (as pjnath did).

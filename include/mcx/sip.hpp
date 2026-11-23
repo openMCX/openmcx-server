@@ -296,8 +296,7 @@ public:
   void poll(std::chrono::milliseconds timeout);
   // One wait as poll(timeout) that also ends as soon as one of the application's sockets (media, floor control) is
   // readable, so that its packets are handled at once rather than after the SIP wait (prototype/resiprocate/PLAN.md
-  // phase 4). The sockets are given anew with each call; none is read. A SIP stack that cannot wait on them (pjsip)
-  // waits the timeout as poll(timeout) does.
+  // phase 4). The sockets are given anew with each call; none is read.
   void poll(std::chrono::milliseconds timeout, std::span<const int> wake_sockets);
   // Retained non-INVITE dialogs, for operational resource diagnostics.
   [[nodiscard]] std::size_t subscription_count() const noexcept;

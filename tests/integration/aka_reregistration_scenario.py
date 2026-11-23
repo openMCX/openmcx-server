@@ -34,7 +34,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-TOOLS = 'openmcx-dev:0.4'
+TOOLS = 'openmcx-dev:0.5'
 WAIT_OLD_SET = 64 * 0.5 + 5 + 2  # 64*T1, tm wait_timer, the 1 s look-ups at the UE and the P-CSCF
 
 

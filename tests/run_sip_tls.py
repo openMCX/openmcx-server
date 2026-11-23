@@ -147,7 +147,7 @@ def run_register_digest(binary, directory, env):
             method = request[0].split()[0]
             fields = request[1]
             number = int(fields['cseq'][0].split()[0])
-            # The host only: over a connection the port may be the connection's own (pjproject over TLS).
+            # The host only: over a connection the port may be the connection's own (the stack's over TLS).
             sent_by = fields['via'][0].split()[1].split(';')[0]
             assert sent_by.split(':')[0] == 'localhost', f'the Via sent-by names the advertised host, not {sent_by}'
             if method == 'REGISTER':
@@ -355,7 +355,7 @@ def run_uas_bye_auth(binary, directory, env):
                 ('CSeq', '1 ACK'),
             ],
         )
-        # PJSIP can reuse the established transport or open a connection to the
+        # The stack can reuse the established transport or open a connection to the
         # Contact. Exercise the dialog independently of either transport choice.
         available, _, _ = select.select([listener, outgoing], [], [], 5)
         assert available, 'native UAS did not originate BYE'

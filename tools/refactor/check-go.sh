@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 test=0; [ "${1:-}" = --test ] && { test=1; shift; }
 docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e GOCACHE=/gopath/cache -e GOPATH=/gopath -e GOFLAGS=-mod=vendor \
-  -v mcxadmin-gopath:/gopath -v "$PWD:/src" -w /src/services openmcx-lint:0.1 bash -c '
+  -v mcxadmin-gopath:/gopath -v "$PWD:/src" -w /src/services openmcx-lint:0.2 bash -c '
 test=$1; shift
 files=(); for file in "$@"; do files+=("/src/$file"); done
 [ ${#files[@]} -eq 0 ] || gofmt -w "${files[@]}"

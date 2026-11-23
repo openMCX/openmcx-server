@@ -103,7 +103,7 @@ int ue(const std::string &sqn_file, const std::string &k, const std::string &opc
   callbacks.on_error = [](std::string_view error) { std::cout << "error " << error << std::endl; };
   SipEngine *calling = nullptr;
   // Over UDP: the INVITE's dialog, whose route set names TCP (the P-CSCF's Record-Route of an INVITE that went over
-  // TCP), sends its ACK and BYE over the connection from port_uc (dependencies/pjproject/0002-udp-to-tcp.patch).
+  // TCP), sends its ACK and BYE over the connection from port_uc (src/sip/aka_transports.hpp).
   callbacks.on_call_state = [&](std::string_view dialog, SipCallState state, int code) {
     std::cout << "call " << (state == SipCallState::confirmed      ? "confirmed"
                              : state == SipCallState::disconnected ? "disconnected"

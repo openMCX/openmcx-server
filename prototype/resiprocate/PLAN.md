@@ -33,7 +33,7 @@ rolled back until pjproject is removed.
 | 4 | One event loop | The engine takes media and floor control sockets into its epoll; the server and client loops drop the 5 ms SIP poll | Wire captures show relay delay near 0.1 ms (today a median of 2.75 ms) | 1 week |
 | 5 | ICE without pjnath (done) | OpenMCX's own ICE agent: host candidates, STUN binding checks, nomination | `test_ice`, `test_ice_sdp` and the pre-established session labs pass | 1 to 2 weeks |
 | 6 | Verification (done) | The full IP regression (no RAN labs) over TCP and TLS on both; the MCPTT, MCData and MCVideo conformance suites; a client on one and a server on the other; a soak run; call setup time and CPU | No new failures compared with pjproject | 2 weeks |
-| 7 | Switch and remove | `resip` the default; pjproject removed from the development images, `dependencies/lock.json`, `dependencies/pjproject` and the NOTICE files of both repositories; the binaries checked for pjsip symbols; the licence scan repeated | No GPL code linked into any OpenMCX program | 1 week |
+| 7 | Switch and remove (done) | `resip` the default; pjproject removed from the development images, `dependencies/lock.json`, `dependencies/pjproject` and the NOTICE files of both repositories; the binaries checked for pjsip symbols; the licence scan repeated | No GPL code linked into any OpenMCX program | 1 week |
 
 In all, about 11 to 15 weeks, mostly phases 3 and 6.
 
@@ -231,3 +231,36 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
       its per-lab median is 13.7 MB against 13.5 and p90 14.5 against 14.4, with no growth across the rounds.
   - Not changed: the wire verifiers' exact P-Preferred-Service compares (`verify_mcdata_media.py`,
     `verify_mcdata_fd.py`): one ICSI per request on both engines, and the regression passes.
+- Phase 7, done (2026-11-23): reSIProcate is the only SIP engine. pjproject is gone from both repositories and every
+  image; no OpenMCX program links GPL code.
+  - The reSIProcate engine moved from `src/sip_resip/` to `src/sip/` (the pjsip engine removed), `MCX_SIP_STACK`
+    removed, reSIProcate required by CMake. Removed with it: `dependencies/pjproject`, its `dependencies/lock.json`
+    entry, `test_ice_interop` and the pjnath test peer, the pjproject build of `docker/Dockerfile.dev` and
+    `docker/Dockerfile.centos` (which now builds reSIProcate). Images: `openmcx-dev:0.5`, `openmcx-lint:0.2`.
+  - NOTICE in both repositories: pjproject replaced by reSIProcate 1.14.0 (Vovida Software License, the fork's tag,
+    c-ares); the client's wolfSSL line, never used, removed. Every image carries `resiprocate-LICENSE.md`.
+  - Found: the reSIProcate engine wrote none of the `SIP <-` / `SIP ->` debug lines of docs/USAGE.md. They are back
+    (`src/sip/lifecycle.cpp`, a transport message logging handler, headers and peer but no body), tested in
+    `test_sip`.
+  - Found: the CentOS images lacked OpenMCX's LICENSE and NOTICE, the hostap README, and the licences of the libraries
+    copied in (OpenH264, freeDiameter, opencore-amrwb, vo-amrwbenc, libidn); all are now copied.
+  - Symbols: none of the 8 programs of the 7 Ubuntu images has a pjproject symbol or string; nor the CentOS MCPTT
+    server.
+  - Licence scan (`ldd` of each program, the owning package's licence, Ubuntu and CentOS): every shared library is
+    LGPL, dual-licensed or permissive; the GCC runtime is GPL with the runtime library exception. Linked statically:
+    reSIProcate (VSL, c-ares MIT), libsrtp (BSD), hostap (BSD). Go modules of the user database: BSD-3 and MPL-2.0.
+  - Unit tests: 59 of 59 on `openmcx-dev:0.5`; CentOS 56 of 57.
+  - Regression (`p7`, 95 labs): TCP 257 of 257, TLS 174 of 175, the miss `mbs` (client-c and client-d decoded
+    different speech).
+  - Open, found in that miss: `mbs` over TLS fails now and then since phase 5. Over all kept runs, images before
+    phase 5 pass 32 of 32 (p6 to p6e, both stacks), those from phase 5 on 15 of 21 (p5 5 of 6, p7 10 of 15),
+    and eight p6e and p7 runs taken in turn give 8 of 8 against 6 of 8. In a miss, a listener on the subchannel
+    joins it after the conversation's first multicast packets were sent: it receives one or two packets fewer, no
+    drop counter moves, and its recording is a 20 ms frame shorter, which the final comparison of client-c's and
+    client-d's speech (warm-up bursts included) catches. The ICE agent is not created in this lab; the client
+    binary changed at phase 5 only by no longer linking pjnath and pjlib. Not yet isolated to the client or the
+    servers (a run of p7 servers with the p6e client would tell).
+  - Open, not caused by this work: the CentOS Stream 10 digests in `dependencies/lock.json` are no longer served by
+    quay.io (the CentOS build was verified with current digests passed as build arguments); `http_crl` fails on
+    CentOS (its test CRL is signed with SHA-1, refused by the default crypto policy). The Ubuntu 26.04 development
+    image was not rebuilt.

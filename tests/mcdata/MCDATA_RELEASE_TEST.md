@@ -60,7 +60,7 @@ python3 tools/prepare-prearranged-test.py --directory artifacts/mcdata-release-l
 C=".cache/deps/docker-compose-linux-x86_64 -p openmcx-mcdata-release -f artifacts/mcdata-release-lab/compose.json"
 $C up -d mcdata-server                      # start the capture before the clients authorise
 docker run -d --rm --name openmcx-mcdata-release-capture --network "container:$($C ps -q mcdata-server)" \
-  --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.4 \
+  --cap-drop ALL --cap-add NET_RAW openmcx-dev:0.5 \
   sh -c "tcpdump -Z root -i eth0 -U --immediate-mode -s 0 -w /tmp/c.pcap 'tcp port 5060'"
 $C up -d
 python3 tests/integration/mcdata_release_scenario.py \
@@ -93,7 +93,7 @@ The scenario (`mcdata_release_scenario.py`) makes 57 assertions and its wire ver
 | REL-13 | SIP wire checks (26), with the COMMUNICATION RELEASE, DATA PAYLOAD and FD HTTP TERMINATION bodies decoded independently of the C++ codec: the INFO package and Content-Disposition; intents with and without the data query and with a reason; the TEXT payload of the remaining data; extension requests and responses (ACCEPTED and REJECTED); `AUTH USER RELEASE REQ` with the client ID, answered 200 and 403; the authorised user's intent and the requests passed to it with `<mcdata-request-uri>`; BYEs carrying each of seven reasons in RFC 3326 form, and `User requested release`; and the five FD HTTP TERMINATION steps of §13.2.6.3 | Wire report (`artifacts/integration/mcdata-release-sip-wire.json`), capture (`artifacts/integration/mcdata-release.pcap`) |
 | REL-14 | Unit tests of the COMMUNICATION RELEASE codec: byte-exact intent with data query (`0a 01 b1`), extension response (`0a 03 c2`) and `AUTH USER RELEASE REQ` (`0a 04`), and six rejections | `test_mcdata` in the image build |
 
-When the SIP core challenges an in-dialog request that a client sends on an INVITE dialog, pjsip's INVITE session layer sends it again with its own credentials. The SIP engine hands the request's handler to that resent transaction, with the next CSeq, so the real answer (for example a 403) reaches the client and not the 407 challenge.
+When the SIP core challenges an in-dialog request that a client sends on an INVITE dialog, the SIP engine sends it again once with its credentials and the next CSeq (RFC 3261 section 22.2, `src/sip/requests.cpp`), and hands the answer to that request to the request's handler, so the real answer (for example a 403) reaches the client and not the 407 challenge.
 
 ## High-level call flow (authorised user with prior indication)
 

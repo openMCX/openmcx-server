@@ -2,14 +2,12 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// Dependency smoke test: PJSIP, libxml2, the AMR-WB encoder and decoder (one frame each way) and libsrtp2 initialise,
-// work and shut down.
+// Dependency smoke test: reSIProcate (a SIP URI parsed), libxml2, the AMR-WB encoder and decoder (one frame each way)
+// and libsrtp2 initialise, work and shut down.
 //
 // Specifications: none (third-party libraries only).
 
 #include <libxml/parser.h>
-#include <pjlib.h>
-#include <pjsip.h>
 #include <srtp2/srtp.h>
 
 #include <algorithm>
@@ -17,13 +15,16 @@
 #include <cmath>
 #include <iostream>
 #include <opencore-amrwb/dec_if.h>
+#include <resip/stack/Uri.hxx>
 #include <vo-amrwbenc/enc_if.h>
 
 //------------------------------------------------------------------------------
 // Initialises each third-party library, encodes and decodes one AMR-WB frame, parses a minimal XML document and shuts
 // everything down again.
 int main() {
-  if (pj_init() != PJ_SUCCESS || srtp_init() != srtp_err_status_ok) return 1;
+  if (srtp_init() != srtp_err_status_ok) return 1;
+  const resip::Uri uri("sip:alice.mcptt@mcx.test;transport=tcp");
+  if (uri.user() != "alice.mcptt" || uri.host() != "mcx.test" || uri.param(resip::p_transport) != "tcp") return 6;
   void *encoder = E_IF_init();
   void *decoder = D_IF_init();
   if (!encoder || !decoder) return 2;
@@ -46,6 +47,5 @@ int main() {
   E_IF_exit(encoder);
   D_IF_exit(decoder);
   srtp_shutdown();
-  pj_shutdown();
-  std::cout << "PJSIP, XML, AMR-WB encode/decode and SRTP dependency smoke passed\n";
+  std::cout << "reSIProcate, XML, AMR-WB encode/decode and SRTP dependency smoke passed\n";
 }

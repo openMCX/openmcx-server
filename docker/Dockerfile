@@ -9,14 +9,11 @@
 #
 # Targets: openmcx-mcptt-server, openmcx-mcvideo-server, openmcx-mcdata-server, openmcx-common (the common services
 # and the key tool), openmcx-http-proxy, openmcx-user-db; openmcx-all holds every program (the former single image).
-# The build stage runs on the development image (docker/Dockerfile.dev: compilers, pjsip, Go); each runtime
+# The build stage runs on the development image (docker/Dockerfile.dev: compilers, reSIProcate, Go); each runtime
 # image is Ubuntu with only its program's run-time packages and the program stripped of its debug information (the
 # machine code is the same -O2 build), plus curl and Python for the lab's health checks.
 
-ARG DEV_IMAGE=openmcx-dev:0.4
-# The SIP stack of the SIP engine (CMakeLists.txt MCX_SIP_STACK): pjsip, or resip on a development image with
-# reSIProcate (prototype/resiprocate/PLAN.md).
-ARG MCX_SIP_STACK=pjsip
+ARG DEV_IMAGE=openmcx-dev:0.5
 ARG RUNTIME_BASE=ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
 # The Ubuntu release of RUNTIME_BASE and of the development image; its package names are in docker/packages.
 ARG UBUNTU=24.04
@@ -24,7 +21,6 @@ ARG UBUNTU=24.04
 #------------------------------------------------------------------------------
 # Build: Go services and tests, C++ programs and unit tests; stripped copies in /install/stripped.
 FROM ${DEV_IMAGE} AS build
-ARG MCX_SIP_STACK
 COPY services /services
 RUN cd /services && go test ./... && go build -trimpath -o /install/bin/mcx-common ./cmd/mcx-common \
     && go build -trimpath -o /install/bin/mcx-http-proxy ./cmd/mcx-http-proxy
@@ -33,7 +29,7 @@ COPY dependencies/hostap /src/dependencies/hostap
 COPY include /src/include
 COPY src /src/src
 COPY tests /src/tests
-RUN cmake -S /src -B /build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMCX_SIP_STACK=${MCX_SIP_STACK} \
+RUN cmake -S /src -B /build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     && cmake --build /build -j4 \
     && ctest --test-dir /build --output-on-failure -E diameter_sctp \
     && cmake --install /build --prefix /install \
@@ -57,6 +53,9 @@ COPY dependencies/hostap/README /usr/share/doc/openmcx/hostap-README
 # libsrtp's licence (BSD-3-Clause): the programs link the patched libsrtp of the development image statically
 # (dependencies/libsrtp).
 COPY --from=build /usr/local/share/doc/libsrtp/LICENSE /usr/share/doc/openmcx/libsrtp-LICENSE
+# reSIProcate's licences (the Vovida Software License 1.0 and, for its bundled resolver, c-ares's): the programs link
+# rutil, resip and dum of the build stage statically (dependencies/resiprocate).
+COPY --from=build /opt/resiprocate/share/doc/resiprocate/LICENSE.md /usr/share/doc/openmcx/resiprocate-LICENSE.md
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.source="https://github.com/openMCX/openmcx-server"
 

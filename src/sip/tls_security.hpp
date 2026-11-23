@@ -4,9 +4,9 @@
 
 // The TLS profile of TS 33.210 clause 6.2 (include/mcx/tls_profile.hpp) on reSIProcate's TLS: a resip::Security that
 // applies it to every SSL_CTX the stack creates, its own (the client side) and each TLS transport's domain context
-// (the server side), as src/sip/lifecycle.cpp sets it on pjsip's TLS transport.
+// (the server side).
 //
-// Private to src/sip_resip/.
+// Private to src/sip/.
 //
 // Specifications: TS 33.210 V19.3.0 clause 6.2, TS 33.180 V19.4.0 (Rel-19) clause 6.1.
 #pragma once

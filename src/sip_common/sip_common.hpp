@@ -2,8 +2,7 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// The SIP engine's stack-independent helpers (sip_common.cpp), shared by its pjproject implementation (src/sip/) and
-// its reSIProcate one (src/sip_resip/).
+// The SIP engine's stack-independent helpers (sip_common.cpp), apart from the engine on reSIProcate (src/sip/).
 //
 // Private to the SIP engine: include/mcx/sip.hpp is its interface.
 //

@@ -6,10 +6,10 @@ listed in `docs/IMAGES.md`.
 ## 1. Development image (once, and when a pinned dependency changes)
 
 ```sh
-docker build -t openmcx-dev:0.4 -f docker/Dockerfile.dev .
+docker build -t openmcx-dev:0.5 -f docker/Dockerfile.dev .
 ```
 
-Ubuntu 24.04 with the compilers and the libraries the programs link, plus pjsip and Go built from pinned
+Ubuntu 24.04 with the compilers and the libraries the programs link, plus reSIProcate, libsrtp and Go built from pinned
 sources. The build downloads each source archive itself and checks its SHA-256 (`docker/fetch`); the versions,
 URLs and hashes are the build arguments at the top of `docker/Dockerfile.dev`, kept equal to
 `dependencies/lock.json` by `tools/check-dependencies.py`. For an offline build, put the archives on a web server
@@ -44,20 +44,20 @@ so building every target compiles once.
 Ubuntu 24.04 is the default; 26.04 is supported too:
 
 ```sh
-tools/build-images --ubuntu 26.04 0.1-u2604   # builds openmcx-dev:0.4-ubuntu26.04 first when missing
+tools/build-images --ubuntu 26.04 0.1-u2604   # builds openmcx-dev:0.5-ubuntu26.04 first when missing
 ```
 
 The pinned base image of each release is in `dependencies/lock.json` (`base_images`; `base_image` is the default,
 which the Dockerfiles' `BASE_IMAGE` and `RUNTIME_BASE` defaults must equal, checked by `tools/check-dependencies.py`).
 Package names differ between releases (for example `libxml2` / `libxml2-16`, freeDiameter 6 / 7, the OpenH264
-version); `docker/packages <release> <part>` lists them for both Dockerfiles. pjsip and Go are built or
+version); `docker/packages <release> <part>` lists them for both Dockerfiles. reSIProcate, libsrtp and Go are built or
 fetched from the same pinned sources on both. By hand:
 
 ```sh
-docker build -t openmcx-dev:0.4-ubuntu26.04 -f docker/Dockerfile.dev \
+docker build -t openmcx-dev:0.5-ubuntu26.04 -f docker/Dockerfile.dev \
   --build-arg BASE_IMAGE=<base_images 26.04> --build-arg UBUNTU=26.04 .
 docker build --target openmcx-mcptt-server -t openmcx-mcptt-server:0.1-u2604 -f docker/Dockerfile \
-  --build-arg DEV_IMAGE=openmcx-dev:0.4-ubuntu26.04 --build-arg RUNTIME_BASE=<base_images 26.04> \
+  --build-arg DEV_IMAGE=openmcx-dev:0.5-ubuntu26.04 --build-arg RUNTIME_BASE=<base_images 26.04> \
   --build-arg UBUNTU=26.04 .
 ```
 
@@ -92,7 +92,7 @@ docker build -t openmcx-sipdb:8.0-1 -f docker/Dockerfile.sipdb .
 ## 5. Lint image
 
 ```sh
-tools/lint-image          # openmcx-lint:0.1: clang-format, clang-tidy, golangci-lint, ruff (docs/CODING_STYLE.md)
+tools/lint-image          # openmcx-lint:0.2: clang-format, clang-tidy, golangci-lint, ruff (docs/CODING_STYLE.md)
 ```
 
 ## 6. Running the labs

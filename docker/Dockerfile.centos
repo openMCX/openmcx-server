@@ -12,7 +12,7 @@
 # and the key tool), openmcx-http-proxy, openmcx-user-db. The build stage compiles once for all of them.
 #
 # Packages: BaseOS, AppStream and CRB, and EPEL 10 for nlohmann JSON, the AMR-WB codecs and libidn. freeDiameter and
-# OpenH264 have no EL10 package, so they are built from their pinned sources, like pjsip and Go
+# OpenH264 have no EL10 package, so they are built from their pinned sources, like reSIProcate and Go
 # (dependencies/lock.json, checked by tools/check-dependencies.py). The runtime images use BaseOS and AppStream only:
 # the few libraries from EPEL or built here are copied in, and every image checks with ldd that nothing is missing.
 
@@ -27,9 +27,9 @@ ARG DEPS_MIRROR=
 ARG GO_FILE=go1.27.1.linux-amd64.tar.gz
 ARG GO_URL=https://go.dev/dl/go1.27.1.linux-amd64.tar.gz
 ARG GO_SHA256=63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445
-ARG PJSIP_FILE=pjproject-2.17.tar.gz
-ARG PJSIP_URL=https://github.com/pjsip/pjproject/archive/refs/tags/2.17.tar.gz
-ARG PJSIP_SHA256=065fe06c06788d97c35f563796d59f00ce52fe9558a52d7b490a042a966facce
+ARG RESIPROCATE_FILE=resiprocate-openmcx-1.14.0-1.tar.gz
+ARG RESIPROCATE_URL=https://github.com/openMCX/resiprocate/archive/refs/tags/openmcx-1.14.0-1.tar.gz
+ARG RESIPROCATE_SHA256=a04a018a1e6be6321f979b0aa9f3abb9c30daddf7936b5caa853db650a7dc1e8
 ARG FREEDIAMETER_FILE=freeDiameter-1.5.0.tar.gz
 ARG FREEDIAMETER_URL=https://github.com/freeDiameter/freeDiameter/archive/refs/tags/1.5.0.tar.gz
 ARG FREEDIAMETER_SHA256=cc4ceafd9d0d4a6a5e3aa02bf557906fe755df9ec14d16c4fcd5dab6930296aa
@@ -56,14 +56,14 @@ RUN dnf config-manager --set-enabled crb \
     # Libraries built from source go to /usr/local, which is not on EL's default loader path.
     && echo "/usr/local/lib" > /etc/ld.so.conf.d/local-lib.conf \
     && echo "/usr/local/lib64" >> /etc/ld.so.conf.d/local-lib.conf
-ENV PATH="/usr/local/go/bin:/opt/pjsip/bin:${PATH}" \
-    PKG_CONFIG_PATH="/opt/pjsip/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/local/lib64/pkgconfig" \
+ENV PATH="/usr/local/go/bin:${PATH}" \
+    PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/local/lib64/pkgconfig" \
     LIBRARY_PATH="/usr/local/lib:/usr/local/lib64"
 COPY docker/fetch /usr/local/bin/fetch
 RUN fetch "$GO_FILE" "$GO_URL" "$GO_SHA256" /tmp/go.tar.gz \
     && tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
 # libsrtp from its pinned source with OpenMCX's patch (dependencies/libsrtp/README.md): the first SRTCP index is zero
-# (RFC 3711 section 3.4). A static library in /usr/local, used by pjproject and the OpenMCX programs.
+# (RFC 3711 section 3.4). A static library in /usr/local, used by the OpenMCX programs.
 COPY dependencies/libsrtp/${LIBSRTP_PATCH} /tmp/libsrtp-patches/
 RUN fetch "$LIBSRTP_FILE" "$LIBSRTP_URL" "$LIBSRTP_SHA256" /tmp/libsrtp.tar.gz \
     && echo "$LIBSRTP_PATCH_SHA256  /tmp/libsrtp-patches/$LIBSRTP_PATCH" | sha256sum --check --strict - \
@@ -74,21 +74,13 @@ RUN fetch "$LIBSRTP_FILE" "$LIBSRTP_URL" "$LIBSRTP_SHA256" /tmp/libsrtp.tar.gz \
     && make -j4 && make install \
     && install -D -m 644 LICENSE /usr/local/share/doc/libsrtp/LICENSE \
     && rm -rf /tmp/libsrtp /tmp/libsrtp.tar.gz /tmp/libsrtp-patches
-# OpenMCX's pjproject patches (dependencies/pjproject/README.md): the TCP client port of IMS AKA (TS 33.203 7.1)
-# and TCP for requests pinned to a UDP transport (RFC 3261 18.1.1, TCP next hops).
-COPY dependencies/pjproject/0001-tcp-client-port.patch dependencies/pjproject/0002-udp-to-tcp.patch /tmp/pjproject-patches/
-RUN fetch "$PJSIP_FILE" "$PJSIP_URL" "$PJSIP_SHA256" /tmp/pjproject.tar.gz \
-    && mkdir /tmp/pjproject && tar -xzf /tmp/pjproject.tar.gz -C /tmp/pjproject --strip-components=1 \
-    && cd /tmp/pjproject \
-    && for p in /tmp/pjproject-patches/*.patch; do patch -p1 --forward < "$p" || exit 1; done \
-    && printf '/* SIP over TCP carries access tokens, MIKEY-SAKKE I_MESSAGEs and XML bodies */\n#define PJSIP_MAX_PKT_LEN 16000\n' \
-       > pjlib/include/pj/config_site.h \
-    && ./configure --prefix=/opt/pjsip --disable-video --disable-sound --disable-libyuv \
-       --disable-opencore-amr --disable-speex-aec --disable-gsm-codec --disable-speex-codec \
-       --disable-ilbc-codec --disable-g7221-codec --with-external-srtp CFLAGS='-fPIC' CXXFLAGS='-fPIC' \
-    && grep -q "guid_uuid.o" pjlib/build/os-auto.mak \
-    && make dep && make -j4 && make install \
-    && rm -rf /tmp/pjproject /tmp/pjproject.tar.gz /tmp/pjproject-patches
+# reSIProcate from OpenMCX's fork, with its patches (dependencies/resiprocate/README.md), the SIP stack of the SIP
+# engine: static rutil, resip and dum in /opt/resiprocate, found by CMakeLists.txt.
+COPY dependencies/resiprocate/ /tmp/resiprocate/
+RUN mkdir -p /tmp/resiprocate-work \
+    && fetch "$RESIPROCATE_FILE" "$RESIPROCATE_URL" "$RESIPROCATE_SHA256" /tmp/resiprocate-work/$RESIPROCATE_FILE \
+    && MCX_BUILD_JOBS=4 bash /tmp/resiprocate/build.sh /opt/resiprocate /tmp/resiprocate-work \
+    && rm -rf /tmp/resiprocate /tmp/resiprocate-work
 # freeDiameter 1.5.0 (the version Ubuntu 24.04 packages): libfdcore and libfdproto for the Diameter client of the
 # servers and the user database (TS 29.283); OpenMCX loads no extension.
 RUN fetch "$FREEDIAMETER_FILE" "$FREEDIAMETER_URL" "$FREEDIAMETER_SHA256" /tmp/freediameter.tar.gz \
@@ -96,12 +88,14 @@ RUN fetch "$FREEDIAMETER_FILE" "$FREEDIAMETER_URL" "$FREEDIAMETER_SHA256" /tmp/f
     && cmake -S /tmp/freediameter -B /tmp/freediameter/build -DCMAKE_INSTALL_PREFIX=/usr/local \
        -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
     && cmake --build /tmp/freediameter/build -j4 && cmake --install /tmp/freediameter/build && ldconfig \
+    && install -D -m 644 /tmp/freediameter/LICENSE /install/licenses/freeDiameter-LICENSE \
     && rm -rf /tmp/freediameter /tmp/freediameter.tar.gz
 # Cisco OpenH264 2.4.1 (the version Ubuntu 24.04 packages), H.264 for MCVideo (TS 26.281 clause 4.1.1); built
 # without assembly, so no nasm is needed.
 RUN fetch "$OPENH264_FILE" "$OPENH264_URL" "$OPENH264_SHA256" /tmp/openh264.tar.gz \
     && mkdir /tmp/openh264 && tar -xzf /tmp/openh264.tar.gz -C /tmp/openh264 --strip-components=1 \
     && make -C /tmp/openh264 -j4 USE_ASM=No PREFIX=/usr/local install-shared && ldconfig \
+    && install -D -m 644 /tmp/openh264/LICENSE /install/licenses/openh264-LICENSE \
     && rm -rf /tmp/openh264 /tmp/openh264.tar.gz
 COPY services /services
 RUN cd /services && go test ./... && go build -trimpath -o /install/bin/mcx-common ./cmd/mcx-common \
@@ -122,6 +116,9 @@ RUN cmake -S /src -B /build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
          ldd "$program" | awk '/=> \// {print $3}' \
            | grep -E '/usr/local/|libopencore-amrwb|libvo-amrwbenc|libidn\.so' || true; \
        done | sort -u | xargs -r cp -L -t /install/libs/ \
+    # The licences of the EPEL libraries copied with them (the runtime images install no package of theirs).
+    && cp -r /usr/share/licenses/opencore-amr /usr/share/licenses/vo-amrwbenc /usr/share/licenses/libidn \
+       /install/licenses/ \
     && ls -l /install/libs
 
 #------------------------------------------------------------------------------
@@ -133,8 +130,17 @@ RUN microdnf update -y \
     && microdnf clean all -y && rm -rf /var/cache/yum /var/cache/dnf \
     && echo "/usr/local/lib64" > /etc/ld.so.conf.d/local-lib.conf
 COPY --from=build /install/libs/ /usr/local/lib64/
+# The licence of OpenMCX and the third-party notices, in every image (NOTICE lists the sources), as the Ubuntu images.
+COPY LICENSE NOTICE /usr/share/doc/openmcx/
+# hostap's licence (BSD), which its MILENAGE (dependencies/hostap) in the SIP library asks binaries to carry.
+COPY dependencies/hostap/README /usr/share/doc/openmcx/hostap-README
+# The licences of the libraries in /usr/local/lib64 (built here or from EPEL), which no package of the image carries.
+COPY --from=build /install/licenses/ /usr/share/doc/openmcx/third-party/
 # libsrtp's licence (BSD-3-Clause): the programs link the patched libsrtp statically (dependencies/libsrtp).
 COPY --from=build /usr/local/share/doc/libsrtp/LICENSE /usr/share/doc/openmcx/libsrtp-LICENSE
+# reSIProcate's licences (the Vovida Software License 1.0 and, for its bundled resolver, c-ares's): the programs link
+# rutil, resip and dum of the build stage statically (dependencies/resiprocate).
+COPY --from=build /opt/resiprocate/share/doc/resiprocate/LICENSE.md /usr/share/doc/openmcx/resiprocate-LICENSE.md
 RUN ldconfig
 COPY tools/healthcheck.py /healthcheck.py
 WORKDIR /workspace

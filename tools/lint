@@ -18,7 +18,7 @@ mkdir -p artifacts/lint
 git ls-files 'src/*.cpp' > artifacts/lint/tidy.list
 git ls-files '*.py' > artifacts/lint/py.list
 docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e GOCACHE=/tmp/go-cache -e GOFLAGS=-mod=vendor \
-  -v "$PWD:/src" -w /src openmcx-lint:0.1 bash -c '
+  -v "$PWD:/src" -w /src openmcx-lint:0.2 bash -c '
 set -uo pipefail
 only=$1
 out=artifacts/lint

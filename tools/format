@@ -15,7 +15,7 @@ mkdir -p artifacts/lint
 git ls-files 'src/*.cpp' 'src/*.hpp' 'include/*.hpp' 'tests/*.cpp' 'tests/*.hpp' > artifacts/lint/cpp.list
 git ls-files 'services/*.go' | grep -v '^services/vendor/' > artifacts/lint/go.list
 git ls-files '*.py' > artifacts/lint/py.list
-docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/src" -w /src openmcx-lint:0.1 bash -c '
+docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/src" -w /src openmcx-lint:0.2 bash -c '
 set -euo pipefail
 mode=$1
 cpp=$(cat artifacts/lint/cpp.list); go=$(cat artifacts/lint/go.list); py=$(cat artifacts/lint/py.list)

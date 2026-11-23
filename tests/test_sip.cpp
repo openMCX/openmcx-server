@@ -2,7 +2,7 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// SIP engine (PJSIP): configuration checks, header lookup, and the transaction, dialog, subscription and INVITE
+// SIP engine (reSIProcate): configuration checks, header lookup, and the transaction, dialog, subscription and INVITE
 // session behaviour seen by the application, in one process and as separate server and client processes.
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), RFC 3515, RFC 4488, RFC 4538.
@@ -19,9 +19,11 @@
 
 #include <chrono>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -230,8 +232,8 @@ void test_native_mutual_tls_request_callbacks_when_configured() {
   for (int iteration = 0; iteration < 200 && !response_received; ++iteration) {
     engine.poll(std::chrono::milliseconds(10));
   }
-  check(request_received, "native PJSIP TLS listener delivers incoming request metadata and body");
-  check(response_received, "native PJSIP transaction delivers final response callback");
+  check(request_received, "TLS listener delivers incoming request metadata and body");
+  check(response_received, "transaction delivers final response callback");
   if (!request_received || !response_received) {
     std::cerr << "multipart diagnostic: status=" << final_status << " content-type='" << observed_content_type
               << "' parts=" << observed_part_count << " error='" << observed_error << "'\n";
@@ -248,7 +250,7 @@ void test_native_mutual_tls_request_callbacks_when_configured() {
   for (int iteration = 0; iteration < 200 && !response_received; ++iteration) {
     engine.poll(std::chrono::milliseconds(10));
   }
-  check(request_received && response_received, "PJSIP-style leading MIME framing is normalized before strict parsing");
+  check(request_received && response_received, "a CRLF before the first MIME delimiter (RFC 2046 preamble) is normalized before strict parsing");
 
   // A request answered from the callback and its response leave within the polls that see them: no poll waits out
   // its timeout with a message for the application or the wire in hand (each step ends the wait by its own I/O).
@@ -1126,7 +1128,7 @@ void run_transaction_failure(const std::string &directory) {
 } // namespace
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 18.1.1: a request is on the wire when the call that sends it returns (pjsip writes it there), so it
+// RFC 3261 section 18.1.1: a request is on the wire when the call that sends it returns, so it
 // goes before what the application does next: TS 24.282 clause 10.2.1.2.2, the FD NOTIFICATION "accepted" before
 // the HTTP GET of the file. Against a plain TCP listener (debug TCP configuration): once the connection stands, a
 // second request is readable from the socket without any poll of the engine.
@@ -1193,6 +1195,64 @@ void test_request_on_wire_at_return() {
 }
 
 //------------------------------------------------------------------------------
+// The SIP message log of log level debug (src/sip/lifecycle.cpp, docs/USAGE.md section 7): a MESSAGE to the engine
+// itself over debug TCP gives a "SIP ->" and a "SIP <-" line for the request and for its 200, each with the method or
+// status, From, To, Call-ID, CSeq, the peer, the transport and the size; the body is never written.
+void test_sip_message_log() {
+  mcx::SipConfig config;
+  config.listen_address = "127.0.0.1";
+  config.advertise_address = "127.0.0.1";
+  config.listen_port = 15073;
+  config.core_uri = "sip:127.0.0.1:15073;transport=tcp";
+  config.identity = "sip:trace@openmcx.test";
+  config.tls.enabled = false;
+  config.tls.ca_file.clear();
+  config.tls.cert_file.clear();
+  config.tls.key_file.clear();
+  mcx::SipCallbacks callbacks;
+  callbacks.on_request = [](const mcx::SipMessage &) {
+    mcx::SipResponse response;
+    response.status_code = 200;
+    return response;
+  };
+  char path[] = "/tmp/openmcx-sip-log-XXXXXX";
+  const int file = ::mkstemp(path);
+  const int saved = ::dup(2);
+  check(file >= 0 && saved >= 0, "a file for stderr");
+  if (file < 0 || saved < 0) return;
+  std::cerr.flush();
+  ::dup2(file, 2);
+  const auto level = mcx::log_level();
+  mcx::set_log_level(mcx::LogLevel::debug);
+  bool answered = false;
+  {
+    mcx::SipEngine engine(config, callbacks);
+    engine.start();
+    engine.request("MESSAGE", "sip:trace@127.0.0.1:15073;transport=tcp", "text/plain", "secret-body-text", {},
+                   [&](const mcx::SipResponse &response) { answered = response.status_code == 200; });
+    for (int iteration = 0; iteration < 200 && !answered; ++iteration) engine.poll(std::chrono::milliseconds(10));
+  }
+  mcx::set_log_level(level);
+  std::cerr.flush();
+  ::dup2(saved, 2);
+  ::close(saved);
+  std::ifstream input(path);
+  const std::string log((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  ::close(file);
+  ::unlink(path);
+  check(answered, "the MESSAGE to the engine itself is answered 200");
+  const auto has = [&log](std::string_view text) { return log.find(text) != std::string::npos; };
+  check(has("SIP -> MESSAGE sip:trace@127.0.0.1:15073;transport=tcp | from <sip:trace@openmcx.test> | to "
+            "<sip:trace@127.0.0.1:15073;transport=tcp> | call-id "),
+        "the sent request is logged with its Request-URI, From and To");
+  check(has("SIP <- MESSAGE sip:trace@127.0.0.1:15073;transport=tcp"), "the received request is logged");
+  check(has("SIP -> 200 | from <sip:trace@openmcx.test>") && has("SIP <- 200 | from <sip:trace@openmcx.test>"),
+        "the 200 is logged sent and received");
+  check(has("| cseq 1 MESSAGE | 127.0.0.1:15073 TCP | ") && has(" bytes"), "CSeq, peer, transport and size");
+  check(!has("secret-body-text"), "the body is never logged");
+}
+
+//------------------------------------------------------------------------------
 // Runs one role of a multi-process test (OPENMCX_SIP_TEST_ROLE) or the single-process tests.
 int main() {
   // The SIP message log of both processes (src/sip/lifecycle.cpp), for a failing exchange.
@@ -1231,6 +1291,7 @@ int main() {
   test_tls_and_identity_configuration_are_required();
   test_native_mutual_tls_request_callbacks_when_configured();
   test_request_on_wire_at_return();
+  test_sip_message_log();
   if (failures != 0) {
     return 1;
   }

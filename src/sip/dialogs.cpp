@@ -3,8 +3,7 @@
 //
 
 // SipEngine::Impl on reSIProcate: INVITE dialogs on the transaction layer (prototype/resiprocate/PLAN.md phase 3c,
-// decision 1: the engine's own dialog layer, not reSIProcate's DUM). The behaviour is the pjproject engine's INVITE
-// session: the UAC's INVITE with a required session timer, its provisional and final responses, the ACK of a 2xx (and
+// decision 1: the engine's own dialog layer, not reSIProcate's DUM): the UAC's INVITE with a required session timer, its provisional and final responses, the ACK of a 2xx (and
 // of its retransmissions), CANCEL of an early call and BYE after a 2xx that crossed it; the UAS's dialog, deferred
 // and immediate answers, the 2xx retransmitted over UDP until its ACK, 487 to a cancelled INVITE; re-INVITE and UPDATE
 // offers both ways with one offer at a time (491 to a crossing one), BYE both ways, in-dialog INFO and MESSAGE, PRACK
@@ -29,12 +28,12 @@ namespace {
 using sip_detail::ascii_equal;
 
 
-// RFC 4028 section 4: this endpoint's Min-SE (the pjproject session timer's default).
+// RFC 4028 section 4: this endpoint's Min-SE (the minimum the RFC allows, section 5).
 constexpr unsigned kMinimumSessionExpires = 90;
 // RFC 3261 section 17.1.1.1: T1, the first 2xx retransmission interval; 64*T1 is the wait for its ACK.
 constexpr std::chrono::milliseconds kT1{500};
-// RFC 3261 section 13.3.1.4 and RFC 3262 section 3: the methods this endpoint allows in an INVITE dialog, as the
-// pjproject engine's INVITE session lists them in requests and in answers.
+// RFC 3261 section 13.3.1.4 and RFC 3262 section 3: the methods this endpoint allows in an INVITE dialog, in requests
+// and in answers.
 constexpr const char *kAllowRequest = "INVITE, ACK, BYE, CANCEL, UPDATE";
 constexpr const char *kAllowAnswer = "INVITE, ACK, BYE, CANCEL, UPDATE, PRACK";
 
@@ -73,7 +72,7 @@ std::string sdp_of(const std::string &content_type, const std::string &body) {
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 sections 7.3.1, 20.32 and 20.37 (as add_answer_headers of the pjproject engine): a server's own header
+// RFC 3261 sections 7.3.1, 20.32 and 20.37: a server's own header
 // fields joined to a message's: option tags of Supported and Require join the header field of that name; any other
 // header field is added unless the message has one of that name.
 void merge_headers(std::vector<SipHeader> &headers, const std::vector<SipHeader> &extra) {
@@ -207,7 +206,7 @@ SipResponse SipEngine::Impl::safe_application_response(const SipMessage &request
 }
 
 //------------------------------------------------------------------------------
-// TS 24.229 clause 5.1.4.1 (as response_contact of the pjproject engine): the Contact of an answer: this endpoint's,
+// TS 24.229 clause 5.1.4.1: the Contact of an answer: this endpoint's,
 // or the application's public session URI with its or the services' tags, ";isfocus" for a focus, and the media
 // feature tags.
 std::string SipEngine::Impl::response_contact(const SipResponse &response) const {
@@ -266,7 +265,7 @@ std::string SipEngine::Impl::send_in_dialog(Dialog &dialog, OutgoingRequest requ
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 13.2 (as create_invite of the pjproject engine): a new INVITE dialog: From the identity with a new
+// RFC 3261 section 13.2: a new INVITE dialog: From the identity with a new
 // tag, To the Request-URI, a new Call-ID and CSeq, the Contact with the media feature tags (TS 24.229 clause 5.1.3.1)
 // or the application's, a pinned route set when the application names a Route (otherwise the preloaded route, and the
 // route set the 2xx records); Allow, Supported and Require "timer", Session-Expires and Min-SE (RFC 4028, the session
@@ -372,7 +371,7 @@ void SipEngine::Impl::send_ack(Dialog &dialog, std::uint32_t cseq) {
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 sections 13.2.2, 9.1 and 13.2.2.4 (as follow_invite_state of the pjproject engine): a response to the
+// RFC 3261 sections 13.2.2, 9.1 and 13.2.2.4: a response to the
 // initial INVITE. A provisional one with a tag makes the dialog early (reported once, with the first such response to
 // the handler; RFC 3262: a reliable one is acknowledged with PRACK). A 2xx is acknowledged; it confirms the call
 // (media, state, then the handler), or ends it with BYE when this side has cancelled it meanwhile. A failure ends it.
@@ -524,7 +523,7 @@ void SipEngine::Impl::terminate(std::string dialog_id, int cause) {
 }
 
 //------------------------------------------------------------------------------
-// RFC 3264 sections 5 and 6 (as invite_media_updated of the pjproject engine): the peer's SDP of a completed offer and
+// RFC 3264 sections 5 and 6: the peer's SDP of a completed offer and
 // answer, when it describes audio or video, to the application's media callback.
 void SipEngine::Impl::report_media(const Dialog &dialog, const std::string &content_type, const std::string &body) {
   if (!callbacks.on_media) return;
@@ -612,7 +611,7 @@ void SipEngine::Impl::refresh_session(const std::string &dialog_id) {
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 14.1 and RFC 3311 section 5.1 (as send_reinvite and update of the pjproject engine): an offer in a
+// RFC 3261 section 14.1 and RFC 3311 section 5.1: an offer in a
 // confirmed dialog with no offer pending: a re-INVITE or UPDATE with the SDP (and the parts), the session timer header
 // fields and the application's.
 void SipEngine::Impl::send_offer(std::string_view dialog_id, std::string_view method, std::string sdp,
@@ -645,7 +644,7 @@ void SipEngine::Impl::send_offer(std::string_view dialog_id, std::string_view me
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 sections 15.1.1 and 9.1 (as bye of the pjproject engine): ends a call: BYE in a confirmed dialog (with at
+// RFC 3261 sections 15.1.1 and 9.1: ends a call: BYE in a confirmed dialog (with at
 // most one body part), CANCEL of this side's early INVITE (the body kept for the BYE should a 2xx cross it), 487 to an
 // INVITE this side has not answered yet. Repeated ends are harmless.
 void SipEngine::Impl::end_dialog(std::string_view dialog_id, SipResponseHandler handler,
@@ -706,7 +705,7 @@ void SipEngine::Impl::send_dialog_response(Dialog &dialog, const resip::SipMessa
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 13.3.1 (as accept_invite and answer of the pjproject engine): an answer to the dialog's INVITE:
+// RFC 3261 section 13.3.1: an answer to the dialog's INVITE:
 // a provisional one (the Contact, Allow, the provisional header fields of the configuration; RFC 3262 with RSeq when
 // the INVITE requires 100rel) makes the dialog early; a 2xx (the Contact, Allow, the session timer, the SDP answer
 // with the parts and the dialog parts, the success header fields of the configuration) waits for its ACK; a failure
@@ -779,7 +778,7 @@ void SipEngine::Impl::answer_invite(Dialog &dialog, const SipResponse &response)
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 13.3.1 (as accept_invite of the pjproject engine): the UAS dialog of an initial INVITE that the
+// RFC 3261 section 13.3.1: the UAS dialog of an initial INVITE that the
 // application answers 1xx or 2xx: a new local tag, the remote tag, target and route set (its Record-Route, or the
 // application's peer route, pinned), this side's Contact (SIPS for a SIPS request), the session timer (RFC 4028: 422
 // below Min-SE) and RFC 3262 when the INVITE requires 100rel; then the answer. False when the INVITE was refused here
@@ -1038,7 +1037,7 @@ void SipEngine::Impl::receive_in_dialog(const resip::SipMessage &message) {
 }
 
 //------------------------------------------------------------------------------
-// RFC 6665 section 4.1.2 (as create_subscribe of the pjproject engine): a subscription dialog and its initial
+// RFC 6665 section 4.1.2: a subscription dialog and its initial
 // SUBSCRIBE: From the identity with a new tag, To the Request-URI, a new Call-ID and CSeq, this side's Contact (or the
 // application's, which the dialog keeps), a pinned route set for an application Route (otherwise the preloaded route),
 // Event, Expires, the application's header fields and body. Returns the dialog id (its Call-ID).
@@ -1123,7 +1122,7 @@ void SipEngine::Impl::subscribe_response(const resip::SipMessage &message, Pendi
 }
 
 //------------------------------------------------------------------------------
-// RFC 6665 section 4.2.1 (as accept_subscription of the pjproject engine): the notifier's dialog of an initial
+// RFC 6665 section 4.2.1: the notifier's dialog of an initial
 // SUBSCRIBE that the application accepts: a new local tag, the subscriber's tag, target and route set, this side's
 // Contact (SIPS for a SIPS request); then the 2xx with that Contact.
 void SipEngine::Impl::accept_subscription(const resip::SipMessage &message, const SipResponse &response) {
@@ -1168,7 +1167,7 @@ void SipEngine::Impl::accept_subscription(const resip::SipMessage &message, cons
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 14.2 and RFC 3311 section 5.2 (as receive_reinvite and receive_offer of the pjproject engine): a
+// RFC 3261 section 14.2 and RFC 3311 section 5.2: a
 // re-INVITE or an UPDATE with an offer goes to the application; a re-INVITE answered deferred waits (the stack has sent
 // 100 Trying) for SipEngine::respond; otherwise the answer now.
 void SipEngine::Impl::receive_offer(Dialog &dialog, const resip::SipMessage &message) {
@@ -1196,7 +1195,7 @@ void SipEngine::Impl::receive_offer(Dialog &dialog, const resip::SipMessage &mes
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 14.2, RFC 3311 section 5.2 and RFC 3264 section 6 (as answer_reinvite of the pjproject engine): the
+// RFC 3261 section 14.2, RFC 3311 section 5.2 and RFC 3264 section 6: the
 // answer to a received re-INVITE or UPDATE offer: a 2xx with the SDP answer (the dialog's origin, its version raised
 // when the description changed), the Contact, the session timer and, for a re-INVITE, the success header fields of the
 // configuration; 488 for a 2xx without media; an error with its body; a provisional one (to a deferred re-INVITE)
@@ -1250,7 +1249,7 @@ void SipEngine::Impl::answer_offer(Dialog &dialog, const resip::SipMessage &offe
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 12.2.1 (as send_dialog_request of the pjproject engine): INFO, MESSAGE, SUBSCRIBE or NOTIFY in a
+// RFC 3261 section 12.2.1: INFO, MESSAGE, SUBSCRIBE or NOTIFY in a
 // dialog, with the
 // application's header fields and body; the handler gets the final response (after a digest retry).
 void SipEngine::Impl::send_dialog_request(std::string_view dialog_id, std::string_view method,

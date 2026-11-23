@@ -108,7 +108,7 @@ std::vector<BodyPart> parse_body_parts(std::string_view type, std::string_view b
   if (main != "multipart/mixed" && main != "multipart/related") return {{main, std::string(body)}};
   const std::string marker = "--" + multipart_boundary(type);
 
-  // RFC 2046 section 5.1.1: a preamble may precede the first delimiter; PJSIP writes a CRLF.
+  // RFC 2046 section 5.1.1: a preamble may precede the first delimiter; some stacks (pjsip) write a CRLF.
   std::size_t pos = body.starts_with("\r\n") ? 2 : 0;
   std::vector<BodyPart> out;
   while (pos < body.size()) {

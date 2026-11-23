@@ -2,68 +2,41 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// The public interface of the SIP engine (include/mcx/sip.hpp): registration, requests, subscriptions, INVITE sessions.
+// mcx::SipEngine (include/mcx/sip.hpp) on reSIProcate: the public operations over SipEngine::Impl (resip_impl.hpp).
 //
-// Specifications: RFC 3261, RFC 3264, RFC 4028, RFC 6665, RFC 3903, TS 24.379 V19.7.0 (Rel-19), TS 24.229.
+// Specifications: RFC 3261, RFC 3903, TS 24.379 V19.7.0 (Rel-19) clause 7.2.
+
+#include "resip_impl.hpp"
 
 #include "mcx/runtime.hpp"
-#include "sip_impl.hpp"
+
+#include <algorithm>
+#include <stdexcept>
 
 namespace mcx {
-
-//------------------------------------------------------------------------------
-// Helper: creates the engine's implementation from its configuration and callbacks.
 SipEngine::SipEngine(SipConfig config, SipCallbacks callbacks)
     : impl_(std::make_unique<Impl>(std::move(config), std::move(callbacks))) {}
 
-//------------------------------------------------------------------------------
-// Helper: the implementation's destructor stops the engine.
 SipEngine::~SipEngine() noexcept = default;
 
-//------------------------------------------------------------------------------
-// Helper: starts the PJSIP endpoint and transports (SipEngine::Impl::start).
 void SipEngine::start() { impl_->start(); }
 
-//------------------------------------------------------------------------------
-// Helper: stops the engine, releasing its registration, dialogs and pending responses (SipEngine::Impl::stop).
 void SipEngine::stop() noexcept { impl_->stop(); }
 
-//------------------------------------------------------------------------------
-// Helper: whether the engine has been started.
 bool SipEngine::running() const noexcept { return impl_->started; }
 
-//------------------------------------------------------------------------------
-// Helper: the number of tracked dialogs that are not INVITE sessions (the subscription dialogs of RFC 6665).
+void SipEngine::poll(std::chrono::milliseconds timeout) { impl_->poll(timeout); }
+
+void SipEngine::poll(std::chrono::milliseconds timeout, std::span<const int> wake_sockets) {
+  impl_->watch(wake_sockets);
+  impl_->poll(timeout);
+}
+
+// The dialogs that are not INVITE sessions (the subscription dialogs of RFC 6665).
 std::size_t SipEngine::subscription_count() const noexcept {
   return static_cast<std::size_t>(std::count_if(impl_->dialogs.begin(), impl_->dialogs.end(),
-                                                [](const auto &entry) { return entry.second->invite == nullptr; }));
+                                                [](const auto &entry) { return !entry.second->invite; }));
 }
-
-//------------------------------------------------------------------------------
-// Helper: handles PJSIP events for at most the timeout, then sends the queued responses and releases the ended
-// subscriptions and BYE references.
-void SipEngine::poll(std::chrono::milliseconds timeout) {
-  impl_->ensure_started();
-  if (timeout.count() < 0 || timeout.count() > std::numeric_limits<long>::max()) {
-    throw std::invalid_argument("invalid SIP poll timeout");
-  }
-  pj_time_val duration{};
-  duration.sec = static_cast<long>(timeout.count() / 1000);
-  duration.msec = static_cast<long>(timeout.count() % 1000);
-  const pj_status_t status = pjsip_endpt_handle_events(impl_->endpoint, &duration);
-  impl_->send_pending_responses();
-  impl_->release_pending_subscriptions();
-  impl_->release_bye_references();
-  if (status != PJ_SUCCESS && status != PJ_ETIMEDOUT && status != PJ_STATUS_FROM_OS(EINTR)) {
-    require_success(status, "poll PJSIP endpoint");
-  }
-}
-
-//------------------------------------------------------------------------------
-// Helper: sets the filters applied to outgoing and incoming message bodies (for example signalling protection).
-//------------------------------------------------------------------------------
-// pjsip's I/O queue cannot wait on the application's sockets: the wait is poll(timeout)'s.
-void SipEngine::poll(std::chrono::milliseconds timeout, std::span<const int>) { poll(timeout); }
 
 void SipEngine::set_body_filters(SipBodyFilter outgoing, SipBodyFilter incoming) {
   impl_->outgoing_filter = std::move(outgoing);
@@ -71,228 +44,124 @@ void SipEngine::set_body_filters(SipBodyFilter outgoing, SipBodyFilter incoming)
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 10.2 and TS 24.379 clause 7.2.1: sends a REGISTER with a body (for example the service
-// authorisation document) on the existing registration.
-void SipEngine::register_account(unsigned expires, std::string_view content_type, std::string_view body,
-                                 SipResponseHandler handler) {
-  if (impl_->aka) return impl_->aka_register(expires, content_type, body, std::move(handler));
-  if (impl_->registration == nullptr) {
-    throw std::logic_error("a REGISTER with a body follows the initial registration");
-  }
-  require_success(pjsip_regc_update_expires(impl_->registration, expires), "update SIP registration expiry");
-  impl_->registration_handler = std::move(handler);
-  pjsip_tx_data *created = nullptr;
-  require_success(pjsip_regc_register(impl_->registration, PJ_TRUE, &created), "create REGISTER request");
-  TxData data(created);
-  data->msg->body = make_text_body(data->pool, content_type, body);
-  impl_->before_send(data.get());
-  require_success(pjsip_regc_send(impl_->registration, data.release()), "send REGISTER request");
-}
-
-//------------------------------------------------------------------------------
-// RFC 3261 section 10.2: registers (or refreshes the registration of) the configured identity with digest
-// credentials; the Request-URI names the home domain and the REGISTER reaches it through the SIP core as the
-// outbound proxy.
+// RFC 3261 section 10.2: registers (or refreshes the registration of) the identity: with IMS AKA its own procedure
+// (TS 24.229 clauses 5.1.1.2.2 and 5.1.1.4.2, ims_aka.cpp), otherwise with digest credentials through the SIP core.
 void SipEngine::register_account(unsigned expires, SipResponseHandler handler) {
   impl_->ensure_started();
-  // TS 24.229 clauses 5.1.1.2.2 and 5.1.1.4.2: IMS AKA has its own REGISTER procedure (ims_aka.cpp).
-  if (impl_->aka) {
-    if (expires == 0) throw std::invalid_argument("SIP registration expiry must be nonzero");
-    return impl_->aka_register(expires, {}, {}, std::move(handler));
-  }
-  if (!has_credentials(impl_->config)) {
+  if (expires == 0) throw std::invalid_argument("SIP registration expiry must be nonzero");
+  if (impl_->aka) return impl_->aka_register(expires, {}, {}, std::move(handler));
+  if (!sip_detail::has_credentials(impl_->config))
     throw std::invalid_argument("SIP REGISTER requires digest credentials");
-  }
-  if (expires == 0) {
-    throw std::invalid_argument("SIP registration expiry must be nonzero");
-  }
-
-  if (impl_->registration == nullptr) {
-    require_success(pjsip_regc_create(impl_->endpoint, impl_.get(), &Impl::registration_complete, &impl_->registration),
-                    "create SIP registration client");
-    // RFC 3261 section 10.2: the Request-URI names the home domain; the REGISTER
-    // reaches it through the SIP core as the outbound proxy.
-    const auto registrar = "sip:" + identity_domain(impl_->config.identity);
-    auto server = pj_view(registrar);
-    auto identity = pj_view(impl_->config.identity);
-    // RFC 5626 section 4.2: an outbound client registers its instance and reg-id with the Contact.
-    const auto &instance = impl_->config.outbound_instance;
-    if (instance.find_first_of("\"<>\r\n") != std::string::npos)
-      throw std::invalid_argument("invalid SIP outbound instance");
-    const auto contact_text = (impl_->config.registration_features.empty()
-                                   ? impl_->contact_uri()
-                                   : "<" + impl_->contact_target() + ">" + impl_->config.registration_features) +
-                              impl_->config.media_feature_tags +
-                              (instance.empty() ? "" : ";+sip.instance=\"<" + instance + ">\";reg-id=1");
-    const auto register_contact = impl_->sips_target(registrar) ? Impl::as_sips(contact_text) : contact_text;
-    auto contact = pj_view(register_contact);
-    require_success(pjsip_regc_init(impl_->registration, &server, &identity, &identity, 1, &contact, expires),
-                    "initialize SIP registration");
-
-    pjsip_cred_info credential{};
-    credential.realm = pj_view("*");
-    credential.scheme = pj_view("digest");
-    credential.username = pj_view(impl_->config.username);
-    credential.data_type = PJSIP_CRED_DATA_PLAIN_PASSWD;
-    credential.data = pj_view(impl_->config.password);
-    require_success(pjsip_regc_set_credentials(impl_->registration, 1, &credential),
-                    "set SIP registration credentials");
-
-    auto *pool = pjsip_endpt_create_pool(impl_->endpoint, "register-route", 512, 512);
-    if (pool == nullptr) throw std::bad_alloc();
-    try {
-      auto *route = create_header(pool, {"Route", impl_->core_route()});
-      if (route->type != PJSIP_H_ROUTE) throw std::invalid_argument("invalid SIP core route");
-      pjsip_route_hdr head;
-      pj_list_init(&head);
-      pj_list_push_back(&head, route);
-      require_success(pjsip_regc_set_route_set(impl_->registration, &head), "set SIP registration route");
-    } catch (...) {
-      pjsip_endpt_release_pool(impl_->endpoint, pool);
-      throw;
-    }
-    pjsip_endpt_release_pool(impl_->endpoint, pool);
-  } else {
-    require_success(pjsip_regc_update_expires(impl_->registration, expires), "update SIP registration expiry");
-  }
-
-  impl_->registration_handler = std::move(handler);
-  pjsip_tx_data *data = nullptr;
-  require_success(pjsip_regc_register(impl_->registration, PJ_TRUE, &data), "create REGISTER request");
-  impl_->before_send(data);
-  require_success(pjsip_regc_send(impl_->registration, data), "send REGISTER request");
+  impl_->register_digest(expires, {}, {}, std::move(handler));
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 10.2.2: removes the registration of this engine's Contact (Expires 0, TS 24.229 clause 5.1.1.6
-// for a UE): the registration is no longer refreshed until register_account.
+// RFC 3261 section 10.2 and TS 24.379 clause 7.2.1: a REGISTER with a body (for example the service authorisation
+// document) on the existing registration.
+void SipEngine::register_account(unsigned expires, std::string_view content_type, std::string_view body,
+                                 SipResponseHandler handler) {
+  impl_->ensure_started();
+  if (impl_->aka) return impl_->aka_register(expires, content_type, body, std::move(handler));
+  if (!impl_->registration) throw std::logic_error("a REGISTER with a body follows the initial registration");
+  impl_->register_digest(expires, content_type, body, std::move(handler));
+}
+
+//------------------------------------------------------------------------------
+// RFC 3261 section 10.2.2: removes the registration of this engine's Contact (Expires 0; TS 24.229 clause 5.1.1.6.2
+// with IMS AKA, protected by the set in use, whose 200 removes the SAs); no refresh follows.
 void SipEngine::unregister_account(SipResponseHandler handler) {
-  // TS 24.229 clause 5.1.1.6.2: the IMS AKA deregistration, protected by the set in use; its 200 removes the SAs.
+  impl_->ensure_started();
   if (impl_->aka) return impl_->aka_register(0, {}, {}, std::move(handler));
-  if (impl_->registration == nullptr) throw std::logic_error("no SIP registration to remove");
-  impl_->registration_handler = std::move(handler);
-  pjsip_tx_data *data = nullptr;
-  require_success(pjsip_regc_unregister(impl_->registration, &data), "create de-REGISTER request");
-  impl_->before_send(data);
-  require_success(pjsip_regc_send(impl_->registration, data), "send de-REGISTER request");
+  if (!impl_->registration) throw std::logic_error("no SIP registration to remove");
+  impl_->register_digest(0, {}, {}, std::move(handler));
 }
 
 //------------------------------------------------------------------------------
 // TS 24.229 clause 5.1.1.7: the S-CSCF ended the registration (reg event NOTIFY): "the UE shall delete all security
-// associations or TLS sessions towards the P-CSCF". SIP digest: the registration client goes with its refresh, and
-// the TLS session it registered over (the registration client holds a reference to its last transport) is shut down:
-// gracefully, so the transactions still on it (the NOTIFY's answer, BYEs of a "rejected") end first, and no new request
-// picks it; the next register_account opens a new one. IMS AKA: aka_registration_ended().
+// associations or TLS sessions towards the P-CSCF". Digest: the registration goes with its refresh, and its TLS
+// connection is closed once the transactions still on it (the NOTIFY's answer) had time to end; the next
+// register_account opens a new one. IMS AKA: aka_registration_ended().
 void SipEngine::registration_ended() {
   if (impl_->aka) return impl_->aka_registration_ended();
-  if (impl_->registration != nullptr) {
-    pjsip_regc_info info{};
-    pjsip_transport *session = nullptr;
-    if (pjsip_regc_get_info(impl_->registration, &info) == PJ_SUCCESS && info.transport != nullptr &&
-        (info.transport->flag & PJSIP_TRANSPORT_SECURE) != 0) {
-      session = info.transport;
-      (void)pjsip_transport_add_ref(session);
-    }
-    (void)pjsip_regc_destroy(impl_->registration);
-    impl_->registration = nullptr;
-    if (session != nullptr) {
-      (void)pjsip_transport_shutdown(session);
-      (void)pjsip_transport_dec_ref(session);
-    }
+  if (!impl_->registration) return;
+  const auto flow = impl_->registration->flow;
+  impl_->registration.reset();
+  impl_->cancel(Impl::Timer::registration_refresh);
+  if (flow && impl_->config.tls.enabled) {
+    impl_->end_registration(); // an earlier one first
+    impl_->ending_flow = flow;
+    impl_->schedule(Impl::Timer::flow_end, std::chrono::seconds(2));
   }
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 8.1: sends an out-of-dialog request (SipEngine::Impl::send_request).
+// RFC 3261 section 8.1: a request outside a dialog (Impl::send_request).
 void SipEngine::request(std::string_view method, std::string_view request_uri, std::string_view content_type,
                         std::string_view body, const std::vector<SipHeader> &headers, SipResponseHandler handler) {
   impl_->send_request(method, request_uri, content_type, body, headers, std::move(handler));
 }
 
 //------------------------------------------------------------------------------
-// RFC 3515 section 2.4.1 with RFC 4488 section 4: sends a REFER outside a dialog with its parts (TS 24.379 clauses
-// 6.2.4.2 and 10.1.2.2.2.1); the body protection filters see its parts as for any request.
-void SipEngine::refer(std::string_view request_uri, const std::vector<BodyPart> &parts,
-                      const std::vector<SipHeader> &headers, SipResponseHandler handler) {
-  if (get_header(headers, "Refer-To").empty()) throw std::invalid_argument("REFER without Refer-To: RFC 3515");
-  if (parts.empty()) {
-    request("REFER", request_uri, {}, {}, headers, std::move(handler));
-    return;
-  }
-  const auto [type, body] = message_body(parts, "mcx-refer");
-  request("REFER", request_uri, type, body, headers, std::move(handler));
-}
-
-//------------------------------------------------------------------------------
-// RFC 3261 section 12: the Call-ID and the local and remote tags of an INVITE dialog.
-std::optional<DialogIdentifiers> SipEngine::dialog_identifiers(std::string_view dialog_id) const {
-  const auto found = impl_->dialogs.find(std::string(dialog_id));
-  if (found == impl_->dialogs.end() || found->second->dialog == nullptr) return std::nullopt;
-  const auto *dialog = found->second->dialog;
-  if (dialog->call_id == nullptr || dialog->local.info == nullptr || dialog->remote.info == nullptr ||
-      dialog->local.info->tag.slen <= 0 || dialog->remote.info->tag.slen <= 0)
-    return std::nullopt;
-  return DialogIdentifiers{string_from(dialog->call_id->id), string_from(dialog->local.info->tag),
-                           string_from(dialog->remote.info->tag)};
-}
-
-//------------------------------------------------------------------------------
-// RFC 3903 and TS 24.379 clause 7.2.1A: sends a PUBLISH out of dialog.
+// RFC 3903 section 4 and TS 24.379 clause 7.2: a PUBLISH outside a dialog.
 void SipEngine::publish(std::string_view request_uri, std::string_view content_type, std::string_view body,
                         const std::vector<SipHeader> &headers, SipResponseHandler handler) {
   request("PUBLISH", request_uri, content_type, body, headers, std::move(handler));
 }
 
-//------------------------------------------------------------------------------
-// RFC 6665 section 4.1.2: creates a subscription with the initial SUBSCRIBE; returns its dialog id.
 std::string SipEngine::subscribe(std::string_view request_uri, std::string_view event, unsigned expires,
                                  const std::vector<SipHeader> &headers, SipResponseHandler handler,
                                  std::string_view content_type, std::string_view body) {
-  if (event.empty()) {
-    throw std::invalid_argument("SUBSCRIBE requires event");
-  }
+  if (event.empty()) throw std::invalid_argument("SUBSCRIBE requires event");
   return impl_->create_subscribe(request_uri, event, expires, headers, std::move(handler), content_type, body);
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 12.2.1: sends an INFO, MESSAGE or SUBSCRIBE within an existing dialog; SUBSCRIBE refreshes or
-// ends a subscription this engine created (RFC 6665 section 4.1.2).
-void SipEngine::request_in_dialog(std::string_view dialog_id, std::string_view method, std::string_view type,
-                                  std::string_view body, const std::vector<SipHeader> &headers,
-                                  SipResponseHandler handler) {
-  // SUBSCRIBE: refresh or de-subscription of a subscription this engine created.
-  if (method != "INFO" && method != "MESSAGE" && method != "SUBSCRIBE")
-    throw std::invalid_argument("unsupported application dialog method");
-  pjsip_method native{};
-  auto name = pj_view(method);
-  pjsip_method_init_np(&native, &name);
-  impl_->send_dialog_request(dialog_id, native, headers, type, body, std::move(handler));
-}
-
-//------------------------------------------------------------------------------
-// RFC 6665 section 4.2.2: sends a NOTIFY with Event and Subscription-State in a subscription dialog.
+// RFC 6665 section 4.2.2: a NOTIFY with Event and Subscription-State in a subscription dialog; "terminated" ends it
+// once answered.
 void SipEngine::notify(std::string_view dialog_id, std::string_view event, std::string_view subscription_state,
                        std::string_view content_type, std::string_view body, const std::vector<SipHeader> &headers,
                        SipResponseHandler handler) {
-  if (event.empty() || subscription_state.empty()) {
+  if (event.empty() || subscription_state.empty())
     throw std::invalid_argument("NOTIFY requires Event and Subscription-State");
-  }
   auto notify_headers = headers;
   notify_headers.push_back({"Event", std::string(event)});
   notify_headers.push_back({"Subscription-State", std::string(subscription_state)});
-  impl_->send_dialog_request(dialog_id, pjsip_notify_method, notify_headers, content_type, body, std::move(handler));
+  impl_->send_dialog_request(dialog_id, "NOTIFY", notify_headers, content_type, body, std::move(handler));
+}
+
+
+//------------------------------------------------------------------------------
+// RFC 3515 section 2.4.1 with RFC 4488 section 4: a REFER outside a dialog with its parts (TS 24.379 clauses 6.2.4.2
+// and 10.1.2.2.2.1); no implicit subscription is kept: the handler gets the final response.
+void SipEngine::refer(std::string_view request_uri, const std::vector<BodyPart> &parts,
+                      const std::vector<SipHeader> &headers, SipResponseHandler handler) {
+  if (get_header(headers, "Refer-To").empty()) throw std::invalid_argument("REFER without Refer-To: RFC 3515");
+  if (parts.empty()) return request("REFER", request_uri, {}, {}, headers, std::move(handler));
+  const auto [type, body] = message_body(parts, "mcx-refer");
+  request("REFER", request_uri, type, body, headers, std::move(handler));
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 13.2: sends an INVITE with an SDP offer built from local media; returns its dialog id.
+// RFC 3261 section 12.2.1: INFO or MESSAGE in an INVITE dialog, or SUBSCRIBE in a subscription dialog.
+void SipEngine::request_in_dialog(std::string_view dialog_id, std::string_view method, std::string_view type,
+                                  std::string_view body, const std::vector<SipHeader> &headers,
+                                  SipResponseHandler handler) {
+  // SUBSCRIBE: the refresh or end of a subscription this engine created (RFC 6665 section 4.1.2).
+  if (method != "INFO" && method != "MESSAGE" && method != "SUBSCRIBE")
+    throw std::invalid_argument("unsupported application dialog method");
+  impl_->send_dialog_request(dialog_id, method, headers, type, body, std::move(handler));
+}
+
+//------------------------------------------------------------------------------
+// RFC 3261 section 13.2: an INVITE with an SDP offer built from local media; returns its dialog id.
 std::string SipEngine::invite(std::string_view request_uri, const MediaDescription &local_media,
                               const std::vector<BodyPart> &application_parts, SipResponseHandler handler,
                               const std::vector<SipHeader> &headers) {
-  return impl_->create_invite(request_uri, local_media, application_parts, std::move(handler), headers);
+  return impl_->create_invite(request_uri, local_media, application_parts, std::move(handler), headers, nullptr);
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 13.2: sends an INVITE with the given SDP offer text; returns its dialog id.
+// RFC 3261 section 13.2: an INVITE with the given SDP offer text (the MCData media plane); returns its dialog id.
 std::string SipEngine::invite_sdp(std::string_view request_uri, std::string_view sdp,
                                   const std::vector<BodyPart> &application_parts, SipResponseHandler handler,
                                   const std::vector<SipHeader> &headers) {
@@ -302,228 +171,104 @@ std::string SipEngine::invite_sdp(std::string_view request_uri, std::string_view
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 13.3.1: sends a later (provisional or final) answer to an incoming INVITE, with the SDP answer
-// (RFC 3264 section 6) when it is still pending and the answer is 2xx.
+// RFC 3261 section 13.3.1: a later answer to an incoming INVITE, with the SDP
+// answer when it is still pending; dropped for an unknown, ending or answered dialog (a stale answer after
+// cancellation is harmless).
 void SipEngine::answer(std::string_view dialog_id, const SipResponse &response) {
   impl_->ensure_started();
   if (response.status_code < 100 || response.status_code > 699)
     throw std::invalid_argument("invalid INVITE answer status");
   const auto found = impl_->dialogs.find(std::string(dialog_id));
-  if (found == impl_->dialogs.end() || !found->second->invite || found->second->terminating ||
-      found->second->final_answer) {
+  if (found == impl_->dialogs.end() || found->second->terminating || found->second->final_answer ||
+      !found->second->invite_request) {
     debug_line("SIP answer " + std::to_string(response.status_code) + " for dialog " + std::string(dialog_id) +
-               " dropped: " +
-               (found == impl_->dialogs.end() ? "no such dialog"
-                : !found->second->invite      ? "not an INVITE dialog"
-                : found->second->terminating  ? "the dialog is ending"
-                                              : "already answered"));
+               " dropped");
     return;
   }
-
-  auto &entry = *found->second;
-  auto *invite = entry.invite;
-  if (invite->role != PJSIP_ROLE_UAS) throw std::invalid_argument("only an incoming INVITE can be answered");
-  if (!response.contact_uri.empty() || response.focus || !response.contact_tags.empty())
-    entry.response_contact =
-        entry.sips_contact ? Impl::as_sips(impl_->response_contact(response)) : impl_->response_contact(response);
-
-  const pjmedia_sdp_session *sdp = nullptr;
-  if (entry.answer_sdp_pending && response.status_code >= 200 && response.status_code < 300) {
+  auto &dialog = *found->second;
+  if (dialog.uac) throw std::invalid_argument("only an incoming INVITE can be answered");
+  if (!response.contact_uri.empty() || response.focus || !response.contact_tags.empty()) {
+    auto contact = impl_->response_contact(response);
+    if (dialog.sips) {
+      const auto at = contact.starts_with('<') ? 1U : 0U;
+      if (contact.compare(at, 4, "sip:") == 0) contact.insert(at + 3, "s");
+    }
+    dialog.response_contact = contact;
+  }
+  if (dialog.answer_sdp_pending && response.status_code >= 200 && response.status_code < 300) {
     if (!response.local_media && !response.local_sdp)
       throw std::invalid_argument("a 2xx INVITE answer needs local media");
-    if (response.local_sdp)
-      record_sdp_text(entry.sdp_origin, *response.local_sdp);
-    else
-      next_sdp_origin(entry.sdp_origin, *response.local_media);
-    sdp = response.local_sdp ? parse_sdp_text(entry.dialog->pool, *response.local_sdp)
-                             : parse_local_sdp(entry.dialog->pool, *response.local_media, entry.sdp_origin);
-    entry.answer_sdp_pending = false;
+    dialog.answer_sdp_pending = false;
   }
-
-  pjsip_tx_data *created = nullptr;
-  auto reason = pj_view(response.reason);
-  require_success(
-      pjsip_inv_answer(invite, response.status_code, response.reason.empty() ? nullptr : &reason, sdp, &created),
-      "create deferred INVITE answer");
-  TxData data(created);
-  // pjsip builds the answer from the last provisional one: an Alert-Info of a 180 or 183 (RFC 3261 section 20.4,
-  // RFC 7462 section 4) does not belong in the final response.
-  if (response.status_code >= 200) {
-    static const pj_str_t alert_info = pj_str(const_cast<char *>("Alert-Info"));
-    while (auto *header = pjsip_msg_find_hdr_by_name(data->msg, &alert_info, nullptr))
-      pj_list_erase(static_cast<pjsip_hdr *>(header));
-  }
-
-  if (response.status_code >= 200 && response.status_code < 300 && response.local_sdp)
-    data->msg->body = make_body_with_sdp(data->pool, *response.local_sdp, impl_->answer_parts(response, entry.dialog));
-  else if (response.status_code >= 200 && response.status_code < 300 && response.local_media)
-    data->msg->body = make_invite_body(data->pool, *response.local_media, impl_->answer_parts(response, entry.dialog),
-                                       entry.sdp_origin);
-  else if (response.status_code >= 300 && !response.content_type.empty())
-    data->msg->body = make_text_body(data->pool, response.content_type, response.body);
-  else if (response.status_code >= 300 && !response.parts.empty())
-    data->msg->body = make_parts_body(data->pool, response.parts, "mcx-answer");
-  if (response.status_code > 100 && response.status_code < 300)
-    add_headers(data.get(), {{"Contact", entry.response_contact}});
-
-  // A header field this answer sets replaces the copy pjsip kept from the last provisional answer, so that it is
-  // not sent twice (a Resource-Priority of RFC 4412 section 3.1, for example).
-  for (const auto &header : response.headers) {
-    const auto name = pj_view(header.name);
-    while (auto *kept = pjsip_msg_find_hdr_by_name(data->msg, &name, nullptr))
-      pj_list_erase(static_cast<pjsip_hdr *>(kept));
-  }
-  add_headers(data.get(), response.headers);
-  if (response.status_code > 100 && response.status_code < 200)
-    add_answer_headers(data.get(), impl_->config.invite_provisional_headers);
-  else if (response.status_code >= 200 && response.status_code < 300)
-    add_answer_headers(data.get(), impl_->config.invite_success_headers);
-
-  entry.final_answer = response.status_code >= 200;
-  if (response.status_code >= 200 && response.status_code < 300) {
-    const auto *cseq = static_cast<const pjsip_cseq_hdr *>(pjsip_msg_find_hdr(data->msg, PJSIP_H_CSEQ, nullptr));
-    if (cseq != nullptr) entry.pending_ack_cseq = cseq->cseq;
-  }
-  require_success(pjsip_inv_send_msg(invite, data.release()), "send deferred INVITE answer");
+  impl_->answer_invite(dialog, response);
 }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 8.2.6: sends the application's response to a deferred request.
+// RFC 3261 section 14.1: a re-INVITE with a new SDP offer built from local media in a confirmed dialog.
+void SipEngine::reinvite(std::string_view dialog_id, const MediaDescription &media, const std::vector<BodyPart> &parts,
+                         SipResponseHandler handler, const std::vector<SipHeader> &headers) {
+  const auto found = impl_->dialogs.find(std::string(dialog_id));
+  if (found == impl_->dialogs.end()) throw std::invalid_argument("re-INVITE requires active dialog");
+  auto origin = found->second->sdp_origin;
+  sip_detail::next_sdp_origin(origin, media);
+  impl_->send_offer(dialog_id, "INVITE", make_sdp(media, origin.id, origin.version), parts, std::move(handler),
+                    headers);
+  found->second->sdp_origin = origin;
+}
+
+//------------------------------------------------------------------------------
+// RFC 3311 section 5.1: an UPDATE with a new SDP offer in a confirmed dialog (TS 24.379 clauses 8.3.1.1 and 8.3.2.2).
+void SipEngine::update(std::string_view dialog_id, const MediaDescription &media, SipResponseHandler handler,
+                       const std::vector<SipHeader> &headers) {
+  const auto found = impl_->dialogs.find(std::string(dialog_id));
+  if (found == impl_->dialogs.end()) throw std::invalid_argument("UPDATE requires active dialog");
+  auto origin = found->second->sdp_origin;
+  sip_detail::next_sdp_origin(origin, media);
+  impl_->send_offer(dialog_id, "UPDATE", make_sdp(media, origin.id, origin.version), {}, std::move(handler), headers);
+  found->second->sdp_origin = origin;
+}
+
+//------------------------------------------------------------------------------
+// RFC 3261 section 14.1: a re-INVITE with the given SDP offer text in a confirmed dialog.
+void SipEngine::reinvite_sdp(std::string_view dialog_id, std::string_view sdp, const std::vector<BodyPart> &parts,
+                             SipResponseHandler handler, const std::vector<SipHeader> &headers) {
+  impl_->ensure_started();
+  if (sdp.empty()) throw std::invalid_argument("a re-INVITE offer needs an SDP body");
+  const auto found = impl_->dialogs.find(std::string(dialog_id));
+  if (found == impl_->dialogs.end()) throw std::invalid_argument("re-INVITE requires active dialog");
+  const std::string text(sdp);
+  auto origin = found->second->sdp_origin;
+  sip_detail::record_sdp_text(origin, text);
+  impl_->send_offer(dialog_id, "INVITE", text, parts, std::move(handler), headers);
+  found->second->sdp_origin = origin;
+}
+
+//------------------------------------------------------------------------------
+// RFC 3261 sections 15.1.1 and 9.1: ends an established call or cancels a pending one; BYE carries at most one body
+// part. Repeated ends are harmless.
+void SipEngine::bye(std::string_view dialog_id, SipResponseHandler handler, const std::vector<SipHeader> &headers,
+                    const std::vector<BodyPart> &parts) {
+  if (parts.size() > 1) throw std::invalid_argument("BYE carries at most one body part");
+  impl_->end_dialog(dialog_id, std::move(handler), headers, parts);
+}
+
+//------------------------------------------------------------------------------
+// RFC 3261 section 8.2.6: the application's response to a deferred request.
 void SipEngine::respond(std::string_view transaction_id, const SipResponse &response) {
   impl_->ensure_started();
   impl_->respond_deferred(std::string(transaction_id), response);
 }
 
-//------------------------------------------------------------------------------
-// RFC 3261 section 14.1: sends a re-INVITE in a confirmed dialog with no re-INVITE pending: the offer and the body
-// come from the builders, in the session's pool and in the request's.
-void SipEngine::Impl::send_reinvite(std::string_view dialog_id,
-                                    const std::function<pjmedia_sdp_session *(pj_pool_t *, SdpOrigin &)> &offer,
-                                    const std::function<pjsip_msg_body *(pj_pool_t *, const SdpOrigin &)> &body,
-                                    SipResponseHandler handler, const std::vector<SipHeader> &headers) {
-  ensure_started();
-  const auto found = dialogs.find(std::string(dialog_id));
-  if (found == dialogs.end() || !found->second->invite || found->second->terminating)
-    throw std::invalid_argument("re-INVITE requires active dialog");
-  auto &entry = *found->second;
-  if (entry.invite->state != PJSIP_INV_STATE_CONFIRMED || entry.reinvite_handler)
-    throw std::runtime_error("re-INVITE already pending or dialog not confirmed");
-  auto *sdp = offer(entry.invite->pool_prov, entry.sdp_origin);
-  pjsip_tx_data *created = nullptr;
-  require_success(pjsip_inv_reinvite(entry.invite, nullptr, sdp, &created), "create re-INVITE");
-  TxData data(created);
-  data->msg->body = body(data->pool, entry.sdp_origin);
-  add_headers(data.get(), headers);
-  const auto *cseq = static_cast<const pjsip_cseq_hdr *>(pjsip_msg_find_hdr(data->msg, PJSIP_H_CSEQ, nullptr));
-  if (cseq == nullptr) throw std::runtime_error("re-INVITE without CSeq");
-  entry.reinvite_cseq = cseq->cseq;
-  entry.reinvite_handler = handler ? std::move(handler) : [](const SipResponse &) {};
-  before_send(data.get());
-  const auto result = pjsip_inv_send_msg(entry.invite, data.release());
-  if (result != PJ_SUCCESS) entry.reinvite_handler = {};
-  require_success(result, "send re-INVITE");
-}
+std::string SipEngine::contact_target() const { return sip_detail::contact_target(impl_->config); }
 
 //------------------------------------------------------------------------------
-// RFC 3261 section 14.1: sends a re-INVITE with a new SDP offer built from local media in a confirmed dialog.
-void SipEngine::reinvite(std::string_view dialog_id, const MediaDescription &media, const std::vector<BodyPart> &parts,
-                         SipResponseHandler handler, const std::vector<SipHeader> &headers) {
-  impl_->send_reinvite(
-      dialog_id,
-      [&](pj_pool_t *pool, SdpOrigin &origin) { return parse_local_sdp(pool, media, next_sdp_origin(origin, media)); },
-      [&](pj_pool_t *pool, const SdpOrigin &origin) { return make_invite_body(pool, media, parts, origin); },
-      std::move(handler), headers);
-}
-
-//------------------------------------------------------------------------------
-// RFC 3261 section 14.1: sends a re-INVITE with the given SDP offer text in a confirmed dialog.
-void SipEngine::reinvite_sdp(std::string_view dialog_id, std::string_view sdp, const std::vector<BodyPart> &parts,
-                             SipResponseHandler handler, const std::vector<SipHeader> &headers) {
-  impl_->ensure_started();
-  if (sdp.empty()) throw std::invalid_argument("a re-INVITE offer needs an SDP body");
-  const std::string text(sdp);
-  impl_->send_reinvite(
-      dialog_id,
-      [&](pj_pool_t *pool, SdpOrigin &origin) {
-        record_sdp_text(origin, text);
-        return parse_sdp_text(pool, text);
-      },
-      [&](pj_pool_t *pool, const SdpOrigin &) { return make_body_with_sdp(pool, text, parts); }, std::move(handler),
-      headers);
-}
-
-//------------------------------------------------------------------------------
-// RFC 3311 section 5.1: sends an UPDATE with a new SDP offer built from local media in a confirmed dialog (TS 24.379
-// clauses 8.3.1.1 and 8.3.2.2: the modification of a pre-established session); one offer at a time, shared with the
-// re-INVITE.
-void SipEngine::update(std::string_view dialog_id, const MediaDescription &media, SipResponseHandler handler,
-                       const std::vector<SipHeader> &headers) {
-  auto &impl = *impl_;
-  impl.ensure_started();
-  const auto found = impl.dialogs.find(std::string(dialog_id));
-  if (found == impl.dialogs.end() || !found->second->invite || found->second->terminating)
-    throw std::invalid_argument("UPDATE requires active dialog");
-  auto &entry = *found->second;
-  if (entry.invite->state != PJSIP_INV_STATE_CONFIRMED || entry.reinvite_handler)
-    throw std::runtime_error("an offer is already pending or the dialog is not confirmed (RFC 3311 section 5.1)");
-  auto *sdp = parse_local_sdp(entry.invite->pool_prov, media, next_sdp_origin(entry.sdp_origin, media));
-  pjsip_tx_data *created = nullptr;
-  require_success(pjsip_inv_update(entry.invite, nullptr, sdp, &created), "create UPDATE");
-  TxData data(created);
-  data->msg->body = make_invite_body(data->pool, media, {}, entry.sdp_origin);
-  add_headers(data.get(), headers);
-  const auto *cseq = static_cast<const pjsip_cseq_hdr *>(pjsip_msg_find_hdr(data->msg, PJSIP_H_CSEQ, nullptr));
-  if (cseq == nullptr) throw std::runtime_error("UPDATE without CSeq");
-  entry.reinvite_cseq = cseq->cseq;
-  entry.reinvite_handler = handler ? std::move(handler) : [](const SipResponse &) {};
-  impl.before_send(data.get());
-  const auto result = pjsip_inv_send_msg(entry.invite, data.release());
-  if (result != PJ_SUCCESS) entry.reinvite_handler = {};
-  require_success(result, "send UPDATE");
-}
-
-//------------------------------------------------------------------------------
-// Helper: the routable Contact URI of this engine, with its transport (SipEngine::Impl::contact_target).
-std::string SipEngine::contact_target() const { return impl_->contact_target(); }
-
-//------------------------------------------------------------------------------
-// RFC 3261 section 15.1.1: ends an INVITE session with BYE, or before it is connected with CANCEL (section 9.1)
-// or a 487 response; BYE carries at most one body part.
-void SipEngine::bye(std::string_view dialog_id, SipResponseHandler handler, const std::vector<SipHeader> &headers,
-                    const std::vector<BodyPart> &parts) {
-  if (parts.size() > 1) throw std::invalid_argument("BYE carries at most one body part");
-  impl_->ensure_started();
+// RFC 3261 section 12: the Call-ID and the local and remote tags of a dialog that has both.
+std::optional<DialogIdentifiers> SipEngine::dialog_identifiers(std::string_view dialog_id) const {
   const auto found = impl_->dialogs.find(std::string(dialog_id));
-  if (found == impl_->dialogs.end() || !found->second->invite || found->second->terminating) return;
-  // Called while PJSIP reports the session's end (e.g. from a request handler
-  // observing a received BYE): there is nothing left to end.
-  if (found->second->invite->state == PJSIP_INV_STATE_DISCONNECTED) return;
-
-  found->second->terminating = true;
-  found->second->bye_parts = parts;
-  if (handler) found->second->initial_handler = std::move(handler);
-
-  auto *invite = found->second->invite;
-  require_success(pjsip_inv_add_ref(invite), "retain ending INVITE session");
-  try {
-    pjsip_tx_data *created = nullptr;
-    const int cause = invite->state < PJSIP_INV_STATE_CONNECTING ? 487 : 200;
-    require_success(pjsip_inv_end_session(invite, cause, nullptr, &created), "end or cancel INVITE session");
-    if (created != nullptr) {
-      TxData data(created);
-      const bool bye = data->msg->line.req.method.id == PJSIP_BYE_METHOD;
-      add_headers(data.get(), headers);
-      if (cause == 200 && !parts.empty())
-        data->msg->body = make_text_body(data->pool, parts.front().content_type, parts.front().body);
-      impl_->before_send(data.get());
-      require_success(pjsip_inv_send_msg(invite, data.release()), "send call termination");
-      if (bye && impl_->bye_references.insert(invite).second) return;
-    }
-  } catch (...) {
-    (void)pjsip_inv_dec_ref(invite);
-    throw;
-  }
-  (void)pjsip_inv_dec_ref(invite);
+  if (found == impl_->dialogs.end() || found->second->local_tag.empty() || found->second->remote_tag.empty())
+    return std::nullopt;
+  return DialogIdentifiers{found->second->call_id, found->second->local_tag, found->second->remote_tag};
 }
+
 
 } // namespace mcx

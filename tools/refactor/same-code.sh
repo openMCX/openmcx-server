@@ -27,7 +27,7 @@ git diff -M --name-status HEAD | awk '$1 ~ /^R/ {print $3, $2}' > "$work/renames
 mounts=(-v "$PWD:/after:ro" -v "$work/before:/before:ro" -v "$work:/work")
 extra=""
 if [ -n "$server" ]; then mounts+=(-v "$(cd "$server" && pwd):/mcxserver:ro"); extra="-DMCXSERVER_DIR=/mcxserver"; fi
-docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp "${mounts[@]}" openmcx-lint:0.1 bash -c '
+docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp "${mounts[@]}" openmcx-lint:0.2 bash -c '
 set -uo pipefail
 extra=$1; shift
 for tree in before after; do cmake -S /$tree -B /work/build-$tree -DCMAKE_EXPORT_COMPILE_COMMANDS=ON $extra >/dev/null 2>&1; done

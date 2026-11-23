@@ -15,7 +15,7 @@ server=${MCXSERVER:-}
 mounts=(-v "$PWD:/src")
 cmake_extra=()
 if [ -n "$server" ]; then mounts+=(-v "$(cd "$server" && pwd):/mcxserver:ro"); cmake_extra=(-DMCXSERVER_DIR=/mcxserver); fi
-docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp "${mounts[@]}" -w /src openmcx-lint:0.1 bash -c '
+docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp "${mounts[@]}" -w /src openmcx-lint:0.2 bash -c '
 set -uo pipefail
 build=/tmp/check-build
 cmake -S . -B $build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON '"${cmake_extra[*]:-}"' >/dev/null 2>&1 || { echo "cmake failed"; exit 1; }

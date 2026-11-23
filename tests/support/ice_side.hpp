@@ -2,9 +2,8 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// Helper of the ICE tests (test_ice, test_ice_interop): one side of a pre-established session on real UDP sockets
-// on the loopback address, its three sockets (RTP, RTCP, control) and an agent of type Agent (mcx::IceAgent or the
-// pjnath test peer), with the caller's part of include/mcx/ice.hpp: STUN to the agent, everything else counted as
+// Helper of the ICE tests (test_ice): one side of a pre-established session on real UDP sockets on the loopback
+// address, its three sockets (RTP, RTCP, control) and an agent of type Agent (mcx::IceAgent), with the caller's part of include/mcx/ice.hpp: STUN to the agent, everything else counted as
 // media. The first `drop` datagrams it would send are lost, to exercise retransmission.
 
 #pragma once

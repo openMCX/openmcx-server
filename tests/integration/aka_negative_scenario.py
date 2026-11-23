@@ -24,7 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
-TOOLS = 'openmcx-dev:0.4'
+TOOLS = 'openmcx-dev:0.5'
 
 
 # ------------------------------------------------------------------------------

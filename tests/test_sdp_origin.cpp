@@ -2,14 +2,14 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// The "o=" line of the SDP one side sends in a dialog (src/sip/helpers.cpp, SdpOrigin): RFC 3264 section 8 keeps the
+// The "o=" line of the SDP one side sends in a dialog (src/sip_common/sip_common.hpp, SdpOrigin): RFC 3264 section 8 keeps the
 // <sess-id> of the session and increments its <sess-version> by one for a changed description, and keeps it for an
 // unchanged one; RFC 4566 section 5.2 for the fields. Found by the TS 37.579-6 conformance run of the MCVideo client
 // (6.1.1.1, 6.1.1.2: every re-INVITE offer and every answer to one had a new <sess-id> and version 1).
 //
 // Specifications: RFC 3264, RFC 4566; TS 24.281 V19.6.0 clause 6.2.1 (via TS 24.229).
 
-#include "../src/sip/sip_impl.hpp"
+#include "../src/sip_common/sip_common.hpp"
 
 #include <functional>
 #include <iostream>
@@ -49,36 +49,36 @@ static void Rfc4566_5_2_OriginFields() {
 //------------------------------------------------------------------------------
 // RFC 3264 section 8: one <sess-id> for the dialog, the version incremented only for a changed description.
 static void Rfc3264_8_SameSessionNewVersion() {
-  mcx::SdpOrigin origin;
+  mcx::sip_detail::SdpOrigin origin;
   auto offer = media();
-  const auto first = mcx::next_sdp_origin(origin, offer);
+  const auto first = mcx::sip_detail::next_sdp_origin(origin, offer);
   expect(first.id != 0 && first.version == 1, "first SDP: a new origin with version 1");
   const auto id = first.id;
-  mcx::next_sdp_origin(origin, offer);
+  mcx::sip_detail::next_sdp_origin(origin, offer);
   expect(origin.id == id && origin.version == 1, "an unchanged description keeps the version");
   offer.implicit_request = true;
-  mcx::next_sdp_origin(origin, offer);
+  mcx::sip_detail::next_sdp_origin(origin, offer);
   expect(origin.id == id && origin.version == 2, "a changed description increments the version by one");
   offer.audio_port = 40010;
   offer.floor_port = 40012;
-  mcx::next_sdp_origin(origin, offer);
+  mcx::sip_detail::next_sdp_origin(origin, offer);
   expect(origin.id == id && origin.version == 3, "every change increments it again");
   const auto [text_id, text_version] = origin_of(mcx::make_sdp(offer, origin.id, origin.version));
   expect(text_id == std::to_string(id) && text_version == "3", "the SDP written with the origin");
-  mcx::SdpOrigin other;
-  mcx::next_sdp_origin(other, offer);
+  mcx::sip_detail::SdpOrigin other;
+  mcx::sip_detail::next_sdp_origin(other, offer);
   expect(other.id != id, "another dialog takes another <sess-id>");
 }
 
 //------------------------------------------------------------------------------
 // RFC 3264 section 8: an SDP the caller wrote itself continues from its own "o=" line.
 static void Rfc3264_8_RecordedText() {
-  mcx::SdpOrigin origin;
-  mcx::record_sdp_text(origin, mcx::make_sdp(media(), 900, 4));
+  mcx::sip_detail::SdpOrigin origin;
+  mcx::sip_detail::record_sdp_text(origin, mcx::make_sdp(media(), 900, 4));
   expect(origin.id == 900 && origin.version == 4, "the recorded origin");
   auto changed = media();
   changed.implicit_request = true;
-  mcx::next_sdp_origin(origin, changed);
+  mcx::sip_detail::next_sdp_origin(origin, changed);
   expect(origin.id == 900 && origin.version == 5, "the next SDP after a recorded one");
 }
 

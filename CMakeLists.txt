@@ -5,31 +5,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 include(CTest)
 find_package(PkgConfig REQUIRED)
-# The SIP stack of the SIP engine (include/mcx/sip.hpp): pjproject (today's) or reSIProcate (the migration of
-# prototype/resiprocate/PLAN.md). The development image has both; reSIProcate is in /opt/resiprocate
-# (dependencies/resiprocate), or wherever CMAKE_PREFIX_PATH points.
-set(MCX_SIP_STACK "pjsip" CACHE STRING "SIP stack of the SIP engine: pjsip or resip")
-set_property(CACHE MCX_SIP_STACK PROPERTY STRINGS pjsip resip)
-find_path(RESIPROCATE_INCLUDE_DIR resip/dum/DialogUsageManager.hxx HINTS /opt/resiprocate/include)
-find_library(RESIPROCATE_DUM_LIBRARY dum HINTS /opt/resiprocate/lib)
-find_library(RESIPROCATE_RESIP_LIBRARY resip HINTS /opt/resiprocate/lib)
-find_library(RESIPROCATE_RUTIL_LIBRARY rutil HINTS /opt/resiprocate/lib)
-find_library(RESIPROCATE_ARES_LIBRARY resipares HINTS /opt/resiprocate/lib)
-if(RESIPROCATE_INCLUDE_DIR AND RESIPROCATE_DUM_LIBRARY AND RESIPROCATE_RESIP_LIBRARY AND RESIPROCATE_RUTIL_LIBRARY
-   AND RESIPROCATE_ARES_LIBRARY)
-    set(RESIPROCATE_FOUND TRUE)
-endif()
-if(MCX_SIP_STACK STREQUAL "resip")
-    if(NOT RESIPROCATE_FOUND)
-        message(FATAL_ERROR "MCX_SIP_STACK=resip needs reSIProcate (dependencies/resiprocate/build.sh)")
-    endif()
-    # The engine core is written (PLAN.md phase 3a); registration, dialogs and subscriptions refuse until their
-    # phases.
-    message(STATUS "SIP engine on reSIProcate (prototype/resiprocate/PLAN.md)")
-elseif(NOT MCX_SIP_STACK STREQUAL "pjsip")
-    message(FATAL_ERROR "MCX_SIP_STACK must be pjsip or resip, not ${MCX_SIP_STACK}")
-endif()
-pkg_check_modules(PJ REQUIRED libpjproject)
+# The SIP stack of the SIP engine (include/mcx/sip.hpp): reSIProcate (dependencies/resiprocate), in /opt/resiprocate
+# on the development image or wherever CMAKE_PREFIX_PATH points.
+find_path(RESIPROCATE_INCLUDE_DIR resip/dum/DialogUsageManager.hxx HINTS /opt/resiprocate/include REQUIRED)
+find_library(RESIPROCATE_DUM_LIBRARY dum HINTS /opt/resiprocate/lib REQUIRED)
+find_library(RESIPROCATE_RESIP_LIBRARY resip HINTS /opt/resiprocate/lib REQUIRED)
+find_library(RESIPROCATE_RUTIL_LIBRARY rutil HINTS /opt/resiprocate/lib REQUIRED)
+find_library(RESIPROCATE_ARES_LIBRARY resipares HINTS /opt/resiprocate/lib REQUIRED)
 pkg_check_modules(XML REQUIRED IMPORTED_TARGET libxml-2.0)
 pkg_check_modules(CURL REQUIRED IMPORTED_TARGET libcurl)
 pkg_check_modules(NGHTTP2 REQUIRED IMPORTED_TARGET libnghttp2)
@@ -37,32 +19,27 @@ pkg_check_modules(SRTP REQUIRED IMPORTED_TARGET libsrtp2)
 pkg_check_modules(OPENH264 REQUIRED IMPORTED_TARGET openh264)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
-if(RESIPROCATE_FOUND)
-    # reSIProcate's stack, DUM and their resolver, with OpenSSL for its TLS.
-    add_library(mcx_resiprocate INTERFACE)
-    target_include_directories(mcx_resiprocate SYSTEM INTERFACE ${RESIPROCATE_INCLUDE_DIR})
-    target_link_libraries(mcx_resiprocate INTERFACE ${RESIPROCATE_DUM_LIBRARY} ${RESIPROCATE_RESIP_LIBRARY}
-        ${RESIPROCATE_RUTIL_LIBRARY} ${RESIPROCATE_ARES_LIBRARY} OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
-endif()
+# reSIProcate's stack, DUM and their resolver, with OpenSSL for its TLS.
+add_library(mcx_resiprocate INTERFACE)
+target_include_directories(mcx_resiprocate SYSTEM INTERFACE ${RESIPROCATE_INCLUDE_DIR})
+target_link_libraries(mcx_resiprocate INTERFACE ${RESIPROCATE_DUM_LIBRARY} ${RESIPROCATE_RESIP_LIBRARY}
+    ${RESIPROCATE_RUTIL_LIBRARY} ${RESIPROCATE_ARES_LIBRARY} OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-find_library(UUID uuid REQUIRED)
 find_library(AMRWB_DEC opencore-amrwb REQUIRED)
 find_library(AMRWB_ENC vo-amrwbenc REQUIRED)
 
 add_library(mcx_dependencies INTERFACE)
-target_include_directories(mcx_dependencies INTERFACE include ${PJ_INCLUDE_DIRS})
-target_link_directories(mcx_dependencies INTERFACE ${PJ_LIBRARY_DIRS})
-target_compile_options(mcx_dependencies INTERFACE ${PJ_CFLAGS_OTHER})
-target_link_libraries(mcx_dependencies INTERFACE ${PJ_STATIC_LIBRARIES}
+target_include_directories(mcx_dependencies INTERFACE include)
+target_link_libraries(mcx_dependencies INTERFACE
     PkgConfig::XML PkgConfig::CURL PkgConfig::SRTP OpenSSL::SSL OpenSSL::Crypto
-    ${AMRWB_DEC} ${AMRWB_ENC} ${UUID} Threads::Threads)
+    ${AMRWB_DEC} ${AMRWB_ENC} Threads::Threads)
 
 if(BUILD_TESTING)
     add_executable(test_admission tests/test_admission.cpp)
     target_include_directories(test_admission PRIVATE include)
     add_test(NAME admission COMMAND test_admission)
     add_executable(test_dependencies tests/test_dependencies.cpp)
-    target_link_libraries(test_dependencies PRIVATE mcx_dependencies)
+    target_link_libraries(test_dependencies PRIVATE mcx_resiprocate mcx_dependencies)
     add_test(NAME dependencies COMMAND test_dependencies)
     # The request values of the servers (src/server/request_values.hpp, header only).
     add_executable(test_server_values tests/test_server_values.cpp)
@@ -119,9 +96,9 @@ if(BUILD_TESTING)
     target_include_directories(test_ibe_hostile PRIVATE src/security)
     target_link_libraries(test_ibe_hostile PRIVATE mcx_keying)
     add_test(NAME ibe_hostile COMMAND test_ibe_hostile)
-    # The reSIProcate prototype (prototype/resiprocate/README.md): built when reSIProcate is found and the prototype
-    # is in the tree (an image build copies only what the programs need); no program links it.
-    if(RESIPROCATE_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/prototype/resiprocate")
+    # The reSIProcate prototype (prototype/resiprocate/README.md): built when the prototype is in the tree (an image
+    # build copies only what the programs need); no program links it.
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/prototype/resiprocate")
         add_executable(test_resip_probe prototype/resiprocate/resip_probe.cpp)
         target_link_libraries(test_resip_probe PRIVATE mcx_resiprocate)
         add_test(NAME resip_probe COMMAND test_resip_probe)
@@ -205,21 +182,13 @@ if(BUILD_TESTING)
     set_tests_properties(rx PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE)
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
-    # The SIP engine on the stack MCX_SIP_STACK names; the parts that do not depend on it are shared.
-    if(MCX_SIP_STACK STREQUAL "resip")
-        set(MCX_SIP_ENGINE_SOURCES src/sip_resip/incoming.cpp src/sip_resip/lifecycle.cpp src/sip_resip/messages.cpp
-            src/sip_resip/requests.cpp src/sip_resip/sip_engine.cpp src/sip_resip/tls_security.cpp
-            src/sip_resip/ims_aka.cpp src/sip_resip/aka_transports.cpp src/sip_resip/dialogs.cpp)
-    else()
-        set(MCX_SIP_ENGINE_SOURCES src/sip/helpers.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp src/sip/messages.cpp
-            src/sip/requests.cpp src/sip/responses.cpp src/sip/sip_engine.cpp src/sip/transactions.cpp
-            src/sip/ims_aka.cpp)
-    endif()
-    add_library(mcx_sip src/media/ice.cpp src/media/stun.cpp ${MCX_SIP_ENGINE_SOURCES} src/sip_common/sip_common.cpp src/common/runtime.cpp src/common/multicast.cpp src/security/key_client.cpp src/security/xfrm.cpp)
+    # The SIP engine on reSIProcate (src/sip/) and its stack-independent helpers (src/sip_common/).
+    add_library(mcx_sip src/media/ice.cpp src/media/stun.cpp src/sip/incoming.cpp src/sip/lifecycle.cpp
+        src/sip/messages.cpp src/sip/requests.cpp src/sip/sip_engine.cpp src/sip/tls_security.cpp src/sip/ims_aka.cpp
+        src/sip/aka_transports.cpp src/sip/dialogs.cpp src/sip_common/sip_common.cpp src/common/runtime.cpp
+        src/common/multicast.cpp src/security/key_client.cpp src/security/xfrm.cpp)
     target_link_libraries(mcx_sip PUBLIC mcx_core mcx_keying mcx_ims_aka)
-    if(MCX_SIP_STACK STREQUAL "resip")
-        target_link_libraries(mcx_sip PRIVATE mcx_resiprocate)
-    endif()
+    target_link_libraries(mcx_sip PRIVATE mcx_resiprocate)
     target_include_directories(mcx_sip PRIVATE src/sip_common)
     target_compile_options(mcx_sip PRIVATE -Wall -Wextra -Wpedantic)
     # The service parts shared by the MCPTT and MCVideo core and the MCData server:
@@ -327,7 +296,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         add_executable(test_sip tests/test_sip.cpp)
         target_link_libraries(test_sip PRIVATE mcx_sip)
         add_test(NAME sip_api COMMAND test_sip)
-        # RFC 3264 section 8: the "o=" line of a dialog's SDP (SdpOrigin, src/sip/helpers.cpp).
+        # RFC 3264 section 8: the "o=" line of a dialog's SDP (SdpOrigin, src/sip_common/sip_common.hpp).
         add_executable(test_sdp_origin tests/test_sdp_origin.cpp)
         target_link_libraries(test_sdp_origin PRIVATE mcx_sip)
         add_test(NAME sdp_origin COMMAND test_sdp_origin)
@@ -360,15 +329,6 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         target_link_libraries(test_ice PRIVATE mcx_sip)
         add_test(NAME ice COMMAND test_ice)
         set_tests_properties(ice PROPERTIES TIMEOUT 60)
-        # The agent against the pjnath one it replaced (tests/support/ice_pjnath.cpp), while pjproject is in the
-        # development image (prototype/resiprocate/PLAN.md phase 7 removes both).
-        if(PJ_FOUND)
-            add_executable(test_ice_interop tests/test_ice_interop.cpp tests/support/ice_pjnath.cpp)
-            target_include_directories(test_ice_interop PRIVATE tests)
-            target_link_libraries(test_ice_interop PRIVATE mcx_sip)
-            add_test(NAME ice_interop COMMAND test_ice_interop)
-            set_tests_properties(ice_interop PROPERTIES TIMEOUT 60)
-        endif()
         add_executable(test_mbms tests/test_mbms.cpp)
         target_link_libraries(test_mbms PRIVATE mcx_core)
         add_test(NAME mbms COMMAND test_mbms)

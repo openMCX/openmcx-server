@@ -37,7 +37,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-TOOLS = 'openmcx-dev:0.4'
+TOOLS = 'openmcx-dev:0.5'
 SHORTENED = 60  # the operator's expiry of REG-02 ("an operator defined value"), shorter than any lab registration
 OTHER_CONTACT = 'sip:other-device@192.0.2.9:5060'  # TEST-NET-1 (RFC 5737): never reached, removed after REG-02
 

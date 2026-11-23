@@ -123,7 +123,7 @@ flowchart LR
 | Directory | Responsibility | Key files |
 |---|---|---|
 | `include/mcx/` | Public headers of the libraries the servers and the client share | `sip.hpp` (SIP engine API), `floor.hpp` and `media_control.hpp` (floor control codec and arbitration), `transmission.hpp` (MCVideo transmission control codec), `mbms.hpp` (MBMS and 5G MBS subchannel control and notification messages, TS 24.380 clauses 8.4 to 8.6 and TS 24.581 clauses 9.3 to 9.5; the code points the specifications leave open are listed in its header), `mbms_usage.hpp` (MBMS usage information bodies of TS 24.379 and TS 24.281 annex F.2), `protocol.hpp` (SIP bodies), `mcdata.hpp`, `msrp.hpp`, `warning.hpp`, `service.hpp` (service profiles), `runtime.hpp` |
-| `src/sip/` | SIP user agent and application server core over pjsip (`SipEngine`, private implementation `sip_impl.hpp`) | `incoming.cpp` (received requests, INVITE state), `requests.cpp`, `responses.cpp`, `transactions.cpp`, `messages.cpp` (bodies and their protection hooks) |
+| `src/sip/` | SIP user agent and application server core over reSIProcate's stack (`SipEngine`, private implementation `resip_impl.hpp`); the stack-independent helpers are in `src/sip_common/` | `lifecycle.cpp` (start, stop, poll, the SIP message log), `incoming.cpp` (received requests), `requests.cpp` (requests outside dialogs, registration), `dialogs.cpp` (INVITE and subscription dialogs, the engine's own dialog layer), `messages.cpp` (bodies and their protection hooks), `ims_aka.cpp` and `aka_transports.cpp` (IMS AKA), `tls_security.cpp` (the TLS profile) |
 | `src/server/` | `McServer`, the shared core of the MCPTT and MCVideo servers, one topic per file | `server.hpp` (the class), `server.cpp` (construction, run loop, tick, status), `sip_dispatch.cpp` (request dispatch), `group_call.cpp`, `private_call.cpp`, `adhoc.cpp`, `ambient.cpp`, `priority.cpp`, `affiliation.cpp`, `regroup.cpp`, `functional_alias.cpp`, `split.cpp`, `split_relay.cpp`, `pre_session.cpp` (pre-established sessions: setup, modification, release, REFER, Connect and Disconnect), `xml_protection.cpp`, `policy.cpp` |
 | `src/server/parts/` | Service parts shared by `McServer` and `DataServer`, reached through small host interfaces (`ServiceHost`) | `task_queue.hpp`, `served_users.hpp`, `location_service.*`, `peer_registration.*`, `peers.*`, `alias_registry.*`, `common_services.*`, `program.*` (shared `serve` entry point) |
 | `src/mcptt/` | `McpttServer`: the MCPTT service hooks of `McServer` and the floor control server interface | `mcptt_server.hpp`, `floor_control.cpp` |
@@ -159,8 +159,9 @@ the SIGINT and SIGTERM handlers and calls the server's `run()`.
 `McServer::run` (`src/server/server.cpp`) provisions the server's keys at the KMS (when `security` is configured),
 starts the policy clients, installs the SIP body filters (section 6) and loops until `stopping`:
 
-1. `sip_.poll(5 ms)`: pjsip handles its events on this thread (`pjsip_endpt_handle_events` in `SipEngine::poll`);
-   received requests and responses call back into the server synchronously.
+1. `sip_.poll(5 ms, media sockets)`: the SIP stack handles its events on this thread (`SipEngine::poll`: one epoll
+   wait on the stack's sockets and the server's media and floor sockets, which ends the wait as soon as one is
+   readable); received requests and responses call back into the server synchronously.
 2. `pending_.run()`: the tasks scheduled while handling requests (section 3.4).
 3. `control_.read()`: commands from the control FIFO (`quit`, `hangup`, `ambient-release`, `seal-*`,
    `regroup-remove`), written by `--command`.
@@ -181,7 +182,8 @@ the loop up until the request times out; the document polling then backs off fro
 
 ### 3.2 The SIP engine
 
-`SipEngine` (`include/mcx/sip.hpp`) wraps pjsip. The application sees plain structures:
+`SipEngine` (`include/mcx/sip.hpp`) wraps reSIProcate's SIP stack (its transports and transaction layer; the dialogs
+are the engine's own, `src/sip/dialogs.cpp`). The application sees plain structures:
 
 - `SipMessage`: a received request with its headers, MIME parts (`parts`), parsed SDP (`remote_media`), dialog ID,
   source address and, when the incoming body filter refused the body, `protection_error`.
@@ -192,11 +194,11 @@ the loop up until the request times out; the document polling then backs off fro
   `disconnected`), `on_media` (the SDP answer to an offer the server made), `on_response`, `on_error`, `on_ack`.
 
 `SipEngine::Impl::receive_request` (`src/sip/incoming.cpp`) answers what the application must not see (482 for a
-colliding Call-ID, 420 for an unsupported `Require`, pjsip's INVITE checks), calls the application through
+merged request, 420 for an unsupported `Require` of an initial INVITE), calls the application through
 `safe_application_response` (an exception becomes 500), and then sends the answer: an INVITE with SDP is accepted as
 an INVITE session, a 2xx to SUBSCRIBE creates the subscription dialog, a deferred answer is kept by transaction ID.
-In-dialog INVITE, ACK, BYE, CANCEL, UPDATE and PRACK belong to pjsip's INVITE usage and reach the application as
-dialog state changes, re-INVITEs and BYEs.
+ACK, CANCEL and every request with a To tag go to the engine's dialogs (`src/sip/dialogs.cpp`): in-dialog INVITE,
+ACK, BYE, CANCEL, UPDATE and PRACK reach the application as dialog state changes, re-INVITEs and BYEs.
 
 Sending: `request` (out of dialog, through the SIP core unless an explicit `Route` header is given), `publish`,
 `subscribe`, `notify`, `invite`, `invite_sdp`, `reinvite`, `request_in_dialog` (INFO, MESSAGE in a dialog), `answer`,
@@ -540,7 +542,7 @@ TS 24.379 describes call setup and release as procedures. OpenMCX keeps their st
 - `Leg` (one user's dialog) holds `active`, `awaiting_answer`, `held`, `floor_granted`, the media sockets and the SDP
   of both sides.
 - `Relay` (a participating function's call relayed to a peer) holds both dialogs and the port triple.
-- The dialog state comes from pjsip as `SipCallState` (early, confirmed, disconnected) through `McServer::state`,
+- The dialog state comes from the SIP engine as `SipCallState` (early, confirmed, disconnected) through `McServer::state`,
   which calls `leg_confirmed` and `leg_disconnected`; `release_departed_leg` releases the call when TS 24.379 clause
   6.3.8.1 says so.
 - `tick` supervises every session (`supervise_session`): setup completion, ambient listening timer, call timers, the
@@ -722,8 +724,8 @@ MCVideo server sees the MCVideo parts.
 Every C++ program logs one JSON object per line to stdout with `mcx::event(kind, detail)`
 (`src/common/runtime.cpp`): the detail fields plus `"event": kind` and `"monotonic_ms"`. The log level
 (`"log_level"` in the configuration, overridden by `MCX_LOG`; `mcx::log_level()`) is `info` by default; `debug` adds
-a human-readable line on stderr per SIP message (`mcx::debug_line`, from a pjsip module registered only at that level,
-`src/sip/lifecycle.cpp`) and, in the Go services, per HTTP request (`services/internal/common/request_log.go`), each
+a human-readable line on stderr per SIP message (`mcx::debug_line`, from a logging handler on every transport of the
+SIP stack, set only at that level, `src/sip/lifecycle.cpp`) and, in the Go services, per HTTP request (`services/internal/common/request_log.go`), each
 starting with the date, time and `OpenMCX DEBUG [<program>]`. stdout stays the JSON event stream. See
 [using the lab](USAGE.md#7-troubleshooting-logs-and-readable-sip). For example:
 

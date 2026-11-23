@@ -13,7 +13,7 @@
 # udp prepares the lab as the regression's aka-udp lab (--aka-transport udp).
 #
 # Needs .cache/deps/docker-compose-linux-x86_64 (tools/fetch-dependencies.py). Work files in .cache/resip-prototype.
-# MCX_DEV_IMAGE picks the development image (default openmcx-dev:0.4).
+# MCX_DEV_IMAGE picks the development image (default openmcx-dev:0.5).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 images=${1:?usage: run-aka-probe.sh IMAGES_TAG CLIENT_IMAGE}
@@ -22,7 +22,7 @@ transport=${3:-tcp}
 case "$transport" in tcp | udp) ;; *) echo "run-aka-probe.sh: transport is tcp or udp" >&2; exit 2 ;; esac
 compose_tool=.cache/deps/docker-compose-linux-x86_64
 work=.cache/resip-prototype
-dev_image=${MCX_DEV_IMAGE:-openmcx-dev:0.4}
+dev_image=${MCX_DEV_IMAGE:-openmcx-dev:0.5}
 project="resip-aka-$$"
 [ -x "$compose_tool" ] || { echo "run-aka-probe.sh: $compose_tool is missing: run tools/fetch-dependencies.py" >&2; exit 1; }
 mkdir -p "$work"

@@ -1406,7 +1406,7 @@ def add_mock_pcf(compose, fixture):
     """The mock PCF: tests/integration/mock_pcf.go, run with the Go toolchain of the development image."""
     server = compose['services']['mcptt-server']
     compose['services']['mock-pcf'] = {
-        'image': 'openmcx-dev:0.4',
+        'image': 'openmcx-dev:0.5',
         'init': True,
         'entrypoint': ['go', 'run', '/mock/mock_pcf.go'],
         'command': ['-listen', ':8080', '-record', '/artifacts/mock-pcf/requests.jsonl'],
@@ -1526,7 +1526,7 @@ def add_mock_pcrf(compose, fixture):
     domain = json.loads((fixture / 'generated/site.json').read_text())['domain']
     server = compose['services']['mcptt-server']
     compose['services']['mock-pcrf'] = {
-        'image': 'openmcx-dev:0.4',
+        'image': 'openmcx-dev:0.5',
         'init': True,
         'entrypoint': ['python3', '/mock/mock_pcrf.py'],
         'command': ['--identity', f'mock-pcrf.{domain}', '--realm', domain, '--record',
