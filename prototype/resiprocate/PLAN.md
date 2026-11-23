@@ -263,7 +263,16 @@ In all, about 11 to 15 weeks, mostly phases 3 and 6.
     client-d's speech (warm-up bursts included) catches. The ICE agent is not created in this lab; the client
     binary changed at phase 5 only by no longer linking pjnath and pjlib. Not yet isolated to the client or the
     servers (a run of p7 servers with the p6e client would tell).
-  - Open, not caused by this work: the CentOS Stream 10 digests in `dependencies/lock.json` are no longer served by
-    quay.io (the CentOS build was verified with current digests passed as build arguments); `http_crl` fails on
-    CentOS (its test CRL is signed with SHA-1, refused by the default crypto policy). The Ubuntu 26.04 development
-    image was not rebuilt.
+  - CentOS Stream 10: quay.io no longer served the pinned base image digests (they go when the tags move); pinned
+    again in `dependencies/lock.json` and `docker/Dockerfile.centos` (docs/BUILD.md says how). `test_http_crl`
+    could not sign its SHA-1 CRL there (the default crypto policy refuses SHA-1 signatures, and verifies none
+    either); the case is now skipped, with a message, where the platform cannot sign it. The six images build from
+    the Dockerfile as it is, with 57 of 57 test suites, and nine labs (smoke, smoke-mcdata, smoke-mcvideo, mcdata,
+    protected-private, aka, multicast, pre-established, xml-protection) pass on them with the p7 client: TCP 42 of 42,
+    TLS 28 of 28.
+  - Ubuntu 26.04: libsrtp's configure failed, as libcrypto.pc lists static-only private libraries there
+    (libjitterentropy.a, zlib, zstd); `docker/Dockerfile.dev` passes `crypto_LIBS=-lcrypto` (the programs link
+    libcrypto dynamically). `openmcx-dev:0.5-ubuntu26.04` and the images build; 58 of 58 test suites (diameter_sctp
+    left out, as in the image builds); no pjproject symbol, the same licence files, libraries LGPL or permissive (new
+    against 24.04: freeDiameter 7, libxml2-16, libssh2, all BSD or MIT); the nine labs pass: TCP 42 of 42, TLS 28 of
+    28.

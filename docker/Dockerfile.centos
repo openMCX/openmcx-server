@@ -16,8 +16,8 @@
 # (dependencies/lock.json, checked by tools/check-dependencies.py). The runtime images use BaseOS and AppStream only:
 # the few libraries from EPEL or built here are copied in, and every image checks with ldd that nothing is missing.
 
-ARG BUILDER_IMAGE=quay.io/centos/centos:stream10@sha256:3f924e68a32f956996f69431e59e069fbcef608ab9de821a78693167d25348d4
-ARG RUNTIME_IMAGE=quay.io/centos/centos:stream10-minimal@sha256:5c0cf51dd1b0553f8ea8ebd7c5a4f080e0be9c8ad702ee0462b7bb69119f5068
+ARG BUILDER_IMAGE=quay.io/centos/centos:stream10@sha256:a266f7ae08c4b3f5d0eaaa8a500201d40d260ecdfa81e49991fe8d27699d69e9
+ARG RUNTIME_IMAGE=quay.io/centos/centos:stream10-minimal@sha256:64641eb2320cd369261c2c72c83a030dca5a4c19045525be8136326d8f45ce3f
 
 #------------------------------------------------------------------------------
 # BUILDER IMAGE: the toolchain and libraries, the pinned sources, then the Go services and their tests, the C++

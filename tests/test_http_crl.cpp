@@ -10,6 +10,7 @@
 // RFC 5280 sections 5 and 6.3.
 #include "mcx/http.hpp"
 
+#include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
@@ -202,8 +203,19 @@ int main() {
     // TS 33.310 clause 6.1a: version 2 only, no SHA-1; clause 7.6: no delta CRL.
     write(crl_file, make_crl(ca_cert.get(), ca_key.get(), {.version = X509_CRL_VERSION_1}) + valid);
     expect_rejected("a version 1 CRL", [&] { get(crl_file); });
-    write(crl_file, make_crl(ca_cert.get(), ca_key.get(), {.digest = EVP_sha1}) + valid);
-    expect_rejected("a CRL signed with SHA-1", [&] { get(crl_file); });
+    // A platform whose crypto policy refuses SHA-1 signatures (CentOS Stream 10, RHEL 9 and later by default) cannot
+    // sign the test CRL, and verifies no SHA-1 signature either.
+    std::string sha1_crl;
+    try {
+      sha1_crl = make_crl(ca_cert.get(), ca_key.get(), {.digest = EVP_sha1});
+    } catch (const std::runtime_error &) {
+      ERR_clear_error();
+      std::cout << "skipped: a CRL signed with SHA-1, the platform's crypto policy refuses SHA-1 signatures\n";
+    }
+    if (!sha1_crl.empty()) {
+      write(crl_file, sha1_crl + valid);
+      expect_rejected("a CRL signed with SHA-1", [&] { get(crl_file); });
+    }
     write(crl_file, make_crl(ca_cert.get(), ca_key.get(), {.delta = true}) + valid);
     expect_rejected("a delta CRL", [&] { get(crl_file); });
     write(crl_file, "");

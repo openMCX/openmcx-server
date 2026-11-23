@@ -67,7 +67,14 @@ docker build --target openmcx-mcptt-server -t openmcx-mcptt-server:0.1-u2604 -f 
 `Dockerfile.<nf>.centos`: CentOS Stream 10 builder (GCC 14; CRB and EPEL 10) and CentOS Stream 10 minimal runtime
 (`microdnf`, BaseOS and AppStream only). freeDiameter 1.5.0 and OpenH264 2.4.1 have no EL10 package and are built
 from pinned sources (`dependencies/lock.json`); the few libraries the minimal image lacks are copied from the builder,
-and each image checks with `ldd` that nothing is missing. Not yet built or run in the lab.
+and each image checks with `ldd` that nothing is missing. The base images are pinned by digest in
+`dependencies/lock.json` (`centos_images`) and in the Dockerfile's `BUILDER_IMAGE` and `RUNTIME_IMAGE`
+(`tools/check-dependencies.py` compares them). CentOS Stream's tags move with each update and quay.io removes the
+digests they leave, so a pinned digest stops resolving after a while: pin the tags' current index digests
+(`docker buildx imagetools inspect quay.io/centos/centos:stream10`, and `stream10-minimal`) in both places.
+
+The default crypto policy of CentOS Stream 10 refuses SHA-1 signatures, so `test_http_crl` skips its SHA-1 CRL case
+there (it says so); the platform verifies no SHA-1 signature either.
 
 ```sh
 docker build --target openmcx-mcptt-server -t openmcx-mcptt-server:0.1-centos -f docker/Dockerfile.centos .

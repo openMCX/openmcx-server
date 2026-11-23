@@ -31,14 +31,15 @@ RUN fetch "$GO_FILE" "$GO_URL" "$GO_SHA256" /tmp/go.tar.gz \
 ENV PATH="/usr/local/go/bin:${PATH}"
 # libsrtp from its pinned source with OpenMCX's patch (dependencies/libsrtp/README.md): the first SRTCP index is zero
 # (RFC 3711 section 3.4). A static library in /usr/local, used by the OpenMCX programs; its licence is
-# kept for the runtime images.
+# kept for the runtime images. crypto_LIBS: the programs link libcrypto dynamically, and libsrtp's configure would
+# otherwise test against libcrypto.pc's static-only private libraries (Ubuntu 26.04: libjitterentropy.a, zlib, zstd).
 COPY dependencies/libsrtp/${LIBSRTP_PATCH} /tmp/libsrtp-patches/
 RUN fetch "$LIBSRTP_FILE" "$LIBSRTP_URL" "$LIBSRTP_SHA256" /tmp/libsrtp.tar.gz \
     && echo "$LIBSRTP_PATCH_SHA256  /tmp/libsrtp-patches/$LIBSRTP_PATCH" | sha256sum --check --strict - \
     && mkdir /tmp/libsrtp && tar -xzf /tmp/libsrtp.tar.gz -C /tmp/libsrtp --strip-components=1 \
     && cd /tmp/libsrtp && patch -p1 --forward < /tmp/libsrtp-patches/$LIBSRTP_PATCH \
     && grep -q SRTP_OPENMCX_SRTCP_INDEX_ZERO include/srtp.h \
-    && ./configure --prefix=/usr/local --enable-openssl CFLAGS='-O2 -fPIC' \
+    && ./configure --prefix=/usr/local --enable-openssl CFLAGS='-O2 -fPIC' crypto_LIBS=-lcrypto \
     && make -j4 && make install \
     && install -D -m 644 LICENSE /usr/local/share/doc/libsrtp/LICENSE \
     && rm -rf /tmp/libsrtp /tmp/libsrtp.tar.gz /tmp/libsrtp-patches
