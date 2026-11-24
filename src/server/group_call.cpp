@@ -464,10 +464,14 @@ void McServer::complete_setup(const std::shared_ptr<Session> &session) {
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 10.1.3.4 (content of clause 6.3.3.4): the controlling function's NOTIFY of the conference
-// event package to each subscriber; the subscription terminates when the session ends, it expires or the
-// subscriber leaves.
-void McServer::notify_conference(const std::shared_ptr<Session> &session, bool ending) {
+// event package to each subscriber (or, with `only`, to the subscription of that dialog); the subscription terminates
+// when the session ends, it expires (also when ended in its dialog with Expires 0) or the subscriber leaves.
+void McServer::notify_conference(const std::shared_ptr<Session> &session, bool ending, std::string_view only) {
   for (auto it = session->subscriptions.begin(); it != session->subscriptions.end();) {
+    if (!only.empty() && it->first != only) {
+      ++it;
+      continue;
+    }
     auto &sub = it->second;
     const bool expired = sub.expires <= std::time(nullptr);
     const auto *user = by_id(sub.user);
