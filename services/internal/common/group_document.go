@@ -58,6 +58,8 @@ type listServiceXML struct {
 	MaxDuration          string               `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-maximum-duration,omitempty"`
 	MaxParticipants      int                  `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-max-participant-count,omitempty"`
 	PreconfiguredUseOnly bool                 `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 preconfigured-group-use-only,omitempty"`
+	PermittedArea        *groupAreaXML        `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 permitted-geographic-area,omitempty"`
+	MandatoryArea        *groupAreaXML        `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 mandatory-geographic-area,omitempty"`
 	Disabled             *struct{}            `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 on-network-disabled,omitempty"`
 	ProtectMedia         bool                 `xml:"urn:3gpp:ns:mcpttGroupInfo:1.0 protect-media"`
 	// TS 24.481 clause 7.2.2 (MCData group document): <mcdata-protect-media>, read as the group's media protection.
@@ -365,7 +367,8 @@ type groupExtension struct {
 // read, as the group document. withList false leaves out <list> (TS 24.481 clause 6.3.16.3).
 func groupDocument(group Group, withList bool) ([]byte, error) {
 	ls := listServiceXML{URI: group.ID, ProtectMedia: group.ProtectMedia, ProtectFloor: group.ProtectFloor,
-		PreconfiguredUseOnly: group.PreconfiguredUseOnly, AudioCutIn: group.AudioCutIn}
+		PreconfiguredUseOnly: group.PreconfiguredUseOnly, AudioCutIn: group.AudioCutIn,
+		PermittedArea: groupAreaOf(group.PermittedArea), MandatoryArea: groupAreaOf(group.MandatoryArea)}
 	if group.MultiTalker != nil {
 		ls.MultiTalkerControl = true
 		ls.MaxSimultaneousTalkers = group.MultiTalker.MaxTalkers
@@ -464,7 +467,8 @@ func parseGroupDocument(raw []byte) (Group, error) {
 	}
 	group := Group{ID: ls.URI, ProtectMedia: ls.ProtectMedia || (ls.MCDataProtectMedia != nil && *ls.MCDataProtectMedia),
 		ProtectFloor:         ls.ProtectFloor,
-		PreconfiguredUseOnly: ls.PreconfiguredUseOnly, AudioCutIn: ls.AudioCutIn, Members: []string{}}
+		PreconfiguredUseOnly: ls.PreconfiguredUseOnly, AudioCutIn: ls.AudioCutIn, Members: []string{},
+		PermittedArea: geoAreasOf(ls.PermittedArea), MandatoryArea: geoAreasOf(ls.MandatoryArea)}
 	if ls.MultiTalkerControl {
 		group.MultiTalker = &GroupMultiTalker{MaxTalkers: ls.MaxSimultaneousTalkers, MixingEntity: ls.AudioMixingEntity}
 	}

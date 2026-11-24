@@ -522,7 +522,8 @@ func userProfileXML(user User) profileXML {
 	if len(user.Groups) > 0 {
 		on.GroupInfo = &profileEntryList{}
 		for _, groupID := range user.Groups {
-			on.GroupInfo.Entries = append(on.GroupInfo.Entries, profileEntry{URI: groupID})
+			on.GroupInfo.Entries = append(on.GroupInfo.Entries,
+				profileEntry{URI: groupID, AnyExt: user.AffiliationRules[groupID].profileEntryExt()})
 		}
 	}
 	if private := user.PrivateCall; private != nil {

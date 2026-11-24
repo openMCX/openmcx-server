@@ -42,6 +42,10 @@ type profileEntryExt struct {
 	ManualLocked *bool              `xml:"manual-deactivation-not-allowed-if-location-criteria-met,omitempty"`
 	// The <PrivateCallKMSURI> of a <PrivateCallURI> entry (TS 24.484 clause 8.3.2.1 item 8 d) i) A) I)).
 	KMS *profileKMSURI `xml:"PrivateCallKMSURI,omitempty"`
+	// The affiliation rules of an <MCPTTGroupInfo> entry (affiliation_rules.go).
+	RulesForAffiliation       *profileAffiliationRule `xml:"RulesForAffiliation,omitempty"`
+	RulesForDeaffiliation     *profileAffiliationRule `xml:"RulesForDeaffiliation,omitempty"`
+	ManualDeaffiliationLocked *bool                   `xml:"manual-deaffiliation-not-allowed-if-affiliation-rules-are-met,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -155,21 +159,8 @@ func (alias FunctionalAlias) checkLocationCriteria() error {
 			continue
 		}
 		for _, area := range append(append([]GeoArea{}, criteria.Enter...), criteria.Exit...) {
-			points := area.Polygon
-			switch {
-			case len(area.Polygon) > 0 && area.Center != nil:
-				return fmt.Errorf("functional alias %s: an area is a polygon or an arc", alias.ID)
-			case len(area.Polygon) > 0 && (len(area.Polygon) < 3 || len(area.Polygon) > 15):
-				return fmt.Errorf("functional alias %s: a polygon has 3 to 15 corners", alias.ID)
-			case area.Center != nil:
-				points = [][2]float64{*area.Center}
-			case len(area.Polygon) == 0:
-				return fmt.Errorf("functional alias %s: an area needs a polygon or an arc", alias.ID)
-			}
-			for _, point := range points {
-				if point[0] < -90 || point[0] > 90 || point[1] < -180 || point[1] > 180 {
-					return fmt.Errorf("functional alias %s: coordinates out of range", alias.ID)
-				}
+			if err := checkGeoArea(area); err != nil {
+				return fmt.Errorf("functional alias %s: %w", alias.ID, err)
 			}
 		}
 	}

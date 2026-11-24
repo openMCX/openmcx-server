@@ -165,9 +165,10 @@ McdataProfile parse_mcdata_profile(std::string_view xml) {
 // TS 24.484 clause 9.3.2.1: reads an MCVideo user profile: its index, the MCVideo ID (equal to "XUI-URI"), the
 // private call targets, the MCVideo groups of <OnNetwork> and the granted actions.
 //------------------------------------------------------------------------------
-// TS 24.484 clause 9.3.2.3: a <GeographicalAreaType> of a user profile: a <PolygonArea> of 3 to 15 <Corner>s or an
-// <EllipsoidArcArea>, each point a <Longitude> and a <Latitude> coded as in TS 23.032 clause 6.1 (0 to 16777215).
-static location::Area profile_area(xmlNode *node, const char *ns) {
+// TS 24.484 clause 9.3.2.3 (TS 24.481 clause 7.2.4.2 likewise): an area element: a <PolygonArea> of 3 to 15
+// <Corner>s or an <EllipsoidArcArea>, each point a <Longitude> and a <Latitude> coded as in TS 23.032 clause 6.1 (0 to
+// 16777215).
+static location::Area profile_shape(xmlNode *shape, const char *ns) {
   const auto coded = [&](xmlNode *parent, const char *name, std::uint32_t max) {
     const auto value = text(unique_child(parent, name, ns));
     if (value.empty() || value.size() > 10) invalid("invalid profile area coordinate or size");
@@ -180,18 +181,18 @@ static location::Area profile_area(xmlNode *node, const char *ns) {
     return out;
   };
   location::Area area;
-  if (auto polygon = unique_child(node, "PolygonArea", ns, false)) {
-    for (auto corner = polygon->children; corner; corner = corner->next)
+  if (is(shape, "PolygonArea", ns)) {
+    for (auto corner = shape->children; corner; corner = corner->next)
       if (is(corner, "Corner", ns)) {
         if (area.polygon.size() >= 15) invalid("a polygon has 3 to 15 corners");
         area.polygon.push_back(point(corner));
       }
     if (area.polygon.size() < 3) invalid("a polygon has 3 to 15 corners");
-  } else if (auto arc = unique_child(node, "EllipsoidArcArea", ns, false)) {
-    area.center = point(unique_child(arc, "Center", ns));
-    area.radius = coded(arc, "Radius", 0xffffffff);
-    area.offset_angle = static_cast<std::uint8_t>(coded(arc, "OffsetAngle", 255));
-    area.included_angle = static_cast<std::uint8_t>(coded(arc, "IncludedAngle", 255));
+  } else if (is(shape, "EllipsoidArcArea", ns)) {
+    area.center = point(unique_child(shape, "Center", ns));
+    area.radius = coded(shape, "Radius", 0xffffffff);
+    area.offset_angle = static_cast<std::uint8_t>(coded(shape, "OffsetAngle", 255));
+    area.included_angle = static_cast<std::uint8_t>(coded(shape, "IncludedAngle", 255));
   } else {
     invalid("an area is a polygon or an ellipsoid arc");
   }
@@ -199,16 +200,25 @@ static location::Area profile_area(xmlNode *node, const char *ns) {
 }
 
 //------------------------------------------------------------------------------
+// The GeographicalAreaType `node` (e.g. an <EnterSpecificArea>): its <PolygonArea> or <EllipsoidArcArea>.
+static location::Area profile_area(xmlNode *node, const char *ns) {
+  if (auto polygon = unique_child(node, "PolygonArea", ns, false)) return profile_shape(polygon, ns);
+  if (auto arc = unique_child(node, "EllipsoidArcArea", ns, false)) return profile_shape(arc, ns);
+  invalid("an area is a polygon or an ellipsoid arc");
+}
+
+//------------------------------------------------------------------------------
 // TS 24.484 clause 9.3.2.1 item 10: the <entry> elements of <FunctionalAliasList> in the <anyExt> of <OnNetwork>, with
 // the location criteria and the manual deactivation lock of their <anyExt>.
-static void profile_functional_aliases(xmlNode *on, const char *ns, McvideoProfile &out) {
+static void profile_functional_aliases(xmlNode *on, const char *ns,
+                                       std::vector<McvideoProfile::FunctionalAlias> &functional_aliases) {
   for (auto ext = on->children; ext; ext = ext->next) {
     if (!is(ext, "anyExt", ns)) continue;
     for (auto list = ext->children; list; list = list->next) {
       if (!is(list, "FunctionalAliasList", ns)) continue;
       for (auto entry = list->children; entry; entry = entry->next) {
         if (!is(entry, "entry", ns)) continue;
-        if (out.functional_aliases.size() >= 256) invalid("too many functional aliases");
+        if (functional_aliases.size() >= 256) invalid("too many functional aliases");
         McvideoProfile::FunctionalAlias alias;
         alias.alias = text(unique_child(entry, "uri-entry", ns));
         if (alias.alias.empty()) invalid("a functional alias entry without its URI");
@@ -229,7 +239,7 @@ static void profile_functional_aliases(xmlNode *on, const char *ns, McvideoProfi
               alias.manual_deactivation_locked = value == "true" || value == "1";
             }
           }
-        out.functional_aliases.push_back(std::move(alias));
+        functional_aliases.push_back(std::move(alias));
       }
     }
   }
@@ -266,7 +276,7 @@ McvideoProfile parse_mcvideo_profile(std::string_view xml) {
         if (out.groups.size() >= 256) invalid("too many MCVideo groups");
         out.groups.push_back(uri(unique_child(entry, "MCVideo-Group-ID", ns)));
       }
-    profile_functional_aliases(on, ns, out);
+    profile_functional_aliases(on, ns, out.functional_aliases);
   }
   // TS 24.484 clause 9.3.2.3: the EntryType <entry> of a target element, with its "entry-info" and <uri-entry>
   // (absent for "UseCurrentlySelectedGroup" and "LocallyDetermined", which name no target).
@@ -305,6 +315,85 @@ McvideoProfile parse_mcvideo_profile(std::string_view xml) {
     if (is(on, "OnNetwork", ns)) out.private_emergency_alert = target(on, "PrivateEmergencyAlert");
   out.actions = parse_profile_actions(xml);
 
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.3: a GeographicalAreaChangeType (<LocationCriteriaFor...>, <ListOfLocationCriteria>): its
+// <EnterSpecificArea> and <ExitSpecificArea> areas; one with a <Speed> or <Heading> in its <anyExt> is only counted.
+static ProfileAreaChange profile_area_change(xmlNode *node, const char *ns) {
+  ProfileAreaChange out;
+  for (auto area = node->children; area; area = area->next) {
+    const bool enter = is(area, "EnterSpecificArea", ns);
+    if (!enter && !is(area, "ExitSpecificArea", ns)) continue;
+    if (out.enter.size() + out.exit.size() + out.constrained >= 32) invalid("too many location criteria");
+    bool constrained = false;
+    if (auto ext = unique_child(area, "anyExt", ns, false))
+      constrained = unique_child(ext, "Speed", ns, false) || unique_child(ext, "Heading", ns, false);
+    if (constrained) {
+      ++out.constrained;
+      continue;
+    }
+    (enter ? out.enter : out.exit).push_back(profile_area(area, ns));
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.1 item 10 and clause 8.3.2.7: the location criteria of the functional aliases
+// (<FunctionalAliasList> in the <anyExt> of <OnNetwork>) and, per <entry> of <MCPTTGroupInfo>, its <RulesForAffiliation>
+// and <RulesForDeaffiliation> (each rule a RulesForAffiliationManagementType: <ListOfLocationCriteria> and
+// <ListOfActiveFunctionalAliasCriteria>, whose <entry>s name the aliases by <uri-entry>) and
+// <manual-deaffiliation-not-allowed-if-affiliation-rules-are-met>.
+McpttProfileRules parse_mcptt_profile_rules(std::string_view xml) {
+  auto doc = document(xml);
+  const char *ns = nullptr;
+  auto root = profile_root(doc.get(), &ns);
+  if (ns != profile_ns) invalid("not an MCPTT user profile");
+  McpttProfileRules out;
+  for (auto on = root->children; on; on = on->next) {
+    if (!is(on, "OnNetwork", ns)) continue;
+    profile_functional_aliases(on, ns, out.functional_aliases);
+    for (auto info = on->children; info; info = info->next) {
+      if (!is(info, "MCPTTGroupInfo", ns)) continue;
+      for (auto entry = info->children; entry; entry = entry->next) {
+        if (!is(entry, "entry", ns)) continue;
+        auto ext = unique_child(entry, "anyExt", ns, false);
+        if (!ext) continue;
+        const auto group = text(unique_child(entry, "uri-entry", ns));
+        if (group.empty()) invalid("an MCPTT group entry without its URI");
+        for (auto node = ext->children; node; node = node->next) {
+          const bool affiliate = is(node, "RulesForAffiliation", ns);
+          if (affiliate || is(node, "RulesForDeaffiliation", ns)) {
+            if (out.affiliation_rules.size() >= 256) invalid("too many affiliation rules");
+            McpttAffiliationRule rule;
+            rule.group = group;
+            rule.affiliate = affiliate;
+            for (auto part = node->children; part; part = part->next) {
+              if (is(part, "ListOfLocationCriteria", ns)) {
+                auto change = profile_area_change(part, ns);
+                rule.location.enter.insert(rule.location.enter.end(), change.enter.begin(), change.enter.end());
+                rule.location.exit.insert(rule.location.exit.end(), change.exit.begin(), change.exit.end());
+                rule.location.constrained += change.constrained;
+              } else if (is(part, "ListOfActiveFunctionalAliasCriteria", ns)) {
+                for (auto alias = part->children; alias; alias = alias->next)
+                  if (is(alias, "entry", ns)) {
+                    if (rule.aliases.size() >= 64) invalid("too many functional alias criteria");
+                    const auto uri = text(unique_child(alias, "uri-entry", ns));
+                    if (uri.empty()) invalid("a functional alias criterion without its URI");
+                    rule.aliases.push_back(uri);
+                  }
+              }
+            }
+            out.affiliation_rules.push_back(std::move(rule));
+          } else if (is(node, "manual-deaffiliation-not-allowed-if-affiliation-rules-are-met", ns)) {
+            const auto value = scalar(node);
+            if (value == "true" || value == "1") out.manual_deaffiliation_locked.insert(group);
+          }
+        }
+      }
+    }
+  }
   return out;
 }
 
@@ -494,6 +583,28 @@ static bool group_flag(xmlNode *list_service, const char *name) {
 bool group_preconfigured_use_only(std::string_view xml) {
   auto doc = document(xml);
   return group_flag(group_list_service(doc.get()), "preconfigured-group-use-only");
+}
+
+//------------------------------------------------------------------------------
+// TS 24.481 clause 7.2.4.2 (areaType: a sequence of <PolygonArea> and <EllipsoidArcArea>, coded as the profile's) and
+// clause 7.2.8: <permitted-geographic-area> and <mandatory-geographic-area> of <list-service>.
+GroupGeographicAreas parse_group_geographic_areas(std::string_view xml) {
+  auto doc = document(xml);
+  auto list_service = group_list_service(doc.get());
+  GroupGeographicAreas out;
+  const auto read = [&](const char *name, std::vector<location::Area> &areas) {
+    auto element = unique_child(list_service, name, mcpttgi_ns, false);
+    if (!element) return;
+    for (auto shape = element->children; shape; shape = shape->next) {
+      if (!is(shape, "PolygonArea", mcpttgi_ns) && !is(shape, "EllipsoidArcArea", mcpttgi_ns)) continue;
+      if (areas.size() >= 32) invalid("too many areas in a group geographic area");
+      areas.push_back(profile_shape(shape, mcpttgi_ns));
+    }
+    if (areas.empty()) invalid((std::string(name) + " without an area").c_str());
+  };
+  read("permitted-geographic-area", out.permitted);
+  read("mandatory-geographic-area", out.mandatory);
+  return out;
 }
 
 //------------------------------------------------------------------------------
