@@ -21,11 +21,20 @@
 // 5.3C.12.4-1 sends none: the client then offers in its 2xx, RFC 3261 section 13.3.1), which this SIP engine, whose
 // re-INVITEs always offer, does not send.
 //
+// Emergency and imminent peril communications over the session (clauses 9.2.5.2.2.1 step 4 ii and iii, 9.2.5.3.2.1
+// steps 6A and 6B, 9.2.5.2.2.3, 9.2.5.2.2.4): the indications of the REFER's entry, or of its own MCData-Info, checked
+// at the REFER (pre_session_priority_refused) and carried to the controlling function with the alert's location of the
+// REFER; the grant in "establish-success" with the communication's Resource-Priority, the correction of clause
+// 6.2.8.1.16 2) b) in it rather than after a SIP INFO (media_invite_answer); a priority communication offered over a
+// session as on demand (media_deliver); the client's upgrade or cancellation by re-INVITE in the session (clause
+// 6.3.7.1.18, pre_session_in_dialog) and the controlling function's to the other legs (clause 6.3.7.1.17,
+// reinvite_leg).
+//
 // Not implemented: ICE (the answer carries no ICE attributes, which turns ICE off, RFC 8839 section 4.2.3; clause
 // 18.3.2.2 steps 9 e and 12), resource sharing by the SIP core (clause 18.2 with TS 24.229 clause 7.2.13: with
 // mcdata.resource_sharing "rx" the session is allowed and its resources left to the PCC deployment, "sip-core" is
-// refused like "none"), the emergency and imminent peril communications over the session (clauses 9.2.5.2.2.3 to
-// 9.2.5.2.2.5), FD over the session, and separate participating and controlling MCData functions.
+// refused like "none"), the SIP INFO correction of a priority re-INVITE within the session (it goes as on demand), FD
+// and ad hoc groups over the session, and separate participating and controlling MCData functions.
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19), TS 24.582 V19.0.0 (Rel-19), TS 37.579-1 V18.1.0 (Rel-18), RFC 3261,
 // RFC 3264, RFC 3515, RFC 4488, RFC 4538, RFC 2392, RFC 5366, RFC 4975, RFC 6135, RFC 8839.
@@ -173,8 +182,14 @@ std::optional<SipResponse> DataServer::pre_session_in_dialog(const SipMessage &r
   if (found == pre_sessions_.end()) return std::nullopt;
   if (request.method == "INVITE" && part(request, mcdata::info_mime))
     if (const auto leg = media_session(request.dialog_id)) {
+      // TS 24.282 clauses 9.2.5.2.2.3 and 6.3.7.1.18 (and the group communication's re-INVITE, 9.2.4.4.4): the
+      // upgrade or cancellation of the communication's priority, handled by the collocated controlling function; the
+      // 200 (OK) with the session's media and the participating function's P-Asserted-Identity (step 4 of the 200).
       auto response = media_reinvite(request, leg);
-      if (response.status_code / 100 == 2) response.local_sdp = found->second->sdp;
+      if (response.status_code / 100 == 2) {
+        response.local_sdp = found->second->sdp;
+        response.headers.push_back({"P-Asserted-Identity", "<" + service_uri_ + ">"});
+      }
       return response;
     }
   SipResponse response;
@@ -261,13 +276,86 @@ SipResponse DataServer::pre_session_refer(const SipMessage &request) {
   }
   if (!profile(user.id).value("mcdata", Json::object()).value("transmit_data", false))
     return reject(403, "200 user not authorised to transmit data", user.id, "pre-established-refer");
+  // The entry's bodies, opened as the client protected them (TS 24.282 clause 6.5.2: the bodies under its CSK, the
+  // XML encrypted with it); its MCData-Info is what the INVITE of clause 9.2.5.1.1 step 9 a) carries.
+  SipMessage entry_bodies;
+  entry_bodies.method = "REFER";
+  entry_bodies.parts = std::move(refer.entry.body);
+  if (auto refused = open_signalling(user.sip, entry_bodies)) return *refused;
+  refer.entry.body = std::move(entry_bodies.parts);
+  mcdata::Info info;
+  BodyPart *entry_info = nullptr;
+  try {
+    for (auto &part : refer.entry.body)
+      if (part.content_type == mcdata::info_mime) {
+        entry_info = &part;
+        info = mcdata::parse_info(part.body);
+      }
+    // The priority indications of the REFER's own MCData-Info (TS 24.282 clause 9.2.5.2.1.1 1a), 9.2.5.3.2.1 6A)),
+    // where the entry's has none: the INVITE to the controlling function carries them.
+    if (const auto *own = part(request, mcdata::info_mime)) {
+      const auto top = mcdata::parse_info(own->body);
+      if (!info.emergency) info.emergency = top.emergency;
+      if (!info.imminent_peril) info.imminent_peril = top.imminent_peril;
+      if (!info.alert) info.alert = top.alert;
+    }
+  } catch (const std::exception &error) {
+    event("mcdata_pre_refer_refused", {{"user_id", user.id}, {"reason", error.what()}});
+    return reject(403, "145 unable to determine called party", user.id, "pre-established-refer");
+  }
+  if (!entry_info) return reject(403, "145 unable to determine called party", user.id, "pre-established-refer");
+  if (auto refused = pre_session_priority_refused(user, info, refer.entry.target)) return *refused;
+  entry_info->body = mcdata::info_xml(info);
+  // TS 24.282 clause 6.3.7.1.18 step 4 c) as clause 9.2.5.1.1 does for the entry: the location information of an
+  // emergency alert, a body of the REFER itself (the client's, clause 6.2.8.1.1 3) b)), goes with the INVITE.
+  std::vector<BodyPart> location;
+  for (const auto &body : request.parts)
+    if (body.content_type == mcdata::location_mime) location.push_back(body);
   pre->communication = "originating";
   count("pre_session_refers");
-  event("mcdata_pre_refer", {{"user_id", user.id}, {"target", refer.entry.target}, {"dialog", pre->dialog}});
-  pending_.push_back([this, dialog = pre->dialog, entry = std::move(refer.entry)]() mutable {
-    pre_session_originate(dialog, std::move(entry));
-  });
+  event("mcdata_pre_refer", {{"user_id", user.id},
+                             {"target", refer.entry.target},
+                             {"dialog", pre->dialog},
+                             {"emergency", info.emergency ? Json(*info.emergency) : Json(nullptr)},
+                             {"imminent", info.imminent_peril ? Json(*info.imminent_peril) : Json(nullptr)},
+                             {"alert", info.alert ? Json(*info.alert) : Json(nullptr)},
+                             {"resource_priority", std::string(get_header(request.headers, "Resource-Priority"))}});
+  pending_.push_back(
+      [this, dialog = pre->dialog, entry = std::move(refer.entry), location = std::move(location)]() mutable {
+        pre_session_originate(dialog, std::move(entry), std::move(location));
+      });
   return response;
+}
+
+//------------------------------------------------------------------------------
+// The priority of a REFER over the session: TS 24.282 clause 9.2.5.3.2.1 steps 6A (clause 6.3.7.1.9: an invalid
+// combination of the indications, 403 with warning 150) and 6B (a), c): an unauthorised emergency or imminent peril
+// group communication, clauses 6.3.7.2.6 and 6.3.7.2.4, 403 with warning 233 or 236 and the refused indications, as
+// on demand; b): an unauthorised emergency alert, clause 6.3.7.2.1, 403); clause 9.2.5.2.2.1 steps 4 ii and iii (a
+// one-to-one communication: 403 with warning 233 without <allow-emergency-private-call>, 236 for an imminent peril
+// one, which TS 24.282 defines for groups only). None: the request may go on.
+std::optional<SipResponse> DataServer::pre_session_priority_refused(const User &user, const mcdata::Info &info,
+                                                                    const std::string &target) {
+  if (!info.emergency && !info.imminent_peril && info.alert != true) return std::nullopt;
+  if (!valid_priority_combination(info))
+    return reject(403, "150 invalid combinations of data received in MIME body", user.id, "pre-established-priority");
+  if (info.request_type.starts_with("group-")) {
+    const auto group = info.request_uri.empty() ? target : info.request_uri;
+    if (info.emergency == true && !priority_authorised(user.id, group, true, true))
+      return reject_priority(user.id, true);
+    if (info.alert == true && !alert_authorised(user.id, group))
+      return reject(403, "", user.id, "pre-established-alert");
+    if (info.imminent_peril == true && !priority_authorised(user.id, group, false, true))
+      return reject_priority(user.id, false);
+    return std::nullopt;
+  }
+  if (info.emergency == true && !profile(user.id).value("mcdata", Json::object()).value("emergency_private", false))
+    return reject(403, "233 user not authorised to initiate emergency communication", user.id,
+                  "pre-established-priority");
+  if (info.imminent_peril == true)
+    return reject(403, "236 user not authorised to initiate imminent peril communication", user.id,
+                  "pre-established-priority");
+  return std::nullopt;
 }
 
 //------------------------------------------------------------------------------
@@ -279,7 +367,7 @@ SipResponse DataServer::pre_session_refer(const SipMessage &request) {
 // leg takes the session's MSRP media (TS 24.582 clause 12) and the re-INVITE of clause 9.2.5.1.2 with
 // <mcdata-communication-state> "establish-success" goes to the client, the MCData session identity in its Contact
 // (as clause 9.2.5.2.2.2 step 3 iii names it to a terminating client); upon an error response, "establish-fail".
-void DataServer::pre_session_originate(const std::string &dialog, ReferEntry entry) {
+void DataServer::pre_session_originate(const std::string &dialog, ReferEntry entry, std::vector<BodyPart> location) {
   const auto found = pre_sessions_.find(dialog);
   if (found == pre_sessions_.end()) return;
   const auto pre = found->second;
@@ -297,9 +385,8 @@ void DataServer::pre_session_originate(const std::string &dialog, ReferEntry ent
   invite.source_address = core_address_;
   invite.transaction_id = "pre-established";
   invite.headers = {{"P-Asserted-Identity", "<" + pre->sip + ">"}, {"P-Asserted-Service", mcdata::sds_icsi}};
-  invite.parts = std::move(entry.body);
-  if (auto refused = open_signalling(pre->sip, invite))
-    return fail("the entry's bodies cannot be opened", refused->status_code);
+  invite.parts = std::move(entry.body); // opened by pre_session_refer
+  for (auto &body : location) invite.parts.push_back(std::move(body));
   std::string request_type;
   for (auto &part : invite.parts) {
     if (part.content_type != mcdata::info_mime) continue;
@@ -423,9 +510,6 @@ void DataServer::pre_session_reinvite_parts(const std::shared_ptr<PreSession> &p
     return;
   }
   if (!pre_sessions_.contains(pre->dialog)) return;
-  if (state.empty())
-    for (const auto &part : parts)
-      if (part.content_type == mcdata::info_mime) state = "establish-request";
   headers.push_back({"Contact", contact});
   headers.push_back({"P-Asserted-Identity", "<" + service_uri_ + ">"});
   headers.push_back({"P-Asserted-Service", mcdata::sds_icsi});
@@ -451,6 +535,26 @@ void DataServer::pre_session_reinvite_parts(const std::shared_ptr<PreSession> &p
       handler(failed);
     }
   }
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clauses 9.2.5.2.2.4 and 9.2.5.3 (6.3.7.1.17: the terminating participating function relays the controlling
+// function's re-INVITE that upgrades or cancels the priority of the communication, its MCData-Info, Resource-Priority
+// and the session's media): on a leg over a pre-established session, a re-INVITE in the session's dialog with no
+// <mcdata-communication-state> (the communication in use), the communication's MCData session identity in Contact;
+// on another leg, the re-INVITE in its own dialog.
+void DataServer::reinvite_leg(const std::string &dialog, const std::string &sdp, std::vector<BodyPart> parts,
+                              std::vector<SipHeader> headers) {
+  const auto found = pre_sessions_.find(dialog);
+  if (found == pre_sessions_.end()) return sip_.reinvite_sdp(dialog, sdp, parts, {}, headers);
+  const auto pre = found->second;
+  std::erase_if(headers, [](const SipHeader &header) { return header.name == "Contact"; });
+  pre_session_reinvite_parts(
+      pre, std::move(parts), focus_contact(pre->identity, "sds"), std::move(headers), pre->sdp,
+      [this, owner = pre->owner](const SipResponse &response) {
+        event("mcdata_pre_priority_relayed", {{"user_id", owner}, {"status", response.status_code}});
+      },
+      "priority");
 }
 
 //------------------------------------------------------------------------------

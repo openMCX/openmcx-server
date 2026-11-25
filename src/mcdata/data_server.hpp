@@ -355,7 +355,13 @@ class DataServer {
   std::optional<SipResponse> pre_session_in_dialog(const SipMessage &request);
   SipResponse pre_session_refer(const SipMessage &request);
   std::shared_ptr<PreSession> pre_session_of_refer(const SipMessage &request) const;
-  void pre_session_originate(const std::string &dialog, ReferEntry entry);
+  void pre_session_originate(const std::string &dialog, ReferEntry entry, std::vector<BodyPart> location);
+  std::optional<SipResponse> pre_session_priority_refused(const User &user, const mcdata::Info &info,
+                                                          const std::string &target);
+  // A re-INVITE of the controlling function on a leg, in its own dialog or within the pre-established session the
+  // leg uses (TS 24.282 clause 6.3.7.1.17).
+  void reinvite_leg(const std::string &dialog, const std::string &sdp, std::vector<BodyPart> parts,
+                    std::vector<SipHeader> headers);
   void pre_session_leave(const std::string &dialog);
   void pre_session_reinvite(const std::shared_ptr<PreSession> &pre, const std::string &state, mcdata::Info info,
                             const std::string &contact, std::vector<SipHeader> headers = {}, std::string sdp = {},
@@ -842,6 +848,7 @@ class DataServer {
                                 const std::string &location = {});
 
   bool group_alert(const SipMessage &request, User &user, const std::string &group, std::string &location);
+  bool alert_authorised(const std::string &user, const std::string &group);
 
   void media_group_notify(const std::shared_ptr<MediaSession> &leg, bool emergency, bool imminent);
 
