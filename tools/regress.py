@@ -226,6 +226,16 @@ LABS = [
         ['mcdata_pre_established_scenario'],
         ['mcdata', 'pre-established'],
     ),
+    # The same with the signalling and XML of the clients protected under their CSKs and the payloads end to end (TS
+    # 33.180 clauses 8, 9.3 and 9.5): the REFER's resource list and entry bodies opened, the re-INVITEs' MCData-Info
+    # protected for the client.
+    lab(
+        'mcdata-pre-established-protected',
+        'single',
+        ['--private-call', '--mcdata', '--mcdata-pre-established'] + KEYS,
+        ['mcdata_pre_established_scenario'],
+        ['mcdata', 'pre-established', 'protected'],
+    ),
     # TS 24.379 clauses 6.3.5.2, 6.3.5.3, 6.3.8.2 and 10.1.1.4.2: group calls refused by the group document and its
     # call policy (warnings 115, 119, 121 and 112).
     lab('group-admission', 'single', ['--admission-groups'], ['group_admission_scenario'], ['mcptt', 'failure']),
