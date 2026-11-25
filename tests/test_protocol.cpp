@@ -1791,6 +1791,40 @@ int main() {
                 .affiliation_rules.empty(),
             "MCPTT profile without rules");
       rejects([&] { (void)parse_mcptt_profile_rules(with_aliases); }); // an MCVideo profile
+      // TS 24.484 clause 10.3.2.1 items 9 b vii and 9 i ii with TS 24.282 clauses 22.2.1.4 and 8.2.6.2: the MCData
+      // profile's location rules: the affiliation rules in the <anyExt> of an <MCDataGroupInfo>, the functional alias
+      // criteria of its <FunctionalAliasList>.
+      const std::string mcdata_rules =
+          "<mcdata-user-profile xmlns=\"urn:3gpp:ns:mcdata:user-profile:1.0\" XUI-URI=\"sip:a@x\" "
+          "user-profile-index=\"1\"><OnNetwork index=\"0\"><MCDataGroupInfo><MCData-Group-ID><uri-entry>sip:ga@x"
+          "</uri-entry></MCData-Group-ID><anyExt><allow-store-group-comm-in-msgstore>true"
+          "</allow-store-group-comm-in-msgstore><RulesForAffiliation><ListOfLocationCriteria><ExitSpecificArea>" +
+          polygon +
+          "</ExitSpecificArea></ListOfLocationCriteria></RulesForAffiliation><RulesForDeaffiliation>"
+          "<ListOfLocationCriteria><EnterSpecificArea>" +
+          polygon +
+          "</EnterSpecificArea></ListOfLocationCriteria></RulesForDeaffiliation>"
+          "<manual-deaffiliation-not-allowed-if-affiliation-rules-are-met>true"
+          "</manual-deaffiliation-not-allowed-if-affiliation-rules-are-met></anyExt></MCDataGroupInfo>"
+          "<MCDataGroupInfo><MCData-Group-ID><uri-entry>sip:gb@x</uri-entry></MCData-Group-ID></MCDataGroupInfo>"
+          "<anyExt><FunctionalAliasList><entry index=\"1\"><uri-entry>sip:fa1@x</uri-entry><anyExt>"
+          "<LocationCriteriaForActivation><EnterSpecificArea>" +
+          polygon +
+          "</EnterSpecificArea></LocationCriteriaForActivation></anyExt></entry></FunctionalAliasList>"
+          "</anyExt></OnNetwork></mcdata-user-profile>";
+      const auto data_rules = parse_mcdata_profile_rules(mcdata_rules);
+      check(data_rules.functional_aliases.size() == 1 && data_rules.functional_aliases.front().alias == "sip:fa1@x" &&
+                data_rules.functional_aliases.front().activate_on_entry.size() == 1,
+            "MCData profile functional alias location criteria");
+      check(data_rules.affiliation_rules.size() == 2 && data_rules.affiliation_rules.front().group == "sip:ga@x" &&
+                data_rules.affiliation_rules.front().affiliate &&
+                data_rules.affiliation_rules.front().location.exit.size() == 1 &&
+                !data_rules.affiliation_rules.back().affiliate &&
+                data_rules.affiliation_rules.back().location.enter.size() == 1,
+            "MCData profile affiliation rules");
+      check(data_rules.manual_deaffiliation_locked == std::set<std::string>{"sip:ga@x"},
+            "MCData manual de-affiliation lock");
+      rejects([&] { (void)parse_mcdata_profile_rules(mcptt_rules); }); // an MCPTT profile
       // TS 24.481 clause 7.2.4.2 with TS 24.379 clause 9.2.1.7.3: a group document's geographic areas.
       const auto group_doc = [](const std::string &list_service_extra) {
         return "<group xmlns=\"urn:oma:xml:poc:list-service\" xmlns:gi=\"urn:3gpp:ns:mcpttGroupInfo:1.0\">"

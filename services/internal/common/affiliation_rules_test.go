@@ -104,3 +104,45 @@ func TestGroupGeographicAreas(test *testing.T) {
 		test.Error("a mandatory area out of range accepted")
 	}
 }
+
+// ------------------------------------------------------------------------------
+// TS 24.484 clause 10.3.2.1 item 9 b vii (TS 24.282 clause 8.2.6.2): a user's MCData affiliation rules are in the
+// <anyExt> of the <MCDataGroupInfo> of their group, valid against the MCData profile schema; validated as the MCPTT
+// rules are, against the user's MCData groups.
+func TestMCDataAffiliationRulesInProfile(test *testing.T) {
+	cfg := mcdataLocationConfig(testConfig())
+	area := GeoArea{Polygon: [][2]float64{{45.0005, 9.999}, {45.0005, 10.001}, {45.0013, 10.001}}}
+	group := cfg.Groups[0].ID
+	user := &cfg.Users[0]
+	user.MCData.AffiliationRules = map[string]*GroupAffiliationRules{group: {
+		Affiliate: &AffiliationRule{Exit: []GeoArea{area}}, Deaffiliate: &AffiliationRule{Enter: []GeoArea{area}},
+		ManualDeaffiliationLocked: true}}
+	if err := cfg.Validate(); err != nil {
+		test.Fatal(err)
+	}
+	svc := &service{cfg: cfg}
+	raw, err := xml.Marshal(svc.mcdataProfileXML(*user))
+	if err != nil {
+		test.Fatal(err)
+	}
+	if err := mcdataProfileSchema.validate(raw); err != nil {
+		test.Fatalf("MCData profile fails its schema: %v\n%s", err, raw)
+	}
+	text := string(raw)
+	for _, want := range []string{
+		"<MCData-Group-ID><uri-entry>" + group + "</uri-entry></MCData-Group-ID>",
+		"<RulesForAffiliation><ListOfLocationCriteria><ExitSpecificArea><PolygonArea><Corner>",
+		"<RulesForDeaffiliation><ListOfLocationCriteria><EnterSpecificArea><PolygonArea>",
+		"<manual-deaffiliation-not-allowed-if-affiliation-rules-are-met>true</manual-deaffiliation-not-allowed-if-affiliation-rules-are-met>",
+	} {
+		if !strings.Contains(text, want) {
+			test.Fatalf("missing %s in\n%s", want, text)
+		}
+	}
+	bad := mcdataLocationConfig(testConfig())
+	bad.Users[0].MCData.AffiliationRules = map[string]*GroupAffiliationRules{
+		"sip:other@mcx.test": {Deaffiliate: &AffiliationRule{Enter: []GeoArea{area}}}}
+	if bad.Validate() == nil {
+		test.Error("MCData affiliation rules for a group the user is not an MCData member of accepted")
+	}
+}

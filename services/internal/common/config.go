@@ -268,6 +268,9 @@ type MCDataPolicy struct {
 	StoreComms        bool     `json:"store_comms,omitempty"`
 	StorePrivateComms bool     `json:"store_private_comms,omitempty"`
 	StoreGroupComms   []string `json:"store_group_comms,omitempty"`
+	// The affiliation rules of the user's MCData groups, by group ID (TS 24.484 clause 10.3.2.1 item 9 b vii; TS 24.282
+	// clause 8.2.6.2; affiliation_rules.go).
+	AffiliationRules map[string]*GroupAffiliationRules `json:"affiliation_rules,omitempty"`
 }
 
 // GroupMCData mirrors the MCData group-document membership and elements of TS 24.282
@@ -797,6 +800,12 @@ func (cfg Config) Validate() error {
 		if err := checkAffiliationRules(user, aliases); err != nil {
 			return err
 		}
+		if user.MCData != nil && len(user.MCData.AffiliationRules) > 0 {
+			if err := checkGroupAffiliationRules(user.MCDataID, cfg.mcdataGroupsOf(user), user.MCData.AffiliationRules,
+				aliases); err != nil {
+				return err
+			}
+		}
 	}
 	for _, group := range cfg.Groups {
 		for _, area := range append(append([]GeoArea{}, group.PermittedArea...), group.MandatoryArea...) {
@@ -883,6 +892,19 @@ func (cfg Config) functionalAliasList(id string, users func(FunctionalAlias) []s
 		}
 	}
 	return list
+}
+
+// ------------------------------------------------------------------------------
+// Helper: the groups of which a user is an MCData member: those MCX Admin names (user.MCDataGroups) and, in file mode,
+// the groups whose MCData members list the user's MCData ID.
+func (cfg Config) mcdataGroupsOf(user User) []string {
+	groups := append([]string{}, user.MCDataGroups...)
+	for _, group := range cfg.Groups {
+		if group.MCData != nil && slices.Contains(group.MCData.Members, user.MCDataID) {
+			groups = append(groups, group.ID)
+		}
+	}
+	return groups
 }
 
 // ------------------------------------------------------------------------------

@@ -155,7 +155,8 @@ std::string SipEngine::Impl::write_request(const OutgoingRequest &request, const
 
 //------------------------------------------------------------------------------
 // RFC 3261 section 8.1: a request outside a dialog: From the identity with a
-// new tag, To the Request-URI (or the application's To), a new Call-ID, CSeq 1, this endpoint's Contact (SIPS for a
+// new tag, To the Request-URI (or the application's To), a new Call-ID, CSeq 1, this endpoint's Contact (or the
+// application's; SIPS for a
 // SIPS target), the preloaded Route (to the SIP core; with IMS AKA the P-CSCF and the Service-Route, TS 24.229 clause
 // 5.1.2A.1.1) unless the application names a Route, its header fields, the body; with IMS AKA over the set in use
 // with the sec-agree header fields (RFC 3329 section 2.3.1).
@@ -179,11 +180,17 @@ void SipEngine::Impl::send_request(std::string_view method, std::string_view req
   const auto to_override = get_header(headers, "To");
   request.to = to_override.empty() ? sip_detail::name_addr(request_uri) : std::string(to_override);
   request.call_id = random_hex(16);
-  request.contact = sips_target(request_uri) ? as_sips(contact_uri()) : contact_uri();
+  // A Contact among the headers replaces this endpoint's (as for an INVITE, create_invite): the media feature tags a
+  // service asks for in one request, such as the MCData SDS tag of a REFER over a pre-established session (TS 24.282
+  // clauses 9.2.5.2.1.1 step 9 and 9.2.5.3.1.1 step 8). It must build on contact_target().
+  const auto override_contact = get_header(headers, "Contact");
+  const auto contact = override_contact.empty() ? contact_uri() : std::string(override_contact);
+  request.contact = sips_target(request_uri) ? as_sips(contact) : contact;
   if (get_header(headers, "Route").empty())
     request.routes = aka ? aka_routes() : std::vector<std::string>{core_route(config)};
   for (const auto &header : headers)
-    if (!sip_detail::ascii_equal(header.name, "To")) request.headers.push_back(header);
+    if (!sip_detail::ascii_equal(header.name, "To") && !sip_detail::ascii_equal(header.name, "Contact"))
+      request.headers.push_back(header);
   request.content_type = std::string(content_type);
   request.body = std::string(body);
 

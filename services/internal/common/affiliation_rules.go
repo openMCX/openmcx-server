@@ -2,14 +2,16 @@
 // OpenMCX Licence Information : AGPL-3.0-or-later
 //
 
-// Location rules for group affiliation at the MCPTT client:
+// Location rules for group affiliation at the MCPTT and MCData clients:
 //   - the user profile's affiliation rules (TS 24.484 clause 8.3.2.1 item 10 e) and f) and clause 8.3.2.7, the <anyExt>
 //     of an <MCPTTGroupInfo> <entry>: <RulesForAffiliation>, <RulesForDeaffiliation> and
-//     <manual-deaffiliation-not-allowed-if-affiliation-rules-are-met>; TS 24.379 clauses 9.2.1.7.2 and 9.2.1.2);
+//     <manual-deaffiliation-not-allowed-if-affiliation-rules-are-met>; TS 24.379 clauses 9.2.1.7.2 and 9.2.1.2), and
+//     those of the MCData user profile (TS 24.484 clause 10.3.2.1 item 9 b vii, the <anyExt> of an <MCDataGroupInfo>;
+//     TS 24.282 clauses 8.2.6.2 and 8.2.2);
 //   - the group document's <permitted-geographic-area> and <mandatory-geographic-area> (TS 24.481 clauses 7.2.4.2 and
 //     7.2.8; TS 24.379 clause 9.2.1.7.3).
 //
-// Specifications: TS 24.484 V19.6.0, TS 24.481 V19.3.0 (Rel-19), TS 23.032.
+// Specifications: TS 24.484 V19.6.0, TS 24.481 V19.3.0, TS 24.282 V19.7.0 (Rel-19), TS 23.032.
 
 package common
 
@@ -80,6 +82,23 @@ func (rules *GroupAffiliationRules) profileEntryExt() *profileEntryExt {
 }
 
 // ------------------------------------------------------------------------------
+// Helper: TS 24.484 clause 10.3.2.1 item 9 b vii: the affiliation rules in the <anyExt> of the user's
+// <MCDataGroupInfo> for a group (`ext`, created when nil and a rule is configured); the extension returned.
+func (rules *GroupAffiliationRules) mcdataGroupInfoExt(ext *mcdataGroupInfoExt) *mcdataGroupInfoExt {
+	rendered := rules.profileEntryExt()
+	if rendered == nil {
+		return ext
+	}
+	if ext == nil {
+		ext = &mcdataGroupInfoExt{}
+	}
+	ext.RulesForAffiliation = rendered.RulesForAffiliation
+	ext.RulesForDeaffiliation = rendered.RulesForDeaffiliation
+	ext.ManualDeaffiliationLocked = rendered.ManualDeaffiliationLocked
+	return ext
+}
+
+// ------------------------------------------------------------------------------
 // Helper: checks an area: a polygon of 3 to 15 corners in range, or an arc with a centre in range.
 func checkGeoArea(area GeoArea) error {
 	points := area.Polygon
@@ -105,30 +124,38 @@ func checkGeoArea(area GeoArea) error {
 // Helper: checks a user's affiliation rules: each for a group of the user, with areas of checkGeoArea and known
 // functional aliases, and each rule with a criterion.
 func checkAffiliationRules(user User, aliases map[string]bool) error {
-	groups := map[string]bool{}
-	for _, group := range user.Groups {
-		groups[group] = true
+	return checkGroupAffiliationRules(user.MCPTTID, user.Groups, user.AffiliationRules, aliases)
+}
+
+// ------------------------------------------------------------------------------
+// Helper: checks the affiliation rules of one service's user profile (`id`, the user's ID in that service): each
+// for one of `groups`, with areas of checkGeoArea and known functional aliases, and each rule with a criterion.
+func checkGroupAffiliationRules(id string, groups []string, all map[string]*GroupAffiliationRules,
+	aliases map[string]bool) error {
+	member := map[string]bool{}
+	for _, group := range groups {
+		member[group] = true
 	}
-	for group, rules := range user.AffiliationRules {
-		if !groups[group] || rules == nil {
-			return fmt.Errorf("user %s: affiliation rules for %q, not one of its groups", user.MCPTTID, group)
+	for group, rules := range all {
+		if !member[group] || rules == nil {
+			return fmt.Errorf("user %s: affiliation rules for %q, not one of its groups", id, group)
 		}
 		for _, rule := range []*AffiliationRule{rules.Affiliate, rules.Deaffiliate} {
 			if rule == nil {
 				continue
 			}
 			if len(rule.Enter)+len(rule.Exit)+len(rule.Aliases) == 0 {
-				return fmt.Errorf("user %s: an affiliation rule for %s without a criterion", user.MCPTTID, group)
+				return fmt.Errorf("user %s: an affiliation rule for %s without a criterion", id, group)
 			}
 			for _, area := range append(append([]GeoArea{}, rule.Enter...), rule.Exit...) {
 				if err := checkGeoArea(area); err != nil {
-					return fmt.Errorf("user %s: affiliation rule for %s: %w", user.MCPTTID, group, err)
+					return fmt.Errorf("user %s: affiliation rule for %s: %w", id, group, err)
 				}
 			}
 			for _, alias := range rule.Aliases {
 				if !aliases[alias] {
 					return fmt.Errorf("user %s: affiliation rule for %s names unknown functional alias %q",
-						user.MCPTTID, group, alias)
+						id, group, alias)
 				}
 			}
 		}
