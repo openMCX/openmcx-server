@@ -1203,11 +1203,15 @@ void SipEngine::Impl::receive_offer(Dialog &dialog, const resip::SipMessage &mes
 void SipEngine::Impl::answer_offer(Dialog &dialog, const resip::SipMessage &offer, SipResponse response) {
   const bool invite = offer.method() == resip::INVITE;
   if (invite && response.status_code > 100 && response.status_code < 200) {
+    // RFC 3261 section 20.10 (Contact in a 1xx) and, as for the initial INVITE, the configured provisional header
+    // fields: a re-INVITE that offers a call (TS 24.379 clauses 10.1.1.2.2.2 and 11.1.1.2.2.2 apply the initial
+    // INVITE's procedures, clause 6.2.3.2.1 steps 2 to 4: Require "timer" and the service's Contact tags).
     SipResponse provisional = response;
     provisional.content_type.clear();
     provisional.body.clear();
     provisional.parts.clear();
-    send_dialog_response(dialog, offer, provisional, {});
+    merge_headers(provisional.headers, config.invite_provisional_headers);
+    send_dialog_response(dialog, offer, provisional, {{"Contact", dialog.contact}});
     return;
   }
   if (response.status_code < 200) response.status_code = 500;
