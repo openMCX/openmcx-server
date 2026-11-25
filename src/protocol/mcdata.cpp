@@ -292,6 +292,11 @@ std::string info_xml(const Info &info) {
     ext += std::string("<") + name + ">" + *value + "</" + name + ">";
   }
   plain("mc-service-auth-result", info.service_auth_result);
+  plain("pre-established-session-ind", info.pre_established_session);
+  if (!info.communication_state.empty()) {
+    check_token(info.communication_state, "communication state");
+    ext += "<mcdata-communication-state>" + info.communication_state + "</mcdata-communication-state>";
+  }
   if (!ext.empty()) out += "<anyExt>" + ext + "</anyExt>";
   out += "</mcdata-Params></mcdatainfo>";
   if (out.size() > max_xml) invalid("mcdata-info body too large");
@@ -411,6 +416,8 @@ Info parse_info(std::string_view xml) {
         if (*value != "enable" && *value != "disable") invalid("storageCtrlType is enable or disable");
       }
     info.service_auth_result = boolean(child(ext, "mc-service-auth-result"));
+    info.pre_established_session = boolean(child(ext, "pre-established-session-ind"));
+    if (auto node = child(ext, "mcdata-communication-state")) info.communication_state = text(node);
   }
 
   return info;

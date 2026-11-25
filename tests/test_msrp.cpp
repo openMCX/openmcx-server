@@ -283,6 +283,38 @@ int main() {
           "a chunked message is reassembled");
   }
 
+  // TS 24.582 clause 12: a listener that keeps listening (a pre-established session's MSRP media) takes a new
+  // connection once the first ends, the peer learnt anew from its binding SEND; the callbacks can be replaced.
+  {
+    Endpoint passive;
+    std::vector<Message> first, second;
+    std::string closed;
+    const auto local = passive.listen("127.0.0.1", {[&](const Message &message) { first.push_back(message); },
+                                                    [&](std::string_view reason) { closed = reason; }});
+    passive.keep_listening();
+    for (int round = 0; round < 2; ++round) {
+      auto &into = round == 0 ? first : second;
+      if (round == 1)
+        passive.set_callbacks({[&](const Message &message) { second.push_back(message); },
+                               [&](std::string_view reason) { closed = reason; }});
+      {
+        Endpoint active;
+        active.connect(local, Uri{"127.0.0.1", random_ident(), "tcp", 0, false}, {});
+        active.send("application/vnd.3gpp.mcdata-payload", round == 0 ? "one" : "two");
+        for (int attempt = 0; attempt < 400 && into.empty(); ++attempt) {
+          active.poll();
+          passive.poll();
+        }
+        check(passive.connected(), "the persistent listener's connection is bound");
+      }
+      closed.clear();
+      for (int attempt = 0; attempt < 400 && closed.empty(); ++attempt) passive.poll();
+      check(!closed.empty() && !passive.connected(), "the peer's close ends the connection alone");
+    }
+    check(first.size() == 1 && first.front().body == "one" && second.size() == 1 && second.front().body == "two",
+          "each connection's message reaches the callbacks then in place");
+  }
+
   // RFC 4975 section 7.1.2: a REPORT is not answered and is no message for the application; a SEND is answered
   // unless its Failure-Report is "no". A raw TCP peer sends them to a listening endpoint.
   {

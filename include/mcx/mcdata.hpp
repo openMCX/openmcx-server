@@ -84,6 +84,11 @@ struct Info {
   // <unbinding-fa-uri> (xs:anyURI, not contentType).
   std::optional<bool> binding;
   std::string binding_fa_uri, unbinding_fa_uri;
+  // Pre-established session (TS 24.282 clauses 18.3.2.1 step 9 and 9.2.5.1, <anyExt>): <pre-established-session-ind>
+  // of the INVITE that establishes one, and the <mcdata-communication-state> of a re-INVITE within one
+  // ("establish-request", "establish-success", "establish-fail", "terminate-request" or "terminated").
+  std::optional<bool> pre_established_session;
+  std::string communication_state;
 };
 
 //------------------------------------------------------------------------------

@@ -216,6 +216,16 @@ LABS = [
         ['pre_established_scenario'],
         ['mcptt', 'pre-established'],
     ),
+    # TS 24.282 clause 18.3, TS 24.582 clause 12: MCData pre-established sessions set up, modified and released by
+    # either side; one-to-one and group standalone SDS and SDS sessions over them by REFER, and communications offered
+    # over them (TS 24.282 clause 9.2.5).
+    lab(
+        'mcdata-pre-established',
+        'single',
+        ['--private-call', '--mcdata', '--mcdata-pre-established'],
+        ['mcdata_pre_established_scenario'],
+        ['mcdata', 'pre-established'],
+    ),
     # TS 24.379 clauses 6.3.5.2, 6.3.5.3, 6.3.8.2 and 10.1.1.4.2: group calls refused by the group document and its
     # call policy (warnings 115, 119, 121 and 112).
     lab('group-admission', 'single', ['--admission-groups'], ['group_admission_scenario'], ['mcptt', 'failure']),

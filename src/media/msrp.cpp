@@ -8,6 +8,7 @@
 // Specifications: TS 24.582 V19.0.0 (Rel-19), RFC 4975, RFC 6135, RFC 2046.
 
 #include "mcx/msrp.hpp"
+
 #include "mcx/tls_profile.hpp"
 
 #include <fcntl.h>
@@ -439,8 +440,31 @@ struct Endpoint::State {
     connection = listener = -1;
   }
 
+  // TS 24.582 clause 12 (keep_listening): a persistent listener outlives its connections.
+  bool persistent = false;
+
+  // Helper: the connection alone ends; the listener waits for the next one, whose binding SEND names the peer again
+  // (RFC 6135). What was buffered for the ended connection goes with it.
+  void drop_connection() {
+    if (session) {
+      SSL_free(session);
+      session = nullptr;
+    }
+    handshaken = false;
+    if (connection >= 0) ::close(connection);
+    connection = -1;
+    peer = Uri{};
+    incoming.clear();
+    outgoing.clear();
+    partial.clear();
+    outstanding.clear();
+  }
+
   void fail(const std::string &reason) {
-    shutdown();
+    if (persistent && listener >= 0)
+      drop_connection();
+    else
+      shutdown();
     if (callbacks.failure) callbacks.failure(reason);
   }
 
@@ -728,6 +752,15 @@ void Endpoint::poll() {
 //------------------------------------------------------------------------------
 // Helper: closes the connection and the listener.
 void Endpoint::close() { state_->shutdown(); }
+
+//------------------------------------------------------------------------------
+// TS 24.582 clause 12: the listener of a pre-established session's MSRP media stays for the session's lifetime; each
+// MCData communication over the session connects to it anew (TS 37.579-1 table 5.3C.12.3-1 step 8).
+void Endpoint::keep_listening() { state_->persistent = true; }
+
+//------------------------------------------------------------------------------
+// Helper: the callbacks of the communication now using the endpoint.
+void Endpoint::set_callbacks(Callbacks callbacks) { state_->callbacks = std::move(callbacks); }
 
 //------------------------------------------------------------------------------
 // Helper: whether a message can be sent: the connection is up (and its TLS handshake complete) and the peer is known.

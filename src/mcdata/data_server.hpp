@@ -26,6 +26,7 @@
 #include "mcx/location.hpp"
 #include "mcx/mcdata.hpp"
 #include "mcx/msrp.hpp"
+#include "mcx/refer.hpp"
 #include "mcx/runtime.hpp"
 #include "mcx/warning.hpp"
 #include "mcx/xml_security.hpp"
@@ -260,7 +261,8 @@ class DataServer {
   // both legs and always listens, so each client connects to it. One session per
   // SIP dialog; the originating session keeps the leg toward the recipient.
   struct MediaSession {
-    std::unique_ptr<msrp::Endpoint> endpoint;
+    // Shared with a pre-established session whose MSRP media the leg uses (PreSession, TS 24.582 clause 12).
+    std::shared_ptr<msrp::Endpoint> endpoint;
     std::string dialog, originator, target, group, message_id;
     std::string owner;                   // the MCData ID of the client on this leg
     std::string sdp;                     // this leg's own media, repeated in a re-INVITE or its answer
@@ -323,6 +325,54 @@ class DataServer {
   };
 
   std::map<std::string, std::shared_ptr<MediaSession>> media_;
+
+  //------------------------------------------------------------------------------
+  // Pre-established sessions (TS 24.282 clause 18.3, pre_established.cpp): the participating function's end of a
+  // client's session (its dialog, the URI identifying it, the MSRP media of TS 24.582 clause 12, listening for the
+  // whole session) and the SDS communication over it (clause 9.2.5): its leg in media_ has the session's dialog and
+  // shares the session's MSRP endpoint, which each communication connects to anew.
+  struct PreSession {
+    std::string dialog, owner, sip; // the session's dialog, the MCData ID and public user identity of its user
+    std::string uri;                // TS 24.282 clause 18.3.2.2 step 8: the URI identifying the session
+    std::shared_ptr<msrp::Endpoint> endpoint;
+    MsrpMedia local; // this function's media of the session (clause 18.3.1.2: "passive", "sendrecv")
+    std::string sdp; // its SDP: the answer, and the offer of this function's re-INVITEs
+    bool confirmed = false;
+    // The communication over the session: "" (none), "originating" (the client's REFER, clauses 9.2.5.2.2.1 and
+    // 9.2.5.3.2.1), "terminating" (offered by this function, clauses 9.2.5.2.2.2 and 9.2.5.3.2.2).
+    std::string communication;
+    std::string identity; // its MCData session identity, the Contact of the re-INVITEs naming it
+    // RFC 3261 section 14.1: one offer at a time; the re-INVITEs that follow wait.
+    bool offer_pending = false;
+    std::deque<std::function<void()>> waiting;
+  };
+
+  std::map<std::string, std::shared_ptr<PreSession>> pre_sessions_; // by dialog
+
+  std::string pre_resource_sharing() const;
+  bool pre_session_refused(const SipMessage &request, const User &user, SipResponse &response);
+  SipResponse pre_session_invite(const SipMessage &request, const User &user, const BodyPart &sdp);
+  std::optional<SipResponse> pre_session_in_dialog(const SipMessage &request);
+  SipResponse pre_session_refer(const SipMessage &request);
+  std::shared_ptr<PreSession> pre_session_of_refer(const SipMessage &request) const;
+  void pre_session_originate(const std::string &dialog, ReferEntry entry);
+  void pre_session_leave(const std::string &dialog);
+  void pre_session_reinvite(const std::shared_ptr<PreSession> &pre, const std::string &state, mcdata::Info info,
+                            const std::string &contact, std::vector<SipHeader> headers = {}, std::string sdp = {},
+                            SipResponseHandler handler = {});
+  void pre_session_reinvite_parts(const std::shared_ptr<PreSession> &pre, std::vector<BodyPart> parts,
+                                  const std::string &contact, std::vector<SipHeader> headers, std::string sdp,
+                                  SipResponseHandler handler, std::string state = {});
+  void pre_session_reinvite_done(const std::string &dialog);
+  std::shared_ptr<PreSession> pre_session_free(const std::string &user_id) const;
+  MsrpMedia pre_session_media(const PreSession &pre) const;
+  void pre_session_idle(PreSession &pre);
+  void end_media_leg(const std::string &dialog, const std::vector<SipHeader> &headers = {});
+  void pre_session_state(const std::string &dialog, SipCallState state);
+  void pre_session_tick();
+  void pre_session_command(const std::string &command);
+  Json pre_session_status() const;
+
   // The I_MESSAGE of a one-to-one media plane offer, by (originator, recipient),
   // until this function offers the communication to the recipient.
   std::map<std::pair<std::string, std::string>, std::string> media_key_mgmt_;
@@ -891,7 +941,7 @@ class DataServer {
         const auto dialog = session->dialog;
         event("mcdata_media_session_released", {{"dialog", dialog}, {"message_id", session->message_id}});
         it = media_.erase(it);
-        if (!dialog.empty()) sip_.bye(dialog);
+        if (!dialog.empty()) end_media_leg(dialog); // a leg over a pre-established session keeps the session
         continue;
       }
       ++it;

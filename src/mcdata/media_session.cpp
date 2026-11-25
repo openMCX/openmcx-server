@@ -224,6 +224,9 @@ SipResponse DataServer::media_invite(const SipMessage &request) {
   }
   if (!sdp || !info_part) return reject(403, "199 expected MIME bodies not in the request", user.id, "media-sds");
   auto info = mcdata::parse_info(info_part->body);
+  // TS 24.282 clause 18.3.2.2: a "SIP INVITE request for establishing a pre-established session" (clause 18.3.2.1
+  // step 9: <pre-established-session-ind> "true").
+  if (info.pre_established_session == true) return pre_session_invite(request, user, *sdp);
   if (info.request_type == "one-to-one-ipconn") return ipcon_invite(request, user, info, *sdp, resources);
   MediaInvite invite;
   if (auto refused = media_invite_kind(user, info, *sdp, invite)) return *refused;

@@ -56,7 +56,7 @@ void DataServer::release_communication(const std::string &key, const std::string
   if (!reason.empty()) headers.push_back({"Reason", reason_header(reason)});
   for (const auto &dialog : dialogs) {
     media_.erase(dialog);
-    pending_.push_back([this, dialog, headers] { sip_.bye(dialog, {}, headers); });
+    pending_.push_back([this, dialog, headers] { end_media_leg(dialog, headers); });
   }
   releases_.erase(key);
   count(counter);
@@ -400,7 +400,7 @@ void DataServer::media_released(const std::string &dialog) {
     if (done.size() < remaining) {
       for (const auto &dialog : done) {
         media_.erase(dialog);
-        pending_.push_back([this, dialog] { sip_.bye(dialog); });
+        pending_.push_back([this, dialog] { end_media_leg(dialog); });
       }
       event("mcdata_file_legs_kept",
             {{"key", leaving->key}, {"released", done.size()}, {"kept", remaining - done.size()}});
