@@ -248,6 +248,51 @@ struct McvideoProfile {
 McvideoProfile parse_mcvideo_profile(std::string_view xml);
 
 //------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.3: a GeographicalAreaChangeType: the areas whose entry or exit meets a criterion. An area
+// whose <anyExt> carries a <Speed> or a <Heading> condition is counted in `constrained` and left out: the client has
+// no speed or heading to evaluate it with, so such a criterion is never met.
+struct ProfileAreaChange {
+  std::vector<location::Area> enter, exit;
+  unsigned constrained = 0;
+
+  bool empty() const { return enter.empty() && exit.empty(); }
+};
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.1 item 10 e) and f) and clause 8.3.2.7 with TS 24.379 clause 9.2.1.7.2: a <RulesForAffiliation>
+// (affiliate) or <RulesForDeaffiliation> rule of an <MCPTTGroupInfo> <entry>: its <ListOfLocationCriteria> and the
+// functional aliases of its <ListOfActiveFunctionalAliasCriteria>.
+struct McpttAffiliationRule {
+  std::string group;
+  bool affiliate = true;
+  ProfileAreaChange location;
+  std::vector<std::string> aliases;
+};
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 8.3.2.1 item 10 with TS 24.379 clauses 9A.2.1.4, 9.2.1.7.2 and 9.2.1.2: the location and affiliation
+// rules of an MCPTT user profile: the functional aliases of <FunctionalAliasList> with their location criteria, the
+// affiliation rules of the <MCPTTGroupInfo> entries, and the groups whose entry sets
+// <manual-deaffiliation-not-allowed-if-affiliation-rules-are-met>.
+struct McpttProfileRules {
+  std::vector<McvideoProfile::FunctionalAlias> functional_aliases;
+  std::vector<McpttAffiliationRule> affiliation_rules;
+  std::set<std::string> manual_deaffiliation_locked;
+};
+
+McpttProfileRules parse_mcptt_profile_rules(std::string_view xml);
+
+//------------------------------------------------------------------------------
+// TS 24.481 clauses 7.2.4.2 and 7.2.8 with TS 24.379 clause 9.2.1.7.3: the <permitted-geographic-area> and the
+// <mandatory-geographic-area> of a group document's <list-service> (each a union of polygons and ellipsoid arcs; empty
+// when absent).
+struct GroupGeographicAreas {
+  std::vector<location::Area> permitted, mandatory;
+};
+
+GroupGeographicAreas parse_group_geographic_areas(std::string_view xml);
+
+//------------------------------------------------------------------------------
 // TS 24.484 clause 10.3: the MCData user profile document as the MCData client
 // reads it: its identity and index and its granted rights.
 struct McdataProfile {

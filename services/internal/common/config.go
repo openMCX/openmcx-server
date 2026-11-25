@@ -153,6 +153,8 @@ type User struct {
 	RemoteGroupSelection []string `json:"remote_group_selection,omitempty"`
 	// <MaxAffiliationsN2>: simultaneous group affiliations; 0 means no limit.
 	MaxAffiliations int `json:"max_affiliations,omitempty"`
+	// The affiliation rules of the user's groups, by group ID (affiliation_rules.go; TS 24.379 clause 9.2.1.7.2).
+	AffiliationRules map[string]*GroupAffiliationRules `json:"affiliation_rules,omitempty"`
 	// MCData ID (TS 23.280 clause 8.1.2): a distinct identity; empty when the user has no
 	// MCData service. MCData is the MCData user-profile ruleset subset.
 	MCDataID string        `json:"mcdata_id,omitempty"`
@@ -442,6 +444,10 @@ type Group struct {
 	// (TS 24.379 clause 9.2.2.3.3 step 10 a0).
 	ForbiddenDeaffiliationFAs       []string `json:"forbidden_deaffiliation_fas,omitempty"`
 	ForbiddenDeaffiliationIfLastFAs []string `json:"forbidden_deaffiliation_if_last_fas,omitempty"`
+	// <permitted-geographic-area> and <mandatory-geographic-area> (TS 24.481 clauses 7.2.4.2 and 7.2.8; TS 24.379
+	// clause 9.2.1.7.3): where a client may be affiliated, and outside of which it de-affiliates (affiliation_rules.go).
+	PermittedArea []GeoArea `json:"permitted_area,omitempty"`
+	MandatoryArea []GeoArea `json:"mandatory_area,omitempty"`
 	// <on-network-allow-getting-member-list> for members (TS 24.481 clause 7.2.12);
 	// without it a member reads only its own <entry>.
 	AllowGettingMemberList bool                   `json:"allow_getting_member_list,omitempty"`
@@ -783,6 +789,19 @@ func (cfg Config) Validate() error {
 		for _, id := range fa.MCVideoUsers {
 			if !known(mcvideoIDs, id) {
 				return fmt.Errorf("functional alias %q has unknown MCVideo user %q", fa.ID, id)
+			}
+		}
+	}
+	// TS 24.379 clauses 9.2.1.7.2 and 9.2.1.7.3: the users' affiliation rules and the groups' geographic areas.
+	for _, user := range cfg.Users {
+		if err := checkAffiliationRules(user, aliases); err != nil {
+			return err
+		}
+	}
+	for _, group := range cfg.Groups {
+		for _, area := range append(append([]GeoArea{}, group.PermittedArea...), group.MandatoryArea...) {
+			if err := checkGeoArea(area); err != nil {
+				return fmt.Errorf("group %s geographic area: %w", group.ID, err)
 			}
 		}
 	}

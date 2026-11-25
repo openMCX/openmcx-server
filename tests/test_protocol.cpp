@@ -1751,6 +1751,70 @@ int main() {
       for (const auto &corner : {at(45.0013, 10.001), at(45.0013, 9.999)})
         two_corners.replace(two_corners.find(corner), corner.size(), "");
       rejects([&] { (void)parse_mcvideo_profile(two_corners); });
+      // TS 24.484 clause 8.3.2.1 item 10 with TS 24.379 clauses 9A.2.1.4 and 9.2.1.7.2: the MCPTT profile's location rules:
+      // functional alias criteria, the affiliation rules of an <MCPTTGroupInfo> entry (a <Speed>-constrained area only
+      // counted) and the manual de-affiliation lock.
+      const std::string mcptt_rules =
+          "<mcptt-user-profile xmlns=\"urn:3gpp:mcptt:user-profile:1.0\" XUI-URI=\"sip:a@x\" user-profile-index=\"1\">"
+          "<OnNetwork index=\"1\"><MCPTTGroupInfo><entry index=\"1\"><uri-entry>sip:ga@x</uri-entry><anyExt>"
+          "<RulesForAffiliation><ListOfLocationCriteria><ExitSpecificArea>" +
+          polygon +
+          "</ExitSpecificArea></ListOfLocationCriteria><ListOfActiveFunctionalAliasCriteria><entry index=\"1\">"
+          "<uri-entry>sip:fa1@x</uri-entry></entry></ListOfActiveFunctionalAliasCriteria></RulesForAffiliation>"
+          "<RulesForDeaffiliation><ListOfLocationCriteria><EnterSpecificArea>" +
+          polygon + "</EnterSpecificArea><EnterSpecificArea>" + polygon +
+          "<anyExt><Speed><MinimumSpeed>5</MinimumSpeed><MaximumSpeed>9</MaximumSpeed></Speed></anyExt>"
+          "</EnterSpecificArea></ListOfLocationCriteria></RulesForDeaffiliation>"
+          "<manual-deaffiliation-not-allowed-if-affiliation-rules-are-met>true"
+          "</manual-deaffiliation-not-allowed-if-affiliation-rules-are-met></anyExt></entry>"
+          "<entry index=\"2\"><uri-entry>sip:gb@x</uri-entry></entry></MCPTTGroupInfo>"
+          "<anyExt><FunctionalAliasList><entry index=\"1\"><uri-entry>sip:fa1@x</uri-entry><anyExt>"
+          "<LocationCriteriaForActivation><EnterSpecificArea>" +
+          polygon +
+          "</EnterSpecificArea></LocationCriteriaForActivation></anyExt></entry></FunctionalAliasList>"
+          "</anyExt></OnNetwork></mcptt-user-profile>";
+      const auto rules = parse_mcptt_profile_rules(mcptt_rules);
+      check(rules.functional_aliases.size() == 1 && rules.functional_aliases.front().alias == "sip:fa1@x" &&
+                rules.functional_aliases.front().activate_on_entry.size() == 1,
+            "MCPTT profile functional alias location criteria");
+      check(rules.affiliation_rules.size() == 2, "MCPTT profile affiliation rules");
+      const auto &join = rules.affiliation_rules.front(), &leave = rules.affiliation_rules.back();
+      check(join.group == "sip:ga@x" && join.affiliate && join.location.exit.size() == 1 &&
+                join.location.enter.empty() && join.aliases == std::vector<std::string>{"sip:fa1@x"},
+            "RulesForAffiliation: exit area and functional alias criterion");
+      check(leave.group == "sip:ga@x" && !leave.affiliate && leave.location.enter.size() == 1 &&
+                leave.location.constrained == 1 && leave.aliases.empty(),
+            "RulesForDeaffiliation: the speed-constrained area left out");
+      check(rules.manual_deaffiliation_locked == std::set<std::string>{"sip:ga@x"}, "manual de-affiliation lock");
+      check(parse_mcptt_profile_rules("<mcptt-user-profile xmlns=\"urn:3gpp:mcptt:user-profile:1.0\" "
+                                      "XUI-URI=\"sip:a@x\"><OnNetwork/></mcptt-user-profile>")
+                .affiliation_rules.empty(),
+            "MCPTT profile without rules");
+      rejects([&] { (void)parse_mcptt_profile_rules(with_aliases); }); // an MCVideo profile
+      // TS 24.481 clause 7.2.4.2 with TS 24.379 clause 9.2.1.7.3: a group document's geographic areas.
+      const auto group_doc = [](const std::string &list_service_extra) {
+        return "<group xmlns=\"urn:oma:xml:poc:list-service\" xmlns:gi=\"urn:3gpp:ns:mcpttGroupInfo:1.0\">"
+               "<list-service uri=\"sip:ga@x\">" +
+               list_service_extra + "</list-service></group>";
+      };
+      auto gi = polygon;
+      for (const auto &[from, to] : {std::pair<std::string, std::string>{"<PolygonArea>", "<gi:PolygonArea>"},
+                                     {"</PolygonArea>", "</gi:PolygonArea>"},
+                                     {"<Corner>", "<gi:Corner>"},
+                                     {"</Corner>", "</gi:Corner>"},
+                                     {"<Longitude>", "<gi:Longitude>"},
+                                     {"</Longitude>", "</gi:Longitude>"},
+                                     {"<Latitude>", "<gi:Latitude>"},
+                                     {"</Latitude>", "</gi:Latitude>"}})
+        for (auto at_pos = gi.find(from); at_pos != std::string::npos; at_pos = gi.find(from, at_pos + to.size()))
+          gi.replace(at_pos, from.size(), to);
+      const auto areas = parse_group_geographic_areas(
+          group_doc("<gi:mandatory-geographic-area>" + gi + gi + "</gi:mandatory-geographic-area>"));
+      check(areas.mandatory.size() == 2 && areas.permitted.empty() &&
+                location::inside(areas.mandatory.front(), 45.0009, 10.0),
+            "group mandatory geographic area");
+      check(parse_group_geographic_areas(group_doc("")).mandatory.empty(), "group without geographic areas");
+      rejects([&] { (void)parse_group_geographic_areas(group_doc("<gi:permitted-geographic-area/>")); });
     }
     // TS 24.484 clause 10.3.2.1: the MCData user profile: identity, index and the MCData rights only.
     const std::string data_profile =
