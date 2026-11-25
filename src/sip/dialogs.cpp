@@ -627,7 +627,15 @@ void SipEngine::Impl::send_offer(std::string_view dialog_id, std::string_view me
   for (const auto &header : headers) resip_engine::check_header(header);
   auto request = dialog_request(dialog, method);
   request.headers = session_headers(dialog, true);
-  request.headers.insert(request.headers.end(), headers.begin(), headers.end());
+  // A Contact among the headers replaces this side's for this request (RFC 3261 section 12.2.1.1: a target refresh
+  // request names the target the peer then uses): the MCData session identity of a communication within a
+  // pre-established session (TS 24.282 clauses 9.2.5.1.3 step 6 and 9.2.5.2.2.2 step 3 iii), or the session's own
+  // identity again when it ends. It must reach this endpoint (a URI the SIP core routes here).
+  for (const auto &header : headers)
+    if (ascii_equal(header.name, "Contact"))
+      request.contact = header.value;
+    else
+      request.headers.push_back(header);
   dialog.local_sdp = std::move(sdp);
   std::tie(request.content_type, request.body) = sdp_body(dialog.local_sdp, parts);
   dialog.offer_cseq = request.cseq;

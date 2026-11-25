@@ -265,6 +265,17 @@ int main() {
     received.emergency = false;
     received.emergency_received = true;
     check(parse_info(info_xml(received)).emergency_received == true, "MCData-Info <emergency-ind-rcvd>");
+    // TS 24.282 clauses 18.3.2.1 step 9 and 9.2.5.1: the pre-established session elements of <anyExt>.
+    Info pre;
+    pre.pre_established_session = true;
+    pre.communication_state = "establish-success";
+    const auto pre_xml = info_xml(pre);
+    check(pre_xml.find("<anyExt><pre-established-session-ind>true</pre-established-session-ind>"
+                       "<mcdata-communication-state>establish-success</mcdata-communication-state></anyExt>") !=
+                  std::string::npos &&
+              parse_info(pre_xml).pre_established_session == true &&
+              parse_info(pre_xml).communication_state == "establish-success",
+          "MCData-Info <pre-established-session-ind> and <mcdata-communication-state>");
     Info adhoc;
     adhoc.adhoc_alert = true;
     adhoc.adhoc_additional_information = "help";

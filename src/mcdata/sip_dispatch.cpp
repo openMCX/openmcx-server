@@ -99,7 +99,12 @@ SipResponse DataServer::dispatch(const SipMessage &request) {
     if (request.method == "PUBLISH" && event_name == "poc-settings") return authorise(request);
     // TS 24.282 clause 7.3.2: the SIP core's third-party REGISTER.
     if (request.method == "REGISTER") return third_party_register(request);
+    // TS 24.282 clause 18.3.4.2.1: a re-INVITE or UPDATE in a pre-established session's dialog.
+    if (request.method == "INVITE" || request.method == "UPDATE")
+      if (auto handled = pre_session_in_dialog(request)) return *handled;
     if (request.method == "INVITE") return media_invite(request); // TS 24.282 clauses 9.2.3 and 9.2.4: the media plane
+    // TS 24.282 clauses 9.2.5.2.2.1, 9.2.5.3.2.1 and 9.2.5.4.2.1: a REFER to a pre-established session.
+    if (request.method == "REFER") return pre_session_refer(request);
     if (request.method == "BYE") {
       // Read before the disconnect is reported (TS 24.282 clause 13.2.2.2.4.3 step 3A).
       if (const auto reason = get_header(request.headers, "Reason"); !reason.empty())

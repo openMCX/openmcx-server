@@ -105,8 +105,14 @@ public:
   void send_parts(const std::vector<std::pair<std::string, std::string>> &parts);
   void poll(); // accepts, reads and writes without blocking
   void close();
+  // TS 24.582 clause 12: a listening endpoint that keeps listening when its connection ends (the peer closed it or it
+  // failed), for the next connection, whose binding SEND names the peer again: the MSRP media of a pre-established
+  // session, connected to anew by each MCData communication over it. close() still ends both.
+  void keep_listening();
+  // Replaces the callbacks given to listen() or connect(): the communication now using the endpoint.
+  void set_callbacks(Callbacks callbacks);
   bool connected() const; // ready to send: connected, TLS handshake done, peer known
-  bool secure() const; // the connection runs over TLS and its handshake completed
+  bool secure() const;    // the connection runs over TLS and its handshake completed
   std::uint16_t port() const;
   const Uri &local() const;
 

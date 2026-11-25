@@ -59,6 +59,7 @@ void DataServer::tick() {
     if (held.redeliver_at && held.redeliver_at <= now) redeliver(key, held);
   const auto indication = file_distribution().value("intent_before_release_ms", 0u);
   media_tick();
+  pre_session_tick();
   ipcon_tick();
   file_transfer_timers(now, indication);
   std::erase_if(transfers_, [](const auto &entry) { return !entry.second.expires; });
@@ -147,6 +148,7 @@ void DataServer::save_status() {
                                       {"sealed", signalling_sealed_},
                                       {"refused", signalling_refused_}};
   status_["pending_dispositions"] = dispatched_.size();
+  status_["pre_sessions"] = pre_session_status(); // TS 24.282 clause 18.3
   status_communications();
   status_procedures();
   write_status(cfg_, status_);
@@ -247,6 +249,7 @@ DataServer::DataServer(Json cfg, bool disable_tls)
                media_released(std::string(dialog));
                ipcon_released(std::string(dialog));
              }
+             pre_session_state(std::string(dialog), state); // TS 24.282 clauses 18.3.2.2 and 18.3.3.2
            },
            {},
            {},
@@ -316,6 +319,10 @@ void DataServer::run() {
         } else if (!intent) {
           release_communication(key, reason, "releases_server");
         }
+      }
+      // TS 24.282 clauses 18.3.3.2.2 and 18.3.4: an operator releases or modifies pre-established sessions.
+      else if (command.starts_with("pre-session-")) {
+        pre_session_command(command);
       }
       // TS 24.282 clause 13.2.3.3.4: an operator releases a file transmission by policy.
       else if (command.starts_with("release ")) {

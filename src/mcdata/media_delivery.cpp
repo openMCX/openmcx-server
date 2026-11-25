@@ -277,15 +277,8 @@ void DataServer::notify_in_progress_state(const std::string &group, const std::s
 // communication request. It is recorded like an alert of clause 16.2 and the
 // members of the group are told, so both paths share one alert state.
 bool DataServer::group_alert(const SipMessage &request, User &user, const std::string &group, std::string &location) {
-  const auto document = group_document(group);
-  if (!document) return false;
-  const auto settings = document->value("mcdata", Json());
+  if (!alert_authorised(user.id, group)) return false;
   const auto policy = profile(user.id).value("mcdata", Json::object());
-  const auto dedicated = policy.value("alert_groups", Json::array());
-  if (document->value("preconfigured_use_only", false) || !settings.is_object() ||
-      !settings.value("allow_emergency_alert", false) || !policy.value("emergency_alert", false) ||
-      (!dedicated.empty() && !listed(dedicated, group)))
-    return false;
   EmergencyAlert alert;
   alert.organization = policy.value("organization", std::string{});
   if (const auto *body = part(request, mcdata::location_mime)) {
@@ -304,6 +297,21 @@ bool DataServer::group_alert(const SipMessage &request, User &user, const std::s
 
   event("mcdata_emergency_alert", {{"user_id", user.id}, {"group_id", group}, {"with", "priority communication"}});
   return true;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 6.3.7.2.1: the user may send an emergency alert on the group: the group allows them (not a
+// preconfigured-use-only group), the user profile authorises them, on the user's dedicated alert groups when it names
+// any.
+bool DataServer::alert_authorised(const std::string &user, const std::string &group) {
+  const auto document = group_document(group);
+  if (!document) return false;
+  const auto settings = document->value("mcdata", Json());
+  const auto policy = profile(user).value("mcdata", Json::object());
+  const auto dedicated = policy.value("alert_groups", Json::array());
+  return !document->value("preconfigured_use_only", false) && settings.is_object() &&
+         settings.value("allow_emergency_alert", false) && policy.value("emergency_alert", false) &&
+         (dedicated.empty() || listed(dedicated, group));
 }
 
 //------------------------------------------------------------------------------
@@ -327,8 +335,8 @@ void DataServer::media_group_notify(const std::shared_ptr<MediaSession> &leg, bo
     for (const auto &header : media_priority_headers(group_level(leg->group))) headers.push_back(header);
     pending_.push_back([this, dialog, notice, headers, sdp = other->sdp] {
       try {
-        sip_.reinvite_sdp(dialog, sdp, seal_for_id(notice.request_uri, {{mcdata::info_mime, mcdata::info_xml(notice)}}),
-                          {}, headers);
+        reinvite_leg(dialog, sdp, seal_for_id(notice.request_uri, {{mcdata::info_mime, mcdata::info_xml(notice)}}),
+                     headers);
       } catch (const std::exception &error) {
         event("mcdata_media_failed", {{"reason", error.what()}, {"dialog", dialog}});
       }
@@ -365,7 +373,19 @@ std::string DataServer::media_deliver(const std::string &originator, const std::
   leg->deadline =
       monotonic_ms() +
       cfg_.at("mcdata").value("media", Json::object()).value(key.empty() ? "session_ms" : "idle_ms", 60000u);
-  auto offer = media_offer(leg);
+  // TS 24.282 clauses 9.2.5.2.2.2 and 9.2.5.3.2.2: a recipient with a free pre-established session is offered a
+  // one-to-one or group SDS (standalone or session, at any priority: the MCData-Info and the Resource-Priority of the
+  // communication are those of an on-demand offer) within it, on the session's MSRP media (TS 24.582 clause 12).
+  const auto pre = !file && !adhoc ? pre_session_free(target) : nullptr;
+  MsrpMedia offer;
+  if (pre) {
+    leg->endpoint = pre->endpoint;
+    leg->endpoint->set_callbacks(media_callbacks(leg));
+    offer = pre->local;
+    offer.direction = "recvonly"; // as this server's own offer to a recipient (media_offer)
+  } else {
+    offer = media_offer(leg);
+  }
   if (adhoc && leg->session) offer.direction = "sendrecv"; // TS 24.282 clause 24.4.2.1.1 step 10 with clause 9.2.4.4.1
   if (const auto key = media_key_mgmt_.find({originator, target}); group.empty() && key != media_key_mgmt_.end()) {
     offer.key_mgmt = key->second;
@@ -398,6 +418,8 @@ std::string DataServer::media_deliver(const std::string &originator, const std::
   if (emergency) info.emergency = true;
   if (imminent) info.imminent_peril = true;
   if (alert) info.alert = true;
+  // TS 24.282 clause 9.2.5.2.2.2 step 3 ii a: the MCData-Info with <mcdata-communication-state> "establish-request".
+  if (pre) info.communication_state = "establish-request";
   std::vector<BodyPart> parts{{mcdata::info_mime, mcdata::info_xml(info)}};
   if (file) parts.push_back({std::string(mcdata::signalling_mime), file->signalling});
   if (alert && !alert_location.empty()) parts.push_back({std::string(mcdata::location_mime), alert_location});
@@ -406,7 +428,57 @@ std::string DataServer::media_deliver(const std::string &originator, const std::
   } catch (const CskExpired &error) {
     // TS 33.180 annex E.6.10: the recipient's CSK may no longer be used: this message is not sent (never in the clear).
     csk_expired_not_sent(target, "invite", error);
+    if (pre) pre_session_idle(*pre);
     return {};
+  }
+  if (pre) {
+    // TS 24.282 clause 9.2.5.1.3 steps 1 to 6 (clause 9.2.5.2.2.2 steps 3 and 4): the re-INVITE in the session's
+    // dialog: Supported "timer" with Session-Expires (the SIP engine's), the two Accept-Contact header fields, the
+    // MCData session identity with the SDS tags and isfocus in Contact; step 5: the client's 2xx, then the media plane
+    // (the client connects to the session's MSRP URI and the bodies follow, media_tick). A refusal ends the leg; the
+    // session stays.
+    pre->communication = "terminating";
+    pre->identity = session_identity(key);
+    leg->dialog = pre->dialog;
+    media_[pre->dialog] = leg;
+    std::vector<SipHeader> headers{
+        {"Accept-Contact", "*;+g.3gpp.mcdata.sds;require;explicit"},
+        {"Accept-Contact", "*;+g.3gpp.icsi-ref=\"" + url_encode(mcdata::sds_icsi) + "\";require;explicit"}};
+    // TS 24.282 clauses 6.3.7.1.11 and 6.2.8.3.3: the priority the communication is carried at, as on demand (clause
+    // 9.2.5.2.2.2 step 3 copies the incoming INVITE's MCData-Info; TS 24.229 carries its Resource-Priority).
+    if (level != "normal")
+      for (const auto &header : media_priority_headers(level.c_str())) headers.push_back(header);
+    count("pre_session_communications");
+    event("mcdata_pre_communication", {{"user_id", target},
+                                       {"direction", "terminating"},
+                                       {"request_type", info.request_type},
+                                       {"from", originator},
+                                       {"identity", pre->identity},
+                                       {"dialog", pre->dialog}});
+    // The parts are sealed already, the state in their MCData-Info.
+    pre_session_reinvite_parts(pre, std::move(parts), focus_contact(pre->identity, "sds"), headers, leg->sdp,
+                               [this, dialog = pre->dialog, weak = std::weak_ptr<MediaSession>(leg), message_id,
+                                target](const SipResponse &response) {
+                                 if (response.status_code / 100 == 2) {
+                                   event("mcdata_media_delivery_answered", {{"message_id", message_id},
+                                                                            {"target", target},
+                                                                            {"status", response.status_code},
+                                                                            {"pre_established", true}});
+                                   return;
+                                 }
+                                 event("mcdata_media_delivery_failed", {{"message_id", message_id},
+                                                                        {"target", target},
+                                                                        {"status", response.status_code},
+                                                                        {"pre_established", true}});
+                                 const auto held = weak.lock();
+                                 if (const auto found = media_.find(dialog);
+                                     held && found != media_.end() && found->second == held)
+                                   media_.erase(found);
+                                 if (const auto session = pre_sessions_.find(dialog); session != pre_sessions_.end())
+                                   pre_session_idle(*session->second);
+                               },
+                               "establish-request");
+    return pre->dialog;
   }
   const auto dialog = sip_.invite_sdp(
       recipient->sip, leg->sdp, parts,

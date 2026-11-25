@@ -699,6 +699,16 @@ def add_pre_established(fixture):
     server_file.write_text(json.dumps(server, indent=2) + '\n')
 
 
+def add_mcdata_pre_established(fixture):
+    """MCData pre-established sessions (TS 24.282 clause 18.3): the combined MCData server allows them, with resource
+    sharing left to the PCC deployment (mcdata.resource_sharing "rx", clause 18.2); its default "none" refuses every
+    session with 403 and warning 226."""
+    server_file = fixture / 'generated/mcdata-server.json'
+    server = json.loads(server_file.read_text())
+    server['mcdata']['resource_sharing'] = 'rx'
+    server_file.write_text(json.dumps(server, indent=2) + '\n')
+
+
 def add_manual_only_caller(fixture):
     """On top of --private-call, client-d may make private calls with manual commencement only: a call with automatic
     commencement is refused with 403 and warning 125 (TS 24.379 clause 11.1.1.3.1.1 step 10). It stays unable to be
@@ -2345,6 +2355,12 @@ def main():
         help='The MCPTT server allows pre-established sessions (TS 24.379 clause 8; mcptt.resource_sharing "rx")',
     )
     parser.add_argument(
+        '--mcdata-pre-established',
+        action='store_true',
+        help='With --mcdata, the MCData server allows pre-established sessions (TS 24.282 clause 18.3; '
+        'mcdata.resource_sharing "rx")',
+    )
+    parser.add_argument(
         '--broadcast', action='store_true', help='Restrict broadcast group call initiation to client-a and client-b'
     )
     parser.add_argument(
@@ -2821,6 +2837,10 @@ def main():
         add_manual_only_caller(fixture)
     if args.pre_established:
         add_pre_established(fixture)
+    if args.mcdata_pre_established:
+        if not args.mcdata:
+            parser.error('--mcdata-pre-established needs --mcdata')
+        add_mcdata_pre_established(fixture)
     if args.chat:
         add_chat_group(fixture, source, protect=args.chat_protected_floor and args.protected)
     if args.adhoc:

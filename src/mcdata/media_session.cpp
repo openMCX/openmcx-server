@@ -111,8 +111,8 @@ SipResponse DataServer::media_reinvite(const SipMessage &request, const std::sha
       for (const auto &header : media_priority_headers()) headers.push_back(header);
     pending_.push_back([this, dialog, notice, headers, sdp = other->sdp] {
       try {
-        sip_.reinvite_sdp(dialog, sdp, seal_for_id(notice.request_uri, {{mcdata::info_mime, mcdata::info_xml(notice)}}),
-                          {}, headers);
+        reinvite_leg(dialog, sdp, seal_for_id(notice.request_uri, {{mcdata::info_mime, mcdata::info_xml(notice)}}),
+                     headers);
       } catch (const std::exception &error) {
         event("mcdata_media_failed", {{"reason", error.what()}, {"dialog", dialog}});
       }
@@ -224,6 +224,9 @@ SipResponse DataServer::media_invite(const SipMessage &request) {
   }
   if (!sdp || !info_part) return reject(403, "199 expected MIME bodies not in the request", user.id, "media-sds");
   auto info = mcdata::parse_info(info_part->body);
+  // TS 24.282 clause 18.3.2.2: a "SIP INVITE request for establishing a pre-established session" (clause 18.3.2.1
+  // step 9: <pre-established-session-ind> "true").
+  if (info.pre_established_session == true) return pre_session_invite(request, user, *sdp);
   if (info.request_type == "one-to-one-ipconn") return ipcon_invite(request, user, info, *sdp, resources);
   MediaInvite invite;
   if (auto refused = media_invite_kind(user, info, *sdp, invite)) return *refused;
@@ -699,7 +702,11 @@ void DataServer::media_invite_answer(const SipMessage &request, const User &user
   // ordinary communication carries no Resource-Priority header field at all.
   if (level != "normal")
     for (const auto &header : media_priority_headers(level.c_str())) response.headers.push_back(header);
-  if (corrected || alert_refused) {
+  // Within a pre-established session the corrected indications go in the re-INVITE "establish-success" itself (TS 24.282
+  // clause 6.2.8.1.16 2) b): <imminentperil-ind> "false" with <emergency-ind> "true"; <alert-ind> "false" for a refused
+  // alert): the participating function of clause 9.2.5.2.2.1 (2xx step 3) relays the correction to the client in a
+  // re-INVITE of the session, which the collocated functions send at once, without the SIP INFO between them.
+  if ((corrected || alert_refused) && !pre_sessions_.contains(request.dialog_id)) {
     // TS 24.282 clause 9.2.4.4.4 step 3 and clause 10.2.5.4.3: the correction follows in a SIP INFO request.
     response.headers.push_back({"Warning", warning_value("149 SIP INFO request pending")});
     send_priority_info(request.dialog_id, user.id, group, corrected ? std::optional<bool>(false) : std::nullopt, true,

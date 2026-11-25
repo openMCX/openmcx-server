@@ -185,6 +185,11 @@ def scenario_verifiers(scenario, flags):
         'mcdata_status_scenario': ('mcdata-server', [['verify_mcdata_status.py', '--service', MCDATA]]),
         'mcdata_media_scenario': ('mcdata-server', [['verify_mcdata_media.py', '--service', MCDATA]]),
         'mcdata_ipconn_scenario': ('mcdata-server', [['verify_mcdata_ipconn.py', '--service', MCDATA]]),
+        # TS 24.282 clauses 18.3 and 9.2.5, TS 24.582 clause 12: MCData over pre-established sessions.
+        'mcdata_pre_established_scenario': (
+            'mcdata-server',
+            [['verify_mcdata_pre_established.py', '--service', MCDATA]],
+        ),
         'mcdata_protected_scenario': ('mcdata-server', [['verify_mcdata_protected.py', '--results', '{results}']]),
     }
     # The MCVideo scenarios: verify_mcvideo.py checks what the MCVideo server sends in each, and that the scenario
@@ -233,6 +238,7 @@ def applicable(args, cli):
         'mcdata_status_scenario',
         'mcdata_media_scenario',
         'mcdata_ipconn_scenario',
+        'mcdata_pre_established_scenario',
     }
     if args.scenario in clear_only and '--protected' in args.lab_flags.split():
         return None, 'protected MCData signalling'
