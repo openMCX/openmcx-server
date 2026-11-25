@@ -993,6 +993,30 @@ bool McServer::refresh_key_subscription(const SipMessage &message, const User &u
 // TS 24.379 clause 10.1.3.4.1: a participant's subscription to the conference event package of its call (relayed
 // when the call is controlled elsewhere).
 void McServer::conference_subscribe(const SipMessage &message, const User &user, SipResponse &response) {
+  // RFC 6665 sections 4.1.2.2, 4.1.2.3 and 4.2.1.2 (TS 24.379 clause 10.1.3.2: the client terminates the subscription
+  // "according to IETF RFC 6665"): a SUBSCRIBE in the dialog of a conference subscription refreshes it, or ends it
+  // with Expires 0, and a NOTIFY to that subscriber follows (the last one "terminated"). It is known by its dialog: it
+  // need not repeat the mcptt-info body, and its Request-URI is the dialog's remote target, not the session identity.
+  // Only the subscriber may.
+  for (const auto &entry : sessions_)
+    if (const auto sub = entry.second->subscriptions.find(message.dialog_id);
+        sub != entry.second->subscriptions.end()) {
+      if (sub->second.user != user.id) {
+        response.status_code = 403;
+        return;
+      }
+      const auto expiry = refreshed_expires(message);
+      if (!expiry) {
+        response.status_code = 400;
+        return;
+      }
+      sub->second.expires = std::time(nullptr) + static_cast<std::int64_t>(*expiry);
+      response.status_code = 200;
+      response.headers = {{"Expires", std::to_string(*expiry)}};
+      event(*expiry == 0 ? "conference_unsubscribed" : "conference_subscription_refreshed", {{"user_id", user.id}});
+      schedule([this, session = entry.second, dialog = message.dialog_id] { notify_conference(session, false, dialog); });
+      return;
+    }
   if (const auto alias = session_aliases_.find(message.request_uri);
       alias != session_aliases_.end() && user.peer.empty()) {
     if (!accepts_mcptt(message)) {

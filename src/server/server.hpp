@@ -990,7 +990,8 @@ protected:
 
   void complete_setup(const std::shared_ptr<Session> &session);
 
-  void notify_conference(const std::shared_ptr<Session> &session, bool ending = false);
+  // only: one subscription (its dialog) instead of all of the session's.
+  void notify_conference(const std::shared_ptr<Session> &session, bool ending = false, std::string_view only = {});
 
   void notify_key(const std::string &dialog);
 
