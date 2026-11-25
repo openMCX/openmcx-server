@@ -283,6 +283,12 @@ struct McpttProfileRules {
 McpttProfileRules parse_mcptt_profile_rules(std::string_view xml);
 
 //------------------------------------------------------------------------------
+// TS 24.484 clause 10.3.2.1 items 9 b vii and 9 i ii with TS 24.282 clauses 22.2.1.4, 8.2.6.2 and 8.2.2: the same rules
+// of an MCData user profile (the functional aliases of its <FunctionalAliasList>, the affiliation rules of its
+// <MCDataGroupInfo> elements).
+McpttProfileRules parse_mcdata_profile_rules(std::string_view xml);
+
+//------------------------------------------------------------------------------
 // TS 24.481 clauses 7.2.4.2 and 7.2.8 with TS 24.379 clause 9.2.1.7.3: the <permitted-geographic-area> and the
 // <mandatory-geographic-area> of a group document's <list-service> (each a union of polygons and ellipsoid arcs; empty
 // when absent).

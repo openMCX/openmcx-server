@@ -27,6 +27,8 @@ import (
 //   - <TxRxControl> with <MaxData1To1>; <GroupEmergencyAlert> from the alert groups;
 //   - the groups of which the user is an MCData member: <OnNetwork>/<MCDataGroupInfo> with the GMS, the IdMS token
 //     endpoint and the KMS; <MaxAffiliationsN2>, <ImplicitAffiliations>, <One-To-One-EmergencyAlert>;
+//   - in the <anyExt> of an <MCDataGroupInfo>: <allow-store-group-comm-in-msgstore> and the affiliation rules
+//     (<RulesForAffiliation>, <RulesForDeaffiliation>, <manual-deaffiliation-not-allowed-if-affiliation-rules-are-met>);
 //   - in the <anyExt> of <OnNetwork>: <MCDataContentServerURI>, <MessageStoreHostname> and
 //     <IncomingOne-to-OneCommunicationList>;
 //   - the granted rights: boolean elements of the <cp:ruleset> actions (clause 10.3.2.1 item 11 b).
@@ -114,7 +116,11 @@ type mcdataGroupInfo struct {
 // ------------------------------------------------------------------------------
 // TS 24.484 clause 10.3.2.1 item 9 b vi: the <anyExt> of <MCDataGroupInfo>.
 type mcdataGroupInfoExt struct {
-	Store bool `xml:"allow-store-group-comm-in-msgstore"`
+	Store bool `xml:"allow-store-group-comm-in-msgstore,omitempty"`
+	// Item 9 b vii A)-C): the affiliation rules of the group (affiliation_rules.go; TS 24.282 clause 8.2.6.2).
+	RulesForAffiliation       *profileAffiliationRule `xml:"RulesForAffiliation,omitempty"`
+	RulesForDeaffiliation     *profileAffiliationRule `xml:"RulesForDeaffiliation,omitempty"`
+	ManualDeaffiliationLocked *bool                   `xml:"manual-deaffiliation-not-allowed-if-affiliation-rules-are-met,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -247,6 +253,7 @@ func (svc *service) mcdataProfileXML(user User) mcdataProfileXML {
 		if slices.Contains(policy.StoreGroupComms, id) {
 			info.AnyExt = &mcdataGroupInfoExt{Store: true}
 		}
+		info.AnyExt = policy.AffiliationRules[id].mcdataGroupInfoExt(info.AnyExt)
 		doc.OnNetwork.GroupInfo = append(doc.OnNetwork.GroupInfo, info)
 	}
 	return doc

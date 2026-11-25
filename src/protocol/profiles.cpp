@@ -340,6 +340,42 @@ static ProfileAreaChange profile_area_change(xmlNode *node, const char *ns) {
 }
 
 //------------------------------------------------------------------------------
+// Helper: the <anyExt> `ext` of a group's profile entry (an <MCPTTGroupInfo> <entry>, an <MCDataGroupInfo>): its
+// <RulesForAffiliation> and <RulesForDeaffiliation> rules for `group` and its
+// <manual-deaffiliation-not-allowed-if-affiliation-rules-are-met>, added to `out`.
+static void profile_group_rules(xmlNode *ext, const char *ns, const std::string &group, McpttProfileRules &out) {
+  for (auto node = ext->children; node; node = node->next) {
+    const bool affiliate = is(node, "RulesForAffiliation", ns);
+    if (affiliate || is(node, "RulesForDeaffiliation", ns)) {
+      if (out.affiliation_rules.size() >= 256) invalid("too many affiliation rules");
+      McpttAffiliationRule rule;
+      rule.group = group;
+      rule.affiliate = affiliate;
+      for (auto part = node->children; part; part = part->next) {
+        if (is(part, "ListOfLocationCriteria", ns)) {
+          auto change = profile_area_change(part, ns);
+          rule.location.enter.insert(rule.location.enter.end(), change.enter.begin(), change.enter.end());
+          rule.location.exit.insert(rule.location.exit.end(), change.exit.begin(), change.exit.end());
+          rule.location.constrained += change.constrained;
+        } else if (is(part, "ListOfActiveFunctionalAliasCriteria", ns)) {
+          for (auto alias = part->children; alias; alias = alias->next)
+            if (is(alias, "entry", ns)) {
+              if (rule.aliases.size() >= 64) invalid("too many functional alias criteria");
+              const auto uri = text(unique_child(alias, "uri-entry", ns));
+              if (uri.empty()) invalid("a functional alias criterion without its URI");
+              rule.aliases.push_back(uri);
+            }
+        }
+      }
+      out.affiliation_rules.push_back(std::move(rule));
+    } else if (is(node, "manual-deaffiliation-not-allowed-if-affiliation-rules-are-met", ns)) {
+      const auto value = scalar(node);
+      if (value == "true" || value == "1") out.manual_deaffiliation_locked.insert(group);
+    }
+  }
+}
+
+//------------------------------------------------------------------------------
 // TS 24.484 clause 8.3.2.1 item 10 and clause 8.3.2.7: the location criteria of the functional aliases
 // (<FunctionalAliasList> in the <anyExt> of <OnNetwork>) and, per <entry> of <MCPTTGroupInfo>, its <RulesForAffiliation>
 // and <RulesForDeaffiliation> (each rule a RulesForAffiliationManagementType: <ListOfLocationCriteria> and
@@ -362,36 +398,35 @@ McpttProfileRules parse_mcptt_profile_rules(std::string_view xml) {
         if (!ext) continue;
         const auto group = text(unique_child(entry, "uri-entry", ns));
         if (group.empty()) invalid("an MCPTT group entry without its URI");
-        for (auto node = ext->children; node; node = node->next) {
-          const bool affiliate = is(node, "RulesForAffiliation", ns);
-          if (affiliate || is(node, "RulesForDeaffiliation", ns)) {
-            if (out.affiliation_rules.size() >= 256) invalid("too many affiliation rules");
-            McpttAffiliationRule rule;
-            rule.group = group;
-            rule.affiliate = affiliate;
-            for (auto part = node->children; part; part = part->next) {
-              if (is(part, "ListOfLocationCriteria", ns)) {
-                auto change = profile_area_change(part, ns);
-                rule.location.enter.insert(rule.location.enter.end(), change.enter.begin(), change.enter.end());
-                rule.location.exit.insert(rule.location.exit.end(), change.exit.begin(), change.exit.end());
-                rule.location.constrained += change.constrained;
-              } else if (is(part, "ListOfActiveFunctionalAliasCriteria", ns)) {
-                for (auto alias = part->children; alias; alias = alias->next)
-                  if (is(alias, "entry", ns)) {
-                    if (rule.aliases.size() >= 64) invalid("too many functional alias criteria");
-                    const auto uri = text(unique_child(alias, "uri-entry", ns));
-                    if (uri.empty()) invalid("a functional alias criterion without its URI");
-                    rule.aliases.push_back(uri);
-                  }
-              }
-            }
-            out.affiliation_rules.push_back(std::move(rule));
-          } else if (is(node, "manual-deaffiliation-not-allowed-if-affiliation-rules-are-met", ns)) {
-            const auto value = scalar(node);
-            if (value == "true" || value == "1") out.manual_deaffiliation_locked.insert(group);
-          }
-        }
+        profile_group_rules(ext, ns, group, out);
       }
+    }
+  }
+  return out;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.484 clause 10.3.2.1 items 9 b and 9 i ii with TS 24.282 clauses 22.2.1.4 and 8.2.6.2: the location rules of an
+// MCData user profile: the functional aliases of <FunctionalAliasList> (in the <anyExt> of <OnNetwork>) with their
+// location criteria (the <anyExt> of their <entry>, item 5) b)-d) of the <entry> elements), and per <MCDataGroupInfo>
+// (its group the <uri-entry> of <MCData-Group-ID>) the <RulesForAffiliation>, <RulesForDeaffiliation> and
+// <manual-deaffiliation-not-allowed-if-affiliation-rules-are-met> of its <anyExt> (item 9 b vii).
+McpttProfileRules parse_mcdata_profile_rules(std::string_view xml) {
+  auto doc = document(xml);
+  const char *ns = nullptr;
+  auto root = profile_root(doc.get(), &ns);
+  if (ns != mcdata_profile_ns) invalid("not an MCData user profile");
+  McpttProfileRules out;
+  for (auto on = root->children; on; on = on->next) {
+    if (!is(on, "OnNetwork", ns)) continue;
+    profile_functional_aliases(on, ns, out.functional_aliases);
+    for (auto info = on->children; info; info = info->next) {
+      if (!is(info, "MCDataGroupInfo", ns)) continue;
+      auto ext = unique_child(info, "anyExt", ns, false);
+      if (!ext) continue;
+      const auto group = text(unique_child(unique_child(info, "MCData-Group-ID", ns), "uri-entry", ns));
+      if (group.empty()) invalid("an MCData group entry without its URI");
+      profile_group_rules(ext, ns, group, out);
     }
   }
   return out;
