@@ -35,6 +35,13 @@ Examples:
   tools/regress.py --image openmcx:0.72 --client-image openmcx-client:0.72 --all --jobs 6
   tools/regress.py --image openmcx:0.72 --client-image openmcx-client:0.72 --select mcdata --tls
   tools/regress.py --image openmcx:0.72 --client-image openmcx-client:0.72 --select smoke,mcdata --duration 4h   # soak
+  tools/regress.py --image openmcx-all:0.72 --client-image openmcx-client:0.72 --select smoke \
+      --android ../openmcx-client --android-select =base                # then the Android client's units
+
+--android CLIENT_TREE runs, after these labs, the Android client's regression of that openmcx-client checkout
+(android/tools/regress.py) against the same server image, this checkout's fixture generator and SIP core image, with
+the client image as its Linux peer; its summary is included in summary.json and summary.md, and a failure there fails
+the run.
 
 The client image is built from the openmcx-client repository (linux/tools/build-image).
 """
@@ -1140,6 +1147,46 @@ def select(names):
 
 
 # ------------------------------------------------------------------------------
+def sip_image():
+    """The SIP core image of the lab compose file (docker/compose/compose.yaml), which the fixtures use."""
+    found = re.search(r'image:\s*(openmcx-kamailio:\S+)', (ROOT / 'docker/compose/compose.yaml').read_text())
+    return found.group(1) if found else 'openmcx-kamailio:6.1.4-14'
+
+
+# ------------------------------------------------------------------------------
+def android_command(args, output, listing=False):
+    """The Android client's regression (android/tools/regress.py of the --android checkout) with this run's images."""
+    tool = Path(args.android).resolve() / 'android/tools/regress.py'
+    if not tool.exists():
+        sys.exit(f'{tool} not found: --android names an openmcx-client checkout')
+    command = ['python3', str(tool)]
+    if listing:
+        command.append('--list')
+    else:
+        command += [
+            '--server-tree',
+            str(ROOT),
+            '--server-image',
+            args.image,
+            '--sip-image',
+            sip_image(),
+            '--jobs',
+            str(args.android_jobs),
+            '--out',
+            str(output),
+        ]
+        if args.client_image:
+            command += ['--peer-image', args.client_image]
+        if not args.android_select:
+            command.append('--all')
+    if args.android_select:
+        command += ['--select', args.android_select]
+    if args.android_scenarios:
+        command += ['--scenarios', args.android_scenarios]
+    return command
+
+
+# ------------------------------------------------------------------------------
 def duration(text):
     """Parse a --duration such as 90m, 4h or 300s (minutes without a unit) into seconds."""
     found = re.fullmatch(r'(\d+(?:\.\d+)?)([smh]?)', text or '')
@@ -1203,8 +1250,21 @@ def main():
     parser.add_argument('--duration', type=duration, help='Soak: repeat the selection until this much time has passed')
     parser.add_argument('--output', type=Path, help='Directory for the lab fixtures, logs and summary')
     parser.add_argument('--list', action='store_true', help='List the labs and exit')
+    parser.add_argument(
+        '--android',
+        metavar='CLIENT_TREE',
+        help='then run the Android regression of this openmcx-client checkout (android/tools/regress.py)',
+    )
+    parser.add_argument('--android-select', help='its --select (default: every Android unit)')
+    parser.add_argument('--android-scenarios', help='its --scenarios, e.g. S1,S2,S3')
+    parser.add_argument(
+        '--android-jobs', type=int, default=1, help='Android labs at once (default 1, about 3.5 GB each)'
+    )
     args = parser.parse_args()
     if args.list:
+        if args.android:
+            # The Android units only: the selection --android-select makes, no labs.
+            return subprocess.run(android_command(args, None, listing=True)).returncode
         for spec in LABS:
             print(
                 f'{spec["name"]:28} {spec["kind"]:6} {" ".join(spec["flags"]) or "-":55} '
@@ -1216,11 +1276,14 @@ def main():
         parser.error('--image or --images, and --client-image, are required')
     if args.image and args.images:
         parser.error('choose --image or --images')
-    if not args.all and not args.select:
+    if args.android and args.images:
+        parser.error('--android needs one application image, --image (its labs take openmcx-all)')
+    if not args.all and not args.select and not args.android:
         parser.error('choose --all or --select')
     if not COMPOSE.exists():
         parser.error(f'{COMPOSE} is missing: run tools/fetch-dependencies.py')
-    labs = LABS if args.all else select(args.select)
+    # With --android only, none of this matrix's labs.
+    labs = LABS if args.all else select(args.select) if args.select else []
     stamp = datetime.datetime.now().strftime('%m%d%H%M%S')
     output = (args.output or ROOT / f'artifacts/regress-{stamp}').resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -1359,6 +1422,36 @@ def main():
             + '\n'
         )
     failed = [result for result in results if not result['passed']]
+    android_failed = False
+    if args.android:
+        # The Android client's units, after this matrix's, on the same server image and SIP core.
+        where = output / 'android'
+        say(f'[android] {" ".join(android_command(args, where))}')
+        code = subprocess.run(android_command(args, where)).returncode
+        android_failed = code != 0
+        try:
+            android = json.loads((where / 'summary.json').read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            android = dict(totals=None, error=f'android/tools/regress.py exited {code} without a summary')
+        android['exit'] = code
+        android['summary'] = str(where / 'SUMMARY.md')
+        # Into summary.json, or beside the per-transport ones of --transport both.
+        path = output / 'summary.json'
+        summary = json.loads(path.read_text()) if path.exists() else {}
+        summary['android'] = dict(
+            exit=code, totals=android.get('totals'), summary=android['summary'], versions=android.get('versions')
+        )
+        (path if path.exists() else output / 'android-summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+        totals = android.get('totals') or {}
+        line = (
+            f'Android ({args.android}): **{totals.get("pass", 0)} passed, {totals.get("fail", 0)} failed, '
+            f'{totals.get("flake", 0)} flaky, {totals.get("skip", 0)} skipped**, exit {code}; see {android["summary"]}.'
+            if totals
+            else f'Android ({args.android}): {android.get("error")}.'
+        )
+        with (output / 'summary.md').open('a') as out:
+            out.write('\n' + line + '\n')
+        say(line)
     leftover = subprocess.run(
         ['docker', 'ps', '-a', '--format', '{{.Names}}'], capture_output=True, text=True
     ).stdout.split()
@@ -1369,7 +1462,7 @@ def main():
         # Lab projects no longer running (an interrupted run's); images stay.
         run(['python3', 'tools/lab-clean', '--yes', '--no-images'], output / 'lab-clean.log', timeout=900)
     say(f'summary: {output / "summary.md"}')
-    return 1 if failed else 0
+    return 1 if failed or android_failed else 0
 
 
 if __name__ == '__main__':

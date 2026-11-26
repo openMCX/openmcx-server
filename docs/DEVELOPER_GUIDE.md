@@ -804,6 +804,13 @@ tools/regress.py --images <tag> --client-image openmcx-client:<tag> --all --tran
 are in `artifacts/regress-<stamp>/` (`summary.md`, `summary.json`, per lab the generated configuration, logs,
 `status.json` and captures). `tools/lab-clean` reports anything left behind.
 
+`--android CLIENT_TREE` runs, after these labs, the Android client's regression of that openmcx-client checkout
+(`android/tools/regress.py`, its `android/docs/REGRESSION.md`) on the same `--image`, this checkout's fixture
+generator and SIP core image, with `--client-image` as its Linux peer. `--android-select`, `--android-scenarios` and
+`--android-jobs` pass its `--select`, `--scenarios` and `--jobs`; without `--all` or `--select` only the Android units
+run. Its summary is in `<output>/android/` and in `summary.json` (`android`) and `summary.md`; a failure there fails
+the run. `tools/regress.py --list --android CLIENT_TREE --android-select ...` lists its units without labs.
+
 ### 9.3 Wire verifiers
 
 Over debug TCP SIP (the default transport), `tests/integration/wire_check.py` captures at the scenario's server from
