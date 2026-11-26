@@ -217,8 +217,9 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 - **Reg event package** (RFC 3680; TS 24.229 clauses 5.1.1.3, 5.2.3 and 5.4.2.1) is served by the SIP core to the
   Linux client, the Android app and the P-CSCF; the operator starts a network-initiated deregistration or
   re-authentication of one private user identity (shortened registration, TS 33.203 clauses 5.1.2 and 6.1.4) with the
-  commands in USAGE.md. Own deviation not fixed yet: the P-Charging-Vector (charging correlation, TS 32.260) is
-  carried only in the P-CSCF's reg event dialog (clauses 5.2.3, 5.2.4, 5.2.5.2, 5.4.2.1.1 and 5.4.2.1.2): the
+  commands in USAGE.md. The first NOTIFY of a subscription has the registrar's current contacts, and an ended
+  registration is not kept for a later subscription (dependencies/kamailio patch 0009). Own deviation not fixed yet: the
+  P-Charging-Vector (charging correlation, TS 32.260) is carried only in the P-CSCF's reg event dialog (clauses 5.2.3, 5.2.4, 5.2.5.2, 5.4.2.1.1 and 5.4.2.1.2): the
   P-CSCF's REGISTER (clause 5.2.2.1 item 3) and the other requests and responses of the P-CSCF and the SIP core carry
   none, so neither do the UEs' own reg event dialogs.
 - **sec-agree option-tag in Proxy-Require** (spec defect, to report). After the security agreement the Linux client
@@ -256,6 +257,17 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 
 ### MCPTT
 
+- **Affiliation of other users** (MCPTT and MCVideo; TS 24.379 clauses 9.2.2.2.3, 9.2.2.2.4, 9.2.2.2.8 to 9.2.2.2.10).
+  A user's affiliation status may have several subscriptions, and another user's status and the request in negotiated
+  mode are passed on. The authorisations are the user profile's `<allow-request-affiliated-groups>` or
+  `<allow-request-to-affiliate-other-users>` for a subscription (clause 9.2.2.2.4 step 4 names no element; own
+  reading), and `<allow-request-to-affiliate-other-users>` for negotiated mode. Not done: the mandatory mode for
+  another user (a PUBLISH naming another MC service ID is still refused with 403, clauses 9.2.2.2.3 step 4 and
+  9.2.2.2.9), and both procedures in MCData (TS 24.282 clause 8.3.2). TS 24.379 has no originating procedure for
+  the negotiated-mode MESSAGE, so it is passed on as clause 9.2.2.2.9 passes on a PUBLISH. Its From header is the
+  server's; the requester is in `<mcptt-calling-user-id>`. Another server is found by peer registration, or else the
+  controlling server of a participating-only server (clause 9.2.2.2.10 NOTE 4). A subscription is granted at most
+  3600 s.
 - **Private calls.** The forwarding settings MESSAGE and warning 174 are not implemented;
   forwarding is manual only.
 - **Broadcast group calls.** Group-broadcast and user-broadcast hierarchies are a project profile, because TS 24.379
