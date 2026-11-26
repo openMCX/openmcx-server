@@ -941,7 +941,9 @@ SipResponse McServer::private_reinvite(const SipMessage &message, const User &us
   state = next;
   leg->pending_priority_info = correction;
   response.status_code = 200;
-  response.local_media = answer_media(*leg);
+  // TS 24.379 clauses 6.4 and 11.1.1.2.1.5 step 4: the upgrade to an emergency private call may be an implicit floor
+  // request; the cancellation is none.
+  response.local_media = priority_answer_media(leg, *message.remote_media, *info.emergency);
   McpttInfo current;
   current.session_type = "private";
   current.request_uri = user.id;

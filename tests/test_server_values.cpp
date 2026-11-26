@@ -7,8 +7,9 @@
 // management documents of a subscription's resource list; and the implicit floor request rules of the MCPTT server
 // (src/server/implicit_floor.hpp); the location sent with a call request to the controlling function
 // (src/server/talking_location.hpp); whether a group call is still ongoing for a new request
-// (src/server/group_session.hpp); which procedure a re-INVITE in a pre-established session's dialog belongs to, and
-// the dialog a priority state change reaches a participant over such a session in (src/server/pre_session_rules.hpp).
+// (src/server/group_session.hpp); which procedure a re-INVITE in a pre-established session's dialog belongs to, the
+// SDP answer to a call's re-INVITE in it, and the dialog a priority state change reaches a participant over such a
+// session in (src/server/pre_session_rules.hpp).
 //
 // Specifications: RFC 3261, RFC 3986, RFC 5875, TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19),
 // TS 24.484 V19.6.0 (Rel-19).
@@ -22,7 +23,9 @@
 #include "talking_location.hpp"
 
 #include <cassert>
+#include <cstdint>
 #include <iostream>
+#include <optional>
 using namespace mcx;
 
 //------------------------------------------------------------------------------
@@ -190,6 +193,66 @@ static void Clause_6_3_3_1_6_PriorityReinviteDialog() {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clause 6.4: a re-INVITE is an implicit floor request when it upgrades the call to an emergency or imminent
+// peril call with "mc_implicit_request" in a call with floor control; a cancellation ("false") or an offer without
+// the attribute is not.
+static void Clause_6_4_UpgradeImplicitFloorAccepted() {
+  assert(upgrade_implicit_floor_accepted(true, true, true));
+  assert(!upgrade_implicit_floor_accepted(false, true, true));
+  assert(!upgrade_implicit_floor_accepted(true, false, true));
+  assert(!upgrade_implicit_floor_accepted(true, true, false));
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clause 6.3.4.3.6: in 'G: Floor Idle' the implicit floor request of an upgrade is refused (cause #3) when
+// the requester is alone in the call, granted otherwise; in 'G: Floor Taken' (clause 6.3.4.4.12) it is the request
+// that pre-empts the talker, also with a single participant (the requester itself holding the floor).
+static void Clause_6_3_4_3_6_UpgradeFloorOutcome() {
+  assert(upgrade_floor_outcome(1, false) == UpgradeFloorOutcome::deny_only_participant);
+  assert(upgrade_floor_outcome(0, false) == UpgradeFloorOutcome::deny_only_participant);
+  assert(upgrade_floor_outcome(2, false) == UpgradeFloorOutcome::request);
+  assert(upgrade_floor_outcome(4, true) == UpgradeFloorOutcome::request);
+  assert(upgrade_floor_outcome(1, true) == UpgradeFloorOutcome::request);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 6.3.2.1.5.2 with TS 24.380 clauses 14.3.3 to 14.3.6: the answer to a call's re-INVITE in the
+// session's dialog is the session's media with the controlling function's floor priority and its acceptance of an
+// upgrade's implicit floor request ("mc_implicit_request", "mc_ssrc"); the session's own implicit floor request is not
+// echoed for a request the controlling function did not accept.
+static void Clause_6_3_2_1_5_2_PreSessionCallAnswer() {
+  struct Media {
+    bool implicit_request = false, granted = false;
+    std::uint32_t granted_audio_ssrc = 0;
+    std::optional<std::uint8_t> floor_priority;
+    std::uint16_t audio_port = 0;
+  };
+
+  Media session;
+  session.audio_port = 4000;
+  session.floor_priority = 5;
+  session.implicit_request = true; // the session was set up with an implicit floor request
+
+  Media accepted;
+  accepted.audio_port = 5000;
+  accepted.floor_priority = 7;
+  accepted.implicit_request = true;
+  accepted.granted_audio_ssrc = 1234;
+  auto answer = pre_session_call_answer(session, std::optional<Media>(accepted));
+  assert(answer.audio_port == 4000); // the session's media, not the call leg's
+  assert(answer.floor_priority == 7);
+  assert(answer.implicit_request && answer.granted_audio_ssrc == 1234 && !answer.granted);
+
+  Media cancel;
+  cancel.floor_priority = 3;
+  answer = pre_session_call_answer(session, std::optional<Media>(cancel));
+  assert(!answer.implicit_request && answer.granted_audio_ssrc == 0 && answer.floor_priority == 3);
+
+  answer = pre_session_call_answer(session, std::optional<Media>());
+  assert(!answer.implicit_request && answer.floor_priority == 5 && answer.audio_port == 4000);
+}
+
+//------------------------------------------------------------------------------
 int main() {
   Section_20_19_Expires();
   Section_2_1_PercentDecoding();
@@ -202,6 +265,9 @@ int main() {
   Clause_10_1_1_4_2_GroupCallOngoing();
   Clause_10_1_1_3_1_3_PreSessionReinvite();
   Clause_6_3_3_1_6_PriorityReinviteDialog();
+  Clause_6_4_UpgradeImplicitFloorAccepted();
+  Clause_6_3_4_3_6_UpgradeFloorOutcome();
+  Clause_6_3_2_1_5_2_PreSessionCallAnswer();
   std::cout << "server request values: all checks passed\n";
   return 0;
 }

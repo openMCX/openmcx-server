@@ -10,6 +10,8 @@
 
 #include "server.hpp"
 
+#include "implicit_floor.hpp"
+
 namespace mcx {
 
 //------------------------------------------------------------------------------
@@ -65,6 +67,30 @@ MediaDescription McServer::initial_answer_media(const Leg &leg) const {
     media.granted_audio_ssrc = leg.implicit_audio_ssrc;
   }
   return media;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 6.4: a re-INVITE upgrading the call to an emergency group or private call, or to an imminent peril
+// group call (upgrade), with "mc_implicit_request" in its SDP offer is an implicit floor request (clauses
+// 10.1.1.2.1.3 step 7, 10.1.2.2.1.4, 11.1.1.2.1.5); a cancellation or a re-INVITE without the attribute is none, and
+// the answer is the leg's media (answer_media). An accepted one is answered as an initial INVITE's (TS 24.380 clause
+// 14.3.5: "include the "mc_implicit_request" fmtp attribute in responses to the SIP request"; clause 14.3.6: "mc_ssrc"
+// with the offer's "a=ssrc", or the SSRC the participant already sends with when it holds the floor; clause 14.3.4:
+// no "mc_granted", the floor is granted by Floor Granted) and processed once the answer is sent, the leg's priority
+// already changed (upgrade_floor_request: TS 24.380 clauses 6.3.4.3.6 and 6.3.4.4.12).
+MediaDescription McServer::priority_answer_media(const std::shared_ptr<Leg> &leg, const MediaDescription &offer,
+                                                 bool upgrade) {
+  accept_implicit_floor_request(
+      *leg, offer,
+      upgrade_implicit_floor_accepted(offer.implicit_request, upgrade, leg->local.control == MediaControl::floor));
+  if (!leg->implicit_floor) return answer_media(*leg);
+  if (leg->floor_granted && leg->implicit_audio_ssrc) leg->implicit_audio_ssrc = leg->audio_ssrc;
+  event("upgrade_implicit_floor_request_accepted", {{"user_id", leg->user}, {"dialog", leg->dialog}});
+  schedule([this, leg] {
+    const auto session = leg->session;
+    if (session && current_session(session) && leg->active) upgrade_floor_request(leg, session);
+  });
+  return initial_answer_media(*leg);
 }
 
 //------------------------------------------------------------------------------

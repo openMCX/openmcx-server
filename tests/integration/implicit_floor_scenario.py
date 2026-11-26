@@ -6,8 +6,8 @@
 """Exercise MCPTT calls set up with an implicit floor request.
 
 Run against a separate four-client fixture prepared with --private-call --chat --adhoc --priority (the priority
-policy authorises client-a's emergency call, IF-04), with the speech fixtures copied. Check labels carry the IDs IF-01 to IF-09 (to be listed in
-tests/mcptt/IMPLICIT_FLOOR_TEST.md).
+policy authorises client-a's emergency call, IF-04 and IF-10), with the speech fixtures copied. Check labels carry the
+IDs IF-01 to IF-10 (to be listed in tests/mcptt/IMPLICIT_FLOOR_TEST.md).
 
 The procedures under test: the client offers "mc_implicit_request" when the call command ends in implicit=<WAV>
 (TS 24.380 clause 14.2.5, an implementation option; TS 24.379 clause 6.4), the controlling MCPTT function accepts
@@ -17,7 +17,9 @@ the client waits in 'U: pending Request' with T101 running (TS 24.380 clause 6.2
 Granted. A join of a chat group call that exists is not an implicit floor request (TS 24.380 clauses 6.3.2.2 and
 14.3.5): no echo, Floor Taken or Floor Idle; a call request to a group whose call has a talker gets Floor Taken
 without queueing (TS 24.380 clause 6.3.5.2.2 item 3c); the client refuses "rejoin implicit" (TS 24.380 clause 6.2.1
-item 2). The wire checks are verify_implicit_floor.py.
+item 2). An upgrade of the call to an emergency call by re-INVITE with "mc_implicit_request" is an implicit floor
+request too (TS 24.379 clause 6.4): echoed in the 200 (OK) and granted, pre-empting the talker (TS 24.380 clause
+6.3.4.4.12). The wire checks are verify_implicit_floor.py.
 
 Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19).
 """
@@ -37,7 +39,7 @@ SPEECH = '/artifacts/speech/alpha.wav'
 
 # ------------------------------------------------------------------------------
 def main():
-    """Run the implicit floor request checks IF-01 to IF-09 and write integration/implicit-floor-results.json."""
+    """Run the implicit floor request checks IF-01 to IF-10 and write integration/implicit-floor-results.json."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--compose', type=Path, required=True)
     parser.add_argument('--artifacts', type=Path, required=True)
@@ -257,6 +259,23 @@ def main():
         assert holds(lambda: status('client-a').get('floor_state') == 'NoPermission', 2), 'no-implicit got the floor'
         checks.append('IF-09 no-implicit stays in U: has no permission')
         hangup_all('IF-09 call released')
+
+        # IF-10 an upgrade to an emergency call by re-INVITE with "mc_implicit_request" is an implicit floor request
+        # (TS 24.379 clauses 6.4 and 10.1.1.2.1.3 step 7): the answer echoes it (TS 24.380 clause 14.3.5) and, with
+        # client-b talking, client-b's burst is pre-empted and client-a granted (TS 24.380 clause 6.3.4.4.12).
+        command('client-a', 'call')
+        wait('IF-10 a plain call is active', lambda: status('client-a').get('call_state') == 'active')
+        wait('IF-10 client-b is in the call', lambda: status('client-b').get('call_state') == 'active')
+        command('client-b', f'ptt {SPEECH}')
+        wait('IF-10 client-b talks', lambda: status('client-b').get('talking'), 10)
+        before = received()
+        command('client-a', f'emergency on implicit={SPEECH}')
+        wait('IF-10 the upgrade accepts the implicit floor request', implicit('client-a', 'accepted'))
+        wait('IF-10 the upgraded participant is granted', talks('client-a', ['client-c'], before), 20)
+        wait('IF-10 client-b\'s burst is pre-empted', lambda: not status('client-b').get('talking'))
+        command('client-a', 'release')
+        command('client-a', 'emergency off')
+        hangup_all('IF-10 call released')
 
         assert status('mcptt-server')['instance_id'] == instance, 'server restarted during scenario'
         checks.append('server instance unchanged')

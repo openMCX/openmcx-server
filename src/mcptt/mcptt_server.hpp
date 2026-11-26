@@ -47,6 +47,8 @@ class McpttServer final : public McServer {
 
   void accept_implicit_floor_request(Leg &leg, const MediaDescription &remote, bool initiates) override;
 
+  void upgrade_floor_request(const std::shared_ptr<Leg> &leg, const std::shared_ptr<Session> &session) override;
+
   //------------------------------------------------------------------------------
   // TS 24.379 clause 6.2.1: an MCPTT call carries speech and floor control only.
   std::unique_ptr<UdpSocket> service_media(MediaDescription & /*local*/, unsigned /*offset*/,
