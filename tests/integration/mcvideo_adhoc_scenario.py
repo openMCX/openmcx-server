@@ -44,6 +44,10 @@ def main():
     compose = json.loads(args.compose.read_text())
     sip_on_wire = '--disable-tls' in compose['services']['client-a']['command']
     ids = {role: json.loads((generated / f'{role}.json').read_text())['mcvideo']['user_id'] for role in ROLES}
+    # On a protected lab (prepare-prearranged-test.py --protected --mcvideo, add_adhoc_security): the preconfigured
+    # group whose GMK keys an end-to-end protected ad hoc group call (TS 24.281 clause 22.4.2.2 step 11).
+    adhoc_policy = json.loads((generated / 'mcvideo-server.json').read_text())['mcvideo'].get('adhoc_call', {})
+    security_group = (adhoc_policy.get('security_groups') or [''])[0]
     checks, observations = [], {}
     result = dict(scenario='mcvideo-adhoc', passed=False, checks=checks, observations=observations)
     capture_file = args.artifacts / 'integration/mcvideo-adhoc.pcap'
@@ -70,6 +74,8 @@ def main():
             'mcvideo_frames_received',
             'mcvideo_group',
             'mcvideo_last_call',
+            'mcvideo_call_protected',
+            'mcvideo_security_group',
             'last_error',
         )
         return {role: {key: status(role).get(key) for key in keys} for role in ROLES}
@@ -220,6 +226,37 @@ def main():
             and '' not in groups
         )
 
+    # ------------------------------------------------------------------------------
+    def adhoc_sessions():
+        """The MCVideo server's ad hoc group call sessions."""
+        value = status('mcvideo-server').get('sessions', [])
+        calls = value.values() if isinstance(value, dict) else value
+        return [call for call in calls if call.get('call_type') == 'adhoc']
+
+    # ------------------------------------------------------------------------------
+    def keyed(roles, label):
+        """MV-AH-E2E: on a protected lab every given client keys the ad hoc call with the GMK of the preconfigured group
+        named in <preconfigured-group-id> (TS 24.281 clauses 22.2.2.1.1 2xx step 3 and 22.2.2.1.2 step 8, TS 33.180
+        clause 5.7), as the server's session does; on a clear lab the call is in the clear.
+        """
+        wait(
+            f'{label} the clients key the call with the preconfigured group'
+            if security_group
+            else f'{label} the call is in the clear',
+            lambda: all(
+                status(role).get('mcvideo_call_protected') is bool(security_group)
+                and (status(role).get('mcvideo_security_group') or '') == security_group
+                for role in roles
+            ),
+        )
+        if security_group:
+            sessions = adhoc_sessions()
+            check(
+                f'{label} the server keys the session with the preconfigured group',
+                any(call.get('protected') and call.get('security_group') == security_group for call in sessions),
+                sessions,
+            )
+
     try:
         wait(
             'four clients MCVideo authorised and affiliated',
@@ -241,6 +278,8 @@ def main():
         observations['adhoc_group'] = adhoc_group
         check('MV-AH-01 the ad hoc group identity is not the preconfigured group', adhoc_group != group, adhoc_group)
         check('MV-AH-01 client-d is not in the call', idle('client-d'))
+        keyed(['client-a', 'client-b', 'client-c'], 'MV-AH-E2E')
+        observations['security_group'] = security_group
         command('client-a', 'mcvideo-transmit')
         wait('MV-AH-01 client-a granted', lambda: status('client-a').get('mcvideo_transmitting') is True)
         for role in ('client-b', 'client-c'):
@@ -288,6 +327,7 @@ def main():
         # affiliated to the MCVideo group is invited.
         command('client-a', f'mcvideo-adhoc criteria affiliated:{group}')
         wait('MV-AH-03 the criteria call invites every user affiliated to the group', lambda: in_adhoc(ROLES))
+        keyed(ROLES, 'MV-AH-E2E criteria call:')
         for role in ('client-a', 'client-b', 'client-c'):
             command(role, 'mcvideo-hangup')
             wait(f'MV-AH-03 {role} leaves', lambda role=role: idle(role), 30)
@@ -410,6 +450,27 @@ def main():
                     for message in answers
                 ),
             )
+            # MV-AH-E2E TS 24.281 clauses 22.2.2.1.1 step 10 d) iii) and 22.4.2.2: the protected request asks for
+            # end-to-end security and offers RTP/SAVP; the 200 (OK) and the invitations name the preconfigured group.
+            if security_group:
+                named = f'<preconfigured-group-id>{security_group}</preconfigured-group-id>'
+                check(
+                    'MV-AH-E2E the ad hoc INVITE carries <end-to-end-security>true with RTP/SAVP',
+                    any('<end-to-end-security>true</end-to-end-security>' in m and 'RTP/SAVP' in m for m in adhoc),
+                )
+                check(
+                    'MV-AH-E2E the 200 (OK) names the group in <preconfigured-group-id>',
+                    any(named in m for m in answers),
+                )
+                invitations = [
+                    m
+                    for m in capture.split(sip)
+                    if m.startswith('INVITE sip:') and not m.startswith('INVITE sip:mcvideo@')
+                ]
+                check(
+                    'MV-AH-E2E the invitations name the group in <preconfigured-group-id>',
+                    any(named in m and '<session-type>adhoc' in m for m in invitations),
+                )
             messages = [message for message in capture.split(sip) if message.startswith('MESSAGE sip:')]
             check(
                 'MV-AH-06 the alert carries <adhoc-alert-ind>true, the criteria and an MCVideo location body',
