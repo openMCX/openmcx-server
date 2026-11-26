@@ -496,27 +496,49 @@ struct Endpoint::State {
     }
   }
 
-  void deliver(Message &message) {
-    if (message.aborted) {
-      partial.erase(message.message_id);
+  // RFC 4975 section 7.1.2: the response to one SEND chunk, unless its sender declined reports (Failure-Report "no").
+  void respond(const Message &chunk, unsigned status, const std::string &comment) {
+    if (chunk.failure_report == "no") return;
+    Message response;
+    response.transaction = chunk.transaction;
+    response.status = status;
+    response.comment = comment;
+    response.to_path = chunk.from_path;
+    response.from_path = std::vector<Uri>{local};
+    queue(response);
+  }
+
+  // RFC 4975 sections 7.1.2 and 7.3: one SEND chunk: an intermediate (or aborted) chunk is held and answered 200;
+  // the last one completes the message, which the application accepts (callbacks.accept, TS 24.582 clause 6.3.1.3
+  // step 3) before its chunk is answered, then receives.
+  void deliver(const Message &chunk) {
+    if (chunk.aborted) {
+      partial.erase(chunk.message_id);
+      respond(chunk, 200, "OK");
       return;
     }
-    if (!message.complete) {
-      auto &held = partial[message.message_id];
+    if (!chunk.complete) {
+      auto &held = partial[chunk.message_id];
       if (held.body.empty()) {
-        held = message;
+        held = chunk;
       } else {
-        held.body += message.body;
+        held.body += chunk.body;
       }
+      respond(chunk, 200, "OK");
       return;
     }
-    const auto held = partial.find(message.message_id);
+    Message message = chunk;
+    const auto held = partial.find(chunk.message_id);
     if (held != partial.end()) {
-      held->second.body += message.body;
+      held->second.body += chunk.body;
       held->second.complete = true;
       message = held->second;
       partial.erase(held);
     }
+    const auto [status, comment] =
+        callbacks.accept ? callbacks.accept(message) : std::pair<unsigned, std::string>{200, "OK"};
+    respond(chunk, status, comment);
+    if (status != 200) return;
     // RFC 4975 section 7.1.2: a sender that asked for a success report ("Success-Report: yes") gets a REPORT for the
     // whole message once it is received (Status 000 200, the octets received in Byte-Range; TS 24.582 clause
     // 6.1.1.3.1 step 1).
@@ -595,18 +617,12 @@ struct Endpoint::State {
       // RFC 4975 section 7.1.2: a REPORT is never answered; it reports on a SEND of ours and is no message for the
       // application.
       if (message.method == "REPORT") continue;
-      // RFC 4975 section 7.1.2: answer a SEND unless the sender declined reports.
-      if (message.failure_report != "no") {
-        Message response;
-        response.transaction = message.transaction;
-        response.status = 200;
-        response.comment = "OK";
-        response.to_path = message.from_path;
-        response.from_path = std::vector<Uri>{local};
-        queue(response);
+      // RFC 6135: the empty SEND that binds the connection carries nothing to deliver; it is answered (RFC 4975
+      // section 7.1.2) like any other SEND.
+      if (message.body.empty()) {
+        respond(message, 200, "OK");
+        continue;
       }
-      // RFC 6135: the empty SEND that binds the connection carries nothing to deliver.
-      if (message.body.empty()) continue;
       deliver(message);
     }
   }

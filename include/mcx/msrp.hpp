@@ -16,6 +16,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace mcx::msrp {
@@ -87,6 +88,10 @@ public:
     // Every SEND this endpoint issued has been answered; TS 24.582 clause 6.1.1.2.1 then releases the SIP session of a
     // standalone transfer.
     std::function<void()> sent;
+    // RFC 4975 section 7.3 with TS 24.582 clause 6.3.1.3 step 3: the status and comment of the response to the last
+    // chunk of a complete SEND (an intermediate chunk is answered 200), decided before the message is delivered: a
+    // status other than 200 refuses it (no success report, no message callback). Unset: 200 OK.
+    std::function<std::pair<unsigned, std::string>(const Message &)> accept;
   };
 
   Endpoint();
