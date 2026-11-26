@@ -919,7 +919,8 @@ bool McServer::pre_session_invite_member(const std::shared_ptr<Session> &call, c
   pre_session_bind(session, leg);
   add_leg(leg);
   session->control->refer_received(); // 'G: Pre-established session in use' from now on (clause 9.3.2.3.3 step 5)
-  bool manual = call->policy.value("answer_mode", "Auto") == "Manual";
+  // A group call: TS 24.379 clause 10.1.1.3.2 steps 7 and 8, the member's own Answer-Mode Indication.
+  bool manual = group_answer_mode(user, std::time(nullptr), call->policy.value("answer_mode", "Auto")) == "Manual";
   if (call->private_call) {
     // Clauses 6.3.2.2.5.3 and 6.3.2.2.6.3: the Answer-Mode of the call, else the user's cached Answer-Mode Indication.
     const auto headers = with_cached_answer_mode(call->answer_headers, user);

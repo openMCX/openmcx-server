@@ -88,6 +88,7 @@ struct SettingsPublication {
   int status = 0;
   std::uint64_t expires = 0;
 };
+
 SettingsPublication settings_publication(std::string_view if_match, std::string_view expires, std::string_view etag,
                                          bool has_body);
 
@@ -101,6 +102,14 @@ ServiceSettings read_service_settings(std::string_view xml, std::string_view cli
 // TS 24.379 clauses 6.3.2.2.5.2 and 6.3.2.2.6.2 step 5 (TS 24.281 likewise): the current Answer-Mode Indication of the
 // client from its cached service settings ("Auto" or "Manual"), "" when none is cached or they have expired.
 std::string cached_answer_mode(const ServedUser &user, std::int64_t now);
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 10.1.1.3.2 steps 7 and 8 (prearranged group call) and 17.3.2.1.2 steps 7 and 8 (ad hoc group
+// call; TS 24.281 likewise): the Answer-Mode of a group call INVITE to a member, its cached Answer-Mode Indication;
+// "" (no Answer-Mode) for a member served by a peer server, whose terminating function decides by its own cache
+// (clause 6.3.3.1.2 step 10: the controlling function adds none); else, without cached settings, `fallback` (the
+// call policy's answer_mode).
+std::string group_answer_mode(const ServedUser &user, std::int64_t now, const std::string &fallback);
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 7.3.4 steps 4 and 6 (TS 24.281 and TS 24.282 likewise): the binding between the IMS public user

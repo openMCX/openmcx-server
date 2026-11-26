@@ -291,7 +291,10 @@ void McServer::invite_member(const std::shared_ptr<Session> &session, const std:
   const auto state = priorities_[session->group];
   populate_priority(info, state);
   auto headers = priority_headers(profile.value("priority_policy", Json::object()), state);
-  headers.push_back({"Answer-Mode", session->policy.value("answer_mode", "Auto")});
+  // TS 24.379 clause 10.1.1.3.2 steps 7 and 8: the member's own Answer-Mode Indication (group_answer_mode).
+  if (const auto mode = group_answer_mode(*user, std::time(nullptr), session->policy.value("answer_mode", "Auto"));
+      !mode.empty())
+    headers.push_back({"Answer-Mode", mode});
   headers.push_back({"Contact", focus_contact(*session)});
   // TS 24.379 clauses 6.3.2.2.5.1 and 6.3.2.2.6.1, TS 24.380 clause 4.1.2.2: a member with a free pre-established
   // session is invited over it (Connect, or re-INVITE then Connect); otherwise on demand (clause 4.1.2.2 NOTE).

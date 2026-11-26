@@ -291,6 +291,14 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   ended by its BYE, the answers outstanding) creates a new call (TS 24.379 §10.1.1.4.2 steps 9 and 14); the new call
   invites the members still in the old one once they are out of it, or after 5 s, as a broadcast does for the calls it
   preempts.
+- **Group call answer mode.** The INVITE of a prearranged, broadcast, emergency, imminent peril or ad hoc group call
+  to a member (on demand, or the Connect or re-INVITE over a pre-established session) commences as the member's own
+  Answer-Mode Indication of its last poc-settings PUBLISH says (TS 24.379 §10.1.1.3.2 and §17.3.2.1.2 steps 7 and 8,
+  §6.3.2.2.5.2 step 8, §6.3.2.2.6.2 step 5), sent as an Answer-Mode header field. Only a member whose client has
+  published no service settings (an authorisation by REGISTER) gets the call policy's `answer_mode` (default `Auto`)
+  instead of the 480 with warning 146 of step 3; the local-policy automatic commencement of §17.3.2.1.2 step 7 ii is
+  not offered. A member served by a peer server gets no Answer-Mode: that server's terminating function adds its own
+  (§6.3.3.1.2 step 10).
 - **Broadcast group calls.** Group-broadcast and user-broadcast hierarchies are a project profile, because TS 24.379
   §4.12 defines no procedure for them.
 - **Ad hoc group calls.** End-to-end security (TS 24.379 §17.4.2.2 step 11, TS 24.281 §22.4.2.2) uses one of the
