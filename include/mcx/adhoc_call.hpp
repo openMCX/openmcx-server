@@ -5,7 +5,7 @@
 // Ad hoc group call admission: the authorisation of the request, the participant criteria and the participant list
 // modification.
 //
-// Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.484 V19.6.0 (Rel-19).
+// Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.484 V19.6.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
 #pragma once
 #include "mcx/warning.hpp"
 
@@ -18,6 +18,18 @@
 #include <vector>
 
 namespace mcx {
+//------------------------------------------------------------------------------
+// TS 33.180 clauses 9.4.1 and 9.4.2: "RTCP encryption is required between the MC UE and MCX Server"; floor (and
+// transmission) control between a client and the server is protected under the client's CSK. An ad hoc group has no
+// group document whose <protect-floor-control-signalling> (TS 24.481 clause 7.2.8) a prearranged group call follows,
+// so its floor control is protected as the server's keying configuration says (security.protect_floor, the same
+// setting its clients read), and only with the server's key management client (keyed). security: the server's
+// "security" block, or null.
+inline bool adhoc_floor_protected(const nlohmann::json &security, bool keyed) {
+  return keyed && security.is_object() && security.contains("protect_floor") &&
+         security.at("protect_floor").is_boolean() && security.at("protect_floor").get<bool>();
+}
+
 //------------------------------------------------------------------------------
 // TS 24.379 clause 17.3.2.1.1 step 9 and clause 17.4.2.2 steps 4 to 7: the outcome of ad hoc group call admission.
 //   service: server mcptt.adhoc_call  {"enabled": bool, "max_participants": N}

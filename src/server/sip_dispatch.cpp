@@ -1592,7 +1592,12 @@ bool McServer::find_group_session(const SipMessage &message, const McpttInfo &in
       return false;
     }
   } else if (auto existing = sessions_.find(info.request_uri); existing != sessions_.end()) {
-    session = existing->second;
+    // TS 24.379 clause 10.1.1.4.2 step 9: a call being released (every remaining dialog ended by this server) is not
+    // ongoing; the request creates a new session (step 14) instead of joining one that ends with its release.
+    if (!group_session_releasing(existing->second->dialogs, ended_here_))
+      session = existing->second;
+    else
+      event("group_call_being_released", {{"group_id", info.request_uri}, {"session_uri", existing->second->uri}});
   }
   return true;
 }
@@ -1973,7 +1978,10 @@ void McServer::answer_group_invite(const SipMessage &message, const User &user, 
     response.headers.push_back({"Warning", warning_value(warn(Warning::session_exists))});
   }
   // Do not publish a phantom session if media allocation or response creation fails.
-  if (creating) sessions_[session->group] = session;
+  if (creating) {
+    replace_released_session(session, user.id);
+    sessions_[session->group] = session;
+  }
   add_leg(leg);
   if (creating && !session->chat && session->awaiting_users.empty()) {
     auto start = [this, session, id = user.id] {

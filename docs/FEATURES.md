@@ -54,10 +54,10 @@ participating and controlling servers.
 | Call type | Supported | Reference |
 |---|---|---|
 | Prearranged group call | On-demand setup, explicit affiliation, floor-gated media, late entry, leave and rejoin, conference rosters, simultaneous groups, session refresh | TS 24.379 §10.1.1 |
-| Private call | Automatic, manual and forced commencement; decline, CANCEL and timeout; caller and called-party rulesets (107/124/125/126/143/144/145); call-back, transfer and forwarding; with or without floor control (an offer without `m=application`: both parties speak at once and only the clients end the call) | §11.1.1, §11.1.2, §11.1.7 |
+| Private call | Automatic, manual and forced commencement; decline, CANCEL and timeout; caller and called-party rulesets (107/124/125/126/143/144/145); call-back, transfer and forwarding (the target is told of a transferred or forwarded call by `<call-transfer-ind>` or `<call-forwarding-ind>`, and a forwarded manual call rings); with or without floor control (an offer without `m=application`: both parties speak at once and only the clients end the call) | §11.1.1, §11.1.2, §11.1.7 |
 | Broadcast group call | `broadcast-ind` fan-out, initiator-only transmission, receive-only Floor Deny cause 5, B-bit coding, release at the end of the transmission, group-broadcast and user-broadcast groups, override | §10.1.3, TS 24.380 §8.2.3.15 |
 | Chat group call | Join-based sessions with no fan-out, call-type checks (117/118), capacity (122/486), rosters, release on inactivity, implicit affiliation | §10.1.2 |
-| Ad hoc group call | Participant lists and criteria-based participants, generated ad hoc group identity, participant modification, rejoin (188), warnings 185–189 | §17 |
+| Ad hoc group call | Participant lists and criteria-based participants, generated ad hoc group identity, participant modification, rejoin (188), warnings 185–189; floor control under each user's CSK when the server's `security.protect_floor` is set (TS 33.180 §9.4.2) | §17 |
 | First-to-answer call | Several invitees ring, the first answer wins, the rest are cancelled or released as "not selected"; emergency variant with MEPP save and restore | §11.1.4 |
 | Remotely initiated call | One user asks another user's device to place a group or private call, with requester authorisation (157/158) and outcome reporting | §10.1.5, §11.1.7 |
 | Ambient listening call | Remote-init and local-init: no indication at the listened-to device, `recvonly`/`sendonly` offers, automatic answer, ruleset checks (154/107/144/127) | §11.1.6 |

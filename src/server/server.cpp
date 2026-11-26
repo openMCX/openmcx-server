@@ -114,7 +114,21 @@ void McServer::leg_disconnected(const std::shared_ptr<Leg> &leg, const std::shar
 // TS 24.379 clause 6.3.8.1 (or clauses 11.1.6.4.3 and 11.1.6.4.4 for an ambient listening call): remove the
 // departed leg, release its floor, and release the call when the initiator left or one participant is left.
 void McServer::release_departed_leg(const std::shared_ptr<Leg> &leg, const std::shared_ptr<Session> &session) {
-  if (!current_session(session) || !legs_.contains(leg->dialog)) return;
+  if (!legs_.contains(leg->dialog)) return;
+  if (const auto released = released_sessions_.find(session->uri);
+      released != released_sessions_.end() && released->second == session) {
+    // A call being released that a new call of its group replaced (replace_released_session): its legs only go.
+    legs_.erase(leg->dialog);
+    session->dialogs.erase(leg->dialog);
+    leg->audio.reset();
+    leg->floor.reset();
+    if (session->dialogs.empty()) {
+      released_sessions_.erase(released);
+      event("released_call_ended", {{"group_id", session->group}, {"session_uri", session->uri}});
+    }
+    return;
+  }
+  if (!current_session(session)) return;
   // Remove the departed leg before dispatching floor notices to survivors.
   legs_.erase(leg->dialog);
   session->dialogs.erase(leg->dialog);

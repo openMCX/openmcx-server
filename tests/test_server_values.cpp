@@ -6,16 +6,18 @@
 // field, percent-decoding of URI components, the outcome rule of an implicit affiliation and the configuration
 // management documents of a subscription's resource list; and the implicit floor request rules of the MCPTT server
 // (src/server/implicit_floor.hpp); the location sent with a call request to the controlling function
-// (src/server/talking_location.hpp).
+// (src/server/talking_location.hpp); whether a group call is still ongoing for a new request
+// (src/server/group_session.hpp).
 //
 // Specifications: RFC 3261, RFC 3986, RFC 5875, TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19),
 // TS 24.484 V19.6.0 (Rel-19).
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
+#include "group_session.hpp"
 #include "implicit_floor.hpp"
-#include "talking_location.hpp"
 #include "request_values.hpp"
+#include "talking_location.hpp"
 
 #include <cassert>
 #include <iostream>
@@ -148,6 +150,23 @@ static void Clause_6_3_2_1_3_TalkingLocation() {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clause 10.1.1.4.2 step 9: a group call whose remaining dialogs this server has all ended with its BYE is
+// being released and not ongoing: a new request for the group creates a new session (step 14) instead of joining
+// it. A call with one dialog not ended by the server is ongoing; a call without dialogs is gone. The members still
+// in the released call are waited for, the caller is not.
+static void Clause_10_1_1_4_2_GroupCallOngoing() {
+  const std::set<std::string> none;
+  assert(!group_session_releasing({"d1", "d2"}, none));
+  assert(!group_session_releasing({"d1", "d2"}, {"d1"}));
+  assert(group_session_releasing({"d1", "d2"}, {"d1", "d2", "other"}));
+  assert(group_session_releasing({"d2"}, {"d2"}));
+  assert(!group_session_releasing({}, {"d1"}));
+  assert(members_to_await({"alice", "bob", "carol"}, "alice") == (std::set<std::string>{"bob", "carol"}));
+  assert(members_to_await({"bob"}, "alice") == std::set<std::string>{"bob"});
+  assert(members_to_await({}, "alice").empty());
+}
+
+//------------------------------------------------------------------------------
 int main() {
   Section_20_19_Expires();
   Section_2_1_PercentDecoding();
@@ -157,6 +176,7 @@ int main() {
   Clause_14_3_6_McSsrc();
   Clause_6_3_5_2_2_ImplicitFloorOutcome();
   Clause_6_3_2_1_3_TalkingLocation();
+  Clause_10_1_1_4_2_GroupCallOngoing();
   std::cout << "server request values: all checks passed\n";
   return 0;
 }

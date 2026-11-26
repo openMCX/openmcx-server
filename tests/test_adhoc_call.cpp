@@ -5,7 +5,7 @@
 // Ad hoc group call: the resource list of invited users, the controlling function's admission checks with their
 // warnings, participant criteria and participant list modification entries.
 //
-// Specifications: TS 24.379 V19.7.0 (Rel-19).
+// Specifications: TS 24.379 V19.7.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
 #include "mcx/adhoc_call.hpp"
 #include "mcx/protocol.hpp"
 
@@ -129,5 +129,13 @@ int main() {
     check(written.find("mc_floor_ssrc") == std::string::npos && written.find("mc_queueing") != std::string::npos,
           "written answer without mc_floor_ssrc");
   }
+  // TS 33.180 clauses 9.4.1 and 9.4.2: ad hoc floor control is protected under the CSK as the server's keying
+  // configuration says, as its clients protect it; never without the key management client or with the setting off.
+  check(adhoc_floor_protected({{"protect_floor", true}}, true), "configured floor protection ignored");
+  check(!adhoc_floor_protected({{"protect_floor", true}}, false), "floor protected without the key client");
+  check(!adhoc_floor_protected({{"protect_floor", false}}, true), "floor protected though configured off");
+  check(!adhoc_floor_protected({{"protect_media", true}}, true), "absent protect_floor protected the floor");
+  check(!adhoc_floor_protected(nlohmann::json(), true), "no security block protected the floor");
+  check(!adhoc_floor_protected({{"protect_floor", "yes"}}, true), "non-boolean protect_floor protected the floor");
   std::cout << "ad hoc authorization and resource-list tests passed\n";
 }

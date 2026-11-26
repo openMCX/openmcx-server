@@ -687,7 +687,8 @@ then reads:
 - `common`: the common services' URLs and the server's client ID and secret; `issuer` (default: `idms`), the IdMS
   whose access tokens the server accepts, and `token_audience` (default: `client_id`), their audience.
 - `diameter_config`: MCPTT-2; required by the MCPTT server (`McpttServer` constructor), not used by MCVideo.
-- `security`: the KMS client (`KeyClient`). The XML protection is not configured here: `McServer::xml_protection` and
+- `security`: the KMS client (`KeyClient`); its `protect_floor` also protects the floor control of ad hoc group calls
+  under each user's CSK (`adhoc_floor_protected`; a prearranged group follows its group document). The XML protection is not configured here: `McServer::xml_protection` and
   `integrity_protection` follow `<signalling-protection>` of the service configuration document as the CMS's
   `/internal/service-config` gives it (an absent element enables it, TS 24.379 clauses 6.6.2.3.2 and 6.6.3.3.2), and
   server-to-server protection follows `<allow-signalling-protection>`; until the document is read nothing whose

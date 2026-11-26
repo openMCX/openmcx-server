@@ -492,16 +492,11 @@ McServer::make_private_session(const SipMessage &message, const User &user, cons
   session->members = {user.id};
   session->members.insert(session->members.end(), reachable.begin(), reachable.end());
 
-  // The requested commencement mode (TS 24.379 clause 11.1.1.3.1.1 step 18): an authorised Priv-Answer-Mode of
-  // "Auto" is passed on, any other Priv-Answer-Mode is not (step 18 a), and otherwise the Answer-Mode as received
-  // (step 18 d). A first-to-answer call always rings (clause 11.1.1.4.1 step 3).
-  const bool forced = answer_mode_value(request.priv_answer_mode) == "Auto";
-  if (first_to_answer)
-    session->answer_headers.push_back({"Priv-Answer-Mode", "Manual"});
-  else if (forced)
-    session->answer_headers.push_back({"Priv-Answer-Mode", "Auto"});
-  else if (!request.answer_mode.empty())
-    session->answer_headers.push_back({"Answer-Mode", request.answer_mode});
+  // The requested commencement mode (TS 24.379 clause 11.1.1.3.1.1 step 18, private_call_commencement_headers): a
+  // Priv-Answer-Mode "Manual" of a forwarded or transferred call stays a manual commencement.
+  session->answer_headers = private_call_commencement_headers(request, first_to_answer);
+  // TS 24.379 clause 6.3.3.1.2 step 11: the transfer and forwarding indications go on to the called user.
+  session->passed_service = private_call_passed_service(info.service);
   session->arbitrator = make_media_control(session->members, floor_options());
 
   // TS 24.379 clause 11.1.2.4.2 and TS 24.281 clause 10.2.3: an offer without a media plane control
@@ -711,6 +706,7 @@ void McServer::invite_private_target(const std::shared_ptr<Session> &session, co
   info.functional_alias = session->initiator_alias;
   if (session->called_alias.size()) info.called_functional_alias = session->called_alias;
   populate_priority(info, session->priority);
+  info.service.insert(session->passed_service.begin(), session->passed_service.end());
   if (session->transfer_announced) info.service["transfer-announced-ind"] = "true";
   auto headers = with_cached_answer_mode(session->answer_headers, *callee);
   for (const auto &header : priority_headers(cfg_.at(svc_.name), session->priority)) headers.push_back(header);

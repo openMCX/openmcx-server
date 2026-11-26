@@ -51,6 +51,7 @@
 #include "parts/program.hpp"
 #include "parts/served_users.hpp"
 #include "parts/settings_subscriptions.hpp"
+#include "group_session.hpp"
 #include "parts/task_queue.hpp"
 #include "request_values.hpp"
 
@@ -140,6 +141,9 @@ protected:
     // (the Replaces value of RFC 3891 passed on to the target).
     bool transfer_announced = false;
     std::string replaces_value, replaces_header;
+    // The caller's transfer and forwarding indications passed on to the called user (TS 24.379 clause 6.3.3.1.2
+    // step 11, private_call_passed_service).
+    std::map<std::string, std::string> passed_service;
     // Ambient listening call (TS 24.379 clause 11.1.6), also a private_call session:
     // the ambient listening type ("remote-init" or "local-init"), the listening
     // and listened-to MCPTT IDs, and once a release is triggered by the server
@@ -366,6 +370,10 @@ protected:
   std::map<std::string, User> users_;
   std::map<std::string, std::shared_ptr<Leg>> legs_;
   std::map<std::string, std::shared_ptr<Session>> sessions_;
+  // Group calls being released (every remaining dialog ended by this server's BYE) that a new call of the same group
+  // replaced in sessions_ (TS 24.379 clause 10.1.1.4.2 steps 9 and 14, group_session_releasing), by session URI, until
+  // their last leg is gone (release_departed_leg).
+  std::map<std::string, std::shared_ptr<Session>> released_sessions_;
   TaskQueue pending_;
   std::uint64_t last_save_ = 0;
   unsigned next_port_ = 0;
@@ -965,6 +973,9 @@ protected:
                                 std::optional<std::uint32_t> offered = std::nullopt);
 
   bool current_session(const std::shared_ptr<Session> &session) const;
+  // TS 24.379 clause 10.1.1.4.2 step 14: a new group call replaces the group's call being released in sessions_; it
+  // invites that call's remaining participants once they are out of it (resume_preempted_fanouts).
+  void replace_released_session(const std::shared_ptr<Session> &session, const std::string &caller);
 
   std::vector<std::shared_ptr<Leg>> session_legs(const Session &session) const;
 

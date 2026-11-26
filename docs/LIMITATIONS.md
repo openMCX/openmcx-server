@@ -257,10 +257,23 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 ### MCPTT
 
 - **Private calls.** The forwarding settings MESSAGE and warning 174 are not implemented;
-  forwarding is manual only.
+  forwarding is manual only. A Priv-Answer-Mode "Manual" (the commencement mode a forwarded or transferred call
+  carries on, TS 24.379 §11.1.1.2.1.1 steps 14A a) and 14C a)) is not passed on (§11.1.1.3.1.1 step 18 a)); without
+  an Answer-Mode the INVITE to the called user then has Answer-Mode "Manual" instead, so that the called user's own
+  automatic Answer-Mode Indication does not answer the call (§6.3.2.2.5.2 step 5). Of the caller's
+  application/vnd.3gpp.mcptt-info+xml (§6.3.3.1.2 step 11) the INVITE to the called user carries the transfer and
+  forwarding indications (`<call-transfer-ind>`, `<call-forwarding-ind>`, `<forwarding-sequence-number>` and the
+  forwarding details), not `<forwarding-other-list>`.
+- **Group call being released.** A request for a group whose call this server is releasing (every remaining dialog
+  ended by its BYE, the answers outstanding) creates a new call (TS 24.379 §10.1.1.4.2 steps 9 and 14); the new call
+  invites the members still in the old one once they are out of it, or after 5 s, as a broadcast does for the calls it
+  preempts.
 - **Broadcast group calls.** Group-broadcast and user-broadcast hierarchies are a project profile, because TS 24.379
   §4.12 defines no procedure for them.
-- **Ad hoc group calls.** End-to-end security is not implemented; the calls are clear (488). The participant lists
+- **Ad hoc group calls.** End-to-end security is not implemented: the media is clear (a protected offer is refused
+  with 488). Floor control is protected under each user's CSK (TS 33.180 §9.4.2) when the server's `security` block
+  sets `protect_floor` (the setting its clients read; an ad hoc group has no group document with
+  `<protect-floor-control-signalling>`), and a caller without a CSK is then refused with 488. The participant lists
   of an ad hoc group emergency alert (the total list and the users who have not acknowledged it, TS 24.379
   §6.3.3.1.24) are not sent.
 - **Functional aliases.** Activations do not expire, and the alias-to-alias call policy (warnings 171 and 172) is not
