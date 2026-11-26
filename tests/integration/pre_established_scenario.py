@@ -211,7 +211,8 @@ def main():
         wait('PE-04 the session stays, not in use', established, 10)
 
         # PE-10 the emergency state of a call client-a is in over its session, raised and cancelled by client-b.
-        if server_cfg.get('mcptt', {}).get('resource_priority'):
+        site = json.loads((generated / 'site.json').read_text())
+        if any(group.get('priority_policy') for group in site.get('groups', [])):
             notified = len(events('client-a', 'pre_session_priority_reinvite'))
             command('client-b', 'call')
             wait('PE-10 client-b\'s group call reaches the four clients', in_call(ROLES))
