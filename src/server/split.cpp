@@ -30,7 +30,7 @@ std::uint64_t McServer::PartsGlue::registration_refresh_ms() const {
 //------------------------------------------------------------------------------
 // Helper: every user known here.
 void McServer::PartsGlue::each_registration_user(const std::function<void(const PeerUser &)> &visit) {
-  for (const auto &[sip, user] : server_.users_) visit(peer_user(user));
+  for (const auto &[sip, user] : server_.users_) visit(server_.peer_user(user));
 }
 
 //------------------------------------------------------------------------------
@@ -59,14 +59,14 @@ std::optional<int> McServer::PartsGlue::registration_refusal(const SipMessage &m
 // Helper: the user with the public user identity.
 std::optional<PeerUser> McServer::PartsGlue::registration_user(const std::string &sip) {
   const auto found = server_.users_.find(sip);
-  return found == server_.users_.end() ? std::nullopt : std::optional(peer_user(found->second));
+  return found == server_.users_.end() ? std::nullopt : std::optional(server_.peer_user(found->second));
 }
 
 //------------------------------------------------------------------------------
 // Helper: the user with the MC service ID, live or not.
 std::optional<PeerUser> McServer::PartsGlue::registration_user_by_id(const std::string &id) {
   const auto *user = server_.by_id(id);
-  return user ? std::optional(peer_user(*user)) : std::nullopt;
+  return user ? std::optional(server_.peer_user(*user)) : std::nullopt;
 }
 
 //------------------------------------------------------------------------------
@@ -102,8 +102,6 @@ void McServer::PartsGlue::update_peer_user(const std::string &sip, const Affilia
   user.sip = sip;
   user.peer = peer;
   user.expires = std::time(nullptr) + static_cast<std::time_t>(expires_s);
-  user.subscription = "peer:" + peer;
-  user.subscription_expires = user.expires;
 }
 
 //------------------------------------------------------------------------------

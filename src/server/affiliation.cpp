@@ -236,15 +236,4 @@ void McServer::apply_affiliation(User &user, std::set<std::string> groups) {
   });
 }
 
-//------------------------------------------------------------------------------
-// TS 24.379 clause 9.2.2.2.5: the NOTIFY of the user's affiliation status to its subscription.
-void McServer::notify(User &user) {
-  // A peer's user gets affiliation notifications from its own server.
-  if (!user.peer.empty() || user.subscription.empty() || user.subscription_expires <= std::time(nullptr)) return;
-  // Clause 9.2.2.2.5 step 3d: the <p-id> only when a PUBLISH caused the notification (its handled p-id).
-  const auto affiliation = affiliation_status(svc_, user, std::exchange(user.handled_pid, std::string{}));
-  auto body = affiliation_xml(affiliation, true);
-  sip_.notify(user.subscription, "presence", "active;expires=3600", "application/pidf+xml", body);
-}
-
 } // namespace mcx

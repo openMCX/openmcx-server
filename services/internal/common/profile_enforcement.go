@@ -114,6 +114,8 @@ func applyProfile(user User, doc profileXML) User {
 	user.FunctionalAliasBinding = rights["allow-functional-alias-binding-with-group"]
 	user.LocationWhenTalking = rights["allow-location-info-when-talking"]
 	user.TriggerRemoteFloorRequest = rights["allow-trigger-remote-floor-request"]
+	user.RequestAffiliatedGroups = rights["allow-request-affiliated-groups"]
+	user.AffiliateOthers = rights["allow-request-to-affiliate-other-users"]
 	user.Groups, user.MaxAffiliations, user.RemoteGroupSelection = nil, 0, nil
 	if on := doc.OnNetwork; on != nil {
 		user.MaxAffiliations = on.MaxAffiliationsN2

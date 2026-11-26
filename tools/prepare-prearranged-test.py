@@ -1276,6 +1276,24 @@ def add_chat_group(fixture, source, protect=False):
 
 
 # ------------------------------------------------------------------------------
+def add_remote_affiliation(fixture):
+    """The affiliation of other users (TS 24.379 clauses 9.2.2.2.4 and 9.2.2.2.8, TS 24.281 likewise): client-a may
+    determine other users' affiliation status (<allow-request-affiliated-groups>, TS 24.484 table 8.3.2.7-24) and ask
+    them to affiliate or de-affiliate in negotiated mode (<allow-request-to-affiliate-other-users>, table 8.3.2.7-25),
+    for MCPTT and, where the user has an MCVideo section, MCVideo; the other users may not."""
+    site_file = fixture / 'generated/site.json'
+    site = json.loads(site_file.read_text())
+    authorised = json.loads((fixture / 'generated/client-a.json').read_text())['mcptt']['user_id']
+    for user in site['users']:
+        if user['mcptt_id'] != authorised:
+            continue
+        user.update(request_affiliated_groups=True, affiliate_others=True)
+        if isinstance(user.get('mcvideo'), dict):
+            user['mcvideo'].update(request_affiliated_groups=True, affiliate_others=True)
+    site_file.write_text(json.dumps(site, indent=2) + '\n')
+
+
+# ------------------------------------------------------------------------------
 def add_regroup_policy(fixture, source):
     """A preconfigured group and two constituent groups for a regroup (TS 24.379 clause 16).
 
@@ -2377,6 +2395,11 @@ def main():
         help='Add a preconfigured group and two constituent groups for regroup (TS 24.379 clause 16)',
     )
     parser.add_argument(
+        '--remote-affiliation',
+        action='store_true',
+        help='client-a may determine and change other users\' affiliation (TS 24.379 clauses 9.2.2.2.4, 9.2.2.2.8)',
+    )
+    parser.add_argument(
         '--chat', action='store_true', help='Add a four-member chat group (max 3 participants, 20 s inactivity)'
     )
     parser.add_argument(
@@ -2851,6 +2874,8 @@ def main():
         add_functional_aliases(fixture, source)
     if args.mcvideo:
         add_mcvideo_policy(fixture)
+    if args.remote_affiliation:
+        add_remote_affiliation(fixture)
     if args.mcdata:
         add_mcdata_policy(fixture, source)
         add_group_subscription(fixture)

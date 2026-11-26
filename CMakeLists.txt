@@ -194,6 +194,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
     # The service parts shared by the MCPTT and MCVideo core and the MCData server:
     # each reaches its server through a small host interface, called per request.
     add_library(mcx_service_parts STATIC
+        src/server/parts/affiliation_subscriptions.cpp
         src/server/parts/alias_registry.cpp
         src/server/parts/common_services.cpp
         src/server/parts/location_service.cpp
@@ -212,6 +213,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
     add_library(mcx_server_core STATIC
         src/server/adhoc.cpp
         src/server/affiliation.cpp
+        src/server/affiliation_requests.cpp
         src/server/ambient.cpp
         src/server/configuration.cpp
         src/server/functional_alias.cpp
@@ -306,7 +308,7 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/sip/sip_engine.cpp")
         # reSIProcate looks for TLS certificates in $HOME/.sipCerts and logs when it is missing.
         set_tests_properties(sip_tls sip_tcp PROPERTIES TIMEOUT 45 RUN_SERIAL TRUE ENVIRONMENT "HOME=${CMAKE_CURRENT_BINARY_DIR}")
         # The service profiles (include/mcx/service.hpp) and the service parts (src/server/parts).
-        foreach(component service location_service peers alias_registry served_users settings_subscriptions runtime_parts)
+        foreach(component service location_service peers alias_registry served_users settings_subscriptions affiliation_subscriptions runtime_parts)
             add_executable(test_${component} tests/test_${component}.cpp)
             target_link_libraries(test_${component} PRIVATE mcx_service_parts)
             add_test(NAME ${component} COMMAND test_${component})

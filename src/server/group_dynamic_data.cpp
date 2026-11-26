@@ -350,8 +350,22 @@ void McServer::group_dynamic_data_tick(std::uint64_t now) {
 // answered here as the controlling function would (clause 8.2.2.3.9 step 3), a malformed one with 400.
 SipResponse McServer::relay_gdd_subscribe(const SipMessage &message, const User &user, const std::string &group,
                                           const std::string &owner) {
+  return relay_presence_subscribe(message, user.id, group, owner, std::nullopt, "group_dynamic_data_relayed");
+}
+
+//------------------------------------------------------------------------------
+// TS 24.281 clause 8.2.2.2.16 step 4 and TS 24.379 clause 9.2.2.2.10 step 3: the SUBSCRIBE towards the server of the
+// target (a group's controlling function, or another user's terminating participating function), with this
+// function's PSI in P-Asserted-Identity, the service information naming the target and the originating user, and the
+// other signalling elements of the request; its final response, NOTIFYs and their responses are relayed (gdd_relays_).
+SipResponse McServer::relay_presence_subscribe(const SipMessage &message, const std::string &originator,
+                                               const std::string &target, const std::string &owner,
+                                               std::optional<std::uint64_t> default_expires,
+                                               const char *relayed_event) {
   SipResponse response;
-  const auto expires_value = expires_of(message);
+  auto expires_value = expires_of(message);
+  const auto default_value = default_expires ? std::to_string(*default_expires) : std::string{};
+  if (!expires_value && default_expires) expires_value = default_value;
   const auto expires = classify_gdd_expires(expires_value);
   if (expires == GddExpires::malformed || !expires_value) {
     response.status_code = expires_value ? 400 : 423;
@@ -361,12 +375,12 @@ SipResponse McServer::relay_gdd_subscribe(const SipMessage &message, const User 
   const auto peer = peers_.find(owner);
   if (peer == peers_.end()) {
     response.status_code = 403;
-    event("group_dynamic_data_subscription_rejected", {{"user_id", user.id}, {"reason", "unknown peer " + owner}});
+    event("presence_relay_rejected", {{"user_id", originator}, {"reason", "unknown peer " + owner}});
     return response;
   }
   McpttInfo info;
-  info.request_uri = group;
-  info.calling_user = user.id;
+  info.request_uri = target;
+  info.calling_user = originator;
   std::vector<BodyPart> parts{{svc_.info_mime, service_info_xml_(info)}};
   for (const auto &part : parts_of(message))
     if (part.content_type != svc_.info_mime) parts.push_back(part);
@@ -408,7 +422,7 @@ SipResponse McServer::relay_gdd_subscribe(const SipMessage &message, const User 
       type, body);
   gdd_relays_[relay->client_dialog] = relay;
   gdd_relays_[relay->upstream_dialog] = relay;
-  event("group_dynamic_data_relayed", {{"user_id", user.id}, {"group_id", group}, {"server", owner}});
+  event(relayed_event, {{"user_id", originator}, {"target", target}, {"server", owner}});
   response.deferred = true;
   return response;
 }
