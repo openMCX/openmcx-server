@@ -350,7 +350,8 @@ LABS = [
     lab(
         'adhoc-protected',
         'single',
-        ['--adhoc', '--protected', '--key-parameters-iei', '0x79'],
+        # The groups of call-types (--broadcast's user-broadcast group is AH-18's other group).
+        ['--private-call', '--broadcast', '--chat', '--adhoc', '--protected', '--key-parameters-iei', '0x79'],
         ['adhoc_call_scenario'],
         ['mcptt', 'protected'],
     ),

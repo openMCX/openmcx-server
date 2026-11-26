@@ -580,7 +580,7 @@ def service_configuration(fixture, documents_only=False):
 
 
 # ------------------------------------------------------------------------------
-def add_broadcast_hierarchy(fixture, source):
+def add_broadcast_hierarchy(fixture, source, protect=False):
     """Add a group-broadcast group over both prearranged groups (initiator a) and a
     user-broadcast group of b, c and d (TS 23.379 clause 10.6.2.5.2; project profile).
     client-c may start and cancel emergency calls on the second group, whose
@@ -603,8 +603,8 @@ def add_broadcast_hierarchy(fixture, source):
             type='group-broadcast',
             members=[ids['client-a']],
             subordinate_groups=[first, second],
-            protect_media=False,
-            protect_floor=False,
+            protect_media=protect,
+            protect_floor=protect,
         )
     )
     site['groups'].append(
@@ -612,8 +612,8 @@ def add_broadcast_hierarchy(fixture, source):
             id=users,
             type='user-broadcast',
             members=[ids['client-b'], ids['client-c'], ids['client-d']],
-            protect_media=False,
-            protect_floor=False,
+            protect_media=protect,
+            protect_floor=protect,
         )
     )
     resources = dict(normal='mcpttp.0', imminent='mcpttp.10', emergency='mcpttp.15')
@@ -2965,7 +2965,9 @@ def main():
             json.loads((fixture / 'generated/client-d.json').read_text())['mcptt']['user_id']
         ]
         server_file.write_text(json.dumps(server, indent=2) + '\n')
-        add_broadcast_hierarchy(fixture, source)
+        # On a protected lab its groups are protected as the lab's others: a client affiliates to a group only once it
+        # holds the group's GMK (TS 33.180 clause 5.7), which the GMS issues for protected groups only.
+        add_broadcast_hierarchy(fixture, source, protect=args.protected and not args.xml_only)
     if args.multi_talker:
         add_multi_talker(fixture, source, args.multi_talker)
     if args.group_management:

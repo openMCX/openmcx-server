@@ -293,12 +293,17 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   preempts.
 - **Broadcast group calls.** Group-broadcast and user-broadcast hierarchies are a project profile, because TS 24.379
   §4.12 defines no procedure for them.
-- **Ad hoc group calls.** End-to-end security is not implemented: the media is clear (a protected offer is refused
-  with 488). Floor control is protected under each user's CSK (TS 33.180 §9.4.2) when the server's `security` block
-  sets `protect_floor` (the setting its clients read; an ad hoc group has no group document with
-  `<protect-floor-control-signalling>`), and a caller without a CSK is then refused with 488. The participant lists
-  of an ad hoc group emergency alert (the total list and the users who have not acknowledged it, TS 24.379
-  §6.3.3.1.24) are not sent.
+- **Ad hoc group calls.** End-to-end security (TS 24.379 §17.4.2.2 step 11, TS 24.281 §22.4.2.2) uses one of the
+  preconfigured groups configured in `mcptt.adhoc_call.security_groups` (`mcvideo.adhoc_call.security_groups`), the
+  local policy of step 11: the first one with protected media that lists the caller, one listing every invitee
+  preferred. It is not derived from the participant criteria, and an invitee that is not a member of it is not
+  invited (it holds no GMK of the group); the server does not check that the group carries
+  `<preconfigured-group-use-only>`. Not done: end-to-end security for ad hoc calls whose participants are on
+  separate servers was not exercised (`call-types-split` stays clear). Floor control is protected under each user's
+  CSK (TS 33.180 §9.4.2) when the server's `security` block sets `protect_floor` (the setting its clients read; an ad
+  hoc group has no group document with `<protect-floor-control-signalling>`), and a caller without a CSK is then
+  refused with 488. The participant lists of an ad hoc group emergency alert (the total list and the users who have
+  not acknowledged it, TS 24.379 §6.3.3.1.24) are not sent.
 - **Functional aliases.** Activations do not expire, and the alias-to-alias call policy (warnings 171 and 172) is not
   implemented. On separate participating and controlling servers, a user can follow its own aliases but not the users
   of an alias (TS 24.379 clause 9A.2.2.2.10). The status lists only the aliases being changed, activated or offered for
@@ -408,7 +413,7 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   the Android app and the dispatcher position have one.
 - **Android app.** A debug build, run on real phones over Wi-Fi (tutorials 1 and 2), not yet over a 4G or 5G radio.
   Not supported: MCPTT chat calls and the conference subscription, first-to-answer calls, ambient listening, call-back,
-  transfer and forwarding, location-based functional alias activation, protected media in ad hoc group calls,
+  transfer and forwarding, location-based functional alias activation,
   MCData over MSRP, IP connectivity, enhanced status and the message store. Supported, as in the Linux client: MCPTT
   and MCVideo media and transmission control protection (PCK, GMK, CSK), XML signalling protection (confidentiality
   and integrity under the CSK of each service, enabled by the service configuration document; an absent element

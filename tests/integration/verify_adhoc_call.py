@@ -283,20 +283,24 @@ def main():
             violations.append(f'Floor Indicator {indicator:#06x}: not one of the A-bit and the D- or E-bit')
         if subtype == 2 and 5 in fields and struct.unpack('!H', fields[5][:2])[0] != 1 and not broadcast:
             violations.append('Taken without permission to request')
-    check(
-        'floor messages carry the A-bit or the D- or E-bit, the B-bit only in a broadcast call, and Floor Taken '
-        'permits requests except in a broadcast call',
-        bool(floor) and not violations,
-    )
-    reject_causes, cause_violations = causes(args.capture)
-    check(
-        'every Floor Deny and Floor Revoke carries a Reject Cause defined for it (TS 24.380 8.2.6.2, 8.2.10.2)',
-        not cause_violations,
-    )
-    check(
-        'a floor request while another participant has permission is denied with cause #1 (TS 24.380 6.3.5.4.4)',
-        reject_causes[('Deny', 1)] > 0,
-    )
+    # On a protected lab the floor control is SRTCP under each user's CSK (TS 33.180 clause 9.4.2): its fields are not
+    # on the wire, so the floor checks are the scenario's (from the clients' status).
+    reject_causes, cause_violations = collections.Counter(), []
+    if not args.protected:
+        check(
+            'floor messages carry the A-bit or the D- or E-bit, the B-bit only in a broadcast call, and Floor Taken '
+            'permits requests except in a broadcast call',
+            bool(floor) and not violations,
+        )
+        reject_causes, cause_violations = causes(args.capture)
+        check(
+            'every Floor Deny and Floor Revoke carries a Reject Cause defined for it (TS 24.380 8.2.6.2, 8.2.10.2)',
+            not cause_violations,
+        )
+        check(
+            'a floor request while another participant has permission is denied with cause #1 (TS 24.380 6.3.5.4.4)',
+            reject_causes[('Deny', 1)] > 0,
+        )
 
     # Priority ad hoc calls (TS 24.379 clause 17.4.2.1.1 steps 6 and 7): invitees learn the state with
     # Resource-Priority.
