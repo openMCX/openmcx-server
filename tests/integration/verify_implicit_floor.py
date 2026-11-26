@@ -14,8 +14,10 @@ the a=fmtp line of the "m=application" floor control channel) is answered:
   - never with a 488 for carrying it (TS 24.379 clause 6.4: "regarded as received without an implicit floor
     request").
 No 200 (OK) carries "mc_implicit_request" or "mc_ssrc" for an offer without "mc_implicit_request" (TS 24.380 clause
-14.3.1), no re-INVITE carries "mc_implicit_request" in this scenario (TS 24.380 clause 14.5: it has meaning only for
-the upgrade to emergency, not used here), and no rejoin INVITE (to a session identity) carries it (TS 24.380 clause
+14.3.1), a re-INVITE carries "mc_implicit_request" only for an upgrade to an emergency or imminent peril call (TS
+24.380 clause 14.5: "only defined for a subsequent SDP offer when upgrading from normal to an emergency call"), which
+the 200 (OK) echoes with "mc_ssrc" (TS 24.379 clause 6.4, TS 24.380 clauses 14.3.5 and 14.3.6), no answer to another
+re-INVITE carries it (clause 14.3.1), and no rejoin INVITE (to a session identity) carries it (TS 24.380 clause
 6.2.1 item 2). Floor control (TS 24.380 clause 6.3.5.2.2 items 1 and 3a, clause 6.2.4.2.2 step 4): every client
 whose implicit floor request was accepted into a call without a talker receives a Floor Granted on its floor
 channel whose Audio SSRC field is the "mc_ssrc", before it sends any Floor Request in that call.
@@ -194,12 +196,30 @@ def main():
             for m in plain
         ),
     )
+    upgrades = [m for m in reinvites if 'mc_implicit_request' in floor_fmtp(m)]
     check(
-        'no re-INVITE offer or answer carries mc_implicit_request (TS 24.380 clause 14.5)',
+        'a re-INVITE offers mc_implicit_request only to upgrade to an emergency or imminent peril call '
+        '(TS 24.380 clause 14.5)',
+        all('true' in (m['info'].get('emergency-ind'), m['info'].get('imminentperil-ind')) for m in upgrades),
+    )
+    check(
+        'the 200 (OK) to that upgrade echoes mc_implicit_request with the offer a=ssrc in mc_ssrc '
+        '(TS 24.379 clause 6.4, TS 24.380 clauses 14.3.5 and 14.3.6)',
+        bool(upgrades)
+        and all(
+            (r := final(m)) is not None
+            and r['status'] == 200
+            and 'mc_implicit_request' in floor_fmtp(r)
+            and (offer_ssrc(m) is None or floor_fmtp(r).get('mc_ssrc') == str(offer_ssrc(m)))
+            for m in upgrades
+        ),
+    )
+    check(
+        'no answer to another re-INVITE carries mc_implicit_request (TS 24.380 clause 14.3.1)',
         all(
-            'mc_implicit_request' not in floor_fmtp(m)
-            and ((r := final(m)) is None or 'mc_implicit_request' not in floor_fmtp(r))
+            (r := final(m)) is None or 'mc_implicit_request' not in floor_fmtp(r)
             for m in reinvites
+            if m not in upgrades
         ),
     )
     check(

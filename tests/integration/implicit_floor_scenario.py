@@ -270,6 +270,8 @@ def main():
         wait('IF-10 client-b talks', lambda: status('client-b').get('talking'), 10)
         before = received()
         command('client-a', f'emergency on implicit={SPEECH}')
+        # The outcome is read once the upgrade is answered (an earlier call's "accepted" is still in the status).
+        wait('IF-10 the upgrade is answered', lambda: status('client-a').get('priority') == 'emergency')
         wait('IF-10 the upgrade accepts the implicit floor request', implicit('client-a', 'accepted'))
         wait('IF-10 the upgraded participant is granted', talks('client-a', ['client-c'], before), 20)
         wait('IF-10 client-b\'s burst is pre-empted', lambda: not status('client-b').get('talking'))
