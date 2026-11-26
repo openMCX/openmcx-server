@@ -35,7 +35,7 @@ mcx-client --config FILE --command 'mcvideo-adhoc-alert <criteria>|cancel'
 tools/regress.py --images <tag> --client-image openmcx-client:<tag> --select =mcvideo-adhoc
 ```
 
-The scenario makes 28 checks. Over TLS the wire checks (MV-AH-05) are skipped.
+The scenario makes 37 checks on a clear lab and 42 on a protected one (`mcvideo-adhoc-protected`, with MV-AH-E2E). Over TLS the wire checks (MV-AH-05, and those of MV-AH-E2E) are skipped.
 
 ## Tests
 
@@ -47,6 +47,7 @@ The scenario makes 28 checks. Over TLS the wire checks (MV-AH-05) are skipped.
 | MV-AH-04 | client-d is refused with 403 `185 user is not authorised to initiate the adhoc group call` (TS 24.281 clause 22.3.2.1.1 step 9; the table omits "is") |
 | MV-AH-05 | Captured at `mcvideo-server`: ad hoc INVITEs to the MCVideo PSI; the called MCVideo IDs in resource-lists; the criteria in `<call-participants-criteria>`; the 200 (OK) naming the ad hoc group in `<mcvideo-calling-group-id>` |
 | MV-AH-06 | Ad hoc group emergency alert (§12.1A). client-a's alert to the users affiliated to the group is answered 200 with its ad hoc group, confirmed to client-a with `<adhoc-alert-ind-rcvd>` and received by client-b, client-c and client-d; its cancellation clears it everywhere; client-b, without `<allow-activate-adhoc-group-emergency-alert>`, sends nothing (its client refuses, TS 24.379 §12.1A.1.1 steps 1-2), and the same MESSAGE sent raw as client-b (`refusal_probe.py`) is refused with 403 (§12.1A.3.1 step 3a) and reaches nobody. On the wire the alert carries `<adhoc-alert-ind>true`, the criteria and an MCVideo location body |
+| MV-AH-E2E | On a protected lab (`mcvideo-adhoc-protected`: `--protected`, the preconfigured group `sip:adhoc-security@<domain>` of `add_adhoc_security` in `mcvideo.adhoc_call.security_groups`): the clients of the listed-users call (MV-AH-01) and of the criteria call (MV-AH-03) key the video with the GMK of the preconfigured group named in `<preconfigured-group-id>` (status `mcvideo_call_protected`, `mcvideo_security_group`; TS 24.281 §22.2.2.1.1 2xx step 3, §22.2.2.1.2 step 8, TS 33.180 §5.7), and the server's session names that group (§22.4.2.2 step 11); MV-AH-01's pictures are then decoded under that GMK. On the wire: the ad hoc INVITE carries `<end-to-end-security>true` with RTP/SAVP (§22.2.2.1.1 step 10 d) iii)), the 200 (OK) and the invitations name the group in `<preconfigured-group-id>`. On a clear lab the calls are checked to be in the clear |
 
 ## Coverage gaps
 
@@ -57,5 +58,5 @@ The scenario makes 28 checks. Over TLS the wire checks (MV-AH-05) are skipped.
 | Priority | Emergency and imminent peril ad hoc calls are not exercised for MCVideo. For the ad hoc emergency alert (§12.1A), participant modification (12.1A.3.4), the late alert to a newly matching user and the not-acknowledged list are not exercised |
 | Participant limit | Warning 189 is exercised by the MCPTT ad hoc tests on the shared code |
 | Pre-established sessions | §22.2.2.2 and the related clauses: not in present edition |
-| Security | End-to-end security for ad hoc calls is not implemented; the calls are clear |
+| Security | End-to-end protection is checked on the `mcvideo-adhoc-protected` lab only (MV-AH-E2E); a protected call's leave and re-join, and an invitee outside the preconfigured group (refused 488 by the controlling function), are not exercised |
 | Alert members of the call | §22.4.3.2 step 2A, §22.4.4.1.1 step 12A, §22.4.7.1.1 step 4A run in the server code shared with MCPTT (`src/server/adhoc.cpp`), checked by the MCPTT adhoc lab (AH-18); no MCVideo lab, as the Linux client has no MCVideo call on an alert's ad hoc group |

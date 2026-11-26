@@ -783,7 +783,8 @@ def add_adhoc_security(fixture):
     (TS 24.379 clauses 17.1 and 17.4.2.2 step 11, TS 24.281 clause 22.4.2.2; TS 33.180 clause 5.7): a copy of the lab's
     first group (its MCVideo section too), preconfigured use only, media and floor protected, all four users members,
     so that the GMS issues them its GMK. The controlling servers choose it (adhoc_call.security_groups); the clients
-    subscribe to its GMK from the start (mcptt.adhoc_security_groups, as the Linux client reads it)."""
+    subscribe to its GMK from the start (mcptt.adhoc_security_groups, as the Linux client reads it; its MCVideo service
+    takes the same groups while mcvideo.adhoc_security_groups is absent)."""
     site_file = fixture / 'generated/site.json'
     site = json.loads(site_file.read_text())
     first = site['groups'][0]
