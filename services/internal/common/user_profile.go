@@ -409,6 +409,8 @@ func profileRights(user User) []profileRight {
 	mcptt(user.FunctionalAliasBinding, "allow-functional-alias-binding-with-group")
 	mcptt(user.LocationWhenTalking, "allow-location-info-when-talking")
 	mcptt(user.TriggerRemoteFloorRequest, "allow-trigger-remote-floor-request")
+	mcptt(user.RequestAffiliatedGroups, "allow-request-affiliated-groups")
+	mcptt(user.AffiliateOthers, "allow-request-to-affiliate-other-users")
 	if mcdataPolicy := user.MCData; mcdataPolicy != nil {
 		mcdata := add(mcdataProfileNS)
 		mcdata(mcdataPolicy.TransmitData, "allow-transmit-data")

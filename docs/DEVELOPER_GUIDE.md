@@ -304,7 +304,8 @@ Before binding, an ended authorisation of the user's (or of the public user iden
 
 A poc-settings `PUBLISH` with `Expires: 0` is the log-off of clause 7.3.5 (`McServer::service_log_off`): RFC 3903
 first (the `SIP-If-Match` of the user's publication, else 412; neither entity tag nor body, 400), then
-`remove_binding` ends the affiliations (the affiliation status subscription is terminated), functional aliases, calls
+`remove_binding` ends the affiliations (the subscriptions to the user's affiliation status are terminated, and those it
+holds to other users'), functional aliases, calls
 and relays, withdraws the user from its controllers and removes the binding, and the answer is 200 with `Expires: 0`
 and the entity tag. `expire_users` calls `remove_binding` when a service authorisation ends.
 
@@ -321,8 +322,16 @@ TS 24.379 clause 9.2.2.2.3. `McServer::affiliation_publish` (`src/server/sip_dis
 3. The PIDF is parsed (`parse_affiliation`, `src/protocol/affiliation.cpp`); each group is admitted when the user is a
    member of the group document (`member(group_profile(group), ...)`), up to the `<MaxAffiliationsN2>` limit
    (`affiliation_limit`). The PUBLISH is answered 200 whatever the outcome per group (step 8).
-4. `apply_affiliation` (`src/server/affiliation.cpp`) updates the user, notifies its affiliation status subscription
-   (`notify`) and late entry of running calls; the events are `affiliated` and `deaffiliated`.
+4. `apply_affiliation` (`src/server/affiliation.cpp`) updates the user, notifies every subscription to its affiliation
+   status (`notify`) and late entry of running calls; the events are `affiliated` and `deaffiliated`.
+
+The subscriptions to a user's affiliation status (clauses 9.2.2.2.4 and 9.2.2.2.5) are kept by dialog in
+`affiliation_subscriptions_` (`src/server/parts/affiliation_subscriptions.hpp`): a user has as many as are made, its
+own clients' and those of users whose profile grants `<allow-request-affiliated-groups>` or
+`<allow-request-to-affiliate-other-users>`; a subscription to a user served by another server goes on to it (clause
+9.2.2.2.10). The affiliation status change request in negotiated mode (a MESSAGE with the annex F.4 affiliation
+command, clause 9.2.1.4) goes to the target's client after the check of clause 9.2.2.2.8, or to the server serving the
+target (`src/server/affiliation_requests.cpp`).
 
 Implicit affiliation (chat, emergency, alerts; TS 24.379 clauses 9.2.2.3.6 and 9.2.2.3.7) uses the
 `ImplicitAffiliation` guard in `server.hpp`: it removes the affiliation again when the request finally fails
@@ -687,7 +696,8 @@ then reads:
 - `common`: the common services' URLs and the server's client ID and secret; `issuer` (default: `idms`), the IdMS
   whose access tokens the server accepts, and `token_audience` (default: `client_id`), their audience.
 - `diameter_config`: MCPTT-2; required by the MCPTT server (`McpttServer` constructor), not used by MCVideo.
-- `security`: the KMS client (`KeyClient`). The XML protection is not configured here: `McServer::xml_protection` and
+- `security`: the KMS client (`KeyClient`); its `protect_floor` also protects the floor control of ad hoc group calls
+  under each user's CSK (`adhoc_floor_protected`; a prearranged group follows its group document). The XML protection is not configured here: `McServer::xml_protection` and
   `integrity_protection` follow `<signalling-protection>` of the service configuration document as the CMS's
   `/internal/service-config` gives it (an absent element enables it, TS 24.379 clauses 6.6.2.3.2 and 6.6.3.3.2), and
   server-to-server protection follows `<allow-signalling-protection>`; until the document is read nothing whose

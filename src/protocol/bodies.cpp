@@ -72,6 +72,33 @@ std::vector<BodyPart> parse_sip_fragment_parts(std::string_view message) {
 }
 
 //------------------------------------------------------------------------------
+// RFC 3420: the value of a header field of a SIP message fragment (the client's REGISTER in the message/sip body of a
+// third-party REGISTER, TS 24.229 clause 5.4.1.7), or empty.
+std::string sip_fragment_header(std::string_view fragment, std::string_view name) {
+  const auto head = fragment.substr(0, fragment.find("\r\n\r\n"));
+  std::size_t at = 0;
+  while (at < head.size()) {
+    const auto end = std::min(head.find("\r\n", at), head.size());
+    const auto line = head.substr(at, end - at);
+    const auto colon = line.find(':');
+    if (colon != std::string_view::npos) {
+      auto field = line.substr(0, colon);
+      while (!field.empty() && field.back() == ' ') field.remove_suffix(1);
+      if (field.size() == name.size() &&
+          std::equal(field.begin(), field.end(), name.begin(), [](char one, char two) {
+            return std::tolower(static_cast<unsigned char>(one)) == std::tolower(static_cast<unsigned char>(two));
+          })) {
+        auto value = line.substr(colon + 1);
+        while (!value.empty() && value.front() == ' ') value.remove_prefix(1);
+        return std::string(value);
+      }
+    }
+    at = end + 2;
+  }
+  return {};
+}
+
+//------------------------------------------------------------------------------
 // RFC 2046 section 5.1.1 (with RFC 2045 section 5.1 quoting): the "boundary" parameter of a multipart Content-Type,
 // without its quotes; a value that opens a quote without closing it is refused.
 std::string multipart_boundary(std::string_view type) {

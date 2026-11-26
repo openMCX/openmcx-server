@@ -1944,6 +1944,32 @@ int main() {
     check(compare_reginfo_version("9", "10") < 0 && compare_reginfo_version("10", "9") > 0 &&
               compare_reginfo_version("4294967296", "4294967296") == 0,
           "reginfo version order");
+    // TS 24.229 clause 5.4.1.7: a network-initiated deregistration (third-party REGISTER, Expires 0) names the
+    // registrations it ends by the callid of the terminated contacts of the reg event document in its message/sip
+    // body. The binding of a newer registration (another Call-ID: the UE registered again on a new flow before the
+    // server got the deregistration) stays; a deregistration that names none (the UE's own REGISTER) ends any.
+    const std::string network =
+        "REGISTER sip:mcx.test SIP/2.0\r\nFrom: <sip:bob@mcx.test>\r\nTo: <sip:bob@mcx.test>\r\nCall-ID: pub-1\r\n"
+        "Contact: *\r\nExpires: 0\r\nContent-Type: application/reginfo+xml\r\n\r\n"
+        "<?xml version=\"1.0\"?><reginfo xmlns=\"urn:ietf:params:xml:ns:reginfo\" version=\"0\" state=\"full\">"
+        "<registration aor=\"sip:bob@mcx.test\" id=\"r1\" state=\"terminated\"><contact id=\"c1\" state=\"terminated\" "
+        "event=\"deactivated\" callid=\"old-flow@10.0.0.2\" cseq=\"4\"><uri>sip:bob@10.0.0.2:40001;ob</uri></contact>"
+        "</registration></reginfo>";
+    const auto ended = deregistered_call_ids(network);
+    check(ended.size() == 1 && ended.front() == "old-flow@10.0.0.2", "deregistration names the ended registration");
+    check(deregistration_ends_binding(ended, "old-flow@10.0.0.2"), "deregistration ends its own binding");
+    check(!deregistration_ends_binding(ended, "new-flow@10.0.0.2"), "deregistration keeps a newer binding");
+    check(deregistration_ends_binding(ended, ""), "deregistration ends a binding of unknown registration");
+    const std::string user_initiated = "REGISTER sip:mcx.test SIP/2.0\r\nFrom: <sip:bob@mcx.test>\r\n"
+                                       "To: <sip:bob@mcx.test>\r\nCall-ID: new-flow@10.0.0.2\r\nContact: *\r\n"
+                                       "Expires: 0\r\n\r\n";
+    check(deregistered_call_ids(user_initiated).empty() &&
+              deregistration_ends_binding(deregistered_call_ids(user_initiated), "new-flow@10.0.0.2"),
+          "a user-initiated deregistration ends the binding");
+    check(deregistered_call_ids("not a fragment").empty(), "an unreadable fragment names no registration");
+    check(sip_fragment_header(user_initiated, "call-id") == "new-flow@10.0.0.2" &&
+              sip_fragment_header(user_initiated, "Resource-Share").empty(),
+          "fragment header field");
     check(!reginfo_version_gap("2", "3") && reginfo_version_gap("2", "4") && !reginfo_version_gap("99", "100") &&
               reginfo_version_gap("99", "101") && !reginfo_version_gap("18446744073709551615", "18446744073709551616"),
           "reginfo version gap");

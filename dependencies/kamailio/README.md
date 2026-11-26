@@ -1,7 +1,7 @@
 # Kamailio patches
 
 The SIP core and the P-CSCF run Kamailio 6.1.4 ([source](https://github.com/kamailio/kamailio/tree/6.1.4), archive
-SHA-256 `d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6`, dependencies/lock.json) with eight changes,
+SHA-256 `d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6`, dependencies/lock.json) with ten changes,
 applied by docker/Dockerfile.kamailio after each is checked against its SHA-256:
 
 - [0001-ims_auth-local-vectors-and-AKAv2-SHA-256.patch](0001-ims_auth-local-vectors-and-AKAv2-SHA-256.patch),
@@ -65,3 +65,25 @@ The image carries the source archive and the patches in /usr/src.
   (TS 24.229 clause 5.4.1.6): only the contacts that identity registered (the "impi" attribute the SIP core stores with
   each contact) are shortened and get the event "shortened" (items e) and f)); the other contacts of the AOR stay
   "active".
+- [0009-presence-reginfo-no-ended-registration-in-a-new-subscription.patch](0009-presence-reginfo-no-ended-registration-in-a-new-subscription.patch),
+  SHA-256 `4f538c7169f468dafdbe1a5b0dcabcb0a2cbeedbad50f541e76dfb5f9f2ae084`: the first NOTIFY of a new reg event subscription has the
+  current registration state. Before, a user who registered again after a "rejected" deregistration got the old
+  binding, terminated with the event "rejected", in that NOTIFY, and the NOTIFY ended the new subscription. The UE's
+  SUBSCRIBE follows the 200 (OK) to the REGISTER at once, and the presence module answered pua_reginfo's PUBLISH of the
+  new contact and sent its NOTIFYs before committing it, so the SUBSCRIBE read the stored terminated document. Now the
+  presence module commits a publication before its 200 (OK) and its NOTIFYs, so a subscription either gets the
+  NOTIFY of the publication or reads it. presence_reginfo builds the first document sent to a subscriber, and the
+  document when no presentity is stored, from the registrar's current contacts (pua_reginfo's new
+  reginfo_current_body, bind_pua_reginfo; parameter usrloc_domain, default "location"). The registrar saves the
+  contact before it answers the REGISTER, so the first NOTIFY has the new contact even before pua_reginfo's PUBLISH is
+  stored (TS 24.229 clause 5.4.2.1.2, full state); a final document is kept as it is. Once a final PUBLISH (every registration terminated, patch 0004) has been
+  notified, its presentity is removed (RFC 3680 section 4.7.1: from "terminated" the registration "immediately
+  transitions back to the init state"). reginfo.deregister publishes one document for all the contacts it removes:
+  back-to-back PUBLISHes with one entity tag got 412 and left two presentities of the AOR.
+- [0010-presence_reginfo-first-NOTIFY-after-a-quick-re-registration.patch](0010-presence_reginfo-first-NOTIFY-after-a-quick-re-registration.patch),
+  SHA-256 `5d201133ca2efd1d6582070ba1386b62e16dcc971d3903812ca856a2e6a23626`: the first NOTIFY of a reg event
+  subscription is the registrar's current state whenever the registrar has a contact of the AOR, also while the
+  presence module still stores the final document of a deregistration. A UE deregistered with "deactivated" registered
+  again within some 15 ms of its NOTIFY and subscribed before that document was removed (0009 removes it once its
+  NOTIFYs are sent, and kept a final document for a first NOTIFY): the new subscription got the old binding, terminated,
+  and was ended by it. A final document is still sent while the registrar has no contact.

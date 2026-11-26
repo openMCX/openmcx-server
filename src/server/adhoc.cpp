@@ -12,14 +12,15 @@
 namespace mcx {
 
 //------------------------------------------------------------------------------
-// Helper: the session policy of an ad hoc group call: at least two participants, no floor protection, no
-// required members. An MCPTT ad hoc group call is released when the initiator leaves unless configured otherwise
-// (local policy of TS 24.379 clause 6.3.8.1 item 3); TS 24.281 clause 6.3.8.1 item 3 limits that to a pre-arranged
-// MCVideo group call, so an MCVideo ad hoc group call goes on without its initiator.
+// Helper: the session policy of an ad hoc group call: at least two participants, floor control protected under
+// each user's CSK when the server's keying configuration protects floor control (TS 33.180 clause 9.4.2,
+// adhoc_floor_protected), no required members. An MCPTT ad hoc group call is released when the initiator leaves
+// unless configured otherwise (local policy of TS 24.379 clause 6.3.8.1 item 3); TS 24.281 clause 6.3.8.1 item 3
+// limits that to a pre-arranged MCVideo group call, so an MCVideo ad hoc group call goes on without its initiator.
 Json McServer::adhoc_call_policy() const {
   auto policy = cfg_.at(svc_.name).value("adhoc_call", Json::object());
   policy["minimum_participants"] = 2;
-  policy["protect_floor"] = false;
+  policy["protect_floor"] = adhoc_floor_protected(cfg_.value("security", Json()), keys_ != nullptr);
   if (svc_.service == Service::mcvideo)
     policy["end_when_initiator_leaves"] = false;
   else if (!policy.contains("end_when_initiator_leaves"))
@@ -372,6 +373,9 @@ SipResponse McServer::adhoc_invite(const SipMessage &message, const User &user, 
     return *refused;
 
   auto session = make_adhoc_session(user, info, alert_group, has_criteria, priority, invitees, via_alias);
+  // TS 33.180 clause 9.4.2: protected floor control needs the caller's CSK (as for a prearranged group call).
+  if (session->policy.value("protect_floor", false) && (!floor_keys(user) || !floor_keys(user)->floor_ready()))
+    return reject(488);
   auto leg = incoming_leg(message, user, session);
   if (!leg) return reject(488);
   leg->origin = true;

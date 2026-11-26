@@ -33,6 +33,7 @@
 
 // Shared with the MCPTT and MCVideo servers: Expires and percent-encoding parsing, and the service parts.
 #include "../server/request_values.hpp"
+#include "media_rules.hpp"
 #include "parts/alias_registry.hpp"
 #include "parts/common_services.hpp"
 #include "parts/counters.hpp"
@@ -268,7 +269,7 @@ class DataServer {
     std::string sdp;                     // this leg's own media, repeated in a re-INVITE or its answer
     bool originating = false;            // the leg from the sender
     std::vector<std::string> recipients; // the affiliated members of a group request
-    std::uint64_t max_bytes = 0;         // the group's SDS size limit, checked on arrival
+    std::uint64_t max_bytes = 0;         // a standalone SDS's size limit, checked on arrival (media_accept)
     // The originator's <user-requested-priority>.
     std::optional<unsigned> requested_priority;
     // An SDS session (TS 24.282 clause 9.2.4) stays open: every leg of one session shares this key,
@@ -294,6 +295,9 @@ class DataServer {
     // A file sent on this leg that its recipient has not answered yet: closing
     // the connection before the answer can lose the file in flight.
     bool file_unanswered = false;
+    // The originating leg of a one-to-one FD whose INVITE waits for the invited client's final response (TS 24.282
+    // clause 10.2.5.4.4): the invited leg ending does not release the communication (release_waits_for_answer).
+    bool awaiting_answer = false;
     std::uint64_t deadline = 0;
   };
 
@@ -532,6 +536,9 @@ class DataServer {
   // ---- Service authorisation and affiliation (authorisation.cpp): TS 24.282 clauses 7.3 and 8.3.2 ----
   SipResponse authorise(const SipMessage &request, bool from_register = false);
   SipResponse third_party_register(const SipMessage &request);
+  // TS 24.229 clause 5.4.1.7: per public user identity, the Call-ID of the client's REGISTER behind its registration
+  // (the message/sip body of the last third-party REGISTER); a deregistration ends the binding only if it names it.
+  std::map<std::string, std::string> registration_call_ids_;
 
   // TS 24.282 clause 7.3.4: a SIP PUBLISH for the MCData service settings only.
   SipResponse settings_publish(const SipMessage &request, const std::string &asserted);
@@ -728,7 +735,7 @@ class DataServer {
                                                         MediaInvite &invite);
 
   // media_invite: the recipient of a one-to-one communication and its authorisation, or the refusal.
-  std::optional<SipResponse> media_invite_private_target(const User &user, const Json &policy,
+  std::optional<SipResponse> media_invite_private_target(const User &user, const mcdata::Info &info, const Json &policy,
                                                          const BodyPart *resources, MediaInvite &invite);
 
   // media_invite: the client's SDP offer and its PCK, or a 488 refusal.
@@ -770,9 +777,10 @@ class DataServer {
   // ipcon_invite: the IP connectivity feature tag and ICSI are in Accept-Contact.
   static bool ipcon_accept_contact(const SipMessage &request);
 
-  // ipcon_invite: a 300 (Multiple Choices) redirection for a functional alias target, or its refusal.
-  std::optional<SipResponse> ipcon_alias_redirect(const User &user, const mcdata::Info &info,
-                                                  const std::string &target);
+  // ipcon_invite and media_invite_private_target: a 300 (Multiple Choices) redirection for a functional alias target,
+  // or its refusal (counted under what).
+  std::optional<SipResponse> alias_redirect(const User &user, const mcdata::Info &info, const std::string &target,
+                                            const char *what);
 
   Json ipconn_config() const { return cfg_.at("mcdata").value("ipconn", Json::object()); }
 
@@ -828,6 +836,12 @@ class DataServer {
   void media_file_received(const std::shared_ptr<MediaSession> &session, const msrp::Message &message);
 
   void media_received(const std::shared_ptr<MediaSession> &session, const msrp::Message &message);
+
+  // The MSRP status of a SEND before it is answered: the size limits of a standalone SDS (TS 24.582 clause 6.3.1.3).
+  std::pair<unsigned, std::string> media_accept(const MediaSession &session, const msrp::Message &message);
+
+  // The record of a standalone SDS relayed over the media plane, for its disposition notifications (clause 12.2.3).
+  void media_sds_dispatched(const MediaSession &session, const std::string &signalling);
 
   std::vector<SipHeader> media_priority_headers(const char *level = "emergency") const;
 

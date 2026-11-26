@@ -11,6 +11,10 @@ This probe is a raw SIP user agent, digest-authenticated as the client (as sip_n
 sends such requests anyway, for the scenarios to check the server's own refusal:
   --sds GROUP SIZE   a group standalone SDS over the signalling control plane (TS 24.282 clause 9.2.2.2.1) to GROUP
                      with a text payload of SIZE octets: a SIP MESSAGE to the MCData PSI;
+  --media-sds TARGET SIZE
+                     a one-to-one standalone SDS over the media plane (TS 24.282 clause 9.2.3.2.1, TS 24.582 clause
+                     6.1.1.2.1) to the MCData ID TARGET with a text payload of SIZE octets, larger than a client command
+                     can carry: an INVITE to the MCData PSI with an MSRP offer, the SDS in one MSRP SEND, then BYE;
   --chat GROUP       a chat group call (TS 24.379 clause 10.1.2.2.1.1) on GROUP: an INVITE to the MCPTT PSI; one that
                      is accepted after all is acknowledged and ended with BYE;
   --video-adhoc-alert CRITERIA
@@ -20,16 +24,19 @@ sends such requests anyway, for the scenarios to check the server's own refusal:
   --mcdata-alert GROUP
                      an MCData emergency alert (TS 24.282 clause 16.2.1.1) on GROUP: a SIP MESSAGE to the MCData PSI
                      with <alert-ind> "true" and the client's location.
-Each option may be repeated. Prints one JSON line: {"sds": [{group, size, status, warning}], "chat": [{group, status,
-warning}], "video_adhoc_alert": [{criteria, status, warning}], "mcdata_alert": [{group, status, warning, alert_ind}]},
-in the order given (alert_ind: the <alert-ind> of the response's MCData info, true, false or null).
+Each option may be repeated. Prints one JSON line: {"sds": [{group, size, status, warning}], "media_sds": [{target,
+size, status, warning, msrp_status}], "chat": [{group, status, warning}], "video_adhoc_alert": [{criteria, status,
+warning}], "mcdata_alert": [{group, status, warning, alert_ind}]}, in the order given (alert_ind: the <alert-ind> of
+the response's MCData info, true, false or null; msrp_status: the MSRP status of the SEND, null without a 2xx to the
+INVITE or over MSRP over TLS, which the probe does not speak).
 
 The probe runs with the client's digest credentials and sends its XML in the clear; it does not work in the AKA labs
 (the client of --config registers with IMS AKA there) nor where the service's signalling is protected (TS 24.282 clause
 6.5, TS 24.379 clause 6.6: the server refuses clear signalling from a client that protects its own): usable() is
 false. The scenarios call run_in() on the host, which copies the probe into the client's container and runs it there.
 
-Specifications: TS 24.282 V19.7.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), RFC 3261.
+Specifications: TS 24.282 V19.7.0 (Rel-19), TS 24.582 V19.0.0 (Rel-19), TS 24.379 V19.7.0 (Rel-19), TS 24.281
+V19.6.0 (Rel-19), RFC 3261, RFC 4975.
 """
 
 import argparse
@@ -172,6 +179,110 @@ def group_sds(sip, cfg, group, size):
 
 
 # ------------------------------------------------------------------------------
+def msrp_answer(connection, transaction):
+    """The status of the MSRP response to transaction on connection (RFC 4975 section 7.2), skipping other frames."""
+    buffer = b''
+    while True:
+        found = re.search(rb'MSRP ' + transaction.encode() + rb' (\d{3})', buffer)
+        if found:
+            return int(found.group(1))
+        chunk = connection.recv(65536)
+        if not chunk:
+            raise RuntimeError('MSRP connection closed')
+        buffer += chunk
+
+
+# ------------------------------------------------------------------------------
+def msrp_send(connection, to_path, from_path, content_type='', body=b''):
+    """Send one complete MSRP SEND (RFC 4975 section 7.1.1) and return its status."""
+    transaction = secrets.token_hex(8)
+    head = f'MSRP {transaction} SEND\r\nTo-Path: {to_path}\r\nFrom-Path: {from_path}\r\n'
+    head += f'Message-ID: {secrets.token_hex(8)}\r\n'
+    if body:
+        head += f'Byte-Range: 1-{len(body)}/{len(body)}\r\nContent-Type: {content_type}\r\n\r\n'
+        connection.sendall(head.encode() + body + f'\r\n-------{transaction}$\r\n'.encode())
+    else:
+        connection.sendall(head.encode() + f'-------{transaction}$\r\n'.encode())
+    return msrp_answer(connection, transaction)
+
+
+# ------------------------------------------------------------------------------
+def media_sds(sip, cfg, target, size):
+    """A one-to-one standalone SDS over the media plane (TS 24.282 clause 9.2.3.2.1: request type "one-to-one-sds",
+    the target in resource-lists, an "m=message" offer "a=setup:actpass" and "a=sendonly"). On a 2xx the probe
+    connects to the server's MSRP path (the server's answer is passive), binds the connection with an empty SEND and
+    sends the SDS SIGNALLING PAYLOAD and DATA PAYLOAD of SIZE octets in one multipart/mixed SEND (TS 24.582 clauses
+    6.1.1.2.1 and 6.4.1); the INVITE's final status and Warning and the SEND's MSRP status. The session is then released
+    with BYE."""
+    address = sip.sock.getsockname()[0]
+    held = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    held.bind((address, 0))
+    own_path = f'msrp://{address}:{held.getsockname()[1]}/{secrets.token_hex(6)};tcp'
+    sdp = (
+        f'v=0\r\no=- 1 1 IN IP4 {address}\r\ns=MCData\r\nc=IN IP4 {address}\r\nt=0 0\r\n'
+        f'm=message {held.getsockname()[1]} TCP/MSRP *\r\na=path:{own_path}\r\na=setup:actpass\r\n'
+        'a=accept-types:application/vnd.3gpp.mcdata-signalling application/vnd.3gpp.mcdata-payload\r\na=sendonly\r\n'
+    )
+    info = (
+        '<?xml version="1.0" encoding="UTF-8"?><mcdatainfo xmlns="urn:3gpp:ns:mcdataInfo:1.0"><mcdata-Params>'
+        '<request-type>one-to-one-sds</request-type>'
+        f'<mcdata-client-id type="Normal"><mcdataString>{escape(cfg["mcptt"]["client_id"])}</mcdataString>'
+        '</mcdata-client-id></mcdata-Params></mcdatainfo>'
+    )
+    resources = (
+        '<?xml version="1.0" encoding="UTF-8"?><resource-lists xmlns="urn:ietf:params:xml:ns:resource-lists"><list>'
+        f'<entry uri="{escape(target)}"/></list></resource-lists>'
+    )
+    boundary = 'refusal-' + secrets.token_hex(12)
+    body = ''.join(
+        f'--{boundary}\r\nContent-Type: {mime}\r\n\r\n{part}\r\n'
+        for mime, part in [
+            ('application/sdp', sdp),
+            ('application/vnd.3gpp.mcdata-info+xml', info),
+            ('application/resource-lists+xml', resources),
+        ]
+    )
+    body += f'--{boundary}--\r\n'
+    fields = [
+        ('Accept-Contact', '*;+g.3gpp.mcdata.sds;require;explicit'),
+        ('Accept-Contact', f'*;+g.3gpp.icsi-ref="{SDS_ICSI}";require;explicit'),
+        ('P-Preferred-Service', 'urn:urn-7:3gpp-service.ims.icsi.mcdata.sds'),
+        ('Content-Type', 'multipart/mixed; boundary=' + boundary),
+    ]
+    outcome = {'target': target, 'size': size, 'msrp_status': None}
+    dialog = Dialog(sip, cfg)
+    try:
+        code, headers, answer = dialog.request('INVITE', cfg['mcdata']['service_uri'], fields, body)
+        outcome.update(status=code, warning=warning_of(headers))
+        if not 200 <= code < 300:
+            return outcome
+        dialog.established(headers)
+        dialog.send('ACK', dialog.target, [], cseq=dialog.cseq)
+        try:
+            path = re.search(r'a=path:(msrp://([^:/\s]+):(\d+)/\S+)', answer)
+            if path:
+                with socket.create_connection((path.group(2), int(path.group(3))), timeout=10) as connection:
+                    msrp_send(connection, path.group(1), own_path)
+                    signalling, data = sds_bodies(size)
+                    parts = 'msrp-' + secrets.token_hex(8)
+                    payload = b''
+                    for content_type, part in [
+                        ('application/vnd.3gpp.mcdata-signalling', signalling),
+                        ('application/vnd.3gpp.mcdata-payload', data),
+                    ]:
+                        payload += f'--{parts}\r\nContent-Type: {content_type}\r\n\r\n'.encode() + part + b'\r\n'
+                    payload += f'--{parts}--\r\n'.encode()
+                    outcome['msrp_status'] = msrp_send(
+                        connection, path.group(1), own_path, 'multipart/mixed; boundary=' + parts, payload
+                    )
+        finally:
+            dialog.request('BYE', dialog.target, [])
+        return outcome
+    finally:
+        held.close()
+
+
+# ------------------------------------------------------------------------------
 def chat(sip, cfg, group):
     """A chat group call INVITE (TS 24.379 clause 10.1.2.2.1.1 steps 3 to 14) to the MCPTT PSI for the group, with an
     SDP offer of its own ports; the final status and Warning. A 2xx is acknowledged and the call ended."""
@@ -303,14 +414,16 @@ def main():
     parser.add_argument('--config', default='/config/client-a.json')
     parser.add_argument('--disable-tls', action='store_true')
     parser.add_argument('--sds', nargs=2, action='append', default=[], metavar=('GROUP', 'SIZE'))
+    parser.add_argument('--media-sds', nargs=2, action='append', default=[], metavar=('TARGET', 'SIZE'))
     parser.add_argument('--chat', action='append', default=[], metavar='GROUP')
     parser.add_argument('--video-adhoc-alert', action='append', default=[], metavar='CRITERIA')
     parser.add_argument('--mcdata-alert', action='append', default=[], metavar='GROUP')
     args = parser.parse_args()
     cfg = json.loads(pathlib.Path(args.config).read_text())
-    outcomes = {'sds': [], 'chat': [], 'video_adhoc_alert': [], 'mcdata_alert': []}
+    outcomes = {'sds': [], 'media_sds': [], 'chat': [], 'video_adhoc_alert': [], 'mcdata_alert': []}
     requests = (
         [('sds', group_sds, (group, int(size))) for group, size in args.sds]
+        + [('media_sds', media_sds, (target, int(size))) for target, size in args.media_sds]
         + [('chat', chat, (group,)) for group in args.chat]
         + [('video_adhoc_alert', video_adhoc_alert, (criteria,)) for criteria in args.video_adhoc_alert]
         + [('mcdata_alert', mcdata_alert, (group,)) for group in args.mcdata_alert]

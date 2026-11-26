@@ -153,6 +153,12 @@ type User struct {
 	RemoteGroupSelection []string `json:"remote_group_selection,omitempty"`
 	// <MaxAffiliationsN2>: simultaneous group affiliations; 0 means no limit.
 	MaxAffiliations int `json:"max_affiliations,omitempty"`
+	// <allow-request-affiliated-groups> (TS 24.484 table 8.3.2.7-24): the user may determine another user's
+	// affiliation status (TS 24.379 clause 9.2.2.2.4 step 4).
+	RequestAffiliatedGroups bool `json:"request_affiliated_groups,omitempty"`
+	// <allow-request-to-affiliate-other-users> (TS 24.484 table 8.3.2.7-25): the user may ask other users to affiliate
+	// or de-affiliate (TS 24.379 clause 9.2.2.2.8 step 3, negotiated mode).
+	AffiliateOthers bool `json:"affiliate_others,omitempty"`
 	// The affiliation rules of the user's groups, by group ID (affiliation_rules.go; TS 24.379 clause 9.2.1.7.2).
 	AffiliationRules map[string]*GroupAffiliationRules `json:"affiliation_rules,omitempty"`
 	// MCData ID (TS 23.280 clause 8.1.2): a distinct identity; empty when the user has no

@@ -152,6 +152,9 @@ bool McServer::peer_request(const SipMessage &message, const std::string &peer, 
   // data (its per-group dynamic data filter tells it from the functional alias status subscription below), or a
   // request in its dialog.
   if (peer_group_dynamic_data_subscribe(message, peer, event_name, response)) return true;
+  // TS 24.379 clauses 9.2.2.2.4 and 9.2.2.2.10: a subscription to the affiliation status of a user, passed on by the
+  // originating participating function, or a request in its dialog.
+  if (peer_affiliation_subscribe(message, peer, event_name, response)) return true;
   // TS 24.379 clauses 9A.2.2.3.4 and 9A.2.2.2.7: a serving server's subscription to a user's status for an alias,
   // and the owning server's NOTIFY to this serving server.
   if (message.method == "SUBSCRIBE" && event_name == "presence" &&
@@ -179,6 +182,13 @@ bool McServer::peer_request(const SipMessage &message, const std::string &peer, 
         }
       }
     }
+  // TS 24.379 clause 9.2.2.2.8: an affiliation status change request in negotiated mode passed on by the originating
+  // participating function; the originating MC service ID is in <mcptt-calling-user-id> (step 2).
+  if (message.method == "MESSAGE" && is_affiliation_command(message)) {
+    const auto info = message_info(message, svc_);
+    response = negotiated_affiliation(message, info.calling_user, info, peer);
+    return true;
+  }
   if (terminating_request(message, peer, response)) return true;
   if (message.method == "PUBLISH" || (message.method == "SUBSCRIBE" && event_name != "conference")) {
     response.status_code = 403;
@@ -436,7 +446,10 @@ bool McServer::cache_service_settings(User &user, const SipMessage &message, std
 // the SIP core includes as a message/sip body in a third-party REGISTER (TS 24.229 clause 5.4.1.7). The REGISTER's
 // application/vnd.3gpp.mcptt-info+xml (access token, client ID; the CSK upload of TS 33.180 clause 9.2.1.3 with
 // it) is authorised as a service authorisation PUBLISH is (steps 3, 4 and 4a; clause 7.3.3). A third-party REGISTER
-// with Expires 0 is a deregistration: the user's binding ends.
+// with Expires 0 is a deregistration: the user's binding ends, unless the deregistration names the registrations it
+// ends and the binding was made from another one (deregistration_ends_binding): a UE deregistered by the network with
+// "deactivated" registers again at once (TS 24.229 clause 5.4.1.5), and the deregistration of its old registration
+// can reach this server after the third-party REGISTER of the new one.
 void McServer::third_party_register(const SipMessage &message, SipResponse &response) {
   // Step 1: the IMS public user identity is the To of the third-party REGISTER.
   const auto identity = message.to_uri;
@@ -445,16 +458,24 @@ void McServer::third_party_register(const SipMessage &message, SipResponse &resp
     return;
   }
   const auto expires = std::string(get_header(message.headers, "Expires"));
-  // TS 24.379 clause 8.1A: the SIP core's resource sharing and the UE's registration token.
-  if (expires == "0")
-    core_registrations_.erase(identity);
-  else
-    record_core_registration(message, identity);
   if (expires == "0") {
-    remove_binding(users_.find(identity), "deregistration");
     response.headers = {{"Expires", "0"}};
+    std::vector<std::string> ended;
+    for (const auto &part : parts_of(message))
+      if (part.content_type == "message/sip") ended = deregistered_call_ids(part.body);
+    const auto registration = core_registrations_.find(identity);
+    const auto bound = registration == core_registrations_.end() ? std::string{} : registration->second.call_id;
+    if (!deregistration_ends_binding(ended, bound)) {
+      event("deregistration_of_older_registration", {{"user", identity}, {"ended", ended}, {"registration", bound}});
+      return;
+    }
+    // TS 24.379 clause 8.1A: the SIP core's resource sharing and the UE's registration token end with it.
+    core_registrations_.erase(identity);
+    remove_binding(users_.find(identity), "deregistration");
     return;
   }
+  // TS 24.379 clause 8.1A: the SIP core's resource sharing and the UE's registration token.
+  record_core_registration(message, identity);
   // The client's REGISTER (RFC 3420): its body parts, without which there is nothing to authorise.
   std::vector<BodyPart> parts;
   for (const auto &part : parts_of(message))
@@ -612,10 +633,7 @@ void McServer::remove_binding(std::map<std::string, User>::iterator found, const
   const auto id = user.id;
   user.expires = 0;
   user.groups.clear();
-  if (!user.subscription.empty() && user.subscription_expires > std::time(nullptr))
-    sip_.notify(user.subscription, "presence", "terminated;reason=noresource", "application/pidf+xml",
-                affiliation_xml(affiliation_status(svc_, user, {}), true));
-  user.subscription.clear();
+  end_affiliation_subscriptions(user);
   end_settings_subscriptions(id, reason); // TS 24.379 clause 7.3.6 with RFC 6665 section 4.2.2
   deactivate_functional_aliases(id);
   disconnect_user(id);
@@ -1095,53 +1113,6 @@ bool McServer::alias_status_subscribe(const SipMessage &message, const User &use
 }
 
 //------------------------------------------------------------------------------
-// TS 24.379 clauses 9.2.1.3 and 9.2.2.2.4: subscription to the user's affiliation status; any other event package is
-// refused with 489. Expires 0 ends the subscription in its dialog, or out of it fetches the current state (clause
-// 9.2.1.3 step 5): either way one final NOTIFY with the current state on its own dialog. The subscription only carries
-// the notifications: ending it leaves the affiliations as they are (clause 9.2.2.2.4).
-void McServer::affiliation_subscribe(const SipMessage &message, User &user, const std::string &event_name,
-                                     SipResponse &response) {
-  if (event_name != "presence") {
-    response.status_code = 489;
-    return;
-  }
-  // TS 24.379 clause 9.2.2.2.4 steps 1 to 4: the mcptt-info names the served user (<mcptt-request-uri>); no user is
-  // authorised for another user's affiliation status. A SUBSCRIBE without the mcptt-info is the subscriber's own.
-  if (user.subscription != message.dialog_id && !message.body.empty()) {
-    std::string served;
-    try {
-      served = message_info(message, svc_).request_uri;
-    } catch (const std::exception &) {
-      served.clear(); // a body without the service info names no other user
-    }
-    if (!served.empty() && served != user.id) {
-      response.status_code = 403;
-      return;
-    }
-  }
-  if (get_header(message.headers, "Expires") == "0") {
-    if (user.subscription == message.dialog_id) {
-      user.subscription.clear();
-      user.subscription_expires = 0;
-    }
-    response.headers = {{"Expires", "0"}};
-    schedule([this, id = user.id, dialog = message.dialog_id] {
-      if (const auto *served = by_id(id))
-        sip_.notify(dialog, "presence", "terminated;reason=timeout", "application/pidf+xml",
-                    affiliation_xml(affiliation_status(svc_, *served, {}), true));
-    });
-    return;
-  }
-  user.subscription = message.dialog_id;
-  user.subscription_expires = std::time(nullptr) + 3600;
-  response.headers = {{"Expires", "3600"}};
-  auto id = user.id;
-  schedule([this, id] {
-    if (auto *served = by_id(id)) notify(*served);
-  });
-}
-
-//------------------------------------------------------------------------------
 // TS 24.379 clause 9.2.2.2.3: affiliation status change from a client (or a functional alias activation, decided
 // by the server owning the functional aliases, TS 24.379 clause 9A.2.2.2.3).
 void McServer::affiliation_publish(const SipMessage &message, User &user, SipResponse &response) {
@@ -1249,6 +1220,11 @@ void McServer::user_message(const SipMessage &message, User &user, SipResponse &
     return;
   }
   auto info = message_info(message, svc_);
+  // TS 24.379 clause 9.2.1.4: an affiliation status change request in negotiated mode for another user.
+  if (user.peer.empty() && is_affiliation_command(message)) {
+    response = negotiated_affiliation(message, user.id, info, {});
+    return;
+  }
   if (user.peer.empty() && message_to_controller(message, user, info, response)) return;
   if (info.adhoc_alert) {
     response = adhoc_alert_message(message, user, info);
@@ -1592,7 +1568,12 @@ bool McServer::find_group_session(const SipMessage &message, const McpttInfo &in
       return false;
     }
   } else if (auto existing = sessions_.find(info.request_uri); existing != sessions_.end()) {
-    session = existing->second;
+    // TS 24.379 clause 10.1.1.4.2 step 9: a call being released (every remaining dialog ended by this server) is not
+    // ongoing; the request creates a new session (step 14) instead of joining one that ends with its release.
+    if (!group_session_releasing(existing->second->dialogs, ended_here_))
+      session = existing->second;
+    else
+      event("group_call_being_released", {{"group_id", info.request_uri}, {"session_uri", existing->second->uri}});
   }
   return true;
 }
@@ -1973,7 +1954,10 @@ void McServer::answer_group_invite(const SipMessage &message, const User &user, 
     response.headers.push_back({"Warning", warning_value(warn(Warning::session_exists))});
   }
   // Do not publish a phantom session if media allocation or response creation fails.
-  if (creating) sessions_[session->group] = session;
+  if (creating) {
+    replace_released_session(session, user.id);
+    sessions_[session->group] = session;
+  }
   add_leg(leg);
   if (creating && !session->chat && session->awaiting_users.empty()) {
     auto start = [this, session, id = user.id] {

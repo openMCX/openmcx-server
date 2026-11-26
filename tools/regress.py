@@ -298,6 +298,14 @@ LABS = [
     lab('mcvideo-pull-push', 'single', ['--mcvideo'], ['mcvideo_pull_push_scenario'], ['mcvideo']),
     lab('mcvideo-ambient', 'single', ['--mcvideo'], ['mcvideo_ambient_scenario'], ['mcvideo']),
     lab('mcvideo-adhoc', 'single', ['--mcvideo'], ['mcvideo_adhoc_scenario'], ['mcvideo']),
+    # TS 33.180 clauses 9.4.1 and 9.4.2: an MCVideo ad hoc group call with transmission control protected under the CSK.
+    lab(
+        'mcvideo-adhoc-protected',
+        'single',
+        ['--mcvideo', '--protected', '--key-parameters-iei', '0x79'],
+        ['mcvideo_adhoc_scenario'],
+        ['mcvideo', 'protected'],
+    ),
     lab('mcvideo-regroup', 'single', ['--mcvideo'], ['mcvideo_regroup_scenario'], ['mcvideo']),
     lab('mcvideo-functional-alias', 'single', ['--mcvideo'], ['mcvideo_functional_alias_scenario'], ['mcvideo']),
     lab('mcvideo-group-selection', 'single', ['--mcvideo'], ['mcvideo_group_selection_scenario'], ['mcvideo']),

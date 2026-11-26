@@ -1009,7 +1009,8 @@ def add_mcdata_policy(fixture, source):
     Functional aliases (TS 24.282 clause 22): front-desk.fa (a, b; one activation; take-over allowed and
     b holds the take-over permission), patrol-car-12.fa (c, d; two activations) and
     incident-commander.fa (a; never activated).
-    Service limits: 1000 bytes over the signalling plane, 500 bytes per one-to-one SDS.
+    Service limits: 1000 bytes over the signalling plane, 4096 bytes per one-to-one SDS (above the signalling
+    plane limit, so a longer one-to-one SDS goes over the media plane, TS 24.582 clause 6.3.1.3 step 1).
     Group operations: all four members, at most 400 bytes per SDS and 800 per request.
     Extra groups: operations-nosds (SDS and FD not allowed), operations-nosupport
     (no SDS or FD enabler) and operations-noemergency (SDS allowed, but neither
@@ -1153,7 +1154,7 @@ def add_mcdata_policy(fixture, source):
     site_file.write_text(json.dumps(site, indent=2) + '\n')
     server_file = fixture / 'generated/mcdata-server.json'
     server = json.loads(server_file.read_text())
-    server['mcdata'].update(max_payload_size_sds_cplane_bytes=1000, max_data_size_sds_bytes=500)
+    server['mcdata'].update(max_payload_size_sds_cplane_bytes=1000, max_data_size_sds_bytes=4096)
     server['mcdata']['adhoc'] = dict(allow=True, max_participants=3, lifetime_ms=1800000)
     server['mcdata']['redelivery'] = dict(tdp1_ms=2000, max_attempts=2, retention_ms=600000, max_held=1000)
     server['mcdata']['aggregation'] = dict(enabled=True, tdc1_ms=3000, max_per_message=50)
@@ -1273,6 +1274,24 @@ def add_chat_group(fixture, source, protect=False):
         config['mcptt']['allowed_groups'] = allowed + [chat] + restricted
         config['mcptt'].setdefault('resource_priority', resources)
         path.write_text(json.dumps(config, indent=2) + '\n')
+
+
+# ------------------------------------------------------------------------------
+def add_remote_affiliation(fixture):
+    """The affiliation of other users (TS 24.379 clauses 9.2.2.2.4 and 9.2.2.2.8, TS 24.281 likewise): client-a may
+    determine other users' affiliation status (<allow-request-affiliated-groups>, TS 24.484 table 8.3.2.7-24) and ask
+    them to affiliate or de-affiliate in negotiated mode (<allow-request-to-affiliate-other-users>, table 8.3.2.7-25),
+    for MCPTT and, where the user has an MCVideo section, MCVideo; the other users may not."""
+    site_file = fixture / 'generated/site.json'
+    site = json.loads(site_file.read_text())
+    authorised = json.loads((fixture / 'generated/client-a.json').read_text())['mcptt']['user_id']
+    for user in site['users']:
+        if user['mcptt_id'] != authorised:
+            continue
+        user.update(request_affiliated_groups=True, affiliate_others=True)
+        if isinstance(user.get('mcvideo'), dict):
+            user['mcvideo'].update(request_affiliated_groups=True, affiliate_others=True)
+    site_file.write_text(json.dumps(site, indent=2) + '\n')
 
 
 # ------------------------------------------------------------------------------
@@ -2377,6 +2396,11 @@ def main():
         help='Add a preconfigured group and two constituent groups for regroup (TS 24.379 clause 16)',
     )
     parser.add_argument(
+        '--remote-affiliation',
+        action='store_true',
+        help='client-a may determine and change other users\' affiliation (TS 24.379 clauses 9.2.2.2.4, 9.2.2.2.8)',
+    )
+    parser.add_argument(
         '--chat', action='store_true', help='Add a four-member chat group (max 3 participants, 20 s inactivity)'
     )
     parser.add_argument(
@@ -2851,6 +2875,8 @@ def main():
         add_functional_aliases(fixture, source)
     if args.mcvideo:
         add_mcvideo_policy(fixture)
+    if args.remote_affiliation:
+        add_remote_affiliation(fixture)
     if args.mcdata:
         add_mcdata_policy(fixture, source)
         add_group_subscription(fixture)

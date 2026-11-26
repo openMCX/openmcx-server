@@ -183,6 +183,27 @@ bool McServer::current_session(const std::shared_ptr<Session> &session) const {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clause 10.1.1.4.2 steps 9 and 14 (clause 10.1.2.4.1 for a chat group call): the group's call in sessions_,
+// if any, is being released (group_session_releasing); it is kept in released_sessions_ until its last leg is gone,
+// and the new call (not a chat call, which invites nobody) invites its remaining participants once they are out of it.
+void McServer::replace_released_session(const std::shared_ptr<Session> &session, const std::string &caller) {
+  const auto found = sessions_.find(session->group);
+  if (found == sessions_.end() || found->second == session) return;
+  const auto released = found->second;
+  released_sessions_[released->uri] = released;
+  std::set<std::string> remaining;
+  for (const auto &leg : session_legs(*released)) remaining.insert(leg->user);
+  if (!session->chat) {
+    for (const auto &id : members_to_await(remaining, caller)) session->awaiting_users.insert(id);
+    session->awaiting_since = monotonic_ms();
+  }
+  event("group_call_replaced", {{"group_id", session->group},
+                                {"released_session_uri", released->uri},
+                                {"session_uri", session->uri},
+                                {"awaiting", session->awaiting_users}});
+}
+
+//------------------------------------------------------------------------------
 // Helper: the legs of the session's dialogs.
 std::vector<std::shared_ptr<McServer::Leg>> McServer::session_legs(const Session &session) const {
   std::vector<std::shared_ptr<Leg>> result;

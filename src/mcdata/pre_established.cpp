@@ -126,6 +126,7 @@ SipResponse DataServer::pre_session_invite(const SipMessage &request, const User
                                                          event("mcdata_pre_session_msrp_closed",
                                                                {{"dialog", dialog}, {"reason", std::string(reason)}});
                                                        },
+                                                       {},
                                                        {}});
     pre->endpoint->keep_listening();
     pre->local.secure = local.secure;
@@ -472,6 +473,7 @@ void DataServer::pre_session_idle(PreSession &pre) {
                                  event("mcdata_pre_session_msrp_closed",
                                        {{"dialog", dialog}, {"reason", std::string(reason)}});
                                },
+                               {},
                                {}});
 }
 

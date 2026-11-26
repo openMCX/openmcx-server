@@ -13,6 +13,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -78,6 +79,43 @@ inline PrivateCallDecision authorize_private_call(const nlohmann::json &policy, 
   if (answer_mode_value(request.priv_answer_mode) == "Auto" && !flag("force_auto_answer"))
     return deny(403, warning_text(service, Warning::force_auto_answer_not_authorised));
   return {};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 11.1.1.3.1.1 step 18 (with clause 6.3.3.1.2 steps 9 and 10) and clause 11.1.1.4.1 step 3: the
+// commencement mode header field of the INVITE to the called user. A first-to-answer call always rings (Priv-Answer-Mode
+// "Manual"); an (authorised) Priv-Answer-Mode "Auto" is passed on (step 18 c); otherwise the Answer-Mode as received
+// (step 18 d). A Priv-Answer-Mode "Manual" is not passed on (step 18 a), but the manual commencement it asks for is
+// kept as Answer-Mode "Manual" when the request has no Answer-Mode: a forwarded or transferred call carries the
+// commencement mode of the call it continues in Priv-Answer-Mode (clause 11.1.1.2.1.1 steps 14A a) and 14C a)), and
+// without a header field the terminating function would apply the called user's own Answer-Mode Indication (clause
+// 6.3.2.2.5.2 step 5), which may be automatic. Values are compared as RFC 5373 tokens (answer_mode_value).
+inline std::vector<SipHeader> private_call_commencement_headers(const PrivateCallRequest &request,
+                                                                bool first_to_answer) {
+  if (first_to_answer) return {{"Priv-Answer-Mode", "Manual"}};
+  const auto forced = answer_mode_value(request.priv_answer_mode);
+  if (forced == "Auto") return {{"Priv-Answer-Mode", "Auto"}};
+  if (!request.answer_mode.empty()) return {{"Answer-Mode", request.answer_mode}};
+  if (forced == "Manual") return {{"Answer-Mode", "Manual"}};
+  return {};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 11.1.1.4.1 step 1 with clause 6.3.3.1.2 step 11 ("shall copy the application/vnd.3gpp.mcptt-info+xml
+// MIME body to the outgoing INVITE request"): the private call service elements of the caller's <anyExt> that the
+// INVITE to the called user carries on: the transfer (<call-transfer-ind>, clause 11.1.1.2.1.1 step 14A b)) and
+// forwarding indications (<call-forwarding-ind> and its <forwarding-sequence-number>, step 14C), with the forwarding
+// details the request names (annex F.1.3). The called client learns that the call is a transferred or forwarded one
+// (clause 11.1.1.2.1.2). Other elements (requests and responses of the private call services) are not copied.
+inline std::map<std::string, std::string>
+private_call_passed_service(const std::map<std::string, std::string> &service) {
+  static const char *const passed[] = {
+      "call-transfer-ind",     "call-forwarding-ind",           "forwarding-sequence-number", "forwarding-reason",
+      "forwarded-by-mcptt-id", "forwarded-by-functional-alias", "forwarding-target-orig-id"};
+  std::map<std::string, std::string> out;
+  for (const auto *name : passed)
+    if (const auto found = service.find(name); found != service.end()) out.emplace(found->first, found->second);
+  return out;
 }
 
 //------------------------------------------------------------------------------

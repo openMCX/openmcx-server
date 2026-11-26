@@ -217,8 +217,17 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 - **Reg event package** (RFC 3680; TS 24.229 clauses 5.1.1.3, 5.2.3 and 5.4.2.1) is served by the SIP core to the
   Linux client, the Android app and the P-CSCF; the operator starts a network-initiated deregistration or
   re-authentication of one private user identity (shortened registration, TS 33.203 clauses 5.1.2 and 6.1.4) with the
-  commands in USAGE.md. Own deviation not fixed yet: the P-Charging-Vector (charging correlation, TS 32.260) is
-  carried only in the P-CSCF's reg event dialog (clauses 5.2.3, 5.2.4, 5.2.5.2, 5.4.2.1.1 and 5.4.2.1.2): the
+  commands in USAGE.md. The first NOTIFY of a subscription has the registrar's current contacts, and an ended
+  registration is not kept for a later subscription (dependencies/kamailio patch 0009), also for a UE that registers
+  again within milliseconds of a "deactivated" deregistration, while the ended document is still stored (patch 0010: the
+  first NOTIFY is the registrar's whenever it has a contact). A network-initiated deregistration reaches the MC service
+  servers after the PUBLISH of its document has been notified, so a UE that registered again at once can be authorised
+  on its new registration first: its third-party REGISTER (Expires 0) carries that document, and the MCPTT, MCVideo and
+  MCData servers end a binding only if it was made from one of the registrations it ends (the Call-ID of the client's
+  REGISTER, `deregistration_ends_binding`; event `deregistration_of_older_registration` otherwise). A user-initiated
+  deregistration names no registration and ends the binding (the SIP core sends it only once no contact is left).
+  Fixed: the new binding was removed (calls 480, subscriptions to the user's affiliation 404). Own deviation not fixed yet: the
+  P-Charging-Vector (charging correlation, TS 32.260) is carried only in the P-CSCF's reg event dialog (clauses 5.2.3, 5.2.4, 5.2.5.2, 5.4.2.1.1 and 5.4.2.1.2): the
   P-CSCF's REGISTER (clause 5.2.2.1 item 3) and the other requests and responses of the P-CSCF and the SIP core carry
   none, so neither do the UEs' own reg event dialogs.
 - **sec-agree option-tag in Proxy-Require** (spec defect, to report). After the security agreement the Linux client
@@ -256,11 +265,38 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 
 ### MCPTT
 
+- **Affiliation of other users** (MCPTT and MCVideo; TS 24.379 clauses 9.2.2.2.3, 9.2.2.2.4, 9.2.2.2.8 to 9.2.2.2.10).
+  A user's affiliation status may have several subscriptions, and another user's status and the request in negotiated
+  mode are passed on. The authorisations are the user profile's `<allow-request-affiliated-groups>` or
+  `<allow-request-to-affiliate-other-users>` for a subscription (clause 9.2.2.2.4 step 4 names no element; own
+  reading), and `<allow-request-to-affiliate-other-users>` for negotiated mode. Not done: the mandatory mode for
+  another user (a PUBLISH naming another MC service ID is still refused with 403, clauses 9.2.2.2.3 step 4 and
+  9.2.2.2.9), and both procedures in MCData (TS 24.282 clause 8.3.2). TS 24.379 has no originating procedure for
+  the negotiated-mode MESSAGE, so it is passed on as clause 9.2.2.2.9 passes on a PUBLISH. Its From header is the
+  server's; the requester is in `<mcptt-calling-user-id>`. Another server is found by peer registration, or else the
+  controlling server of a participating-only server (clause 9.2.2.2.10 NOTE 4). A subscription is granted at most
+  3600 s.
 - **Private calls.** The forwarding settings MESSAGE and warning 174 are not implemented;
-  forwarding is manual only.
+  forwarding is manual only. A Priv-Answer-Mode "Manual" (the commencement mode a forwarded or transferred call
+  carries on, TS 24.379 §11.1.1.2.1.1 steps 14A a) and 14C a)) is not passed on (§11.1.1.3.1.1 step 18 a)); without
+  an Answer-Mode the INVITE to the called user then has Answer-Mode "Manual" instead, so that the called user's own
+  automatic Answer-Mode Indication does not answer the call (§6.3.2.2.5.2 step 5). This is the outcome the terminating
+  procedure gives a Priv-Answer-Mode "Manual" (§11.1.1.3.2 step 13 c): manual commencement); step 18 a) alone would let
+  the target's own Answer-Mode Indication decide (step 12 b)). A call forwarded or transferred from a manual call rings
+  the target (tests/integration/private_services_scenario.py PS-08 and PS-11 answer it there). Of the caller's
+  application/vnd.3gpp.mcptt-info+xml (§6.3.3.1.2 step 11) the INVITE to the called user carries the transfer and
+  forwarding indications (`<call-transfer-ind>`, `<call-forwarding-ind>`, `<forwarding-sequence-number>` and the
+  forwarding details), not `<forwarding-other-list>`.
+- **Group call being released.** A request for a group whose call this server is releasing (every remaining dialog
+  ended by its BYE, the answers outstanding) creates a new call (TS 24.379 §10.1.1.4.2 steps 9 and 14); the new call
+  invites the members still in the old one once they are out of it, or after 5 s, as a broadcast does for the calls it
+  preempts.
 - **Broadcast group calls.** Group-broadcast and user-broadcast hierarchies are a project profile, because TS 24.379
   §4.12 defines no procedure for them.
-- **Ad hoc group calls.** End-to-end security is not implemented; the calls are clear (488). The participant lists
+- **Ad hoc group calls.** End-to-end security is not implemented: the media is clear (a protected offer is refused
+  with 488). Floor control is protected under each user's CSK (TS 33.180 §9.4.2) when the server's `security` block
+  sets `protect_floor` (the setting its clients read; an ad hoc group has no group document with
+  `<protect-floor-control-signalling>`), and a caller without a CSK is then refused with 488. The participant lists
   of an ad hoc group emergency alert (the total list and the users who have not acknowledged it, TS 24.379
   §6.3.3.1.24) are not sent.
 - **Functional aliases.** Activations do not expire, and the alias-to-alias call policy (warnings 171 and 172) is not
@@ -289,6 +325,33 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 - **Ad hoc priority over the media plane.** An emergency or imminent-peril ad hoc group communication over the media
   plane is refused with 403: TS 23.282 clause 7.17.2.1 names the indicators, but TS 24.282 defines no procedure for
   them (clause 24 and the upgrade clauses 9.2.4.4.5 and 9.2.4.4.6 cover none).
+- **Size of a standalone SDS over the media plane.** A one-to-one SDS above `<max-data-size-sds-bytes>` of the
+  service configuration, or a group or ad hoc group SDS above the group's limit (`<mcdata-max-data-in-single-request>`
+  and `<mcdata-on-network-max-data-size-for-SDS>`), is refused by answering its MSRP SEND 403 and is not forwarded
+  (TS 24.582 clause 6.3.1.3 steps 1 to 3); the leg then ends with the originator's BYE or its deadline. Fixed: the leg
+  used to be torn down before the SEND was answered. `<max-data-size-sds-bytes>` is the server's
+  `mcdata.max_data_size_sds_bytes`; the labs set it to 4096, above the 1000-byte signalling plane limit, so a one-to-one
+  SDS over the signalling plane is refused with 203 (TS 24.282 clause 9.2.2.3.1 step 8, at the participating function)
+  before the controlling function's 218 (clause 9.2.2.4.2 step 5a) could apply; 218 is answered only where the
+  configured value is below the signalling plane limit.
+- **One-to-one media-plane communications to a functional alias.** A one-to-one SDS (standalone or session) or FD over
+  the media plane to a functional alias is redirected with 300 (Multiple Choices) to a user that activated it
+  (TS 24.282 clauses 9.2.3.4.4 step 6a1, 9.2.4.4.4 and 10.2.5.4.4 step 8a1), or refused with 403 warning 145. As for
+  IP connectivity, the alias is resolved before the originator's one-to-one list (warning 229, clause 11.1 step 1A) is
+  checked: the list is applied to the selected user when the originator invites that user. An alias is recognised
+  with or without `<call-to-functional-alias-ind>`. The `<called-functional-alias-URI>` of the originator's INVITE to
+  the selected user (clauses 9.2.3.2.3, 9.2.4.2.3 and 10.2.5.2.3 step 3) is passed on to that user, as on the
+  signalling plane (clause 9.2.2.4.2), so the recipient knows which alias was called (clauses 9.2.3.4.3, 9.2.4.4.3 and
+  10.2.5.4.3 name no such element in the INVITE to the terminating client; it is copied as clause 24.4.2.2 step 15b-iv
+  does for an ad hoc group). The server does not check that the selected user still holds the alias. Fixed: the alias
+  used to be treated as a user (403 warning 229, or 404), and the recipient was not told the alias called.
+- **Fixed (no longer limitations).** A client that restarts without logging off (a new registration, a new service
+  authorisation and a new CSK) is opened with the CSK it uploads (TS 24.282 clause 7.3.3, TS 33.180 clause 9.2.1.3), and
+  the answer's XML is protected with it; every request of such a client used to be refused with 403 warning 140. The
+  disposition notifications of a standalone SDS sent over the media plane are correlated with it (TS 24.282 clause
+  12.2.3 step 5) and relayed or aggregated to its originator; they used to be refused with 403 warning 216. A declined
+  one-to-one FD over the media plane answers the originator's INVITE with the invited client's final response and its
+  warning (480 with warning 110 or 231, TS 24.282 clause 10.2.5.4.4); it used to end with 487.
 - **Message store.** Implemented from TS 24.282 clause 21 without the OMA NMS and NotificationChannel specifications:
   LongPolling notification channels only, answers in JSON only, no `listFilter` query. SDS and file distribution over
   HTTP are deposited, communications over the media plane are not.

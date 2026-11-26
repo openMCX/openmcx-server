@@ -293,6 +293,15 @@ def main():
             ),
             20,
         )
+        # TS 24.379 clause 11.1.1.2.1.1 step 14C a): the forwarded call carries the commencement mode of the call it
+        # continues (Priv-Answer-Mode Manual), and the terminating function rings the target for it (clause
+        # 11.1.1.3.2 step 13 c); the server passes it on as Answer-Mode Manual, private_call_commencement_headers).
+        wait(
+            'PS-08 the forwarding target rings (manual commencement of the forwarded call)',
+            lambda: status('client-d').get('call_state') == 'ringing',
+            20,
+        )
+        command('client-d', 'answer')
         wait('PS-08 caller reaches the forwarding target', lambda: private_active('client-a', 'client-d'), 20)
         wait('PS-08 forwarding user told of success', outcome('client-b', 'forward-private-call-response'))
         command('client-a', 'hangup')
@@ -366,6 +375,13 @@ def main():
             'PS-11 the unanswered invitation to the callee is cancelled',
             lambda: status('client-d').get('call_state') == 'idle',
         )
+        # The forwarded call keeps the manual commencement of the call to client-d (clause 11.1.1.2.1.1 step 14C a)).
+        wait(
+            'PS-11 the no-answer forwarding target rings (manual commencement of the forwarded call)',
+            lambda: status('client-a').get('call_state') == 'ringing',
+            20,
+        )
+        command('client-a', 'answer')
         wait('PS-11 caller reaches the no-answer forwarding target', lambda: private_active('client-b', 'client-a'), 20)
         wait(
             'PS-11 the server reports the TNP1 expiry',

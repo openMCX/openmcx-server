@@ -208,5 +208,40 @@ int main() {
     uncontrolled.control = MediaControl::none;
     check(floor_answer_media(uncontrolled, offer).floor_ssrc == 0x1234, "no control channel changed");
   }
+  {
+    // TS 24.379 clause 11.1.1.3.1.1 step 18, clause 11.1.1.4.1 step 3: the commencement mode towards the called user.
+    const auto one = [](const std::vector<SipHeader> &headers, const std::string &name, const std::string &value) {
+      return headers.size() == 1 && headers[0].name == name && headers[0].value == value;
+    };
+    check(one(private_call_commencement_headers({alice, bob, "", ""}, true), "Priv-Answer-Mode", "Manual"),
+          "first-to-answer call does not ring");
+    check(one(private_call_commencement_headers({alice, bob, "Auto", "Auto"}, false), "Priv-Answer-Mode", "Auto"),
+          "forced automatic commencement lost");
+    check(one(private_call_commencement_headers({alice, bob, "Manual", ""}, false), "Answer-Mode", "Manual"),
+          "Answer-Mode not passed on");
+    check(one(private_call_commencement_headers({alice, bob, "Auto", "Manual"}, false), "Answer-Mode", "Auto"),
+          "Answer-Mode not preferred to a Priv-Answer-Mode Manual");
+    // Steps 14A a) and 14C a): a forwarded call's Priv-Answer-Mode "Manual" stays a manual commencement (it was
+    // dropped, and the called user's own automatic Answer-Mode Indication answered the call).
+    check(one(private_call_commencement_headers({alice, bob, "", "Manual"}, false), "Answer-Mode", "Manual"),
+          "forwarded manual call not kept manual");
+    check(one(private_call_commencement_headers({alice, bob, "", "Manual;require"}, false), "Answer-Mode", "Manual"),
+          "Priv-Answer-Mode parameters not ignored");
+    check(private_call_commencement_headers({alice, bob, "", ""}, false).empty(), "commencement mode invented");
+
+    // TS 24.379 clause 6.3.3.1.2 step 11: the transfer and forwarding indications go on to the called user; the
+    // private call service requests do not.
+    const std::map<std::string, std::string> forwarded{{"call-forwarding-ind", "true"},
+                                                       {"forwarding-sequence-number", "1"},
+                                                       {"request-type", "forward-private-call-request"}};
+    check(private_call_passed_service(forwarded) ==
+              std::map<std::string, std::string>{{"call-forwarding-ind", "true"}, {"forwarding-sequence-number", "1"}},
+          "forwarding indication not passed on");
+    check(private_call_passed_service({{"call-transfer-ind", "true"}}) ==
+              std::map<std::string, std::string>{{"call-transfer-ind", "true"}},
+          "transfer indication not passed on");
+    check(private_call_passed_service({{"response-type", "transfer-private-call-response"}}).empty(),
+          "a service response passed on");
+  }
   std::cout << "private call authorization and resource-list tests passed\n";
 }

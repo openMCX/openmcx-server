@@ -157,6 +157,9 @@ type mcvideoRights struct {
 	AllowVideoPushToServer   bool               `json:"allow_video_push_to_server,omitempty"`
 	AllowVideoPullFromServer bool               `json:"allow_video_pull_from_server,omitempty"`
 	MaxAffiliations          int                `json:"max_affiliations,omitempty"`
+	// <allow-request-affiliated-groups> and <allow-request-to-affiliate-other-users> (TS 24.484 clause 9.3.2.7).
+	RequestAffiliatedGroups bool `json:"request_affiliated_groups,omitempty"`
+	AffiliateOthers         bool `json:"affiliate_others,omitempty"`
 }
 
 // ------------------------------------------------------------------------------
@@ -182,6 +185,7 @@ var mcvideoDirectActions = map[string]bool{
 	"allow-private-call-to-any-user": true, "allow-regroup": true, "allow-revoke-transmit": true,
 	"allow-emergency-group-call": true, "allow-cancel-group-emergency": true, "allow-imminent-peril-call": true,
 	"allow-cancel-imminent-peril": true, "allow-activate-emergency-alert": true, "allow-cancel-emergency-alert": true,
+	"allow-request-affiliated-groups": true, "allow-request-to-affiliate-other-users": true,
 }
 
 // ------------------------------------------------------------------------------
@@ -233,6 +237,8 @@ func mcvideoProfileRights(rights mcvideoRights) []profileRight {
 		video(adhoc.AlertCancel, "allow-cancel-adhoc-group-emergency-alert")
 	}
 	video(rights.Regroup, "allow-regroup")
+	video(rights.RequestAffiliatedGroups, "allow-request-affiliated-groups")
+	video(rights.AffiliateOthers, "allow-request-to-affiliate-other-users")
 	video(rights.AllowRevokeTransmit, "allow-revoke-transmit")
 	video(rights.FunctionalAliasTakeover, "allow-takeover-functional-alias-other-user")
 	video(rights.FunctionalAliasBinding, "allow-functional-alias-binding-with-group")
@@ -376,6 +382,8 @@ func (doc mcvideoProfileXML) rights() mcvideoRights {
 		"allow-revoke-transmit":                              func() { rights.AllowRevokeTransmit = true },
 		"allow-takeover-functional-alias-other-user":         func() { rights.FunctionalAliasTakeover = true },
 		"allow-functional-alias-binding-with-group":          func() { rights.FunctionalAliasBinding = true },
+		"allow-request-affiliated-groups":                    func() { rights.RequestAffiliatedGroups = true },
+		"allow-request-to-affiliate-other-users":             func() { rights.AffiliateOthers = true },
 	}
 	own := map[string]func(){
 		"allow-remote-transmit":        func() { rights.AllowRemoteTransmit = true },

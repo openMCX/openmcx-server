@@ -1,0 +1,65 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: OpenMCX <noreply@openmcx.invalid>
+Date: Thu, 26 Nov 2026 18:00:00 +0100
+Subject: [PATCH] presence_reginfo: the first NOTIFY of a subscription made
+ just after a re-registration has the new registration
+
+After a network-initiated deregistration with the event "deactivated"
+(reginfo.deregister) the UE registers again at once (TS 24.229 clause
+5.4.1.5) and subscribes to its reg event. The presence module stores the
+final document of the deregistration (every registration terminated), sends
+its NOTIFYs and only then removes it (patch 0009). A UE that registered again
+within some 15 ms of the NOTIFY it got subscribed while that document was
+still stored, and patch 0009 kept a final document as the first NOTIFY of a
+subscription: the new subscription got the old binding, terminated with the
+event "deactivated" and its old callid, and was ended by it.
+
+- presence_reginfo reginfo_body_setversion(): the first document sent to a
+  subscriber is the registrar's state (reginfo_current_body) whenever the
+  registrar has a contact of the AOR, also when the stored presentity is a
+  final document; a final document is kept while the registrar has no
+  contact (it then reports the end of the registration). TS 24.229 clause
+  5.4.2.1.2: the first NOTIFY has "the state information of all registered
+  public user identities of the user".
+
+The modified file carries a notice of the change (GPL-2.0 section 2(a)).
+---
+diff --git a/src/modules/presence_reginfo/notify_body.c b/src/modules/presence_reginfo/notify_body.c
+index 9f07e66..2f2ae9b 100644
+--- a/src/modules/presence_reginfo/notify_body.c
++++ b/src/modules/presence_reginfo/notify_body.c
+@@ -32,6 +32,9 @@
+  * Modified by OpenMCX on 2026-11-26 (GPL-2.0 section 2(a)): the first document sent to a subscriber, and a document
+  * when no presentity is stored, has the registrar's current contacts (pua_reginfo's reginfo_current_body): the
+  * stored presentity can lag the registrar (TS 24.229 clause 5.4.2.1.2, full state).
++ * Modified by OpenMCX on 2026-11-26 (GPL-2.0 section 2(a)): the first document of a subscription is the registrar's
++ * also when the stored presentity is a final document but the registrar has a contact again (a user who registered
++ * again at once after a network-initiated deregistration).
+  */
+ 
+ /*! \file
+@@ -395,14 +398,21 @@ int reginfo_is_final_body(str *body)
+  * 5.1). The first document sent to the subscriber is the registrar's state
+  * (full state, TS 24.229 clause 5.4.2.1.2): the stored presentity can still be
+  * the one before a REGISTER whose PUBLISH is not yet stored. A final document
+- * (every registration terminated) is kept: it reports the end of the
+- * registration.
++ * (every registration terminated) is kept while the registrar has no contact
++ * of the AOR: it reports the end of the registration. When the registrar has
++ * a contact again, the final document is the one of a registration that ended
++ * before this subscription: a user deregistered by the network with
++ * "deactivated" registers again at once (clause 5.4.1.5) and subscribes while
++ * the presence module still holds that document (it is removed only once its
++ * NOTIFYs are sent), and the new subscription's first NOTIFY would carry the
++ * old binding, terminated, and end the subscription. It gets the registrar's
++ * state.
+  */
+ str *reginfo_body_setversion(subs_t *subs, str *body)
+ {
+ 	str *current = NULL, *versioned;
+ 
+-	if(subs->version <= 1 && body && !reginfo_is_final_body(body))
++	if(subs->version <= 1 && body)
+ 		current = reginfo_registrar_body(&subs->pres_uri);
+ 	if(current == NULL)
+ 		return reginfo_body_setversion_doc(subs, body);
