@@ -426,8 +426,8 @@ def main():
         # above the signalling plane limit (1000), as in a deployment, so a one-to-one SDS over the signalling plane is
         # refused with 203 before the controlling function's 218 could apply (clause 9.2.2.3.1 step 8 precedes clause
         # 9.2.2.4.2 step 5a). The limit is checked over the media plane instead: a longer one-to-one SDS is carried,
-        # one above the limit has its MSRP SEND answered 403 and is not forwarded (the 403 on the wire is checked by
-        # verify_mcdata_sds.py; the client reports any answer to its SEND as delivered).
+        # one above the limit has its MSRP SEND answered 403 and is not forwarded (the 403 on the wire is also checked
+        # by verify_mcdata_sds.py).
         def media_result(role):
             return status(role).get('mcdata_media_result') or {}
 
@@ -464,21 +464,27 @@ def main():
             lambda: bool(media_received('client-a', within)),
             20,
         )
-        refused_before = refused_count()
-        over = unique('media-over') + ' ' + 'o' * 5000
-        media_send('client-c', ids['client-a'], over, 'SD-07 a 5000-octet one-to-one SDS is sent over the media plane')
-        wait(
-            'SD-07 a one-to-one SDS over the media plane above <max-data-size-sds-bytes> is refused (MSRP 403, '
-            'TS 24.582 clause 6.3.1.3 steps 1 and 3)',
-            lambda: refused_count() > refused_before,
-            20,
+        # Above 4094 octets an SDS does not fit in a client command (the control FIFO's atomic write), so the SDS
+        # above the limit is sent raw as client-c (refusal_probe.py --media-sds), as the server's other refusals are.
+        label = (
+            'SD-07 a one-to-one SDS over the media plane above <max-data-size-sds-bytes> has its MSRP SEND answered '
+            '403 (TS 24.582 clause 6.3.1.3 steps 1 and 3)'
         )
-        observations['media_one_to_one_refused'] = True  # verify_mcdata_sds.py: the MSRP 403 on the wire
-        time.sleep(1)
-        check(
-            'SD-07 the refused one-to-one SDS is not forwarded to its recipient',
-            not media_received('client-a', over) and not inbox('client-a', over),
-        )
+        if refusal_probe.usable(args.compose, 'client-c', 'mcdata'):
+            refused_before = refused_count()
+            answer = refusal_probe.run_in(cli, args.compose, 'client-c', ['--media-sds', ids['client-a'], '5000'])
+            answer = answer['media_sds'][0]
+            observations.setdefault('server_refusals', {})[label] = answer
+            check(label, answer['status'] == 200 and answer['msrp_status'] == 403)
+            observations['media_one_to_one_refused'] = True  # verify_mcdata_sds.py: the MSRP 403 on the wire
+            wait('SD-07 the server counts the refused SDS', lambda: refused_count() > refused_before)
+            time.sleep(2)
+            check(
+                'SD-07 the refused one-to-one SDS is not forwarded to its recipient',
+                not media_received('client-a', 'x' * 5000) and not inbox('client-a', 'x' * 5000),
+            )
+        else:
+            observations.setdefault('server_refusals_not_probed', []).append(label)
         send(
             'client-c',
             f'sds {ids["client-b"]} {unique("c")}',
