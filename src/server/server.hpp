@@ -946,6 +946,10 @@ protected:
     // Operator test aid ("pre-session-refuse"): the next REFER with this indication ("emergency", "imminent") is an
     // unauthorised request (TS 24.379 clause 10.1.2.3.2 step 8: the SS's local decision of TS 37.579-2 test 6.1.2.2).
     std::string refuse_next;
+    // The Call-ID of the client's REGISTER the session was established under (CoreRegistration::call_id; empty when
+    // no third-party REGISTER was received): a later registration of the user with another Call-ID is another
+    // registration of the UE, whose sessions these are not (pre_sessions_end).
+    std::string registration;
   };
   std::map<std::string, std::shared_ptr<PreSession>> pre_sessions_;
   bool pre_session_call_setup_ = false; // the INVITE of a call over a session is being handled (pre_session_call)
@@ -964,6 +968,9 @@ protected:
   void pre_session_modify(const std::shared_ptr<PreSession> &session, std::optional<std::uint8_t> priority,
                           bool update);
   void pre_session_release(const std::shared_ptr<PreSession> &session);
+  void pre_session_end(const std::shared_ptr<PreSession> &session, const std::string &reason);
+  void pre_sessions_end(const std::string &user_id, const std::string &reason,
+                        const std::optional<std::string> &keep_registration = std::nullopt);
   std::vector<std::shared_ptr<PreSession>> pre_sessions_of(const std::string &which) const;
   // Calls over a pre-established session (TS 24.379 clauses 10.1.1.3.1.2 and 6.3.2.2.5.3, TS 24.380 clause 9.3.2).
   std::shared_ptr<PreSession> pre_session_by_uri(const std::string &uri) const;

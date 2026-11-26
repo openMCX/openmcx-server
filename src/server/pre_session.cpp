@@ -126,6 +126,8 @@ std::shared_ptr<McServer::PreSession> McServer::make_pre_session(const SipMessag
   auto session = std::make_shared<PreSession>();
   session->dialog = message.dialog_id;
   session->user = user.id;
+  if (const auto registration = core_registrations_.find(user.sip); registration != core_registrations_.end())
+    session->registration = registration->second.call_id;
   session->uri = session_service_ + ";mcptt-pre-session=" + random_id();
   session->local = local_media(cfg_, media_offset());
   while (session->local.floor_ssrc == message.remote_media->floor_ssrc) session->local.floor_ssrc = random_ssrc();
@@ -288,7 +290,7 @@ void McServer::pre_session_poll() {
       }
     }
     pre_session_events(session);
-    if (!session->ice) continue;
+    if (!session->ice || !pre_sessions_.contains(session->dialog)) continue; // pre_session_end may have released it
     const auto before = session->ice->state();
     session->ice->tick();
     if (session->ice->state() != before && session->ice->state() != IceState::Checking)
@@ -333,6 +335,39 @@ void McServer::pre_session_modify(const std::shared_ptr<PreSession> &session, st
 // TS 24.379 clause 8.4.2.2: this function releases the session (step 1 has no call to release yet: calls over
 // sessions come with M2 of conformance/pre-est-feat.md); steps 2 to 4: BYE in its dialog; step 5 on its end.
 void McServer::pre_session_release(const std::shared_ptr<PreSession> &session) { sip_.bye(session->dialog); }
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 8.4.2.2: this function releases a session its client can no longer use: the call over it first
+// (step 1, the leg leaving its call, pre_session_state), then BYE in the session's dialog (steps 2 to 4). The client
+// may be gone (its flow closed), so the session's resources go at once (step 5 does not wait for the 200 (OK)), and
+// no call is offered over it any more.
+void McServer::pre_session_end(const std::shared_ptr<PreSession> &session, const std::string &reason) {
+  if (!pre_sessions_.contains(session->dialog)) return;
+  event("pre_established_session_ended",
+        {{"user_id", session->user}, {"session_uri", session->uri}, {"reason", reason}});
+  try {
+    sip_.bye(session->dialog);
+  } catch (const std::exception &error) {
+    event("pre_established_session_bye_failed", {{"user_id", session->user}, {"reason", error.what()}});
+  }
+  pre_session_state(session, SipCallState::disconnected);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 8.4.2.2 with clause 7.3: the pre-established sessions of a user are bound to the service
+// authorisation and the registration they were established under (clause 8.2.2 steps 2 and 5: the binding of the
+// MCPTT ID to the UE's registration). They are released when that binding ends (deregistration, log-off, end of the
+// authorisation), when a new service authorisation replaces it (a client started again), or, with keep_registration,
+// when the UE registers again with another Call-ID: the sessions established under another registration go.
+void McServer::pre_sessions_end(const std::string &user_id, const std::string &reason,
+                                const std::optional<std::string> &keep_registration) {
+  std::vector<std::shared_ptr<PreSession>> ended;
+  for (const auto &[dialog, session] : pre_sessions_)
+    if (session->user == user_id &&
+        (!keep_registration || (!session->registration.empty() && session->registration != *keep_registration)))
+      ended.push_back(session);
+  for (const auto &session : ended) pre_session_end(session, reason);
+}
 
 //------------------------------------------------------------------------------
 // The operator's commands (as "mbms-announce"): "pre-session-modify <MCPTT ID|all> [priority=<0..255>] [update]"
@@ -457,12 +492,21 @@ void McServer::pre_session_events(const std::shared_ptr<PreSession> &session) {
       if (!leg_id.empty()) state(leg_id, SipCallState::confirmed, 200);
       break;
     case PreEstablishedServerEvent::ConnectRefused:
-    case PreEstablishedServerEvent::ConnectExpired:
       if (!leg_id.empty()) {
         pre_session_unbind(session);
         state(leg_id, SipCallState::disconnected, 480);
       }
       break;
+    case PreEstablishedServerEvent::ConnectExpired:
+      // TS 24.380 clause 9.3.2.4.9: the call is released (step 1). No Acknowledge to any of the C55 Connects: the
+      // client no longer answers on the session, which this function then releases (TS 24.379 clause 8.4.2.2), so
+      // that the next call to the user is offered on demand rather than over it again.
+      if (!leg_id.empty()) {
+        pre_session_unbind(session);
+        state(leg_id, SipCallState::disconnected, 480);
+      }
+      pre_session_end(session, "connect unanswered");
+      return;
     default:
       break;
     }
@@ -967,6 +1011,13 @@ bool McServer::pre_session_invite_member(const std::shared_ptr<Session> &call, c
                     found->second->control->client_released();
                     pre_session_unbind(found->second);
                     state(id, SipCallState::disconnected, response.status_code);
+                    // RFC 3261 section 14.1: a 408 (or no answer) or a 481 to a re-INVITE ends the dialog: the
+                    // client no longer has the session, which is released (TS 24.379 clause 8.4.2.2).
+                    if (response.status_code == 408 || response.status_code == 481)
+                      schedule([this, dialog] {
+                        if (const auto again = pre_sessions_.find(dialog); again != pre_sessions_.end())
+                          pre_session_end(again->second, "re-INVITE unanswered");
+                      });
                   });
   } catch (const std::exception &error) {
     // The session stays without a call; the member's leg fails (the call's setup supervision answers for it).

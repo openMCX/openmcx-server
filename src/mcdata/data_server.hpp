@@ -349,6 +349,9 @@ class DataServer {
     // RFC 3261 section 14.1: one offer at a time; the re-INVITEs that follow wait.
     bool offer_pending = false;
     std::deque<std::function<void()>> waiting;
+    // The Call-ID of the client's REGISTER the session was established under (registration_call_ids_; empty when no
+    // third-party REGISTER was received): another registration of the user is not the session's (pre_sessions_end).
+    std::string registration;
   };
 
   std::map<std::string, std::shared_ptr<PreSession>> pre_sessions_; // by dialog
@@ -379,6 +382,9 @@ class DataServer {
   void pre_session_idle(PreSession &pre);
   void end_media_leg(const std::string &dialog, const std::vector<SipHeader> &headers = {});
   void pre_session_state(const std::string &dialog, SipCallState state);
+  void pre_session_end(const std::string &dialog, const std::string &reason);
+  void pre_sessions_end(const std::string &owner, const std::string &reason,
+                        const std::optional<std::string> &keep_registration = std::nullopt);
   void pre_session_tick();
   void pre_session_command(const std::string &command);
   Json pre_session_status() const;
@@ -851,7 +857,8 @@ class DataServer {
 
   bool priority_authorised(const std::string &user, const std::string &group, bool emergency, bool enable);
 
-  SipResponse reject_priority(const std::string &user, bool emergency);
+  SipResponse reject_priority(const std::string &user, bool emergency,
+                              const std::string &request_type = "group-sds-session");
 
   void send_priority_info(const std::string &dialog, const std::string &user, const std::string &group,
                           std::optional<bool> imminent = false, std::optional<bool> emergency = true,

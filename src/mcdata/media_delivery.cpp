@@ -223,14 +223,15 @@ bool DataServer::priority_authorised(const std::string &user, const std::string 
 }
 
 //------------------------------------------------------------------------------
-// TS 24.282 clause 6.3.7.2.7 and clause 9.2.4.4.4 step 3C: the rejection names the indication it refuses.
-SipResponse DataServer::reject_priority(const std::string &user, bool emergency) {
+// TS 24.282 clause 6.3.7.2.7 and clauses 9.2.4.4.4 and 10.2.5.4.4 step 3C: the rejection names the indication it
+// refuses, in an MCData-Info body of the request's <request-type>.
+SipResponse DataServer::reject_priority(const std::string &user, bool emergency, const std::string &request_type) {
   auto response = reject(403,
                          emergency ? "233 user not authorised to initiate emergency communication"
                                    : "236 user not authorised to initiate imminent peril communication",
                          user, emergency ? "media-group-emergency" : "media-imminent-peril");
   mcdata::Info refused;
-  refused.request_type = "group-sds-session";
+  refused.request_type = request_type;
   if (emergency) {
     refused.emergency = false;
     refused.alert = false;
@@ -512,6 +513,12 @@ std::string DataServer::media_deliver(const std::string &originator, const std::
                                    media_.erase(found);
                                  if (const auto session = pre_sessions_.find(dialog); session != pre_sessions_.end())
                                    pre_session_idle(*session->second);
+                                 // RFC 3261 section 14.1: a 408 (or no answer) or a 481 to a re-INVITE ends the
+                                 // dialog: the client no longer has the session, which is released (TS 24.282
+                                 // clause 18.3.3.2.2) so that the next communication is offered on demand.
+                                 if (response.status_code == 408 || response.status_code == 481)
+                                   pending_.push_back(
+                                       [this, dialog] { pre_session_end(dialog, "re-INVITE unanswered"); });
                                },
                                "establish-request");
     return pre->dialog;

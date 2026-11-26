@@ -476,6 +476,10 @@ void McServer::third_party_register(const SipMessage &message, SipResponse &resp
   }
   // TS 24.379 clause 8.1A: the SIP core's resource sharing and the UE's registration token.
   record_core_registration(message, identity);
+  // TS 24.379 clause 8.4.2.2: a registration with another Call-ID is a new registration of the UE (RFC 3261 section
+  // 10.2.4: a refresh keeps the Call-ID): the sessions established under the old one are released.
+  if (const auto found = users_.find(identity); found != users_.end())
+    pre_sessions_end(found->second.id, "new registration", core_registrations_[identity].call_id);
   // The client's REGISTER (RFC 3420): its body parts, without which there is nothing to authorise.
   std::vector<BodyPart> parts;
   for (const auto &part : parts_of(message))
@@ -637,6 +641,7 @@ void McServer::remove_binding(std::map<std::string, User>::iterator found, const
   end_settings_subscriptions(id, reason); // TS 24.379 clause 7.3.6 with RFC 6665 section 4.2.2
   deactivate_functional_aliases(id);
   disconnect_user(id);
+  pre_sessions_end(id, reason); // TS 24.379 clause 8.4.2.2: the sessions go with the binding
   end_user_relays(id);
   register_with_controllers(user, true);
   event("service_binding_removed", {{"user_id", id}, {"client_id", user.client}, {"reason", reason}});
@@ -657,6 +662,9 @@ void McServer::bind_authorized_user(const Json &claims, const McpttInfo &info, c
     user = old->second;
   else if (old != users_.end()) {
     auto id = old->second.id;
+    // TS 24.379 clause 8.4.2.2: a new service authorisation (an initial publication, RFC 3903 section 4.2, a client
+    // started again) replaces the binding the user's pre-established sessions were established under.
+    pre_sessions_end(id, "service authorisation replaced");
     schedule([this, id] {
       disconnect_user(id);
       end_user_relays(id);

@@ -117,6 +117,8 @@ SipResponse DataServer::pre_session_invite(const SipMessage &request, const User
   pre->dialog = request.dialog_id;
   pre->owner = user.id;
   pre->sip = user.sip;
+  if (const auto registration = registration_call_ids_.find(user.sip); registration != registration_call_ids_.end())
+    pre->registration = registration->second;
   pre->uri = session_service_ + ";mcdata-pre-session=" + random_id();
   pre->endpoint = std::make_shared<msrp::Endpoint>();
   const auto address = media_address();
@@ -172,6 +174,38 @@ void DataServer::pre_session_state(const std::string &dialog, SipCallState state
           {{"user_id", found->second->owner}, {"session_uri", found->second->uri}, {"dialog", dialog}});
     pre_sessions_.erase(found);
   }
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 18.3.3.2.2 with clause 7.3: the pre-established sessions of a user are bound to the service
+// authorisation and the registration they were established under (clause 18.3.2.2 steps 2 and 5). They are released
+// when that binding ends (log-off, deregistration, end of the authorisation), when a new service authorisation
+// replaces it (a client started again), or, with keep_registration, when the UE registers again with another Call-ID:
+// the sessions established under another registration go. BYE in the session's dialog; the client may be gone, so the
+// communication over the session and its media go at once (no communication is offered over it any more).
+void DataServer::pre_sessions_end(const std::string &owner, const std::string &reason,
+                                  const std::optional<std::string> &keep_registration) {
+  std::vector<std::string> ended;
+  for (const auto &[dialog, pre] : pre_sessions_)
+    if (pre->owner == owner &&
+        (!keep_registration || (!pre->registration.empty() && pre->registration != *keep_registration)))
+      ended.push_back(dialog);
+  for (const auto &dialog : ended) pre_session_end(dialog, reason);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 18.3.3.2.2: this function releases one session its client can no longer use (pre_sessions_end).
+void DataServer::pre_session_end(const std::string &dialog, const std::string &reason) {
+  const auto found = pre_sessions_.find(dialog);
+  if (found == pre_sessions_.end()) return;
+  event("mcdata_pre_session_ended", {{"user_id", found->second->owner}, {"dialog", dialog}, {"reason", reason}});
+  try {
+    sip_.bye(dialog, {}, {{"P-Asserted-Identity", "<" + service_uri_ + ">"}});
+  } catch (const std::exception &error) {
+    event("mcdata_pre_session_bye_failed", {{"user_id", found->second->owner}, {"reason", error.what()}});
+  }
+  media_released(dialog);
+  pre_session_state(dialog, SipCallState::disconnected);
 }
 
 //------------------------------------------------------------------------------
