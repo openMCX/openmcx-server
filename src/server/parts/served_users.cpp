@@ -7,6 +7,7 @@
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.281 V19.6.0 (Rel-19), TS 24.282 V19.7.0 (Rel-19).
 
 #include "parts/served_users.hpp"
+
 #include "request_values.hpp"
 
 #include <algorithm>
@@ -104,6 +105,19 @@ ServiceSettings read_service_settings(std::string_view xml, std::string_view cli
 // Helper: the cached Answer-Mode Indication while the settings last.
 std::string cached_answer_mode(const ServedUser &user, std::int64_t now) {
   return user.settings && user.settings->expires > now ? user.settings->answer_mode : std::string{};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 10.1.1.3.2 (clause 17.3.2.1.2 for an ad hoc group call): the terminating participating function
+// performs automatic (step 7) or manual (step 8) commencement when the INVITE "does not contain an Answer-Mode header
+// field and the Answer-Mode Indication received in the application/poc-settings+xml MIME body received from the
+// invited MCPTT client as per clause 7.3.3 or clause 7.3.4 is set to" auto-answer or manual-answer. The controlling
+// function adds no Answer-Mode (clause 10.1.1.4.1.1 with clause 6.3.3.1.2 step 10; a group call's originating INVITE
+// has none), so the member's own setting decides (clauses 6.3.2.2.5.2 step 8 and 6.3.2.2.6.2 step 5).
+std::string group_answer_mode(const ServedUser &user, std::int64_t now, const std::string &fallback) {
+  if (auto mode = cached_answer_mode(user, now); !mode.empty()) return mode;
+  if (!user.peer.empty()) return {};
+  return fallback;
 }
 
 //------------------------------------------------------------------------------

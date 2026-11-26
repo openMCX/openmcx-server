@@ -467,7 +467,10 @@ void McServer::invite_adhoc_member(const std::shared_ptr<Session> &session, cons
   else if (session->priority.imminent)
     info.imminent_peril = true;
   auto headers = priority_headers(cfg_.at(svc_.name), session->priority);
-  headers.push_back({"Answer-Mode", session->policy.value("answer_mode", "Auto")});
+  // TS 24.379 clause 17.3.2.1.2 steps 7 and 8: the member's own Answer-Mode Indication (group_answer_mode).
+  if (const auto mode = group_answer_mode(*user, std::time(nullptr), session->policy.value("answer_mode", "Auto"));
+      !mode.empty())
+    headers.push_back({"Answer-Mode", mode});
   headers.push_back({"Contact", focus_contact(*session)});
   leg->dialog = sip_.invite(user->sip, offer_media(*leg), service_parts(info), {}, user_route(*user, headers));
   add_leg(leg);

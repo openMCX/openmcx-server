@@ -184,6 +184,18 @@ void Clause_7_3_4_Settings() {
   user.settings = read_service_settings(poc_settings_xml("c1", 0, true), "c1", now + 60);
   assert(cached_answer_mode(user, now) == "Manual");
   assert(cached_answer_mode(user, now + 60).empty());
+  // TS 24.379 clauses 10.1.1.3.2 and 17.3.2.1.2 steps 7 and 8: a group call INVITE has the member's own Answer-Mode
+  // Indication, whatever the call policy; the policy's only without cached settings; none for a member of a peer.
+  assert(group_answer_mode(user, now, "Auto") == "Manual");
+  assert(group_answer_mode(user, now + 60, "Auto") == "Auto");
+  user.settings = read_service_settings(poc_settings_xml("c1", 0, false), "c1", now + 60);
+  assert(group_answer_mode(user, now, "Manual") == "Auto");
+  ServedUser fresh;
+  assert(group_answer_mode(fresh, now, "Manual") == "Manual");
+  fresh.peer = "mcptt.partner.example";
+  assert(group_answer_mode(fresh, now, "Auto").empty());
+  fresh.settings = read_service_settings(poc_settings_xml("c1", 0, true), "c1", now + 60);
+  assert(group_answer_mode(fresh, now, "Auto") == "Manual");
 }
 } // namespace
 
