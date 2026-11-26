@@ -214,6 +214,48 @@ void McServer::pre_session_offer(const SipMessage &message, const User &user, Si
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clauses 10.1.1.3.1.3 (prearranged), 10.1.2.3.1.2 (chat) and 11.1.1.3.1.3 (private call), each "covers both
+// on-demand session and pre-established sessions": a re-INVITE in the session's dialog with MC service information
+// while a call is over the session is the client's request for that call: the cancel of the group's in-progress
+// emergency (clause 10.1.1.2.1.4 NOTE 2) or imminent peril state (clause 10.1.1.2.1.5), an upgrade (clause
+// 10.1.1.2.1.3), or a private call's emergency change (clause 11.1.1.2.1.4). Step 3 (clause 6.3.2.1.9): it goes to
+// the controlling function as the re-INVITE of the call, i.e. in the dialog of the call's leg (this server has the
+// controlling role: clause 10.1.1.4.7, priority_reinvite, which clears or sets the group's state and tells the other
+// participants, clause 6.3.3.1.6), with the SDP of the session (step 6, clause 6.3.2.1.1.2; NOTE 2: the media as
+// negotiated for the session). The 2xx (clause 6.3.2.1.5.2, an SDP answer based on the session's, P-Asserted-Identity
+// the PSI of this participating function: steps 2 and 4) or the refusal of the controlling function goes back in the
+// session's dialog; the session itself is unchanged. Returns false for a re-INVITE that modifies the session (clause
+// 8.3.2.1).
+bool McServer::pre_session_call_reinvite(const SipMessage &message, User &user,
+                                         const std::shared_ptr<PreSession> &session, SipResponse &response) {
+  const auto parts = parts_of(message);
+  const bool service_info = std::any_of(parts.begin(), parts.end(),
+                                        [&](const BodyPart &part) { return part.content_type == svc_.info_mime; });
+  if (pre_session_reinvite_kind(!session->call_leg.empty(), service_info) != PreSessionReinvite::call_request)
+    return false;
+  const auto found = legs_.find(session->call_leg);
+  if (found == legs_.end()) return false;
+  const auto leg = found->second;
+  auto forwarded = message;
+  forwarded.dialog_id = leg->dialog;
+  forwarded.request_uri = leg->session ? leg->session->uri : session_service_;
+  event("pre_session_call_reinvite", {{"user_id", user.id}, {"session_uri", session->uri}, {"leg", leg->dialog}});
+  invite_request(forwarded, user, response);
+  if (response.status_code / 100 == 2) {
+    // The session's media, with the floor priority the controlling function negotiated (TS 24.380 clause 14.3.3).
+    auto answer = session->local;
+    if (response.local_media) answer.floor_priority = response.local_media->floor_priority;
+    response.local_media = answer;
+    response.contact_uri = session->uri;
+    response.headers.push_back({"P-Asserted-Identity", "<" + pre_established_uri() + ">"});
+  } else {
+    response.local_media.reset();
+  }
+  event("pre_session_call_reinvite_answered", {{"user_id", user.id}, {"status", response.status_code}});
+  return true;
+}
+
+//------------------------------------------------------------------------------
 // TS 24.379 clause 8.2.2: a "SIP INVITE request for establishing a pre-established session" (clause 6.3.1.1: the
 // Request-URI is the PSI identifying pre-established session set-up). Step 1 is met by the Request-URI; step 2 by the
 // served user's authorisation; steps 3 to 5 by pre_session_refused; step 6: an offer without the MCPTT speech codec

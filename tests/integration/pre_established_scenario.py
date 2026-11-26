@@ -19,6 +19,10 @@ client-a holds a pre-established session with the combined MCPTT server (the lab
   - PE-08 a new session is released by the participating function (clause 8.4.2.2: "pre-session-release").
   - PE-09 the client is killed with a session and starts again: the participating function releases the session
     (clause 8.4.2.2), and the next call to the user is offered on demand.
+  - PE-10 (with --priority) client-b raises and then cancels the emergency of a group call client-a is in over its
+    session: client-a learns of both in a re-INVITE in the session's dialog (TS 24.379 clauses 6.3.3.1.6 and
+    10.1.1.3.6, the session being its only dialog), the group's in-progress emergency state is cleared, and client-a's
+    next call is a normal one.
 
 Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19), RFC 3515, RFC 8445.
 """
@@ -205,6 +209,53 @@ def main():
         command('client-a', 'hangup')
         wait('PE-04 the call is released', idle)
         wait('PE-04 the session stays, not in use', established, 10)
+
+        # PE-10 the emergency state of a call client-a is in over its session, raised and cancelled by client-b.
+        if server_cfg.get('mcptt', {}).get('resource_priority'):
+            notified = len(events('client-a', 'pre_session_priority_reinvite'))
+            command('client-b', 'call')
+            wait('PE-10 client-b\'s group call reaches the four clients', in_call(ROLES))
+            command('client-b', 'emergency on')
+            wait(
+                'PE-10 client-b\'s call is an emergency call', lambda: status('client-b').get('priority') == 'emergency'
+            )
+            wait(
+                'PE-10 client-a is told of the emergency in its session\'s dialog',
+                lambda: (
+                    status('client-a').get('priority') == 'emergency'
+                    and len(events('client-a', 'pre_session_priority_reinvite')) > notified
+                ),
+            )
+            notified = len(events('client-a', 'pre_session_priority_reinvite'))
+            cancelled = len([e for e in events('mcptt-server', 'priority_changed') if e.get('priority') == 'normal'])
+            command('client-b', 'emergency off')
+            wait(
+                'PE-10 the group\'s in-progress emergency state is cleared',
+                lambda: (
+                    len([e for e in events('mcptt-server', 'priority_changed') if e.get('priority') == 'normal'])
+                    > cancelled
+                ),
+            )
+            wait(
+                'PE-10 client-a is told of the cancel in its session\'s dialog',
+                lambda: (
+                    status('client-a').get('priority') == 'normal'
+                    and len(events('client-a', 'pre_session_priority_reinvite')) > notified
+                ),
+            )
+            command('client-b', 'hangup')
+            wait('PE-10 the call is released', idle)
+            wait('PE-10 the session stays, not in use', established, 10)
+            # The next call over the session is a normal one: it reaches client-b by the usual INVITE, not as an
+            # emergency call.
+            over = server_event('pre_session_call')
+            command('client-a', 'call')
+            wait('PE-10 client-a\'s next call goes over its session', over)
+            wait('PE-10 and reaches the four clients', in_call(ROLES))
+            wait('PE-10 as a normal call', lambda: status('client-b').get('priority') == 'normal', 5)
+            command('client-a', 'hangup')
+            wait('PE-10 that call is released', idle)
+            wait('PE-10 the session stays again', established, 10)
 
         # PE-05 the user's modification.
         modified = len(events('client-a', 'pre_session_modified'))

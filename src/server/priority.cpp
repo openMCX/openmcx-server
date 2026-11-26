@@ -185,7 +185,9 @@ void McServer::priority_message(User &target, McpttInfo info) {
 
 //------------------------------------------------------------------------------
 // TS 24.379 clauses 6.3.3.1.6, 6.3.3.1.10 and 6.3.3.1.15: the next queued priority state change goes to
-// a participant in a SIP re-INVITE; a failed one is retried.
+// a participant in a SIP re-INVITE; a failed one is retried. A participant whose call is over its pre-established
+// session gets it in the session's dialog, the only one with its client (priority_reinvite_dialog), with "the media
+// parameters as currently established" there: the session's (clause 6.3.2.1.1.2), with the leg's floor priority.
 void McServer::send_priority_notification(const std::shared_ptr<Leg> &leg) {
   if (!leg->active || leg->priority_notification_pending || leg->priority_notifications.empty() ||
       monotonic_ms() < leg->priority_notification_retry)
@@ -194,10 +196,17 @@ void McServer::send_priority_notification(const std::shared_ptr<Leg> &leg) {
   const auto &state = call_priority(*leg->session);
   if (notification.info.emergency == true)
     notification.info.alert = state.alerts.contains(notification.info.calling_user);
+  auto offer = offer_media(*leg);
+  std::string pre_session_dialog;
+  if (const auto pre = pre_sessions_.find(leg->pre_session); !leg->pre_session.empty() && pre != pre_sessions_.end()) {
+    pre_session_dialog = pre->second->dialog;
+    offer = pre->second->local;
+    offer.floor_priority = leg->local.floor_priority;
+  }
   leg->priority_notification_pending = true;
   try {
     sip_.reinvite(
-        leg->dialog, offer_media(*leg), priority_parts(notification.info, &state),
+        priority_reinvite_dialog(leg->dialog, pre_session_dialog), offer, priority_parts(notification.info, &state),
         [this, weak = std::weak_ptr<Leg>(leg)](const SipResponse &response) {
           if (response.status_code < 200) return;
           auto leg = weak.lock();
