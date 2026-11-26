@@ -155,10 +155,11 @@ std::shared_ptr<McServer::Leg> McServer::make_leg(const std::string &id, const s
     while (leg->local.floor_ssrc == *offered) leg->local.floor_ssrc = random_ssrc();
   }
 
-  // A private call is protected when its caller offers a PCK; an ad hoc call is clear.
-  leg->local.protected_media = session->private_call
-                                   ? session->protected_private
-                                   : !session->adhoc && group_profile(session->group).value("protect_media", false);
+  // A private call is protected when its caller offers a PCK; an ad hoc call when it is end-to-end protected under
+  // its preconfigured group's GMK (TS 24.379 clause 17.4.2.2 step 11).
+  leg->local.protected_media = session->private_call ? session->protected_private
+                               : session->adhoc      ? !session->security_group.empty()
+                                                     : group_profile(session->group).value("protect_media", false);
   auto address = cfg_.at("media").at("bind").get<std::string>();
   if (session->no_media_control) {
     // No m=application, hence none of its parameters (TS 24.379 clause 11.1.2, TS 24.281 clause 10.2.3).

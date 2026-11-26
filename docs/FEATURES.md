@@ -57,7 +57,7 @@ participating and controlling servers.
 | Private call | Automatic, manual and forced commencement; decline, CANCEL and timeout; caller and called-party rulesets (107/124/125/126/143/144/145); call-back, transfer and forwarding (the target is told of a transferred or forwarded call by `<call-transfer-ind>` or `<call-forwarding-ind>`, and a forwarded manual call rings); with or without floor control (an offer without `m=application`: both parties speak at once and only the clients end the call) | §11.1.1, §11.1.2, §11.1.7 |
 | Broadcast group call | `broadcast-ind` fan-out, initiator-only transmission, receive-only Floor Deny cause 5, B-bit coding, release at the end of the transmission, group-broadcast and user-broadcast groups, override | §10.1.3, TS 24.380 §8.2.3.15 |
 | Chat group call | Join-based sessions with no fan-out, call-type checks (117/118), capacity (122/486), rosters, release on inactivity, implicit affiliation | §10.1.2 |
-| Ad hoc group call | Participant lists and criteria-based participants, generated ad hoc group identity, participant modification, rejoin (188), warnings 185–189; floor control under each user's CSK when the server's `security.protect_floor` is set (TS 33.180 §9.4.2) | §17 |
+| Ad hoc group call | Participant lists and criteria-based participants, generated ad hoc group identity, participant modification, rejoin (188), warnings 185–189; floor control under each user's CSK when the server's `security.protect_floor` is set (TS 33.180 §9.4.2); end-to-end protected media on `<end-to-end-security>`: the preconfigured group whose GMK keys the call (`adhoc_call.security_groups`) named in `<preconfigured-group-id>` to the initiator, rejoining and joining users and every invitee, the protected offer passed on (§17.4.2.2 step 11, §17.4.2.1.1 step 4 d), TS 33.180 §5.7, §7.3) | §17 |
 | First-to-answer call | Several invitees ring, the first answer wins, the rest are cancelled or released as "not selected"; emergency variant with MEPP save and restore | §11.1.4 |
 | Remotely initiated call | One user asks another user's device to place a group or private call, with requester authorisation (157/158) and outcome reporting | §10.1.5, §11.1.7 |
 | Ambient listening call | Remote-init and local-init: no indication at the listened-to device, `recvonly`/`sendonly` offers, automatic answer, ruleset checks (154/107/144/127) | §11.1.6 |
@@ -114,7 +114,7 @@ Video services of TS 24.281 and TS 24.581 within one MC system, on the same core
 | Priority | Emergency and imminent peril group calls, emergency private call, emergency alert, ad hoc group emergency alert | §6.2.8, §11.2, §12.1A |
 | Video pull and push | One-to-one and to or from the server with its recording, remote transmission request and cancel | §12.2, §13.2 |
 | Ambient viewing | Remotely and locally initiated, with the release capability | clause 15 |
-| Ad hoc group calls | By list and by criteria | clause 22 |
+| Ad hoc group calls | By list and by criteria; end-to-end protected media under the GMK of the preconfigured group named in `<preconfigured-group-id>` (§22.4.2.2, §22.4.2.1.1 step 4 c)) | clause 22 |
 | Regroup | Group and user regroups using a preconfigured group | clause 21 |
 | Functional aliases | Activation, limits, take-over, status subscriptions, binding to groups, aliases in calls | clause 20 |
 | Remote group selection | Remote change of a user's selected group | §9.2.4 |

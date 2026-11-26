@@ -123,7 +123,10 @@ def scenario_verifiers(scenario, flags):
             'mcptt-server',
             [['verify_chat_call.py', '--service', MCPTT, '--chat-group', 'sip:operations-chat@mcx.test']],
         ),
-        'adhoc_call_scenario': ('mcptt-server', [['verify_adhoc_call.py', '--service', MCPTT]]),
+        'adhoc_call_scenario': (
+            'mcptt-server',
+            [['verify_adhoc_call.py', '--service', MCPTT] + (['--protected'] if protected else [])],
+        ),
         'multicast_scenario': ('mcptt-server', [['verify_multicast.py', '{results}']]),
         'remote_group_call_scenario': (
             'mcptt-server',

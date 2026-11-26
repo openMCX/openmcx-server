@@ -580,7 +580,7 @@ def service_configuration(fixture, documents_only=False):
 
 
 # ------------------------------------------------------------------------------
-def add_broadcast_hierarchy(fixture, source):
+def add_broadcast_hierarchy(fixture, source, protect=False):
     """Add a group-broadcast group over both prearranged groups (initiator a) and a
     user-broadcast group of b, c and d (TS 23.379 clause 10.6.2.5.2; project profile).
     client-c may start and cancel emergency calls on the second group, whose
@@ -603,8 +603,8 @@ def add_broadcast_hierarchy(fixture, source):
             type='group-broadcast',
             members=[ids['client-a']],
             subordinate_groups=[first, second],
-            protect_media=False,
-            protect_floor=False,
+            protect_media=protect,
+            protect_floor=protect,
         )
     )
     site['groups'].append(
@@ -612,8 +612,8 @@ def add_broadcast_hierarchy(fixture, source):
             id=users,
             type='user-broadcast',
             members=[ids['client-b'], ids['client-c'], ids['client-d']],
-            protect_media=False,
-            protect_floor=False,
+            protect_media=protect,
+            protect_floor=protect,
         )
     )
     resources = dict(normal='mcpttp.0', imminent='mcpttp.10', emergency='mcpttp.15')
@@ -775,6 +775,44 @@ def add_private_services(fixture):
     server = json.loads(server_file.read_text())
     server['mcptt']['private_call']['max_calls'] = 2
     server_file.write_text(json.dumps(server, indent=2) + '\n')
+
+
+# ------------------------------------------------------------------------------
+def add_adhoc_security(fixture):
+    """The preconfigured group whose security related information keys an end-to-end protected ad hoc group call
+    (TS 24.379 clauses 17.1 and 17.4.2.2 step 11, TS 24.281 clause 22.4.2.2; TS 33.180 clause 5.7): a copy of the lab's
+    first group (its MCVideo section too), preconfigured use only, media and floor protected, all four users members,
+    so that the GMS issues them its GMK. The controlling servers choose it (adhoc_call.security_groups); the clients
+    subscribe to its GMK from the start (mcptt.adhoc_security_groups, as the Linux client reads it)."""
+    site_file = fixture / 'generated/site.json'
+    site = json.loads(site_file.read_text())
+    first = site['groups'][0]
+    domain = first['id'].split('@', 1)[1]
+    group = copy.deepcopy(first)
+    group.update(id=f'sip:adhoc-security@{domain}', preconfigured_use_only=True,
+                 protect_media=True, protect_floor=True)
+    group.pop('regrouped', None)
+    if 'mcvideo' in group:
+        group['mcvideo']['preconfigured_use_only'] = True
+    site['groups'] = [existing for existing in site['groups'] if existing['id'] != group['id']] + [group]
+    for user in site['users']:
+        if user['mcptt_id'] in group['members'] and group['id'] not in user['groups']:
+            user['groups'].append(group['id'])
+    site_file.write_text(json.dumps(site, indent=2) + '\n')
+    for path in sorted((fixture / 'generated').glob('*.json')):
+        if path.name == 'site.json':
+            continue
+        cfg = json.loads(path.read_text())
+        changed = False
+        for section in ('mcptt', 'mcvideo'):
+            if isinstance(cfg.get(section), dict) and isinstance(cfg[section].get('adhoc_call'), dict):
+                cfg[section]['adhoc_call']['security_groups'] = [group['id']]
+                changed = True
+        if path.name.startswith('client-') and isinstance(cfg.get('mcptt'), dict):
+            cfg['mcptt']['adhoc_security_groups'] = [group['id']]
+            changed = True
+        if changed:
+            path.write_text(json.dumps(cfg, indent=2) + '\n')
 
 
 # ------------------------------------------------------------------------------
@@ -2875,6 +2913,8 @@ def main():
         add_functional_aliases(fixture, source)
     if args.mcvideo:
         add_mcvideo_policy(fixture)
+    if args.protected and not args.xml_only and (args.adhoc or args.mcvideo):
+        add_adhoc_security(fixture)
     if args.remote_affiliation:
         add_remote_affiliation(fixture)
     if args.mcdata:
@@ -2925,7 +2965,9 @@ def main():
             json.loads((fixture / 'generated/client-d.json').read_text())['mcptt']['user_id']
         ]
         server_file.write_text(json.dumps(server, indent=2) + '\n')
-        add_broadcast_hierarchy(fixture, source)
+        # On a protected lab its groups are protected as the lab's others: a client affiliates to a group only once it
+        # holds the group's GMK (TS 33.180 clause 5.7), which the GMS issues for protected groups only.
+        add_broadcast_hierarchy(fixture, source, protect=args.protected and not args.xml_only)
     if args.multi_talker:
         add_multi_talker(fixture, source, args.multi_talker)
     if args.group_management:

@@ -53,6 +53,11 @@ def main():
     parser.add_argument('capture', type=Path)
     parser.add_argument('--service', required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument(
+        '--protected',
+        action='store_true',
+        help='a protected lab: the ad hoc calls are end-to-end protected (TS 24.379 clause 17.4.2.2 step 11)',
+    )
     args = parser.parse_args()
     messages, seen = [], set()
     for _, stream in tcp_streams(args.capture):
@@ -161,6 +166,33 @@ def main():
             for response in accepted
         ),
     )
+    if args.protected:
+        # TS 24.379 clause 17.2.2.1.1 step 10 c) iii): a protected call (RTP/SAVP, TS 33.180 clause 7.3) is requested
+        # with <end-to-end-security> "true"; clause 17.4.2.2 (2xx step 4 b)): the 200 (OK) names the preconfigured
+        # group in <preconfigured-group-id>; clause 17.4.2.1.1 steps 4 d) and 5: so does each invitation, whose offer
+        # is protected as the caller's.
+        def savp(message):
+            return bool(re.search(r'^m=audio \d+ RTP/SAVP ', message['body'], re.M))
+
+        new_calls = [message for message in originating if ';mcptt-session=' not in message['target']]
+        check(
+            'protected originating ad hoc INVITEs request end-to-end security',
+            bool(new_calls)
+            and all(savp(message) and message['info'].get('end-to-end-security') == 'true' for message in new_calls),
+        )
+        check(
+            '200 OK to a protected ad hoc INVITE names the preconfigured group',
+            bool(accepted)
+            and all(response['info'].get('preconfigured-group-id', '').startswith('sip:') for response in accepted),
+        )
+        check(
+            'invitations name the preconfigured group and offer protected media',
+            bool(terminating)
+            and all(
+                savp(message) and message['info'].get('preconfigured-group-id', '').startswith('sip:')
+                for message in terminating
+            ),
+        )
     # A join of an ongoing call (TS 24.379 clause 17.4.7.1.1 step 5: warning 123) names that call's group: only the
     # calls set up count.
     joins = [
@@ -251,20 +283,24 @@ def main():
             violations.append(f'Floor Indicator {indicator:#06x}: not one of the A-bit and the D- or E-bit')
         if subtype == 2 and 5 in fields and struct.unpack('!H', fields[5][:2])[0] != 1 and not broadcast:
             violations.append('Taken without permission to request')
-    check(
-        'floor messages carry the A-bit or the D- or E-bit, the B-bit only in a broadcast call, and Floor Taken '
-        'permits requests except in a broadcast call',
-        bool(floor) and not violations,
-    )
-    reject_causes, cause_violations = causes(args.capture)
-    check(
-        'every Floor Deny and Floor Revoke carries a Reject Cause defined for it (TS 24.380 8.2.6.2, 8.2.10.2)',
-        not cause_violations,
-    )
-    check(
-        'a floor request while another participant has permission is denied with cause #1 (TS 24.380 6.3.5.4.4)',
-        reject_causes[('Deny', 1)] > 0,
-    )
+    # On a protected lab the floor control is SRTCP under each user's CSK (TS 33.180 clause 9.4.2): its fields are not
+    # on the wire, so the floor checks are the scenario's (from the clients' status).
+    reject_causes, cause_violations = collections.Counter(), []
+    if not args.protected:
+        check(
+            'floor messages carry the A-bit or the D- or E-bit, the B-bit only in a broadcast call, and Floor Taken '
+            'permits requests except in a broadcast call',
+            bool(floor) and not violations,
+        )
+        reject_causes, cause_violations = causes(args.capture)
+        check(
+            'every Floor Deny and Floor Revoke carries a Reject Cause defined for it (TS 24.380 8.2.6.2, 8.2.10.2)',
+            not cause_violations,
+        )
+        check(
+            'a floor request while another participant has permission is denied with cause #1 (TS 24.380 6.3.5.4.4)',
+            reject_causes[('Deny', 1)] > 0,
+        )
 
     # Priority ad hoc calls (TS 24.379 clause 17.4.2.1.1 steps 6 and 7): invitees learn the state with
     # Resource-Priority.

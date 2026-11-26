@@ -208,6 +208,11 @@ protected:
     // other participants, and for a call to an alias, the called alias.
     std::string initiator_alias, called_alias;
     std::map<std::string, std::string> participant_aliases;
+    // An end-to-end protected ad hoc group call (TS 24.379 clauses 17.1 and 17.4.2.2 step 11, TS 24.281 clause
+    // 22.4.2.2): the preconfigured group whose GMK keys its media (TS 33.180 clause 7.3), named to every participant in
+    // <preconfigured-group-id>, and that group's document (its members hold the GMK). Empty: media in the clear.
+    std::string security_group;
+    Json security_document;
     // Broadcast group hierarchy (TS 23.379 clause 10.6.2.5.2; project profile, as TS
     // 24.379 clause 4.12 defines no stage-3 procedure): "group-broadcast" delivers via
     // the subordinate groups, "user-broadcast" to the group's users. Fan-out
@@ -1854,6 +1859,13 @@ protected:
                                               bool has_criteria, const PriorityState &priority,
                                               const std::vector<std::string> &invitees,
                                               const std::map<std::string, std::string> &via_alias);
+  // adhoc.cpp: TS 24.379 clause 17.4.2.2 step 11, the preconfigured group of an end-to-end protected ad hoc call.
+  std::optional<SipResponse> adhoc_end_to_end_security(const SipMessage &message, const User &user,
+                                                       const McpttInfo &info, const std::vector<std::string> &invitees,
+                                                       Session &session, SipResponse &response);
+  // adhoc.cpp: TS 24.379 clauses 17.4.4.1.1 and 17.4.7.1.1, the media protection of a (re)joining user.
+  std::optional<SipResponse> adhoc_joined_security(const SipMessage &message, const User &user, const Session &session,
+                                                   SipResponse &response);
   // adhoc.cpp: TS 24.379 clause 17.4.2.1.1, invite the listed users of a new ad hoc group call.
   void schedule_adhoc_invitations(const std::shared_ptr<Session> &session, const std::vector<std::string> &invitees);
   // private_services.cpp: rejects a service request relayed by SIP MESSAGE.
