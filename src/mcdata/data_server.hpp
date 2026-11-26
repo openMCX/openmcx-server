@@ -536,6 +536,9 @@ class DataServer {
   // ---- Service authorisation and affiliation (authorisation.cpp): TS 24.282 clauses 7.3 and 8.3.2 ----
   SipResponse authorise(const SipMessage &request, bool from_register = false);
   SipResponse third_party_register(const SipMessage &request);
+  // TS 24.229 clause 5.4.1.7: per public user identity, the Call-ID of the client's REGISTER behind its registration
+  // (the message/sip body of the last third-party REGISTER); a deregistration ends the binding only if it names it.
+  std::map<std::string, std::string> registration_call_ids_;
 
   // TS 24.282 clause 7.3.4: a SIP PUBLISH for the MCData service settings only.
   SipResponse settings_publish(const SipMessage &request, const std::string &asserted);

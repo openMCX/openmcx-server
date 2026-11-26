@@ -1,7 +1,7 @@
 # Kamailio patches
 
 The SIP core and the P-CSCF run Kamailio 6.1.4 ([source](https://github.com/kamailio/kamailio/tree/6.1.4), archive
-SHA-256 `d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6`, dependencies/lock.json) with nine changes,
+SHA-256 `d6b4fd7924fb524f355d66dbfbdc869035c78ea886b86f9efb44abb946d7b7c6`, dependencies/lock.json) with ten changes,
 applied by docker/Dockerfile.kamailio after each is checked against its SHA-256:
 
 - [0001-ims_auth-local-vectors-and-AKAv2-SHA-256.patch](0001-ims_auth-local-vectors-and-AKAv2-SHA-256.patch),
@@ -80,3 +80,10 @@ The image carries the source archive and the patches in /usr/src.
   notified, its presentity is removed (RFC 3680 section 4.7.1: from "terminated" the registration "immediately
   transitions back to the init state"). reginfo.deregister publishes one document for all the contacts it removes:
   back-to-back PUBLISHes with one entity tag got 412 and left two presentities of the AOR.
+- [0010-presence_reginfo-first-NOTIFY-after-a-quick-re-registration.patch](0010-presence_reginfo-first-NOTIFY-after-a-quick-re-registration.patch),
+  SHA-256 `5d201133ca2efd1d6582070ba1386b62e16dcc971d3903812ca856a2e6a23626`: the first NOTIFY of a reg event
+  subscription is the registrar's current state whenever the registrar has a contact of the AOR, also while the
+  presence module still stores the final document of a deregistration. A UE deregistered with "deactivated" registered
+  again within some 15 ms of its NOTIFY and subscribed before that document was removed (0009 removes it once its
+  NOTIFYs are sent, and kept a final document for a first NOTIFY): the new subscription got the old binding, terminated,
+  and was ended by it. A final document is still sent while the registrar has no contact.

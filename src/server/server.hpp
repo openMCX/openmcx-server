@@ -914,6 +914,9 @@ protected:
   struct CoreRegistration {
     bool resource_sharing = false;
     std::string registration_token;
+    // The Call-ID of the client's REGISTER behind the registration (its message/sip body, TS 24.229 clause 5.4.1.7):
+    // a deregistration ends the binding only if it names this registration (deregistration_ends_binding).
+    std::string call_id;
   };
   std::map<std::string, CoreRegistration> core_registrations_;
   void record_core_registration(const SipMessage &message, const std::string &identity);

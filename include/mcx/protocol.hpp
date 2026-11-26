@@ -398,6 +398,19 @@ int compare_reginfo_version(std::string_view a, std::string_view b);
 // RFC 3680 section 5.2: whether received is "more than one higher than the local version".
 bool reginfo_version_gap(std::string_view local, std::string_view received);
 //------------------------------------------------------------------------------
+// TS 24.229 clause 5.4.1.7: the registrations a third-party REGISTER with Expires 0 (a deregistration) ends, from its
+// message/sip body (the fragment of the REGISTER it reports). A network-initiated deregistration (clause 5.4.1.5)
+// carries the SIP core's reg event document (application/reginfo+xml, RFC 3680) with the ended contacts: the Call-IDs
+// of the REGISTERs behind them (the callid of each terminated <contact>, RFC 3680 section 5.1). A user-initiated one
+// carries the UE's REGISTER, which names no ended registration: empty, as for a fragment that cannot be read.
+std::vector<std::string> deregistered_call_ids(std::string_view fragment);
+// TS 24.379, TS 24.281 and TS 24.282 clause 7.3.2 with TS 24.229 clause 5.4.1.7: whether a deregistration that ends
+// the registrations ended_call_ids (deregistered_call_ids) ends the binding made from the REGISTER with the Call-ID
+// registration_call_id: the binding of a registration the deregistration does not name is a newer one (the UE
+// registered again before the server got the deregistration of its old registration) and stays. A deregistration
+// that names none, or a binding whose registration is not known, ends it.
+bool deregistration_ends_binding(const std::vector<std::string> &ended_call_ids, std::string_view registration_call_id);
+//------------------------------------------------------------------------------
 // TS 24.484 clause 7.2.2.1 item 3 and clause 7.2.2.7 item 4 c), g) (TS 24.483 clauses 8.2.41B, 8.2.44B): the home HTTP
 // proxy of <App-Server-Info> (<http-proxy>, empty when the document names none) and whether its TLS tunnel uses
 // mutual authentication (<tls-tunnel-auth-method>/<mutual-authentication>; false: one-way, based on the proxy's
@@ -818,6 +831,9 @@ std::string multipart_boundary(std::string_view type);
 // RFC 3420: the body parts of a SIP request carried in a message/sip body (TS 24.229: the
 // REGISTER request sent by the UE, inside a third-party REGISTER).
 std::vector<BodyPart> parse_sip_fragment_parts(std::string_view message);
+// RFC 3420: the value of a header field (name compared case-insensitively) of a SIP message fragment (the client's
+// REGISTER in the message/sip body of a third-party REGISTER, TS 24.229 clause 5.4.1.7), or empty.
+std::string sip_fragment_header(std::string_view fragment, std::string_view name);
 //------------------------------------------------------------------------------
 // TS 24.379 clause 6.2.1 and clause 6.2.2 with TS 24.380 clause 14.2 and clause 14.3 (MCPTT), TS 24.281 clause
 // 6.2.1 and clause 6.2.2 with TS 24.581 clause 12.1.2 (MCVideo): writes the SDP offer or answer. RFC 4566 section 5.2

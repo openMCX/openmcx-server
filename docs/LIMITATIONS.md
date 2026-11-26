@@ -218,7 +218,15 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   Linux client, the Android app and the P-CSCF; the operator starts a network-initiated deregistration or
   re-authentication of one private user identity (shortened registration, TS 33.203 clauses 5.1.2 and 6.1.4) with the
   commands in USAGE.md. The first NOTIFY of a subscription has the registrar's current contacts, and an ended
-  registration is not kept for a later subscription (dependencies/kamailio patch 0009). Own deviation not fixed yet: the
+  registration is not kept for a later subscription (dependencies/kamailio patch 0009), also for a UE that registers
+  again within milliseconds of a "deactivated" deregistration, while the ended document is still stored (patch 0010: the
+  first NOTIFY is the registrar's whenever it has a contact). A network-initiated deregistration reaches the MC service
+  servers after the PUBLISH of its document has been notified, so a UE that registered again at once can be authorised
+  on its new registration first: its third-party REGISTER (Expires 0) carries that document, and the MCPTT, MCVideo and
+  MCData servers end a binding only if it was made from one of the registrations it ends (the Call-ID of the client's
+  REGISTER, `deregistration_ends_binding`; event `deregistration_of_older_registration` otherwise). A user-initiated
+  deregistration names no registration and ends the binding (the SIP core sends it only once no contact is left).
+  Fixed: the new binding was removed (calls 480, subscriptions to the user's affiliation 404). Own deviation not fixed yet: the
   P-Charging-Vector (charging correlation, TS 32.260) is carried only in the P-CSCF's reg event dialog (clauses 5.2.3, 5.2.4, 5.2.5.2, 5.4.2.1.1 and 5.4.2.1.2): the
   P-CSCF's REGISTER (clause 5.2.2.1 item 3) and the other requests and responses of the P-CSCF and the SIP core carry
   none, so neither do the UEs' own reg event dialogs.
@@ -272,7 +280,10 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   forwarding is manual only. A Priv-Answer-Mode "Manual" (the commencement mode a forwarded or transferred call
   carries on, TS 24.379 §11.1.1.2.1.1 steps 14A a) and 14C a)) is not passed on (§11.1.1.3.1.1 step 18 a)); without
   an Answer-Mode the INVITE to the called user then has Answer-Mode "Manual" instead, so that the called user's own
-  automatic Answer-Mode Indication does not answer the call (§6.3.2.2.5.2 step 5). Of the caller's
+  automatic Answer-Mode Indication does not answer the call (§6.3.2.2.5.2 step 5). This is the outcome the terminating
+  procedure gives a Priv-Answer-Mode "Manual" (§11.1.1.3.2 step 13 c): manual commencement); step 18 a) alone would let
+  the target's own Answer-Mode Indication decide (step 12 b)). A call forwarded or transferred from a manual call rings
+  the target (tests/integration/private_services_scenario.py PS-08 and PS-11 answer it there). Of the caller's
   application/vnd.3gpp.mcptt-info+xml (§6.3.3.1.2 step 11) the INVITE to the called user carries the transfer and
   forwarding indications (`<call-transfer-ind>`, `<call-forwarding-ind>`, `<forwarding-sequence-number>` and the
   forwarding details), not `<forwarding-other-list>`.
@@ -325,8 +336,12 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
   (TS 24.282 clauses 9.2.3.4.4 step 6a1, 9.2.4.4.4 and 10.2.5.4.4 step 8a1), or refused with 403 warning 145. As for
   IP connectivity, the alias is resolved before the originator's one-to-one list (warning 229, clause 11.1 step 1A) is
   checked: the list is applied to the selected user when the originator invites that user. An alias is recognised
-  with or without `<call-to-functional-alias-ind>`. Fixed: the alias used to be treated as a user (403 warning 229, or
-  404).
+  with or without `<call-to-functional-alias-ind>`. The `<called-functional-alias-URI>` of the originator's INVITE to
+  the selected user (clauses 9.2.3.2.3, 9.2.4.2.3 and 10.2.5.2.3 step 3) is passed on to that user, as on the
+  signalling plane (clause 9.2.2.4.2), so the recipient knows which alias was called (clauses 9.2.3.4.3, 9.2.4.4.3 and
+  10.2.5.4.3 name no such element in the INVITE to the terminating client; it is copied as clause 24.4.2.2 step 15b-iv
+  does for an ad hoc group). The server does not check that the selected user still holds the alias. Fixed: the alias
+  used to be treated as a user (403 warning 229, or 404), and the recipient was not told the alias called.
 - **Fixed (no longer limitations).** A client that restarts without logging off (a new registration, a new service
   authorisation and a new CSK) is opened with the CSK it uploads (TS 24.282 clause 7.3.3, TS 33.180 clause 9.2.1.3), and
   the answer's XML is protected with it; every request of such a client used to be refused with 403 warning 140. The

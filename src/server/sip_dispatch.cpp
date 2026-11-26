@@ -446,7 +446,10 @@ bool McServer::cache_service_settings(User &user, const SipMessage &message, std
 // the SIP core includes as a message/sip body in a third-party REGISTER (TS 24.229 clause 5.4.1.7). The REGISTER's
 // application/vnd.3gpp.mcptt-info+xml (access token, client ID; the CSK upload of TS 33.180 clause 9.2.1.3 with
 // it) is authorised as a service authorisation PUBLISH is (steps 3, 4 and 4a; clause 7.3.3). A third-party REGISTER
-// with Expires 0 is a deregistration: the user's binding ends.
+// with Expires 0 is a deregistration: the user's binding ends, unless the deregistration names the registrations it
+// ends and the binding was made from another one (deregistration_ends_binding): a UE deregistered by the network with
+// "deactivated" registers again at once (TS 24.229 clause 5.4.1.5), and the deregistration of its old registration
+// can reach this server after the third-party REGISTER of the new one.
 void McServer::third_party_register(const SipMessage &message, SipResponse &response) {
   // Step 1: the IMS public user identity is the To of the third-party REGISTER.
   const auto identity = message.to_uri;
@@ -455,16 +458,24 @@ void McServer::third_party_register(const SipMessage &message, SipResponse &resp
     return;
   }
   const auto expires = std::string(get_header(message.headers, "Expires"));
-  // TS 24.379 clause 8.1A: the SIP core's resource sharing and the UE's registration token.
-  if (expires == "0")
-    core_registrations_.erase(identity);
-  else
-    record_core_registration(message, identity);
   if (expires == "0") {
-    remove_binding(users_.find(identity), "deregistration");
     response.headers = {{"Expires", "0"}};
+    std::vector<std::string> ended;
+    for (const auto &part : parts_of(message))
+      if (part.content_type == "message/sip") ended = deregistered_call_ids(part.body);
+    const auto registration = core_registrations_.find(identity);
+    const auto bound = registration == core_registrations_.end() ? std::string{} : registration->second.call_id;
+    if (!deregistration_ends_binding(ended, bound)) {
+      event("deregistration_of_older_registration", {{"user", identity}, {"ended", ended}, {"registration", bound}});
+      return;
+    }
+    // TS 24.379 clause 8.1A: the SIP core's resource sharing and the UE's registration token end with it.
+    core_registrations_.erase(identity);
+    remove_binding(users_.find(identity), "deregistration");
     return;
   }
+  // TS 24.379 clause 8.1A: the SIP core's resource sharing and the UE's registration token.
+  record_core_registration(message, identity);
   // The client's REGISTER (RFC 3420): its body parts, without which there is nothing to authorise.
   std::vector<BodyPart> parts;
   for (const auto &part : parts_of(message))

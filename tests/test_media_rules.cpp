@@ -4,7 +4,8 @@
 
 // The MCData server's decisions of src/mcdata/media_rules.hpp: a service authorisation that uploads a new CSK is not
 // opened with the old one, the MSRP status of a standalone SDS over the media plane against its size limits, and the
-// release that waits for the invited client's answer to a one-to-one FD.
+// release that waits for the invited client's answer to a one-to-one FD, and the called functional alias passed on to
+// the recipient of a one-to-one communication over the media plane.
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19), TS 24.582 V19.0.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
 #ifdef NDEBUG
@@ -65,7 +66,19 @@ static void Clause_10_2_5_4_4_DeclineAnswersTheOriginator() {
 
 //------------------------------------------------------------------------------
 // Runs every test; an assert ends the program on the first failure.
+//------------------------------------------------------------------------------
+// TS 24.282 clauses 9.2.3.4.4 step 6a1 and 9.2.3.2.3 step 3: after the 300 (Multiple Choices) for a functional alias,
+// the originator's INVITE to the selected user names the alias in <called-functional-alias-URI>; the recipient is told
+// it (the called alias of its delivery). A one-to-one request that names no alias tells the recipient none.
+static void Clause_9_2_3_4_4_CalledAliasReachesTheSelectedUser() {
+  const auto aliases = one_to_one_called_alias("sip:client-c@mcx.test", "sip:patrol-car-12.fa@mcx.test");
+  assert(aliases.size() == 1 && aliases.at("sip:client-c@mcx.test") == "sip:patrol-car-12.fa@mcx.test");
+  assert(one_to_one_called_alias("sip:client-c@mcx.test", "").empty());
+  assert(one_to_one_called_alias("", "sip:patrol-car-12.fa@mcx.test").empty());
+}
+
 int main() {
+  Clause_9_2_3_4_4_CalledAliasReachesTheSelectedUser();
   Clause_7_3_3_CskUploadOpenedWithItsOwnCsk();
   Clause_6_3_1_3_GroupLimitsBoth();
   Clause_6_3_1_3_SendAnsweredByItsSize();

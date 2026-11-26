@@ -114,4 +114,33 @@ bool reginfo_version_gap(std::string_view local, std::string_view received) {
   return compare_reginfo_version(received, plus_one(std::string(local))) > 0;
 }
 
+//------------------------------------------------------------------------------
+// TS 24.229 clause 5.4.1.7: the Call-IDs of the terminated contacts of the reg event document a network-initiated
+// deregistration carries in its message/sip body; none for any other fragment (the UE's own REGISTER) or one that
+// cannot be read.
+std::vector<std::string> deregistered_call_ids(std::string_view fragment) {
+  std::vector<std::string> ended;
+  try {
+    for (const auto &part : parse_sip_fragment_parts(fragment)) {
+      if (lower(trim(part.content_type.substr(0, part.content_type.find(';')))) != "application/reginfo+xml")
+        continue;
+      for (const auto &registration : parse_reginfo(part.body).registrations)
+        for (const auto &contact : registration.contacts)
+          if (contact.state == "terminated" && !contact.callid.empty()) ended.push_back(contact.callid);
+    }
+  } catch (const std::exception &) {
+    ended.clear();
+  }
+  return ended;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.229 clause 5.4.1.7: a deregistration ends the binding of a registration it names, or any binding when it names
+// none or the binding's registration is not known.
+bool deregistration_ends_binding(const std::vector<std::string> &ended_call_ids,
+                                 std::string_view registration_call_id) {
+  if (ended_call_ids.empty() || registration_call_id.empty()) return true;
+  return std::find(ended_call_ids.begin(), ended_call_ids.end(), registration_call_id) != ended_call_ids.end();
+}
+
 } // namespace mcx

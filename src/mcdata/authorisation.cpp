@@ -144,7 +144,9 @@ SipResponse DataServer::settings_publish(const SipMessage &request, const std::s
 // TS 24.282 clause 7.3.2: service authorisation from the REGISTER the client sent, which the SIP core includes as a
 // message/sip body in a third-party REGISTER (TS 24.229 clause 5.4.1.7); its mcdata-info is authorised as a service
 // authorisation PUBLISH is. The IMS public user identity is the To of the third-party REGISTER (step 1); Expires 0
-// logs the user off (clause 7.3.5).
+// logs the user off (clause 7.3.5), unless the deregistration names the registrations it ends and the binding was made
+// from another one (deregistration_ends_binding): the UE registered again before the deregistration of its old
+// registration reached this server (TS 24.229 clause 5.4.1.5, "deactivated").
 SipResponse DataServer::third_party_register(const SipMessage &request) {
   const auto identity = request.to_uri;
   const auto expires = std::string(get_header(request.headers, "Expires"));
@@ -154,21 +156,37 @@ SipResponse DataServer::third_party_register(const SipMessage &request) {
     response.status_code = 400;
     return response;
   }
+  const auto fragments = request.parts.empty() && !request.body.empty()
+                             ? parse_body_parts(request.content_type, request.body)
+                             : request.parts;
   if (expires == "0") {
+    response = SipResponse{};
+    response.status_code = 200;
+    response.headers = {{"Expires", "0"}};
+    std::vector<std::string> ended;
+    for (const auto &body : fragments)
+      if (body.content_type == "message/sip") ended = deregistered_call_ids(body.body);
+    const auto registration = registration_call_ids_.find(identity);
+    const auto bound = registration == registration_call_ids_.end() ? std::string{} : registration->second;
+    if (!deregistration_ends_binding(ended, bound)) {
+      event("deregistration_of_older_registration", {{"user", identity}, {"ended", ended}, {"registration", bound}});
+      return response;
+    }
+    registration_call_ids_.erase(identity);
     if (const auto found = users_.find(identity); found != users_.end()) {
       event("mcdata_logged_off", {{"user_id", found->second.id}, {"client_id", found->second.client}});
       remove_binding(found, "log-off");
     }
-    response = SipResponse{};
-    response.status_code = 200;
-    response.headers = {{"Expires", "0"}};
     return response;
   }
   std::vector<BodyPart> parts;
-  for (const auto &body : request.parts.empty() && !request.body.empty()
-                              ? parse_body_parts(request.content_type, request.body)
-                              : request.parts)
-    if (body.content_type == "message/sip") parts = parse_sip_fragment_parts(body.body);
+  for (const auto &body : fragments)
+    if (body.content_type == "message/sip") {
+      parts = parse_sip_fragment_parts(body.body);
+      auto call_id = sip_fragment_header(body.body, "Call-ID");
+      if (call_id.empty()) call_id = sip_fragment_header(body.body, "i");
+      registration_call_ids_[identity] = call_id;
+    }
   const bool has_info =
       std::any_of(parts.begin(), parts.end(), [](const auto &body) { return body.content_type == mcdata::info_mime; });
   if (!has_info) {

@@ -29,33 +29,6 @@ constexpr std::string_view kResourceShareSupported = "supported";
 constexpr std::string_view kBothDirections = "UL-DL";
 
 //------------------------------------------------------------------------------
-// Helper: the value of a header field of a SIP message fragment (the client's REGISTER in the message/sip body of a
-// third-party REGISTER, TS 24.229 clause 5.4.1.7), or empty.
-std::string fragment_header(std::string_view fragment, std::string_view name) {
-  const auto head = fragment.substr(0, fragment.find("\r\n\r\n"));
-  std::size_t at = 0;
-  while (at < head.size()) {
-    const auto end = std::min(head.find("\r\n", at), head.size());
-    const auto line = head.substr(at, end - at);
-    const auto colon = line.find(':');
-    if (colon != std::string_view::npos) {
-      auto field = line.substr(0, colon);
-      while (!field.empty() && field.back() == ' ') field.remove_suffix(1);
-      if (field.size() == name.size() &&
-          std::equal(field.begin(), field.end(), name.begin(), [](char one, char two) {
-            return std::tolower(static_cast<unsigned char>(one)) == std::tolower(static_cast<unsigned char>(two));
-          })) {
-        auto value = line.substr(colon + 1);
-        while (!value.empty() && value.front() == ' ') value.remove_prefix(1);
-        return std::string(value);
-      }
-    }
-    at = end + 2;
-  }
-  return {};
-}
-
-//------------------------------------------------------------------------------
 // TS 24.229 table 7.9.7-1: the value of a "+g.3gpp.registration-token" feature parameter in a Contact or Feature-Caps
 // header field value (quotes and angle brackets removed), or empty.
 std::string registration_token(std::string_view value) {
@@ -97,9 +70,12 @@ void McServer::record_core_registration(const SipMessage &message, const std::st
   CoreRegistration registration;
   registration.registration_token = registration_token(get_header(message.headers, "Contact"));
   for (const auto &part : parts_of(message))
-    if (part.content_type == "message/sip")
+    if (part.content_type == "message/sip") {
       registration.resource_sharing =
-          fragment_header(part.body, "Resource-Share").starts_with(kResourceShareSupported);
+          sip_fragment_header(part.body, "Resource-Share").starts_with(kResourceShareSupported);
+      registration.call_id = sip_fragment_header(part.body, "Call-ID");
+      if (registration.call_id.empty()) registration.call_id = sip_fragment_header(part.body, "i");
+    }
   core_registrations_[identity] = registration;
 }
 
