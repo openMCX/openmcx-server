@@ -1761,7 +1761,8 @@ bool McServer::group_call_admitted(const SipMessage &message, const User &user, 
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 10.1.1.4.7: a re-INVITE of a joined participant changing the call's priority (emergency or
-// imminent peril); the media identities and the floor ownership are kept. `leg` is a copy of the leg's pointer.
+// imminent peril); the media identities and the floor ownership are kept, and an upgrade's implicit floor request
+// (clause 6.4) is accepted and processed (priority_answer_media). `leg` is a copy of the leg's pointer.
 void McServer::priority_reinvite(const SipMessage &message, const User &user, McpttInfo &info,
                                  const std::shared_ptr<Session> &session, const Json &profile, std::shared_ptr<Leg> leg,
                                  std::optional<McpttInfo> &correction, SipResponse &response) {
@@ -1775,6 +1776,8 @@ void McServer::priority_reinvite(const SipMessage &message, const User &user, Mc
     broadcast_priority_refused(response);
     return;
   }
+  // TS 24.379 clause 6.4: an upgrade ("true", not a cancellation) may be an implicit floor request.
+  const bool upgrade = info.emergency == true || info.imminent_peril == true;
   if (!validate_priority(message, user, profile, info, response, correction)) return;
 
   // Priority updates preserve established media identities and floor ownership.
@@ -1797,7 +1800,7 @@ void McServer::priority_reinvite(const SipMessage &message, const User &user, Mc
   apply_priority(session->group, user.id, info, profile, message_location(message));
   if (session->chat && !was_priority && in_priority(session->group))
     schedule([this, session] { invite_chat_members(session); });
-  response.local_media = answer_media(*leg);
+  response.local_media = priority_answer_media(leg, *message.remote_media, upgrade);
   auto current = info;
   current.request_uri = user.id;
   current.calling_group = session->group;

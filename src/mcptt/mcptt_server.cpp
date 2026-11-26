@@ -13,6 +13,7 @@
 
 #include "implicit_floor.hpp"
 
+#include <algorithm>
 #include <set>
 #include <utility>
 
@@ -76,6 +77,32 @@ bool McpttServer::initial_service_state(const std::shared_ptr<Leg> &leg, const s
   constexpr std::uint8_t negotiated_maximum = 255;
   floor_request(*leg, session, arbitrator, outcome == ImplicitFloorOutcome::queue ? negotiated_maximum : 0, true);
   return true;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 6.3.4.3.6 and 6.3.4.4.12 ("R: Implicit floor request", an upgrade to an emergency or imminent
+// peril call accepted with "mc_implicit_request", priority_answer_media): with nobody sending media and the requester
+// alone in the call, Floor Deny with cause #3 (Only one participant); otherwise the request of the upgraded
+// participant, arbitrated as a Floor Request without a Floor Priority field, with the pre-emption of
+// its emergency or imminent peril state (floor_request): Floor Granted in 'G: Floor Idle' (clause 6.3.4.3.6 item 3),
+// a Floor Revoke with cause #4 to the participant sending media and the request in front of the queue in 'G: Floor
+// Taken' (clause 6.3.4.4.12; Floor Queue Position Info when queueing is negotiated), and Floor Granted again to a
+// requester that already has the floor. The request is processed once: the flag is cleared.
+void McpttServer::upgrade_floor_request(const std::shared_ptr<Leg> &leg, const std::shared_ptr<Session> &session) {
+  if (session->no_media_control || !leg->remote || !std::exchange(leg->implicit_floor, false)) return;
+  auto &arbitrator = *session->arbitrator;
+  const auto owner = arbitrator.owner();
+  if (owner == leg->user) leg->implicit_audio_ssrc = 0; // the grant keeps the SSRC the answer returned
+  const auto participants = static_cast<std::size_t>(std::count_if(legs_.begin(), legs_.end(), [&](const auto &entry) {
+    return entry.second->session == session && entry.second->active;
+  }));
+  if (upgrade_floor_outcome(participants, owner.has_value()) == UpgradeFloorOutcome::deny_only_participant) {
+    leg->implicit_audio_ssrc = 0;
+    send_notice(*leg, {FloorNoticeKind::Denied, leg->user, "", 3});
+    event("floor_denied_only_participant", {{"user_id", leg->user}, {"session_uri", session->uri}});
+    return;
+  }
+  floor_request(*leg, session, arbitrator, 0);
 }
 
 //------------------------------------------------------------------------------

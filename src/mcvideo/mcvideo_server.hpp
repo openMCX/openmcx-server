@@ -86,6 +86,11 @@ class McvideoServer final : public McServer {
   // of the answer (answer_service_media, TS 24.581 clause 14.3.5).
   void accept_implicit_floor_request(Leg & /*leg*/, const MediaDescription & /*remote*/, bool /*initiates*/) override {}
 
+  //------------------------------------------------------------------------------
+  // TS 24.379 clause 6.4 is MCPTT's: an MCVideo upgrade's re-INVITE carries no implicit floor request.
+  void upgrade_floor_request(const std::shared_ptr<Leg> & /*leg*/,
+                             const std::shared_ptr<Session> & /*session*/) override {}
+
   std::unique_ptr<UdpSocket> service_media(MediaDescription &local, unsigned offset,
                                            const std::string &address) override;
 

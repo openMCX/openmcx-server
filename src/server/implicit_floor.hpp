@@ -4,13 +4,15 @@
 
 // The implicit floor request of an MCPTT call at the controlling MCPTT function (TS 24.379 clause 6.4): whether
 // the answer to an initial INVITE accepts it (TS 24.380 clause 14.3.5), the RTP SSRC that answer returns in
-// "mc_ssrc" (TS 24.380 clause 14.3.6), and how the floor control server processes the request once the
-// participant's leg is active (TS 24.380 clause 6.3.5.2.2). Used by the MCPTT server (McpttServer); free of server
-// state, so that the unit tests reach them.
+// "mc_ssrc" (TS 24.380 clause 14.3.6), how the floor control server processes the request once the participant's
+// leg is active (TS 24.380 clause 6.3.5.2.2), and the implicit floor request of a re-INVITE upgrading the call to an
+// emergency or imminent peril call (TS 24.380 clauses 6.3.4.3.6 and 6.3.4.4.12). Used by the MCPTT server
+// (McpttServer); free of server state, so that the unit tests reach them.
 //
 // Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19).
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <set>
@@ -64,6 +66,42 @@ enum class ImplicitFloorOutcome {
 constexpr ImplicitFloorOutcome implicit_floor_outcome(bool other_talker, bool queueing) {
   if (!other_talker) return ImplicitFloorOutcome::request;
   return queueing ? ImplicitFloorOutcome::queue : ImplicitFloorOutcome::taken;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 6.4: "A SIP re-INVITE request [...] shall be regarded by the MCPTT server as an implicit floor
+// request when the MCPTT client: 1) performs an upgrade of: a) an MCPTT group call to an emergency MCPTT group call;
+// b) an MCPTT private call to an emergency MCPTT private call; or c) an MCPTT group call to an imminent peril MCPTT
+// group call; and 2) includes the "mc_implicit_request" 'fmtp' attribute [...] In all other cases the SIP
+// (re-)INVITE request shall be regarded as received without an implicit floor request" (a cancellation is none).
+// offered: the re-INVITE's SDP offer has "mc_implicit_request"; upgrade: its MCPTT-Info asks for the emergency or
+// imminent peril state ("true"); floor_control: the call has a media plane control channel. The answer then carries
+// "mc_implicit_request" (TS 24.380 clause 14.3.5) and "mc_ssrc" (clause 14.3.6: "the SIP request shall be interpreted
+// as an implicit floor request"), as for an initial INVITE.
+constexpr bool upgrade_implicit_floor_accepted(bool offered, bool upgrade, bool floor_control) {
+  return offered && upgrade && floor_control;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.380 clauses 6.3.4.3.6 and 6.3.4.4.12 ("R: Implicit floor request", "due to an upgrade to an emergency group
+// call or due to an upgrade to imminent peril call"): how the floor control server processes an accepted implicit
+// floor request of an upgrade.
+enum class UpgradeFloorOutcome {
+  // Clause 6.3.4.3.6 items 1 and 2: in 'G: Floor Idle' "shall reject the request if there is only one MCPTT client
+  // in the MCPTT call": Floor Deny with cause #3 (Only one participant), the state kept.
+  deny_only_participant,
+  // Clause 6.3.4.3.6 item 3 (granted: 'G: Floor Taken', Floor Granted) and clause 6.3.4.4.12 (another participant
+  // has the floor: Floor Revoke with cause #4, Media Burst pre-empted, and the request in front of the queue): the
+  // request of the upgraded participant, arbitrated with its emergency or imminent peril pre-emption (floor_request).
+  request,
+};
+
+//------------------------------------------------------------------------------
+// participants: the active participants of the call (the requester among them); floor_taken: someone has the
+// permission to send media ('G: Floor Taken' or 'G: pending Floor Revoke', clause 6.3.4.3.6 is the 'G: Floor Idle'
+// procedure).
+constexpr UpgradeFloorOutcome upgrade_floor_outcome(std::size_t participants, bool floor_taken) {
+  return !floor_taken && participants <= 1 ? UpgradeFloorOutcome::deny_only_participant : UpgradeFloorOutcome::request;
 }
 
 } // namespace mcx

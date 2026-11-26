@@ -25,7 +25,9 @@ client-a holds a pre-established session with the combined MCPTT server (the lab
     next call is a normal one; in that call client-a itself raises and cancels the emergency, by a re-INVITE in its
     session's dialog with the MCPTT-Info and the session's SDP (TS 24.379 clauses 10.1.1.2.1.3 and 10.1.1.2.1.4,
     "covers both on-demand session and pre-established sessions"), which the participating function takes as the
-    call's (clause 10.1.1.3.1.3), and the other clients are told of both.
+    call's (clause 10.1.1.3.1.3), and the other clients are told of both; the upgrade carries an implicit floor
+    request (clause 6.4), accepted in the answer ("mc_implicit_request", TS 24.380 clause 14.3.5) and granted (TS
+    24.380 clause 6.3.4.3.6): client-b hears client-a.
 
 Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19), RFC 3515, RFC 8445.
 """
@@ -262,10 +264,15 @@ def main():
                 lambda: status('client-a').get('call_state') == 'active',
             )
             # client-a, in its call over the session, raises the emergency itself (TS 24.379 clause 10.1.1.2.1.3): a
-            # re-INVITE in the session's dialog (the call has no other), answered 200 (OK) for the call.
+            # re-INVITE in the session's dialog (the call has no other), answered 200 (OK) for the call. It asks for
+            # the floor with it (step 7: an implicit floor request, clause 6.4): the answer echoes
+            # "mc_implicit_request" (TS 24.380 clause 14.3.5) and the floor control server grants the floor (TS 24.380
+            # clause 6.3.4.3.6), so client-a's speech reaches client-b.
             reinvite = server_event('pre_session_call_reinvite')
             answered = server_event('pre_session_call_reinvite_answered', status=200)
-            command('client-a', 'emergency on')
+            accepted = server_event('upgrade_implicit_floor_request_accepted')
+            heard = status('client-b').get('received_packets', 0)
+            command('client-a', 'emergency on implicit=/artifacts/speech/alpha.wav')
             wait('PE-10 client-a\'s emergency re-INVITE goes in its session\'s dialog', reinvite)
             wait('PE-10 and is answered 200 (OK) for the call', answered)
             wait(
@@ -276,6 +283,18 @@ def main():
                 'PE-10 client-b is told of client-a\'s emergency',
                 lambda: status('client-b').get('priority') == 'emergency',
             )
+            wait('PE-10 the controlling function accepts the upgrade\'s implicit floor request', accepted)
+            wait(
+                'PE-10 the answer in the session\'s dialog echoes mc_implicit_request',
+                lambda: status('client-a').get('implicit_floor_request') == 'accepted',
+            )
+            wait('PE-10 client-a is granted the floor with its upgrade', lambda: status('client-a').get('talking'))
+            wait(
+                'PE-10 client-b receives client-a\'s speech',
+                lambda: status('client-b').get('received_packets', 0) >= heard + 100,
+                20,
+            )
+            wait('PE-10 client-a releases the floor', lambda: not status('client-a').get('talking'), 30)
             # And cancels it (clause 10.1.1.2.1.4), the same way: the group's in-progress emergency state is cleared.
             reinvite = server_event('pre_session_call_reinvite')
             answered = server_event('pre_session_call_reinvite_answered', status=200)

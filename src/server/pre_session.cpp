@@ -242,10 +242,9 @@ bool McServer::pre_session_call_reinvite(const SipMessage &message, User &user,
   event("pre_session_call_reinvite", {{"user_id", user.id}, {"session_uri", session->uri}, {"leg", leg->dialog}});
   invite_request(forwarded, user, response);
   if (response.status_code / 100 == 2) {
-    // The session's media, with the floor priority the controlling function negotiated (TS 24.380 clause 14.3.3).
-    auto answer = session->local;
-    if (response.local_media) answer.floor_priority = response.local_media->floor_priority;
-    response.local_media = answer;
+    // The session's media, with the floor priority the controlling function negotiated (TS 24.380 clause 14.3.3)
+    // and its acceptance of an upgrade's implicit floor request (TS 24.380 clauses 14.3.5 and 14.3.6).
+    response.local_media = pre_session_call_answer(session->local, response.local_media);
     response.contact_uri = session->uri;
     response.headers.push_back({"P-Asserted-Identity", "<" + pre_established_uri() + ">"});
   } else {

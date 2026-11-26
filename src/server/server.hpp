@@ -1008,6 +1008,11 @@ protected:
 
   [[nodiscard]] MediaDescription answer_media(const Leg &leg) const;
 
+  // TS 24.379 clause 6.4, TS 24.380 clauses 14.3.5 and 14.3.6: the answer to the SDP offer of a re-INVITE changing
+  // the call's priority (offer), accepting the implicit floor request of an upgrade (upgrade) as for an initial
+  // INVITE, and the request's processing once answered (upgrade_floor_request).
+  MediaDescription priority_answer_media(const std::shared_ptr<Leg> &leg, const MediaDescription &offer, bool upgrade);
+
   [[nodiscard]] MediaDescription offer_media(const Leg &leg) const;
 
   [[nodiscard]] bool offers_floor_ssrc() const;
@@ -2125,6 +2130,12 @@ protected:
   // accepts the client's implicit floor request (Leg::implicit_floor); initiates: the INVITE initiates the call
   // (not a join of a chat group call that exists nor a rejoin by session identity).
   virtual void accept_implicit_floor_request(Leg &leg, const MediaDescription &remote, bool initiates) = 0;
+
+  //------------------------------------------------------------------------------
+  // TS 24.380 clauses 6.3.4.3.6 and 6.3.4.4.12 (MCPTT): the floor control server's processing of the implicit floor
+  // request of a re-INVITE upgrading the call to an emergency or imminent peril call, accepted in its answer
+  // (priority_answer_media, Leg::implicit_floor); run once the answer is sent.
+  virtual void upgrade_floor_request(const std::shared_ptr<Leg> &leg, const std::shared_ptr<Session> &session) = 0;
 
   //------------------------------------------------------------------------------
   // TS 24.281 clause 6.2.1: the service's media of a new leg or relay besides speech and floor control (MCVideo:
