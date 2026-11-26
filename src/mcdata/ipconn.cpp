@@ -35,7 +35,7 @@ SipResponse DataServer::ipcon_invite(const SipMessage &request, const User &user
   }
   if (target.empty())
     return reject(403, "227 unable to determine targeted user for one-to-one IP Connectivity", user.id, what);
-  if (auto redirect = ipcon_alias_redirect(user, info, target)) return *redirect;
+  if (auto redirect = alias_redirect(user, info, target, what)) return *redirect;
 
   // The one-to-one lists of TS 24.282 clause 11.1, as for the other one-to-one communications.
   if (const auto list = policy.value("targets", Json::array()); !list.empty() && !listed(list, target))
@@ -119,11 +119,12 @@ bool DataServer::ipcon_accept_contact(const SipMessage &request) {
 }
 
 //------------------------------------------------------------------------------
-// TS 24.282 clause 20.4.2 step 5a1: a target that is a functional alias (indicated or found to be one): the
-// originator is sent with 300 (Multiple Choices) to one user that activated it, or refused; nothing for a user.
-std::optional<SipResponse> DataServer::ipcon_alias_redirect(const User &user, const mcdata::Info &info,
-                                                            const std::string &target) {
-  const char *what = "ipconn";
+// TS 24.282 clause 20.4.2 step 5a1 (IP connectivity), clauses 9.2.3.4.4 step 6a1 and 9.2.4.4.4 (SDS over the media
+// plane) and clause 10.2.5.4.4 step 8a1 (FD over the media plane): a target that is a functional alias (indicated or
+// found to be one): the originator is sent with 300 (Multiple Choices) to one user that activated it, or refused
+// (403, warning 145); nothing for a user.
+std::optional<SipResponse> DataServer::alias_redirect(const User &user, const mcdata::Info &info,
+                                                      const std::string &target, const char *what) {
   bool to_alias = info.call_to_functional_alias == true;
   if (!to_alias) {
     // TS 24.282 clause 20.4.2 step 5a1 also covers an entry that is found to be an alias without the indication.

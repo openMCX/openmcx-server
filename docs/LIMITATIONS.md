@@ -302,6 +302,26 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 - **Ad hoc priority over the media plane.** An emergency or imminent-peril ad hoc group communication over the media
   plane is refused with 403: TS 23.282 clause 7.17.2.1 names the indicators, but TS 24.282 defines no procedure for
   them (clause 24 and the upgrade clauses 9.2.4.4.5 and 9.2.4.4.6 cover none).
+- **Size of a standalone SDS over the media plane.** A group or ad hoc group SDS above the group's limit
+  (`<mcdata-max-data-in-single-request>` and `<mcdata-on-network-max-data-size-for-SDS>`) is refused by answering its
+  MSRP SEND 403 and is not forwarded (TS 24.582 clause 6.3.1.3 steps 2 and 3); the leg then ends with the originator's
+  BYE or its deadline. Not applied: step 1, `<max-data-size-sds-bytes>` for a one-to-one SDS over the media plane. The
+  value is applied on the signalling plane (warning 218), where the labs set it below the signalling plane limit, so it
+  would refuse every long one-to-one SDS. Fixed: the leg used to be torn down before the SEND was answered.
+- **One-to-one media-plane communications to a functional alias.** A one-to-one SDS (standalone or session) or FD over
+  the media plane to a functional alias is redirected with 300 (Multiple Choices) to a user that activated it
+  (TS 24.282 clauses 9.2.3.4.4 step 6a1, 9.2.4.4.4 and 10.2.5.4.4 step 8a1), or refused with 403 warning 145. As for
+  IP connectivity, the alias is resolved before the originator's one-to-one list (warning 229, clause 11.1 step 1A) is
+  checked: the list is applied to the selected user when the originator invites that user. An alias is recognised
+  with or without `<call-to-functional-alias-ind>`. Fixed: the alias used to be treated as a user (403 warning 229, or
+  404).
+- **Fixed (no longer limitations).** A client that restarts without logging off (a new registration, a new service
+  authorisation and a new CSK) is opened with the CSK it uploads (TS 24.282 clause 7.3.3, TS 33.180 clause 9.2.1.3), and
+  the answer's XML is protected with it; every request of such a client used to be refused with 403 warning 140. The
+  disposition notifications of a standalone SDS sent over the media plane are correlated with it (TS 24.282 clause
+  12.2.3 step 5) and relayed or aggregated to its originator; they used to be refused with 403 warning 216. A declined
+  one-to-one FD over the media plane answers the originator's INVITE with the invited client's final response and its
+  warning (480 with warning 110 or 231, TS 24.282 clause 10.2.5.4.4); it used to end with 487.
 - **Message store.** Implemented from TS 24.282 clause 21 without the OMA NMS and NotificationChannel specifications:
   LongPolling notification channels only, answers in JSON only, no `listFilter` query. SDS and file distribution over
   HTTP are deposited, communications over the media plane are not.

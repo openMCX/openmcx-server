@@ -36,6 +36,10 @@ msrp::Endpoint::Callbacks DataServer::media_callbacks(const std::shared_ptr<Medi
             // hold it, so the recipient is free for the next transfer. A
             // session leg stays open until the session ends (TS 24.282 clause 9.2.4).
             if (const auto held = weak.lock(); held && !held->session) held->deadline = monotonic_ms();
+          },
+          [this, weak](const msrp::Message &received) -> std::pair<unsigned, std::string> {
+            if (const auto held = weak.lock()) return media_accept(*held, received);
+            return {msrp_ok, "OK"};
           }};
 }
 
@@ -242,7 +246,7 @@ SipResponse DataServer::media_invite(const SipMessage &request) {
     if (auto refused = media_invite_adhoc_targets(request, user, info, policy, invite)) return *refused;
   } else if (invite.group_request) {
     if (auto refused = media_invite_group_targets(user, info, invite)) return *refused;
-  } else if (auto refused = media_invite_private_target(user, policy, resources, invite)) {
+  } else if (auto refused = media_invite_private_target(user, info, policy, resources, invite)) {
     return *refused;
   }
   MsrpMedia offer;
@@ -276,6 +280,7 @@ SipResponse DataServer::media_invite(const SipMessage &request) {
     // refuses the request (500 by the SIP engine), with no XML sent.
     require_csk_in_use(user.sip, response.parts);
     response.parts = encrypt_xml(xml_key(user.sip), std::move(response.parts));
+    leg->awaiting_answer = true; // TS 24.282 clause 10.2.5.4.4: until the invited client's final response
     media_invite_file_recipient(user, invite, *leg, level, request.dialog_id, response);
     // The provisional answer carries the SDP answer and the Contact, so that the SIP engine keeps the dialog, with
     // its session identity, for the final one.
@@ -407,16 +412,23 @@ std::optional<SipResponse> DataServer::media_invite_group_targets(const User &us
     if (member.is_string() && member.get<std::string>() != user.id && affiliated(member, group))
       invite.recipients.push_back(member.get<std::string>());
   if (invite.recipients.empty()) return reject(403, "198 no users are affiliated to this group", user.id, what);
-  invite.group_limit = limit(settings, file_request ? "max_fd_bytes" : "max_sds_bytes");
+  // TS 24.582 clause 6.3.1.3 steps 2a and 2b: a group SDS is held to both group limits.
+  invite.group_limit = file_request
+                           ? limit(settings, "max_fd_bytes")
+                           : tightest_limit(limit(settings, "max_request_bytes"), limit(settings, "max_sds_bytes"));
 
   return std::nullopt;
 }
 
 //------------------------------------------------------------------------------
 // TS 24.282 clauses 9.2.3.3 and 10.2.5.3: the recipient of a one-to-one communication over the media plane
-// (the resource-lists body) and its authorisation, or the refusal.
-std::optional<SipResponse> DataServer::media_invite_private_target(const User &user, const Json &policy,
-                                                                   const BodyPart *resources, MediaInvite &invite) {
+// (the resource-lists body) and its authorisation, or the refusal. A functional alias target is resolved first, as for
+// IP connectivity: the originator is redirected with 300 (Multiple Choices) to a user that activated it (clauses
+// 9.2.3.4.4 step 6a1, 9.2.4.4.4 and 10.2.5.4.4 step 8a1), whose one-to-one authorisation is then checked when the
+// originator invites that user.
+std::optional<SipResponse> DataServer::media_invite_private_target(const User &user, const mcdata::Info &info,
+                                                                   const Json &policy, const BodyPart *resources,
+                                                                   MediaInvite &invite) {
   auto &target = invite.target;
   try {
     if (resources) target = parse_private_call_target(resources->body);
@@ -428,6 +440,7 @@ std::optional<SipResponse> DataServer::media_invite_private_target(const User &u
                   invite.file_request ? "205 unable to determine targeted user for one-to-one FD"
                                       : "204 unable to determine targeted user for one-to-one SDS",
                   user.id, invite.what);
+  if (auto redirect = alias_redirect(user, info, target, invite.what)) return *redirect;
   if (const auto list = policy.value("targets", Json::array()); !list.empty() && !listed(list, target))
     return reject(403, "229 one-to-one MCData communication not authorised to the targeted user", user.id, "media-sds");
   const auto *recipient = by_id(target);
@@ -440,6 +453,10 @@ std::optional<SipResponse> DataServer::media_invite_private_target(const User &u
     return reject(403, "230 one-to-one MCData communication not authorised from this originating user", user.id,
                   "media-sds");
   invite.recipients.push_back(target);
+  // Not implemented: TS 24.582 clause 6.3.1.3 step 1, <max-data-size-sds-bytes> for a standalone one-to-one SDS over
+  // the media plane: the configured value is applied on the signalling plane only (clause 9.2.2.4.2 step 5a, warning
+  // 218), where the labs set it below the signalling plane limit; applied here it would refuse every one-to-one SDS
+  // sent over the media plane for its size.
   return std::nullopt;
 }
 
@@ -659,7 +676,9 @@ void DataServer::media_invite_file_recipient(const User &user, const MediaInvite
 // TS 24.282 clause 10.2.5.4.4: the invited client's final response completes the inviting client's INVITE.
 void DataServer::media_file_answered(const std::string &origin, const SipResponse &prepared,
                                      const SipResponse &response) {
-  if (!media_session(origin)) return; // the inviting client gave up
+  const auto leg = media_session(origin);
+  if (!leg) return; // the inviting client gave up
+  leg->awaiting_answer = false;
   if (response.status_code >= 200 && response.status_code < 300) {
     sip_.answer(origin, prepared);
     return;

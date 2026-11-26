@@ -181,7 +181,9 @@ SipResponse DataServer::third_party_register(const SipMessage &request) {
   inner.content_type = "multipart/mixed";
   inner.body.clear();
   inner.parts = std::move(parts);
-  inner.headers = {{"P-Asserted-Identity", "<" + identity + ">"}, {"Expires", "4294967295"}};
+  // The service authorisation it stands for (clause 7.3.2): a PUBLISH for poc-settings, so that a CSK it uploads is
+  // opened with that CSK (open_signalling, uploads_csk).
+  inner.headers = {{"P-Asserted-Identity", "<" + identity + ">"}, {"Expires", "4294967295"}, {"Event", "poc-settings"}};
   std::string publication;
   if (const auto found = users_.find(identity); found != users_.end() && !found->second.auth_etag.empty()) {
     publication = found->second.auth_etag;

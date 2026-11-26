@@ -28,11 +28,13 @@ SipResponse DataServer::incoming(const SipMessage &request) {
   const auto sip = asserted_identity(request);
   auto opened = request;
   if (auto refused = open_signalling(sip, opened)) return *refused;
-  const auto xml = users_.contains(sip) ? xml_key(sip) : std::nullopt;
   auto response = dispatch(opened);
 
-  // The XML of the answer is protected like any other sent to this client. TS 33.180 annex E.6.10: with its CSK past
-  // its Expiry time the answer cannot be: CskExpired refuses the request (500 by the SIP engine), with no XML sent.
+  // The XML of the answer is protected like any other sent to this client, with the CSK it holds once the request
+  // has been processed: a service authorisation that uploaded a new CSK (TS 24.282 clause 7.3.3) is answered under
+  // it. TS 33.180 annex E.6.10: with its CSK past its Expiry time the answer cannot be: CskExpired refuses the
+  // request (500 by the SIP engine), with no XML sent.
+  const auto xml = users_.contains(sip) ? xml_key(sip) : std::nullopt;
   if (users_.contains(sip))
     require_csk_in_use(sip, !response.parts.empty() ? response.parts
                                                     : std::vector<BodyPart>{{response.content_type, response.body}});
@@ -46,7 +48,9 @@ SipResponse DataServer::incoming(const SipMessage &request) {
 //------------------------------------------------------------------------------
 // TS 24.282 clauses 6.5.2 and 6.6.3: open the bodies of a request of the user sip, signed with its signalling key
 // and with XML encrypted with its CSK, in place. A request of a user without keys is left as it is; one that cannot
-// be opened is refused (403, with warning 140 for XML that cannot be decrypted).
+// be opened is refused (403, with warning 140 for XML that cannot be decrypted). A service authorisation that uploads
+// a CSK is left as it is too: it is opened with the CSK it uploads (authorise_csk, TS 24.282 clause 7.3.3 steps 2 and
+// 3), not with the CSK of an earlier binding of the identity (a client that restarted without logging off).
 std::optional<SipResponse> DataServer::open_signalling(const std::string &sip, SipMessage &message) {
   const auto found = users_.find(sip);
   const auto *key = found != users_.end() ? signalling_key(found->first) : nullptr;
@@ -55,6 +59,12 @@ std::optional<SipResponse> DataServer::open_signalling(const std::string &sip, S
   try {
     const bool whole = message.parts.empty();
     auto parts = whole && !message.body.empty() ? parse_body_parts(message.content_type, message.body) : message.parts;
+    std::vector<std::string_view> types;
+    for (const auto &body : parts) types.emplace_back(body.content_type);
+    if (uploads_csk(message.method, get_header(message.headers, "Event"), types)) {
+      event("mcdata_csk_upload_opened_later", {{"user_id", found->second.id}, {"method", message.method}});
+      return std::nullopt;
+    }
     if (key) parts = open_from(*key, std::move(parts));
     try {
       parts = decrypt_xml(xml, std::move(parts));

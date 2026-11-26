@@ -49,6 +49,10 @@ if(BUILD_TESTING)
     add_executable(test_transfer_record tests/test_transfer_record.cpp)
     target_include_directories(test_transfer_record PRIVATE src/mcdata)
     add_test(NAME transfer_record COMMAND test_transfer_record)
+    # The MCData server's authorisation and media plane decisions (src/mcdata/media_rules.hpp, header only).
+    add_executable(test_media_rules tests/test_media_rules.cpp)
+    target_include_directories(test_media_rules PRIVATE src/mcdata)
+    add_test(NAME media_rules COMMAND test_media_rules)
 endif()
 
 add_library(mcx_keying src/security/keying.cpp src/security/key_documents.cpp src/security/eccsi.cpp

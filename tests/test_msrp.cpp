@@ -382,6 +382,81 @@ int main() {
     if (peer >= 0) ::close(peer);
   }
 
+  // RFC 4975 section 7.3 with TS 24.582 clause 6.3.1.3 steps 3 and 4: the application decides the response to the last
+  // chunk of a complete SEND before it is delivered: an intermediate chunk is answered 200, a refused message 403
+  // (no success report, not delivered), an accepted one 200 and delivered.
+  {
+    Endpoint passive;
+    std::vector<Message> received;
+    std::vector<std::size_t> judged;
+    Endpoint::Callbacks callbacks{[&](const Message &message) { received.push_back(message); }, {}, {}, {}};
+    callbacks.accept = [&](const Message &message) -> std::pair<unsigned, std::string> {
+      judged.push_back(message.body.size());
+      return message.body.size() > 4 ? std::pair<unsigned, std::string>{403, "Forbidden"}
+                                     : std::pair<unsigned, std::string>{200, "OK"};
+    };
+    const auto local = passive.listen("127.0.0.1", callbacks);
+    const int peer = ::socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(local.port);
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    check(peer >= 0 && ::connect(peer, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == 0,
+          "a raw MSRP peer connects to the judging endpoint");
+    const auto exchange = [&](const std::string &bytes) {
+      check(::send(peer, bytes.data(), bytes.size(), MSG_NOSIGNAL) == static_cast<ssize_t>(bytes.size()),
+            "the raw peer sends");
+      std::string answer;
+      for (int attempt = 0; attempt < 50; ++attempt) {
+        passive.poll();
+        char buffer[4096];
+        const auto got = ::recv(peer, buffer, sizeof(buffer), MSG_DONTWAIT);
+        if (got > 0) answer.append(buffer, static_cast<std::size_t>(got));
+      }
+      return answer;
+    };
+    Message first;
+    first.transaction = random_ident();
+    first.method = "SEND";
+    first.message_id = random_ident();
+    first.to_path = {local};
+    first.from_path = {Uri{"127.0.0.1", random_ident(), "tcp", 9, false}};
+    first.content_type = "application/vnd.3gpp.mcdata-payload";
+    first.success_report = "yes";
+    first.body = "abc";
+    first.range_start = 1;
+    first.range_end = 3;
+    first.total = 6;
+    first.complete = false;
+    Message last = first;
+    last.transaction = random_ident();
+    last.body = "def";
+    last.range_start = 4;
+    last.range_end = 6;
+    last.complete = true;
+    const auto chunk_answer = exchange(encode(first));
+    check(chunk_answer.rfind("MSRP " + first.transaction + " 200", 0) == 0 && judged.empty(),
+          "an intermediate chunk is answered 200 without a decision");
+    const auto refused = exchange(encode(last));
+    check(refused.rfind("MSRP " + last.transaction + " 403", 0) == 0 &&
+              refused.find(" REPORT\r\n") == std::string::npos,
+          "the last chunk of a refused message is answered 403, without a success report");
+    check(judged.size() == 1 && judged.front() == 6 && received.empty(),
+          "the whole message is judged once and not delivered");
+    Message small = last;
+    small.transaction = random_ident();
+    small.message_id = random_ident();
+    small.body = "ok";
+    small.range_start = 1;
+    small.range_end = 2;
+    small.total = 2;
+    const auto accepted = exchange(encode(small));
+    check(accepted.rfind("MSRP " + small.transaction + " 200", 0) == 0 && received.size() == 1 &&
+              received.front().body == "ok",
+          "an accepted message is answered 200 and delivered");
+    if (peer >= 0) ::close(peer);
+  }
+
   // MSRP over TLS (RFC 4975 section 14) between two MCData servers: the listener
   // requires a certificate from the connector, the connector checks the listener's name.
   {

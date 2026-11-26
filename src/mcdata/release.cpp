@@ -375,6 +375,14 @@ void DataServer::media_released(const std::string &dialog) {
   for (const auto &[other_dialog, other] : media_)
     if (other->key == leaving->key) ++remaining;
 
+  // TS 24.282 clause 10.2.5.4.4: the invited client of a one-to-one FD declined it: its final response answers the
+  // originator's INVITE (media_file_answered), which a release now would end with 487 instead.
+  if (const auto origin = originating_leg(leaving->key);
+      origin && release_waits_for_answer(leaving->originating, origin->awaiting_answer)) {
+    event("mcdata_release_awaits_answer", {{"key", leaving->key}, {"owner", leaving->owner}});
+    return;
+  }
+
   // Step 3 of both policies: only one or no participants are left.
   bool release = remaining <= 1;
   // TS 24.282 clause 13.2.2.2.4.1 step 4, by local policy: the initiator of a group communication leaves.

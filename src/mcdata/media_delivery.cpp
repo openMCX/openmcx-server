@@ -115,22 +115,13 @@ void DataServer::media_received(const std::shared_ptr<MediaSession> &session, co
   }
   if (!session->originating) return;
 
-  // TS 24.582 clause 6.3.1.3 steps 2 and 3: the group's SDS size limit is applied here: the INVITE carried no
-  // payload.
-  const auto payload = bodies.find(std::string(mcdata::payload_mime));
-  if (session->max_bytes && payload != bodies.end() && payload->second.size() > session->max_bytes) {
-    event("mcdata_media_sds_discarded",
-          {{"user_id", session->originator},
-           {"group_id", session->group},
-           {"message_id", session->message_id},
-           {"reason", "217 user not authorised for SDS communications on this group identity due to message size"}});
-    session->deadline = monotonic_ms();
-    return;
-  }
+  // The size limits of TS 24.582 clause 6.3.1.3 steps 1 to 3 were applied before the SEND was answered
+  // (media_accept).
   event("mcdata_media_sds_relayed", {{"user_id", session->originator},
                                      {"group_id", session->group},
                                      {"recipients", session->recipients},
                                      {"message_id", session->message_id}});
+  media_sds_dispatched(*session, signalling->second);
 
   // The sender releases its own session once its SEND is answered (TS 24.582
   // clause 6.1.1.2.1), so this leg is left to that or to its deadline.
@@ -145,6 +136,49 @@ void DataServer::media_received(const std::shared_ptr<MediaSession> &session, co
                     {}, priority);
     });
   }
+}
+
+//------------------------------------------------------------------------------
+// TS 24.582 clause 6.3.1.3 steps 2 to 4: the MSRP status of a SEND on the originating leg of a standalone SDS over
+// the media plane, decided before it is answered (the INVITE carried no payload): 403 above the limit of the group
+// (<mcdata-max-data-in-single-request> and <mcdata-on-network-max-data-size-for-SDS>; an ad hoc group's own), and the
+// message is not forwarded; else 200 (step 1, one-to-one, is not applied: media_invite_private_target). The originator then
+// releases its session (TS 24.582 clause 6.1.1.2.1), or the leg's deadline does. Every other SEND is answered 200.
+std::pair<unsigned, std::string> DataServer::media_accept(const MediaSession &session, const msrp::Message &message) {
+  if (!session.originating || session.session || session.file || message.content_type == mcdata::file_mime)
+    return {msrp_ok, "OK"};
+  const auto bodies = message.parts();
+  const auto payload = bodies.find(std::string(mcdata::payload_mime));
+  const std::uint64_t size = payload == bodies.end() ? 0 : payload->second.size();
+  if (standalone_sds_send_status(size, session.max_bytes) == msrp_ok) return {msrp_ok, "OK"};
+  count("media_sds_refused");
+  event("mcdata_media_sds_refused", {{"user_id", session.originator},
+                                     {"group_id", session.group},
+                                     {"bytes", size},
+                                     {"limit", session.max_bytes},
+                                     {"status", msrp_forbidden}});
+  return {msrp_forbidden, "Forbidden"};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.282 clause 12.2.3 step 5 with clause 9.2.3.4.3: a standalone SDS relayed over the media plane is recorded like
+// one relayed over the signalling plane (sds), so that the disposition notifications its recipients send (by SIP
+// MESSAGE, clause 12.2.2.1) are correlated with it and relayed to its originator.
+void DataServer::media_sds_dispatched(const MediaSession &session, const std::string &signalling) {
+  mcdata::SdsSignalling message;
+  try {
+    message = mcdata::decode_sds_signalling(signalling);
+  } catch (const std::exception &) {
+    return; // read already in media_received; a message that does not decode asks for nothing
+  }
+  if (message.disposition == mcdata::DispositionRequest::None) return;
+  Dispatched sent;
+  sent.originator = session.originator;
+  sent.group = session.group;
+  sent.deadline = monotonic_ms() + disposition_wait_ms();
+  sent.disposition = message.disposition;
+  sent.recipients.insert(session.recipients.begin(), session.recipients.end());
+  dispatched_[mcdata::uuid_text(message.message)] = sent;
 }
 
 //------------------------------------------------------------------------------
