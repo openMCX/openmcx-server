@@ -517,7 +517,8 @@ std::string DataServer::media_deliver(const std::string &originator, const std::
                                  // dialog: the client no longer has the session, which is released (TS 24.282
                                  // clause 18.3.3.2.2) so that the next communication is offered on demand.
                                  if (response.status_code == 408 || response.status_code == 481)
-                                   pending_.push_back([this, dialog] { pre_session_end(dialog, "re-INVITE unanswered"); });
+                                   pending_.push_back(
+                                       [this, dialog] { pre_session_end(dialog, "re-INVITE unanswered"); });
                                },
                                "establish-request");
     return pre->dialog;

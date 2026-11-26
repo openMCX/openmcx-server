@@ -17,6 +17,8 @@ client-a holds a pre-established session with the combined MCPTT server (the lab
   - PE-06 the participating function modifies it (clause 8.3.2.2: the operator's "pre-session-modify");
   - PE-07 the user releases it (clause 8.4.1.1); a group call then goes the usual way, with no REFER;
   - PE-08 a new session is released by the participating function (clause 8.4.2.2: "pre-session-release").
+  - PE-09 the client is killed with a session and starts again: the participating function releases the session
+    (clause 8.4.2.2), and the next call to the user is offered on demand.
 
 Specifications: TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19), RFC 3515, RFC 8445.
 """
@@ -209,8 +211,10 @@ def main():
         command('client-a', 'pre-session-modify implicit')
         wait(
             'PE-05 the user\'s re-INVITE is answered 200 and the session asks for implicit floor control',
-            lambda: any(e.get('status') == 200 for e in events('client-a', 'pre_session_modified')[modified:])
-            and session().get('implicit') is True,
+            lambda: (
+                any(e.get('status') == 200 for e in events('client-a', 'pre_session_modified')[modified:])
+                and session().get('implicit') is True
+            ),
         )
 
         # PE-06 the participating function's modification.
@@ -243,6 +247,31 @@ def main():
             'PE-08 the participating function releases it and client-a has none',
             lambda: status('client-a').get('pre_session') is None,
         )
+
+        # PE-09 the client dies with its session and starts again (a new registration and an initial service
+        # authorisation): the participating function releases the old session (clause 8.4.2.2), and a call to the user
+        # is then offered on demand, not over the dead session.
+        command('client-a', 'pre-establish')
+        wait('PE-09 client-a sets up a new session', established)
+        ended = server_event('pre_established_session_ended')
+        subprocess.run(cli + ['kill', '-s', 'SIGKILL', 'client-a'], capture_output=True, text=True, timeout=30)
+        (args.artifacts / 'client-a' / 'status.json').unlink(missing_ok=True)
+        subprocess.run(cli + ['start', 'client-a'], capture_output=True, text=True, timeout=60, check=True)
+        wait(
+            'PE-09 client-a is authorised and affiliated again',
+            lambda: status('client-a').get('authorized') and status('client-a').get('affiliated'),
+            90,
+        )
+        wait('PE-09 the participating function releases the session of the dead client', ended)
+        over_session = {'pre_established': True}
+        over_before = len(matching('call_fanout', over_session))
+        command('client-c', 'call')
+        wait('PE-09 the group call client-c starts reaches the four clients on demand', in_call(ROLES))
+        if len(matching('call_fanout', over_session)) != over_before or status('client-a').get('pre_session'):
+            raise AssertionError('PE-09 the call went over a pre-established session')
+        checks.append('PE-09 no call is offered over the released session')
+        command('client-c', 'hangup')
+        wait('PE-09 the call is released', idle)
         result['passed'] = True
     except Exception as error:  # noqa: BLE001 - the result records any failure
         result['error'] = str(error)

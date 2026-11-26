@@ -343,7 +343,8 @@ void McServer::pre_session_release(const std::shared_ptr<PreSession> &session) {
 // no call is offered over it any more.
 void McServer::pre_session_end(const std::shared_ptr<PreSession> &session, const std::string &reason) {
   if (!pre_sessions_.contains(session->dialog)) return;
-  event("pre_established_session_ended", {{"user_id", session->user}, {"session_uri", session->uri}, {"reason", reason}});
+  event("pre_established_session_ended",
+        {{"user_id", session->user}, {"session_uri", session->uri}, {"reason", reason}});
   try {
     sip_.bye(session->dialog);
   } catch (const std::exception &error) {

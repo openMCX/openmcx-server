@@ -100,6 +100,7 @@ The scenario (`mcdata_media_scenario.py`) makes 128 assertions and its wire veri
 | MP-23 | File distribution to an ad hoc group over the media plane (`adhoc-group-fd-session`): both participants receive the file with its hash verified and the ad hoc group, and the sending leg is released once it has been relayed | Same report |
 | MP-24 | Ad hoc rejections: 238 without `<allow-adhoc-group-data-comn>`, 242 above `<max-no-participants>`, 241 when no listed user may participate, and 240 for criteria that determine nobody and for an unknown ad hoc group | Same report |
 | MP-25 | Application priority (§9.2.3.4.3 step c): a standalone SDS with `<user-requested-priority>` 4 reaches the recipient in an INVITE whose `<used-priority>` is 4; without a requested priority the recipient's INVITE has none (MP-01) | Same report |
+| MP-26 | Priority file distribution over the media plane (§6.2.8.1.8, §10.2.5.3.3 steps 7A and 7B, §10.2.5.4.3 steps 1A and 1B, §10.2.5.4.4 step 3B): an emergency group FD is accepted with 200, raises the group's in-progress emergency state and reaches every other affiliated member; the state outlives the transfer and is cancelled on a group SDS session; an imminent peril group FD raises the in-progress imminent peril state (upgraded and cancelled on a session); an emergency one-to-one FD by a user with `<allow-emergency-private-call>` is accepted and delivered, and one by a user without it is refused with 403 and warning 233 | Same report |
 
 ## High-level call flow (standalone SDS over the media plane)
 
