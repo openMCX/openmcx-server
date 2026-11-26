@@ -47,6 +47,9 @@ def main():
     configs = {client: json.loads((generated / f'{client}.json').read_text()) for client in roles}
     ids = {client: configs[client]['mcptt']['user_id'] for client in roles}
     timers = json.loads((generated / 'mcptt-server.json').read_text())['mcptt']['adhoc_call']
+    # On a protected lab (prepare-prearranged-test.py --protected --adhoc): the preconfigured group whose GMK keys an
+    # end-to-end protected ad hoc group call (TS 24.379 clause 17.4.2.2 step 11).
+    security_group = (timers.get('security_groups') or [''])[0]
     nobody = 'sip:nobody.mcptt@' + ids['client-a'].split('@', 1)[1]
     checks, observations = [], {}
     result = dict(scenario='on-demand-adhoc-group-call', passed=False, checks=checks, observations=observations)
@@ -191,6 +194,21 @@ def main():
         first_group = adhoc_sessions()[0]['group_id']
         session = adhoc_sessions()[0]['session_uri']
         observations['adhoc_group_id'] = first_group
+        if security_group:
+            # AH-E2E TS 24.379 clauses 17.2.2.1.1 (2xx step 3), 17.2.2.1.2 step 7 and 17.4.2.1.1 step 4 d): the call is
+            # end-to-end protected under the GMK of the preconfigured group named to the initiator and every invitee.
+            assert adhoc_sessions()[0].get('protected') and adhoc_sessions()[0].get('security_group') == security_group, (
+                'ad hoc call not end-to-end protected: ' + json.dumps(adhoc_sessions()[0])
+            )
+            checks.append('AH-E2E server keys the ad hoc call with the preconfigured group')
+            wait(
+                'AH-E2E initiator and invitees use the preconfigured group named in <preconfigured-group-id>',
+                lambda: all(
+                    status(client).get('adhoc_security_group') == security_group
+                    for client in ['client-a', 'client-b', 'client-c']
+                ),
+            )
+            observations['adhoc_security_group'] = security_group
 
         # AH-02 conference rosters use the ad hoc group identity.
         wait(

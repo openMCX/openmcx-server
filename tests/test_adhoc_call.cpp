@@ -11,6 +11,7 @@
 
 #include <functional>
 #include <iostream>
+#include <map>
 #include <stdexcept>
 
 using namespace mcx;
@@ -137,5 +138,47 @@ int main() {
   check(!adhoc_floor_protected({{"protect_media", true}}, true), "absent protect_floor protected the floor");
   check(!adhoc_floor_protected(nlohmann::json(), true), "no security block protected the floor");
   check(!adhoc_floor_protected({{"protect_floor", "yes"}}, true), "non-boolean protect_floor protected the floor");
+  // TS 24.379 clause 17.2.2.1.1 step 10 c) iii) and clause 17.4.2.2 step 11: <end-to-end-security> goes with protected
+  // media; either alone is refused.
+  check(adhoc_security_mismatch(false, std::nullopt).empty(), "clear ad hoc call refused");
+  check(adhoc_security_mismatch(false, false).empty(), "clear ad hoc call with end-to-end-security false refused");
+  check(adhoc_security_mismatch(true, true).empty(), "end-to-end protected ad hoc call refused");
+  check(!adhoc_security_mismatch(true, std::nullopt).empty(), "protected media without end-to-end security accepted");
+  check(!adhoc_security_mismatch(true, false).empty(), "protected media with end-to-end-security false accepted");
+  check(!adhoc_security_mismatch(false, true).empty(), "end-to-end security without protected media accepted");
+  // TS 24.379 clause 17.4.2.2 step 11 (local policy): the preconfigured group of an end-to-end protected ad hoc call.
+  {
+    const std::string full = "sip:adhoc-full@mcx.test", partial = "sip:adhoc-partial@mcx.test",
+                      clear = "sip:adhoc-clear@mcx.test", foreign = "sip:adhoc-foreign@mcx.test",
+                      missing = "sip:adhoc-missing@mcx.test";
+    const std::map<std::string, nlohmann::json> documents = {
+        {full, {{"members", {caller, bob, carol}}, {"protect_media", true}}},
+        {partial, {{"members", {caller, bob}}, {"protect_media", true}}},
+        {clear, {{"members", {caller, bob, carol}}, {"protect_media", false}}},
+        {foreign, {{"members", {bob, carol}}, {"protect_media", true}}},
+    };
+    const auto lookup = [&](const std::string &id) {
+      const auto found = documents.find(id);
+      if (found == documents.end()) throw std::runtime_error("unknown group");
+      return found->second;
+    };
+    const auto pick = [&](std::vector<std::string> groups, std::vector<std::string> invited) {
+      return select_adhoc_security_group(nlohmann::json{{"security_groups", groups}}, caller, invited, lookup).group;
+    };
+    check(pick({partial, full}, {bob, carol}) == full, "the group listing every invitee not preferred");
+    check(pick({full, partial}, {bob}) == full, "the first group listing every invitee not taken");
+    check(pick({partial}, {bob, carol}) == partial, "a group listing some invitees refused");
+    check(pick({missing, clear, foreign}, {bob}).empty(), "unknown, clear or caller-less group chosen");
+    check(pick({missing, clear, partial}, {bob}) == partial, "a usable group after unusable ones not found");
+    check(select_adhoc_security_group(nlohmann::json::object(), caller, {bob}, lookup).group.empty(),
+          "a group chosen without security_groups");
+    check(select_adhoc_security_group(nlohmann::json{{"security_groups", full}}, caller, {bob}, lookup).group.empty(),
+          "a non-array security_groups used");
+    const auto chosen = select_adhoc_security_group(nlohmann::json{{"security_groups", {full}}}, caller, {}, lookup);
+    check(chosen.group == full && chosen.document.at("members").size() == 3, "criteria call (no list) without group");
+    check(adhoc_security_member(chosen.document, carol), "member not recognised");
+    check(!adhoc_security_member(documents.at(partial), carol) && !adhoc_security_member(nlohmann::json(), carol),
+          "non-member recognised");
+  }
   std::cout << "ad hoc authorization and resource-list tests passed\n";
 }

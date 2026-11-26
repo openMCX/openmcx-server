@@ -82,6 +82,7 @@ SipResponse McServer::adhoc_rejoin(const SipMessage &message, const User &user, 
   if (std::find(session->members.begin(), session->members.end(), user.id) == session->members.end())
     return reject(403, warn(Warning::adhoc_participation_not_allowed));
   if (has_leg(*session, user.id)) return reject(486);
+  if (auto refused = adhoc_joined_security(message, user, *session, response)) return *refused;
   auto leg = incoming_leg(message, user, session);
   if (!leg) return reject(488);
   response.status_code = 200;
@@ -90,6 +91,7 @@ SipResponse McServer::adhoc_rejoin(const SipMessage &message, const User &user, 
   response.focus = true;
   answer.calling_group = session->group;
   answer.calling_user = session->initiator;
+  answer.preconfigured_group_id = session->security_group;
   response.parts = service_parts(answer);
   add_leg(leg);
   event("adhoc_call_rejoined", {{"user_id", user.id}, {"group_id", session->group}, {"session_uri", session->uri}});
@@ -117,6 +119,7 @@ std::optional<SipResponse> McServer::adhoc_alert_group_join(const SipMessage &me
     if (std::find(session->members.begin(), session->members.end(), user.id) == session->members.end())
       return reject(403, warn(Warning::adhoc_participation_not_allowed));
     if (has_leg(*session, user.id)) return reject(486);
+    if (auto refused = adhoc_joined_security(message, user, *session, response)) return *refused;
     auto leg = incoming_leg(message, user, session);
     if (!leg) return reject(488);
     response.status_code = 200;
@@ -125,6 +128,7 @@ std::optional<SipResponse> McServer::adhoc_alert_group_join(const SipMessage &me
     response.focus = true;
     answer.calling_group = session->group;
     answer.calling_user = session->initiator;
+    answer.preconfigured_group_id = session->security_group;
     response.parts = service_parts(answer);
     // TS 24.379 clause 17.4.7.1.1 step 5 (TS 24.281 clause 22.4.7.1.1 step 5): the 200 (OK) to a join carries the
     // warning 123 (session already exists).
@@ -336,8 +340,6 @@ SipResponse McServer::adhoc_invite(const SipMessage &message, const User &user, 
       info.adhoc_emergency == false || info.imminent_peril == false)
     return reject(403, warn(Warning::invalid_mime_combination));
   if (!message.remote_media) return reject(488);
-  if (message.remote_media->protected_media)
-    return reject(488, warn(Warning::function_not_allowed, "end-to-end security for adhoc group call not implemented"));
 
   try {
     validate_remote(user.id, *message.remote_media);
@@ -373,6 +375,7 @@ SipResponse McServer::adhoc_invite(const SipMessage &message, const User &user, 
     return *refused;
 
   auto session = make_adhoc_session(user, info, alert_group, has_criteria, priority, invitees, via_alias);
+  if (auto refused = adhoc_end_to_end_security(message, user, info, invitees, *session, response)) return *refused;
   // TS 33.180 clause 9.4.2: protected floor control needs the caller's CSK (as for a prearranged group call).
   if (session->policy.value("protect_floor", false) && (!floor_keys(user) || !floor_keys(user)->floor_ready()))
     return reject(488);
@@ -391,6 +394,9 @@ SipResponse McServer::adhoc_invite(const SipMessage &message, const User &user, 
   if (priority.emergency) answer.adhoc_emergency = true;
   if (priority.imminent) answer.imminent_peril = true;
   answer.participant_criteria = session->criteria;
+  // TS 24.379 clause 17.4.2.2 (on the invitee's 200 (OK) or 183, step 4 b) / 5 b); TS 24.281 clause 22.4.2.2): with
+  // end-to-end security, the preconfigured group identity of step 11.
+  answer.preconfigured_group_id = session->security_group;
   if (session->broadcast) answer.broadcast = true;
   response.parts = service_parts(answer);
   response.headers = priority_headers(cfg_.at(svc_.name), priority);
@@ -427,6 +433,17 @@ void McServer::invite_adhoc_member(const std::shared_ptr<Session> &session, cons
                                      {"warning", warn(Warning::adhoc_participation_not_allowed)}});
     return;
   }
+  // TS 33.180 clauses 5.7 and 7.3: a user that is not a member of the preconfigured group of an end-to-end protected
+  // ad hoc group call holds no GMK to key it with, and is not invited.
+  if (!session->security_group.empty() && !adhoc_security_member(session->security_document, id)) {
+    event("adhoc_invitee_rejected",
+          {{"user_id", id},
+           {"group_id", session->group},
+           {"status", 488},
+           {"warning", warn(Warning::function_not_allowed,
+                            "end-to-end security for a user outside the preconfigured group " + session->security_group)}});
+    return;
+  }
   release_listened_to(id, ambient_reason("for"));
   auto leg = make_leg(id, session);
   leg->local.floor_priority.reset();
@@ -438,6 +455,10 @@ void McServer::invite_adhoc_member(const std::shared_ptr<Session> &session, cons
 
   // TS 24.379 clause 17.4.2.1.1 steps 4c, 4e, 6 and 7.
   info.participant_criteria = session->criteria;
+  // Step 4 d): "if end-to-end security is requested for the call, the <anyExt> element with the
+  // <preconfigured-group-id> element set to the preconfigured group identity as determined in the clause 17.4.2.2"
+  // (TS 24.281 clause 22.4.2.1.1 step 4 c)); step 5: the offer follows the caller's, protected media included.
+  info.preconfigured_group_id = session->security_group;
   info.functional_alias = session->initiator_alias;
   if (session->participant_aliases.contains(id)) info.called_functional_alias = session->participant_aliases.at(id);
   if (session->broadcast) info.broadcast = true;
@@ -535,7 +556,8 @@ SipResponse McServer::adhoc_modify(const SipMessage &message, const User &user, 
   const auto &old = *leg->remote;
   if (old.address != message.remote_media->address || old.audio_port != message.remote_media->audio_port ||
       old.floor_port != message.remote_media->floor_port || old.floor_ssrc != message.remote_media->floor_ssrc ||
-      old.payload_type != message.remote_media->payload_type)
+      old.payload_type != message.remote_media->payload_type ||
+      message.remote_media->protected_media != leg->local.protected_media)
     return reject(488);
   const auto policy = user_profile(user.id).value("adhoc_call", Json::object());
   if (!policy.is_object() || !policy.value("modify", false))
@@ -807,6 +829,13 @@ void McServer::revalidate_adhoc(const std::shared_ptr<Session> &session) {
                                                user_profile(session->initiator).value("adhoc_call", Json::object()),
                                                session->initiator, none, true, svc_);
     if (!decision) throw std::runtime_error(decision.warning);
+    // An end-to-end protected call needs its preconfigured group, with protected media and the initiator a member.
+    if (!session->security_group.empty()) {
+      auto document = group_profile(session->security_group);
+      if (!document.value("protect_media", true) || !adhoc_security_member(document, session->initiator))
+        throw std::runtime_error("preconfigured group of the end-to-end security no longer usable");
+      session->security_document = std::move(document);
+    }
     if (!session->criteria.empty()) apply_participant_criteria(session);
   } catch (const std::exception &error) {
     event("adhoc_call_revoked", {{"reason", error.what()}, {"session_uri", session->uri}});
@@ -815,6 +844,56 @@ void McServer::revalidate_adhoc(const std::shared_ptr<Session> &session) {
       bye(leg->dialog);
     }
   }
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 17.4.2.2 steps 2 and 11 (TS 24.281 clause 22.4.2.2): an end-to-end protected ad hoc group call. The
+// request is consistent (<end-to-end-security> "true" with protected media, adhoc_security_mismatch), the media
+// profile is the one a group call's protected media take (payload type 96, bandwidth-efficient, as a prearranged
+// group's), and the preconfigured group whose security related information keys the call is determined
+// (select_adhoc_security_group) and kept in the session. Refusals are 488 with warning 100.
+std::optional<SipResponse> McServer::adhoc_end_to_end_security(const SipMessage &message, const User &user,
+                                                               const McpttInfo &info,
+                                                               const std::vector<std::string> &invitees,
+                                                               Session &session, SipResponse &response) {
+  const auto &media = *message.remote_media;
+  const auto refuse = [&](const std::string &detail) {
+    return adhoc_rejected(response, user, 488, warn(Warning::function_not_allowed, detail));
+  };
+  if (const auto mismatch = adhoc_security_mismatch(media.protected_media, info.end_to_end_security); !mismatch.empty())
+    return refuse(mismatch);
+  if (!media.protected_media) return std::nullopt;
+  if (!keys_) return refuse("end-to-end security for adhoc group call without key management");
+  if (svc_.service == Service::mcptt && (media.payload_type != 96 || media.octet_aligned))
+    return adhoc_rejected(response, user, 488);
+  auto chosen = select_adhoc_security_group(cfg_.at(svc_.name).value("adhoc_call", Json::object()), user.id, invitees,
+                                            [this](const std::string &id) { return group_profile(id); });
+  if (chosen.group.empty())
+    return refuse("end-to-end security for adhoc group call without a preconfigured group");
+  session.security_group = std::move(chosen.group);
+  session.security_document = std::move(chosen.document);
+  event("adhoc_security_group", {{"user_id", user.id}, {"group_id", session.group}, {"key_group", session.security_group}});
+  return std::nullopt;
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 17.4.4.1.1 and 17.4.7.1.1: a user rejoining or joining an ongoing ad hoc group call offers the
+// session's media protection, and for an end-to-end protected one is a member of its preconfigured group (TS 33.180
+// clause 5.7). Refusals are 488.
+std::optional<SipResponse> McServer::adhoc_joined_security(const SipMessage &message, const User &user,
+                                                           const Session &session, SipResponse &response) {
+  const bool protected_call = !session.security_group.empty();
+  if (message.remote_media->protected_media != protected_call)
+    return adhoc_rejected(response, user, 488,
+                          warn(Warning::function_not_allowed, protected_call
+                                                                  ? "clear media in an end-to-end protected adhoc group call"
+                                                                  : "protected media in an adhoc group call in the clear"));
+  if (protected_call && !adhoc_security_member(session.security_document, user.id))
+    return adhoc_rejected(
+        response, user, 488,
+        warn(Warning::function_not_allowed, "end-to-end security for a user outside the preconfigured group " +
+                                                session.security_group));
+  return std::nullopt;
 }
 
 //------------------------------------------------------------------------------

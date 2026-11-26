@@ -344,6 +344,16 @@ LABS = [
         ['mcvideo', 'protected'],
     ),
     lab('call-types', 'single', ['--private-call', '--broadcast', '--chat', '--adhoc'], [], ['mcptt'], call_types=True),
+    # TS 24.379 clauses 17.2.2.1.1 step 10 c) iii), 17.4.2.2 step 11 and 17.4.2.1.1 step 4 d) with TS 33.180 clauses
+    # 5.7 and 7.3: end-to-end protected ad hoc group calls, their speech under the GMK of the preconfigured group the
+    # controlling function names in <preconfigured-group-id>; floor control under each user's CSK (clause 9.4.2).
+    lab(
+        'adhoc-protected',
+        'single',
+        ['--adhoc', '--protected', '--key-parameters-iei', '0x79'],
+        ['adhoc_call_scenario'],
+        ['mcptt', 'protected'],
+    ),
     lab(
         'call-types-split',
         'single',

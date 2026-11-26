@@ -569,6 +569,11 @@ Json McServer::session_status(const std::string &group, const std::shared_ptr<Se
     entry["hierarchy"] = session->hierarchy;
     entry["subordinate_groups"] = session->subordinate_groups;
   }
+  // An end-to-end protected ad hoc group call: the preconfigured group whose GMK keys it (TS 24.379 clause 17.4.2.2).
+  if (session->adhoc) {
+    entry["protected"] = !session->security_group.empty();
+    entry["security_group"] = session->security_group;
+  }
   if (session->private_call) {
     entry["calling_user"] = session->initiator;
     entry["called_user"] = session->private_request.target;

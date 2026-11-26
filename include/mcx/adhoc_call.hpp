@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -146,4 +147,70 @@ inline ParticipantChanges split_participant_changes(const std::vector<std::strin
       throw std::invalid_argument("participant both invited and removed");
   return changes;
 }
+//------------------------------------------------------------------------------
+// TS 24.379 clause 17.2.2.1.1 step 10 c) iii) and clause 17.4.2.2 step 11 (TS 24.281 clauses 22.2.2.1.1 step 10 d)
+// iii) and 22.4.2.2): an end-to-end protected ad hoc group call is requested with <end-to-end-security> "true" and
+// offers protected media (RTP/SAVP, TS 33.180 clause 7.3). The one without the other cannot be keyed: the detail of
+// the refusal (warning 100), or empty when the request is consistent.
+inline std::string adhoc_security_mismatch(bool protected_media, const std::optional<bool> &end_to_end_security) {
+  const bool requested = end_to_end_security.value_or(false);
+  if (protected_media && !requested) return "protected media in an adhoc group call without end-to-end security";
+  if (!protected_media && requested) return "end-to-end security in an adhoc group call without protected media";
+  return {};
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clause 17.4.2.2 step 11 (TS 24.281 clause 22.4.2.2 step 11): "shall determine the preconfigured group from
+// which security related materials can be used by the adhoc group call participants to communicate securely"; how is
+// local policy (clause 17.1: "the security related information is used from this preconfigured group"). Here: the
+// first group of the service's adhoc_call.security_groups (configuration, in order) whose document (lookup, which
+// throws for an unknown group) protects media, so that the GMS issues its GMK (TS 33.180 clause 5.7), and lists the
+// caller (only members hold the GMK); one listing every invitee is preferred, else the one listing most of them.
+// Invitees that are not members cannot key the call and are not invited (adhoc_security_member). Empty when there is
+// none.
+struct AdhocSecurityGroup {
+  std::string group;
+  nlohmann::json document;
+};
+
+template <typename Lookup>
+AdhocSecurityGroup select_adhoc_security_group(const nlohmann::json &service, const std::string &caller,
+                                               const std::vector<std::string> &invitees, Lookup &&lookup) {
+  AdhocSecurityGroup best;
+  std::size_t best_count = 0;
+  if (!service.is_object() || !service.contains("security_groups") || !service.at("security_groups").is_array())
+    return best;
+  for (const auto &entry : service.at("security_groups")) {
+    if (!entry.is_string()) continue;
+    nlohmann::json document;
+    try {
+      document = lookup(entry.get<std::string>());
+    } catch (const std::exception &) {
+      continue;
+    }
+    if (!document.is_object() || !document.value("protect_media", true) || !document.contains("members") ||
+        !document.at("members").is_array())
+      continue;
+    const auto members = document.at("members").get<std::vector<std::string>>();
+    const auto listed = [&](const std::string &id) { return std::find(members.begin(), members.end(), id) != members.end(); };
+    if (!listed(caller)) continue;
+    const auto count = static_cast<std::size_t>(std::count_if(invitees.begin(), invitees.end(), listed));
+    if (best.group.empty() || count > best_count) {
+      best = {entry.get<std::string>(), document};
+      best_count = count;
+    }
+    if (count == invitees.size()) break;
+  }
+  return best;
+}
+
+//------------------------------------------------------------------------------
+// TS 33.180 clauses 5.7 and 7.3 with TS 24.379 clause 17.1: a participant of an end-to-end protected ad hoc group call
+// needs the GMK of its preconfigured group, which the GMS gives that group's members: whether the user is one.
+inline bool adhoc_security_member(const nlohmann::json &document, const std::string &id) {
+  if (!document.is_object() || !document.contains("members") || !document.at("members").is_array()) return false;
+  const auto members = document.at("members").get<std::vector<std::string>>();
+  return std::find(members.begin(), members.end(), id) != members.end();
+}
+
 } // namespace mcx

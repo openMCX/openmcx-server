@@ -53,6 +53,11 @@ def main():
     parser.add_argument('capture', type=Path)
     parser.add_argument('--service', required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument(
+        '--protected',
+        action='store_true',
+        help='a protected lab: the ad hoc calls are end-to-end protected (TS 24.379 clause 17.4.2.2 step 11)',
+    )
     args = parser.parse_args()
     messages, seen = [], set()
     for _, stream in tcp_streams(args.capture):
@@ -161,6 +166,33 @@ def main():
             for response in accepted
         ),
     )
+    if args.protected:
+        # TS 24.379 clause 17.2.2.1.1 step 10 c) iii): a protected call (RTP/SAVP, TS 33.180 clause 7.3) is requested
+        # with <end-to-end-security> "true"; clause 17.4.2.2 (2xx step 4 b)): the 200 (OK) names the preconfigured
+        # group in <preconfigured-group-id>; clause 17.4.2.1.1 steps 4 d) and 5: so does each invitation, whose offer
+        # is protected as the caller's.
+        def savp(message):
+            return bool(re.search(r'^m=audio \d+ RTP/SAVP ', message['body'], re.M))
+
+        new_calls = [message for message in originating if ';mcptt-session=' not in message['target']]
+        check(
+            'protected originating ad hoc INVITEs request end-to-end security',
+            bool(new_calls)
+            and all(savp(message) and message['info'].get('end-to-end-security') == 'true' for message in new_calls),
+        )
+        check(
+            '200 OK to a protected ad hoc INVITE names the preconfigured group',
+            bool(accepted)
+            and all(response['info'].get('preconfigured-group-id', '').startswith('sip:') for response in accepted),
+        )
+        check(
+            'invitations name the preconfigured group and offer protected media',
+            bool(terminating)
+            and all(
+                savp(message) and message['info'].get('preconfigured-group-id', '').startswith('sip:')
+                for message in terminating
+            ),
+        )
     # A join of an ongoing call (TS 24.379 clause 17.4.7.1.1 step 5: warning 123) names that call's group: only the
     # calls set up count.
     joins = [
