@@ -139,10 +139,10 @@ void DataServer::media_received(const std::shared_ptr<MediaSession> &session, co
 }
 
 //------------------------------------------------------------------------------
-// TS 24.582 clause 6.3.1.3 steps 1 to 4: the MSRP status of a SEND on the originating leg of a standalone SDS over
-// the media plane, decided before it is answered (the INVITE carried no payload): 403 above the limit of the
-// communication (one-to-one: <max-data-size-sds-bytes>; group: <mcdata-max-data-in-single-request> and
-// <mcdata-on-network-max-data-size-for-SDS>), and the message is not forwarded; else 200. The originator then
+// TS 24.582 clause 6.3.1.3 steps 2 to 4: the MSRP status of a SEND on the originating leg of a standalone SDS over
+// the media plane, decided before it is answered (the INVITE carried no payload): 403 above the limit of the group
+// (<mcdata-max-data-in-single-request> and <mcdata-on-network-max-data-size-for-SDS>; an ad hoc group's own), and the
+// message is not forwarded; else 200 (step 1, one-to-one, is not applied: media_invite_private_target). The originator then
 // releases its session (TS 24.582 clause 6.1.1.2.1), or the leg's deadline does. Every other SEND is answered 200.
 std::pair<unsigned, std::string> DataServer::media_accept(const MediaSession &session, const msrp::Message &message) {
   if (!session.originating || session.session || session.file || message.content_type == mcdata::file_mime)

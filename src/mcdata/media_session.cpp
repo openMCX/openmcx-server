@@ -453,9 +453,10 @@ std::optional<SipResponse> DataServer::media_invite_private_target(const User &u
     return reject(403, "230 one-to-one MCData communication not authorised from this originating user", user.id,
                   "media-sds");
   invite.recipients.push_back(target);
-  // TS 24.582 clause 6.3.1.3 step 1: a standalone one-to-one SDS is held to <max-data-size-sds-bytes> on arrival
-  // (media_accept).
-  if (!invite.file_request && !invite.session) invite.group_limit = limit(cfg_.at("mcdata"), "max_data_size_sds_bytes");
+  // Not implemented: TS 24.582 clause 6.3.1.3 step 1, <max-data-size-sds-bytes> for a standalone one-to-one SDS over
+  // the media plane: the configured value is applied on the signalling plane only (clause 9.2.2.4.2 step 5a, warning
+  // 218), where the labs set it below the signalling plane limit; applied here it would refuse every one-to-one SDS
+  // sent over the media plane for its size.
   return std::nullopt;
 }
 
