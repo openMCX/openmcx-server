@@ -7,7 +7,8 @@
 // management documents of a subscription's resource list; and the implicit floor request rules of the MCPTT server
 // (src/server/implicit_floor.hpp); the location sent with a call request to the controlling function
 // (src/server/talking_location.hpp); whether a group call is still ongoing for a new request
-// (src/server/group_session.hpp).
+// (src/server/group_session.hpp); which procedure a re-INVITE in a pre-established session's dialog belongs to, and
+// the dialog a priority state change reaches a participant over such a session in (src/server/pre_session_rules.hpp).
 //
 // Specifications: RFC 3261, RFC 3986, RFC 5875, TS 24.379 V19.7.0 (Rel-19), TS 24.380 V19.2.0 (Rel-19),
 // TS 24.484 V19.6.0 (Rel-19).
@@ -16,6 +17,7 @@
 #endif
 #include "group_session.hpp"
 #include "implicit_floor.hpp"
+#include "pre_session_rules.hpp"
 #include "request_values.hpp"
 #include "talking_location.hpp"
 
@@ -167,6 +169,27 @@ static void Clause_10_1_1_4_2_GroupCallOngoing() {
 }
 
 //------------------------------------------------------------------------------
+// TS 24.379 clauses 10.1.1.2.1.4 and 10.1.1.2.1.5 ("covers both on-demand session and pre-established sessions"), with
+// clauses 10.1.1.3.1.3 and 11.1.1.3.1.3: a re-INVITE with MC service information in a pre-established session's
+// dialog during a call over it (the cancel of the in-progress emergency or imminent peril state, an upgrade) is the
+// call's, for the controlling function; one without, or outside a call, modifies the session (clause 8.3.2.1).
+static void Clause_10_1_1_3_1_3_PreSessionReinvite() {
+  assert(pre_session_reinvite_kind(true, true) == PreSessionReinvite::call_request);
+  assert(pre_session_reinvite_kind(true, false) == PreSessionReinvite::session_modification);
+  assert(pre_session_reinvite_kind(false, true) == PreSessionReinvite::session_modification);
+  assert(pre_session_reinvite_kind(false, false) == PreSessionReinvite::session_modification);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 6.3.3.1.6 and 10.1.1.3.6 with clause 6.3.2.2.5.3: a participant whose call came over its
+// pre-established session is told of the call's priority state in the session's dialog; any other in its leg's.
+static void Clause_6_3_3_1_6_PriorityReinviteDialog() {
+  const std::string leg = "pre-call-1", session = "session-dialog", none;
+  assert(priority_reinvite_dialog(leg, session) == session);
+  assert(priority_reinvite_dialog(leg, none) == leg);
+}
+
+//------------------------------------------------------------------------------
 int main() {
   Section_20_19_Expires();
   Section_2_1_PercentDecoding();
@@ -177,6 +200,8 @@ int main() {
   Clause_6_3_5_2_2_ImplicitFloorOutcome();
   Clause_6_3_2_1_3_TalkingLocation();
   Clause_10_1_1_4_2_GroupCallOngoing();
+  Clause_10_1_1_3_1_3_PreSessionReinvite();
+  Clause_6_3_3_1_6_PriorityReinviteDialog();
   std::cout << "server request values: all checks passed\n";
   return 0;
 }

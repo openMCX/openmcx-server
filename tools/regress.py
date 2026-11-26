@@ -208,11 +208,12 @@ LABS = [
         ['mcptt', 'mcdata', 'failure'],
     ),
     # TS 24.379 clause 8, TS 24.380 clause 9: a pre-established session (with ICE) set up, modified and released by
-    # either side; group and private calls over it by REFER, and a terminating call received over it.
+    # either side; group and private calls over it by REFER, and a terminating call received over it (--priority: its
+    # emergency state set and cancelled, PE-10).
     lab(
         'pre-established',
         'single',
-        ['--pre-established', '--private-call'],
+        ['--pre-established', '--private-call', '--priority'],
         ['pre_established_scenario'],
         ['mcptt', 'pre-established'],
     ),

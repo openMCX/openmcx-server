@@ -1342,7 +1342,8 @@ void McServer::group_alert_message(const SipMessage &message, User &user, McpttI
 // to their procedures, group calls to group_invite().
 void McServer::invite_request(const SipMessage &message, User &user, SipResponse &response) {
   // TS 24.379 clause 6.3.1.1: an INVITE to the PSI identifying pre-established session set-up (clause 8.2.2); a
-  // re-INVITE of a pre-established session outside a call (clause 8.3.2.1).
+  // re-INVITE of a pre-established session: the call's when it carries MC service information during a call over the
+  // session (clauses 10.1.1.3.1.3, 11.1.1.3.1.3: pre_session_call_reinvite), else a modification (clause 8.3.2.1).
   if (const auto found = pre_sessions_.find(message.dialog_id); found != pre_sessions_.end()) {
     if (found->second->user != user.id) {
       response.status_code = 481;
@@ -1352,6 +1353,7 @@ void McServer::invite_request(const SipMessage &message, User &user, SipResponse
       response.status_code = 488; // clause 8.3.2.1 step 1
       return;
     }
+    if (pre_session_call_reinvite(message, user, found->second, response)) return;
     pre_session_offer(message, user, response);
     return;
   }

@@ -54,6 +54,7 @@
 #include "parts/settings_subscriptions.hpp"
 #include "group_session.hpp"
 #include "parts/task_queue.hpp"
+#include "pre_session_rules.hpp"
 #include "request_values.hpp"
 
 #include <atomic>
@@ -959,6 +960,8 @@ protected:
   [[nodiscard]] std::string resource_sharing_mode() const;
   void pre_session_invite(const SipMessage &message, const User &user, SipResponse &response);
   void pre_session_offer(const SipMessage &message, const User &user, SipResponse &response);
+  bool pre_session_call_reinvite(const SipMessage &message, User &user, const std::shared_ptr<PreSession> &session,
+                                 SipResponse &response);
   bool pre_session_refused(const SipMessage &message, const User &user, SipResponse &response);
   bool pre_session_floor_ssrc_missing(const SipMessage &message, const User &user, SipResponse &response);
   std::shared_ptr<PreSession> make_pre_session(const SipMessage &message, const User &user);
