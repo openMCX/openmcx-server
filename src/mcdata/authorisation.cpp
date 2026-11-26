@@ -67,6 +67,10 @@ SipResponse DataServer::authorise(const SipMessage &request, bool from_register)
   const auto existing = users_.find(asserted);
   const auto match = std::string(get_header(request.headers, "SIP-If-Match"));
   const bool unknown_etag = !match.empty() && (existing == users_.end() || match != existing->second.auth_etag);
+  // TS 24.282 clause 18.3.3.2.2: a new service authorisation (an initial publication, RFC 3903 section 4.2, a client
+  // started again) replaces the binding the user's pre-established sessions were established under.
+  if (existing != users_.end() && match.empty() && !existing->second.auth_etag.empty())
+    pre_sessions_end(id, "service authorisation replaced");
   auto &user = users_[asserted];
   user.id = id;
   user.client = info.client_id;
@@ -186,6 +190,10 @@ SipResponse DataServer::third_party_register(const SipMessage &request) {
       auto call_id = sip_fragment_header(body.body, "Call-ID");
       if (call_id.empty()) call_id = sip_fragment_header(body.body, "i");
       registration_call_ids_[identity] = call_id;
+      // TS 24.282 clause 18.3.3.2.2: a registration with another Call-ID is a new registration of the UE (RFC 3261
+      // section 10.2.4: a refresh keeps the Call-ID): the sessions established under the old one are released.
+      if (const auto found = users_.find(identity); found != users_.end())
+        pre_sessions_end(found->second.id, "new registration", call_id);
     }
   const bool has_info =
       std::any_of(parts.begin(), parts.end(), [](const auto &body) { return body.content_type == mcdata::info_mime; });
@@ -267,6 +275,7 @@ void DataServer::remove_binding(std::map<std::string, User>::iterator found, con
   notify_affiliation(user, {}, true);
   end_settings_subscriptions(user.id, reason); // TS 24.282 clause 7.3.6 with RFC 6665 section 4.2.2
   deactivate_aliases(user.id);
+  pre_sessions_end(user.id, reason); // TS 24.282 clause 18.3.3.2.2: the sessions go with the binding
   event("mcdata_binding_removed", {{"user_id", user.id}, {"client_id", user.client}, {"reason", reason}});
   users_.erase(found);
 }

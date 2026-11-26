@@ -28,7 +28,7 @@ DELIVERED, READ = 2, 3
 
 
 # ------------------------------------------------------------------------------
-# Run the scenario: check MP-01 to MP-24 and write the results file.
+# Run the scenario: check MP-01 to MP-25 and write the results file.
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--compose', type=Path, required=True)
@@ -687,6 +687,91 @@ def main():
             'MP-14 the server counts one delivery per recipient',
             lambda: counters().get('media_files_delivered', 0) >= before + 3,
         )
+
+        # MP-25 emergency and imminent peril file distribution over the media plane (TS 24.282 clauses 6.2.8.1.8,
+        # 10.2.5.3.3 steps 7A and 7B, 10.2.5.4.3 steps 1A and 1B, 10.2.5.4.4 step 3B): an authorised request is
+        # accepted and raises the group's in-progress state; an unauthorised one is refused with 403/233.
+        urgent_file = make_file('client-a', 'urgent.bin', 300)
+        earlier = media('client-a').get('message_id')
+        command('client-a', f'fd-media mandatory emergency group={group} {urgent_file}')
+        wait(
+            'MP-25 the emergency group file offer is accepted with 200 (6.2.8.1.8, 10.2.5.4.3 1A)',
+            lambda: new_media('client-a', earlier).get('status') == 200,
+        )
+        wait(
+            'MP-25 the server records the in-progress emergency state of the group (6.3.7.1.11)',
+            lambda: server_group().get('emergency') and not server_group().get('imminent'),
+        )
+        wait(
+            'MP-25 every other affiliated member receives the emergency file',
+            lambda: all(
+                [
+                    file
+                    for file in media_files(role)
+                    if file.get('name') == 'urgent.bin' and file.get('state') == 'received'
+                ]
+                for role in ['client-b', 'client-c', 'client-d']
+            ),
+        )
+        # The in-progress state outlives the file transfer; it is cancelled on a group SDS session.
+        command('client-a', f'sds-session group={group}')
+        wait('MP-25 a group session joins the emergency state', lambda: media('client-a').get('state') == 'open')
+        command('client-a', 'sds-session emergency cancel')
+        wait('MP-25 the cancellation clears the in-progress emergency state', lambda: not server_group())
+        command('client-a', 'sds-session close')
+        wait(
+            'MP-25 the group session is released at every member',
+            lambda: not any(status(role).get('mcdata_media_session') for role in roles),
+        )
+        peril_file = make_file('client-a', 'peril.bin', 300)
+        earlier = media('client-a').get('message_id')
+        command('client-a', f'fd-media mandatory imminent group={group} {peril_file}')
+        wait(
+            'MP-25 the imminent peril group file offer is accepted with 200 (6.2.8.1.8, 10.2.5.4.3 1B)',
+            lambda: new_media('client-a', earlier).get('status') == 200,
+        )
+        wait(
+            'MP-25 the server records the in-progress imminent peril state of the group',
+            lambda: server_group().get('imminent') and not server_group().get('emergency'),
+        )
+        command('client-a', f'sds-session group={group}')
+        wait('MP-25 a group session joins the imminent peril state', lambda: media('client-a').get('state') == 'open')
+        command('client-a', 'sds-session emergency')
+        wait('MP-25 the group is upgraded to emergency', lambda: server_group().get('emergency'))
+        command('client-a', 'sds-session emergency cancel')
+        wait('MP-25 the group returns to no priority', lambda: not server_group())
+        command('client-a', 'sds-session close')
+        wait(
+            'MP-25 the second group session is released at every member',
+            lambda: not any(status(role).get('mcdata_media_session') for role in roles),
+        )
+        private_file = make_file('client-a', 'urgent-private.bin', 200)
+        earlier = media('client-a').get('message_id')
+        command('client-a', f'fd-media mandatory emergency {ids["client-b"]} {private_file}')
+        wait(
+            'MP-25 the emergency one-to-one file offer is accepted with 200 (6.3.7.2.6, 10.2.5.4.3 1A)',
+            lambda: new_media('client-a', earlier).get('status') == 200,
+        )
+        wait(
+            'MP-25 the recipient receives the emergency one-to-one file',
+            lambda: [
+                file
+                for file in media_files('client-b')
+                if file.get('name') == 'urgent-private.bin' and file.get('state') == 'received'
+            ],
+        )
+        # client-c has no <allow-emergency-private-call> (MP-06).
+        refused_private = make_file('client-c', 'refused-private.bin', 200)
+        earlier = media('client-c').get('message_id')
+        command('client-c', f'fd-media mandatory emergency {ids["client-a"]} {refused_private}')
+        wait(
+            'MP-25 an unauthorised emergency one-to-one file offer is rejected with 403/233 (10.2.5.3.3 7A)',
+            lambda: (
+                new_media('client-c', earlier).get('status') == 403
+                and '233' in new_media('client-c', earlier).get('warning', '')
+            ),
+        )
+        check('MP-25 no in-progress group state is left', not server_group())
 
         # MP-15 a file that is neither mandatory nor small enough to be auto-received
         # is declined by the terminating client (TS 24.282 clause 10.2.5.2.4 step 7b, clause 11.2).

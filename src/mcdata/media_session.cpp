@@ -395,14 +395,14 @@ std::optional<SipResponse> DataServer::media_invite_group_targets(const User &us
   if (file_request && !settings.value("fd_supported", false))
     return reject(488, "214 FD services not supported for this group", user.id, "media-fd");
 
-  // TS 24.282 clause 9.2.4.4.4 steps 3B and 3C: a priority group communication is authorised by
-  // the user profile and the group document (clauses 6.3.7.2.4 and 6.3.7.2.6) before the
-  // remaining group checks, and only a session carries one (clause 6.2.8.1.8).
+  // TS 24.282 clause 9.2.4.4.4 steps 3B and 3C (clause 10.2.5.4.4 steps 3B and 3C for FD): a priority group
+  // communication is authorised by the user profile and the group document (clauses 6.3.7.2.4 and 6.3.7.2.6) before
+  // the remaining group checks, and only an SDS session or FD using the media plane carries one (clause 6.2.8.1.8).
   if (info.emergency == true || info.imminent_peril == true) {
     const bool emergency_request = info.emergency == true;
-    if (!invite.session) return reject(403, "", user.id, "media-sds-priority");
+    if (!invite.session && !file_request) return reject(403, "", user.id, "media-sds-priority");
     if (!priority_authorised(user.id, group, emergency_request, true))
-      return reject_priority(user.id, emergency_request);
+      return reject_priority(user.id, emergency_request, info.request_type);
   }
   if (document->value("regrouped", false)) return reject(403, "148 group is regrouped", user.id, what);
   if (!transmit_allowed(settings, user.id))
@@ -546,10 +546,15 @@ std::optional<SipResponse> DataServer::media_invite_priority(const SipMessage &r
                                                              MediaInvite &invite) {
   if (info.emergency == true && !invite.group_request) {
     // TS 24.282 clauses 6.2.8.3.1.1 and 6.3.7.2.6: only an authorised user may make a one-to-one
-    // communication an emergency one, and only on a session.
-    if (!invite.session) return reject(403, "", user.id, "media-sds-emergency");
-    if (!policy.value("emergency_private", false))
+    // communication an emergency one, and only on an SDS session or FD using the media plane (clause 10.2.5.4.3
+    // step 1A).
+    if (!invite.session && !invite.file_request) return reject(403, "", user.id, "media-sds-emergency");
+    if (!policy.value("emergency_private", false)) {
+      // TS 24.282 clause 10.2.5.3.3 step 7A: an unauthorised emergency one-to-one FD is refused with warning 233,
+      // and clause 10.2.5.4.4 step 3B with clause 6.3.7.2.7: the 403 carries <emergency-ind> and <alert-ind> "false".
+      if (invite.file_request) return reject_priority(user.id, true, info.request_type);
       return reject(403, "112 user not authorised to make private calls", user.id, "media-sds-emergency");
+    }
   } else if (info.emergency == true || info.imminent_peril == true) {
     // TS 24.282 clause 6.2.8.1.8: a priority group communication, and only on a session.
     const bool emergency_request = info.emergency == true;
@@ -557,7 +562,7 @@ std::optional<SipResponse> DataServer::media_invite_priority(const SipMessage &r
     if (!invite.group_request || !(invite.session || invite.file_request))
       return reject(403, "", user.id, "media-sds-priority");
     if (!priority_authorised(user.id, invite.group, emergency_request, true))
-      return reject_priority(user.id, emergency_request);
+      return reject_priority(user.id, emergency_request, info.request_type);
     auto &state = group_priority_[invite.group];
     if (emergency_request) {
       state.emergency = true;
