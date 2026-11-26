@@ -444,8 +444,8 @@ void McServer::retry_floor_messages(std::uint64_t now) {
 // aliases, calls and relays); the users served here are registered again with their controllers at the registration
 // refresh interval.
 void McServer::expire_users(std::uint64_t now) {
-  for (auto &[sip, user] : users_)
-    if (!user.subscription.empty() && user.subscription_expires <= std::time(nullptr)) user.subscription.clear();
+  for (const auto &dialog : affiliation_subscriptions_.expired(std::time(nullptr)))
+    affiliation_subscriptions_.erase(dialog);
   std::vector<std::string> ended;
   for (const auto &[sip, user] : users_)
     if (user.peer.empty() && user.expires <= std::time(nullptr)) ended.push_back(sip);

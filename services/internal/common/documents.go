@@ -42,6 +42,10 @@ type publicUser struct {
 	FunctionalAliasTakeover bool `json:"functional_alias_takeover,omitempty"`
 	FunctionalAliasBinding  bool `json:"functional_alias_binding,omitempty"`
 	MaxAffiliations         int  `json:"max_affiliations,omitempty"`
+	// <allow-request-affiliated-groups> and <allow-request-to-affiliate-other-users> (TS 24.484 tables 8.3.2.7-24
+	// and 8.3.2.7-25).
+	RequestAffiliatedGroups bool `json:"request_affiliated_groups,omitempty"`
+	AffiliateOthers         bool `json:"affiliate_others,omitempty"`
 	// <allow-regroup> (TS 24.379 clause 16.2.2.2 step 3).
 	Regroup bool `json:"regroup,omitempty"`
 	// <allow-location-info-when-talking> (TS 24.484 clause 8.3.2.7).
@@ -625,6 +629,7 @@ func (svc *service) getInternalUser(writer http.ResponseWriter, request *http.Re
 	user = svc.effectiveUser(user)
 	writeJSON(writer, http.StatusOK, publicUser{ProfileIndex: user.profileIndex(), MCID: user.MCID, MCPTTID: user.MCPTTID, SIPURI: user.SIPURI, ClientID: user.ClientID, Groups: user.Groups, PrivateCall: user.PrivateCall, AdhocCall: user.AdhocCall, GroupCall: user.GroupCall,
 		FunctionalAliasTakeover: user.FunctionalAliasTakeover, FunctionalAliasBinding: user.FunctionalAliasBinding, MaxAffiliations: user.MaxAffiliations,
+		RequestAffiliatedGroups: user.RequestAffiliatedGroups, AffiliateOthers: user.AffiliateOthers,
 		Regroup: user.Regroup, LocationWhenTalking: user.LocationWhenTalking, TriggerRemoteFloorRequest: user.TriggerRemoteFloorRequest, RemoteGroupSelection: user.RemoteGroupSelection, MCDataID: user.MCDataID, MCData: user.MCData, MCVideoID: user.MCVideoID, MCVideo: user.MCVideo, Location: user.Location})
 }
 

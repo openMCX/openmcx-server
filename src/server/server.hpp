@@ -41,6 +41,7 @@
 #include "mcx/video.hpp"
 #include "mcx/warning.hpp"
 #include "mcx/xml_security.hpp"
+#include "parts/affiliation_subscriptions.hpp"
 #include "parts/alias_registry.hpp"
 #include "parts/common_services.hpp"
 #include "parts/counters.hpp"
@@ -79,11 +80,11 @@ protected:
   // The shared served user (parts/served_users.hpp; peer: the participating server of a user served elsewhere, over
   // MCPTT-3, TS 23.379 clause 7.5.2.4), with the core's own: the p-id of the affiliation PUBLISH being handled, for
   // the NOTIFY it triggers (TS 24.379 clause 9.2.2.2.5 step 3d, TS 24.281 clause 8.2.2.2.5 step 3d), the floor and
-  // media keys of its calls, and the end of its affiliation status subscription.
+  // media keys of its calls. Its affiliation status subscriptions are in affiliation_subscriptions_ (ServedUser's
+  // subscription is the MCData server's).
   struct User : ServedUser {
     std::string handled_pid;
     std::shared_ptr<ProtectedCall> protection;
-    std::int64_t subscription_expires = 0;
   };
 
   //------------------------------------------------------------------------------
@@ -573,15 +574,16 @@ protected:
     peer_registration_.publish(peer_user(user), withdraw, refresh);
   }
 
-  // Helper: a user as peer registration sees it; its affiliations are current while its subscription lasts.
-  static PeerUser peer_user(const User &user) {
+  // Helper: a user as peer registration sees it; its affiliations are current while one of its own subscriptions to
+  // its affiliation status lasts (a peer's user: while its registration does).
+  PeerUser peer_user(const User &user) const {
     return {user.id,
             user.client,
             user.sip,
             user.peer,
             user.expires,
             user.groups,
-            !user.subscription.empty() && user.subscription_expires > std::time(nullptr)};
+            !user.peer.empty() || affiliation_subscriptions_.own_live(user.id, std::time(nullptr))};
   }
 
   unsigned media_offset() const;
@@ -873,6 +875,37 @@ protected:
   std::set<std::string> deaffiliation_forbidden(const User &user, const std::set<std::string> &leaving);
 
   void notify(User &user);
+
+  // ---- Affiliation as other users see and change it (affiliation_requests.cpp): TS 24.379 clauses 9.2.2.2.4,
+  // 9.2.2.2.5 and 9.2.2.2.8 to 9.2.2.2.10 (TS 24.281 clauses 8.2.2.2.4, 8.2.2.2.5, 8.2.2.2.8 to 8.2.2.2.10) ----
+  // The subscriptions to the affiliation status of the users served here, several per user.
+  AffiliationSubscriptions affiliation_subscriptions_;
+  // Clause 9.2.2.2.5: one NOTIFY on one subscription with the served user's affiliation status.
+  void notify_affiliation(const std::string &dialog, const User &served, const std::string &publication_id,
+                          const std::string &state);
+  // RFC 6665 section 4.2.2: the subscriptions to a user's affiliation status end with its binding (noresource), and
+  // those it holds to other users' (rejected).
+  void end_affiliation_subscriptions(const User &user);
+  // Clauses 9.2.2.2.8 to 9.2.2.2.10 NOTE 4: where a request about the target's affiliation goes.
+  AffiliationRoute affiliation_route_of(const std::string &target, const std::string &from_peer);
+  // Clause 9.2.2.2.4 step 5: the subscription of `subscriber` to the affiliation status of `served`, granted for
+  // `expires_s` (0: a fetch); its first NOTIFY follows the 200 (OK).
+  void accept_affiliation_subscription(const SipMessage &message, const std::string &served,
+                                       const std::string &subscriber, std::uint64_t expires_s, SipResponse &response);
+  // RFC 6665 section 4.2.1.2: a SUBSCRIBE in the dialog of a subscription held here (refresh, or Expires 0 its end);
+  // false when the dialog is none of them.
+  bool affiliation_resubscribe(const SipMessage &message, SipResponse &response);
+  // Clause 9.2.2.2.4 at the terminating participating function, and clause 9.2.2.2.10 passed on again: a subscription
+  // to a user's affiliation status from a peer server, the originating MC service ID in <mcptt-calling-user-id>.
+  bool peer_affiliation_subscribe(const SipMessage &message, const std::string &peer, const std::string &event_name,
+                                  SipResponse &response);
+  // Annex F.4: whether the request carries the affiliation command of negotiated mode.
+  [[nodiscard]] bool is_affiliation_command(const SipMessage &message) const;
+  // Clause 9.2.1.4 received: the request in negotiated mode from `originator` goes to the target's client (clause
+  // 9.2.2.2.8) or to the server serving the target (as clause 9.2.2.2.9 for a PUBLISH); `from_peer` names the server
+  // it came from, empty for a served user's request.
+  SipResponse negotiated_affiliation(const SipMessage &message, const std::string &originator, McpttInfo info,
+                                     const std::string &from_peer);
 
   // ---- Pre-established sessions (pre_session.cpp): TS 24.379 clause 8, TS 24.380 clause 9.3 ----
   // TS 24.379 clause 8.1A: what the third-party REGISTER told of the SIP core's resource sharing for a public user
@@ -1644,6 +1677,11 @@ protected:
   // Clause 8.2.2.2.16 step 4: the SUBSCRIBE towards the controlling function.
   SipResponse relay_gdd_subscribe(const SipMessage &message, const User &user, const std::string &group,
                                   const std::string &owner);
+  // The same for any presence subscription about `target` from `originator` passed on to `owner` (also TS 24.379
+  // clause 9.2.2.2.10 step 3); without Expires, `default_expires` is asked for, or the request is answered 423.
+  SipResponse relay_presence_subscribe(const SipMessage &message, const std::string &originator,
+                                       const std::string &target, const std::string &owner,
+                                       std::optional<std::uint64_t> default_expires, const char *relayed_event);
   // Clause 8.2.2.2.16, last paragraph: a request in the dialog of a relayed subscription.
   SipResponse relay_gdd_in_dialog(const SipMessage &message, const std::shared_ptr<GddRelay> &relay);
   void forward_gdd_notify(const std::shared_ptr<GddRelay> &relay, const GddRelay::Held &held);
