@@ -247,9 +247,10 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--results', type=Path, help="the scenario's results: rejections it could not probe")
     args = parser.parse_args()
-    not_probed = set()
+    not_probed, results = set(), {}
     if args.results and args.results.is_file():
-        not_probed = set(json.loads(args.results.read_text()).get('observations', {}).get('not_probed', []))
+        results = json.loads(args.results.read_text()).get('observations', {})
+        not_probed = set(results.get('not_probed', []))
     messages, seen = [], set()
     for _, stream in tcp_streams(args.capture):
         for head, body in sip_messages(stream):
@@ -813,7 +814,6 @@ def main():
         '202': 403,
         '229': 403,
         '203': 403,
-        '218': 403,
         '230': 403,
         '204': 403,
         '116': 403,
@@ -837,6 +837,23 @@ def main():
         check(
             f'rejection {status}/{code}',
             any(status_code == status and f'"{code} ' in warning for status_code, warning in rejected),
+        )
+    # TS 24.582 clause 6.3.1.3 steps 1 and 3: the one-to-one SDS the scenario sent over the media plane above
+    # <max-data-size-sds-bytes> has its MSRP SEND answered 403 by the server (warning 218 cannot occur over the
+    # signalling plane: the lab's limit is above the signalling plane limit, whose 203 applies first). The MSRP
+    # connections use ephemeral ports, so every stream is read; an MSRP over TLS connection is not readable.
+    from verify_mcdata_media import msrp_frames  # noqa: E402, PLC0415 (verify_mcdata_media imports this module)
+
+    msrp_statuses = [
+        frame['kind']
+        for _, stream in tcp_streams(args.capture, port=None)
+        if stream.startswith(b'MSRP ') or b'\r\nMSRP ' in stream[:4096]
+        for frame in msrp_frames(stream)
+    ]
+    if results.get('media_one_to_one_refused') and msrp_statuses:
+        check(
+            'one-to-one SDS over the media plane above <max-data-size-sds-bytes> answered MSRP 403 (24.582 6.3.1.3)',
+            '403' in msrp_statuses,
         )
     result = dict(
         capture=str(args.capture),

@@ -1009,7 +1009,8 @@ def add_mcdata_policy(fixture, source):
     Functional aliases (TS 24.282 clause 22): front-desk.fa (a, b; one activation; take-over allowed and
     b holds the take-over permission), patrol-car-12.fa (c, d; two activations) and
     incident-commander.fa (a; never activated).
-    Service limits: 1000 bytes over the signalling plane, 500 bytes per one-to-one SDS.
+    Service limits: 1000 bytes over the signalling plane, 4096 bytes per one-to-one SDS (above the signalling
+    plane limit, so a longer one-to-one SDS goes over the media plane, TS 24.582 clause 6.3.1.3 step 1).
     Group operations: all four members, at most 400 bytes per SDS and 800 per request.
     Extra groups: operations-nosds (SDS and FD not allowed), operations-nosupport
     (no SDS or FD enabler) and operations-noemergency (SDS allowed, but neither
@@ -1153,7 +1154,7 @@ def add_mcdata_policy(fixture, source):
     site_file.write_text(json.dumps(site, indent=2) + '\n')
     server_file = fixture / 'generated/mcdata-server.json'
     server = json.loads(server_file.read_text())
-    server['mcdata'].update(max_payload_size_sds_cplane_bytes=1000, max_data_size_sds_bytes=500)
+    server['mcdata'].update(max_payload_size_sds_cplane_bytes=1000, max_data_size_sds_bytes=4096)
     server['mcdata']['adhoc'] = dict(allow=True, max_participants=3, lifetime_ms=1800000)
     server['mcdata']['redelivery'] = dict(tdp1_ms=2000, max_attempts=2, retention_ms=600000, max_held=1000)
     server['mcdata']['aggregation'] = dict(enabled=True, tdc1_ms=3000, max_per_message=50)

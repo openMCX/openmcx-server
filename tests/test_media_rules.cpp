@@ -3,9 +3,9 @@
 //
 
 // The MCData server's decisions of src/mcdata/media_rules.hpp: a service authorisation that uploads a new CSK is not
-// opened with the old one, the MSRP status of a standalone SDS over the media plane against its size limits, and the
-// release that waits for the invited client's answer to a one-to-one FD, and the called functional alias passed on to
-// the recipient of a one-to-one communication over the media plane.
+// opened with the old one, the MSRP status of a standalone SDS over the media plane against its size limits
+// (one-to-one and group), and the release that waits for the invited client's answer to a one-to-one FD, and the
+// called functional alias passed on to the recipient of a one-to-one communication over the media plane.
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19), TS 24.582 V19.0.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19).
 #ifdef NDEBUG
@@ -41,6 +41,29 @@ static void Clause_6_3_1_3_GroupLimitsBoth() {
   assert(tightest_limit(0, 400) == 400);
   assert(tightest_limit(500, 400) == 400);
   assert(tightest_limit(300, 400) == 300);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.582 clause 6.3.1.3 step 1: a standalone one-to-one SDS is held to <max-data-size-sds-bytes>; a one-to-one FD
+// or SDS session over the media plane is not.
+static void Clause_6_3_1_3_OneToOneLimit() {
+  assert(one_to_one_sds_limit(false, false, 4096) == 4096);
+  assert(one_to_one_sds_limit(false, false, 0) == 0);
+  assert(one_to_one_sds_limit(true, false, 4096) == 0);
+  assert(one_to_one_sds_limit(false, true, 4096) == 0);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.582 clause 6.3.1.3 steps 1 and 3: a standalone one-to-one SDS above <max-data-size-sds-bytes> is answered 403
+// (and not forwarded), one at or below it 200, whatever the signalling plane limit, which a media plane SDS is not held
+// to (TS 24.282 clause 9.2.1.1: the media plane carries an SDS above <max-payload-size-sds-cplane-bytes>).
+static void Clause_6_3_1_3_OneToOneSendAnsweredByItsSize() {
+  const auto limit = one_to_one_sds_limit(false, false, 4096);
+  assert(standalone_sds_send_status(4097, limit) == msrp_forbidden);
+  assert(standalone_sds_send_status(4096, limit) == msrp_ok);
+  assert(standalone_sds_send_status(3000, limit) == msrp_ok); // above a 1000-byte signalling plane limit
+  assert(standalone_sds_send_status(1u << 20, one_to_one_sds_limit(false, false, 0)) == msrp_ok);
+  assert(standalone_sds_send_status(1u << 20, one_to_one_sds_limit(false, true, 4096)) == msrp_ok);
 }
 
 //------------------------------------------------------------------------------
@@ -82,6 +105,8 @@ int main() {
   Clause_7_3_3_CskUploadOpenedWithItsOwnCsk();
   Clause_6_3_1_3_GroupLimitsBoth();
   Clause_6_3_1_3_SendAnsweredByItsSize();
+  Clause_6_3_1_3_OneToOneLimit();
+  Clause_6_3_1_3_OneToOneSendAnsweredByItsSize();
   Clause_10_2_5_4_4_DeclineAnswersTheOriginator();
   std::cout << "media rules: all tests passed\n";
   return 0;

@@ -455,10 +455,10 @@ std::optional<SipResponse> DataServer::media_invite_private_target(const User &u
   invite.recipients.push_back(target);
   // The alias the originator called before the 300 (Multiple Choices), passed on to the recipient.
   invite.called_aliases = one_to_one_called_alias(target, info.called_functional_alias);
-  // Not implemented: TS 24.582 clause 6.3.1.3 step 1, <max-data-size-sds-bytes> for a standalone one-to-one SDS over
-  // the media plane: the configured value is applied on the signalling plane only (clause 9.2.2.4.2 step 5a, warning
-  // 218), where the labs set it below the signalling plane limit; applied here it would refuse every one-to-one SDS
-  // sent over the media plane for its size.
+  // TS 24.582 clause 6.3.1.3 step 1: a standalone one-to-one SDS is held to <max-data-size-sds-bytes> when its SEND
+  // arrives (media_accept), since the INVITE does not carry the payload.
+  invite.group_limit =
+      one_to_one_sds_limit(invite.file_request, invite.session, limit(cfg_.at("mcdata"), "max_data_size_sds_bytes"));
   return std::nullopt;
 }
 

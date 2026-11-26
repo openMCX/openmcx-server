@@ -4,9 +4,9 @@
 
 #pragma once
 // Decisions of the MCData server on service authorisation and the media plane, header only so that they are unit
-// tested without the server: the request that uploads a new CSK, the size check of a standalone SDS over MSRP, and the
-// one-to-one file distribution whose originator waits for the recipient's answer, and the functional alias a one-to-one
-// communication over the media plane called.
+// tested without the server: the request that uploads a new CSK, the size limits of a standalone SDS over MSRP
+// (one-to-one and group) and their check, and the one-to-one file distribution whose originator waits for the
+// recipient's answer, and the functional alias a one-to-one communication over the media plane called.
 //
 // Specifications: TS 24.282 V19.7.0 (Rel-19), TS 24.582 V19.0.0 (Rel-19), TS 33.180 V19.4.0 (Rel-19), RFC 4975.
 #include <algorithm>
@@ -43,6 +43,14 @@ inline std::uint64_t tightest_limit(std::uint64_t first, std::uint64_t second) {
   if (!first) return second;
   if (!second) return first;
   return std::min(first, second);
+}
+
+//------------------------------------------------------------------------------
+// TS 24.582 clause 6.3.1.3 step 1 (TS 24.282 clause 11.1 step 3): a standalone one-to-one SDS over the media plane is
+// held to <max-data-size-sds-bytes> of the MCData service configuration document (TS 24.484); a one-to-one FD or SDS
+// session is not a standalone SDS and has no such limit on its SENDs (0: none).
+inline std::uint64_t one_to_one_sds_limit(bool file_request, bool session, std::uint64_t max_data_size_sds) {
+  return file_request || session ? 0 : max_data_size_sds;
 }
 
 //------------------------------------------------------------------------------

@@ -325,12 +325,15 @@ What the present standalone edition of OpenMCX does not do, and the limits of wh
 - **Ad hoc priority over the media plane.** An emergency or imminent-peril ad hoc group communication over the media
   plane is refused with 403: TS 23.282 clause 7.17.2.1 names the indicators, but TS 24.282 defines no procedure for
   them (clause 24 and the upgrade clauses 9.2.4.4.5 and 9.2.4.4.6 cover none).
-- **Size of a standalone SDS over the media plane.** A group or ad hoc group SDS above the group's limit
-  (`<mcdata-max-data-in-single-request>` and `<mcdata-on-network-max-data-size-for-SDS>`) is refused by answering its
-  MSRP SEND 403 and is not forwarded (TS 24.582 clause 6.3.1.3 steps 2 and 3); the leg then ends with the originator's
-  BYE or its deadline. Not applied: step 1, `<max-data-size-sds-bytes>` for a one-to-one SDS over the media plane. The
-  value is applied on the signalling plane (warning 218), where the labs set it below the signalling plane limit, so it
-  would refuse every long one-to-one SDS. Fixed: the leg used to be torn down before the SEND was answered.
+- **Size of a standalone SDS over the media plane.** A one-to-one SDS above `<max-data-size-sds-bytes>` of the
+  service configuration, or a group or ad hoc group SDS above the group's limit (`<mcdata-max-data-in-single-request>`
+  and `<mcdata-on-network-max-data-size-for-SDS>`), is refused by answering its MSRP SEND 403 and is not forwarded
+  (TS 24.582 clause 6.3.1.3 steps 1 to 3); the leg then ends with the originator's BYE or its deadline. Fixed: the leg
+  used to be torn down before the SEND was answered. `<max-data-size-sds-bytes>` is the server's
+  `mcdata.max_data_size_sds_bytes`; the labs set it to 4096, above the 1000-byte signalling plane limit, so a one-to-one
+  SDS over the signalling plane is refused with 203 (TS 24.282 clause 9.2.2.3.1 step 8, at the participating function)
+  before the controlling function's 218 (clause 9.2.2.4.2 step 5a) could apply; 218 is answered only where the
+  configured value is below the signalling plane limit.
 - **One-to-one media-plane communications to a functional alias.** A one-to-one SDS (standalone or session) or FD over
   the media plane to a functional alias is redirected with 300 (Multiple Choices) to a user that activated it
   (TS 24.282 clauses 9.2.3.4.4 step 6a1, 9.2.4.4.4 and 10.2.5.4.4 step 8a1), or refused with 403 warning 145. As for
