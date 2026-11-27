@@ -193,11 +193,30 @@ bool McServer::peer_affiliation_subscribe(const SipMessage &message, const std::
 
 //------------------------------------------------------------------------------
 // TS 24.379 clause 9.2.2.2.5 (TS 24.281 clause 8.2.2.2.5): the served user's affiliation status, every client and
-// group (clause 9.3.1), with the handled p-id when a PUBLISH caused the notification (step 3d).
+// group (clause 9.3.1), with the handled p-id when a PUBLISH caused the notification (step 3d). The body is protected
+// for the subscriber's client (TS 24.379 clauses 6.6.2.3.2 and 6.6.3.3.2, protect_outgoing); when that cannot be done
+// (the client's binding has no CSK: another service authorisation of the user replaced the one the subscription was
+// made under) the body is never sent in the clear: a terminating NOTIFY goes without a body, so that the subscription
+// still ends (RFC 6665 section 4.2.2), any other is not sent (notify_without_body). Either way the request that caused
+// the notification (a log-off, TS 24.379 clause 7.3.5, an affiliation change) goes on.
 void McServer::notify_affiliation(const std::string &dialog, const User &served, const std::string &publication_id,
                                   const std::string &state) {
-  sip_.notify(dialog, "presence", state, "application/pidf+xml",
-              affiliation_xml(affiliation_status(svc_, served, publication_id), true));
+  try {
+    sip_.notify(dialog, "presence", state, "application/pidf+xml",
+                affiliation_xml(affiliation_status(svc_, served, publication_id), true));
+    return;
+  } catch (const std::exception &error) {
+    event("affiliation_notify_not_sent",
+          {{"dialog", dialog}, {"user_id", served.id}, {"state", state}, {"reason", error.what()}});
+  }
+  if (!notify_without_body(state)) return;
+  try {
+    sip_.notify(dialog, "presence", state, {}, {});
+    event("affiliation_notify_sent_without_body", {{"dialog", dialog}, {"user_id", served.id}, {"state", state}});
+  } catch (const std::exception &error) {
+    event("affiliation_notify_not_sent",
+          {{"dialog", dialog}, {"user_id", served.id}, {"state", state}, {"reason", error.what()}});
+  }
 }
 
 //------------------------------------------------------------------------------

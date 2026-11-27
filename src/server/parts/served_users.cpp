@@ -11,6 +11,7 @@
 #include "request_values.hpp"
 
 #include <algorithm>
+#include <cctype>
 
 namespace mcx {
 
@@ -134,6 +135,19 @@ bool listed(const Json &list, const std::string &id) {
 bool transmit_allowed(const Json &settings, const std::string &id) {
   if (settings.value("transmit_all", false)) return true;
   return settings.contains("transmit_members") && listed(settings.at("transmit_members"), id);
+}
+
+//------------------------------------------------------------------------------
+// RFC 6665 section 4.2.2: a NOTIFY whose Subscription-State is "terminated" (case-insensitive, any parameters).
+bool notify_without_body(std::string_view subscription_state) {
+  while (!subscription_state.empty() && (subscription_state.front() == ' ' || subscription_state.front() == '\t'))
+    subscription_state.remove_prefix(1);
+  const auto value = subscription_state.substr(0, subscription_state.find_first_of("; \t"));
+  constexpr std::string_view terminated = "terminated";
+  return value.size() == terminated.size() &&
+         std::equal(value.begin(), value.end(), terminated.begin(), [](char a, char b) {
+           return std::tolower(static_cast<unsigned char>(a)) == b;
+         });
 }
 
 } // namespace mcx
