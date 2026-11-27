@@ -200,6 +200,23 @@ void Clause_7_3_4_Settings() {
 } // namespace
 
 //------------------------------------------------------------------------------
+namespace {
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 6.6.2.3.2 and 6.6.3.3.2 with RFC 6665 section 4.2.2: a terminating NOTIFY whose body cannot be
+// protected for its recipient goes without a body (it still ends the subscription); any other is not sent.
+void Section_4_2_2_UnprotectableNotify() {
+  assert(notify_without_body("terminated;reason=noresource"));
+  assert(notify_without_body("terminated;reason=rejected"));
+  assert(notify_without_body("terminated;reason=timeout"));
+  assert(notify_without_body("terminated"));
+  assert(notify_without_body(" Terminated ;reason=noresource"));
+  assert(!notify_without_body("active;expires=3600"));
+  assert(!notify_without_body("pending"));
+  assert(!notify_without_body("terminatedx"));
+  assert(!notify_without_body(""));
+}
+} // namespace
+
 int main() {
   Clause_7_3_3_ByIdentity();
   Clause_9_3_1_AffiliationDocuments();
@@ -208,5 +225,6 @@ int main() {
   Clause_7_3_4_Binding();
   Clause_7_3_4_Rfc3903();
   Clause_7_3_4_Settings();
+  Section_4_2_2_UnprotectableNotify();
   std::cout << "served_users: all checks passed\n";
 }

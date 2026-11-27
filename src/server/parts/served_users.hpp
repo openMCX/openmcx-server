@@ -144,4 +144,13 @@ bool listed(const Json &list, const std::string &id);
 // transmit data in the group (<mcdata-allow-transmit-data-in-this-group>): for every member ("transmit_all"), or for
 // those listed ("transmit_members"); with neither, no member may.
 bool transmit_allowed(const Json &settings, const std::string &id);
+
+//------------------------------------------------------------------------------
+// TS 24.379 clauses 6.6.2.3.2 and 6.6.3.3.2 with TS 33.180 clause 9.3 and RFC 6665 section 4.2.2: what becomes of a
+// side NOTIFY (one no request of the recipient asked for: the affiliation status or the service settings) whose body
+// could not be sent, for the protection its recipient needs has no key (no CSK of the client's binding) or its dialog
+// is gone. Its body is never sent unprotected. A NOTIFY that ends the subscription ("terminated", whatever reason) is
+// sent without a body: it still ends the subscription and its dialog, and carries no state that would need protection;
+// any other is not sent (the next change, or the subscription's end, notifies again).
+bool notify_without_body(std::string_view subscription_state);
 } // namespace mcx

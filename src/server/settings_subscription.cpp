@@ -132,14 +132,29 @@ std::string McServer::settings_body(const SettingsSubscriptions::Subscription &s
 // TS 24.379 clause 7.3.6.2 step 2: the NOTIFY with the application/poc-settings+xml body (RFC 4354 section 4). RFC
 // 6665 section 4.2.2: a failure response to it (such as 481) ends the subscription.
 void McServer::notify_settings(const std::string &dialog, const std::string &body, const std::string &state) {
-  sip_.notify(dialog, poc_settings_event, state, poc_settings_mime, body, {},
-              [this, dialog](const SipResponse &answer) {
-                if (answer.status_code < 300) return;
-                schedule([this, dialog, status = answer.status_code] {
-                  if (settings_subscriptions_.erase(dialog))
-                    event("service_settings_subscription_ended", {{"dialog", dialog}, {"status", status}});
-                });
-              });
+  const auto answered = [this, dialog](const SipResponse &answer) {
+    if (answer.status_code < 300) return;
+    schedule([this, dialog, status = answer.status_code] {
+      if (settings_subscriptions_.erase(dialog))
+        event("service_settings_subscription_ended", {{"dialog", dialog}, {"status", status}});
+    });
+  };
+  // The body is signed for the subscriber's client (TS 24.379 clause 6.6.3.3.2, protect_outgoing); without the key
+  // for it (the client's binding has no CSK) it is never sent unsigned: a terminating NOTIFY goes without a body (RFC
+  // 6665 section 4.2.2), any other is not sent (notify_without_body), and the request that caused it goes on.
+  try {
+    sip_.notify(dialog, poc_settings_event, state, poc_settings_mime, body, {}, answered);
+    return;
+  } catch (const std::exception &error) {
+    event("service_settings_notify_not_sent", {{"dialog", dialog}, {"state", state}, {"reason", error.what()}});
+  }
+  if (!notify_without_body(state)) return;
+  try {
+    sip_.notify(dialog, poc_settings_event, state, {}, {}, {}, answered);
+    event("service_settings_notify_sent_without_body", {{"dialog", dialog}, {"state", state}});
+  } catch (const std::exception &error) {
+    event("service_settings_notify_not_sent", {{"dialog", dialog}, {"state", state}, {"reason", error.what()}});
+  }
 }
 
 //------------------------------------------------------------------------------
